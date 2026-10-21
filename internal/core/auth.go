@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -28,8 +29,12 @@ const SessionTTL = 30 * 24 * time.Hour
 // tokenTouchInterval throttles last_used_at writes.
 const tokenTouchInterval = time.Minute
 
-// dummyHash keeps failed logins for unknown emails as slow as wrong passwords.
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("platform-dummy-password"), bcrypt.DefaultCost)
+// dummyHash keeps failed logins for unknown emails as slow as wrong
+// passwords. Lazy: hashing at init would slow every CLI start by ~40ms.
+var dummyHash = sync.OnceValue(func() []byte {
+	h, _ := bcrypt.GenerateFromPassword([]byte("platform-dummy-password"), bcrypt.DefaultCost)
+	return h
+})
 
 func newSecret(prefix string) (secret, hash string) {
 	b := make([]byte, 32)
@@ -148,7 +153,7 @@ func (c *Core) checkPassword(ctx context.Context, email, password string) (store
 	defer func() { <-c.bcryptSem }()
 	u, err := c.store.GetUserByEmail(ctx, email)
 	if store.IsNotFound(err) {
-		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
 		return store.User{}, errWrongPassword
 	}
 	if err != nil {
