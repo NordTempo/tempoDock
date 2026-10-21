@@ -60,6 +60,30 @@ access goes through the daemon's API, which enforces permissions.
 - Production and non-production environments live on different servers, so a
   runaway staging app or build can't starve production.
 
+## Network isolation
+
+Deployed code is untrusted, and servers often sit on a home LAN or a
+tailnet. Apps and builds reach the public internet, nothing private:
+
+- **Firewall by default.** Traffic from app networks and from BuildKit to
+  private, CGNAT/Tailscale, link-local and IPv6 ULA addresses is dropped, and
+  so is traffic to the server itself (API, SSH), except Caddy's ports and
+  DNS. LAN hosts an app needs go on an explicit allowlist
+  (`[network] allow_private`). Root installs the rules
+  (`dock-firewall.service`); the daemon can't change them.
+- **Environments are isolated.** Each environment has its own Docker
+  network, with addresses from a dedicated pool. Containers reach their own
+  environment by name and nothing in other environments.
+- **Only loopback ports.** Published app ports bind to 127.0.0.1, where only
+  Caddy uses them (Docker 28+ keeps them off the LAN).
+- **Least privilege on the host.** Only the daemon process gets Docker
+  access. Caddy runs as its own user without it, so a Caddy compromise
+  doesn't become root.
+
+BuildKit runs privileged to build images, so the firewall contains build
+steps but not a BuildKit escape. See the [install guide](guide/install.md#app-firewall)
+for the exact rules.
+
 ## Concurrency
 
 - One deploy at a time per service (lock in SQLite).

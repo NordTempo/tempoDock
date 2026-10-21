@@ -9,8 +9,8 @@ containers and keep running when the daemon is stopped or upgraded.
 | What | Needed |
 |---|---|
 | OS | Linux with systemd, `amd64` or `arm64` |
-| Docker | Docker Engine installed and running (`systemctl enable --now docker`) |
-| Tools | `curl` (downloads Caddy, detects the public IP) |
+| Docker | Docker Engine 28 or newer, installed and running (`systemctl enable --now docker`), with its default iptables firewall backend. Older versions expose ports published on 127.0.0.1 to the LAN; the script warns |
+| Tools | `curl` (downloads Caddy, detects the public IP), `iptables` (the app firewall) |
 | Access | root (`sudo`) |
 | Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-m0)). Builds are capped at 2 GB by default |
 | Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) private |
@@ -56,17 +56,18 @@ re-run; the rest are only used when `/etc/dock/config.toml` doesn't exist yet.
 | Thing | Where |
 |---|---|
 | `dock` binary | `/usr/local/bin/dock` |
-| Caddy binary | `/usr/local/bin/caddy` (skipped if the right version is already there) |
-| System user | `dock` (no login shell, home `/var/lib/dock`), added to the `docker` group |
+| Caddy binary | `/usr/local/bin/caddy`, checked against the release's published SHA-512 checksums (skipped if the right version is already there) |
+| System users | `dock` runs the daemon, `dock-caddy` runs Caddy. Neither has a login shell or is in the `docker` group itself |
 | Daemon config | `/etc/dock/config.toml` (root:dock, 0640). Written once, never overwritten |
 | Caddy bootstrap config | `/etc/dock/caddy.json` (regenerated on every run) |
-| Daemon unit | `dock.service`: `dock serve --config /etc/dock/config.toml`, `MemoryHigh=96M`, `MemoryMax=256M` |
-| Proxy unit | `dock-caddy.service`: `caddy run --resume`, only binds 80/443 |
+| Daemon unit | `dock.service`: `dock serve --config /etc/dock/config.toml` as `dock`, with the `docker` and `dock-caddy` groups for this process only. `MemoryHigh=96M`, `MemoryMax=256M`, `GOMEMLIMIT=64MiB` |
+| Proxy unit | `dock-caddy.service`: `caddy run --resume` as `dock-caddy`, only binds 80/443. No Docker access |
+| Firewall unit | `dock-firewall.service`: runs `dock admin firewall apply` as root whenever Docker starts. See [App firewall](#app-firewall) |
 | Daemon data | `/var/lib/dock` (0700): `dock.db`, `secret.key`, `builds/`, `uploads/` |
 | Caddy data | `/var/lib/dock-caddy`: certificates and the last loaded config |
-| Caddy admin socket | `/run/dock-caddy/admin.sock` (only the daemon can change routing) |
+| Caddy admin socket | `/run/dock-caddy/admin.sock` (dock-caddy:dock-caddy, 0660: only the daemon can change routing) |
 | Kernel setting | `/etc/sysctl.d/90-dock.conf`: `net.ipv4.tcp_migrate_req = 1`, so Caddy reloads hand queued connections over instead of resetting them |
-| BuildKit image | `moby/buildkit:v0.34.1`, pulled now; the `dock-buildkit` container is created before the first build |
+| BuildKit image | `moby/buildkit:v0.34.1`, pinned by digest, pulled now; the `dock-buildkit` container is created before the first build |
 
 Re-running the script is safe: config and data are kept, binaries and units
 are replaced, and no second admin is created.
@@ -92,9 +93,11 @@ running).
 | `[caddy] acme_email` | empty | Contact email for the certificate authority |
 | `[caddy] disable_tls` | `false` | Serve every route over plain HTTP |
 | `[buildkit] enabled` | `true` | This server builds images. `false`: source deploys fail; deploy images instead |
-| `[buildkit] image` | `moby/buildkit:v0.34.1` | BuildKit image |
+| `[buildkit] image` | `moby/buildkit:v0.34.1@sha256:9936…` | BuildKit image, pinned by digest |
 | `[buildkit] memory_mb` | `2048` | Hard memory cap for builds (no swap). Builds over it fail; apps are unaffected |
 | `[buildkit] cpus` | `1` | CPU cap for builds. Builds also get a quarter of the normal CPU weight |
+| `[network] pool` | `10.213.0.0/16` | IPv4 range app networks get their addresses from, a /24 per environment. Keep it clear of your LAN and VPNs |
+| `[network] allow_private` | `[]` | Private CIDRs apps and builds may reach, e.g. `["192.168.10.20/32"]` for a NAS. See [App firewall](#app-firewall) |
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
 | `[defaults] cpus` | `1` | CPU limit for services that don't set one |
 | `[defaults] health_check_timeout_seconds` | `60` | Health check timeout for services that don't set one |
@@ -122,6 +125,52 @@ How you reach the API and how the public reaches apps are separate choices:
 
 On LAN setups anyone on the network can sniff tokens sent to the API. Prefer
 Tailscale.
+
+### App firewall
+
+Apps and builds reach the public internet, but not your private networks:
+`dock-firewall.service` drops their traffic to
+
+- private IPv4 (`10/8`, `172.16/12`, `192.168/16`): the LAN,
+- `100.64.0.0/10`: the Tailscale tailnet,
+- link-local (`169.254/16`, `fe80::/10`): cloud metadata endpoints,
+- IPv6 unique local (`fc00::/7`), which includes Tailscale's `fd7a:115c:a1e0::/48`,
+- the server itself on any address, so the API, SSH and anything else
+  listening on it.
+
+Exceptions: containers in one environment reach each other (different
+environments are isolated by Docker), they reach Caddy's ports 80/443 on the
+server so apps can call each other by domain, and port 53 on the server's DNS
+servers (Docker forwards container DNS to them). If the server's resolver is
+Tailscale's MagicDNS (`100.100.100.100`), apps can resolve tailnet names but
+still can't connect to them.
+
+To let apps reach a LAN host, such as a NAS or a database, add it to the
+allowlist and re-apply:
+
+```toml
+# /etc/dock/config.toml
+[network]
+allow_private = ["192.168.10.20/32"]
+```
+
+```sh
+sudo systemctl restart dock-firewall
+sudo dock admin firewall apply --dry-run   # show the rules without applying them
+```
+
+How it works: iptables rules in the `mangle` table, in chains named
+`DOCK-*` (`sudo iptables -t mangle -S`). They run before Docker's,
+Tailscale's and ufw's filter rules, so those can't let traffic around them.
+The service re-applies them whenever Docker starts. If the server's DNS
+servers change, restart it, or apps lose DNS. Containers that Docker
+restarts at boot run unfiltered for the moment before the service starts.
+
+The rules cover dock's networks and Docker's default bridge (`docker0`),
+where BuildKit runs, so they also apply to any container you start yourself
+with plain `docker run`. Docker's `nftables` firewall backend isn't
+supported; the service fails with an error instead. To switch the firewall
+off: `sudo systemctl disable --now dock-firewall && sudo dock admin firewall remove`.
 
 ### Cloudflare Tunnel
 
@@ -158,6 +207,13 @@ sudo install -m 0755 ./dock /usr/local/bin/dock && sudo systemctl restart dock
   `sudo systemctl restart dock-caddy` (the script doesn't restart a running
   Caddy). Traffic blips briefly; `--resume` restores the routes.
 - To upgrade BuildKit, change `[buildkit] image` in `config.toml`.
+- Upgrading an install from before the app firewall: the script moves Caddy
+  to the `dock-caddy` user (one Caddy restart, `--resume` restores routes),
+  takes `dock` out of the `docker` group, and enables `dock-firewall`.
+  Existing app networks keep their Docker-assigned addresses; the firewall
+  covers them too. Your `config.toml` is not rewritten, so pin
+  `[buildkit] image` by digest yourself if it still says only
+  `moby/buildkit:v0.34.1`.
 
 ## Backups
 
