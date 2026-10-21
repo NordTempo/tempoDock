@@ -436,7 +436,7 @@ export interface paths {
         put?: never;
         /**
          * Deploy source
-         * @description Upload a build context as a tar (optionally gzipped) stream. It is streamed to disk, built on this server, and deployed. A `platform.toml` at its root overrides build and deploy settings. Scope: deploy.
+         * @description Upload a build context as a tar (optionally gzipped) stream. It is streamed to disk, built on this server, and deployed. A `dock.toml` at its root overrides build and deploy settings. Scope: deploy.
          */
         post: operations["deploy-source"];
         delete?: never;
@@ -810,7 +810,7 @@ export interface components {
             role: "read" | "deploy" | "admin";
         };
         CreatedToken: {
-            /** @example pt_3q2... */
+            /** @example dock_3q2... */
             secret: string;
             token: components["schemas"]["Token"];
         };
@@ -1340,7 +1340,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                platform_session?: string;
+                dock_session?: string;
             };
         };
         requestBody?: never;

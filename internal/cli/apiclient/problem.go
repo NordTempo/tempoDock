@@ -81,8 +81,8 @@ func statusExit(status int) output.ExitCode {
 
 // Default hints per exit code, used when the server gives none.
 var exitHints = map[output.ExitCode]string{
-	output.ExitAuth:         "Check the token for this context (`platform context current`), or add a new one with `platform context add`.",
-	output.ExitUnreachable:  "The server or a proxy in front of it is not answering. Check `platform context current` and try again.",
+	output.ExitAuth:         "Check the token for this context (`dock context current`), or add a new one with `dock context add`.",
+	output.ExitUnreachable:  "The server or a proxy in front of it is not answering. Check `dock context current` and try again.",
 	output.ExitIncompatible: "Update the CLI to match the server's version.",
 }
 

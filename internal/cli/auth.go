@@ -13,7 +13,7 @@ func newLogoutCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
 		Short: "Remove the token of the context in use from this machine",
-		Long: `Remove the token of the context in use (see ` + "`platform context current`" + `)
+		Long: `Remove the token of the context in use (see ` + "`dock context current`" + `)
 from the config file. The context itself is kept. Logging out again is not an error.`,
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {

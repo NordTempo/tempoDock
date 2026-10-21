@@ -19,8 +19,8 @@ func validKey(k string) error {
 		return invalid("variable name %q must be letters, digits and underscores, not starting with a digit", k)
 	case k == "PORT":
 		return invalid("PORT is set by the platform; change the service's port setting instead")
-	case strings.HasPrefix(k, "PLATFORM_"):
-		return invalid("%s: the PLATFORM_ prefix is reserved for variables the platform injects", k)
+	case strings.HasPrefix(k, "DOCK_"):
+		return invalid("%s: the DOCK_ prefix is reserved for variables the platform injects", k)
 	}
 	return nil
 }

@@ -5,7 +5,7 @@ LDFLAGS := -s -w -X github.com/NordTempo/platform/internal/version.Version=$(VER
 
 ## build: the single static binary (UI embedded if web/dist is built)
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/platform ./cmd/platform
+	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/dock ./cmd/dock
 
 ## web: build the UI into web/dist
 web:
@@ -29,4 +29,4 @@ generate:
 
 ## dev: run the daemon locally on a fake runtime (no Docker), config in dev/
 dev:
-	PLATFORM_FAKE_RUNTIME=1 go run ./cmd/platform serve --config dev/config.toml
+	DOCK_FAKE_RUNTIME=1 go run ./cmd/dock serve --config dev/config.toml

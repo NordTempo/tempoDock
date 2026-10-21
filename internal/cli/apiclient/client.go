@@ -21,7 +21,7 @@ import (
 )
 
 // UserAgent identifies the CLI and its version to the server.
-var UserAgent = "platform-cli/" + version.Version
+var UserAgent = "dock-cli/" + version.Version
 
 // Client talks to one server with one token.
 type Client struct {
@@ -52,7 +52,7 @@ func ParseServerURL(s string) (*url.URL, error) {
 		return nil, &output.Error{
 			Exit:    output.ExitUsage,
 			Message: fmt.Sprintf("invalid server URL %q", s),
-			Hint:    "Use a full URL such as https://platform.example.com.",
+			Hint:    "Use a full URL such as https://dock.example.com.",
 		}
 	}
 	return u, nil
@@ -92,7 +92,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		return nil, &output.Error{
 			Exit:    output.ExitUnreachable,
 			Message: fmt.Sprintf("could not reach %s", c.base.Redacted()),
-			Hint:    "Check that the server is running and the URL is right: `platform context current`.",
+			Hint:    "Check that the server is running and the URL is right: `dock context current`.",
 			Err:     err,
 		}
 	}
@@ -133,7 +133,7 @@ func (c *Client) JSON(ctx context.Context, method, path string, in, out any) err
 		return &output.Error{
 			Exit:    output.ExitError,
 			Message: fmt.Sprintf("unexpected response from %s %s", method, path),
-			Hint:    "The server may run a different version than this CLI (" + version.Version + "). Check `platform --version` against the server.",
+			Hint:    "The server may run a different version than this CLI (" + version.Version + "). Check `dock --version` against the server.",
 			Err:     err,
 		}
 	}

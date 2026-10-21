@@ -26,11 +26,11 @@ func TestExitCodeOf(t *testing.T) {
 }
 
 func TestPrintError(t *testing.T) {
-	err := fmt.Errorf("deploy web: %w", &Error{Exit: ExitDeployFailed, Code: "health_check_failed", Message: "health check failed", Hint: "See `platform logs`."})
+	err := fmt.Errorf("deploy web: %w", &Error{Exit: ExitDeployFailed, Code: "health_check_failed", Message: "health check failed", Hint: "See `dock logs`."})
 
 	var human bytes.Buffer
 	(&IO{Err: &human}).PrintError(err)
-	if got, want := human.String(), "error: deploy web: health check failed\nSee `platform logs`.\n"; got != want {
+	if got, want := human.String(), "error: deploy web: health check failed\nSee `dock logs`.\n"; got != want {
 		t.Errorf("human error = %q, want %q", got, want)
 	}
 

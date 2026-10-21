@@ -1,25 +1,25 @@
 [Unit]
-Description=platform daemon (API, UI, deploys)
-After=network-online.target docker.service platform-caddy.service
+Description=Tempo Dock daemon (API, UI, deploys)
+After=network-online.target docker.service dock-caddy.service
 Wants=network-online.target
 Requires=docker.service
 
 [Service]
-User=platform
-Group=platform
+User=dock
+Group=dock
 SupplementaryGroups=docker
-ExecStart=/usr/local/bin/platform serve --config /etc/platform/config.toml
+ExecStart=/usr/local/bin/dock serve --config /etc/dock/config.toml
 Restart=always
 RestartSec=2
 # Apps never depend on the daemon, so stopping it is always safe.
 KillSignal=SIGTERM
 TimeoutStopSec=20
-StateDirectory=platform
+StateDirectory=dock
 StateDirectoryMode=0700
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/platform
+ReadWritePaths=/var/lib/dock
 PrivateTmp=true
 MemoryHigh=96M
 MemoryMax=256M

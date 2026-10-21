@@ -169,7 +169,7 @@ func (d *deployment) image(ctx context.Context) (string, error) {
 			StartCommand: d.cfg.Cmd, BuildArgs: d.cfg.Env, Tag: ref, Logs: d.log,
 		}
 		if rc := d.spec.repo; rc != nil {
-			d.event(ctx, "Using settings from platform.toml")
+			d.event(ctx, "Using settings from dock.toml")
 			// The file wins over the service's build settings (ADR 0007).
 			if rc.Build.Dockerfile != "" {
 				req.Dockerfile, req.BuildCommand = rc.Build.Dockerfile, ""

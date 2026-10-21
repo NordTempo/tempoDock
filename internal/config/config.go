@@ -1,6 +1,6 @@
-// Package config loads the daemon's configuration (`platform serve`).
+// Package config loads the daemon's configuration (`dock serve`).
 //
-// Config lives in a TOML file (default /etc/platform/config.toml). Every field
+// Config lives in a TOML file (default /etc/dock/config.toml). Every field
 // has a default, so a missing file means "all defaults". Nothing here is
 // NordTempo-specific: domains, addresses and limits are all configuration.
 package config
@@ -15,8 +15,8 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// DefaultPath is where `platform serve` looks for its config file.
-const DefaultPath = "/etc/platform/config.toml"
+// DefaultPath is where `dock serve` looks for its config file.
+const DefaultPath = "/etc/dock/config.toml"
 
 // Config is the daemon configuration.
 type Config struct {
@@ -33,7 +33,7 @@ type Config struct {
 	// BaseDomain enables generated hostnames (<service>-<env>.<base>).
 	// Requires a wildcard DNS record pointing at PublicIP.
 	BaseDomain string `toml:"base_domain"`
-	// MaxUploadMB caps source uploads (`platform deploy` tarballs).
+	// MaxUploadMB caps source uploads (`dock deploy` tarballs).
 	MaxUploadMB int `toml:"max_upload_mb"`
 	// HostPorts is the range of 127.0.0.1 ports published app containers are
 	// bound to. Each release gets a fixed port so routes survive container
@@ -87,13 +87,13 @@ type Defaults struct {
 // Default returns the configuration used when no file overrides it.
 func Default() Config {
 	return Config{
-		DataDir:        "/var/lib/platform",
+		DataDir:        "/var/lib/dock",
 		Listen:         "127.0.0.1:7070",
 		InternalListen: "127.0.0.1:7071",
 		MaxUploadMB:    512,
 		HostPorts:      PortRange{Min: 20000, Max: 29999},
 		Caddy: Caddy{
-			AdminSocket: "/run/platform-caddy/admin.sock",
+			AdminSocket: "/run/dock-caddy/admin.sock",
 			HTTPPort:    80,
 			HTTPSPort:   443,
 		},
@@ -129,7 +129,7 @@ func Load(path string) (Config, error) {
 }
 
 // DBPath is the SQLite file inside DataDir.
-func (c Config) DBPath() string { return filepath.Join(c.DataDir, "platform.db") }
+func (c Config) DBPath() string { return filepath.Join(c.DataDir, "dock.db") }
 
 // KeyPath is the AES key for secrets at rest. It lives outside the DB so a
 // leaked DB file alone doesn't reveal secrets.

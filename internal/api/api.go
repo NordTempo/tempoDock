@@ -59,8 +59,8 @@ func Spec() ([]byte, error) {
 }
 
 func newAPI(mux *http.ServeMux, s *Server) huma.API {
-	cfg := huma.DefaultConfig("platform", version.Version)
-	cfg.Info.Description = "The platform API. The CLI and web UI are thin clients of it."
+	cfg := huma.DefaultConfig("Tempo Dock", version.Version)
+	cfg.Info.Description = "The Tempo Dock API. The CLI and web UI are thin clients of it."
 	cfg.OpenAPIPath = Prefix + "/openapi"
 	cfg.DocsPath = Prefix + "/docs"
 	cfg.SchemasPath = Prefix + "/schemas"
@@ -68,7 +68,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	// the apitypes fields.
 	cfg.CreateHooks = nil
 	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
-		"bearer":  {Type: "http", Scheme: "bearer", Description: "API token (pt_...)"},
+		"bearer":  {Type: "http", Scheme: "bearer", Description: "API token (dock_...)"},
 		"session": {Type: "apiKey", In: "cookie", Name: sessionCookie, Description: "UI session from /auth/login"},
 	}
 	a := humago.New(mux, cfg)
@@ -237,6 +237,6 @@ func uiHandler() http.Handler {
 	})
 }
 
-const placeholderPage = `<!doctype html><meta charset="utf-8"><title>platform</title>
+const placeholderPage = `<!doctype html><meta charset="utf-8"><title>Tempo Dock</title>
 <body style="background:#000;color:#fff;font:14px ui-monospace,monospace;padding:2rem">
-platform daemon is running. The web UI has not been built into this binary.`
+Tempo Dock is running. The web UI has not been built into this binary.`

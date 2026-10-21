@@ -1,4 +1,4 @@
-// Command platform is both the CLI and the server daemon.
+// Command dock is both the CLI and the server daemon.
 package main
 
 import (

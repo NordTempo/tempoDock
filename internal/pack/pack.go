@@ -1,4 +1,4 @@
-// Package pack creates the source archive that `platform deploy` uploads: a
+// Package pack creates the source archive that `dock deploy` uploads: a
 // gzip-compressed tar of a directory.
 //
 // What goes in:
@@ -7,7 +7,7 @@
 //   - Otherwise .gitignore files at the root and in subdirectories apply (git
 //     semantics). Global excludes and .git/info/exclude are not read.
 //   - .git (at any depth) is always left out. The Dockerfile, .dockerignore and
-//     platform.toml are always kept, as the build needs them.
+//     dock.toml are always kept, as the build needs them.
 //
 // Entries are written in lexical order. Regular files keep their permission
 // bits (so executables stay executable), symlinks are stored as links and

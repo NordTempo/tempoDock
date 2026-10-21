@@ -310,7 +310,7 @@
         "properties": {
           "secret": {
             "examples": [
-              "pt_3q2..."
+              "dock_3q2..."
             ],
             "type": "string"
           },
@@ -1618,21 +1618,21 @@
     },
     "securitySchemes": {
       "bearer": {
-        "description": "API token (pt_...)",
+        "description": "API token (dock_...)",
         "scheme": "bearer",
         "type": "http"
       },
       "session": {
         "description": "UI session from /auth/login",
         "in": "cookie",
-        "name": "platform_session",
+        "name": "dock_session",
         "type": "apiKey"
       }
     }
   },
   "info": {
-    "description": "The platform API. The CLI and web UI are thin clients of it.",
-    "title": "platform",
+    "description": "The Tempo Dock API. The CLI and web UI are thin clients of it.",
+    "title": "Tempo Dock",
     "version": "dev"
   },
   "openapi": "3.1.0",
@@ -1871,7 +1871,7 @@
         "parameters": [
           {
             "in": "cookie",
-            "name": "platform_session",
+            "name": "dock_session",
             "schema": {
               "type": "string"
             }
@@ -4989,7 +4989,7 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases/source": {
       "post": {
-        "description": "Upload a build context as a tar (optionally gzipped) stream. It is streamed to disk, built on this server, and deployed. A `platform.toml` at its root overrides build and deploy settings. Scope: deploy.",
+        "description": "Upload a build context as a tar (optionally gzipped) stream. It is streamed to disk, built on this server, and deployed. A `dock.toml` at its root overrides build and deploy settings. Scope: deploy.",
         "operationId": "deploy-source",
         "parameters": [
           {

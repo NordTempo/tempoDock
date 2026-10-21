@@ -52,27 +52,27 @@ func TestParseErrors(t *testing.T) {
 		{
 			name: "unknown keys with line numbers",
 			in:   "[build]\ndockerfile = \"Dockerfile\"\ndockerfil = \"x\"\n\n[deploy]\nhealthcheck = \"/\"\n",
-			want: []string{`platform.toml:3:1: unknown key "build.dockerfil"`, `platform.toml:6:1: unknown key "deploy.healthcheck"`},
+			want: []string{`dock.toml:3:1: unknown key "build.dockerfil"`, `dock.toml:6:1: unknown key "deploy.healthcheck"`},
 		},
 		{
 			name: "unknown table",
 			in:   "[env.production]\nport = 1\n",
-			want: []string{`platform.toml:1:2: unknown key "env.production"`},
+			want: []string{`dock.toml:1:2: unknown key "env.production"`},
 		},
 		{
 			name: "wrong type",
 			in:   "[deploy]\nport = \"3000\"\n",
-			want: []string{"platform.toml:2:8: deploy.port must be an integer, not a string"},
+			want: []string{"dock.toml:2:8: deploy.port must be an integer, not a string"},
 		},
 		{
 			name: "scalar where a table belongs",
 			in:   "build = 3\n",
-			want: []string{"platform.toml:1:9: build must be a table, not an integer"},
+			want: []string{"dock.toml:1:9: build must be a table, not an integer"},
 		},
 		{
 			name: "syntax",
 			in:   "[deploy\n",
-			want: []string{"platform.toml:1:"},
+			want: []string{"dock.toml:1:"},
 		},
 		{
 			name: "validation errors are joined",
@@ -139,14 +139,14 @@ func TestFromTar(t *testing.T) {
 	}
 
 	for _, gz := range []bool{false, true} {
-		cfg, found, err := FromTar(archive(gz, map[string]string{"./platform.toml": "[deploy]\nport = 8080\n"}))
+		cfg, found, err := FromTar(archive(gz, map[string]string{"./dock.toml": "[deploy]\nport = 8080\n"}))
 		if err != nil || !found || cfg.Deploy.Port != 8080 {
 			t.Fatalf("gzip=%v: got %+v, %v, %v", gz, cfg, found, err)
 		}
 	}
 
-	_, found, err := FromTar(archive(true, map[string]string{"sub/platform.toml": "port = 1"}))
+	_, found, err := FromTar(archive(true, map[string]string{"sub/dock.toml": "port = 1"}))
 	if err != nil || found {
-		t.Fatalf("nested platform.toml must be ignored: found=%v err=%v", found, err)
+		t.Fatalf("nested dock.toml must be ignored: found=%v err=%v", found, err)
 	}
 }

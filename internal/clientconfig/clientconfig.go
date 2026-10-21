@@ -2,8 +2,8 @@
 // to talk to, with which token) and directory links (which project,
 // environment and service a directory deploys to).
 //
-// The file lives at $XDG_CONFIG_HOME/platform/config.json (default
-// ~/.config/platform/config.json) and holds tokens, so it is written with
+// The file lives at $XDG_CONFIG_HOME/dock/config.json (default
+// ~/.config/dock/config.json) and holds tokens, so it is written with
 // mode 0600 and replaced atomically. Links live here rather than in the repo,
 // so cloning a repo never points you at someone else's server.
 package clientconfig
@@ -17,12 +17,12 @@ import (
 	"path/filepath"
 )
 
-// Environment variables that override the config file. With PLATFORM_URL
+// Environment variables that override the config file. With DOCK_URL
 // set, no config file is needed at all (agents, CI).
 const (
-	EnvContext = "PLATFORM_CONTEXT" // selects a context by name
-	EnvURL     = "PLATFORM_URL"     // server URL; ignores contexts entirely
-	EnvToken   = "PLATFORM_TOKEN"   // API token for the selected server
+	EnvContext = "DOCK_CONTEXT" // selects a context by name
+	EnvURL     = "DOCK_URL"     // server URL; ignores contexts entirely
+	EnvToken   = "DOCK_TOKEN"   // API token for the selected server
 )
 
 // Errors returned by Resolve.
@@ -45,7 +45,7 @@ type Context struct {
 	Token  string `json:"token,omitempty"`
 }
 
-// Link is what a directory is linked to with `platform link`.
+// Link is what a directory is linked to with `dock link`.
 type Link struct {
 	Context     string `json:"context"`
 	Project     Ref    `json:"project"`
@@ -60,7 +60,7 @@ type Ref struct {
 	Name string `json:"name"`
 }
 
-// DefaultPath returns $XDG_CONFIG_HOME/platform/config.json, falling back to
+// DefaultPath returns $XDG_CONFIG_HOME/dock/config.json, falling back to
 // ~/.config on every OS so the location is the same on Linux and macOS.
 func DefaultPath() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
@@ -71,7 +71,7 @@ func DefaultPath() (string, error) {
 		}
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "platform", "config.json"), nil
+	return filepath.Join(dir, "dock", "config.json"), nil
 }
 
 // Load reads the config at path. A missing file is an empty config.
@@ -153,7 +153,7 @@ const (
 
 // Resolved is the server and token a command should use.
 type Resolved struct {
-	// Name is the context name; empty when PLATFORM_URL is in use.
+	// Name is the context name; empty when DOCK_URL is in use.
 	Name   string
 	Server string
 	// Token is empty when none is configured.
@@ -163,13 +163,13 @@ type Resolved struct {
 
 // Resolve picks the server and token to use, in order:
 //
-//  1. PLATFORM_URL (with PLATFORM_TOKEN): contexts are ignored, so a token
+//  1. DOCK_URL (with DOCK_TOKEN): contexts are ignored, so a token
 //     from the config file is never sent to a server it wasn't made for.
-//  2. The context named by PLATFORM_CONTEXT.
+//  2. The context named by DOCK_CONTEXT.
 //  3. The context of link, when the directory is linked (link may be nil).
 //  4. The current context.
 //
-// PLATFORM_TOKEN overrides the token of whichever context is picked. Errors
+// DOCK_TOKEN overrides the token of whichever context is picked. Errors
 // wrap ErrNoContext or ErrContextNotFound.
 func (c *Config) Resolve(link *Link) (Resolved, error) {
 	if u := os.Getenv(EnvURL); u != "" {

@@ -234,7 +234,7 @@ type ReleaseConfig struct {
 	CPUs            float64       `json:"cpus"`
 	VariableKeys    []string      `json:"variable_keys"`
 	Mounts          []VolumeMount `json:"mounts"`
-	// FromRepoFile lists the settings platform.toml set (they win over the
+	// FromRepoFile lists the settings dock.toml set (they win over the
 	// service's settings and show as locked).
 	FromRepoFile []string `json:"from_repo_file"`
 }
@@ -483,7 +483,7 @@ type CreateTokenRequest struct {
 // CreatedToken is returned once, on creation. Secret is never shown again.
 type CreatedToken struct {
 	Token  Token  `json:"token"`
-	Secret string `json:"secret" example:"pt_3q2..."`
+	Secret string `json:"secret" example:"dock_3q2..."`
 }
 
 // User is a human who can log in to the UI.

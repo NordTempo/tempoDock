@@ -1,5 +1,5 @@
 // Package fake is an in-memory node.Runtime for tests and for running the
-// daemon without Docker (PLATFORM_FAKE_RUNTIME=1).
+// daemon without Docker (DOCK_FAKE_RUNTIME=1).
 //
 // Containers "run" instantly and pass health checks unless a failure is
 // configured with the Fail* methods. Ops records every mutating call in order,

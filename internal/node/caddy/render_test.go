@@ -10,7 +10,7 @@ import (
 
 func testOptions() Options {
 	return Options{
-		AdminSocket: "/run/platform/caddy-admin.sock",
+		AdminSocket: "/run/dock/caddy-admin.sock",
 		HTTPPort:    80,
 		HTTPSPort:   443,
 		ACMEEmail:   "ops@example.com",
@@ -37,7 +37,7 @@ func TestRenderTLS(t *testing.T) {
 		{Hostnames: []string{"www.example.com"}, RedirectTo: "example.com"},
 	})
 
-	if cfg.Admin.Listen != "unix//run/platform/caddy-admin.sock|0660" || !cfg.Admin.Config.Persist {
+	if cfg.Admin.Listen != "unix//run/dock/caddy-admin.sock|0660" || !cfg.Admin.Config.Persist {
 		t.Errorf("admin = %+v, want the Unix socket with persist on", cfg.Admin)
 	}
 

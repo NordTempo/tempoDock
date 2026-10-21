@@ -1,26 +1,26 @@
 [Unit]
-Description=platform proxy (Caddy, configured only by the platform daemon)
+Description=Tempo Dock proxy (Caddy, configured only by the dock daemon)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=platform
-Group=platform
+User=dock
+Group=dock
 # --resume restores the last config the daemon loaded, so routing survives
 # reboots even if the daemon isn't running.
-ExecStart=/usr/local/bin/caddy run --resume --config /etc/platform/caddy.json
+ExecStart=/usr/local/bin/caddy run --resume --config /etc/dock/caddy.json
 Restart=always
 RestartSec=2
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-RuntimeDirectory=platform-caddy
+RuntimeDirectory=dock-caddy
 RuntimeDirectoryMode=0750
-StateDirectory=platform-caddy
-Environment=XDG_DATA_HOME=/var/lib/platform-caddy XDG_CONFIG_HOME=/var/lib/platform-caddy
+StateDirectory=dock-caddy
+Environment=XDG_DATA_HOME=/var/lib/dock-caddy XDG_CONFIG_HOME=/var/lib/dock-caddy
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/platform-caddy
+ReadWritePaths=/var/lib/dock-caddy
 PrivateTmp=true
 LimitNOFILE=1048576
 

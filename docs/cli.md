@@ -12,7 +12,7 @@ What scripts, CI and agents can rely on. The goals behind these are in
 - With `--json`, an error is one JSON object on stderr:
 
   ```json
-  {"error": {"code": "not_found", "exitCode": 4, "message": "context \"x\" not found", "hint": "Run `platform context list` to see contexts."}}
+  {"error": {"code": "not_found", "exitCode": 4, "message": "context \"x\" not found", "hint": "Run `dock context list` to see contexts."}}
   ```
 
   `code` is the server's machine-readable reason when it gave one (e.g.
@@ -47,27 +47,27 @@ values take precedence: `build_failed`, `deploy_failed`,
 ## Contexts and environment
 
 A context is a named server URL plus API token, like a kubectl context:
-`platform context add|list|use|current|remove`, and `platform logout` removes
+`dock context add|list|use|current|remove`, and `dock logout` removes
 the token of the context in use.
 
 The server and token come from, in order:
 
-1. `PLATFORM_URL` and `PLATFORM_TOKEN`. Contexts are ignored entirely, so no
+1. `DOCK_URL` and `DOCK_TOKEN`. Contexts are ignored entirely, so no
    config file is needed (CI, agent sandboxes).
-2. The context named by `PLATFORM_CONTEXT`.
+2. The context named by `DOCK_CONTEXT`.
 3. The context of the linked directory (see below).
 4. The current context.
 
-`PLATFORM_TOKEN` also overrides the token of a context picked by 2-4.
-`platform context current` shows what the current directory resolves to and
+`DOCK_TOKEN` also overrides the token of a context picked by 2-4.
+`dock context current` shows what the current directory resolves to and
 why.
 
 ## Config file and links
 
-`$XDG_CONFIG_HOME/platform/config.json` (default
-`~/.config/platform/config.json`), mode 0600, replaced atomically on write.
+`$XDG_CONFIG_HOME/dock/config.json` (default
+`~/.config/dock/config.json`), mode 0600, replaced atomically on write.
 
-`platform link` records which project, environment and service a directory
+`dock link` records which project, environment and service a directory
 deploys to. Links are stored in the config file by absolute path, not in the
 repo. Commands use the link of the current directory or its nearest linked
-parent, like git finds its repository. `platform unlink` removes that link.
+parent, like git finds its repository. `dock unlink` removes that link.

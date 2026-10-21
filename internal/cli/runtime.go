@@ -18,10 +18,10 @@ import (
 )
 
 // newRuntime builds the local server's node runtime from Docker, BuildKit
-// and Caddy. PLATFORM_FAKE_RUNTIME=1 uses an in-memory fake (no Docker), for
+// and Caddy. DOCK_FAKE_RUNTIME=1 uses an in-memory fake (no Docker), for
 // local development of the API, CLI and UI.
 func newRuntime(cfg config.Config) (node.Runtime, error) {
-	if os.Getenv("PLATFORM_FAKE_RUNTIME") == "1" {
+	if os.Getenv("DOCK_FAKE_RUNTIME") == "1" {
 		return fake.New(), nil
 	}
 	containers, err := docker.New()

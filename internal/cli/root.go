@@ -1,4 +1,4 @@
-// Package cli implements every `platform` command, including `serve`.
+// Package cli implements every `dock` command, including `serve`.
 package cli
 
 import (
@@ -37,7 +37,7 @@ type globals struct {
 func run(ctx context.Context, args []string, io *output.IO) int {
 	g := &globals{io: io}
 	root := &cobra.Command{
-		Use:           "platform",
+		Use:           "dock",
 		Short:         "Deploy Docker apps to your own servers",
 		Version:       version.Version,
 		SilenceUsage:  true,
@@ -125,11 +125,11 @@ func (c userConfig) resolve() (clientconfig.Resolved, error) {
 		return r, &output.Error{
 			Exit:    output.ExitAuth,
 			Message: "no server configured",
-			Hint: fmt.Sprintf("Add one with `platform context add <name> --server <url> --token <token>`, or set %s and %s.",
+			Hint: fmt.Sprintf("Add one with `dock context add <name> --server <url> --token <token>`, or set %s and %s.",
 				clientconfig.EnvURL, clientconfig.EnvToken),
 		}
 	case errors.Is(err, clientconfig.ErrContextNotFound):
-		return r, &output.Error{Exit: output.ExitNotFound, Err: err, Hint: "Run `platform context list` to see contexts."}
+		return r, &output.Error{Exit: output.ExitNotFound, Err: err, Hint: "Run `dock context list` to see contexts."}
 	}
 	return r, err
 }

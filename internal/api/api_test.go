@@ -38,7 +38,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := store.Open(ctx, filepath.Join(dir, "platform.db"))
+	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

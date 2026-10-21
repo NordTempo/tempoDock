@@ -149,7 +149,7 @@ func TestBuildDockerfile(t *testing.T) {
 	id, _, err := build(t, b, node.BuildRequest{
 		Source:    sourceTar(t, map[string]string{"server.js": serverJS, "package.json": packageJSON, "Dockerfile": dockerfile}),
 		BuildArgs: map[string]string{"GREETING": "dockerfile"},
-		Tag:       "platform-test/hello:dockerfile",
+		Tag:       "dock-test/hello:dockerfile",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestBuildDockerfile(t *testing.T) {
 	if !strings.HasPrefix(id, "sha256:") {
 		t.Fatalf("image ID = %q", id)
 	}
-	if body := get(t, run(t, docker, "platform-test-dockerfile", id)); body != "hello dockerfile" {
+	if body := get(t, run(t, docker, "dock-test-dockerfile", id)); body != "hello dockerfile" {
 		t.Fatalf("body = %q", body)
 	}
 }
@@ -167,7 +167,7 @@ func TestBuildRailpack(t *testing.T) {
 	b := newBuilder(t, docker, 1024)
 	id, logs, err := build(t, b, node.BuildRequest{
 		Source: sourceTar(t, map[string]string{"server.js": serverJS, "package.json": packageJSON}),
-		Tag:    "platform-test/hello:railpack",
+		Tag:    "dock-test/hello:railpack",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestBuildRailpack(t *testing.T) {
 	if !strings.Contains(logs, "Detected Node") {
 		t.Errorf("logs don't mention the detected provider:\n%s", logs)
 	}
-	if body := get(t, run(t, docker, "platform-test-railpack", id)); body != "hello railpack" {
+	if body := get(t, run(t, docker, "dock-test-railpack", id)); body != "hello railpack" {
 		t.Fatalf("body = %q", body)
 	}
 }
@@ -185,7 +185,7 @@ func TestBuildMissingDockerfile(t *testing.T) {
 	_, _, err := build(t, b, node.BuildRequest{
 		Source:     sourceTar(t, map[string]string{"server.js": serverJS}),
 		Dockerfile: "../Dockerfile",
-		Tag:        "platform-test/hello:missing",
+		Tag:        "dock-test/hello:missing",
 	})
 	if err == nil || !strings.Contains(err.Error(), "inside the source") {
 		t.Fatalf("err = %v", err)
@@ -198,7 +198,7 @@ func TestBuildOutOfMemory(t *testing.T) {
 		Source: sourceTar(t, map[string]string{"Dockerfile": `FROM node:22-alpine
 RUN node -e 'const a = []; for (;;) a.push(Buffer.alloc(16 << 20, 1))'
 `}),
-		Tag: "platform-test/hello:oom",
+		Tag: "dock-test/hello:oom",
 	})
 	t.Logf("error users see: %v", err)
 	if err == nil || !strings.Contains(err.Error(), "ran out of memory") {
@@ -207,10 +207,10 @@ RUN node -e 'const a = []; for (;;) a.push(Buffer.alloc(16 << 20, 1))'
 }
 
 // TestSpike measures the numbers the M0 spike asks for. It builds a real
-// Next.js app, so it's slow and only runs with PLATFORM_SPIKE=1.
+// Next.js app, so it's slow and only runs with DOCK_SPIKE=1.
 func TestSpike(t *testing.T) {
-	if os.Getenv("PLATFORM_SPIKE") == "" {
-		t.Skip("set PLATFORM_SPIKE=1 to run")
+	if os.Getenv("DOCK_SPIKE") == "" {
+		t.Skip("set DOCK_SPIKE=1 to run")
 	}
 	docker := dockerClient(t)
 	ctx := t.Context()
@@ -235,7 +235,7 @@ func TestSpike(t *testing.T) {
 			time.Sleep(3 * time.Second)
 			t.Logf("buildkit idle: %s", idle())
 
-			app := run(t, docker, "platform-test-latency", "node:22-alpine", "node", "-e", serverJS)
+			app := run(t, docker, "dock-test-latency", "node:22-alpine", "node", "-e", serverJS)
 			get(t, app)
 			t.Logf("app latency idle: %s", latency(app, 10*time.Second))
 
@@ -244,7 +244,7 @@ func TestSpike(t *testing.T) {
 			go func() { during <- latency(app, 0, done) }()
 			peak := watchMemory(t, docker)
 			start := time.Now()
-			_, logs, err := build(t, b, node.BuildRequest{Source: nextApp(t), Tag: fmt.Sprintf("platform-test/next:%d", memMB)})
+			_, logs, err := build(t, b, node.BuildRequest{Source: nextApp(t), Tag: fmt.Sprintf("dock-test/next:%d", memMB)})
 			close(done)
 			t.Logf("build took %s, err: %v", time.Since(start).Round(time.Second), err)
 			if err != nil {

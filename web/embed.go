@@ -2,7 +2,7 @@
 package web
 
 // The API spec the UI's typed client is generated from (pnpm gen:api).
-//go:generate go run ../cmd/platform openapi -o openapi.json
+//go:generate go run ../cmd/dock openapi -o openapi.json
 
 import "embed"
 

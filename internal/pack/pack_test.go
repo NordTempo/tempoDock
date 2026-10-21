@@ -115,7 +115,7 @@ func TestDockerignore(t *testing.T) {
 		".gitignore":          "app.js\n", // not consulted when .dockerignore exists
 		".git/config":         "",
 		"Dockerfile":          "",
-		"platform.toml":       "",
+		"dock.toml":           "",
 		"app.js":              "",
 		"NOTES.md":            "",
 		"README.md":           "",
@@ -133,7 +133,7 @@ func TestDockerignore(t *testing.T) {
 		"README.md",
 		"app.js",
 		"build/keep.txt",
-		"platform.toml",
+		"dock.toml",
 		"sub/NOTES.md",
 	}
 	if !slices.Equal(got, want) {

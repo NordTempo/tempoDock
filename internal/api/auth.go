@@ -12,7 +12,7 @@ import (
 )
 
 // sessionCookie holds the UI session secret (HttpOnly, SameSite=Lax).
-const sessionCookie = "platform_session"
+const sessionCookie = "dock_session"
 
 type actorKey struct{}
 
@@ -77,7 +77,7 @@ type loginOutput struct {
 }
 
 type logoutInput struct {
-	Session string `cookie:"platform_session"`
+	Session string `cookie:"dock_session"`
 }
 
 type logoutOutput struct {

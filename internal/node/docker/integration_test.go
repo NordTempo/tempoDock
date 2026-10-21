@@ -103,7 +103,7 @@ func TestPull(t *testing.T) {
 	if ok, err := e.HasImage(context.Background(), ref); !ok || err != nil {
 		t.Errorf("HasImage = %v, %v", ok, err)
 	}
-	if ok, err := e.HasImage(context.Background(), "platform-test/does-not-exist:nope"); ok || err != nil {
+	if ok, err := e.HasImage(context.Background(), "dock-test/does-not-exist:nope"); ok || err != nil {
 		t.Errorf("HasImage(missing) = %v, %v", ok, err)
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/NordTempo/platform/internal/clientconfig"
 )
 
-// setup isolates the user config and the PLATFORM_* environment.
+// setup isolates the user config and the DOCK_* environment.
 func setup(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -68,7 +68,7 @@ func TestContextLifecycle(t *testing.T) {
 	}
 
 	exec(t, "context", "remove", "home")
-	if code, _, stderr := exec(t, "context", "current"); code != int(output.ExitAuth) || !strings.Contains(stderr, "platform context add") {
+	if code, _, stderr := exec(t, "context", "current"); code != int(output.ExitAuth) || !strings.Contains(stderr, "dock context add") {
 		t.Errorf("no current context: %d %q", code, stderr)
 	}
 }
@@ -80,7 +80,7 @@ func TestExitCodes(t *testing.T) {
 		exit   output.ExitCode
 		stderr string
 	}{
-		{[]string{"context", "use", "nope"}, output.ExitNotFound, "platform context list"},
+		{[]string{"context", "use", "nope"}, output.ExitNotFound, "dock context list"},
 		{[]string{"context", "add", "x", "--server", "https://x"}, output.ExitUsage, "--token"},
 		{[]string{"context", "add", "x", "--server", "x.example.com", "--token", "t"}, output.ExitUsage, "https://"},
 		{[]string{"context", "add"}, output.ExitUsage, "--help"},

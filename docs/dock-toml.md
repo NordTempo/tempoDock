@@ -1,4 +1,4 @@
-# platform.toml
+# dock.toml
 
 An optional file at the root of a repo that holds the settings belonging to
 the code: how to build it and how to run it

@@ -82,15 +82,15 @@ type Proxy interface {
 
 // Docker label keys put on every platform-managed resource.
 const (
-	LabelManaged     = "platform.managed"
-	LabelProject     = "platform.project"
-	LabelEnvironment = "platform.env"
-	LabelService     = "platform.service"
-	LabelRelease     = "platform.release"
+	LabelManaged     = "dock.managed"
+	LabelProject     = "dock.project"
+	LabelEnvironment = "dock.env"
+	LabelService     = "dock.service"
+	LabelRelease     = "dock.release"
 	// LabelRole marks platform infrastructure (e.g. the BuildKit container).
 	// Containers carrying it are not apps: Containers never lists, returns
 	// or streams events for them.
-	LabelRole = "platform.role"
+	LabelRole = "dock.role"
 )
 
 // Labels identify what a container or volume belongs to. Values are IDs from

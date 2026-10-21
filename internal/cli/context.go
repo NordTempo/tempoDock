@@ -26,8 +26,8 @@ func newContextCmd(g *globals) *cobra.Command {
 		Use:   "context",
 		Short: "Manage the servers the CLI talks to",
 		Long: `A context is a named server URL plus API token, like a kubectl context.
-Commands use the current context unless PLATFORM_CONTEXT names another, the
-directory is linked to another, or PLATFORM_URL and PLATFORM_TOKEN are set.`,
+Commands use the current context unless DOCK_CONTEXT names another, the
+directory is linked to another, or DOCK_URL and DOCK_TOKEN are set.`,
 	})
 	cmd.AddCommand(
 		newContextListCmd(g),
@@ -57,7 +57,7 @@ func newContextListCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(views, func() error {
 				if len(views) == 0 {
-					_, err := fmt.Fprintln(g.io.Out, "No contexts. Add one with `platform context add <name> --server <url> --token <token>`.")
+					_, err := fmt.Fprintln(g.io.Out, "No contexts. Add one with `dock context add <name> --server <url> --token <token>`.")
 					return err
 				}
 				t := g.io.Table("", "name", "server", "token")
@@ -134,7 +134,7 @@ stdin is a terminal.`,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&server, "server", "", "server URL, e.g. https://platform.example.com")
+	cmd.Flags().StringVar(&server, "server", "", "server URL, e.g. https://dock.example.com")
 	cmd.Flags().StringVar(&token, "token", "", "API token")
 	cmd.Flags().BoolVar(&use, "use", false, "make it the current context")
 	return cmd
@@ -190,7 +190,7 @@ func newContextRemoveCmd(g *globals) *cobra.Command {
 			return g.io.Print(contextView{name, ctx.Server, false, false}, func() error {
 				g.io.Successf("Removed context %s", name)
 				if wasCurrent {
-					g.io.Warnf("No current context. Pick one with `platform context use <name>`.")
+					g.io.Warnf("No current context. Pick one with `dock context use <name>`.")
 				}
 				return nil
 			})
@@ -239,6 +239,6 @@ func contextNotFound(name string) error {
 	return &output.Error{
 		Exit:    output.ExitNotFound,
 		Message: fmt.Sprintf("context %q not found", name),
-		Hint:    "Run `platform context list` to see contexts.",
+		Hint:    "Run `dock context list` to see contexts.",
 	}
 }

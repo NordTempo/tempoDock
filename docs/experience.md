@@ -120,7 +120,7 @@ counts mapped binaries.
 | App latency during a build | p99 1.2 ms idle, 1.3 ms during | 0 failed requests (dev VM) |
 | Caddy config reload | p50 2-3 ms, p95 3-18 ms | Full config, ~50 routes |
 | Requests during 50 route swaps | 0.01% of new connections dropped, 0 wrong responses | Upstream Go limitation, see `internal/node/caddy` |
-| CLI start-up | 2 ms | `platform context list` |
+| CLI start-up | 2 ms | `dock context list` |
 | UI initial JS | 109 KB gzipped | Tooling scaffold only |
 | Daemon idle | not yet measured | Needs the wired daemon |
 

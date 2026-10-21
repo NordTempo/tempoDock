@@ -34,7 +34,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := store.Open(ctx, filepath.Join(dir, "platform.db"))
+	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestDeployActivatesAndSwitchesRoutes(t *testing.T) {
 		t.Fatalf("want start < routes < stop, ops = %v", ops)
 	}
 	spec, _ := h.rt.Spec("shop-production-web-2")
-	if spec.Env["PORT"] != "3000" || spec.Env["PLATFORM_PUBLIC_DOMAIN"] != "shop.example.com" || spec.HostPort != 20001 {
+	if spec.Env["PORT"] != "3000" || spec.Env["DOCK_PUBLIC_DOMAIN"] != "shop.example.com" || spec.HostPort != 20001 {
 		t.Fatalf("spec = %+v", spec)
 	}
 }
@@ -326,7 +326,7 @@ func TestVariableReferences(t *testing.T) {
 		}
 	}
 	set("", map[string]string{"REGION": "eu"})
-	set("api", map[string]string{"URL": "http://${{api.PLATFORM_PRIVATE_DOMAIN}}:${{ api.PORT }}"})
+	set("api", map[string]string{"URL": "http://${{api.DOCK_PRIVATE_DOMAIN}}:${{ api.PORT }}"})
 	set("web", map[string]string{"API_URL": "${{api.URL}}/v1", "WHERE": "${{shared.REGION}}"})
 	if _, err := h.c.ApplyChanges(h.ctx, System, env); err != nil {
 		t.Fatal(err)
@@ -421,8 +421,8 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	for name, body := range map[string]string{
-		"platform.toml": "[deploy]\nport = 3000\nstart_command = \"node server.js\"\n",
-		"server.js":     "console.log('hi')",
+		"dock.toml": "[deploy]\nport = 3000\nstart_command = \"node server.js\"\n",
+		"server.js": "console.log('hi')",
 	} {
 		_ = tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg})
 		_, _ = tw.Write([]byte(body))

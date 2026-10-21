@@ -1,4 +1,4 @@
-// Package repoconfig parses platform.toml, the optional per-repo config file
+// Package repoconfig parses dock.toml, the optional per-repo config file
 // (ADR 0007). It holds what belongs to the code: how to build it and how to
 // run it. Anything that differs between environments lives in the platform DB.
 //
@@ -26,9 +26,9 @@ import (
 )
 
 // FileName is the config file's name at the root of a repo.
-const FileName = "platform.toml"
+const FileName = "dock.toml"
 
-// maxSize caps how much of a platform.toml is read, so a hostile upload
+// maxSize caps how much of a dock.toml is read, so a hostile upload
 // can't make the server buffer an arbitrarily large file.
 const maxSize = 64 << 10
 
@@ -80,7 +80,7 @@ type file struct {
 // maxHealthCheckTimeout bounds deploy.health_check_timeout.
 const maxHealthCheckTimeout = time.Hour
 
-// Parse decodes and validates a platform.toml. Unknown keys, wrong types and
+// Parse decodes and validates a dock.toml. Unknown keys, wrong types and
 // syntax errors are reported with line numbers; all validation problems are
 // returned together.
 func Parse(b []byte) (Config, error) {
@@ -142,7 +142,7 @@ func Parse(b []byte) (Config, error) {
 	return cfg, nil
 }
 
-// decodeError rewrites go-toml errors as "platform.toml:line:col: message".
+// decodeError rewrites go-toml errors as "dock.toml:line:col: message".
 func decodeError(err error) error {
 	var strict *toml.StrictMissingError
 	if errors.As(err, &strict) {
@@ -184,7 +184,7 @@ func describe(de *toml.DecodeError) string {
 	return fmt.Sprintf("%s must be %s, not %s %s", strings.Join(de.Key(), "."), want, article, got)
 }
 
-// Load reads platform.toml from dir. found is false when the file doesn't
+// Load reads dock.toml from dir. found is false when the file doesn't
 // exist, which is not an error.
 func Load(dir string) (cfg Config, found bool, err error) {
 	b, err := os.ReadFile(filepath.Join(dir, FileName))
@@ -198,7 +198,7 @@ func Load(dir string) (cfg Config, found bool, err error) {
 	return cfg, true, err
 }
 
-// FromTar scans a build context tar stream (plain or gzip) for platform.toml
+// FromTar scans a build context tar stream (plain or gzip) for dock.toml
 // at its root and parses it. found is false when the archive has none. It
 // consumes r up to the file, or entirely when there is none.
 func FromTar(r io.Reader) (cfg Config, found bool, err error) {

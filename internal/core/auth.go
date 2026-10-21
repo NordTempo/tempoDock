@@ -18,7 +18,7 @@ import (
 
 // Secret prefixes make leaked credentials easy to recognise and scan for.
 const (
-	tokenPrefix   = "pt_"
+	tokenPrefix   = "dock_"
 	sessionPrefix = "ps_"
 )
 

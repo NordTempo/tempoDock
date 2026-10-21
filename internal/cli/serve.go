@@ -95,7 +95,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	for _, srv := range servers {
 		go func() { errc <- srv.ListenAndServe() }()
 	}
-	log.Info("platform daemon listening", "version", version.Version, "api", cfg.Listen, "internal", cfg.InternalListen, "data", cfg.DataDir)
+	log.Info("dock daemon listening", "version", version.Version, "api", cfg.Listen, "internal", cfg.InternalListen, "data", cfg.DataDir)
 
 	select {
 	case err = <-errc:

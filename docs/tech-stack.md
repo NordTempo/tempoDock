@@ -24,7 +24,7 @@ These follow from the above and don't need their own records.
 | Area | Choice |
 |---|---|
 | CLI framework | Cobra |
-| Docker | Official Go SDK (`github.com/docker/docker/client`) |
+| Docker | Official Go SDK (`github.com/moby/moby/client`) |
 | Zero-config builds | Railpack (Railway's open-source builder) when there is no Dockerfile |
 | UI | React, Vite, Tailwind, TanStack Router, TanStack Query |
 | UI API client | `openapi-typescript` + `openapi-fetch`, generated from the spec |

@@ -17,7 +17,7 @@ func TestRequestHeadersAndJSON(t *testing.T) {
 		if r.URL.Path != "/prefix/v1/things" || r.URL.RawQuery != "env=prod" {
 			t.Errorf("path = %s?%s", r.URL.Path, r.URL.RawQuery)
 		}
-		if r.Header.Get("Authorization") != "Bearer tok" || !strings.HasPrefix(r.Header.Get("User-Agent"), "platform-cli/") {
+		if r.Header.Get("Authorization") != "Bearer tok" || !strings.HasPrefix(r.Header.Get("User-Agent"), "dock-cli/") {
 			t.Errorf("headers = %v", r.Header)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -89,7 +89,7 @@ func TestUnreachable(t *testing.T) {
 }
 
 func TestParseServerURL(t *testing.T) {
-	for _, s := range []string{"platform.example.com", "ftp://x", "https://", ""} {
+	for _, s := range []string{"dock.example.com", "ftp://x", "https://", ""} {
 		if _, err := ParseServerURL(s); output.ExitCodeOf(err) != output.ExitUsage {
 			t.Errorf("%q: want usage error, got %v", s, err)
 		}

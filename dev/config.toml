@@ -1,5 +1,5 @@
 # Local development config: `make dev` runs the daemon with the in-memory
-# fake runtime (PLATFORM_FAKE_RUNTIME=1), so no Docker, Caddy or BuildKit is
+# fake runtime (DOCK_FAKE_RUNTIME=1), so no Docker, Caddy or BuildKit is
 # needed. State lives in ./.data (gitignored); delete it to start over.
 data_dir = ".data"
 listen = "127.0.0.1:7070"

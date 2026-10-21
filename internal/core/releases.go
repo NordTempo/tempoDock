@@ -40,12 +40,12 @@ type releaseConfig struct {
 	Mounts             []configMount `json:"mounts"`
 	Network            string        `json:"network"`
 	Aliases            []string      `json:"aliases"`
-	// Repo holds the deploy settings that came from platform.toml, so config
+	// Repo holds the deploy settings that came from dock.toml, so config
 	// releases built on this one keep them.
 	Repo *repoDeploy `json:"repo,omitempty"`
 }
 
-// repoDeploy is the deploy section of platform.toml (ADR 0007). Set fields
+// repoDeploy is the deploy section of dock.toml (ADR 0007). Set fields
 // win over the service's DB settings.
 type repoDeploy struct {
 	StartCommand              string `json:"start_command,omitempty"`
@@ -124,18 +124,18 @@ func (c *Core) openConfig(sealed []byte) (releaseConfig, error) {
 	return cfg, json.Unmarshal(b, &cfg)
 }
 
-func networkName(es envScope) string { return "platform-" + es.project.Name + "-" + es.env.Name }
+func networkName(es envScope) string { return "dock-" + es.project.Name + "-" + es.env.Name }
 
 func containerName(ss svcScope, number int64) string {
 	return fmt.Sprintf("%s-%s-%s-%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
 }
 
 func buildTag(ss svcScope, number int64) string {
-	return fmt.Sprintf("platform/%s-%s-%s:%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
+	return fmt.Sprintf("dock/%s-%s-%s:%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
 }
 
 // resolveConfig builds the container config for a service from its live
-// settings (overridden by platform.toml values in repo), volumes and
+// settings (overridden by dock.toml values in repo), volumes and
 // variables, expanding references.
 func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope, repo *repoDeploy) (releaseConfig, error) {
 	svcs, err := q.ListServices(ctx, ss.env.ID)
@@ -191,13 +191,13 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 		maps.Copy(vars, own[s.ID])
 		// Injected variables win over user ones.
 		vars["PORT"] = strconv.Itoa(servicePort(s))
-		vars["PLATFORM_PROJECT"] = ss.project.Name
-		vars["PLATFORM_ENVIRONMENT"] = ss.env.Name
-		vars["PLATFORM_SERVICE"] = s.Name
-		vars["PLATFORM_PRIVATE_DOMAIN"] = s.Name
+		vars["DOCK_PROJECT"] = ss.project.Name
+		vars["DOCK_ENVIRONMENT"] = ss.env.Name
+		vars["DOCK_SERVICE"] = s.Name
+		vars["DOCK_PRIVATE_DOMAIN"] = s.Name
 		for _, d := range domains {
 			if d.RedirectTo == "" {
-				vars["PLATFORM_PUBLIC_DOMAIN"] = d.Hostname
+				vars["DOCK_PUBLIC_DOMAIN"] = d.Hostname
 				break
 			}
 		}
@@ -280,7 +280,7 @@ type releaseSpec struct {
 	// imageRef is the image for image deploys (empty: the service setting).
 	imageRef string
 	// upload is the source tarball path for upload deploys, and repo the
-	// platform.toml found in it (nil if none).
+	// dock.toml found in it (nil if none).
 	upload string
 	repo   *repoconfig.Config
 }
@@ -344,7 +344,7 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 			if err != nil {
 				return err
 			}
-			repo = activeCfg.Repo // same code, same platform.toml
+			repo = activeCfg.Repo // same code, same dock.toml
 		}
 		var cfg releaseConfig
 		if spec.from != nil {
@@ -460,7 +460,7 @@ func (c *Core) saveUpload(body io.Reader, maxBytes int64) (string, error) {
 	return path, nil
 }
 
-// readRepoConfig reads platform.toml from an uploaded build context.
+// readRepoConfig reads dock.toml from an uploaded build context.
 func readRepoConfig(path string) (*repoconfig.Config, error) {
 	f, err := os.Open(path)
 	if err != nil {

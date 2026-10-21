@@ -21,13 +21,13 @@ import (
 
 const (
 	// ContainerName is the long-lived BuildKit container on a builder server.
-	ContainerName = "platform-buildkit"
+	ContainerName = "dock-buildkit"
 	// CacheVolume holds BuildKit's state and build cache across restarts.
-	CacheVolume = "platform-buildkit-cache"
+	CacheVolume = "dock-buildkit-cache"
 
 	// labelConfig records the settings the container was created with, so a
 	// config change recreates it.
-	labelConfig = "platform.buildkit.config"
+	labelConfig = "dock.buildkit.config"
 
 	// cpuShares is a quarter of Docker's default weight, so app containers
 	// win any CPU contention with a build.

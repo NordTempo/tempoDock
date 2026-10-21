@@ -46,7 +46,7 @@ nearest linked parent directory's. Nothing changes on the server.`,
 				return &output.Error{
 					Exit:    output.ExitNotFound,
 					Message: "this directory is not linked",
-					Hint:    "Nothing to do. `platform link` links a directory to a project.",
+					Hint:    "Nothing to do. `dock link` links a directory to a project.",
 				}
 			}
 			if err := cfg.save(); err != nil {
