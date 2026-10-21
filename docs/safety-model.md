@@ -19,6 +19,12 @@ access goes through the daemon's API, which enforces permissions.
 - Tokens are stored hashed, have a name, and can expire.
 - Users have a role that maps to the same scopes. In v1 that's mostly "admin",
   but the check is the same code path tokens use.
+- Secret values are hidden from `read` and `deploy` in the API, UI, logs and
+  events. That protects against accidental exposure, not against a `deploy`
+  token on purpose: it can ship code that prints its own environment. Treat
+  `deploy` on an environment as access to that environment's secrets, and
+  limit tokens to the environments they need (an agent with
+  `myapp/staging` never sees production secrets).
 
 ## Non-destructive by default
 
