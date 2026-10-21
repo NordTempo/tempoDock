@@ -12,8 +12,8 @@ behind a login.
 
 - The React UI is a static single-page app, built with Vite and embedded into
   the Go binary with `go:embed`. The daemon serves it alongside the API.
-- The same binary is the CLI (`platform deploy`) and the server
-  (`platform serve`).
+- The same binary is the CLI (`dock deploy`) and the server
+  (`dock serve`).
 
 ## Consequences
 

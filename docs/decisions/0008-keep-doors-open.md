@@ -27,7 +27,7 @@ Pay only for the cheap ones:
    defaults are configuration.
 6. **Permissive-licensed dependencies only** (MIT, Apache-2.0, BSD), so any
    license choice remains possible later.
-7. **CLI contexts** (`platform context use ...`), so pointing the CLI at a
+7. **CLI contexts** (`dock context use ...`), so pointing the CLI at a
    different server or a hosted endpoint needs no redesign.
 
 Explicitly not built now: organizations or teams, billing, quotas, running

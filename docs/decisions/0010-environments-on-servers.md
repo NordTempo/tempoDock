@@ -22,7 +22,7 @@ also why production must never rely on it.
 ```
  Hetzner (production)                       Homelab
 ┌──────────────────────────────┐         ┌──────────────────────────────┐
-│ platform serve               │◀────────│ platform node                │
+│ dock serve                   │◀────────│ dock node                    │
 │  ├─ control plane (API, UI,  │ outbound│  ├─ node runtime             │
 │  │   SQLite, registry)       │ conn.   │  ├─ Caddy                    │
 │  └─ node runtime (local)     │         │  ├─ BuildKit (builder)       │
@@ -36,12 +36,12 @@ also why production must never rely on it.
   reachable machine.
 - Every server runs a **node runtime**: Docker, Caddy, and optionally BuildKit.
   On the control plane's server it's in-process; elsewhere it's the same binary
-  in `platform node` mode. This is the seam [0008](0008-keep-doors-open.md)
+  in `dock node` mode. This is the seam [0008](0008-keep-doors-open.md)
   prepared.
 - **Nodes dial out to the control plane** over one long-lived authenticated
   connection and receive commands on it. The homelab needs no port forwarding
   for this, and the same model works for customer-owned servers later.
-- A node joins with a one-time token: `platform node join <token>`.
+- A node joins with a one-time token: `dock node join <token>`.
 
 ### Hetzner never depends on the homelab
 
@@ -69,7 +69,7 @@ instead.
 - Built images are pushed to a small OCI registry next to the control plane.
   Nodes pull from it. Pushes go outbound from the homelab, so this works
   through NAT too.
-- `platform promote staging production` creates a production release from the
+- `dock promote staging production` creates a production release from the
   exact image that ran in staging, with production's own variables. Production
   never rebuilds; what was tested is what ships.
 - CI images (`--image`) skip all of this.

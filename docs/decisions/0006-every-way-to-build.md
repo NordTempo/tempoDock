@@ -16,10 +16,10 @@ either **source** or an **image reference**; everything after that is identical.
 
 | Path | Trigger | Where the image is built |
 |---|---|---|
-| Source upload | `platform deploy` from a laptop or agent | A builder server |
+| Source upload | `dock deploy` from a laptop or agent | A builder server |
 | Git push | GitHub webhook (M4) | A builder server |
-| Prebuilt image | `platform deploy --image ghcr.io/...` from CI | CI; servers only pull |
-| Promotion | `platform promote staging production` | Nowhere: reuses the image already built ([0010](0010-environments-on-servers.md)) |
+| Prebuilt image | `dock deploy --image ghcr.io/...` from CI | CI; servers only pull |
+| Promotion | `dock promote staging production` | Nowhere: reuses the image already built ([0010](0010-environments-on-servers.md)) |
 
 - **Builder servers** are marked as such ([0010](0010-environments-on-servers.md)).
   By default the homelab builds and production doesn't, so production never

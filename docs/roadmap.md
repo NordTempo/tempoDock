@@ -13,8 +13,8 @@ once the API it sits on is real. Production joins in M3.
 
 ## M0: Spike and skeleton
 
-- Go module, `cmd/platform`, CI (lint, test, build), README for local dev.
-- `platform serve`: one API endpoint, SQLite file, list containers via the
+- Go module, `cmd/dock`, CI (lint, test, build), README for local dev.
+- `dock serve`: one API endpoint, SQLite file, list containers via the
   Docker SDK, embedded "hello" web page.
 - Measure idle RAM/CPU of the daemon, Caddy, an idle BuildKit and the registry
   on a small VM in the homelab.
@@ -29,13 +29,13 @@ once the API it sits on is real. Production joins in M3.
 
 - Install script: checks Docker, installs Caddy, BuildKit, binary, systemd unit,
   creates the first admin token.
-- `platform login`, `platform link`, `platform deploy` (source or `--image`).
+- `dock login`, `dock link`, `dock deploy` (source or `--image`).
 - Deploy state machine with health-gated cutover and crash recovery.
 - `rollback`, `releases`, `logs`, `status`, all with `--json`.
 - Domains: add any hostname from the CLI, generated subdomains, automatic
   HTTPS, live DNS and certificate status.
-- Service variables (`platform env set/list/unset`).
-- Optional `platform.toml` for build and health check settings.
+- Service variables (`dock env set/list/unset`).
+- Optional `dock.toml` for build and health check settings.
 
 **Done when:** a real NordTempo app deploys to the homelab from a laptop and
 from an agent with zero downtime, and a broken deploy leaves the previous version
@@ -55,11 +55,11 @@ with a `deploy` token cannot delete anything.
 
 ## M3: Production + homelab
 
-- `platform node` mode, node join tokens, the outbound node connection,
+- `dock node` mode, node join tokens, the outbound node connection,
   version compatibility checks.
 - Environment placement (production vs non-production servers).
 - Registry next to the control plane; builds only on builder servers.
-- `platform promote staging production`.
+- `dock promote staging production`.
 - Per-server status in the UI and CLI.
 - Move the control plane to the Hetzner server; homelab joins as a node.
 
@@ -80,7 +80,7 @@ doesn't affect production.
 - Scheduled off-box backups and tested restore.
 - Database templates (Postgres, Redis): regular services with volumes and
   backup presets ([ADR 0011](decisions/0011-stateful-services-and-databases.md)).
-- Non-destructive restore into a new service; `platform connect` tunnels.
+- Non-destructive restore into a new service; `dock connect` tunnels.
 
 ## M6: Ready for others (if we go open source)
 
