@@ -47,6 +47,9 @@ type Config struct {
 type Context struct {
 	Server string `json:"server"`
 	Token  string `json:"token,omitempty"`
+	// LoginToken marks a token that `dock login` got in the browser. It is
+	// this machine's own, so logging out revokes it on the server.
+	LoginToken bool `json:"loginToken,omitempty"`
 }
 
 // Link is what a directory is linked to with `dock link`.

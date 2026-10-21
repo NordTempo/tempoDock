@@ -29,6 +29,7 @@ import (
 type testServer struct {
 	url    string
 	rt     *fake.Runtime
+	core   *core.Core
 	tokens map[apitypes.Scope]string
 }
 
@@ -59,7 +60,7 @@ func newTestServer(t *testing.T) *testServer {
 		c.Close()
 		_ = st.Close()
 	})
-	ts := &testServer{url: srv.URL, rt: rt, tokens: map[apitypes.Scope]string{}}
+	ts := &testServer{url: srv.URL, rt: rt, core: c, tokens: map[apitypes.Scope]string{}}
 	for _, scope := range []apitypes.Scope{apitypes.ScopeRead, apitypes.ScopeDeploy, apitypes.ScopeAdmin} {
 		tok, err := c.CreateToken(ctx, core.System, apitypes.CreateTokenRequest{Name: string(scope), Scope: scope})
 		if err != nil {

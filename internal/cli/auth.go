@@ -20,39 +20,57 @@ import (
 
 // loginView is the JSON shape of `dock login`.
 type loginView struct {
-	Context       string           `json:"context"`
-	Server        string           `json:"server"`
-	Me            apitypes.Me      `json:"me"`
+	Context string      `json:"context"`
+	Server  string      `json:"server"`
+	Me      apitypes.Me `json:"me"`
+	// User is who approved a browser login.
+	User          string           `json:"user,omitempty"`
 	ServerVersion apitypes.Version `json:"serverVersion"`
 }
 
 func newLoginCmd(g *globals) *cobra.Command {
 	var token, name string
-	var tokenStdin bool
+	var tokenStdin, noBrowser bool
 	cmd := &cobra.Command{
-		Use:   "login <server-url>",
-		Short: "Log in to a server with an API token",
-		Long: `Verify the token against the server, store it as a context and make that
-context the current one. Logging in again to the same server replaces its
-token. The context is named after the server's host unless --name is given.
+		Use:   "login [server-url]",
+		Short: "Log in to a server in the browser, or with an API token",
+		Long: `Log in, store the credentials as a context and make that context the
+current one. Logging in again to the same server replaces its token. The
+context is named after the server's host unless --name is given; without a
+URL, log in again to the current context's server.
 
-On a terminal the token is prompted for without echo. Scripts should pipe it
-in with --token-stdin. --token works too, but leaves the token in shell
-history and the process list. Create the first token on the server with
+On a terminal, login happens in the browser: the CLI prints a link and a
+code and opens the link. Sign in there, check the code matches and approve.
+The CLI then gets its own token, with your role as scope, valid for 90
+days; ` + "`dock logout`" + ` revokes it. --no-browser only prints the link, for when
+the browser is on another machine; it also works without a terminal.
+
+Agents, CI and scripts use API tokens instead: pipe one in with
+--token-stdin. --token works too, but leaves the token in shell history and
+the process list. Create the first token on the server with
 ` + "`dock admin bootstrap`" + `.`,
 		Example: `  dock login https://dock.example.com
+  dock login https://dock.example.com --no-browser
   dock admin bootstrap | dock login http://127.0.0.1:7070 --token-stdin`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			u, err := apiclient.ParseServerURL(args[0])
-			if err != nil {
-				return err
-			}
-			server := u.String()
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
+			var arg string
+			if len(args) == 1 {
+				arg = args[0]
+			} else if r, err := cfg.resolve(); err == nil {
+				arg = r.Server
+			} else {
+				return usageError("no server URL given", "Pass the server's URL: `dock login https://dock.example.com`.")
+			}
+			u, err := apiclient.ParseServerURL(arg)
+			if err != nil {
+				return err
+			}
+			server := u.String()
 			if name == "" {
 				if name, err = contextNameFor(cfg, u); err != nil {
 					return err
@@ -60,16 +78,21 @@ history and the process list. Create the first token on the server with
 			} else if !contextName.MatchString(name) {
 				return &output.Error{Exit: output.ExitUsage, Message: fmt.Sprintf("invalid context name %q", name), Hint: "Use letters, digits, '.', '_' and '-'."}
 			}
-			if token, err = g.loginToken(token, tokenStdin); err != nil {
-				return err
+			// No token flag: log in in the browser, on a terminal or when
+			// asked to print the link (--no-browser).
+			browser := token == "" && !tokenStdin && (g.io.Interactive || noBrowser)
+			if !browser {
+				if token, err = g.loginToken(token, tokenStdin); err != nil {
+					return err
+				}
 			}
 
-			api, err := apiclient.New(server, token)
+			ctx := cmd.Context()
+			anon, err := apiclient.New(server, "")
 			if err != nil {
 				return err
 			}
-			ctx := cmd.Context()
-			ver, err := apiclient.Get[apitypes.Version](ctx, api, apiPrefix+"/version")
+			ver, err := apiclient.Get[apitypes.Version](ctx, anon, apiPrefix+"/version")
 			if err != nil {
 				return err
 			}
@@ -80,22 +103,44 @@ history and the process list. Create the first token on the server with
 					Hint:    "Install the CLI that matches the server (" + ver.Version + ").",
 				}
 			}
+			var approved apitypes.CLILoginWait
+			if browser {
+				if approved, err = g.browserLogin(ctx, server, !noBrowser); err != nil {
+					return err
+				}
+				token = approved.Token
+			}
+			api, err := apiclient.New(server, token)
+			if err != nil {
+				return err
+			}
 			me, err := apiclient.Get[apitypes.Me](ctx, api, apiPrefix+"/me")
 			if err != nil {
-				if e, ok := errors.AsType[*output.Error](err); ok && e.Exit == output.ExitAuth {
+				if e, ok := errors.AsType[*output.Error](err); ok && e.Exit == output.ExitAuth && !browser {
 					e.Hint = "Check the token. Admins create tokens with `dock token create`, or `dock admin bootstrap` on the server."
 				}
 				return err
 			}
 
-			cfg.Contexts[name] = clientconfig.Context{Server: server, Token: token}
+			// A token from an earlier browser login here is replaced: revoke
+			// it rather than leave it valid for months.
+			if old := cfg.Contexts[name]; old.LoginToken && old.Token != "" && old.Token != token && old.Server == server {
+				if err := revokeOwnToken(ctx, server, old.Token); err != nil {
+					g.io.Warnf("Could not revoke the previous login's token: %v", err)
+				}
+			}
+			cfg.Contexts[name] = clientconfig.Context{Server: server, Token: token, LoginToken: browser}
 			cfg.CurrentContext = name
 			if err := cfg.save(); err != nil {
 				return err
 			}
-			v := loginView{Context: name, Server: server, Me: me, ServerVersion: ver}
+			v := loginView{Context: name, Server: server, Me: me, User: approved.User, ServerVersion: ver}
 			return g.io.Print(v, func() error {
-				g.io.Successf("Logged in to %s as %s (%s)", server, me.Name, describeMe(me))
+				if browser {
+					g.io.Successf("Logged in as %s (%s) on %s", approved.User, approved.Scope, server)
+				} else {
+					g.io.Successf("Logged in to %s as %s (%s)", server, me.Name, describeMe(me))
+				}
 				g.io.Successf("Now using context %s", name)
 				if ver.Version != version.Version {
 					g.io.Warnf("The server runs %s and this CLI is %s. Keep them in step to avoid surprises.", ver.Version, version.Version)
@@ -107,6 +152,7 @@ history and the process list. Create the first token on the server with
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "log in in the browser, but only print the link (works without a terminal)")
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the API token from stdin (preferred for scripts)")
 	cmd.Flags().StringVar(&token, "token", "", "API token; prefer --token-stdin, this ends up in shell history")
 	cmd.Flags().StringVar(&name, "name", "", "context name (default: the server's host)")
@@ -116,8 +162,7 @@ history and the process list. Create the first token on the server with
 // maxTokenInput bounds what --token-stdin reads.
 const maxTokenInput = 4 << 10
 
-// loginToken returns the token from --token, stdin (--token-stdin) or a
-// hidden prompt on a terminal, in that order of the flags given.
+// loginToken returns the token from --token or stdin (--token-stdin).
 func (g *globals) loginToken(flag string, fromStdin bool) (string, error) {
 	switch {
 	case flag != "" && fromStdin:
@@ -135,10 +180,9 @@ func (g *globals) loginToken(flag string, fromStdin bool) (string, error) {
 		}
 		return token, nil
 	}
-	if !g.io.Interactive {
-		return "", usageError("no API token given", "Pipe it in with --token-stdin, e.g. `dock login <url> --token-stdin < token-file`. The CLI only prompts on a terminal.")
-	}
-	return g.io.PromptSecret("API token", "token-stdin")
+	return "", usageError("no API token given and no terminal to log in on",
+		"Pipe a token in with --token-stdin, e.g. `dock login <url> --token-stdin < token-file`, "+
+			"or log in in the browser: run `dock login` on a terminal, or pass --no-browser to only print the link.")
 }
 
 // contextNameFor picks the context for a login to u: the context that
@@ -214,9 +258,12 @@ func newLogoutCmd(g *globals) *cobra.Command {
 		Use:   "logout",
 		Short: "Remove the token of the context in use from this machine",
 		Long: `Remove the token of the context in use (see ` + "`dock context current`" + `)
-from the config file. The context itself is kept. Logging out again is not an error.`,
+from the config file. A token from a browser login is also revoked on the
+server; tokens given with --token or --token-stdin stay valid, since they
+may be in use elsewhere. The context itself is kept. Logging out again is
+not an error.`,
 		Args: cobra.NoArgs,
-		RunE: func(*cobra.Command, []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -234,7 +281,15 @@ from the config file. The context itself is kept. Logging out again is not an er
 			}
 			ctx := cfg.Contexts[r.Name]
 			hadToken := ctx.Token != ""
-			ctx.Token = ""
+			revoked := false
+			if hadToken && ctx.LoginToken {
+				if err := revokeOwnToken(cmd.Context(), ctx.Server, ctx.Token); err != nil {
+					g.io.Warnf("Could not revoke the token on %s (%v). It expires on its own; an admin can revoke it on the Tokens page.", ctx.Server, err)
+				} else {
+					revoked = true
+				}
+			}
+			ctx.Token, ctx.LoginToken = "", false
 			cfg.Contexts[r.Name] = ctx
 			if err := cfg.save(); err != nil {
 				return err
@@ -242,11 +297,15 @@ from the config file. The context itself is kept. Logging out again is not an er
 			v := struct {
 				Context  string `json:"context"`
 				HadToken bool   `json:"hadToken"`
-			}{r.Name, hadToken}
+				Revoked  bool   `json:"revoked"`
+			}{r.Name, hadToken, revoked}
 			return g.io.Print(v, func() error {
-				if hadToken {
+				switch {
+				case revoked:
+					g.io.Successf("Logged out of %s and revoked its token", r.Name)
+				case hadToken:
 					g.io.Successf("Logged out of %s", r.Name)
-				} else {
+				default:
 					g.io.Successf("Already logged out of %s", r.Name)
 				}
 				return nil
