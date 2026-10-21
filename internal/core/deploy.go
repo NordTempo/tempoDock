@@ -514,12 +514,19 @@ func (c *Core) newBuildLog(ss svcScope, rel store.Release) (*logWriter, error) {
 	}}, nil
 }
 
+// maxLogLine caps a build log line. Longer output without a newline is
+// split into lines of this size, so a build printing megabytes on one line
+// can't grow the writer's buffer or a log event without bound.
+const maxLogLine = 64 << 10
+
 // logWriter appends build output to the log file and publishes each
-// complete line with its zero-based line number.
+// complete line with its zero-based line number. The file and the events
+// always agree on line boundaries.
 type logWriter struct {
 	mu   sync.Mutex
 	f    *os.File
-	buf  []byte
+	buf  []byte // the current line so far, at most maxLogLine
+	out  []byte // what one Write appends to the file
 	seq  int
 	emit func(seq int, line string)
 }
@@ -527,18 +534,38 @@ type logWriter struct {
 func (w *logWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	n, err := w.f.Write(p)
-	w.buf = append(w.buf, p[:n]...)
-	for {
-		i := bytes.IndexByte(w.buf, '\n')
-		if i < 0 {
-			break
+	n := len(p)
+	w.out = w.out[:0]
+	for len(p) > 0 {
+		room := maxLogLine - len(w.buf)
+		i := bytes.IndexByte(p, '\n')
+		switch {
+		case i >= 0 && i <= room:
+			w.out = append(w.out, p[:i+1]...)
+			w.buf = append(w.buf, p[:i]...)
+			p = p[i+1:]
+		case len(p) <= room && i < 0:
+			w.out = append(w.out, p...)
+			w.buf = append(w.buf, p...)
+			p = nil
+			continue
+		default: // the line is too long: break it here
+			w.out = append(append(w.out, p[:room]...), '\n')
+			w.buf = append(w.buf, p[:room]...)
+			p = p[room:]
 		}
-		w.emit(w.seq, string(w.buf[:i]))
+		w.emit(w.seq, string(w.buf))
 		w.seq++
-		w.buf = w.buf[i+1:]
+		w.buf = w.buf[:0]
 	}
-	return n, err
+	_, err := w.f.Write(w.out)
+	if cap(w.out) > 4*maxLogLine {
+		w.out = nil // don't keep a huge write's buffer
+	}
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // Close terminates a trailing partial line and closes the file.
