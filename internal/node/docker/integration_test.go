@@ -107,6 +107,10 @@ func TestPull(t *testing.T) {
 	if ok, err := e.HasImage(context.Background(), "dock-test/does-not-exist:nope"); ok || err != nil {
 		t.Errorf("HasImage(missing) = %v, %v", ok, err)
 	}
+	// The caller names the image; the error must not repeat it.
+	if _, err := e.Pull(ctxTimeout(t, time.Minute), "dock-test/does-not-exist:nope", nil); err == nil || strings.HasPrefix(err.Error(), "pull ") {
+		t.Errorf("Pull(missing) err = %v", err)
+	}
 }
 
 func TestLifecycle(t *testing.T) {

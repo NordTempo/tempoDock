@@ -605,4 +605,8 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 	if _, err := h.c.DeploySource(h.ctx, System, web, strings.NewReader(strings.Repeat("x", 100)), 10); CodeOf(err) != apitypes.CodeTooLarge {
 		t.Fatalf("oversized upload: %v", err)
 	}
+	notTar := strings.NewReader(strings.Repeat("this is a zip file, honest\n", 40))
+	if _, err := h.c.DeploySource(h.ctx, System, web, notTar, 1<<20); CodeOf(err) != apitypes.CodeValidation || err.Error() != "upload is not a tar or tar.gz archive" {
+		t.Fatalf("non-tar upload: %v", err)
+	}
 }

@@ -546,6 +546,9 @@ func readRepoConfig(path string) (*repoconfig.Config, error) {
 	}
 	defer func() { _ = f.Close() }()
 	rc, found, err := repoconfig.FromTar(f)
+	if errors.Is(err, repoconfig.ErrNotArchive) {
+		return nil, invalid("upload is not a tar or tar.gz archive")
+	}
 	if err != nil {
 		return nil, invalid("%s: %v", repoconfig.FileName, err)
 	}

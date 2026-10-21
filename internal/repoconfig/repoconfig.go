@@ -198,6 +198,10 @@ func Load(dir string) (cfg Config, found bool, err error) {
 	return cfg, true, err
 }
 
+// ErrNotArchive is returned (wrapped) by FromTar for input that isn't a
+// readable tar or tar.gz stream.
+var ErrNotArchive = errors.New("not a tar or tar.gz archive")
+
 // FromTar scans a build context tar stream (plain or gzip) for dock.toml
 // at its root and parses it. found is false when the archive has none. It
 // consumes r up to the file, or entirely when there is none.
@@ -207,7 +211,7 @@ func FromTar(r io.Reader) (cfg Config, found bool, err error) {
 	if magic, _ := br.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
 		zr, err := gzip.NewReader(br)
 		if err != nil {
-			return Config{}, false, fmt.Errorf("read build context: %w", err)
+			return Config{}, false, fmt.Errorf("%w: %w", ErrNotArchive, err)
 		}
 		defer func() { _ = zr.Close() }()
 		src = zr
@@ -219,7 +223,7 @@ func FromTar(r io.Reader) (cfg Config, found bool, err error) {
 			return Config{}, false, nil
 		}
 		if err != nil {
-			return Config{}, false, fmt.Errorf("read build context: %w", err)
+			return Config{}, false, fmt.Errorf("%w: %w", ErrNotArchive, err)
 		}
 		if h.Typeflag == tar.TypeReg && path.Clean(h.Name) == FileName {
 			cfg, err := parseReader(tr)
