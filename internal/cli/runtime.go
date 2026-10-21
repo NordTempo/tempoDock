@@ -24,7 +24,7 @@ func newRuntime(cfg config.Config) (node.Runtime, error) {
 	if os.Getenv("DOCK_FAKE_RUNTIME") == "1" {
 		return fake.New(), nil
 	}
-	containers, err := docker.New()
+	containers, err := docker.New(cfg.Network.Pool)
 	if err != nil {
 		return nil, err
 	}

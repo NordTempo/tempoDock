@@ -7,6 +7,9 @@ package docker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -30,18 +34,26 @@ import (
 // Runtime is a node.Containers backed by the local Docker Engine.
 type Runtime struct {
 	cli *client.Client
+	// pool is where network subnets come from (config [network] pool).
+	pool netip.Prefix
+	// netMu serialises picking a free subnet and creating the network.
+	netMu sync.Mutex
 }
 
 var _ node.Containers = (*Runtime)(nil)
 
 // New connects to the Docker Engine configured by the environment
-// (DOCKER_HOST etc., defaulting to the local socket).
-func New() (*Runtime, error) {
+// (DOCKER_HOST etc., defaulting to the local socket). Networks it creates get
+// a /24 from pool.
+func New(pool netip.Prefix) (*Runtime, error) {
+	if !pool.Addr().Is4() || pool.Bits() > 24 {
+		return nil, fmt.Errorf("network pool %s must be an IPv4 CIDR of /24 or larger", pool)
+	}
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
-	return &Runtime{cli: cli}, nil
+	return &Runtime{cli: cli, pool: pool.Masked()}, nil
 }
 
 // Close releases the underlying Docker client.
@@ -135,10 +147,24 @@ func (r *Runtime) HasImage(ctx context.Context, ref string) (bool, error) {
 	return true, nil
 }
 
+// BridgePrefix starts the host interface name of every network the runtime
+// creates, so the firewall (`dock admin firewall`) can match app traffic by
+// interface: "dk-+" in iptables.
+const BridgePrefix = "dk-"
+
+// BridgeNameOption is Docker's network option for the bridge interface name.
+const BridgeNameOption = "com.docker.network.bridge.name"
+
 // EnsureNetwork creates a managed bridge network called name if missing. It
 // fails if an unmanaged network already uses the name, or a managed one
 // labelled for another project or environment.
+//
+// New networks get the first free /24 of the runtime's pool and a bridge
+// named BridgePrefix + a hash of the name. Networks created before the pool
+// existed keep Docker's addresses; the firewall finds them by label.
 func (r *Runtime) EnsureNetwork(ctx context.Context, name string, labels node.Labels) error {
+	r.netMu.Lock()
+	defer r.netMu.Unlock()
 	res, err := r.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
 	switch {
 	case err == nil && res.Network.Name == name:
@@ -152,14 +178,61 @@ func (r *Runtime) EnsureNetwork(ctx context.Context, name string, labels node.La
 	case err != nil && !cerrdefs.IsNotFound(err):
 		return fmt.Errorf("inspect network %s: %w", name, err)
 	}
+	subnet, err := r.freeSubnet(ctx)
+	if err != nil {
+		return err
+	}
 	_, err = r.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
-		Driver: "bridge",
-		Labels: node.Labels{Project: labels.Project, Environment: labels.Environment}.Map(),
+		Driver:  "bridge",
+		IPAM:    &network.IPAM{Config: []network.IPAMConfig{{Subnet: subnet}}},
+		Options: map[string]string{BridgeNameOption: bridgeName(name)},
+		Labels:  node.Labels{Project: labels.Project, Environment: labels.Environment}.Map(),
 	})
 	if err != nil {
 		return fmt.Errorf("create network %s: %w", name, err)
 	}
 	return nil
+}
+
+// bridgeName is the host interface of network name: BridgePrefix plus a
+// hash, as interface names are limited to 15 characters.
+func bridgeName(name string) string {
+	sum := sha256.Sum256([]byte(name))
+	return BridgePrefix + hex.EncodeToString(sum[:5])
+}
+
+// freeSubnet returns the first /24 of the pool that no Docker network,
+// managed or not, overlaps.
+func (r *Runtime) freeSubnet(ctx context.Context) (netip.Prefix, error) {
+	res, err := r.cli.NetworkList(ctx, client.NetworkListOptions{})
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("list networks: %w", err)
+	}
+	var used []netip.Prefix
+	for _, n := range res.Items {
+		for _, c := range n.IPAM.Config {
+			used = append(used, c.Subnet)
+		}
+	}
+	return firstFree(r.pool, used)
+}
+
+// firstFree returns the first /24 in pool (an IPv4 prefix of /24 or larger)
+// that overlaps nothing in used.
+func firstFree(pool netip.Prefix, used []netip.Prefix) (netip.Prefix, error) {
+	for p := netip.PrefixFrom(pool.Addr(), 24); pool.Contains(p.Addr()); {
+		if !slices.ContainsFunc(used, p.Overlaps) {
+			return p, nil
+		}
+		a := p.Addr().As4()
+		next := binary.BigEndian.Uint32(a[:]) + 1<<8
+		if next == 0 {
+			break // wrapped past 255.255.255.0/24
+		}
+		binary.BigEndian.PutUint32(a[:], next)
+		p = netip.PrefixFrom(netip.AddrFrom4(a), 24)
+	}
+	return netip.Prefix{}, fmt.Errorf("network pool %s is full; set a larger [network] pool", pool)
 }
 
 // EnsureVolume creates a managed volume called name if missing. It fails if
