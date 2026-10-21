@@ -1,0 +1,130 @@
+// Package store is the platform's SQLite state: connection setup, embedded
+// migrations and sqlc-generated typed queries (Queries).
+//
+// Queries live in queries/*.sql and the schema in migrations/*.sql. After
+// changing either, run `go generate ./internal/store` and commit the output.
+package store
+
+//go:generate sqlc generate
+
+import (
+	"context"
+	"database/sql"
+	"embed"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
+)
+
+//go:embed migrations/*.sql
+var migrations embed.FS
+
+// Store is an open platform database.
+type Store struct {
+	*Queries
+	DB *sql.DB
+}
+
+// Open opens (creating if needed) the SQLite database at path and applies any
+// pending migrations. WAL mode lets the admin CLI write while the daemon runs.
+func Open(ctx context.Context, path string) (*Store, error) {
+	q := url.Values{}
+	for _, p := range []string{"foreign_keys(1)", "journal_mode(WAL)", "busy_timeout(10000)", "synchronous(NORMAL)"} {
+		q.Add("_pragma", p)
+	}
+	// Writers take the lock up front, so read-then-write transactions never
+	// fail with SQLITE_BUSY halfway through.
+	q.Set("_txlock", "immediate")
+	q.Set("_time_format", "sqlite")
+	db, err := sql.Open("sqlite", "file:"+path+"?"+q.Encode())
+	if err != nil {
+		return nil, fmt.Errorf("open db: %w", err)
+	}
+	db.SetMaxOpenConns(8)
+	if err := migrate(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return &Store{Queries: New(db), DB: db}, nil
+}
+
+// Close closes the database.
+func (s *Store) Close() error { return s.DB.Close() }
+
+// Tx runs fn in a write transaction, committing if fn returns nil.
+func (s *Store) Tx(ctx context.Context, fn func(q *Queries) error) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	if err := fn(s.WithTx(tx)); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// IsUnique reports whether err is a UNIQUE or PRIMARY KEY constraint violation.
+func IsUnique(err error) bool {
+	var se *sqlite.Error
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE || se.Code() == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY
+}
+
+// IsNotFound reports whether err means a :one query matched no row.
+func IsNotFound(err error) bool { return errors.Is(err, sql.ErrNoRows) }
+
+// migrate applies migrations/NNNN_*.sql files newer than PRAGMA user_version,
+// each in its own transaction.
+func migrate(ctx context.Context, db *sql.DB) error {
+	var current int
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	names, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		return err
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		base := strings.TrimPrefix(name, "migrations/")
+		num, _, _ := strings.Cut(base, "_")
+		version, err := strconv.Atoi(num)
+		if err != nil {
+			return fmt.Errorf("migration %s: name must start with a number", base)
+		}
+		if version <= current {
+			continue
+		}
+		body, err := migrations.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("migration %s: %w", base, err)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", version)); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("migration %s: %w", base, err)
+		}
+		current = version
+	}
+	return nil
+}
