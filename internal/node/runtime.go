@@ -74,6 +74,9 @@ type Proxy interface {
 	// ApplyRoutes replaces the full routing table atomically. If the new
 	// config is rejected, the previous one stays in effect.
 	ApplyRoutes(ctx context.Context, routes []Route) error
+	// CheckDomain reports whether hostname's DNS points at this server and
+	// whether a valid certificate is being served for it.
+	CheckDomain(ctx context.Context, hostname string) (DomainCheck, error)
 }
 
 // Docker label keys put on every platform-managed resource.
@@ -237,4 +240,19 @@ type Route struct {
 	// RedirectTo, when set, permanently redirects to this hostname instead
 	// of proxying.
 	RedirectTo string
+}
+
+// DomainCheck is the observed state of one hostname on this server.
+type DomainCheck struct {
+	// ExpectedIPs are this server's public addresses that DNS should use.
+	ExpectedIPs []string
+	// ResolvedIPs are what the hostname currently resolves to.
+	ResolvedIPs []string
+	// DNSOK is true when ResolvedIPs includes an expected address.
+	DNSOK bool
+	// CertificateOK is true when a valid certificate is served for hostname
+	// (always false when TLS is disabled).
+	CertificateOK bool
+	// Error explains a failed check in plain words.
+	Error string
 }
