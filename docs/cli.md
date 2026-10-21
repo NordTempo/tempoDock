@@ -55,7 +55,8 @@ values take precedence: `build_failed`, `deploy_failed`,
 
 A context is a named server URL plus API token, like a kubectl context:
 `dock context add|list|use|current|remove`, and `dock logout` removes
-the token of the context in use.
+the token of the context in use (and revokes it, if `dock login` got it in
+the browser).
 
 The server and token come from, in order:
 
@@ -72,15 +73,34 @@ never follows redirects either; a 3xx is an error naming its target.
 `dock context current` shows what the current directory resolves to and
 why.
 
-Log in with `dock login <server-url>`: on a terminal it prompts for the
-token without echo. Scripts pipe it in, so it stays out of shell history and
-the process list:
+Log in with `dock login <server-url>` (no URL: the current context's
+server). On a terminal it logs in through the browser, so there is no token
+to create or paste:
+
+1. The CLI prints a link and a code like `BCDF-GHJK` and opens the link
+   (not over SSH or without a display; `--no-browser` only prints it, which
+   also works without a terminal).
+2. In the browser, sign in if needed, check the code matches the terminal
+   and approve. The page shows the CLI's host, OS and IP: deny a login you
+   didn't start.
+3. The CLI gets its own token: named `cli: <hostname>`, your role as
+   scope, valid for 90 days, listed on the Tokens page as from `dock login`.
+   Links expire after 10 minutes; Ctrl-C cancels.
+
+`dock logout` revokes a token from a browser login on the server, and
+logging in again replaces (and revokes) it. A denied or expired login exits
+3. The browser and the CLI may be on different machines: the CLI never
+listens on a port, it waits on the server.
+
+Agents, CI and scripts use API tokens instead and pipe them in, so they
+stay out of shell history and the process list:
 
 ```sh
 dock login https://dock.example.com --token-stdin < token-file
 ```
 
-`--token <token>` still works but is not recommended.
+`--token <token>` still works but is not recommended. Without a terminal
+and without a token flag (or `--no-browser`), `dock login` is a usage error.
 
 ## Config file and links
 
@@ -103,7 +123,8 @@ keeps the linked service, so it means "this service, in staging".
 
 | Command | What it does |
 |---|---|
-| `login <url> [--token-stdin]` | Verify a token against `/version` and `/me` (prompted for on a terminal, or read from stdin), store it as a context and use it. Warns when the server runs another version |
+| `login [url] [--no-browser \| --token-stdin]` | Log in through the browser (on a terminal, or with `--no-browser`), or verify a token from stdin; store it as a context and use it. Warns when the server runs another version |
+| `logout` | Remove the context's token; revoke it on the server if it came from a browser login |
 | `whoami` | Who the token belongs to and its scope |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails |

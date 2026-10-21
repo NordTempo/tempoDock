@@ -1,15 +1,16 @@
 # Getting started
 
 From a fresh server to a live app with a domain. Assumes the server is
-[installed](install.md) and you have the admin token it printed.
+[installed](install.md) and you have the admin password it printed.
 
 Your app needs a `Dockerfile` at the repo root, or be something
 [Railpack](https://railpack.com) can build (Node, Python, Go, ...). It should
 listen on `$PORT` (default `8080`).
 
 ```sh
-# 1. Point the CLI at the server (saved as a context in ~/.config/dock/config.json)
-dock login http://100.64.0.10:7070 --token dock_...
+# 1. Log in: opens the browser, where you sign in and approve the code
+#    (saved as a context in ~/.config/dock/config.json)
+dock login http://100.64.0.10:7070
 
 # 2. A project. It comes with a `production` environment
 dock project create shop

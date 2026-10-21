@@ -4,6 +4,9 @@ How to let an AI agent (Claude Code, a CI job, any bot) deploy with `dock`
 without being able to break or destroy things.
 
 The model: the agent gets a **scoped API token**, never SSH or Docker access.
+`dock login` in the browser is for people at a terminal; it gives the CLI
+your own, unlimited access. Agents get their own token, limited to what
+they deploy.
 Every rule is enforced by the daemon, not by the agent behaving. The worst
 outcome of a bad deploy is a failed release that never got traffic.
 

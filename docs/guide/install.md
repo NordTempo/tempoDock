@@ -29,14 +29,16 @@ ssh server 'cd /tmp/dock-install && sudo DOCK_BINARY=./dock ./deploy/install.sh'
 ```
 
 The last lines of output print the API address and the first admin token
-(shown once). Log in from your laptop:
+(shown once). `install.sh` also creates an admin user `admin@localhost` for
+the UI and prints its generated password to stderr, once. Log in from your
+laptop, then sign in as that user in the browser it opens and approve:
 
 ```sh
-dock login http://100.64.0.10:7070 --token dock_...
+dock login http://100.64.0.10:7070
 ```
 
-`install.sh` also creates an admin user `admin@localhost` for the UI and
-prints its generated password to stderr, once.
+Keep the admin token for scripts and for creating agent tokens
+(`dock login <url> --token-stdin` works too).
 
 ### install.sh options
 
