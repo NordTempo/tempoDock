@@ -250,10 +250,18 @@ type BuildRequest struct {
 	// BuildCommand and StartCommand are passed to Railpack builds.
 	BuildCommand string
 	StartCommand string
-	// BuildArgs are passed to Dockerfile builds and Railpack as variables.
+	// BuildArgs are the service's variables. Every build step can read them
+	// as BuildKit secrets (id = name); Dockerfile builds also get the ones
+	// the Dockerfile declares with ARG as build args, and Railpack reads its
+	// RAILPACK_* settings from them.
 	BuildArgs map[string]string
-	Tag       string
-	Logs      io.Writer
+	// CacheScope namespaces BuildKit cache mounts, so one project's builds
+	// can't read or poison another's. Use one scope per project and
+	// environment; only letters, digits and _ are allowed. Empty shares a
+	// single "unscoped" namespace.
+	CacheScope string
+	Tag        string
+	Logs       io.Writer
 }
 
 // Route sends traffic for Hostnames to Upstream (host:port).

@@ -15,27 +15,56 @@
 // The daemon reaches BuildKit through `buildctl dial-stdio` over the Docker
 // exec API: no extra socket permissions or ports to manage.
 //
-// Sources with a Dockerfile use BuildKit's dockerfile frontend. Everything
-// else gets a Railpack build: the plan is generated in-process with the
-// Railpack library and built with the matching Railpack BuildKit frontend,
-// which is what Railpack recommends for platforms. Results are exported
-// straight into the local Docker Engine.
+// Sources with a Dockerfile use BuildKit's built-in Dockerfile frontend;
+// `# syntax=` directives are ignored, since a custom frontend could bypass
+// the cache namespacing below. Everything else gets a Railpack build: the
+// plan is generated with the Railpack library in a capped child process
+// (PlanMain) and built with the matching Railpack BuildKit frontend, which
+// is what Railpack recommends for platforms. Results are exported straight
+// into the local Docker Engine.
+//
+// # Variables
+//
+// Every service variable is available to build steps as a BuildKit secret
+// with the variable's name as ID. Secret mounts don't end up in the image
+// or its history (unless a step copies them into a layer). In a Dockerfile:
+//
+//	RUN --mount=type=secret,id=NPM_TOKEN,env=NPM_TOKEN npm ci
+//
+// Dockerfile builds also get the variables the Dockerfile declares with ARG
+// as build args, since many Dockerfiles rely on ARG for settings like
+// NODE_ENV or public URLs. ARG values are visible in the image history
+// (`docker history`) of every RUN step that sees them, so secrets should be
+// consumed with secret mounts, never declared as ARG. Changing a secret
+// doesn't invalidate cached Dockerfile layers that read it; Railpack builds
+// rebuild when any variable changes.
+//
+// # Cache isolation
+//
+// Cache mounts (RUN --mount=type=cache, Railpack's caches) are mutable
+// state shared across builds on the builder. Each build's cache IDs are
+// prefixed with BuildRequest.CacheScope, so a build in one project and
+// environment can't read or poison another's caches. Layer cache is
+// content-addressed and needs no namespacing.
+//
+// # Network
+//
+// Build steps share the BuildKit container's network namespace (BuildKit's
+// "host" network mode inside the container), so they reach exactly what the
+// container does: the default bridge, or Builder.Network when set. No
+// entitlements are granted, so `RUN --network=host` and
+// `RUN --security=insecure` are refused.
 package build
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
-	"runtime/debug"
-	"slices"
-	"strings"
+	"regexp"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
@@ -45,8 +74,6 @@ import (
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/client"
-	"github.com/railwayapp/railpack/core"
-	"github.com/railwayapp/railpack/core/app"
 	"github.com/tonistiigi/fsutil"
 	"google.golang.org/grpc/codes"
 
@@ -56,6 +83,12 @@ import (
 
 // Builder builds images in the capped BuildKit container, one at a time.
 type Builder struct {
+	// Network is the Docker network the BuildKit container (and so every
+	// build step) runs on. Empty means Docker's default bridge. The network
+	// must exist; changing it recreates the container on the next build.
+	// Set it before the first build.
+	Network string
+
 	docker  *client.Client
 	cfg     config.BuildKit
 	workDir string
@@ -109,7 +142,7 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, err
 	}
 	defer func() { <-b.sem }()
 
-	opt, err := solveOpt(dir, src, req, logs)
+	opt, err := solveOpt(ctx, dir, src, req, logs)
 	if err != nil {
 		return "", err
 	}
@@ -151,7 +184,11 @@ func (b *Builder) explain(ctx context.Context, err error, started time.Time) err
 
 // solveOpt picks the frontend: a Dockerfile build when one is given or
 // present at the root, otherwise Railpack.
-func solveOpt(dir, src string, req node.BuildRequest, logs io.Writer) (bkclient.SolveOpt, error) {
+func solveOpt(ctx context.Context, dir, src string, req node.BuildRequest, logs io.Writer) (bkclient.SolveOpt, error) {
+	ns, err := cacheNamespace(req.CacheScope)
+	if err != nil {
+		return bkclient.SolveOpt{}, err
+	}
 	dockerfile := req.Dockerfile
 	if dockerfile == "" {
 		if _, err := os.Stat(filepath.Join(src, "Dockerfile")); err == nil {
@@ -159,97 +196,34 @@ func solveOpt(dir, src string, req node.BuildRequest, logs io.Writer) (bkclient.
 		}
 	}
 	if dockerfile != "" {
-		return dockerfileOpt(src, dockerfile, req.BuildArgs)
+		return dockerfileOpt(src, dockerfile, req.BuildArgs, ns, logs)
 	}
-	return railpackOpt(dir, src, req, logs)
+	return railpackOpt(ctx, dir, src, req, ns, logs)
 }
 
-func dockerfileOpt(src, dockerfile string, args map[string]string) (bkclient.SolveOpt, error) {
-	if !filepath.IsLocal(dockerfile) {
-		return bkclient.SolveOpt{}, fmt.Errorf("dockerfile path %q must be inside the source", dockerfile)
+// validScope matches cache scopes. Scopes exclude the separators BuildKit
+// ("/") and Railpack ("-") put between namespace and cache ID, so two
+// scopes can never produce the same cache ID.
+var validScope = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
+
+// cacheNamespace returns the namespace for a build's cache mounts.
+func cacheNamespace(scope string) (string, error) {
+	if scope == "" {
+		return "unscoped", nil
 	}
-	// extract keeps every symlink inside src, but resolve through os.Root
-	// anyway: BuildKit mounts the Dockerfile's directory, so a link out of
-	// the tree there would expose host files.
-	root, err := os.OpenRoot(src)
-	if err != nil {
-		return bkclient.SolveOpt{}, err
+	if !validScope.MatchString(scope) {
+		return "", fmt.Errorf("build: cache scope %q may only contain letters, digits and _", scope)
 	}
-	_, err = root.Stat(dockerfile)
-	_ = root.Close()
-	if err != nil {
-		return bkclient.SolveOpt{}, fmt.Errorf("dockerfile %q not found in source", dockerfile)
-	}
-	attrs := map[string]string{"filename": filepath.Base(dockerfile)}
-	for k, v := range args {
-		attrs["build-arg:"+k] = v
-	}
-	return localOpt("dockerfile.v0", attrs, src, filepath.Join(src, filepath.Dir(dockerfile)))
+	return scope, nil
 }
 
-const planFile = "railpack-plan.json"
-
-// railpackOpt generates a Railpack plan for src and returns options to build
-// it with the Railpack frontend. Build args become Railpack variables: they
-// configure the plan (RAILPACK_* settings) and are exposed to build steps as
-// secrets, the way Railway does it.
-func railpackOpt(dir, src string, req node.BuildRequest, logs io.Writer) (bkclient.SolveOpt, error) {
-	// Railpack joins these onto src and reads them on the host.
-	for _, k := range []string{"RAILPACK_CONFIG_FILE", "RAILPACK_SHELL_SCRIPT"} {
-		if v := strings.TrimSpace(req.BuildArgs[k]); v != "" && !filepath.IsLocal(v) {
-			return bkclient.SolveOpt{}, fmt.Errorf("%s must be a path inside the source", k)
-		}
+// secretStore exposes vars to build steps as BuildKit secrets, id = name.
+func secretStore(vars map[string]string) session.Attachable {
+	secrets := make(map[string][]byte, len(vars))
+	for k, v := range vars {
+		secrets[k] = []byte(v)
 	}
-	a, err := app.NewApp(src)
-	if err != nil {
-		return bkclient.SolveOpt{}, fmt.Errorf("railpack: %w", err)
-	}
-	vars := maps.Clone(req.BuildArgs)
-	res, err := core.GenerateBuildPlan(a, app.NewEnvironment(&vars), &core.GenerateBuildPlanOptions{
-		RailpackVersion:          railpackVersion,
-		BuildCommand:             req.BuildCommand,
-		StartCommand:             req.StartCommand,
-		ErrorMissingStartCommand: true,
-	})
-	for _, l := range res.Logs {
-		_, _ = fmt.Fprintf(logs, "railpack %s: %s\n", l.Level, l.Msg)
-	}
-	if err != nil {
-		return bkclient.SolveOpt{}, fmt.Errorf("railpack (temporary failure, retry): %w", err)
-	}
-	if !res.Success {
-		return bkclient.SolveOpt{}, errors.New("railpack could not work out how to build this app; add a Dockerfile or see the log above")
-	}
-
-	plan, err := json.Marshal(res.Plan)
-	if err != nil {
-		return bkclient.SolveOpt{}, err
-	}
-	planDir := filepath.Join(dir, "plan")
-	if err := os.Mkdir(planDir, 0o700); err != nil {
-		return bkclient.SolveOpt{}, err
-	}
-	if err := os.WriteFile(filepath.Join(planDir, planFile), plan, 0o600); err != nil {
-		return bkclient.SolveOpt{}, err
-	}
-
-	attrs := map[string]string{
-		"source":   "ghcr.io/railwayapp/railpack-frontend:" + railpackVersion,
-		"filename": planFile,
-	}
-	secrets := map[string][]byte{}
-	if len(vars) > 0 {
-		h := sha256.New()
-		for _, k := range slices.Sorted(maps.Keys(vars)) {
-			secrets[k] = []byte(vars[k])
-			_, _ = fmt.Fprintf(h, "%s=%s\n", k, vars[k])
-		}
-		// Secrets don't invalidate cached layers on their own.
-		attrs["build-arg:secrets-hash"] = hex.EncodeToString(h.Sum(nil))
-	}
-	opt, err := localOpt("gateway.v0", attrs, src, planDir)
-	opt.Session = []session.Attachable{secretsprovider.FromMap(secrets)}
-	return opt, err
+	return secretsprovider.FromMap(secrets)
 }
 
 func localOpt(frontend string, attrs map[string]string, contextDir, dockerfileDir string) (bkclient.SolveOpt, error) {
@@ -327,16 +301,3 @@ func (b *Builder) load(ctx context.Context, r io.Reader) error {
 		}
 	}
 }
-
-// railpackVersion is the Railpack library version compiled in. The frontend
-// image must match the version that generated the plan.
-var railpackVersion = func() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, m := range info.Deps {
-			if m.Path == "github.com/railwayapp/railpack" {
-				return m.Version
-			}
-		}
-	}
-	return "latest"
-}()
