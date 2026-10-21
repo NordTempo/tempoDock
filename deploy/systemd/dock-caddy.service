@@ -4,8 +4,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=dock
-Group=dock
+# Its own user without the docker group, so a Caddy compromise can't reach
+# Docker. The daemon reaches the admin socket (0660) via the dock-caddy group.
+User=dock-caddy
+Group=dock-caddy
 # --resume restores the last config the daemon loaded, so routing survives
 # reboots even if the daemon isn't running.
 ExecStart=/usr/local/bin/caddy run --resume --config /etc/dock/caddy.json

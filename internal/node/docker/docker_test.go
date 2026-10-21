@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"net/netip"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -230,5 +231,44 @@ func TestToEvent(t *testing.T) {
 	}
 	if ev.Time.UnixNano() != 1_700_000_000_000_000_001 {
 		t.Errorf("Time = %v", ev.Time)
+	}
+}
+
+func TestFirstFree(t *testing.T) {
+	p := netip.MustParsePrefix
+	pool := p("10.213.0.0/16")
+	tests := []struct {
+		pool netip.Prefix
+		used []netip.Prefix
+		want string // "" means the pool is full
+	}{
+		{pool, nil, "10.213.0.0/24"},
+		{pool, []netip.Prefix{p("172.17.0.0/16"), p("10.213.0.0/24"), p("10.213.1.0/24")}, "10.213.2.0/24"},
+		{pool, []netip.Prefix{p("10.213.0.0/23"), p("fd00::/64")}, "10.213.2.0/24"},
+		{pool, []netip.Prefix{p("10.213.0.128/25")}, "10.213.1.0/24"},
+		{pool, []netip.Prefix{p("10.0.0.0/8")}, ""},
+		{p("10.213.7.0/24"), nil, "10.213.7.0/24"},
+		{p("10.213.7.0/24"), []netip.Prefix{p("10.213.7.0/24")}, ""},
+		{p("10.212.254.0/23"), []netip.Prefix{p("10.212.254.0/24")}, "10.212.255.0/24"},
+		{p("255.255.254.0/23"), []netip.Prefix{p("255.255.254.0/23")}, ""},
+	}
+	for _, tt := range tests {
+		got, err := firstFree(tt.pool, tt.used)
+		if tt.want == "" {
+			if err == nil {
+				t.Errorf("firstFree(%s, %v) = %s, want pool full", tt.pool, tt.used, got)
+			}
+			continue
+		}
+		if err != nil || got.String() != tt.want {
+			t.Errorf("firstFree(%s, %v) = %s, %v; want %s", tt.pool, tt.used, got, err, tt.want)
+		}
+	}
+}
+
+func TestBridgeName(t *testing.T) {
+	a, b := bridgeName("dock-myapp-production"), bridgeName("dock-myapp-staging")
+	if a == b || len(a) > 15 || !strings.HasPrefix(a, BridgePrefix) {
+		t.Errorf("bridge names %q, %q: want distinct, %s prefix, at most 15 chars", a, b, BridgePrefix)
 	}
 }

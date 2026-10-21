@@ -1,13 +1,15 @@
 [Unit]
 Description=Tempo Dock daemon (API, UI, deploys)
-After=network-online.target docker.service dock-caddy.service
-Wants=network-online.target
+After=network-online.target docker.service dock-caddy.service dock-firewall.service
+Wants=network-online.target dock-firewall.service
 Requires=docker.service
 
 [Service]
 User=dock
 Group=dock
-SupplementaryGroups=docker
+# docker: drive Docker. dock-caddy: reach Caddy's admin socket. Only this
+# unit gets them; the dock user itself is in neither group.
+SupplementaryGroups=docker dock-caddy
 ExecStart=/usr/local/bin/dock serve --config /etc/dock/config.toml
 Restart=always
 RestartSec=2
@@ -23,6 +25,8 @@ ReadWritePaths=/var/lib/dock
 PrivateTmp=true
 MemoryHigh=96M
 MemoryMax=256M
+# Makes the Go runtime return memory after bursts (builds, uploads).
+Environment=GOMEMLIMIT=64MiB
 
 [Install]
 WantedBy=multi-user.target

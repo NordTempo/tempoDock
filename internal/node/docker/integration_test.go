@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ type testEnv struct {
 
 func newEnv(t *testing.T) *testEnv {
 	t.Helper()
-	r, err := New()
+	r, err := New(netip.MustParsePrefix("10.213.0.0/16"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +127,17 @@ func TestLifecycle(t *testing.T) {
 		if err := e.EnsureVolume(ctx, vol, node.Labels{Project: "p1"}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// The network gets a /24 from the pool and a dk- bridge.
+	res, err := e.cli.NetworkInspect(ctx, net, client.NetworkInspectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg := res.Network.IPAM.Config; len(cfg) != 1 || cfg[0].Subnet.Bits() != 24 || !e.pool.Contains(cfg[0].Subnet.Addr()) {
+		t.Errorf("network subnets = %v, want one /24 in %s", cfg, e.pool)
+	}
+	if br := res.Network.Options[BridgeNameOption]; br != bridgeName(net) {
+		t.Errorf("bridge name = %q, want %q", br, bridgeName(net))
 	}
 	// Another environment or project can't take over the same names.
 	if err := e.EnsureNetwork(ctx, net, node.Labels{Project: "p1", Environment: "e2"}); err == nil {

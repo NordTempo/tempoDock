@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/netip"
 	"os"
 	"path/filepath"
 
@@ -42,6 +43,7 @@ type Config struct {
 
 	Caddy    Caddy    `toml:"caddy"`
 	BuildKit BuildKit `toml:"buildkit"`
+	Network  Network  `toml:"network"`
 	Defaults Defaults `toml:"defaults"`
 }
 
@@ -75,6 +77,19 @@ type BuildKit struct {
 	CPUs     float64 `toml:"cpus"`
 }
 
+// Network configures app networks and what app containers may reach.
+// `dock admin firewall apply` (run as root by dock-firewall.service) turns
+// it into firewall rules.
+type Network struct {
+	// Pool is the IPv4 range dock-managed networks get their subnets from,
+	// one /24 per environment. Keep it clear of the LAN and the tailnet.
+	Pool netip.Prefix `toml:"pool"`
+	// AllowPrivate lists private CIDRs app containers and builds may reach
+	// (a NAS, a LAN database). All other private, link-local and tailnet
+	// addresses, and the server itself, are blocked.
+	AllowPrivate []netip.Prefix `toml:"allow_private"`
+}
+
 // Defaults apply to services that don't set their own values.
 type Defaults struct {
 	MemoryMB           int     `toml:"memory_mb"`
@@ -99,9 +114,12 @@ func Default() Config {
 		},
 		BuildKit: BuildKit{
 			Enabled:  true,
-			Image:    "moby/buildkit:v0.34.1",
+			Image:    "moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c",
 			MemoryMB: 2048,
 			CPUs:     1,
+		},
+		Network: Network{
+			Pool: netip.MustParsePrefix("10.213.0.0/16"),
 		},
 		Defaults: Defaults{
 			MemoryMB:           512,
@@ -125,7 +143,21 @@ func Load(path string) (Config, error) {
 	if err := toml.Unmarshal(b, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
+	if err := cfg.Network.validate(); err != nil {
+		return cfg, fmt.Errorf("%s: %w", path, err)
+	}
 	return cfg, nil
+}
+
+func (n *Network) validate() error {
+	if !n.Pool.IsValid() || !n.Pool.Addr().Is4() || n.Pool.Bits() > 24 {
+		return fmt.Errorf("[network] pool %q must be an IPv4 CIDR of /24 or larger", n.Pool)
+	}
+	n.Pool = n.Pool.Masked()
+	for i, p := range n.AllowPrivate {
+		n.AllowPrivate[i] = p.Masked()
+	}
+	return nil
 }
 
 // DBPath is the SQLite file inside DataDir.
