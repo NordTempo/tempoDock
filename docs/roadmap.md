@@ -57,7 +57,11 @@ with a `deploy` token cannot delete anything.
 
 - `dock node` mode, node join tokens, the outbound node connection,
   version compatibility checks.
-- Environment placement (production vs non-production servers).
+- Servers accept production and/or non-production environments; projects
+  are placed per kind on the least-loaded eligible server and stay together
+  ([ADR 0015](decisions/0015-server-pools-and-placement.md)).
+- Admin dashboard: users, tokens, servers (add, accepted kinds, placements,
+  statistics).
 - Registry next to the control plane; builds only on builder servers.
 - `dock promote staging production`.
 - Per-server status in the UI and CLI.
@@ -70,7 +74,9 @@ doesn't affect production.
 ## M4: Day-to-day comfort
 
 - GitHub push-to-deploy (webhook per service and branch).
-- Resource limits in the UI; stored, downsampled metrics per service.
+- Resource limits in the UI. (Stored, downsampled metrics per server and
+  service: 24 hours at 1 minute, 7 days at 10 minutes, landed early with
+  ADR 0015.)
 - Disk pruning, alerts (disk, failed deploys, crash loops).
 - Clone an environment. Export a project's config.
 
