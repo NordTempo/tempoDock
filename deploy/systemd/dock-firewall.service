@@ -1,0 +1,15 @@
+[Unit]
+Description=Tempo Dock firewall (keeps apps and builds off the LAN, the tailnet and the server)
+# Runs whenever Docker starts or restarts. It covers the networks that exist
+# at that point and every network dock creates later.
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/dock admin firewall apply --config /etc/dock/config.toml
+ExecReload=/usr/local/bin/dock admin firewall apply --config /etc/dock/config.toml
+
+[Install]
+WantedBy=docker.service
