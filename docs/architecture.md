@@ -5,7 +5,7 @@
 ```
  laptop / agent / CI                    server (VPS)
 ┌──────────────┐               ┌───────────────────────────────────────┐
-│ platform CLI │──HTTPS+token─▶│ platform serve (one Go binary)         │
+│   dock CLI   │──HTTPS+token─▶│ dock serve (one Go binary)             │
 └──────────────┘               │  ├─ HTTP API (OpenAPI) + SSE           │
 ┌──────────────┐               │  ├─ embedded web UI                    │
 │   browser    │──────────────▶│  ├─ core: deploys, releases, rules     │
@@ -97,7 +97,7 @@ Details in [ADR 0010](decisions/0010-environments-on-servers.md).
 
 ```
  Hetzner (production)                     Homelab (non-production, builder)
- platform serve                ◀────────  platform node
+ dock serve                    ◀────────  dock node
   ├─ control plane                outbound   ├─ node runtime
   ├─ registry                     conn.      ├─ BuildKit
   └─ node runtime                            └─ staging, dev, previews
@@ -105,13 +105,16 @@ Details in [ADR 0010](decisions/0010-environments-on-servers.md).
 ```
 
 - One control plane, on the production server. Other servers run
-  `platform node`, dial out to it, and receive commands over that connection.
+  `dock node`, dial out to it, and receive commands over that connection.
 - An environment lives entirely on one server: its services, volumes and
   private network. Production environments go to the production server;
   everything else goes to the homelab unless pinned elsewhere.
 - Builds run only on builder servers. Images go to the registry next to the
-  control plane; `platform promote` ships a tested image to production without
+  control plane; `dock promote` ships a tested image to production without
   rebuilding.
+- Hetzner never depends on the homelab. The homelab is flexible (rebooted,
+  rebuilt, experimented on), which is why staging and dev live there and why
+  production can't rely on it.
 - If the homelab is down, production is unaffected. If the control plane is
   down, apps everywhere keep running; only deploys stop.
 
@@ -148,8 +151,8 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
 
 ## Docker as the runtime source of truth
 
-- Every container gets labels: `platform.project`, `platform.env`,
-  `platform.service`, `platform.release`.
+- Every container gets labels: `dock.project`, `dock.env`,
+  `dock.service`, `dock.release`.
 - Containers run with `restart: unless-stopped`, so they survive daemon and
   host restarts without the daemon's help.
 - On start-up the daemon reconciles SQLite (desired) against Docker labels
@@ -170,7 +173,7 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
 |---|---|---|
 | Docker Engine | systemd | Everything (rare) |
 | Caddy | systemd, `caddy run --resume` | Traffic, briefly |
-| platform daemon (`serve` or `node`) | systemd | Only the API/UI, or that node's link to the control plane |
+| dock daemon (`serve` or `node`) | systemd | Only the API/UI, or that node's link to the control plane |
 | BuildKit (builder servers only) | Docker, capped CPU/RAM | Only builds |
 | Registry (control plane server only) | Docker | Image pushes and pulls |
 | App containers | Docker restart policy | That app |
@@ -181,7 +184,7 @@ unit. Apps and routing are unaffected.
 ## Code layout
 
 ```
-cmd/platform/        entry point: CLI commands, `platform serve`, `platform node`
+cmd/dock/        entry point: CLI commands, `dock serve`, `dock node`
 internal/api/        HTTP handlers (Huma), auth, SSE
 internal/core/       domain logic: projects, environments, releases, deploy state machine
 internal/store/      SQLite, migrations, sqlc queries

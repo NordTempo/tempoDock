@@ -36,7 +36,7 @@ reference with `${{postgres.DATABASE_URL}}`.
   need the template path.
 - **Non-destructive restores.** A restore creates a new service from a backup;
   you switch over when it checks out. Restores never overwrite a live database.
-- **Private by default.** No public port. `platform connect <service>` tunnels
+- **Private by default.** No public port. `dock connect <service>` tunnels
   through the API to a local port. This needs a stronger permission than
   `deploy`, since it gives direct data access.
 - **One per environment.** Staging gets its own database, on the homelab

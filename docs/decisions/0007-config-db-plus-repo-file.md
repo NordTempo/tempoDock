@@ -26,16 +26,16 @@ Split by the kind of setting.
 
 | Setting | Lives in |
 |---|---|
-| Dockerfile path, build command, start command, port, health check | Optional `platform.toml` in the repo, applied on deploy. Falls back to the DB if absent. |
+| Dockerfile path, build command, start command, port, health check | Optional `dock.toml` in the repo, applied on deploy. Falls back to the DB if absent. |
 | Variables, secrets, domains, resource limits, volumes, replicas | Platform DB, edited in UI/CLI |
 
 - If the repo file sets a field, the file wins. Those fields show as locked in
-  the UI ("from platform.toml").
+  the UI ("from dock.toml").
 - The file has no per-environment overrides. Anything that differs between
   environments belongs in the DB.
 - Every config change creates a release, which gives history, diffs and
   rollback for DB-held config too.
-- Later: `platform config export` dumps a project as a file for backup and
+- Later: `dock config export` dumps a project as a file for backup and
   reproducibility.
 
 ## Consequences

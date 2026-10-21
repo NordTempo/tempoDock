@@ -8,19 +8,19 @@ same API (see [architecture](architecture.md)).
 
 Users: developers in a terminal, agents in a sandbox, and CI.
 
-- **Noun-verb commands** that read naturally: `platform service list`,
-  `platform env set KEY=value`, `platform release rollback`. Common ones get
-  short top-level aliases: `platform deploy`, `platform logs`, `platform status`.
-- **Linked directories.** `platform link` remembers project, environment and
+- **Noun-verb commands** that read naturally: `dock service list`,
+  `dock env set KEY=value`, `dock release rollback`. Common ones get
+  short top-level aliases: `dock deploy`, `dock logs`, `dock status`.
+- **Linked directories.** `dock link` remembers project, environment and
   service for the current directory, so most commands need no flags.
-- **Contexts** for multiple servers (`platform context use prod-vps`), like
+- **Contexts** for multiple servers (`dock context use prod-vps`), like
   kubectl. Also the hook for a future hosted control plane.
 - **Machine-readable everywhere.** Every command supports `--json`. Output is
   stable and documented, so agents and scripts never parse human text.
 - **Non-interactive when not a TTY.** No prompts in CI or agent sandboxes;
   missing input is an error with the exact flag to pass.
 - **Errors say what to do next.** "Health check failed on `/healthz` after 30s.
-  Previous release is still serving. See logs: `platform logs --release 42`."
+  Previous release is still serving. See logs: `dock logs --release 42`."
 - **Meaningful exit codes**, so agents can branch on outcomes (failed health
   check vs auth error vs not found).
 - **Live progress** for deploys: build, start, health check, cutover, streamed
@@ -53,7 +53,7 @@ Users: developers who want an overview, and anyone who prefers clicking.
 The flow is the same in both clients:
 
 ```
-$ platform domain add shop.example.com
+$ dock domain add shop.example.com
 Added shop.example.com → web (production)
 Point DNS:  A  shop.example.com  →  203.0.113.10
 Waiting for DNS... ok. Issuing certificate... ok.
@@ -61,7 +61,7 @@ https://shop.example.com is live.
 ```
 
 - Any hostname, any number per service, added or removed at any time.
-- `platform domain generate` gives a service a hostname under the base domain
+- `dock domain generate` gives a service a hostname under the base domain
   instantly, no DNS work needed.
 - The UI shows each domain's state (waiting for DNS, issuing certificate,
   active, error) with the exact DNS record to create.
@@ -69,12 +69,12 @@ https://shop.example.com is live.
 ## Servers and promotion
 
 ```
-$ platform server list
+$ dock server list
 NAME      ROLE            BUILDER  STATUS   ENVIRONMENTS
 hetzner   production      no       online   12
 homelab   non-production  yes      online   31
 
-$ platform promote staging production
+$ dock promote staging production
 Promoting web@staging (release 57, sha256:4be1…) to production on hetzner
 Health check... ok. Traffic switched. https://shop.example.com
 ```

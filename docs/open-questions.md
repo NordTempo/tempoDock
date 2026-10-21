@@ -23,12 +23,6 @@ Which domain do we use for generated hostnames (like Railway's
 `*.up.railway.app`)? Needs a wildcard DNS record pointing at the server. See
 [ADR 0009](decisions/0009-dynamic-domains-and-tls.md).
 
-## Name
-
-`platform` is a placeholder. Needed before the binary name, CLI commands and
-config file name (`platform.toml`) get baked into docs and agent prompts.
-Renaming is cheap until M1 ships.
-
 ## Homelab VM for M0-M2
 
 M0 to M2 run on the homelab. A small VM (2 vCPU, 2-4 GB RAM) with Docker makes

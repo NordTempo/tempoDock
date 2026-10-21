@@ -14,7 +14,7 @@ decision records.
 | Builds | Source, git push, CI image or promotion; capped **BuildKit** on builder servers | [0006](decisions/0006-every-way-to-build.md) |
 | Servers | One control plane, nodes dial out; each environment lives on one server | [0010](decisions/0010-environments-on-servers.md) |
 | Databases | Services from templates; stateful services recreate, one replica, tool-native backups | [0011](decisions/0011-stateful-services-and-databases.md) |
-| Service config | Platform DB, plus optional `platform.toml` in the repo | [0007](decisions/0007-config-db-plus-repo-file.md) |
+| Service config | Platform DB, plus optional `dock.toml` in the repo | [0007](decisions/0007-config-db-plus-repo-file.md) |
 | Future options | Single-tenant core with users and roles, internal node boundary | [0008](decisions/0008-keep-doors-open.md) |
 
 ## Supporting choices
