@@ -58,7 +58,10 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 		newDeployCmd(g), newStatusCmd(g), newLogsCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g),
 		newRollbackCmd(g), newRestartCmd(g))
 	addGroup(root, "config", "Configure (changes are staged until applied):",
-		newEnvironmentCmd(g), newProjectCmd(g))
+		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newDiscardCmd(g), newDomainCmd(g), newVolumeCmd(g),
+		newServiceCmd(g), newEnvironmentCmd(g), newProjectCmd(g))
+	addGroup(root, "admin", "Administer:",
+		newTokenCmd(g), newUserCmd(g), newAuditCmd(g), newServerCmd(g))
 	addGroup(root, "server", "Run a server:",
 		newServeCmd(), newAdminCmd(), newOpenAPICmd())
 
