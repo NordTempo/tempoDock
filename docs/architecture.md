@@ -62,6 +62,12 @@ AuditEvent      who did what, when, with which token
   release is created, so every release is self-contained.
 - Where settings come from (repo file vs DB) is described in
   [ADR 0007](decisions/0007-config-db-plus-repo-file.md).
+- **Staged changes.** Setting variables, changing service settings and adding
+  volumes are staged next to the live values, Railway-style. Applying an
+  environment's changes is one transaction followed by one `config` release per
+  affected running service. A source or image deploy of a service takes that
+  service's own staged changes with it; environment-level variables wait for
+  an explicit apply because they affect every service.
 
 ## Deploy flow
 
@@ -185,18 +191,26 @@ unit. Apps and routing are unaffected.
 
 ```
 cmd/dock/        entry point: CLI commands, `dock serve`, `dock node`
-internal/api/        HTTP handlers (Huma), auth, SSE
-internal/core/       domain logic: projects, environments, releases, deploy state machine
+internal/apitypes/   the API's JSON contract (requests, responses, events, error
+                     codes); no server dependencies, so the CLI imports it
+internal/api/        HTTP handlers (Huma), auth middleware, SSE, internal
+                     loopback endpoints (Caddy `ask`)
+internal/core/       domain logic: projects, environments, services, staged
+                     changes, variables, releases, deploy state machine, domains,
+                     permissions, audit, event bus
 internal/store/      SQLite, migrations, sqlc queries
+internal/secrets/    AES-GCM encryption of values at rest, key file
 internal/node/       runtime interface, local implementation (Docker, BuildKit, Caddy),
                      remote client + node-side server for the node connection
+internal/node/fake/  in-memory runtime for tests and `make dev`
 internal/cli/        CLI commands, output formatting (human and --json)
 web/                 React app; build output embedded into the binary
 docs/
 ```
 
-- `core` depends on interfaces for `store` and `node`, never on Docker or HTTP
-  directly.
+- `core` depends on the `store` package and the `node.Runtime` interface,
+  never on Docker or HTTP directly. Every core operation takes the calling
+  actor and checks permissions itself (one code path for users and tokens).
 - Tests: unit tests for `core` with a fake node runtime; integration tests in CI
   against a real Docker Engine; a small set of UI tests where logic is
   non-trivial.
