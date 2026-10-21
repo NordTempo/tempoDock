@@ -1,15 +1,12 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useArchiveProject } from "../data/mutations";
-import {
-  queries,
-  serviceRef,
-  useIsAdmin,
-  useProjectOverview,
-} from "../data/queries";
+import { queries, serviceRef, useIsAdmin } from "../data/queries";
 import { DeployBanner } from "../features/overview/DeployBanner";
 import { EnvironmentTable } from "../features/overview/EnvironmentTable";
 import { LiveColumn, Recent } from "../features/overview/Live";
+import { Placements } from "../features/overview/Placements";
 import { Problems } from "../features/overview/Problems";
 import { useShortcuts } from "../shell/keys";
 import { rememberProject } from "../shell/location";
@@ -22,6 +19,7 @@ export const Route = createFileRoute("/_app/$project/")({
     const [overview] = await Promise.all([
       queryClient.ensureQueryData(queries.overview(params.project)),
       queryClient.ensureQueryData(queries.audit({ project: params.project })),
+      queryClient.ensureQueryData(queries.placements(params.project)),
     ]);
     await Promise.all([
       // Staged problems say which releases applying creates.
@@ -48,7 +46,12 @@ export const Route = createFileRoute("/_app/$project/")({
 
 function Overview() {
   const { project } = Route.useParams();
-  const { environments } = useProjectOverview(project);
+  const { environments } = useSuspenseQuery({
+    ...queries.overview(project),
+    // CPU and memory columns show the latest minute sample; nothing on
+    // the event bus carries usage, so refresh at that pace while visible.
+    refetchInterval: 60_000,
+  }).data;
   const navigate = useNavigate();
   const openPalette = usePalette();
   const services = environments.flatMap((e) => e.services);
@@ -156,6 +159,8 @@ function Overview() {
             .
           </p>
         )}
+
+        <Placements project={project} />
 
         <Recent project={project} />
 
