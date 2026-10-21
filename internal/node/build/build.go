@@ -65,6 +65,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"runtime/debug"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
@@ -140,7 +142,12 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, err
 			return "", ctx.Err()
 		}
 	}
-	defer func() { <-b.sem }()
+	defer func() {
+		<-b.sem
+		if len(b.sem) == 0 {
+			releaseMemory()
+		}
+	}()
 
 	opt, err := solveOpt(ctx, dir, src, req, logs)
 	if err != nil {
@@ -163,6 +170,22 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, err
 		return "", fmt.Errorf("inspect built image: %w", err)
 	}
 	return img.ID, nil
+}
+
+// releaseMemory hands the heap a build churned through back to the OS.
+//
+// The built image streams through the daemon on its way into Docker,
+// tunnelled twice in gRPC (BuildKit's session runs inside the control
+// connection), so a build allocates about twice the image size in buffers
+// of up to 1 MB. None of it stays live, but an idle daemon keeps it for
+// minutes: nothing allocates, so no GC runs until the runtime's forced one
+// every 2 minutes; gRPC's buffer pool is a sync.Pool, which survives one
+// more; only then does the scavenger return the pages. The first GC moves
+// the pool into its victim cache, FreeOSMemory's drops it and returns all
+// free pages at once. Both are cheap: the live heap is a few MB.
+func releaseMemory() {
+	runtime.GC()
+	debug.FreeOSMemory()
 }
 
 // explain makes failures caused by the memory cap say so. BuildKit reports
