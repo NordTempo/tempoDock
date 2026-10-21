@@ -16,15 +16,19 @@ RestartSec=2
 # Apps never depend on the daemon, so stopping it is always safe.
 KillSignal=SIGTERM
 TimeoutStopSec=20
-StateDirectory=dock
+StateDirectory=dock dock/railpack
 StateDirectoryMode=0700
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/dock
 PrivateTmp=true
-MemoryHigh=96M
-MemoryMax=256M
+# Railpack keeps its tool cache (~150 MB) in /tmp/railpack. On disk it
+# survives restarts and isn't charged to this unit's memory as tmpfs.
+BindPaths=/var/lib/dock/railpack:/tmp/railpack
+# A safety net, sized for the build-plan subprocess (capped at 512 MB on
+# its own). The daemon itself idles around 15 MB.
+MemoryMax=768M
 # Makes the Go runtime return memory after bursts (builds, uploads).
 Environment=GOMEMLIMIT=64MiB
 
