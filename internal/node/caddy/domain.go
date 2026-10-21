@@ -84,12 +84,20 @@ func (p *Proxy) CheckDomain(ctx context.Context, hostname string) (node.DomainCh
 		if ctx.Err() != nil {
 			return dc, ctx.Err()
 		}
+		if errors.Is(err, errNoCertYet) {
+			// Not an error: Caddy issues it on the first HTTPS request.
+			return dc, nil
+		}
 		dc.Error = strings.TrimPrefix(dc.Error+"; "+err.Error(), "; ")
 		return dc, nil
 	}
 	dc.CertificateOK = true
 	return dc, nil
 }
+
+// errNoCertYet means the handshake failed without a certificate to judge:
+// with DNS OK that means issuance is still pending.
+var errNoCertYet = errors.New("no certificate yet")
 
 // checkCertificate handshakes with the local Caddy as hostname.
 func (p *Proxy) checkCertificate(ctx context.Context, hostname string) error {
@@ -105,7 +113,7 @@ func (p *Proxy) checkCertificate(ctx context.Context, hostname string) error {
 		case errors.As(err, &unknownAuthority), errors.As(err, &invalid), errors.As(err, &hostErr):
 			return fmt.Errorf("the certificate served for %s is not valid: %w", hostname, err)
 		default:
-			return fmt.Errorf("no certificate for %s yet: %w", hostname, err)
+			return fmt.Errorf("%w for %s: %w", errNoCertYet, hostname, err)
 		}
 	}
 	return conn.Close()
