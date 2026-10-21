@@ -54,3 +54,25 @@ func TestCheckDomainDNS(t *testing.T) {
 		})
 	}
 }
+
+// With DNS right and no certificate served yet, the check reports no error,
+// so the domain shows as issuing_certificate rather than error.
+func TestCheckDomainNoCertificateYet(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close() // nothing serves TLS there
+	p, err := New(Options{AdminSocket: "/x", HTTPPort: 80, HTTPSPort: port, AskURL: "http://127.0.0.1:1/ask", PublicIPs: []string{"203.0.113.7"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.lookupIP = func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("203.0.113.7")}}, nil
+	}
+	dc, err := p.CheckDomain(context.Background(), "app.example.com")
+	if err != nil || !dc.DNSOK || dc.CertificateOK || dc.Error != "" {
+		t.Fatalf("check = %+v, %v", dc, err)
+	}
+}

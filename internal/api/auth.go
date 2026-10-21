@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -11,7 +13,7 @@ import (
 	"github.com/NordTempo/platform/internal/core"
 )
 
-// sessionCookie holds the UI session secret (HttpOnly, SameSite=Lax).
+// sessionCookie holds the UI session secret (HttpOnly, SameSite=Strict).
 const sessionCookie = "dock_session"
 
 type actorKey struct{}
@@ -59,15 +61,48 @@ func (s *Server) authenticate(a huma.API) func(huma.Context, func(huma.Context))
 	}
 }
 
-type loginInput struct {
-	Body   apitypes.LoginRequest
+// client is how a request arrived: over HTTPS (for the cookie's Secure
+// flag) and from which IP (for login rate limits). Behind a reverse proxy
+// the IP is the proxy's.
+type client struct {
 	secure bool
+	ip     string
 }
 
-// Resolve records whether the request came over HTTPS, for the cookie's
-// Secure flag.
+func clientOf(ctx huma.Context) client {
+	ip := ctx.RemoteAddr()
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
+	return client{secure: ctx.TLS() != nil || ctx.Header("X-Forwarded-Proto") == "https", ip: ip}
+}
+
+func (c client) sessionCookie(secret string, expires time.Time) http.Cookie {
+	return http.Cookie{
+		Name: sessionCookie, Value: secret, Path: "/", Expires: expires,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: c.secure,
+	}
+}
+
+type loginInput struct {
+	Body   apitypes.LoginRequest
+	client client
+}
+
+// Resolve records how the request arrived.
 func (in *loginInput) Resolve(ctx huma.Context) []error {
-	in.secure = ctx.TLS() != nil || ctx.Header("X-Forwarded-Proto") == "https"
+	in.client = clientOf(ctx)
+	return nil
+}
+
+type passwordInput struct {
+	Body   apitypes.ChangePasswordRequest
+	client client
+}
+
+// Resolve records how the request arrived.
+func (in *passwordInput) Resolve(ctx huma.Context) []error {
+	in.client = clientOf(ctx)
 	return nil
 }
 
@@ -88,19 +123,25 @@ func registerAuth(s *Server, a huma.API) {
 	public(a, huma.Operation{
 		OperationID: "login", Method: http.MethodPost, Path: Prefix + "/auth/login",
 		Summary: "Log in to the UI", Description: "Sets an HttpOnly session cookie.", Tags: []string{"auth"},
-		Errors: []int{http.StatusUnauthorized},
+		Errors: []int{http.StatusUnauthorized, http.StatusTooManyRequests},
 	}, func(ctx context.Context, in *loginInput) (*loginOutput, error) {
-		secret, expires, actor, err := s.core.Login(ctx, in.Body.Email, in.Body.Password)
+		secret, expires, actor, err := s.core.Login(ctx, in.Body.Email, in.Body.Password, in.client.ip)
 		if err != nil {
 			return nil, s.problem(err)
 		}
-		return &loginOutput{
-			SetCookie: http.Cookie{
-				Name: sessionCookie, Value: secret, Path: "/", Expires: expires,
-				HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: in.secure,
-			},
-			Body: actor.Me(),
-		}, nil
+		return &loginOutput{SetCookie: in.client.sessionCookie(secret, expires), Body: actor.Me()}, nil
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "change-password", Method: http.MethodPost, Path: Prefix + "/me/password",
+		Summary: "Change your password", Description: "Users only. Ends all your sessions and sets a fresh session cookie.",
+		Tags: []string{"auth"}, DefaultStatus: http.StatusNoContent,
+		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusTooManyRequests},
+	}, func(ctx context.Context, actor core.Actor, in *passwordInput) (*logoutOutput, error) {
+		secret, expires, err := s.core.ChangePassword(ctx, actor, in.Body, in.client.ip)
+		if err != nil {
+			return nil, err
+		}
+		return &logoutOutput{SetCookie: in.client.sessionCookie(secret, expires)}, nil
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "logout", Method: http.MethodPost, Path: Prefix + "/auth/logout",
@@ -111,7 +152,7 @@ func registerAuth(s *Server, a huma.API) {
 				return nil, err
 			}
 		}
-		return &logoutOutput{SetCookie: http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode}}, nil
+		return &logoutOutput{SetCookie: http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode}}, nil
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "me", Method: http.MethodGet, Path: Prefix + "/me",

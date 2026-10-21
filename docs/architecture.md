@@ -91,6 +91,10 @@ queued → building → starting → health_checking → active
 
 If the daemon restarts mid-deploy, any release not yet `active` is marked
 `failed` and its container stopped. The previous release keeps serving.
+Stopping the daemon never stops app containers: in-flight deploys are
+abandoned and finished by recovery on the next start, which also removes
+containers of replaced releases left running. A release keeps its host port
+until its container is confirmed removed.
 
 **Stateful services** (any service with a volume, including databases) use a
 recreate strategy instead: stop the old container, then start the new one,

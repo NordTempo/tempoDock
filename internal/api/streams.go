@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 
@@ -19,14 +21,17 @@ import (
 // heartbeat keeps idle SSE connections (and proxies) alive.
 const heartbeat = 25 * time.Second
 
-// SSE streams end with an `end` event, or an `error` event carrying an
-// apitypes.Error if the stream failed after it started. Errors before the
-// stream starts (auth, not found) are normal problem responses.
-const sseDoc = "\n\nServer-Sent Events. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats."
+// SSE streams start with a `ready` event once the subscription is live
+// (anything published after it is delivered), and end with an `end` event,
+// or an `error` event carrying an apitypes.Error if the stream failed after
+// it started. Errors before the stream starts (auth, not found) are normal
+// problem responses.
+const sseDoc = "\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats."
 
 // sse registers a Server-Sent Events operation. name picks each item's
-// `event:` field; events documents the possible names.
-func sse[I, T any](s *Server, a huma.API, op huma.Operation, events []string, name func(T) string, h func(context.Context, core.Actor, *I) (core.Stream[T], error)) {
+// `event:` field (events documents the possible names) and id its optional
+// `id:` field.
+func sse[I, T any](s *Server, a huma.API, op huma.Operation, events []string, name, id func(T) string, h func(context.Context, core.Actor, *I) (core.Stream[T], error)) {
 	var zero T
 	data := a.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(zero), true, "")
 	op.Description += sseDoc
@@ -38,7 +43,8 @@ func sse[I, T any](s *Server, a huma.API, op huma.Operation, events []string, na
 				Type:     huma.TypeObject,
 				Required: []string{"event", "data"},
 				Properties: map[string]*huma.Schema{
-					"event": {Type: huma.TypeString, Enum: toAny(append(events, "end", "error"))},
+					"event": {Type: huma.TypeString, Enum: toAny(append(events, "ready", "end", "error"))},
+					"id":    {Type: huma.TypeString},
 					"data":  data,
 				},
 			},
@@ -50,16 +56,19 @@ func sse[I, T any](s *Server, a huma.API, op huma.Operation, events []string, na
 			return nil, err
 		}
 		return &huma.StreamResponse{Body: func(hctx huma.Context) {
-			w := newSSEWriter(hctx)
+			w := &sseWriter{hctx: hctx}
 			ctx, cancel := context.WithCancel(hctx.Context())
 			defer cancel()
 			go w.heartbeats(ctx)
-			err := stream(ctx, func(v T) error { return w.event(name(v), v) })
-			if err != nil && ctx.Err() == nil {
-				_ = w.event("error", s.problem(err))
-				return
+			err := stream(ctx, w.ready, func(v T) error { return w.event(name(v), id(v), v) })
+			switch {
+			case err != nil && !w.started():
+				w.problem(s.problem(err))
+			case err != nil && ctx.Err() == nil:
+				_ = w.event("error", "", s.problem(err))
+			default:
+				_ = w.event("end", "", struct{}{})
 			}
-			_ = w.event("end", struct{}{})
 		}}, nil
 	})
 }
@@ -72,38 +81,77 @@ func toAny(ss []string) []any {
 	return out
 }
 
+// sseWriter writes an event stream. Headers go out with the `ready` event
+// (or the first event), so a stream that fails before it is live can still
+// answer with a plain problem response.
 type sseWriter struct {
 	mu    sync.Mutex
-	w     io.Writer
+	hctx  huma.Context
+	w     io.Writer // nil until the stream starts
 	flush func()
 }
 
-func newSSEWriter(hctx huma.Context) *sseWriter {
-	hctx.SetHeader("Content-Type", "text/event-stream")
-	hctx.SetHeader("Cache-Control", "no-cache")
-	hctx.SetHeader("X-Accel-Buffering", "no")
-	hctx.SetStatus(http.StatusOK)
-	w := hctx.BodyWriter()
-	flush := func() {}
-	if f, ok := w.(http.Flusher); ok {
-		flush = f.Flush
-	}
-	flush()
-	return &sseWriter{w: w, flush: flush}
+func (w *sseWriter) started() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.w != nil
 }
 
-func (w *sseWriter) event(name string, v any) error {
+// ready starts the stream and tells the client it is live.
+func (w *sseWriter) ready() { _ = w.event("ready", "", struct{}{}) }
+
+// startLocked writes the headers and the ready event, once.
+func (w *sseWriter) startLocked() error {
+	if w.w != nil {
+		return nil
+	}
+	w.hctx.SetHeader("Content-Type", "text/event-stream")
+	w.hctx.SetHeader("Cache-Control", "no-cache")
+	w.hctx.SetHeader("X-Accel-Buffering", "no")
+	w.hctx.SetStatus(http.StatusOK)
+	w.w = w.hctx.BodyWriter()
+	w.flush = func() {}
+	if f, ok := w.w.(http.Flusher); ok {
+		w.flush = f.Flush
+	}
+	_, err := io.WriteString(w.w, "event: ready\ndata: {}\n\n")
+	return err
+}
+
+func (w *sseWriter) event(name, id string, v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if _, err := fmt.Fprintf(w.w, "event: %s\ndata: %s\n\n", name, b); err != nil {
+	if err := w.startLocked(); err != nil {
 		return err
+	}
+	if name != "ready" {
+		if id != "" {
+			if _, err := fmt.Fprintf(w.w, "id: %s\n", id); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintf(w.w, "event: %s\ndata: %s\n\n", name, b); err != nil {
+			return err
+		}
 	}
 	w.flush()
 	return nil
+}
+
+// problem answers a stream that failed before it started with a normal
+// problem response.
+func (w *sseWriter) problem(err error) {
+	ae, ok := errors.AsType[*apitypes.Error](err)
+	if !ok {
+		ae = &apitypes.Error{Status: http.StatusInternalServerError, Title: "Internal Server Error", Code: apitypes.CodeInternal, Detail: err.Error()}
+	}
+	w.hctx.SetHeader("Content-Type", "application/problem+json")
+	w.hctx.SetStatus(ae.Status)
+	_ = json.NewEncoder(w.hctx.BodyWriter()).Encode(ae)
 }
 
 func (w *sseWriter) heartbeats(ctx context.Context) {
@@ -115,11 +163,22 @@ func (w *sseWriter) heartbeats(ctx context.Context) {
 			return
 		case <-t.C:
 			w.mu.Lock()
-			_, _ = io.WriteString(w.w, ": ping\n\n")
-			w.flush()
+			if w.w != nil {
+				_, _ = io.WriteString(w.w, ": ping\n\n")
+				w.flush()
+			}
 			w.mu.Unlock()
 		}
 	}
+}
+
+// eventID is a live event's SSE `id:`: the release event sequence, so
+// clients can de-duplicate against GET release history.
+func eventID(e apitypes.Event) string {
+	if e.ReleaseEvent != nil {
+		return strconv.FormatInt(e.ReleaseEvent.Seq, 10)
+	}
+	return ""
 }
 
 func registerStreams(s *Server, a huma.API) {
@@ -133,7 +192,7 @@ func registerStreams(s *Server, a huma.API) {
 		Summary: "Live events", Tags: []string{"events"},
 		Description: "Release progress, build logs, service status, domain status and audit events the caller may see. " +
 			"The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.",
-	}, eventNames, func(e apitypes.Event) string { return string(e.Type) },
+	}, eventNames, func(e apitypes.Event) string { return string(e.Type) }, eventID,
 		func(ctx context.Context, actor core.Actor, in *struct {
 			Project     string `query:"project"`
 			Environment string `query:"environment" doc:"Requires project"`
@@ -147,6 +206,7 @@ func registerStreams(s *Server, a huma.API) {
 		Summary: "Follow a build log", Tags: []string{"releases"},
 		Description: "The build log so far, then new lines until the build phase ends.",
 	}, []string{"line"}, func(apitypes.BuildLogLine) string { return "line" },
+		func(l apitypes.BuildLogLine) string { return strconv.Itoa(l.Seq) },
 		func(ctx context.Context, actor core.Actor, in *ReleasePath) (core.Stream[apitypes.BuildLogLine], error) {
 			return s.core.FollowBuildLog(ctx, actor, in.ref(), in.Number)
 		})
@@ -154,8 +214,8 @@ func registerStreams(s *Server, a huma.API) {
 	sse(s, a, huma.Operation{
 		OperationID: "service-logs", Method: http.MethodGet, Path: servicePathT + "/logs",
 		Summary: "Service logs", Tags: []string{"services"},
-		Description: "Output of the active release's container (or `release`), read from the runtime.",
-	}, []string{"line"}, func(apitypes.LogLine) string { return "line" },
+		Description: "Output of the active release's container (or `release`), read from the runtime. For a failed release, the last 200 lines its container wrote before it was removed.",
+	}, []string{"line"}, func(apitypes.LogLine) string { return "line" }, func(apitypes.LogLine) string { return "" },
 		func(ctx context.Context, actor core.Actor, in *struct {
 			ServicePath
 			Release int64  `query:"release" doc:"Release number; default the active release"`

@@ -48,3 +48,15 @@ UPDATE tokens SET last_used_at = ? WHERE id = ?;
 
 -- name: RevokeToken :exec
 UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL;
+
+-- name: SetUserDisabled :exec
+UPDATE users SET disabled_at = ? WHERE id = ?;
+
+-- name: SetUserPassword :exec
+UPDATE users SET password_hash = ? WHERE id = ?;
+
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?;
+
+-- name: DeleteUserSessions :exec
+DELETE FROM sessions WHERE user_id = ?;

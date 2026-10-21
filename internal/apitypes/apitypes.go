@@ -29,6 +29,9 @@ const (
 type Version struct {
 	Version    string `json:"version" example:"v0.1.0"`
 	APIVersion string `json:"api_version" example:"v1"`
+	// MaxUploadBytes caps source uploads (deploy-source); clients can warn
+	// before sending a bigger build context.
+	MaxUploadBytes int64 `json:"max_upload_bytes"`
 }
 
 // Health reports that the daemon is up.
@@ -247,6 +250,10 @@ type VolumeMount struct {
 
 // ReleaseEvent is one progress line of a deploy.
 type ReleaseEvent struct {
+	// Seq increases with every release event (across all releases), so a
+	// client can fetch history and then follow live events without
+	// duplicates. Live events also carry it as the SSE `id:`.
+	Seq           int64     `json:"seq"`
 	ReleaseNumber int64     `json:"release"`
 	Message       string    `json:"message"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -493,6 +500,15 @@ type User struct {
 	Name      string    `json:"name"`
 	Role      Scope     `json:"role" enum:"read,deploy,admin"`
 	CreatedAt time.Time `json:"created_at"`
+	// DisabledAt is set while the user can't log in.
+	DisabledAt *time.Time `json:"disabled_at,omitempty"`
+}
+
+// ChangePasswordRequest changes the caller's own password. All their
+// sessions end; the response carries a fresh one.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password" minLength:"12"`
 }
 
 // CreateUserRequest creates a user.

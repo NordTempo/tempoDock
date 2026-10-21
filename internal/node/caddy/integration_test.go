@@ -490,11 +490,12 @@ func TestIntegrationOnDemandAsk(t *testing.T) {
 	if err != nil || !dc.DNSOK || !dc.CertificateOK || dc.Error != "" {
 		t.Errorf("CheckDomain(ok.test) = %+v, %v", dc, err)
 	}
+	// No certificate served looks like a pending issuance to the node; core
+	// turns it into an error if it stays that way (certPatience).
 	dc, err = tc.proxy.CheckDomain(ctx, "refused.test")
-	if err != nil || !dc.DNSOK || dc.CertificateOK || dc.Error == "" {
+	if err != nil || !dc.DNSOK || dc.CertificateOK || dc.Error != "" {
 		t.Errorf("CheckDomain(refused.test) = %+v, %v", dc, err)
 	}
-	t.Logf("refused.test check error: %s", dc.Error)
 }
 
 func TestIntegrationIdleRSS(t *testing.T) {

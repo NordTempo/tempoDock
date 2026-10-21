@@ -35,7 +35,8 @@ func (s envScope) String() string { return s.project.Name + "/" + s.env.Name }
 func (s svcScope) String() string { return s.envScope.String() + "/" + s.svc.Name }
 
 // nameRe keeps project, environment, service and volume names DNS-safe:
-// they become container names, network names and private hostnames.
+// service names are private hostnames. Docker resources are named by ID
+// (see networkName), and these names never contain the "_" those use.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$`)
 
 func validName(kind, name string) error {

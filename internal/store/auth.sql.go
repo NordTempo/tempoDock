@@ -82,7 +82,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, name, password_hash, role)
 VALUES (?, ?, ?, ?)
-RETURNING id, email, name, password_hash, role, created_at
+RETURNING id, email, name, password_hash, role, created_at, disabled_at
 `
 
 type CreateUserParams struct {
@@ -107,6 +107,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordHash,
 		&i.Role,
 		&i.CreatedAt,
+		&i.DisabledAt,
 	)
 	return i, err
 }
@@ -129,8 +130,26 @@ func (q *Queries) DeleteSession(ctx context.Context, hash string) error {
 	return err
 }
 
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
+	return err
+}
+
+const deleteUserSessions = `-- name: DeleteUserSessions :exec
+DELETE FROM sessions WHERE user_id = ?
+`
+
+func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUserSessions, userID)
+	return err
+}
+
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.email, users.name, users.password_hash, users.role, users.created_at, sessions.expires_at AS session_expires_at
+SELECT users.id, users.email, users.name, users.password_hash, users.role, users.created_at, users.disabled_at, sessions.expires_at AS session_expires_at
 FROM sessions JOIN users ON users.id = sessions.user_id
 WHERE sessions.hash = ?
 `
@@ -150,6 +169,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 		&i.User.PasswordHash,
 		&i.User.Role,
 		&i.User.CreatedAt,
+		&i.User.DisabledAt,
 		&i.SessionExpiresAt,
 	)
 	return i, err
@@ -202,7 +222,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (Token, error
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, name, password_hash, role, created_at FROM users WHERE id = ?
+SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -215,12 +235,13 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.PasswordHash,
 		&i.Role,
 		&i.CreatedAt,
+		&i.DisabledAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, role, created_at FROM users WHERE email = ?
+SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users WHERE email = ?
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -233,6 +254,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PasswordHash,
 		&i.Role,
 		&i.CreatedAt,
+		&i.DisabledAt,
 	)
 	return i, err
 }
@@ -277,7 +299,7 @@ func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, name, password_hash, role, created_at FROM users ORDER BY id
+SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users ORDER BY id
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -296,6 +318,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.PasswordHash,
 			&i.Role,
 			&i.CreatedAt,
+			&i.DisabledAt,
 		); err != nil {
 			return nil, err
 		}
@@ -321,6 +344,34 @@ type RevokeTokenParams struct {
 
 func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) error {
 	_, err := q.db.ExecContext(ctx, revokeToken, arg.RevokedAt, arg.ID)
+	return err
+}
+
+const setUserDisabled = `-- name: SetUserDisabled :exec
+UPDATE users SET disabled_at = ? WHERE id = ?
+`
+
+type SetUserDisabledParams struct {
+	DisabledAt *time.Time
+	ID         int64
+}
+
+func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error {
+	_, err := q.db.ExecContext(ctx, setUserDisabled, arg.DisabledAt, arg.ID)
+	return err
+}
+
+const setUserPassword = `-- name: SetUserPassword :exec
+UPDATE users SET password_hash = ? WHERE id = ?
+`
+
+type SetUserPasswordParams struct {
+	PasswordHash string
+	ID           int64
+}
+
+func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
 	return err
 }
 

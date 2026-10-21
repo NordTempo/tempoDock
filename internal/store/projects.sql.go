@@ -43,7 +43,7 @@ func (q *Queries) CountEnvironmentsByServer(ctx context.Context) ([]CountEnviron
 }
 
 const createEnvironment = `-- name: CreateEnvironment :one
-INSERT INTO environments (project_id, name, server_id) VALUES (?, ?, ?) RETURNING id, project_id, name, server_id, created_at
+INSERT INTO environments (project_id, name, server_id) VALUES (?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network
 `
 
 type CreateEnvironmentParams struct {
@@ -61,6 +61,7 @@ func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentPa
 		&i.Name,
 		&i.ServerID,
 		&i.CreatedAt,
+		&i.Network,
 	)
 	return i, err
 }
@@ -113,7 +114,7 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 }
 
 const getEnvironment = `-- name: GetEnvironment :one
-SELECT id, project_id, name, server_id, created_at FROM environments WHERE id = ?
+SELECT id, project_id, name, server_id, created_at, network FROM environments WHERE id = ?
 `
 
 func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, error) {
@@ -125,12 +126,13 @@ func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, er
 		&i.Name,
 		&i.ServerID,
 		&i.CreatedAt,
+		&i.Network,
 	)
 	return i, err
 }
 
 const getEnvironmentByName = `-- name: GetEnvironmentByName :one
-SELECT id, project_id, name, server_id, created_at FROM environments WHERE project_id = ? AND name = ?
+SELECT id, project_id, name, server_id, created_at, network FROM environments WHERE project_id = ? AND name = ?
 `
 
 type GetEnvironmentByNameParams struct {
@@ -147,6 +149,7 @@ func (q *Queries) GetEnvironmentByName(ctx context.Context, arg GetEnvironmentBy
 		&i.Name,
 		&i.ServerID,
 		&i.CreatedAt,
+		&i.Network,
 	)
 	return i, err
 }
@@ -214,7 +217,7 @@ func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
 }
 
 const listEnvironments = `-- name: ListEnvironments :many
-SELECT id, project_id, name, server_id, created_at FROM environments WHERE project_id = ? ORDER BY name
+SELECT id, project_id, name, server_id, created_at, network FROM environments WHERE project_id = ? ORDER BY name
 `
 
 func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Environment, error) {
@@ -232,6 +235,7 @@ func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Envi
 			&i.Name,
 			&i.ServerID,
 			&i.CreatedAt,
+			&i.Network,
 		); err != nil {
 			return nil, err
 		}

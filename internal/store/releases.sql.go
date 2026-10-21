@@ -46,6 +46,16 @@ func (q *Queries) AddReleaseEvent(ctx context.Context, arg AddReleaseEventParams
 	return i, err
 }
 
+const clearReleaseHostPort = `-- name: ClearReleaseHostPort :exec
+UPDATE releases SET host_port = 0 WHERE id = ? AND status IN ('failed', 'superseded')
+`
+
+// Frees a retired release's port once its containers are gone.
+func (q *Queries) ClearReleaseHostPort(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, clearReleaseHostPort, id)
+	return err
+}
+
 const createRelease = `-- name: CreateRelease :one
 INSERT INTO releases (service_id, number, source, from_release, image_ref, image_id, config, host_port, created_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -406,15 +416,48 @@ func (q *Queries) ListReleases(ctx context.Context, arg ListReleasesParams) ([]R
 	return items, nil
 }
 
+const listRetiredPortHolders = `-- name: ListRetiredPortHolders :many
+SELECT releases.id FROM releases
+JOIN services ON services.id = releases.service_id
+JOIN environments ON environments.id = services.environment_id
+WHERE environments.server_id = ? AND releases.host_port > 0
+  AND releases.status IN ('failed', 'superseded')
+`
+
+// Failed or superseded releases on one server that still hold a host port.
+func (q *Queries) ListRetiredPortHolders(ctx context.Context, serverID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listRetiredPortHolders, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsedHostPorts = `-- name: ListUsedHostPorts :many
 SELECT releases.host_port FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.server_id = ? AND releases.host_port > 0
-  AND releases.status IN ('queued', 'building', 'starting', 'health_checking', 'active')
 `
 
-// Host ports held by releases that are deploying or serving on one server.
+// Host ports held on one server. A release keeps its port until its
+// container is confirmed removed (ClearReleaseHostPort), so a container
+// that is still draining, or failed to stop, never shares it.
 func (q *Queries) ListUsedHostPorts(ctx context.Context, serverID int64) ([]int64, error) {
 	rows, err := q.db.QueryContext(ctx, listUsedHostPorts, serverID)
 	if err != nil {

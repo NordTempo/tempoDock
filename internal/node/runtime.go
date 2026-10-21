@@ -31,10 +31,14 @@ type Containers interface {
 	// HasImage reports whether ref is present locally.
 	HasImage(ctx context.Context, ref string) (bool, error)
 
-	// EnsureNetwork creates the bridge network if it doesn't exist.
-	EnsureNetwork(ctx context.Context, name string) error
-	// EnsureVolume creates the named volume if it doesn't exist. Volumes are
-	// never removed by the runtime.
+	// EnsureNetwork creates the bridge network, labelled with labels'
+	// project and environment, if it doesn't exist. An existing network
+	// labelled for a different project or environment is an error, so one
+	// environment can never join another's network.
+	EnsureNetwork(ctx context.Context, name string, labels Labels) error
+	// EnsureVolume creates the named volume if it doesn't exist. An existing
+	// volume labelled for a different service is an error. Volumes are never
+	// removed by the runtime.
 	EnsureVolume(ctx context.Context, name string, labels Labels) error
 
 	// Start creates and starts a container. Restart policy is always
@@ -116,6 +120,16 @@ func (l Labels) Map() map[string]string {
 		}
 	}
 	return m
+}
+
+// Conflicts reports whether existing (read from a resource) belongs to
+// something other than want: a label set on both sides that differs.
+// Unset labels never conflict, so resources created before a label existed
+// stay usable.
+func (l Labels) Conflicts(want Labels) bool {
+	differs := func(have, want string) bool { return have != "" && want != "" && have != want }
+	return differs(l.Project, want.Project) || differs(l.Environment, want.Environment) ||
+		differs(l.Service, want.Service) || differs(l.Release, want.Release)
 }
 
 // LabelsFrom reads platform labels back from a Docker label map.

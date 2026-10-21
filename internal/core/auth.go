@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -28,8 +29,12 @@ const SessionTTL = 30 * 24 * time.Hour
 // tokenTouchInterval throttles last_used_at writes.
 const tokenTouchInterval = time.Minute
 
-// dummyHash keeps failed logins for unknown emails as slow as wrong passwords.
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("platform-dummy-password"), bcrypt.DefaultCost)
+// dummyHash keeps failed logins for unknown emails as slow as wrong
+// passwords. Lazy: hashing at init would slow every CLI start by ~40ms.
+var dummyHash = sync.OnceValue(func() []byte {
+	h, _ := bcrypt.GenerateFromPassword([]byte("platform-dummy-password"), bcrypt.DefaultCost)
+	return h
+})
 
 func newSecret(prefix string) (secret, hash string) {
 	b := make([]byte, 32)
@@ -96,7 +101,7 @@ func (c *Core) AuthenticateSession(ctx context.Context, secret string) (Actor, e
 	if err != nil {
 		return Actor{}, err
 	}
-	if now().After(row.SessionExpiresAt) {
+	if now().After(row.SessionExpiresAt) || row.User.DisabledAt != nil {
 		return Actor{}, errUnauthenticated
 	}
 	return userActor(row.User), nil
@@ -106,29 +111,170 @@ func userActor(u store.User) Actor {
 	return Actor{Kind: "user", Name: u.Email, Email: u.Email, UserID: u.ID, Scope: apitypes.Scope(u.Role)}
 }
 
+var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password")
+
 // Login checks a user's password and starts a session. It returns the
-// session secret for the cookie.
-func (c *Core) Login(ctx context.Context, email, password string) (secret string, expires time.Time, a Actor, err error) {
-	u, err := c.store.GetUserByEmail(ctx, email)
-	if store.IsNotFound(err) {
-		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
-		return "", time.Time{}, Actor{}, errf(apitypes.CodeUnauthorized, "wrong email or password")
+// session secret for the cookie. Attempts are rate limited per client IP
+// and per email; failures are logged and audited (never the password).
+func (c *Core) Login(ctx context.Context, email, password, clientIP string) (secret string, expires time.Time, a Actor, err error) {
+	t := now()
+	if !c.loginLimit.allow("ip:"+clientIP, t) || !c.loginLimit.allow("email:"+strings.ToLower(email), t) {
+		c.log.Warn("login rate limited", "email", email, "ip", clientIP)
+		return "", time.Time{}, Actor{}, errf(apitypes.CodeRateLimited, "too many login attempts; wait a minute and try again")
+	}
+	u, err := c.checkPassword(ctx, email, password)
+	if err == nil && u.DisabledAt != nil {
+		err = errf(apitypes.CodeUnauthorized, "this account is disabled")
+	}
+	if CodeOf(err) == apitypes.CodeUnauthorized {
+		c.log.Warn("login failed", "email", email, "ip", clientIP, "reason", err.Error())
+		c.audit(ctx, Actor{Kind: "user", Name: email}, "user.login_failed", nil, nil, email, fmt.Sprintf("failed login from %s: %v", clientIP, err))
 	}
 	if err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
-	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
-		return "", time.Time{}, Actor{}, errf(apitypes.CodeUnauthorized, "wrong email or password")
+	secret, expires, err = c.newSession(ctx, u)
+	if err != nil {
+		return "", time.Time{}, Actor{}, err
 	}
+	a = userActor(u)
+	c.audit(ctx, a, "user.login", nil, nil, u.Email, "logged in from "+clientIP)
+	return secret, expires, a, nil
+}
+
+// checkPassword returns the user if password is theirs. At most a few
+// checks run at once, and unknown emails cost as much as wrong passwords.
+func (c *Core) checkPassword(ctx context.Context, email, password string) (store.User, error) {
+	select {
+	case c.bcryptSem <- struct{}{}:
+	case <-ctx.Done():
+		return store.User{}, ctx.Err()
+	}
+	defer func() { <-c.bcryptSem }()
+	u, err := c.store.GetUserByEmail(ctx, email)
+	if store.IsNotFound(err) {
+		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
+		return store.User{}, errWrongPassword
+	}
+	if err != nil {
+		return store.User{}, err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+		return store.User{}, errWrongPassword
+	}
+	return u, nil
+}
+
+func (c *Core) newSession(ctx context.Context, u store.User) (secret string, expires time.Time, err error) {
 	secret, hash := newSecret(sessionPrefix)
 	expires = now().Add(SessionTTL)
 	if err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires}); err != nil {
-		return "", time.Time{}, Actor{}, err
+		return "", time.Time{}, err
 	}
 	_ = c.store.DeleteExpiredSessions(ctx, now())
-	a = userActor(u)
-	c.audit(ctx, a, "user.login", nil, nil, u.Email, "logged in")
-	return secret, expires, a, nil
+	return secret, expires, nil
+}
+
+// ChangePassword changes the calling user's own password. Every session of
+// theirs ends; the returned one replaces the caller's.
+func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangePasswordRequest, clientIP string) (secret string, expires time.Time, err error) {
+	if a.Kind != "user" {
+		return "", time.Time{}, invalid("only users have passwords; tokens can't change them")
+	}
+	if !c.loginLimit.allow("email:"+strings.ToLower(a.Email), now()) {
+		return "", time.Time{}, errf(apitypes.CodeRateLimited, "too many password attempts; wait a minute and try again")
+	}
+	if len(req.NewPassword) < 12 {
+		return "", time.Time{}, invalid("password must be at least 12 characters")
+	}
+	u, err := c.checkPassword(ctx, a.Email, req.CurrentPassword)
+	if CodeOf(err) == apitypes.CodeUnauthorized {
+		c.audit(ctx, a, "user.password_failed", nil, nil, a.Email, "wrong current password from "+clientIP)
+		return "", time.Time{}, invalid("current password is wrong")
+	}
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: string(hash), ID: u.ID}); err != nil {
+			return err
+		}
+		return q.DeleteUserSessions(ctx, u.ID)
+	})
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if secret, expires, err = c.newSession(ctx, u); err != nil {
+		return "", time.Time{}, err
+	}
+	c.audit(ctx, a, "user.password", nil, nil, u.Email, "changed own password; other sessions ended")
+	return secret, expires, nil
+}
+
+// SetUserDisabled disables (ending their sessions) or re-enables a user.
+// Tokens they created are separate credentials and keep working until
+// revoked.
+func (c *Core) SetUserDisabled(ctx context.Context, a Actor, id int64, disabled bool) (apitypes.User, error) {
+	var at *time.Time
+	verb, summary := "enable", "enabled user %s"
+	if disabled {
+		at, verb, summary = ptr(now()), "disable", "disabled user %s and ended their sessions"
+	}
+	u, err := c.otherUser(ctx, a, id, verb)
+	if err != nil {
+		return apitypes.User{}, err
+	}
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.SetUserDisabled(ctx, store.SetUserDisabledParams{DisabledAt: at, ID: u.ID}); err != nil {
+			return err
+		}
+		return q.DeleteUserSessions(ctx, u.ID)
+	})
+	if err != nil {
+		return apitypes.User{}, err
+	}
+	u.DisabledAt = at
+	c.audit(ctx, a, "user."+verb, nil, nil, u.Email, fmt.Sprintf(summary, u.Email))
+	return toUser(u), nil
+}
+
+// DeleteUser deletes a user and their sessions. Their audit history and the
+// tokens they created stay.
+func (c *Core) DeleteUser(ctx context.Context, a Actor, id int64) error {
+	u, err := c.otherUser(ctx, a, id, "delete")
+	if err != nil {
+		return err
+	}
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.DeleteUserSessions(ctx, u.ID); err != nil {
+			return err
+		}
+		return q.DeleteUser(ctx, u.ID)
+	})
+	if err != nil {
+		return err
+	}
+	c.audit(ctx, a, "user.delete", nil, nil, u.Email, "deleted user "+u.Email)
+	return nil
+}
+
+// otherUser loads a user an admin manages; nobody can lock themselves out.
+func (c *Core) otherUser(ctx context.Context, a Actor, id int64, verb string) (store.User, error) {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing users"); err != nil {
+		return store.User{}, err
+	}
+	if a.UserID == id {
+		return store.User{}, invalid("you can't %s your own account", verb)
+	}
+	u, err := c.store.GetUser(ctx, id)
+	if store.IsNotFound(err) {
+		return u, notFound("user %d not found", id)
+	}
+	return u, err
 }
 
 // Logout ends a session. Unknown sessions are ignored.
@@ -305,7 +451,7 @@ func (c *Core) Bootstrap(ctx context.Context, email string) (b Bootstrapped, ok 
 }
 
 func toUser(u store.User) apitypes.User {
-	return apitypes.User{ID: u.ID, Email: u.Email, Name: u.Name, Role: apitypes.Scope(u.Role), CreatedAt: u.CreatedAt}
+	return apitypes.User{ID: u.ID, Email: u.Email, Name: u.Name, Role: apitypes.Scope(u.Role), CreatedAt: u.CreatedAt, DisabledAt: u.DisabledAt}
 }
 
 func toToken(ctx context.Context, names *names, t store.Token) apitypes.Token {

@@ -49,7 +49,7 @@ func New(c *core.Core, opts Options) http.Handler {
 	mux := http.NewServeMux()
 	newAPI(mux, &Server{core: c, opts: opts})
 	mux.Handle("/", uiHandler())
-	return mux
+	return guard(mux)
 }
 
 // Spec returns the OpenAPI document (JSON) without a running daemon.
@@ -119,6 +119,8 @@ func codeForStatus(status int) apitypes.ErrorCode {
 		return apitypes.CodeConflict
 	case http.StatusRequestEntityTooLarge:
 		return apitypes.CodeTooLarge
+	case http.StatusTooManyRequests:
+		return apitypes.CodeRateLimited
 	}
 	return apitypes.CodeInternal
 }
@@ -137,6 +139,8 @@ func statusForCode(code apitypes.ErrorCode) int {
 		return http.StatusConflict
 	case apitypes.CodeTooLarge:
 		return http.StatusRequestEntityTooLarge
+	case apitypes.CodeRateLimited:
+		return http.StatusTooManyRequests
 	}
 	return http.StatusInternalServerError
 }
@@ -194,7 +198,7 @@ func public[I, O any](a huma.API, op huma.Operation, h func(context.Context, *I)
 	huma.Register(a, op, h)
 }
 
-func registerSystem(_ *Server, a huma.API) {
+func registerSystem(s *Server, a huma.API) {
 	public(a, huma.Operation{
 		OperationID: "health", Method: http.MethodGet, Path: Prefix + "/health",
 		Summary: "Daemon health and version", Tags: []string{"system"},
@@ -205,7 +209,7 @@ func registerSystem(_ *Server, a huma.API) {
 		OperationID: "version", Method: http.MethodGet, Path: Prefix + "/version",
 		Summary: "Server and API version, for client compatibility checks", Tags: []string{"system"},
 	}, func(context.Context, *struct{}) (*out[apitypes.Version], error) {
-		return reply(apitypes.Version{Version: version.Version, APIVersion: apitypes.APIVersion}, nil)
+		return reply(apitypes.Version{Version: version.Version, APIVersion: apitypes.APIVersion, MaxUploadBytes: s.opts.MaxUploadBytes}, nil)
 	})
 }
 

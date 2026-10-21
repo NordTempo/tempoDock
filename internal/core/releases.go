@@ -38,7 +38,6 @@ type releaseConfig struct {
 	MemoryMB           int           `json:"memory_mb"`
 	CPUs               float64       `json:"cpus"`
 	Mounts             []configMount `json:"mounts"`
-	Network            string        `json:"network"`
 	Aliases            []string      `json:"aliases"`
 	// Repo holds the deploy settings that came from dock.toml, so config
 	// releases built on this one keep them.
@@ -124,14 +123,32 @@ func (c *Core) openConfig(sealed []byte) (releaseConfig, error) {
 	return cfg, json.Unmarshal(b, &cfg)
 }
 
-func networkName(es envScope) string { return "dock-" + es.project.Name + "-" + es.env.Name }
+// Docker resource names are built from DB IDs, never from user-chosen names:
+// "a"/"b-c" and "a-b"/"c" would otherwise share a network. Underscores keep
+// them apart from pre-ID names (project, environment and service names never
+// contain one). Labels carry the same IDs for tracing a resource back.
+
+// networkName is the environment's private network. Environments that had
+// containers before ID-based naming keep their old network (migration 0002).
+func networkName(es envScope) string {
+	if es.env.Network != "" {
+		return es.env.Network
+	}
+	return fmt.Sprintf("dock_p%d_e%d", es.project.ID, es.env.ID)
+}
 
 func containerName(ss svcScope, number int64) string {
-	return fmt.Sprintf("%s-%s-%s-%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
+	return fmt.Sprintf("dock_p%d_e%d_s%d_r%d", ss.project.ID, ss.env.ID, ss.svc.ID, number)
 }
 
 func buildTag(ss svcScope, number int64) string {
-	return fmt.Sprintf("dock/%s-%s-%s:%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
+	return fmt.Sprintf("dock/p%d_e%d_s%d:%d", ss.project.ID, ss.env.ID, ss.svc.ID, number)
+}
+
+// volumeName is the Docker name of a new volume. It is stored with the
+// volume, so volumes created under older naming keep their name and data.
+func volumeName(ss svcScope, volume string) string {
+	return fmt.Sprintf("dock_p%d_e%d_s%d_%s", ss.project.ID, ss.env.ID, ss.svc.ID, volume)
 }
 
 // resolveConfig builds the container config for a service from its live
@@ -215,7 +232,6 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 		MemoryMB:           int(target.MemoryMb),
 		CPUs:               target.Cpus,
 		Mounts:             []configMount{},
-		Network:            networkName(ss.envScope),
 		Aliases:            []string{target.Name},
 	}
 	if cfg.HealthCheckTimeout == 0 {
@@ -302,16 +318,23 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 		if r, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
 			return deployInProgress(ss, r)
 		}
+		// Re-checked in the transaction: ArchiveService may have won a race.
+		svc, err := q.GetService(ctx, ss.svc.ID)
+		if err != nil {
+			return err
+		}
+		if svc.ArchivedAt != nil {
+			return invalid("service %s is archived", ss)
+		}
+		ss.svc = svc
 		if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage {
 			// A deploy takes the service's own staged changes with it.
 			if _, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID); err != nil {
 				return err
 			}
-			svc, err := q.GetService(ctx, ss.svc.ID)
-			if err != nil {
+			if ss.svc, err = q.GetService(ctx, ss.svc.ID); err != nil {
 				return err
 			}
-			ss.svc = svc
 		}
 		number, err := q.NextReleaseNumber(ctx, ss.svc.ID)
 		if err != nil {
@@ -327,6 +350,9 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 			}
 			if params.ImageRef == "" {
 				return invalid("no image given and service %s has no image setting", ss)
+			}
+			if err := validateImageRef(params.ImageRef); err != nil {
+				return err
 			}
 		case apitypes.SourceUpload:
 			params.ImageRef = buildTag(ss, number)
@@ -413,6 +439,12 @@ func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body i
 	if ss.svc.ArchivedAt != nil {
 		return apitypes.Release{}, invalid("service %s is archived", ss)
 	}
+	done, err := c.beginUpload(ss)
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	// Held until the release exists, which then blocks further deploys.
+	defer done()
 	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
 		return apitypes.Release{}, deployInProgress(ss, r)
 	}
@@ -432,6 +464,31 @@ func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body i
 	}
 	c.audit(ctx, a, "release.deploy", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d from source upload", rel.Number))
 	return c.toRelease(ctx, ss, rel, false)
+}
+
+// maxConcurrentUploads caps source uploads streaming to disk at once on
+// this server, whatever the service.
+const maxConcurrentUploads = 2
+
+// beginUpload claims the right to stream a source upload for a service:
+// one per service, and at most maxConcurrentUploads per server, so parallel
+// uploads can't fill the disk before the in-flight check sees them. Call
+// done when the upload is saved and its release created (or it failed).
+func (c *Core) beginUpload(ss svcScope) (done func(), err error) {
+	c.uploadsMu.Lock()
+	defer c.uploadsMu.Unlock()
+	switch {
+	case c.uploads[ss.svc.ID]:
+		return nil, errf(apitypes.CodeDeployInProgress, "a source upload for %s is already in progress; wait for it to finish", ss)
+	case len(c.uploads) >= maxConcurrentUploads:
+		return nil, errf(apitypes.CodeConflict, "%d source uploads are already in progress on this server; try again in a moment", len(c.uploads))
+	}
+	c.uploads[ss.svc.ID] = true
+	return func() {
+		c.uploadsMu.Lock()
+		delete(c.uploads, ss.svc.ID)
+		c.uploadsMu.Unlock()
+	}, nil
 }
 
 func (c *Core) saveUpload(body io.Reader, maxBytes int64) (string, error) {
@@ -591,7 +648,7 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 		}
 		out.Events = make([]apitypes.ReleaseEvent, 0, len(evs))
 		for _, e := range evs {
-			out.Events = append(out.Events, apitypes.ReleaseEvent{ReleaseNumber: r.Number, Message: e.Message, CreatedAt: e.CreatedAt})
+			out.Events = append(out.Events, apitypes.ReleaseEvent{Seq: e.ID, ReleaseNumber: r.Number, Message: e.Message, CreatedAt: e.CreatedAt})
 		}
 	}
 	return out, nil
@@ -614,7 +671,7 @@ func (c *Core) releaseEvent(ctx context.Context, ss svcScope, r store.Release, m
 	c.log.Info(msg, "service", ss.String())
 	c.publish(ss, apitypes.Event{
 		Type:         apitypes.EventReleaseEvent,
-		ReleaseEvent: &apitypes.ReleaseEvent{ReleaseNumber: r.Number, Message: msg, CreatedAt: row.CreatedAt},
+		ReleaseEvent: &apitypes.ReleaseEvent{Seq: row.ID, ReleaseNumber: r.Number, Message: msg, CreatedAt: row.CreatedAt},
 	})
 }
 

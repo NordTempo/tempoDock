@@ -70,6 +70,15 @@ type Core struct {
 	statusMu sync.Mutex
 	status   map[int64]apitypes.ServiceStatus // by service ID
 
+	// loginLimit throttles password attempts per client IP and per email;
+	// bcryptSem caps concurrent password checks (each is ~50ms of CPU).
+	loginLimit *limiter
+	bcryptSem  chan struct{}
+
+	// uploads holds the services with a source upload streaming to disk.
+	uploadsMu sync.Mutex
+	uploads   map[int64]bool
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -96,6 +105,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		buildSem:   make(chan struct{}, 1),
 		domainKick: make(chan struct{}, 1),
 		status:     map[int64]apitypes.ServiceStatus{},
+		uploads:    map[int64]bool{},
+		loginLimit: newLimiter(5, 10*time.Second),
+		bcryptSem:  make(chan struct{}, 2),
 		drain:      DefaultCutoverDrain,
 	}
 	if o.CutoverDrain > 0 {
@@ -137,6 +149,7 @@ func (c *Core) Start(ctx context.Context) error {
 	if c.rt == nil {
 		return errors.New("core: no runtime")
 	}
+	c.clearTempFiles()
 	if err := c.recover(ctx); err != nil {
 		return fmt.Errorf("recover: %w", err)
 	}
@@ -157,8 +170,28 @@ func (c *Core) Start(ctx context.Context) error {
 	return nil
 }
 
-// Close cancels in-flight deploys (they fail with "interrupted" and clean up
-// their containers) and waits for background work to finish.
+// clearTempFiles removes source uploads and unpacked build contexts left by
+// deploys that a crash or restart cut short; only the deploy that created
+// them deletes them otherwise. Nothing can be using them yet: Start runs
+// before the API serves (and not in admin commands, which use New alone).
+// builds/work is where the local builder unpacks contexts (internal/cli).
+func (c *Core) clearTempFiles() {
+	for _, pattern := range []string{
+		filepath.Join(c.cfg.DataDir, "uploads", "*"),
+		filepath.Join(c.cfg.DataDir, "builds", "work", "build-*"),
+	} {
+		paths, _ := filepath.Glob(pattern)
+		for _, p := range paths {
+			if err := os.RemoveAll(p); err != nil {
+				c.log.Warn("remove temp file", "path", p, "err", err)
+			}
+		}
+	}
+}
+
+// Close abandons in-flight deploys and waits for background work to finish.
+// It never stops or waits on app containers: the next Start's recovery
+// fails abandoned releases and removes their containers.
 func (c *Core) Close() {
 	c.cancel()
 	c.wg.Wait()

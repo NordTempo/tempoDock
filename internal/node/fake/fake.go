@@ -28,8 +28,8 @@ type Runtime struct {
 	containers map[string]*node.Container
 	specs      map[string]node.ContainerSpec
 	images     map[string]string
-	networks   map[string]bool
-	volumes    map[string]bool
+	networks   map[string]node.Labels
+	volumes    map[string]node.Labels
 	routes     []node.Route
 	ops        []string
 	logs       map[string][]node.LogLine
@@ -40,6 +40,7 @@ type Runtime struct {
 	buildErr    error
 	pullErr     error
 	startErr    error
+	stopErr     error
 	healthErr   func(node.ContainerSpec) error
 	exitOnStart bool
 	routesErr   error
@@ -55,8 +56,8 @@ func New() *Runtime {
 		containers: map[string]*node.Container{},
 		specs:      map[string]node.ContainerSpec{},
 		images:     map[string]string{},
-		networks:   map[string]bool{},
-		volumes:    map[string]bool{},
+		networks:   map[string]node.Labels{},
+		volumes:    map[string]node.Labels{},
 		logs:       map[string][]node.LogLine{},
 		nextPort:   40000,
 	}
@@ -70,6 +71,9 @@ func (r *Runtime) FailPull(err error) { r.mu.Lock(); r.pullErr = err; r.mu.Unloc
 
 // FailStart makes every Start return err.
 func (r *Runtime) FailStart(err error) { r.mu.Lock(); r.startErr = err; r.mu.Unlock() }
+
+// FailStop makes every Stop return err, leaving the container running.
+func (r *Runtime) FailStop(err error) { r.mu.Lock(); r.stopErr = err; r.mu.Unlock() }
 
 // FailHealthCheck makes health checks fail for containers where fn returns
 // an error. Nil makes every check pass.
@@ -235,19 +239,39 @@ func (r *Runtime) HasImage(_ context.Context, ref string) (bool, error) {
 }
 
 // EnsureNetwork implements node.Containers.
-func (r *Runtime) EnsureNetwork(_ context.Context, name string) error {
+func (r *Runtime) EnsureNetwork(_ context.Context, name string, labels node.Labels) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.networks[name] = true
+	labels = node.Labels{Project: labels.Project, Environment: labels.Environment}
+	if have, ok := r.networks[name]; ok {
+		if have.Conflicts(labels) {
+			return fmt.Errorf("network %q belongs to another environment", name)
+		}
+		return nil
+	}
+	r.networks[name] = labels
 	return nil
 }
 
 // EnsureVolume implements node.Containers.
-func (r *Runtime) EnsureVolume(_ context.Context, name string, _ node.Labels) error {
+func (r *Runtime) EnsureVolume(_ context.Context, name string, labels node.Labels) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.volumes[name] = true
+	if have, ok := r.volumes[name]; ok {
+		if have.Conflicts(labels) {
+			return fmt.Errorf("volume %q belongs to another service", name)
+		}
+		return nil
+	}
+	r.volumes[name] = labels
 	return nil
+}
+
+// Networks returns the names of networks created so far, sorted.
+func (r *Runtime) Networks() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Sorted(maps.Keys(r.networks))
 }
 
 // Start implements node.Containers.
@@ -303,6 +327,9 @@ func (r *Runtime) Stop(_ context.Context, id string, _ time.Duration) error {
 		return fmt.Errorf("container %s: %w", id, node.ErrNotFound)
 	}
 	r.op("stop %s", c.Name)
+	if r.stopErr != nil {
+		return r.stopErr
+	}
 	c.State = node.StateExited
 	return nil
 }
@@ -314,6 +341,9 @@ func (r *Runtime) Remove(_ context.Context, id string) error {
 	c, ok := r.containers[id]
 	if !ok {
 		return fmt.Errorf("container %s: %w", id, node.ErrNotFound)
+	}
+	if c.State == node.StateRunning {
+		return fmt.Errorf("container %s is running; stop it first", c.Name)
 	}
 	r.op("remove %s", c.Name)
 	delete(r.containers, id)

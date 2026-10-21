@@ -32,6 +32,9 @@ func pendingSettings(s store.Service) (*apitypes.ServiceSettings, error) {
 }
 
 func validateSettings(s apitypes.ServiceSettings) error {
+	if err := validateImageRef(s.Image); err != nil {
+		return err
+	}
 	switch {
 	case s.Port < 0 || s.Port > 65535:
 		return invalid("port must be between 0 and 65535")
@@ -173,27 +176,47 @@ func (c *Core) ArchiveService(ctx context.Context, a Actor, ref ServiceRef) (api
 	if err != nil {
 		return apitypes.Service{}, err
 	}
-	if ss.svc.ArchivedAt != nil {
-		return c.toService(ctx, ss, apitypes.PendingChanges{})
-	}
-	if inflight, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
-		return apitypes.Service{}, errf(apitypes.CodeDeployInProgress, "release %d of %s is deploying; wait for it to finish before archiving", inflight.Number, ss)
-	}
-	n := now()
-	if err := c.store.ArchiveService(ctx, store.ArchiveServiceParams{ArchivedAt: &n, ID: ss.svc.ID}); err != nil {
+	// One transaction, so no deploy can start between the check and the
+	// archive (startRelease re-checks archived_at in its own).
+	already := false
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		svc, err := q.GetService(ctx, ss.svc.ID)
+		if err != nil {
+			return err
+		}
+		if ss.svc = svc; svc.ArchivedAt != nil {
+			already = true
+			return nil
+		}
+		if inflight, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+			return errf(apitypes.CodeDeployInProgress, "release %d of %s is deploying; wait for it to finish before archiving", inflight.Number, ss)
+		} else if !store.IsNotFound(err) {
+			return err
+		}
+		n := now()
+		ss.svc.ArchivedAt = &n
+		return q.ArchiveService(ctx, store.ArchiveServiceParams{ArchivedAt: &n, ID: ss.svc.ID})
+	})
+	if err != nil {
 		return apitypes.Service{}, err
 	}
-	ss.svc.ArchivedAt = &n
+	if already {
+		return c.toService(ctx, ss, apitypes.PendingChanges{})
+	}
 	// Routes first, so no traffic goes to a container that is stopping.
 	if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
 		c.log.Error("apply routes after archive", "service", ss.String(), "err", err)
 	}
 	if active, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
-		if active.ContainerID != "" {
-			c.removeContainer(ctx, ss.env.ServerID, active.ContainerID)
+		removeErr := c.removeReleaseContainers(ctx, ss.env.ServerID, active.ID)
+		if removeErr != nil {
+			c.log.Error("stop archived service", "service", ss.String(), "err", removeErr)
 		}
 		if err := c.store.SupersedeRelease(ctx, active.ID); err != nil {
 			return apitypes.Service{}, err
+		}
+		if removeErr == nil {
+			c.freePort(ctx, active.ID)
 		}
 	}
 	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceNone})
@@ -235,7 +258,7 @@ func (c *Core) AddVolume(ctx context.Context, a Actor, ref ServiceRef, req apity
 	}
 	_, err = c.store.CreateVolume(ctx, store.CreateVolumeParams{
 		ServiceID: ss.svc.ID, Name: req.Name, MountPath: path.Clean(req.MountPath), Pending: true,
-		DockerName: fmt.Sprintf("%s-%s-%s-%s", ss.project.Name, ss.env.Name, ss.svc.Name, req.Name),
+		DockerName: volumeName(ss, req.Name),
 	})
 	if store.IsUnique(err) {
 		return apitypes.ChangeResult{}, conflict("service %s already has a volume named %s or mounted at %s", ss, req.Name, req.MountPath)

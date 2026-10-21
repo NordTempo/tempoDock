@@ -136,13 +136,17 @@ func (r *Runtime) HasImage(ctx context.Context, ref string) (bool, error) {
 }
 
 // EnsureNetwork creates a managed bridge network called name if missing. It
-// fails if an unmanaged network already uses the name.
-func (r *Runtime) EnsureNetwork(ctx context.Context, name string) error {
+// fails if an unmanaged network already uses the name, or a managed one
+// labelled for another project or environment.
+func (r *Runtime) EnsureNetwork(ctx context.Context, name string, labels node.Labels) error {
 	res, err := r.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
 	switch {
 	case err == nil && res.Network.Name == name:
 		if !isManaged(res.Network.Labels) {
 			return fmt.Errorf("network %q exists but is not managed by the platform", name)
+		}
+		if node.LabelsFrom(res.Network.Labels).Conflicts(labels) {
+			return fmt.Errorf("network %q belongs to another environment", name)
 		}
 		return nil
 	case err != nil && !cerrdefs.IsNotFound(err):
@@ -150,7 +154,7 @@ func (r *Runtime) EnsureNetwork(ctx context.Context, name string) error {
 	}
 	_, err = r.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
 		Driver: "bridge",
-		Labels: map[string]string{node.LabelManaged: "true"},
+		Labels: node.Labels{Project: labels.Project, Environment: labels.Environment}.Map(),
 	})
 	if err != nil {
 		return fmt.Errorf("create network %s: %w", name, err)
@@ -159,13 +163,17 @@ func (r *Runtime) EnsureNetwork(ctx context.Context, name string) error {
 }
 
 // EnsureVolume creates a managed volume called name if missing. It fails if
-// an unmanaged volume already uses the name. Existing labels are left as is.
+// an unmanaged volume already uses the name, or a managed one labelled for
+// another service. Existing labels are left as is.
 func (r *Runtime) EnsureVolume(ctx context.Context, name string, labels node.Labels) error {
 	res, err := r.cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	switch {
 	case err == nil:
 		if !isManaged(res.Volume.Labels) {
 			return fmt.Errorf("volume %q exists but is not managed by the platform", name)
+		}
+		if node.LabelsFrom(res.Volume.Labels).Conflicts(labels) {
+			return fmt.Errorf("volume %q belongs to another service", name)
 		}
 		return nil
 	case !cerrdefs.IsNotFound(err):
@@ -195,12 +203,24 @@ func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Cont
 	if err != nil {
 		return node.Container{}, fmt.Errorf("create container %s: %w", spec.Name, err)
 	}
+	// From here on, any failure (including ctx being cancelled) removes the
+	// container: the caller gets no ID, so it could never clean it up, and a
+	// stray container on a stateful service's volume must not keep running.
+	cleanup := func() {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_, _ = r.cli.ContainerRemove(cctx, created.ID, client.ContainerRemoveOptions{Force: true})
+	}
 	if _, err := r.cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		// Don't leave a half-made container holding the name.
-		_, _ = r.cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+		cleanup()
 		return node.Container{}, fmt.Errorf("start container %s: %w", spec.Name, err)
 	}
-	return r.Inspect(ctx, created.ID)
+	c, err := r.Inspect(ctx, created.ID)
+	if err != nil {
+		cleanup()
+		return node.Container{}, err
+	}
+	return c, nil
 }
 
 // checkDeps refuses to attach a container to unmanaged networks or volumes.
@@ -214,6 +234,9 @@ func (r *Runtime) checkDeps(ctx context.Context, spec node.ContainerSpec) error 
 		if err != nil || res.Network.Name != spec.Network || !isManaged(res.Network.Labels) {
 			return fmt.Errorf("network %q does not exist or is not managed by the platform", spec.Network)
 		}
+		if node.LabelsFrom(res.Network.Labels).Conflicts(spec.Labels) {
+			return fmt.Errorf("network %q belongs to another environment", spec.Network)
+		}
 	}
 	for _, m := range spec.Mounts {
 		res, err := r.cli.VolumeInspect(ctx, m.Volume, client.VolumeInspectOptions{})
@@ -222,6 +245,9 @@ func (r *Runtime) checkDeps(ctx context.Context, spec node.ContainerSpec) error 
 		}
 		if err != nil || !isManaged(res.Volume.Labels) {
 			return fmt.Errorf("volume %q does not exist or is not managed by the platform", m.Volume)
+		}
+		if node.LabelsFrom(res.Volume.Labels).Conflicts(spec.Labels) {
+			return fmt.Errorf("volume %q belongs to another service", m.Volume)
 		}
 	}
 	return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,9 +16,17 @@ import (
 
 var labelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// normalizeHostname lowercases and validates a hostname.
+var numericRe = regexp.MustCompile(`^[0-9]+$`)
+
+// normalizeHostname lowercases and validates a hostname. IP addresses,
+// localhost and single-label names are refused: they aren't public names,
+// and an IP "domain" would route the server's own address (making a page
+// on it same-site with the dashboard).
 func normalizeHostname(h string) (string, error) {
 	h = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(h)), ".")
+	if _, err := netip.ParseAddr(strings.Trim(h, "[]")); err == nil {
+		return "", invalid("%q is an IP address; domains must be hostnames like app.example.com", h)
+	}
 	labels := strings.Split(h, ".")
 	if len(h) > 253 || len(labels) < 2 {
 		return "", invalid("%q is not a valid hostname; use a full name like app.example.com", h)
@@ -26,6 +35,12 @@ func normalizeHostname(h string) (string, error) {
 		if !labelRe.MatchString(l) {
 			return "", invalid("%q is not a valid hostname (label %q)", h, l)
 		}
+	}
+	switch tld := labels[len(labels)-1]; {
+	case tld == "localhost":
+		return "", invalid("%q is a localhost name; domains must be public hostnames", h)
+	case numericRe.MatchString(tld):
+		return "", invalid("%q is not a valid hostname (all-numeric top-level label %q)", h, tld)
 	}
 	return h, nil
 }
@@ -247,6 +262,9 @@ func (c *Core) checkDomains() {
 	type backoff struct {
 		next  time.Time
 		delay time.Duration
+		// dnsOK is when DNS was first seen right, i.e. when the first
+		// HTTPS handshake asked Caddy to issue a certificate.
+		dnsOK time.Time
 	}
 	state := map[int64]*backoff{}
 	for {
@@ -264,7 +282,7 @@ func (c *Core) checkDomains() {
 				state[d.ID] = b
 			}
 			if !time.Now().Before(b.next) {
-				c.checkDomain(c.ctx, d)
+				c.checkDomain(c.ctx, d, &b.dnsOK)
 				b.next = time.Now().Add(b.delay)
 				b.delay = min(b.delay*2, domainCheckMax)
 			}
@@ -297,7 +315,13 @@ func (c *Core) checkDomains() {
 	}
 }
 
-func (c *Core) checkDomain(ctx context.Context, d store.Domain) {
+// certPatience is how long a certificate may stay pending after DNS is
+// right before the domain shows an error.
+const certPatience = 10 * time.Minute
+
+// checkDomain updates one domain's status. dnsOK tracks when its DNS was
+// first seen right, to tell a pending certificate from one that never comes.
+func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time) {
 	ss, err := c.scopeOf(ctx, d.ServiceID)
 	if err != nil || ss.svc.ArchivedAt != nil {
 		return
@@ -311,6 +335,7 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain) {
 	case err != nil:
 		reason = "could not check: " + err.Error()
 	case !check.DNSOK:
+		*dnsOK = time.Time{}
 		status = apitypes.DomainWaitingForDNS
 		reason = check.Error
 		if reason == "" {
@@ -320,8 +345,13 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain) {
 		status, reason = apitypes.DomainActive, ""
 	case check.Error != "":
 		status, reason = apitypes.DomainError, check.Error
-	default:
+	case dnsOK.IsZero() || time.Since(*dnsOK) < certPatience:
+		if dnsOK.IsZero() {
+			*dnsOK = time.Now()
+		}
 		status, reason = apitypes.DomainIssuingCertificate, ""
+	default:
+		status, reason = apitypes.DomainError, fmt.Sprintf("no certificate after %s; check that ports 80 and 443 reach this server and see Caddy's log", certPatience)
 	}
 	if string(status) == d.Status && reason == d.StatusReason {
 		return
