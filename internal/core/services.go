@@ -350,11 +350,25 @@ func (c *Core) toService(ctx context.Context, ss svcScope, pending apitypes.Pend
 // (nil if none) and whether it has an applied volume. toService loads that
 // for one service; Overview loads it for a whole project at once.
 func (c *Core) serviceOf(ss svcScope, pending apitypes.PendingChanges, active *int64, stateful bool) apitypes.Service {
-	return apitypes.Service{
+	s := apitypes.Service{
 		ID: ss.svc.ID, Project: ss.project.Name, Environment: ss.env.Name, Name: ss.svc.Name,
 		ServiceSettings: settingsOf(ss.svc), Status: c.getStatus(ss.svc.ID),
 		ActiveRelease: active, Stateful: stateful,
 		CreatedAt: ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt,
-		PendingChanges: pending.CountFor(ss.svc.Name),
+		PendingChanges:    pending.CountFor(ss.svc.Name),
+		EffectiveMemoryMB: int(ss.svc.MemoryMb), EffectiveCPUs: ss.svc.Cpus,
 	}
+	// The same defaults releases get (releaseConfig).
+	if s.EffectiveMemoryMB == 0 {
+		s.EffectiveMemoryMB, s.MemoryFromDefault = c.cfg.Defaults.MemoryMB, true
+	}
+	if s.EffectiveCPUs == 0 {
+		s.EffectiveCPUs, s.CPUsFromDefault = c.cfg.Defaults.CPUs, true
+	}
+	if active != nil {
+		if u, ok := c.stats.serviceUsage(ss.svc.ID); ok {
+			s.Usage = &u
+		}
+	}
+	return s
 }

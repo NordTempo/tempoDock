@@ -24,50 +24,40 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 	return err
 }
 
-const countEnvironmentsByServer = `-- name: CountEnvironmentsByServer :many
-SELECT server_id, count(*) AS environments FROM environments GROUP BY server_id
+const countKindEnvironments = `-- name: CountKindEnvironments :one
+SELECT count(*) FROM environments WHERE project_id = ? AND kind = ?
 `
 
-type CountEnvironmentsByServerRow struct {
-	ServerID     int64
-	Environments int64
+type CountKindEnvironmentsParams struct {
+	ProjectID int64
+	Kind      string
 }
 
-func (q *Queries) CountEnvironmentsByServer(ctx context.Context) ([]CountEnvironmentsByServerRow, error) {
-	rows, err := q.query(ctx, q.countEnvironmentsByServerStmt, countEnvironmentsByServer)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []CountEnvironmentsByServerRow
-	for rows.Next() {
-		var i CountEnvironmentsByServerRow
-		if err := rows.Scan(&i.ServerID, &i.Environments); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) CountKindEnvironments(ctx context.Context, arg CountKindEnvironmentsParams) (int64, error) {
+	row := q.queryRow(ctx, q.countKindEnvironmentsStmt, countKindEnvironments, arg.ProjectID, arg.Kind)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createEnvironment = `-- name: CreateEnvironment :one
-INSERT INTO environments (project_id, name, server_id) VALUES (?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network, apply_error
+INSERT INTO environments (project_id, name, kind, server_id) VALUES (?, ?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind
 `
 
 type CreateEnvironmentParams struct {
 	ProjectID int64
 	Name      string
+	Kind      string
 	ServerID  int64
 }
 
 func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentParams) (Environment, error) {
-	row := q.queryRow(ctx, q.createEnvironmentStmt, createEnvironment, arg.ProjectID, arg.Name, arg.ServerID)
+	row := q.queryRow(ctx, q.createEnvironmentStmt, createEnvironment,
+		arg.ProjectID,
+		arg.Name,
+		arg.Kind,
+		arg.ServerID,
+	)
 	var i Environment
 	err := row.Scan(
 		&i.ID,
@@ -77,6 +67,7 @@ func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentPa
 		&i.CreatedAt,
 		&i.Network,
 		&i.ApplyError,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -98,43 +89,51 @@ func (q *Queries) CreateProject(ctx context.Context, name string) (Project, erro
 }
 
 const createServer = `-- name: CreateServer :one
-INSERT INTO servers (name, role, builder, local, status, last_seen_at)
-VALUES (?, ?, ?, ?, 'online', ?)
-RETURNING id, name, role, builder, local, status, last_seen_at, created_at
+INSERT INTO servers (name, accepts_production, accepts_non_production, builder, local, status, last_seen_at, version)
+VALUES (?, ?, ?, ?, ?, 'online', ?, ?)
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version
 `
 
 type CreateServerParams struct {
-	Name       string
-	Role       string
-	Builder    bool
-	Local      bool
-	LastSeenAt *time.Time
+	Name                 string
+	AcceptsProduction    bool
+	AcceptsNonProduction bool
+	Builder              bool
+	Local                bool
+	LastSeenAt           *time.Time
+	Version              string
 }
 
 func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Server, error) {
 	row := q.queryRow(ctx, q.createServerStmt, createServer,
 		arg.Name,
-		arg.Role,
+		arg.AcceptsProduction,
+		arg.AcceptsNonProduction,
 		arg.Builder,
 		arg.Local,
 		arg.LastSeenAt,
+		arg.Version,
 	)
 	var i Server
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Role,
 		&i.Builder,
 		&i.Local,
 		&i.Status,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.AcceptsProduction,
+		&i.AcceptsNonProduction,
+		&i.DisabledForPlacement,
+		&i.MemoryBytes,
+		&i.Version,
 	)
 	return i, err
 }
 
 const getEnvironment = `-- name: GetEnvironment :one
-SELECT id, project_id, name, server_id, created_at, network, apply_error FROM environments WHERE id = ?
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE id = ?
 `
 
 func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, error) {
@@ -148,12 +147,13 @@ func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, er
 		&i.CreatedAt,
 		&i.Network,
 		&i.ApplyError,
+		&i.Kind,
 	)
 	return i, err
 }
 
 const getEnvironmentByName = `-- name: GetEnvironmentByName :one
-SELECT id, project_id, name, server_id, created_at, network, apply_error FROM environments WHERE project_id = ? AND name = ?
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE project_id = ? AND name = ?
 `
 
 type GetEnvironmentByNameParams struct {
@@ -172,12 +172,13 @@ func (q *Queries) GetEnvironmentByName(ctx context.Context, arg GetEnvironmentBy
 		&i.CreatedAt,
 		&i.Network,
 		&i.ApplyError,
+		&i.Kind,
 	)
 	return i, err
 }
 
 const getLocalServer = `-- name: GetLocalServer :one
-SELECT id, name, role, builder, local, status, last_seen_at, created_at FROM servers WHERE local = 1 ORDER BY id LIMIT 1
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version FROM servers WHERE local = 1 ORDER BY id LIMIT 1
 `
 
 func (q *Queries) GetLocalServer(ctx context.Context) (Server, error) {
@@ -186,11 +187,37 @@ func (q *Queries) GetLocalServer(ctx context.Context) (Server, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Role,
 		&i.Builder,
 		&i.Local,
 		&i.Status,
 		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.AcceptsProduction,
+		&i.AcceptsNonProduction,
+		&i.DisabledForPlacement,
+		&i.MemoryBytes,
+		&i.Version,
+	)
+	return i, err
+}
+
+const getPlacement = `-- name: GetPlacement :one
+SELECT project_id, kind, server_id, pinned, created_at FROM project_placements WHERE project_id = ? AND kind = ?
+`
+
+type GetPlacementParams struct {
+	ProjectID int64
+	Kind      string
+}
+
+func (q *Queries) GetPlacement(ctx context.Context, arg GetPlacementParams) (ProjectPlacement, error) {
+	row := q.queryRow(ctx, q.getPlacementStmt, getPlacement, arg.ProjectID, arg.Kind)
+	var i ProjectPlacement
+	err := row.Scan(
+		&i.ProjectID,
+		&i.Kind,
+		&i.ServerID,
+		&i.Pinned,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -229,7 +256,7 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 }
 
 const getServer = `-- name: GetServer :one
-SELECT id, name, role, builder, local, status, last_seen_at, created_at FROM servers WHERE id = ?
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version FROM servers WHERE id = ?
 `
 
 func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
@@ -238,18 +265,46 @@ func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Role,
 		&i.Builder,
 		&i.Local,
 		&i.Status,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.AcceptsProduction,
+		&i.AcceptsNonProduction,
+		&i.DisabledForPlacement,
+		&i.MemoryBytes,
+		&i.Version,
+	)
+	return i, err
+}
+
+const getServerByName = `-- name: GetServerByName :one
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version FROM servers WHERE name = ?
+`
+
+func (q *Queries) GetServerByName(ctx context.Context, name string) (Server, error) {
+	row := q.queryRow(ctx, q.getServerByNameStmt, getServerByName, name)
+	var i Server
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Builder,
+		&i.Local,
+		&i.Status,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.AcceptsProduction,
+		&i.AcceptsNonProduction,
+		&i.DisabledForPlacement,
+		&i.MemoryBytes,
+		&i.Version,
 	)
 	return i, err
 }
 
 const listEnvironments = `-- name: ListEnvironments :many
-SELECT id, project_id, name, server_id, created_at, network, apply_error FROM environments WHERE project_id = ? ORDER BY name
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE project_id = ? ORDER BY name
 `
 
 func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Environment, error) {
@@ -269,6 +324,40 @@ func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Envi
 			&i.CreatedAt,
 			&i.Network,
 			&i.ApplyError,
+			&i.Kind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlacements = `-- name: ListPlacements :many
+SELECT project_id, kind, server_id, pinned, created_at FROM project_placements WHERE project_id = ? ORDER BY kind
+`
+
+func (q *Queries) ListPlacements(ctx context.Context, projectID int64) ([]ProjectPlacement, error) {
+	rows, err := q.query(ctx, q.listPlacementsStmt, listPlacements, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProjectPlacement
+	for rows.Next() {
+		var i ProjectPlacement
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.Kind,
+			&i.ServerID,
+			&i.Pinned,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -315,28 +404,90 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 	return items, nil
 }
 
-const listServers = `-- name: ListServers :many
-SELECT id, name, role, builder, local, status, last_seen_at, created_at FROM servers ORDER BY id
+const listServerEnvironments = `-- name: ListServerEnvironments :many
+SELECT environments.project_id, environments.name, environments.kind
+FROM environments JOIN projects ON projects.id = environments.project_id
+WHERE environments.server_id = ? AND projects.archived_at IS NULL
+ORDER BY environments.project_id, environments.name
 `
 
-func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
-	rows, err := q.query(ctx, q.listServersStmt, listServers)
+type ListServerEnvironmentsRow struct {
+	ProjectID int64
+	Name      string
+	Kind      string
+}
+
+func (q *Queries) ListServerEnvironments(ctx context.Context, serverID int64) ([]ListServerEnvironmentsRow, error) {
+	rows, err := q.query(ctx, q.listServerEnvironmentsStmt, listServerEnvironments, serverID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Server
+	var items []ListServerEnvironmentsRow
 	for rows.Next() {
-		var i Server
+		var i ListServerEnvironmentsRow
+		if err := rows.Scan(&i.ProjectID, &i.Name, &i.Kind); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServerLoads = `-- name: ListServerLoads :many
+SELECT
+    servers.id, servers.name, servers.builder, servers.local, servers.status, servers.last_seen_at, servers.created_at, servers.accepts_production, servers.accepts_non_production, servers.disabled_for_placement, servers.memory_bytes, servers.version,
+    CAST((SELECT coalesce(sum(CASE WHEN sv.memory_mb > 0 THEN sv.memory_mb ELSE ?1 END), 0)
+     FROM services sv JOIN environments e ON e.id = sv.environment_id
+     WHERE e.server_id = servers.id AND sv.archived_at IS NULL) AS INTEGER) AS reserved_mb,
+    CAST((SELECT count(DISTINCT pp.project_id)
+     FROM project_placements pp JOIN projects p ON p.id = pp.project_id
+     WHERE pp.server_id = servers.id AND p.archived_at IS NULL) AS INTEGER) AS projects,
+    CAST((SELECT count(*) FROM environments e WHERE e.server_id = servers.id) AS INTEGER) AS environments
+FROM servers ORDER BY servers.id
+`
+
+type ListServerLoadsRow struct {
+	Server       Server
+	ReservedMb   int64
+	Projects     int64
+	Environments int64
+}
+
+// ListServerLoads is everything placement weighs, for every server in one
+// query: memory reserved by its live services (their limit, or
+// default_memory_mb without one) and how many live projects are placed on it.
+func (q *Queries) ListServerLoads(ctx context.Context, defaultMemoryMb interface{}) ([]ListServerLoadsRow, error) {
+	rows, err := q.query(ctx, q.listServerLoadsStmt, listServerLoads, defaultMemoryMb)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListServerLoadsRow
+	for rows.Next() {
+		var i ListServerLoadsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Role,
-			&i.Builder,
-			&i.Local,
-			&i.Status,
-			&i.LastSeenAt,
-			&i.CreatedAt,
+			&i.Server.ID,
+			&i.Server.Name,
+			&i.Server.Builder,
+			&i.Server.Local,
+			&i.Server.Status,
+			&i.Server.LastSeenAt,
+			&i.Server.CreatedAt,
+			&i.Server.AcceptsProduction,
+			&i.Server.AcceptsNonProduction,
+			&i.Server.DisabledForPlacement,
+			&i.Server.MemoryBytes,
+			&i.Server.Version,
+			&i.ReservedMb,
+			&i.Projects,
+			&i.Environments,
 		); err != nil {
 			return nil, err
 		}
@@ -351,29 +502,196 @@ func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
 	return items, nil
 }
 
+const listServerPlacements = `-- name: ListServerPlacements :many
+SELECT project_placements.project_id, project_placements.kind, project_placements.server_id, project_placements.pinned, project_placements.created_at, projects.name AS project_name
+FROM project_placements JOIN projects ON projects.id = project_placements.project_id
+WHERE project_placements.server_id = ? AND projects.archived_at IS NULL
+ORDER BY projects.name, project_placements.kind
+`
+
+type ListServerPlacementsRow struct {
+	ProjectPlacement ProjectPlacement
+	ProjectName      string
+}
+
+func (q *Queries) ListServerPlacements(ctx context.Context, serverID int64) ([]ListServerPlacementsRow, error) {
+	rows, err := q.query(ctx, q.listServerPlacementsStmt, listServerPlacements, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListServerPlacementsRow
+	for rows.Next() {
+		var i ListServerPlacementsRow
+		if err := rows.Scan(
+			&i.ProjectPlacement.ProjectID,
+			&i.ProjectPlacement.Kind,
+			&i.ProjectPlacement.ServerID,
+			&i.ProjectPlacement.Pinned,
+			&i.ProjectPlacement.CreatedAt,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServers = `-- name: ListServers :many
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version FROM servers ORDER BY id
+`
+
+func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
+	rows, err := q.query(ctx, q.listServersStmt, listServers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Server
+	for rows.Next() {
+		var i Server
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Builder,
+			&i.Local,
+			&i.Status,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.AcceptsProduction,
+			&i.AcceptsNonProduction,
+			&i.DisabledForPlacement,
+			&i.MemoryBytes,
+			&i.Version,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setServerMemory = `-- name: SetServerMemory :exec
+UPDATE servers SET memory_bytes = ? WHERE id = ? AND memory_bytes != ?
+`
+
+type SetServerMemoryParams struct {
+	MemoryBytes   int64
+	ID            int64
+	MemoryBytes_2 int64
+}
+
+func (q *Queries) SetServerMemory(ctx context.Context, arg SetServerMemoryParams) error {
+	_, err := q.exec(ctx, q.setServerMemoryStmt, setServerMemory, arg.MemoryBytes, arg.ID, arg.MemoryBytes_2)
+	return err
+}
+
 const touchLocalServer = `-- name: TouchLocalServer :one
-UPDATE servers SET builder = ?, status = 'online', last_seen_at = ? WHERE id = ?
-RETURNING id, name, role, builder, local, status, last_seen_at, created_at
+UPDATE servers SET builder = ?, status = 'online', last_seen_at = ?, version = ? WHERE id = ?
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version
 `
 
 type TouchLocalServerParams struct {
 	Builder    bool
 	LastSeenAt *time.Time
+	Version    string
 	ID         int64
 }
 
 func (q *Queries) TouchLocalServer(ctx context.Context, arg TouchLocalServerParams) (Server, error) {
-	row := q.queryRow(ctx, q.touchLocalServerStmt, touchLocalServer, arg.Builder, arg.LastSeenAt, arg.ID)
+	row := q.queryRow(ctx, q.touchLocalServerStmt, touchLocalServer,
+		arg.Builder,
+		arg.LastSeenAt,
+		arg.Version,
+		arg.ID,
+	)
 	var i Server
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Role,
 		&i.Builder,
 		&i.Local,
 		&i.Status,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.AcceptsProduction,
+		&i.AcceptsNonProduction,
+		&i.DisabledForPlacement,
+		&i.MemoryBytes,
+		&i.Version,
 	)
 	return i, err
+}
+
+const updateServerPlacement = `-- name: UpdateServerPlacement :one
+UPDATE servers SET accepts_production = ?, accepts_non_production = ?, disabled_for_placement = ?
+WHERE id = ?
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version
+`
+
+type UpdateServerPlacementParams struct {
+	AcceptsProduction    bool
+	AcceptsNonProduction bool
+	DisabledForPlacement bool
+	ID                   int64
+}
+
+func (q *Queries) UpdateServerPlacement(ctx context.Context, arg UpdateServerPlacementParams) (Server, error) {
+	row := q.queryRow(ctx, q.updateServerPlacementStmt, updateServerPlacement,
+		arg.AcceptsProduction,
+		arg.AcceptsNonProduction,
+		arg.DisabledForPlacement,
+		arg.ID,
+	)
+	var i Server
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Builder,
+		&i.Local,
+		&i.Status,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.AcceptsProduction,
+		&i.AcceptsNonProduction,
+		&i.DisabledForPlacement,
+		&i.MemoryBytes,
+		&i.Version,
+	)
+	return i, err
+}
+
+const upsertPlacement = `-- name: UpsertPlacement :exec
+INSERT INTO project_placements (project_id, kind, server_id, pinned) VALUES (?, ?, ?, ?)
+ON CONFLICT (project_id, kind) DO UPDATE SET server_id = excluded.server_id, pinned = excluded.pinned
+`
+
+type UpsertPlacementParams struct {
+	ProjectID int64
+	Kind      string
+	ServerID  int64
+	Pinned    bool
+}
+
+func (q *Queries) UpsertPlacement(ctx context.Context, arg UpsertPlacementParams) error {
+	_, err := q.exec(ctx, q.upsertPlacementStmt, upsertPlacement,
+		arg.ProjectID,
+		arg.Kind,
+		arg.ServerID,
+		arg.Pinned,
+	)
+	return err
 }

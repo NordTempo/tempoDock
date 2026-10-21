@@ -209,7 +209,7 @@ func (c *Core) CreateProject(ctx context.Context, a Actor, req apitypes.CreatePr
 		if p, err = q.CreateProject(ctx, req.Name); err != nil {
 			return err
 		}
-		_, err = c.createEnv(ctx, q, p, "production")
+		_, err = c.createEnv(ctx, q, p, "production", apitypes.KindProduction)
 		return err
 	})
 	if store.IsUnique(err) {
@@ -222,35 +222,14 @@ func (c *Core) CreateProject(ctx context.Context, a Actor, req apitypes.CreatePr
 	return toProject(p), nil
 }
 
-func (c *Core) createEnv(ctx context.Context, q *store.Queries, p store.Project, name string) (store.Environment, error) {
-	serverID, err := placeEnvironment(ctx, q, name)
+// createEnv places and creates an environment; call it in a transaction
+// so the placement and the environment are recorded together.
+func (c *Core) createEnv(ctx context.Context, q *store.Queries, p store.Project, name string, kind apitypes.EnvironmentKind) (store.Environment, error) {
+	serverID, err := c.placeEnvironment(ctx, q, p, kind)
 	if err != nil {
 		return store.Environment{}, err
 	}
-	return q.CreateEnvironment(ctx, store.CreateEnvironmentParams{ProjectID: p.ID, Name: name, ServerID: serverID})
-}
-
-// placeEnvironment picks a server: `production` goes to a production server,
-// anything else to a non-production one, and with one server everything
-// goes there (ADR 0010).
-func placeEnvironment(ctx context.Context, q *store.Queries, name string) (int64, error) {
-	servers, err := q.ListServers(ctx)
-	if err != nil {
-		return 0, err
-	}
-	if len(servers) == 0 {
-		return 0, fmt.Errorf("no servers registered")
-	}
-	want := "non-production"
-	if name == "production" {
-		want = "production"
-	}
-	for _, s := range servers {
-		if s.Role == want {
-			return s.ID, nil
-		}
-	}
-	return servers[0].ID, nil
+	return q.CreateEnvironment(ctx, store.CreateEnvironmentParams{ProjectID: p.ID, Name: name, Kind: string(kind), ServerID: serverID})
 }
 
 // ListEnvironments returns a project's environments the actor can see.
@@ -301,7 +280,18 @@ func (c *Core) CreateEnvironment(ctx context.Context, a Actor, project string, r
 	if err := validName("environment", req.Name); err != nil {
 		return apitypes.Environment{}, err
 	}
-	e, err := c.createEnv(ctx, c.store.Queries, p, req.Name)
+	kind := req.Kind
+	if kind == "" {
+		kind = defaultKind(req.Name)
+	}
+	if !validKind(kind) {
+		return apitypes.Environment{}, invalid("kind must be production or non_production")
+	}
+	var e store.Environment
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		e, err = c.createEnv(ctx, q, p, req.Name, kind)
+		return err
+	})
 	if store.IsUnique(err) {
 		return apitypes.Environment{}, conflict("environment %q already exists in project %s", req.Name, p.Name)
 	}
@@ -312,35 +302,8 @@ func (c *Core) CreateEnvironment(ctx context.Context, a Actor, project string, r
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
-	c.audit(ctx, a, "environment.create", &p, &e, p.Name+"/"+e.Name, "created environment on server "+srv.Name)
+	c.audit(ctx, a, "environment.create", &p, &e, p.Name+"/"+e.Name, fmt.Sprintf("created %s environment on server %s", kindWords(kind), srv.Name))
 	return toEnvironment(p, e, srv.Name), nil
-}
-
-// ListServers returns all servers.
-func (c *Core) ListServers(ctx context.Context, a Actor) ([]apitypes.Server, error) {
-	if err := a.require(apitypes.ScopeRead, "listing servers"); err != nil {
-		return nil, err
-	}
-	rows, err := c.store.ListServers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	counts, err := c.store.CountEnvironmentsByServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	byServer := map[int64]int{}
-	for _, r := range counts {
-		byServer[r.ServerID] = int(r.Environments)
-	}
-	out := make([]apitypes.Server, 0, len(rows))
-	for _, s := range rows {
-		out = append(out, apitypes.Server{
-			ID: s.ID, Name: s.Name, Role: s.Role, Builder: s.Builder, Local: s.Local,
-			Status: s.Status, LastSeenAt: s.LastSeenAt, Environments: byServer[s.ID],
-		})
-	}
-	return out, nil
 }
 
 func (c *Core) serverNames(ctx context.Context) (map[int64]string, error) {
@@ -360,5 +323,5 @@ func toProject(p store.Project) apitypes.Project {
 }
 
 func toEnvironment(p store.Project, e store.Environment, server string) apitypes.Environment {
-	return apitypes.Environment{ID: e.ID, Project: p.Name, Name: e.Name, Server: server, CreatedAt: e.CreatedAt}
+	return apitypes.Environment{ID: e.ID, Project: p.Name, Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), Server: server, CreatedAt: e.CreatedAt}
 }

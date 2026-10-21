@@ -81,6 +81,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerReleases(s, a)
 	registerDomains(s, a)
 	registerAdmin(s, a)
+	registerServers(s, a)
 	registerStreams(s, a)
 	return a
 }
@@ -121,6 +122,8 @@ func codeForStatus(status int) apitypes.ErrorCode {
 		return apitypes.CodeTooLarge
 	case http.StatusTooManyRequests:
 		return apitypes.CodeRateLimited
+	case http.StatusServiceUnavailable:
+		return apitypes.CodeServerOffline
 	}
 	return apitypes.CodeInternal
 }
@@ -141,6 +144,8 @@ func statusForCode(code apitypes.ErrorCode) int {
 		return http.StatusRequestEntityTooLarge
 	case apitypes.CodeRateLimited:
 		return http.StatusTooManyRequests
+	case apitypes.CodeServerOffline:
+		return http.StatusServiceUnavailable
 	}
 	return http.StatusInternalServerError
 }

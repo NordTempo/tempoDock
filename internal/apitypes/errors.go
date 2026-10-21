@@ -19,7 +19,10 @@ const (
 	CodeTooLarge      ErrorCode = "too_large"
 	// CodeRateLimited means too many attempts (e.g. logins); wait and retry.
 	CodeRateLimited ErrorCode = "rate_limited"
-	CodeInternal    ErrorCode = "internal"
+	// CodeServerOffline means the server an operation needs isn't
+	// connected (HTTP 503).
+	CodeServerOffline ErrorCode = "server_offline"
+	CodeInternal      ErrorCode = "internal"
 )
 
 // Release failure codes (Release.ErrorCode). Release.Error has the details.

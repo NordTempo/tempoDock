@@ -33,6 +33,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addReleaseEventStmt, err = db.PrepareContext(ctx, addReleaseEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query AddReleaseEvent: %w", err)
 	}
+	if q.addServerStatsStmt, err = db.PrepareContext(ctx, addServerStats); err != nil {
+		return nil, fmt.Errorf("error preparing query AddServerStats: %w", err)
+	}
+	if q.addServiceStatsStmt, err = db.PrepareContext(ctx, addServiceStats); err != nil {
+		return nil, fmt.Errorf("error preparing query AddServiceStats: %w", err)
+	}
 	if q.applyVariableStmt, err = db.PrepareContext(ctx, applyVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query ApplyVariable: %w", err)
 	}
@@ -48,8 +54,8 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.clearReleaseHostPortStmt, err = db.PrepareContext(ctx, clearReleaseHostPort); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearReleaseHostPort: %w", err)
 	}
-	if q.countEnvironmentsByServerStmt, err = db.PrepareContext(ctx, countEnvironmentsByServer); err != nil {
-		return nil, fmt.Errorf("error preparing query CountEnvironmentsByServer: %w", err)
+	if q.countKindEnvironmentsStmt, err = db.PrepareContext(ctx, countKindEnvironments); err != nil {
+		return nil, fmt.Errorf("error preparing query CountKindEnvironments: %w", err)
 	}
 	if q.countUsersStmt, err = db.PrepareContext(ctx, countUsers); err != nil {
 		return nil, fmt.Errorf("error preparing query CountUsers: %w", err)
@@ -105,6 +111,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteVolumeStmt, err = db.PrepareContext(ctx, deleteVolume); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteVolume: %w", err)
 	}
+	if q.downsampleServerStatsStmt, err = db.PrepareContext(ctx, downsampleServerStats); err != nil {
+		return nil, fmt.Errorf("error preparing query DownsampleServerStats: %w", err)
+	}
+	if q.downsampleServiceStatsStmt, err = db.PrepareContext(ctx, downsampleServiceStats); err != nil {
+		return nil, fmt.Errorf("error preparing query DownsampleServiceStats: %w", err)
+	}
 	if q.failReleaseStmt, err = db.PrepareContext(ctx, failRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query FailRelease: %w", err)
 	}
@@ -126,6 +138,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getLocalServerStmt, err = db.PrepareContext(ctx, getLocalServer); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLocalServer: %w", err)
 	}
+	if q.getPlacementStmt, err = db.PrepareContext(ctx, getPlacement); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPlacement: %w", err)
+	}
 	if q.getProjectStmt, err = db.PrepareContext(ctx, getProject); err != nil {
 		return nil, fmt.Errorf("error preparing query GetProject: %w", err)
 	}
@@ -140,6 +155,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getServerStmt, err = db.PrepareContext(ctx, getServer); err != nil {
 		return nil, fmt.Errorf("error preparing query GetServer: %w", err)
+	}
+	if q.getServerByNameStmt, err = db.PrepareContext(ctx, getServerByName); err != nil {
+		return nil, fmt.Errorf("error preparing query GetServerByName: %w", err)
 	}
 	if q.getServiceStmt, err = db.PrepareContext(ctx, getService); err != nil {
 		return nil, fmt.Errorf("error preparing query GetService: %w", err)
@@ -198,6 +216,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listPendingDomainsStmt, err = db.PrepareContext(ctx, listPendingDomains); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPendingDomains: %w", err)
 	}
+	if q.listPlacementsStmt, err = db.PrepareContext(ctx, listPlacements); err != nil {
+		return nil, fmt.Errorf("error preparing query ListPlacements: %w", err)
+	}
 	if q.listProjectAuditEventsStmt, err = db.PrepareContext(ctx, listProjectAuditEvents); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectAuditEvents: %w", err)
 	}
@@ -228,11 +249,29 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listRoutableDomainsStmt, err = db.PrepareContext(ctx, listRoutableDomains); err != nil {
 		return nil, fmt.Errorf("error preparing query ListRoutableDomains: %w", err)
 	}
+	if q.listServerEnvironmentsStmt, err = db.PrepareContext(ctx, listServerEnvironments); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServerEnvironments: %w", err)
+	}
+	if q.listServerLoadsStmt, err = db.PrepareContext(ctx, listServerLoads); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServerLoads: %w", err)
+	}
+	if q.listServerPlacementsStmt, err = db.PrepareContext(ctx, listServerPlacements); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServerPlacements: %w", err)
+	}
+	if q.listServerStatsStmt, err = db.PrepareContext(ctx, listServerStats); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServerStats: %w", err)
+	}
 	if q.listServersStmt, err = db.PrepareContext(ctx, listServers); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServers: %w", err)
 	}
+	if q.listServiceStatsStmt, err = db.PrepareContext(ctx, listServiceStats); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServiceStats: %w", err)
+	}
 	if q.listServicesStmt, err = db.PrepareContext(ctx, listServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServices: %w", err)
+	}
+	if q.listStatsTargetsStmt, err = db.PrepareContext(ctx, listStatsTargets); err != nil {
+		return nil, fmt.Errorf("error preparing query ListStatsTargets: %w", err)
 	}
 	if q.listTokensStmt, err = db.PrepareContext(ctx, listTokens); err != nil {
 		return nil, fmt.Errorf("error preparing query ListTokens: %w", err)
@@ -240,8 +279,8 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listUsedHostPortsStmt, err = db.PrepareContext(ctx, listUsedHostPorts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListUsedHostPorts: %w", err)
 	}
-	if q.listUsersStmt, err = db.PrepareContext(ctx, listUsers); err != nil {
-		return nil, fmt.Errorf("error preparing query ListUsers: %w", err)
+	if q.listUsersWithCountsStmt, err = db.PrepareContext(ctx, listUsersWithCounts); err != nil {
+		return nil, fmt.Errorf("error preparing query ListUsersWithCounts: %w", err)
 	}
 	if q.listVariablesStmt, err = db.PrepareContext(ctx, listVariables); err != nil {
 		return nil, fmt.Errorf("error preparing query ListVariables: %w", err)
@@ -251,6 +290,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.nextReleaseNumberStmt, err = db.PrepareContext(ctx, nextReleaseNumber); err != nil {
 		return nil, fmt.Errorf("error preparing query NextReleaseNumber: %w", err)
+	}
+	if q.pruneServerStatsStmt, err = db.PrepareContext(ctx, pruneServerStats); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneServerStats: %w", err)
+	}
+	if q.pruneServiceStatsStmt, err = db.PrepareContext(ctx, pruneServiceStats); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneServiceStats: %w", err)
 	}
 	if q.restoreVariableStmt, err = db.PrepareContext(ctx, restoreVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query RestoreVariable: %w", err)
@@ -272,6 +317,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setReleaseStatusStmt, err = db.PrepareContext(ctx, setReleaseStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseStatus: %w", err)
+	}
+	if q.setServerMemoryStmt, err = db.PrepareContext(ctx, setServerMemory); err != nil {
+		return nil, fmt.Errorf("error preparing query SetServerMemory: %w", err)
 	}
 	if q.setUserDisabledStmt, err = db.PrepareContext(ctx, setUserDisabled); err != nil {
 		return nil, fmt.Errorf("error preparing query SetUserDisabled: %w", err)
@@ -297,8 +345,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateDomainStatusStmt, err = db.PrepareContext(ctx, updateDomainStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateDomainStatus: %w", err)
 	}
+	if q.updateServerPlacementStmt, err = db.PrepareContext(ctx, updateServerPlacement); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateServerPlacement: %w", err)
+	}
 	if q.updateServiceStmt, err = db.PrepareContext(ctx, updateService); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateService: %w", err)
+	}
+	if q.upsertPlacementStmt, err = db.PrepareContext(ctx, upsertPlacement); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertPlacement: %w", err)
 	}
 	return &q, nil
 }
@@ -318,6 +372,16 @@ func (q *Queries) Close() error {
 	if q.addReleaseEventStmt != nil {
 		if cerr := q.addReleaseEventStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addReleaseEventStmt: %w", cerr)
+		}
+	}
+	if q.addServerStatsStmt != nil {
+		if cerr := q.addServerStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addServerStatsStmt: %w", cerr)
+		}
+	}
+	if q.addServiceStatsStmt != nil {
+		if cerr := q.addServiceStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addServiceStatsStmt: %w", cerr)
 		}
 	}
 	if q.applyVariableStmt != nil {
@@ -345,9 +409,9 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing clearReleaseHostPortStmt: %w", cerr)
 		}
 	}
-	if q.countEnvironmentsByServerStmt != nil {
-		if cerr := q.countEnvironmentsByServerStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing countEnvironmentsByServerStmt: %w", cerr)
+	if q.countKindEnvironmentsStmt != nil {
+		if cerr := q.countKindEnvironmentsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countKindEnvironmentsStmt: %w", cerr)
 		}
 	}
 	if q.countUsersStmt != nil {
@@ -440,6 +504,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteVolumeStmt: %w", cerr)
 		}
 	}
+	if q.downsampleServerStatsStmt != nil {
+		if cerr := q.downsampleServerStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing downsampleServerStatsStmt: %w", cerr)
+		}
+	}
+	if q.downsampleServiceStatsStmt != nil {
+		if cerr := q.downsampleServiceStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing downsampleServiceStatsStmt: %w", cerr)
+		}
+	}
 	if q.failReleaseStmt != nil {
 		if cerr := q.failReleaseStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing failReleaseStmt: %w", cerr)
@@ -475,6 +549,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getLocalServerStmt: %w", cerr)
 		}
 	}
+	if q.getPlacementStmt != nil {
+		if cerr := q.getPlacementStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPlacementStmt: %w", cerr)
+		}
+	}
 	if q.getProjectStmt != nil {
 		if cerr := q.getProjectStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getProjectStmt: %w", cerr)
@@ -498,6 +577,11 @@ func (q *Queries) Close() error {
 	if q.getServerStmt != nil {
 		if cerr := q.getServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getServerStmt: %w", cerr)
+		}
+	}
+	if q.getServerByNameStmt != nil {
+		if cerr := q.getServerByNameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getServerByNameStmt: %w", cerr)
 		}
 	}
 	if q.getServiceStmt != nil {
@@ -595,6 +679,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listPendingDomainsStmt: %w", cerr)
 		}
 	}
+	if q.listPlacementsStmt != nil {
+		if cerr := q.listPlacementsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listPlacementsStmt: %w", cerr)
+		}
+	}
 	if q.listProjectAuditEventsStmt != nil {
 		if cerr := q.listProjectAuditEventsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listProjectAuditEventsStmt: %w", cerr)
@@ -645,14 +734,44 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listRoutableDomainsStmt: %w", cerr)
 		}
 	}
+	if q.listServerEnvironmentsStmt != nil {
+		if cerr := q.listServerEnvironmentsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServerEnvironmentsStmt: %w", cerr)
+		}
+	}
+	if q.listServerLoadsStmt != nil {
+		if cerr := q.listServerLoadsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServerLoadsStmt: %w", cerr)
+		}
+	}
+	if q.listServerPlacementsStmt != nil {
+		if cerr := q.listServerPlacementsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServerPlacementsStmt: %w", cerr)
+		}
+	}
+	if q.listServerStatsStmt != nil {
+		if cerr := q.listServerStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServerStatsStmt: %w", cerr)
+		}
+	}
 	if q.listServersStmt != nil {
 		if cerr := q.listServersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServersStmt: %w", cerr)
 		}
 	}
+	if q.listServiceStatsStmt != nil {
+		if cerr := q.listServiceStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServiceStatsStmt: %w", cerr)
+		}
+	}
 	if q.listServicesStmt != nil {
 		if cerr := q.listServicesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServicesStmt: %w", cerr)
+		}
+	}
+	if q.listStatsTargetsStmt != nil {
+		if cerr := q.listStatsTargetsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listStatsTargetsStmt: %w", cerr)
 		}
 	}
 	if q.listTokensStmt != nil {
@@ -665,9 +784,9 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listUsedHostPortsStmt: %w", cerr)
 		}
 	}
-	if q.listUsersStmt != nil {
-		if cerr := q.listUsersStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing listUsersStmt: %w", cerr)
+	if q.listUsersWithCountsStmt != nil {
+		if cerr := q.listUsersWithCountsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listUsersWithCountsStmt: %w", cerr)
 		}
 	}
 	if q.listVariablesStmt != nil {
@@ -683,6 +802,16 @@ func (q *Queries) Close() error {
 	if q.nextReleaseNumberStmt != nil {
 		if cerr := q.nextReleaseNumberStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing nextReleaseNumberStmt: %w", cerr)
+		}
+	}
+	if q.pruneServerStatsStmt != nil {
+		if cerr := q.pruneServerStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneServerStatsStmt: %w", cerr)
+		}
+	}
+	if q.pruneServiceStatsStmt != nil {
+		if cerr := q.pruneServiceStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneServiceStatsStmt: %w", cerr)
 		}
 	}
 	if q.restoreVariableStmt != nil {
@@ -718,6 +847,11 @@ func (q *Queries) Close() error {
 	if q.setReleaseStatusStmt != nil {
 		if cerr := q.setReleaseStatusStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setReleaseStatusStmt: %w", cerr)
+		}
+	}
+	if q.setServerMemoryStmt != nil {
+		if cerr := q.setServerMemoryStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setServerMemoryStmt: %w", cerr)
 		}
 	}
 	if q.setUserDisabledStmt != nil {
@@ -760,9 +894,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateDomainStatusStmt: %w", cerr)
 		}
 	}
+	if q.updateServerPlacementStmt != nil {
+		if cerr := q.updateServerPlacementStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateServerPlacementStmt: %w", cerr)
+		}
+	}
 	if q.updateServiceStmt != nil {
 		if cerr := q.updateServiceStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateServiceStmt: %w", cerr)
+		}
+	}
+	if q.upsertPlacementStmt != nil {
+		if cerr := q.upsertPlacementStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertPlacementStmt: %w", cerr)
 		}
 	}
 	return err
@@ -802,197 +946,233 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                            DBTX
-	tx                            *sql.Tx
-	activateReleaseStmt           *sql.Stmt
-	addAuditEventStmt             *sql.Stmt
-	addReleaseEventStmt           *sql.Stmt
-	applyVariableStmt             *sql.Stmt
-	applyVolumeStmt               *sql.Stmt
-	archiveProjectStmt            *sql.Stmt
-	archiveServiceStmt            *sql.Stmt
-	clearReleaseHostPortStmt      *sql.Stmt
-	countEnvironmentsByServerStmt *sql.Stmt
-	countUsersStmt                *sql.Stmt
-	createDomainStmt              *sql.Stmt
-	createEnvironmentStmt         *sql.Stmt
-	createProjectStmt             *sql.Stmt
-	createReleaseStmt             *sql.Stmt
-	createServerStmt              *sql.Stmt
-	createServiceStmt             *sql.Stmt
-	createSessionStmt             *sql.Stmt
-	createTokenStmt               *sql.Stmt
-	createUserStmt                *sql.Stmt
-	createVolumeStmt              *sql.Stmt
-	deleteDomainStmt              *sql.Stmt
-	deleteExpiredSessionsStmt     *sql.Stmt
-	deleteSessionStmt             *sql.Stmt
-	deleteUserStmt                *sql.Stmt
-	deleteUserSessionsStmt        *sql.Stmt
-	deleteVariableStmt            *sql.Stmt
-	deleteVolumeStmt              *sql.Stmt
-	failReleaseStmt               *sql.Stmt
-	getActiveReleaseStmt          *sql.Stmt
-	getDomainByHostnameStmt       *sql.Stmt
-	getEnvironmentStmt            *sql.Stmt
-	getEnvironmentByNameStmt      *sql.Stmt
-	getInFlightReleaseStmt        *sql.Stmt
-	getLocalServerStmt            *sql.Stmt
-	getProjectStmt                *sql.Stmt
-	getProjectByNameStmt          *sql.Stmt
-	getReleaseStmt                *sql.Stmt
-	getReleaseByNumberStmt        *sql.Stmt
-	getServerStmt                 *sql.Stmt
-	getServiceStmt                *sql.Stmt
-	getServiceByNameStmt          *sql.Stmt
-	getSessionUserStmt            *sql.Stmt
-	getTokenStmt                  *sql.Stmt
-	getTokenByHashStmt            *sql.Stmt
-	getUserStmt                   *sql.Stmt
-	getUserByEmailStmt            *sql.Stmt
-	getVariableStmt               *sql.Stmt
-	hostnameExistsStmt            *sql.Stmt
-	insertRestoredVariableStmt    *sql.Stmt
-	insertVariableStmt            *sql.Stmt
-	listActiveReleasesStmt        *sql.Stmt
-	listAuditEventsStmt           *sql.Stmt
-	listAuditEventsByTargetStmt   *sql.Stmt
-	listDomainsByServiceStmt      *sql.Stmt
-	listEnvironmentVolumesStmt    *sql.Stmt
-	listEnvironmentsStmt          *sql.Stmt
-	listInFlightReleasesStmt      *sql.Stmt
-	listPendingDomainsStmt        *sql.Stmt
-	listProjectAuditEventsStmt    *sql.Stmt
-	listProjectDomainsStmt        *sql.Stmt
-	listProjectReleaseHeadsStmt   *sql.Stmt
-	listProjectServicesStmt       *sql.Stmt
-	listProjectVolumesStmt        *sql.Stmt
-	listProjectsStmt              *sql.Stmt
-	listReleaseEventsStmt         *sql.Stmt
-	listReleasesStmt              *sql.Stmt
-	listRetiredPortHoldersStmt    *sql.Stmt
-	listRoutableDomainsStmt       *sql.Stmt
-	listServersStmt               *sql.Stmt
-	listServicesStmt              *sql.Stmt
-	listTokensStmt                *sql.Stmt
-	listUsedHostPortsStmt         *sql.Stmt
-	listUsersStmt                 *sql.Stmt
-	listVariablesStmt             *sql.Stmt
-	listVolumesStmt               *sql.Stmt
-	nextReleaseNumberStmt         *sql.Stmt
-	restoreVariableStmt           *sql.Stmt
-	revokeTokenStmt               *sql.Stmt
-	setEnvironmentApplyErrorStmt  *sql.Stmt
-	setPendingSettingsStmt        *sql.Stmt
-	setReleaseContainerStmt       *sql.Stmt
-	setReleaseImageStmt           *sql.Stmt
-	setReleaseStatusStmt          *sql.Stmt
-	setUserDisabledStmt           *sql.Stmt
-	setUserPasswordStmt           *sql.Stmt
-	setVariablePendingStmt        *sql.Stmt
-	supersedeReleaseStmt          *sql.Stmt
-	touchLocalServerStmt          *sql.Stmt
-	touchTokenStmt                *sql.Stmt
-	unapplyVolumeStmt             *sql.Stmt
-	updateDomainStatusStmt        *sql.Stmt
-	updateServiceStmt             *sql.Stmt
+	db                           DBTX
+	tx                           *sql.Tx
+	activateReleaseStmt          *sql.Stmt
+	addAuditEventStmt            *sql.Stmt
+	addReleaseEventStmt          *sql.Stmt
+	addServerStatsStmt           *sql.Stmt
+	addServiceStatsStmt          *sql.Stmt
+	applyVariableStmt            *sql.Stmt
+	applyVolumeStmt              *sql.Stmt
+	archiveProjectStmt           *sql.Stmt
+	archiveServiceStmt           *sql.Stmt
+	clearReleaseHostPortStmt     *sql.Stmt
+	countKindEnvironmentsStmt    *sql.Stmt
+	countUsersStmt               *sql.Stmt
+	createDomainStmt             *sql.Stmt
+	createEnvironmentStmt        *sql.Stmt
+	createProjectStmt            *sql.Stmt
+	createReleaseStmt            *sql.Stmt
+	createServerStmt             *sql.Stmt
+	createServiceStmt            *sql.Stmt
+	createSessionStmt            *sql.Stmt
+	createTokenStmt              *sql.Stmt
+	createUserStmt               *sql.Stmt
+	createVolumeStmt             *sql.Stmt
+	deleteDomainStmt             *sql.Stmt
+	deleteExpiredSessionsStmt    *sql.Stmt
+	deleteSessionStmt            *sql.Stmt
+	deleteUserStmt               *sql.Stmt
+	deleteUserSessionsStmt       *sql.Stmt
+	deleteVariableStmt           *sql.Stmt
+	deleteVolumeStmt             *sql.Stmt
+	downsampleServerStatsStmt    *sql.Stmt
+	downsampleServiceStatsStmt   *sql.Stmt
+	failReleaseStmt              *sql.Stmt
+	getActiveReleaseStmt         *sql.Stmt
+	getDomainByHostnameStmt      *sql.Stmt
+	getEnvironmentStmt           *sql.Stmt
+	getEnvironmentByNameStmt     *sql.Stmt
+	getInFlightReleaseStmt       *sql.Stmt
+	getLocalServerStmt           *sql.Stmt
+	getPlacementStmt             *sql.Stmt
+	getProjectStmt               *sql.Stmt
+	getProjectByNameStmt         *sql.Stmt
+	getReleaseStmt               *sql.Stmt
+	getReleaseByNumberStmt       *sql.Stmt
+	getServerStmt                *sql.Stmt
+	getServerByNameStmt          *sql.Stmt
+	getServiceStmt               *sql.Stmt
+	getServiceByNameStmt         *sql.Stmt
+	getSessionUserStmt           *sql.Stmt
+	getTokenStmt                 *sql.Stmt
+	getTokenByHashStmt           *sql.Stmt
+	getUserStmt                  *sql.Stmt
+	getUserByEmailStmt           *sql.Stmt
+	getVariableStmt              *sql.Stmt
+	hostnameExistsStmt           *sql.Stmt
+	insertRestoredVariableStmt   *sql.Stmt
+	insertVariableStmt           *sql.Stmt
+	listActiveReleasesStmt       *sql.Stmt
+	listAuditEventsStmt          *sql.Stmt
+	listAuditEventsByTargetStmt  *sql.Stmt
+	listDomainsByServiceStmt     *sql.Stmt
+	listEnvironmentVolumesStmt   *sql.Stmt
+	listEnvironmentsStmt         *sql.Stmt
+	listInFlightReleasesStmt     *sql.Stmt
+	listPendingDomainsStmt       *sql.Stmt
+	listPlacementsStmt           *sql.Stmt
+	listProjectAuditEventsStmt   *sql.Stmt
+	listProjectDomainsStmt       *sql.Stmt
+	listProjectReleaseHeadsStmt  *sql.Stmt
+	listProjectServicesStmt      *sql.Stmt
+	listProjectVolumesStmt       *sql.Stmt
+	listProjectsStmt             *sql.Stmt
+	listReleaseEventsStmt        *sql.Stmt
+	listReleasesStmt             *sql.Stmt
+	listRetiredPortHoldersStmt   *sql.Stmt
+	listRoutableDomainsStmt      *sql.Stmt
+	listServerEnvironmentsStmt   *sql.Stmt
+	listServerLoadsStmt          *sql.Stmt
+	listServerPlacementsStmt     *sql.Stmt
+	listServerStatsStmt          *sql.Stmt
+	listServersStmt              *sql.Stmt
+	listServiceStatsStmt         *sql.Stmt
+	listServicesStmt             *sql.Stmt
+	listStatsTargetsStmt         *sql.Stmt
+	listTokensStmt               *sql.Stmt
+	listUsedHostPortsStmt        *sql.Stmt
+	listUsersWithCountsStmt      *sql.Stmt
+	listVariablesStmt            *sql.Stmt
+	listVolumesStmt              *sql.Stmt
+	nextReleaseNumberStmt        *sql.Stmt
+	pruneServerStatsStmt         *sql.Stmt
+	pruneServiceStatsStmt        *sql.Stmt
+	restoreVariableStmt          *sql.Stmt
+	revokeTokenStmt              *sql.Stmt
+	setEnvironmentApplyErrorStmt *sql.Stmt
+	setPendingSettingsStmt       *sql.Stmt
+	setReleaseContainerStmt      *sql.Stmt
+	setReleaseImageStmt          *sql.Stmt
+	setReleaseStatusStmt         *sql.Stmt
+	setServerMemoryStmt          *sql.Stmt
+	setUserDisabledStmt          *sql.Stmt
+	setUserPasswordStmt          *sql.Stmt
+	setVariablePendingStmt       *sql.Stmt
+	supersedeReleaseStmt         *sql.Stmt
+	touchLocalServerStmt         *sql.Stmt
+	touchTokenStmt               *sql.Stmt
+	unapplyVolumeStmt            *sql.Stmt
+	updateDomainStatusStmt       *sql.Stmt
+	updateServerPlacementStmt    *sql.Stmt
+	updateServiceStmt            *sql.Stmt
+	upsertPlacementStmt          *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                            tx,
-		tx:                            tx,
-		activateReleaseStmt:           q.activateReleaseStmt,
-		addAuditEventStmt:             q.addAuditEventStmt,
-		addReleaseEventStmt:           q.addReleaseEventStmt,
-		applyVariableStmt:             q.applyVariableStmt,
-		applyVolumeStmt:               q.applyVolumeStmt,
-		archiveProjectStmt:            q.archiveProjectStmt,
-		archiveServiceStmt:            q.archiveServiceStmt,
-		clearReleaseHostPortStmt:      q.clearReleaseHostPortStmt,
-		countEnvironmentsByServerStmt: q.countEnvironmentsByServerStmt,
-		countUsersStmt:                q.countUsersStmt,
-		createDomainStmt:              q.createDomainStmt,
-		createEnvironmentStmt:         q.createEnvironmentStmt,
-		createProjectStmt:             q.createProjectStmt,
-		createReleaseStmt:             q.createReleaseStmt,
-		createServerStmt:              q.createServerStmt,
-		createServiceStmt:             q.createServiceStmt,
-		createSessionStmt:             q.createSessionStmt,
-		createTokenStmt:               q.createTokenStmt,
-		createUserStmt:                q.createUserStmt,
-		createVolumeStmt:              q.createVolumeStmt,
-		deleteDomainStmt:              q.deleteDomainStmt,
-		deleteExpiredSessionsStmt:     q.deleteExpiredSessionsStmt,
-		deleteSessionStmt:             q.deleteSessionStmt,
-		deleteUserStmt:                q.deleteUserStmt,
-		deleteUserSessionsStmt:        q.deleteUserSessionsStmt,
-		deleteVariableStmt:            q.deleteVariableStmt,
-		deleteVolumeStmt:              q.deleteVolumeStmt,
-		failReleaseStmt:               q.failReleaseStmt,
-		getActiveReleaseStmt:          q.getActiveReleaseStmt,
-		getDomainByHostnameStmt:       q.getDomainByHostnameStmt,
-		getEnvironmentStmt:            q.getEnvironmentStmt,
-		getEnvironmentByNameStmt:      q.getEnvironmentByNameStmt,
-		getInFlightReleaseStmt:        q.getInFlightReleaseStmt,
-		getLocalServerStmt:            q.getLocalServerStmt,
-		getProjectStmt:                q.getProjectStmt,
-		getProjectByNameStmt:          q.getProjectByNameStmt,
-		getReleaseStmt:                q.getReleaseStmt,
-		getReleaseByNumberStmt:        q.getReleaseByNumberStmt,
-		getServerStmt:                 q.getServerStmt,
-		getServiceStmt:                q.getServiceStmt,
-		getServiceByNameStmt:          q.getServiceByNameStmt,
-		getSessionUserStmt:            q.getSessionUserStmt,
-		getTokenStmt:                  q.getTokenStmt,
-		getTokenByHashStmt:            q.getTokenByHashStmt,
-		getUserStmt:                   q.getUserStmt,
-		getUserByEmailStmt:            q.getUserByEmailStmt,
-		getVariableStmt:               q.getVariableStmt,
-		hostnameExistsStmt:            q.hostnameExistsStmt,
-		insertRestoredVariableStmt:    q.insertRestoredVariableStmt,
-		insertVariableStmt:            q.insertVariableStmt,
-		listActiveReleasesStmt:        q.listActiveReleasesStmt,
-		listAuditEventsStmt:           q.listAuditEventsStmt,
-		listAuditEventsByTargetStmt:   q.listAuditEventsByTargetStmt,
-		listDomainsByServiceStmt:      q.listDomainsByServiceStmt,
-		listEnvironmentVolumesStmt:    q.listEnvironmentVolumesStmt,
-		listEnvironmentsStmt:          q.listEnvironmentsStmt,
-		listInFlightReleasesStmt:      q.listInFlightReleasesStmt,
-		listPendingDomainsStmt:        q.listPendingDomainsStmt,
-		listProjectAuditEventsStmt:    q.listProjectAuditEventsStmt,
-		listProjectDomainsStmt:        q.listProjectDomainsStmt,
-		listProjectReleaseHeadsStmt:   q.listProjectReleaseHeadsStmt,
-		listProjectServicesStmt:       q.listProjectServicesStmt,
-		listProjectVolumesStmt:        q.listProjectVolumesStmt,
-		listProjectsStmt:              q.listProjectsStmt,
-		listReleaseEventsStmt:         q.listReleaseEventsStmt,
-		listReleasesStmt:              q.listReleasesStmt,
-		listRetiredPortHoldersStmt:    q.listRetiredPortHoldersStmt,
-		listRoutableDomainsStmt:       q.listRoutableDomainsStmt,
-		listServersStmt:               q.listServersStmt,
-		listServicesStmt:              q.listServicesStmt,
-		listTokensStmt:                q.listTokensStmt,
-		listUsedHostPortsStmt:         q.listUsedHostPortsStmt,
-		listUsersStmt:                 q.listUsersStmt,
-		listVariablesStmt:             q.listVariablesStmt,
-		listVolumesStmt:               q.listVolumesStmt,
-		nextReleaseNumberStmt:         q.nextReleaseNumberStmt,
-		restoreVariableStmt:           q.restoreVariableStmt,
-		revokeTokenStmt:               q.revokeTokenStmt,
-		setEnvironmentApplyErrorStmt:  q.setEnvironmentApplyErrorStmt,
-		setPendingSettingsStmt:        q.setPendingSettingsStmt,
-		setReleaseContainerStmt:       q.setReleaseContainerStmt,
-		setReleaseImageStmt:           q.setReleaseImageStmt,
-		setReleaseStatusStmt:          q.setReleaseStatusStmt,
-		setUserDisabledStmt:           q.setUserDisabledStmt,
-		setUserPasswordStmt:           q.setUserPasswordStmt,
-		setVariablePendingStmt:        q.setVariablePendingStmt,
-		supersedeReleaseStmt:          q.supersedeReleaseStmt,
-		touchLocalServerStmt:          q.touchLocalServerStmt,
-		touchTokenStmt:                q.touchTokenStmt,
-		unapplyVolumeStmt:             q.unapplyVolumeStmt,
-		updateDomainStatusStmt:        q.updateDomainStatusStmt,
-		updateServiceStmt:             q.updateServiceStmt,
+		db:                           tx,
+		tx:                           tx,
+		activateReleaseStmt:          q.activateReleaseStmt,
+		addAuditEventStmt:            q.addAuditEventStmt,
+		addReleaseEventStmt:          q.addReleaseEventStmt,
+		addServerStatsStmt:           q.addServerStatsStmt,
+		addServiceStatsStmt:          q.addServiceStatsStmt,
+		applyVariableStmt:            q.applyVariableStmt,
+		applyVolumeStmt:              q.applyVolumeStmt,
+		archiveProjectStmt:           q.archiveProjectStmt,
+		archiveServiceStmt:           q.archiveServiceStmt,
+		clearReleaseHostPortStmt:     q.clearReleaseHostPortStmt,
+		countKindEnvironmentsStmt:    q.countKindEnvironmentsStmt,
+		countUsersStmt:               q.countUsersStmt,
+		createDomainStmt:             q.createDomainStmt,
+		createEnvironmentStmt:        q.createEnvironmentStmt,
+		createProjectStmt:            q.createProjectStmt,
+		createReleaseStmt:            q.createReleaseStmt,
+		createServerStmt:             q.createServerStmt,
+		createServiceStmt:            q.createServiceStmt,
+		createSessionStmt:            q.createSessionStmt,
+		createTokenStmt:              q.createTokenStmt,
+		createUserStmt:               q.createUserStmt,
+		createVolumeStmt:             q.createVolumeStmt,
+		deleteDomainStmt:             q.deleteDomainStmt,
+		deleteExpiredSessionsStmt:    q.deleteExpiredSessionsStmt,
+		deleteSessionStmt:            q.deleteSessionStmt,
+		deleteUserStmt:               q.deleteUserStmt,
+		deleteUserSessionsStmt:       q.deleteUserSessionsStmt,
+		deleteVariableStmt:           q.deleteVariableStmt,
+		deleteVolumeStmt:             q.deleteVolumeStmt,
+		downsampleServerStatsStmt:    q.downsampleServerStatsStmt,
+		downsampleServiceStatsStmt:   q.downsampleServiceStatsStmt,
+		failReleaseStmt:              q.failReleaseStmt,
+		getActiveReleaseStmt:         q.getActiveReleaseStmt,
+		getDomainByHostnameStmt:      q.getDomainByHostnameStmt,
+		getEnvironmentStmt:           q.getEnvironmentStmt,
+		getEnvironmentByNameStmt:     q.getEnvironmentByNameStmt,
+		getInFlightReleaseStmt:       q.getInFlightReleaseStmt,
+		getLocalServerStmt:           q.getLocalServerStmt,
+		getPlacementStmt:             q.getPlacementStmt,
+		getProjectStmt:               q.getProjectStmt,
+		getProjectByNameStmt:         q.getProjectByNameStmt,
+		getReleaseStmt:               q.getReleaseStmt,
+		getReleaseByNumberStmt:       q.getReleaseByNumberStmt,
+		getServerStmt:                q.getServerStmt,
+		getServerByNameStmt:          q.getServerByNameStmt,
+		getServiceStmt:               q.getServiceStmt,
+		getServiceByNameStmt:         q.getServiceByNameStmt,
+		getSessionUserStmt:           q.getSessionUserStmt,
+		getTokenStmt:                 q.getTokenStmt,
+		getTokenByHashStmt:           q.getTokenByHashStmt,
+		getUserStmt:                  q.getUserStmt,
+		getUserByEmailStmt:           q.getUserByEmailStmt,
+		getVariableStmt:              q.getVariableStmt,
+		hostnameExistsStmt:           q.hostnameExistsStmt,
+		insertRestoredVariableStmt:   q.insertRestoredVariableStmt,
+		insertVariableStmt:           q.insertVariableStmt,
+		listActiveReleasesStmt:       q.listActiveReleasesStmt,
+		listAuditEventsStmt:          q.listAuditEventsStmt,
+		listAuditEventsByTargetStmt:  q.listAuditEventsByTargetStmt,
+		listDomainsByServiceStmt:     q.listDomainsByServiceStmt,
+		listEnvironmentVolumesStmt:   q.listEnvironmentVolumesStmt,
+		listEnvironmentsStmt:         q.listEnvironmentsStmt,
+		listInFlightReleasesStmt:     q.listInFlightReleasesStmt,
+		listPendingDomainsStmt:       q.listPendingDomainsStmt,
+		listPlacementsStmt:           q.listPlacementsStmt,
+		listProjectAuditEventsStmt:   q.listProjectAuditEventsStmt,
+		listProjectDomainsStmt:       q.listProjectDomainsStmt,
+		listProjectReleaseHeadsStmt:  q.listProjectReleaseHeadsStmt,
+		listProjectServicesStmt:      q.listProjectServicesStmt,
+		listProjectVolumesStmt:       q.listProjectVolumesStmt,
+		listProjectsStmt:             q.listProjectsStmt,
+		listReleaseEventsStmt:        q.listReleaseEventsStmt,
+		listReleasesStmt:             q.listReleasesStmt,
+		listRetiredPortHoldersStmt:   q.listRetiredPortHoldersStmt,
+		listRoutableDomainsStmt:      q.listRoutableDomainsStmt,
+		listServerEnvironmentsStmt:   q.listServerEnvironmentsStmt,
+		listServerLoadsStmt:          q.listServerLoadsStmt,
+		listServerPlacementsStmt:     q.listServerPlacementsStmt,
+		listServerStatsStmt:          q.listServerStatsStmt,
+		listServersStmt:              q.listServersStmt,
+		listServiceStatsStmt:         q.listServiceStatsStmt,
+		listServicesStmt:             q.listServicesStmt,
+		listStatsTargetsStmt:         q.listStatsTargetsStmt,
+		listTokensStmt:               q.listTokensStmt,
+		listUsedHostPortsStmt:        q.listUsedHostPortsStmt,
+		listUsersWithCountsStmt:      q.listUsersWithCountsStmt,
+		listVariablesStmt:            q.listVariablesStmt,
+		listVolumesStmt:              q.listVolumesStmt,
+		nextReleaseNumberStmt:        q.nextReleaseNumberStmt,
+		pruneServerStatsStmt:         q.pruneServerStatsStmt,
+		pruneServiceStatsStmt:        q.pruneServiceStatsStmt,
+		restoreVariableStmt:          q.restoreVariableStmt,
+		revokeTokenStmt:              q.revokeTokenStmt,
+		setEnvironmentApplyErrorStmt: q.setEnvironmentApplyErrorStmt,
+		setPendingSettingsStmt:       q.setPendingSettingsStmt,
+		setReleaseContainerStmt:      q.setReleaseContainerStmt,
+		setReleaseImageStmt:          q.setReleaseImageStmt,
+		setReleaseStatusStmt:         q.setReleaseStatusStmt,
+		setServerMemoryStmt:          q.setServerMemoryStmt,
+		setUserDisabledStmt:          q.setUserDisabledStmt,
+		setUserPasswordStmt:          q.setUserPasswordStmt,
+		setVariablePendingStmt:       q.setVariablePendingStmt,
+		supersedeReleaseStmt:         q.supersedeReleaseStmt,
+		touchLocalServerStmt:         q.touchLocalServerStmt,
+		touchTokenStmt:               q.touchTokenStmt,
+		unapplyVolumeStmt:            q.unapplyVolumeStmt,
+		updateDomainStatusStmt:       q.updateDomainStatusStmt,
+		updateServerPlacementStmt:    q.updateServerPlacementStmt,
+		updateServiceStmt:            q.updateServiceStmt,
+		upsertPlacementStmt:          q.upsertPlacementStmt,
 	}
 }
