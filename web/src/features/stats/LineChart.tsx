@@ -112,6 +112,7 @@ export const LineChart = memo(function LineChart({
           <span className="absolute top-0 right-0 -translate-y-1/2">
             {format(max)}
           </span>
+          {maxNote && <span className="absolute top-2 right-0">{maxNote}</span>}
           <span className="absolute top-1/2 right-0 -translate-y-1/2">
             {format(max / 2)}
           </span>
@@ -153,11 +154,6 @@ export const LineChart = memo(function LineChart({
           <div className="absolute inset-x-0 top-0 border-t border-line" />
           <div className="absolute inset-x-0 top-1/2 border-t border-soft" />
           <div className="absolute inset-x-0 bottom-0 border-t border-line" />
-          {maxNote && (
-            <span className="absolute top-0.5 right-0 text-2xs text-faint">
-              {maxNote}
-            </span>
-          )}
           <svg
             viewBox={`0 0 ${W} ${H}`}
             preserveAspectRatio="none"
