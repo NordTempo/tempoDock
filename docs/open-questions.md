@@ -1,46 +1,47 @@
 # Open questions
 
-Each question has a current leaning. Move answered ones into the relevant doc.
+Each question has a current leaning. When answered, record it as a decision in
+[decisions](decisions/README.md) and remove it here.
+
+## Homelab ingress
+
+How does public traffic reach staging and dev domains on the homelab?
+
+- **Port forward 80/443** to the homelab's Caddy. Simple, exposes the home IP,
+  needs dynamic DNS if the IP changes.
+- **Cloudflare Tunnel.** No open ports, hides the home IP, adds a Cloudflare
+  dependency and complicates automatic TLS.
+- **Through production's Caddy** over Tailscale. One public entry point, but
+  staging traffic and availability then depend on production.
+- **Private only** (Tailscale). Safest; staging isn't publicly reachable.
+
+Depends on how the homelab is exposed today.
+
+## Base domain for generated subdomains
+
+Which domain do we use for generated hostnames (like Railway's
+`*.up.railway.app`)? Needs a wildcard DNS record pointing at the server. See
+[ADR 0009](decisions/0009-dynamic-domains-and-tls.md).
 
 ## Name
 
-`platform` is a placeholder. Needed before the CLI binary name gets baked in.
+`platform` is a placeholder. Needed before the binary name, CLI commands and
+config file name (`platform.toml`) get baked into docs and agent prompts.
+Renaming is cheap until M1 ships.
 
-## Language
+## Homelab VM for M0-M2
 
-Leaning **Go** for daemon + CLI, TypeScript for the UI only. See
-[tech stack](tech-stack.md). Confirm after M0.
-
-## API style: Huma (OpenAPI) or ConnectRPC?
-
-Leaning **Huma**. Plain JSON over HTTP is easy for agents to `curl`, and the
-OpenAPI spec doubles as docs. ConnectRPC gives a stricter schema and streaming,
-but adds protobuf and a codegen step.
-
-## Proxy: Caddy or kamal-proxy?
-
-Leaning **Caddy** for flexibility (wildcards, on-demand TLS, static sites). kamal-proxy
-does health-gated cutover itself, which could save code. Decide in M0.
-
-## Where do builds run?
-
-Leaning **on the VPS** for simplicity, one build at a time with resource caps.
-Building in CI or on the laptop and pushing an image avoids build spikes on the
-server. Could support both: `deploy` from source or `deploy --image`.
-
-## Source of truth for config: database or repo file?
-
-Railway keeps most config in the platform and optionally reads `railway.json`.
-Leaning **database as source of truth** (so the UI can edit everything), with an
-optional repo file for build settings (Dockerfile path, health check, start
-command) that is applied on deploy.
+M0 to M2 run on the homelab. A small VM (2 vCPU, 2-4 GB RAM) with Docker makes
+footprint problems show up early. Which host, and is Tailscale already there?
 
 ## UI access
 
-Leaning **Tailscale-only** for the API and UI at first, plus an admin login.
-Public access with proper auth (better-auth or similar) later if needed.
+Leaning Tailscale-only for the API and UI, plus a login. Public access with
+proper auth is needed before open source or hosting, so the auth code should
+not assume Tailscale.
 
-## Image registry
+## License
 
-Not needed while builds happen on the VPS. Revisit if we add CI builds or
-multiple servers.
+Not needed while the repo is private. To keep options open, only take
+dependencies with permissive licenses (MIT, Apache-2.0, BSD). See
+[ADR 0008](decisions/0008-keep-doors-open.md).

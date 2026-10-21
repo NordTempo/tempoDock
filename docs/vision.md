@@ -3,38 +3,60 @@
 ## Problem
 
 Railway is great to use but expensive at scale, and your apps and data live on
-someone else's infrastructure. Existing self-hosted options (Coolify, Dokploy,
-Dokku, Kamal) cover parts of this, but none are designed around AI agents
-deploying on your behalf with enforced limits.
+someone else's infrastructure. Self-hosted options (Coolify, Dokploy, Dokku,
+Kamal) cover parts of this, but none are designed around AI agents deploying on
+your behalf with enforced limits, and several are heavy on the server they run
+on.
+
+## Who it's for
+
+1. **Now:** NordTempo. We host our own apps on our own VPSes, deployed by people
+   and by agents.
+2. **Possibly later:** an open-source project others self-host.
+3. **Possibly later:** paid hosting, most likely a hosted control plane managing
+   servers customers bring.
+
+We build for (1) without closing doors on (2) and (3). See
+[ADR 0008](decisions/0008-keep-doors-open.md) for what that means concretely,
+and what we deliberately don't build yet.
+
+## Pillars
+
+| Pillar | Means |
+|---|---|
+| **Lightweight** | The platform uses a small, predictable slice of the server. Idle means idle. |
+| **Fast** | Commands, pages and deploys feel instant. Nothing waits on polling. |
+| **Maintainable** | Small codebase, boring tech, clear boundaries, focused tests. |
+| **Great to use** | CLI and UI are both first-class, with full parity. See [experience](experience.md). |
+| **Safe** | Agents can ship all day; the worst outcome of a mistake is a failed release that never got traffic. |
 
 ## Goals
 
-- **One-command deploys** of any Dockerized app to your own VPS.
-- **UI and CLI parity.** Everything you can do in one, you can do in the other.
-- **Railway's model:** projects, environments, services and variables, with
-  private networking between services in the same environment.
-- **Agent-safe by design.** Agents can deploy and roll back, but cannot destroy
-  apps, volumes or data. This is enforced server-side, not by convention.
-- **Lightweight.** The platform must use a small, predictable slice of the VPS.
-  If the platform starves the apps, it has failed.
-- **Own your data.** Everything lives on your server. No external control plane.
+- One-command deploys of any Dockerized app to your own server.
+- Railway's model: projects, environments, services and variables, with private
+  networking between services in the same environment.
+- UI and CLI parity. Everything you can do in one, you can do in the other.
+- Agent-safe by design, enforced server-side.
+- Own your data. No external control plane required.
 
 ## Non-goals (for now)
 
-- Multiple servers or clustering
+- Clustering: spreading one environment across servers, or automatic failover
+  (we do place whole environments on different servers, see
+  [ADR 0010](decisions/0010-environments-on-servers.md))
 - Kubernetes, Nomad, Swarm or any orchestrator layer
-- Teams, billing or multi-tenant isolation
-- Managed databases in the first versions (plain containers + volumes first)
-- Building our own reverse proxy
+- Billing, organizations, or hosting untrusted customer workloads
+- Managed databases beyond "a container with a volume and backups"
+- Building our own reverse proxy or container runtime
 
 ## Principles
 
 1. **Running apps never depend on the platform being up.** The daemon can crash,
    restart or upgrade while apps keep serving traffic.
 2. **Every change is a release.** Code deploys and config changes both produce an
-   immutable release that is health-checked before it gets traffic, and can be
+   immutable release that is health-checked before it gets traffic and can be
    rolled back.
 3. **Nothing destructive by default.** Deleting is rare, explicit, and requires
    elevated permissions.
 4. **One API, two thin clients.** The CLI and UI contain no business logic.
-5. **Boring, small technology.** Prefer one binary and SQLite over more services.
+5. **Boring, small technology.** One binary and SQLite before more services.

@@ -3,64 +3,148 @@
 ## Overview
 
 ```
- laptop / agent                         VPS
-┌──────────────┐               ┌──────────────────────────────────────┐
-│ platform CLI │──HTTPS+token─▶│ platform serve (one Go binary)        │
-└──────────────┘   (Tailscale) │  ├─ HTTP API (OpenAPI)                │
-┌──────────────┐               │  ├─ embedded web UI                   │
-│   browser    │──────────────▶│  ├─ SQLite (state, audit log)         │
-└──────────────┘               │  ├─ Docker SDK ──▶ Docker Engine       │
-                               │  └─ Caddy admin API ──▶ Caddy :80/:443 │
-                               └──────────────────────────────────────┘
+ laptop / agent / CI                    server (VPS)
+┌──────────────┐               ┌───────────────────────────────────────┐
+│ platform CLI │──HTTPS+token─▶│ platform serve (one Go binary)         │
+└──────────────┘               │  ├─ HTTP API (OpenAPI) + SSE           │
+┌──────────────┐               │  ├─ embedded web UI                    │
+│   browser    │──────────────▶│  ├─ core: deploys, releases, rules     │
+└──────────────┘               │  ├─ SQLite (state, audit log)          │
+                               │  └─ node runtime                       │
+                               │      ├─ Docker SDK ──▶ Docker Engine    │
+                               │      ├─ BuildKit (capped container)    │
+                               │      └─ Caddy config (socket) ─▶ Caddy  │
+                               └───────────────────────────────────────┘
 ```
 
-- The daemon is the only thing that talks to Docker and Caddy.
+- The daemon is the only thing that talks to Docker, BuildKit and Caddy.
 - The CLI and UI only talk to the daemon's API.
 - Agents use the CLI (or the API directly) with a scoped token.
+- This shows a single server. With more servers (production on Hetzner,
+  everything else on the homelab), the other servers run only a node runtime.
+  See [Servers](#servers).
+
+## Two halves inside one binary
+
+The code is split into a **control plane** (API, core logic, SQLite) and a
+**node runtime** (Docker, builds, proxy) behind a Go interface. On the control
+plane's own server the interface is a plain function call; for other servers
+it's a client that sends the same calls over the node connection.
+
+This keeps the core testable with a fake runtime, makes remote servers a
+transport detail, and is where a hosted control plane would split later. See
+[ADR 0008](decisions/0008-keep-doors-open.md).
 
 ## Data model
 
 ```
+User            humans; log in to the UI, own tokens
+Token           hashed, with scopes and optional project/environment limits
+Server          a node: role (production / non-production), builder flag, status
+
 Project
- └─ Environment            production, staging, ...
+ └─ Environment            production, staging, ...; placed on one Server
      ├─ Variable           environment-level, shared by all services
-     └─ Service            one container image (from repo, Dockerfile or image)
+     └─ Service            built from source or a prebuilt image
          ├─ Variable       service-level, overrides environment-level
-         ├─ Domain         public hostname → service port
-         ├─ Volume         named Docker volume, mount path
+         ├─ Domain         public hostname → service port, with TLS status
+         ├─ Volume         named Docker volume + mount path
          └─ Release        immutable snapshot, one per deploy or config change
              └─ Event      build/deploy progress, status changes
 
-Token        hashed, with scopes and an optional project restriction
-AuditEvent   who did what, when, with which token
+AuditEvent      who did what, when, with which token
 ```
 
-- A **Release** stores the image ID and the fully resolved config (variables,
-  ports, limits, mounts). Rolling back means starting an old release as-is.
+- A **Release** stores the image reference and the fully resolved config
+  (variables, ports, limits, mounts, health check). Rolling back starts an old
+  release exactly as it was.
 - **Variable references** like `${{postgres.DATABASE_URL}}` are resolved when a
-  release is created, so each release is self-contained.
+  release is created, so every release is self-contained.
+- Where settings come from (repo file vs DB) is described in
+  [ADR 0007](decisions/0007-config-db-plus-repo-file.md).
 
 ## Deploy flow
 
-1. Client uploads source (tarball) or names an image.
-2. Daemon takes the per-service lock, creates a Release in `building` state.
-3. Build with BuildKit (or pull the image). Build logs stream to the client.
-4. Start the new container next to the old one, on the environment's network.
-5. Health check (HTTP path or TCP port) until it passes or times out.
-6. **Pass:** switch the Caddy route to the new container, drain and stop the old
-   one, mark the Release `active`.
-   **Fail:** stop the new container, keep the old one serving, mark the Release
-   `failed` with logs.
-7. Write an AuditEvent. Release the lock.
+A deploy is a state machine persisted in SQLite, so it survives a daemon crash.
+
+```
+queued → building → starting → health_checking → active
+                         └──────────┴───────────→ failed
+```
+
+1. Client uploads source (tarball) or names an image. Daemon takes the
+   per-service lock and creates a Release in `queued`.
+2. **building:** BuildKit build (or image pull). Build logs stream to clients
+   and are kept as a file per release.
+3. **starting:** start the new container next to the old one, on the
+   environment's network, with resource limits.
+4. **health_checking:** HTTP path or TCP port until it passes or times out.
+5. **active:** switch the Caddy route, drain and stop the old container.
+   **failed:** stop the new container. The old one never stopped serving.
+6. Write an AuditEvent, release the lock, publish events to SSE subscribers.
+
+If the daemon restarts mid-deploy, any release not yet `active` is marked
+`failed` and its container stopped. The previous release keeps serving.
+
+**Stateful services** (any service with a volume, including databases) use a
+recreate strategy instead: stop the old container, then start the new one,
+because two processes must never share a volume. See
+[ADR 0011](decisions/0011-stateful-services-and-databases.md).
+
+## Servers
+
+Details in [ADR 0010](decisions/0010-environments-on-servers.md).
+
+```
+ Hetzner (production)                     Homelab (non-production, builder)
+ platform serve                ◀────────  platform node
+  ├─ control plane                outbound   ├─ node runtime
+  ├─ registry                     conn.      ├─ BuildKit
+  └─ node runtime                            └─ staging, dev, previews
+ production environments
+```
+
+- One control plane, on the production server. Other servers run
+  `platform node`, dial out to it, and receive commands over that connection.
+- An environment lives entirely on one server: its services, volumes and
+  private network. Production environments go to the production server;
+  everything else goes to the homelab unless pinned elsewhere.
+- Builds run only on builder servers. Images go to the registry next to the
+  control plane; `platform promote` ships a tested image to production without
+  rebuilding.
+- If the homelab is down, production is unaffected. If the control plane is
+  down, apps everywhere keep running; only deploys stop.
 
 ## Networking
 
 - Each (project, environment) gets its own Docker network. Services reach each
   other by service name, like Railway's private networking.
 - Services with a domain publish their port on `127.0.0.1` only. Caddy proxies
-  to that port, so nothing is directly exposed to the internet.
-- Firewall: only 22, 80 and 443 open publicly. The daemon API listens on the
-  Tailscale interface (see [open questions](open-questions.md)).
+  to it, so app containers are never directly exposed.
+- Public firewall: 22, 80, 443. The daemon API and UI listen on Tailscale by
+  default.
+
+## Domains
+
+Users add domains from the CLI or UI; nobody edits proxy config. Details in
+[ADR 0009](decisions/0009-dynamic-domains-and-tls.md).
+
+```
+CLI / UI ──add domain──▶ API ──▶ Domain row in SQLite
+                                     │
+                     render full Caddy config from DB
+                                     │
+                         load into Caddy (atomic swap)
+
+first HTTPS request for a new hostname:
+Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes: issue certificate
+                                                        └─▶ no: refuse
+```
+
+- Any hostname works: apex, subdomains, several per service, and generated
+  subdomains under a configured base domain.
+- DNS can be set up before or after adding the domain; status updates live.
+- Release cutovers use the same render-and-load path.
 
 ## Docker as the runtime source of truth
 
@@ -68,15 +152,48 @@ AuditEvent   who did what, when, with which token
   `platform.service`, `platform.release`.
 - Containers run with `restart: unless-stopped`, so they survive daemon and
   host restarts without the daemon's help.
-- On startup the daemon **reconciles**: it compares SQLite (desired state)
-  with Docker labels (actual state), reports drift, and never destroys anything
-  it doesn't recognize.
+- On start-up the daemon reconciles SQLite (desired) against Docker labels
+  (actual), reports drift, and never touches containers it didn't create.
 
-## Process layout on the VPS
+## Live data without idle cost
+
+- An in-process event bus feeds SSE streams to the UI and CLI.
+- The daemon subscribes to Docker's event stream instead of polling.
+- Resource stats are only collected while someone is viewing them (until we
+  add stored metrics in M4).
+- App logs are read from Docker (`local` log driver with rotation). We don't
+  copy or store them.
+
+## Process layout per server
 
 | Process | Managed by | Restarting it affects |
 |---|---|---|
 | Docker Engine | systemd | Everything (rare) |
 | Caddy | systemd, `caddy run --resume` | Traffic, briefly |
-| platform daemon | systemd | Only the API and UI |
+| platform daemon (`serve` or `node`) | systemd | Only the API/UI, or that node's link to the control plane |
+| BuildKit (builder servers only) | Docker, capped CPU/RAM | Only builds |
+| Registry (control plane server only) | Docker | Image pushes and pulls |
 | App containers | Docker restart policy | That app |
+
+Upgrading the platform means swapping the binary and restarting the systemd
+unit. Apps and routing are unaffected.
+
+## Code layout
+
+```
+cmd/platform/        entry point: CLI commands, `platform serve`, `platform node`
+internal/api/        HTTP handlers (Huma), auth, SSE
+internal/core/       domain logic: projects, environments, releases, deploy state machine
+internal/store/      SQLite, migrations, sqlc queries
+internal/node/       runtime interface, local implementation (Docker, BuildKit, Caddy),
+                     remote client + node-side server for the node connection
+internal/cli/        CLI commands, output formatting (human and --json)
+web/                 React app; build output embedded into the binary
+docs/
+```
+
+- `core` depends on interfaces for `store` and `node`, never on Docker or HTTP
+  directly.
+- Tests: unit tests for `core` with a fake node runtime; integration tests in CI
+  against a real Docker Engine; a small set of UI tests where logic is
+  non-trivial.
