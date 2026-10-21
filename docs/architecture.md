@@ -112,6 +112,9 @@ Details in [ADR 0010](decisions/0010-environments-on-servers.md).
 - Builds run only on builder servers. Images go to the registry next to the
   control plane; `platform promote` ships a tested image to production without
   rebuilding.
+- Hetzner never depends on the homelab. The homelab is flexible (rebooted,
+  rebuilt, experimented on), which is why staging and dev live there and why
+  production can't rely on it.
 - If the homelab is down, production is unaffected. If the control plane is
   down, apps everywhere keep running; only deploys stop.
 

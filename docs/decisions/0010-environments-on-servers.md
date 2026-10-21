@@ -9,6 +9,12 @@ preview environments, and all builds, don't need to live there. A homelab can
 host them for free. We want one platform, one UI and one CLI across both, not
 two separate installs.
 
+The two servers play different roles. Hetzner is the stable one: it should
+just keep running. The homelab is flexible: it gets rebooted, rebuilt,
+reshuffled and experimented on, and it sits behind a home internet connection
+and power. That flexibility is why staging, dev and previews belong there, and
+also why production must never rely on it.
+
 ## Decision
 
 ### One control plane, many nodes
@@ -36,6 +42,15 @@ two separate installs.
   connection and receive commands on it. The homelab needs no port forwarding
   for this, and the same model works for customer-owned servers later.
 - A node joins with a one-time token: `platform node join <token>`.
+
+### Hetzner never depends on the homelab
+
+Dependencies only point one way: the homelab may depend on Hetzner, never the
+reverse. Nothing that production needs to run, serve, deploy or roll back may
+live only on the homelab. The control plane, registry and production data stay
+on Hetzner, and the homelab can disappear at any time without production
+noticing. Anything that would break this rule belongs on Hetzner or in CI
+instead.
 
 ### Placement
 
