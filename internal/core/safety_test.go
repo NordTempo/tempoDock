@@ -198,6 +198,34 @@ func TestFailedReleaseKeepsContainerLogs(t *testing.T) {
 	}
 }
 
+// DNS right but no certificate yet is issuing_certificate, until it has
+// been so for certPatience.
+func TestPendingCertificateIsIssuing(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	h.rt.SetDomainCheck(func(string) node.DomainCheck { return node.DomainCheck{DNSOK: true} })
+	ss, _ := h.c.serviceFor(h.ctx, System, web, apitypes.ScopeRead, "testing")
+	status := func(dnsOK time.Time) string {
+		t.Helper()
+		ds, err := h.store.ListDomainsByService(h.ctx, ss.svc.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.c.checkDomain(h.ctx, ds[0], &dnsOK)
+		ds, _ = h.store.ListDomainsByService(h.ctx, ss.svc.ID)
+		return ds[0].Status
+	}
+	if s := status(time.Time{}); s != string(apitypes.DomainIssuingCertificate) {
+		t.Fatalf("pending certificate: %s", s)
+	}
+	if s := status(time.Now().Add(-certPatience - time.Minute)); s != string(apitypes.DomainError) {
+		t.Fatalf("certificate pending too long: %s", s)
+	}
+}
+
 // waitOp waits until the runtime has seen op.
 func (h *harness) waitOp(op string) {
 	h.t.Helper()

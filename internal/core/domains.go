@@ -262,6 +262,9 @@ func (c *Core) checkDomains() {
 	type backoff struct {
 		next  time.Time
 		delay time.Duration
+		// dnsOK is when DNS was first seen right, i.e. when the first
+		// HTTPS handshake asked Caddy to issue a certificate.
+		dnsOK time.Time
 	}
 	state := map[int64]*backoff{}
 	for {
@@ -279,7 +282,7 @@ func (c *Core) checkDomains() {
 				state[d.ID] = b
 			}
 			if !time.Now().Before(b.next) {
-				c.checkDomain(c.ctx, d)
+				c.checkDomain(c.ctx, d, &b.dnsOK)
 				b.next = time.Now().Add(b.delay)
 				b.delay = min(b.delay*2, domainCheckMax)
 			}
@@ -312,7 +315,13 @@ func (c *Core) checkDomains() {
 	}
 }
 
-func (c *Core) checkDomain(ctx context.Context, d store.Domain) {
+// certPatience is how long a certificate may stay pending after DNS is
+// right before the domain shows an error.
+const certPatience = 10 * time.Minute
+
+// checkDomain updates one domain's status. dnsOK tracks when its DNS was
+// first seen right, to tell a pending certificate from one that never comes.
+func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time) {
 	ss, err := c.scopeOf(ctx, d.ServiceID)
 	if err != nil || ss.svc.ArchivedAt != nil {
 		return
@@ -326,6 +335,7 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain) {
 	case err != nil:
 		reason = "could not check: " + err.Error()
 	case !check.DNSOK:
+		*dnsOK = time.Time{}
 		status = apitypes.DomainWaitingForDNS
 		reason = check.Error
 		if reason == "" {
@@ -335,8 +345,13 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain) {
 		status, reason = apitypes.DomainActive, ""
 	case check.Error != "":
 		status, reason = apitypes.DomainError, check.Error
-	default:
+	case dnsOK.IsZero() || time.Since(*dnsOK) < certPatience:
+		if dnsOK.IsZero() {
+			*dnsOK = time.Now()
+		}
 		status, reason = apitypes.DomainIssuingCertificate, ""
+	default:
+		status, reason = apitypes.DomainError, fmt.Sprintf("no certificate after %s; check that ports 80 and 443 reach this server and see Caddy's log", certPatience)
 	}
 	if string(status) == d.Status && reason == d.StatusReason {
 		return
