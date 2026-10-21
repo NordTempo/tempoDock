@@ -120,12 +120,19 @@ func TestLifecycle(t *testing.T) {
 
 	net, vol := e.name("net"), e.name("data")
 	for range 2 { // idempotent
-		if err := e.EnsureNetwork(ctx, net); err != nil {
+		if err := e.EnsureNetwork(ctx, net, node.Labels{Project: "p1", Environment: "e1"}); err != nil {
 			t.Fatal(err)
 		}
 		if err := e.EnsureVolume(ctx, vol, node.Labels{Project: "p1"}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Another environment or project can't take over the same names.
+	if err := e.EnsureNetwork(ctx, net, node.Labels{Project: "p1", Environment: "e2"}); err == nil {
+		t.Error("EnsureNetwork accepted another environment's network")
+	}
+	if err := e.EnsureVolume(ctx, vol, node.Labels{Project: "p2"}); err == nil {
+		t.Error("EnsureVolume accepted another project's volume")
 	}
 
 	labels := node.Labels{Project: "p1", Environment: "e1", Service: "s1", Release: "r1"}

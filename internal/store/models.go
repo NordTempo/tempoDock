@@ -39,6 +39,7 @@ type Environment struct {
 	Name      string
 	ServerID  int64
 	CreatedAt time.Time
+	Network   string
 }
 
 type Project struct {

@@ -235,7 +235,7 @@ func (c *Core) AddVolume(ctx context.Context, a Actor, ref ServiceRef, req apity
 	}
 	_, err = c.store.CreateVolume(ctx, store.CreateVolumeParams{
 		ServiceID: ss.svc.ID, Name: req.Name, MountPath: path.Clean(req.MountPath), Pending: true,
-		DockerName: fmt.Sprintf("%s-%s-%s-%s", ss.project.Name, ss.env.Name, ss.svc.Name, req.Name),
+		DockerName: volumeName(ss, req.Name),
 	})
 	if store.IsUnique(err) {
 		return apitypes.ChangeResult{}, conflict("service %s already has a volume named %s or mounted at %s", ss, req.Name, req.MountPath)

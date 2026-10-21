@@ -139,6 +139,16 @@ func (h *harness) status(ref ServiceRef, number int64) apitypes.ReleaseStatus {
 	return rel.Status
 }
 
+// ctr is the container name of a service's release.
+func (h *harness) ctr(ref ServiceRef, number int64) string {
+	h.t.Helper()
+	ss, err := h.c.serviceFor(h.ctx, System, ref, apitypes.ScopeRead, "testing")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return containerName(ss, number)
+}
+
 func indexOf(ops []string, op string) int { return slices.Index(ops, op) }
 
 // waitRunning waits for the set of running containers to settle on want;
@@ -177,15 +187,15 @@ func TestDeployActivatesAndSwitchesRoutes(t *testing.T) {
 	if routes := h.rt.Routes(); routes[0].Upstream != "127.0.0.1:20001" {
 		t.Fatalf("routes after release 2: %+v", routes)
 	}
-	h.waitRunning("shop-production-web-2")
+	h.waitRunning(h.ctr(web, 2))
 	// Zero downtime: the new container starts and gets traffic before the
 	// old one stops.
 	ops := h.rt.Ops()
-	start, routed, stop := indexOf(ops, "start shop-production-web-2"), indexOf(ops, "routes shop.example.com->127.0.0.1:20001"), indexOf(ops, "stop shop-production-web-1")
+	start, routed, stop := indexOf(ops, "start "+h.ctr(web, 2)), indexOf(ops, "routes shop.example.com->127.0.0.1:20001"), indexOf(ops, "stop "+h.ctr(web, 1))
 	if start < 0 || start > routed || routed > stop {
 		t.Fatalf("want start < routes < stop, ops = %v", ops)
 	}
-	spec, _ := h.rt.Spec("shop-production-web-2")
+	spec, _ := h.rt.Spec(h.ctr(web, 2))
 	if spec.Env["PORT"] != "3000" || spec.Env["DOCK_PUBLIC_DOMAIN"] != "shop.example.com" || spec.HostPort != 20001 {
 		t.Fatalf("spec = %+v", spec)
 	}
@@ -198,7 +208,7 @@ func TestFailedHealthCheckKeepsOldReleaseServing(t *testing.T) {
 	before := h.rt.Routes()
 
 	h.rt.FailHealthCheck(func(s node.ContainerSpec) error {
-		if s.Image == "app:bad" || strings.HasSuffix(s.Name, "-2") {
+		if s.Image == "app:bad" || strings.HasSuffix(s.Name, "_r2") {
 			return errors.New("GET /healthz: 500")
 		}
 		return nil
@@ -213,7 +223,7 @@ func TestFailedHealthCheckKeepsOldReleaseServing(t *testing.T) {
 	if h.status(web, 1) != apitypes.ReleaseActive {
 		t.Fatal("release 1 should still be active")
 	}
-	if got := h.rt.Running(); !slices.Equal(got, []string{"shop-production-web-1"}) {
+	if got := h.rt.Running(); !slices.Equal(got, []string{h.ctr(web, 1)}) {
 		t.Fatalf("running = %v", got)
 	}
 	if !reflect.DeepEqual(h.rt.Routes(), before) {
@@ -251,7 +261,7 @@ func TestCrashRecoveryFailsInFlightReleases(t *testing.T) {
 	if h.status(web, 1) != apitypes.ReleaseActive {
 		t.Fatal("release 1 should still be active")
 	}
-	if got := h.rt.Running(); !slices.Equal(got, []string{"shop-production-web-1"}) {
+	if got := h.rt.Running(); !slices.Equal(got, []string{h.ctr(web, 1)}) {
 		t.Fatalf("running = %v", got)
 	}
 	h.c.Close()
@@ -277,7 +287,7 @@ func TestRollbackReusesImageAndConfig(t *testing.T) {
 	if r3.Status != apitypes.ReleaseActive || r3.Source != apitypes.SourceRollback || r3.FromRelease != 1 || r3.ImageRef != "app:1" {
 		t.Fatalf("rollback release: %+v", r3)
 	}
-	spec, _ := h.rt.Spec("shop-production-web-3")
+	spec, _ := h.rt.Spec(h.ctr(web, 3))
 	if spec.Env["MODE"] != "one" {
 		t.Fatalf("rollback should use release 1's config, MODE = %q", spec.Env["MODE"])
 	}
@@ -298,7 +308,7 @@ func TestStatefulServiceIsRecreated(t *testing.T) {
 		t.Fatalf("release 2: %+v", r2)
 	}
 	ops := h.rt.Ops()
-	if stop, start := indexOf(ops, "stop shop-production-db-1"), indexOf(ops, "start shop-production-db-2"); stop < 0 || stop > start {
+	if stop, start := indexOf(ops, "stop "+h.ctr(db, 1)), indexOf(ops, "start "+h.ctr(db, 2)); stop < 0 || stop > start {
 		t.Fatalf("stateful deploy must stop the old container first, ops = %v", ops)
 	}
 
@@ -309,7 +319,7 @@ func TestStatefulServiceIsRecreated(t *testing.T) {
 	if r3.Status != apitypes.ReleaseFailed || h.status(db, 2) != apitypes.ReleaseActive {
 		t.Fatalf("release 3 %s, release 2 %s", r3.Status, h.status(db, 2))
 	}
-	if got := h.rt.Running(); !slices.Equal(got, []string{"shop-production-db-2"}) {
+	if got := h.rt.Running(); !slices.Equal(got, []string{h.ctr(db, 2)}) {
 		t.Fatalf("running = %v", got)
 	}
 }
@@ -333,7 +343,7 @@ func TestVariableReferences(t *testing.T) {
 	}
 	h.deploy(api, "api:1")
 	h.deploy(web, "web:1")
-	spec, _ := h.rt.Spec("shop-production-web-1")
+	spec, _ := h.rt.Spec(h.ctr(web, 1))
 	if spec.Env["API_URL"] != "http://api:8080/v1" || spec.Env["WHERE"] != "eu" || spec.Env["REGION"] != "eu" {
 		t.Fatalf("env = %v", spec.Env)
 	}

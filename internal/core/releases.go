@@ -38,7 +38,8 @@ type releaseConfig struct {
 	MemoryMB           int           `json:"memory_mb"`
 	CPUs               float64       `json:"cpus"`
 	Mounts             []configMount `json:"mounts"`
-	Network            string        `json:"network"`
+	// Network (older releases) is ignored: containers always join their
+	// environment's current network (networkName).
 	Aliases            []string      `json:"aliases"`
 	// Repo holds the deploy settings that came from dock.toml, so config
 	// releases built on this one keep them.
@@ -124,14 +125,32 @@ func (c *Core) openConfig(sealed []byte) (releaseConfig, error) {
 	return cfg, json.Unmarshal(b, &cfg)
 }
 
-func networkName(es envScope) string { return "dock-" + es.project.Name + "-" + es.env.Name }
+// Docker resource names are built from DB IDs, never from user-chosen names:
+// "a"/"b-c" and "a-b"/"c" would otherwise share a network. Underscores keep
+// them apart from pre-ID names (project, environment and service names never
+// contain one). Labels carry the same IDs for tracing a resource back.
+
+// networkName is the environment's private network. Environments that had
+// containers before ID-based naming keep their old network (migration 0002).
+func networkName(es envScope) string {
+	if es.env.Network != "" {
+		return es.env.Network
+	}
+	return fmt.Sprintf("dock_p%d_e%d", es.project.ID, es.env.ID)
+}
 
 func containerName(ss svcScope, number int64) string {
-	return fmt.Sprintf("%s-%s-%s-%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
+	return fmt.Sprintf("dock_p%d_e%d_s%d_r%d", ss.project.ID, ss.env.ID, ss.svc.ID, number)
 }
 
 func buildTag(ss svcScope, number int64) string {
-	return fmt.Sprintf("dock/%s-%s-%s:%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
+	return fmt.Sprintf("dock/p%d_e%d_s%d:%d", ss.project.ID, ss.env.ID, ss.svc.ID, number)
+}
+
+// volumeName is the Docker name of a new volume. It is stored with the
+// volume, so volumes created under older naming keep their name and data.
+func volumeName(ss svcScope, volume string) string {
+	return fmt.Sprintf("dock_p%d_e%d_s%d_%s", ss.project.ID, ss.env.ID, ss.svc.ID, volume)
 }
 
 // resolveConfig builds the container config for a service from its live
@@ -215,7 +234,6 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 		MemoryMB:           int(target.MemoryMb),
 		CPUs:               target.Cpus,
 		Mounts:             []configMount{},
-		Network:            networkName(ss.envScope),
 		Aliases:            []string{target.Name},
 	}
 	if cfg.HealthCheckTimeout == 0 {

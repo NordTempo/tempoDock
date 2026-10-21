@@ -98,8 +98,9 @@ func (d *deployment) run(ctx context.Context) error {
 		return err
 	}
 	d.stateful = len(d.cfg.Mounts) > 0
-	if err := d.rt.EnsureNetwork(ctx, d.cfg.Network); err != nil {
-		return step(apitypes.CodeDeployFailed, "create network %s: %w", d.cfg.Network, err)
+	network := networkName(d.ss.envScope)
+	if err := d.rt.EnsureNetwork(ctx, network, labels(d.ss, 0)); err != nil {
+		return step(apitypes.CodeDeployFailed, "create network %s: %w", network, err)
 	}
 	for _, m := range d.cfg.Mounts {
 		if err := d.rt.EnsureVolume(ctx, m.DockerName, labels(d.ss, 0)); err != nil {
@@ -365,7 +366,7 @@ func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) 
 		Labels:  labels(ss, rel.ID),
 		Env:     cfg.Env,
 		Cmd:     cfg.Cmd,
-		Network: cfg.Network,
+		Network: networkName(ss.envScope),
 		Aliases: cfg.Aliases,
 		Resources: node.Resources{
 			MemoryBytes: int64(cfg.MemoryMB) << 20,
