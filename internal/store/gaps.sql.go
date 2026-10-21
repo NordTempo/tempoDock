@@ -10,7 +10,7 @@ import (
 )
 
 const listAuditEventsByTarget = `-- name: ListAuditEventsByTarget :many
-SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at FROM audit_events
+SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id FROM audit_events
 WHERE project_id = ?1
   AND environment_id = ?2
   AND target = ?3
@@ -60,6 +60,7 @@ func (q *Queries) ListAuditEventsByTarget(ctx context.Context, arg ListAuditEven
 			&i.Target,
 			&i.Summary,
 			&i.CreatedAt,
+			&i.DetailID,
 		); err != nil {
 			return nil, err
 		}

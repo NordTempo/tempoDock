@@ -46,7 +46,7 @@ const createService = `-- name: CreateService :one
 INSERT INTO services (environment_id, name, image, port, health_check_path, health_check_timeout_seconds,
                       start_command, dockerfile_path, build_command, memory_mb, cpus)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at
+RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable
 `
 
 type CreateServiceParams struct {
@@ -94,6 +94,8 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) (S
 		&i.PendingSettings,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Database,
+		&i.DatabaseUrlVariable,
 	)
 	return i, err
 }
@@ -151,7 +153,7 @@ func (q *Queries) DeleteVolume(ctx context.Context, id int64) error {
 }
 
 const getService = `-- name: GetService :one
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at FROM services WHERE id = ?
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE id = ?
 `
 
 func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
@@ -173,12 +175,14 @@ func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
 		&i.PendingSettings,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Database,
+		&i.DatabaseUrlVariable,
 	)
 	return i, err
 }
 
 const getServiceByName = `-- name: GetServiceByName :one
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at FROM services WHERE environment_id = ? AND name = ?
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE environment_id = ? AND name = ?
 `
 
 type GetServiceByNameParams struct {
@@ -205,6 +209,8 @@ func (q *Queries) GetServiceByName(ctx context.Context, arg GetServiceByNamePara
 		&i.PendingSettings,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Database,
+		&i.DatabaseUrlVariable,
 	)
 	return i, err
 }
@@ -327,7 +333,7 @@ func (q *Queries) ListEnvironmentVolumes(ctx context.Context, environmentID int6
 }
 
 const listProjectServices = `-- name: ListProjectServices :many
-SELECT services.id, services.environment_id, services.name, services.image, services.port, services.health_check_path, services.health_check_timeout_seconds, services.start_command, services.dockerfile_path, services.build_command, services.memory_mb, services.cpus, services.pending_settings, services.created_at, services.archived_at FROM services
+SELECT services.id, services.environment_id, services.name, services.image, services.port, services.health_check_path, services.health_check_timeout_seconds, services.start_command, services.dockerfile_path, services.build_command, services.memory_mb, services.cpus, services.pending_settings, services.created_at, services.archived_at, services."database", services.database_url_variable FROM services
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.project_id = ?
 ORDER BY services.environment_id, services.name
@@ -359,6 +365,8 @@ func (q *Queries) ListProjectServices(ctx context.Context, projectID int64) ([]S
 			&i.PendingSettings,
 			&i.CreatedAt,
 			&i.ArchivedAt,
+			&i.Database,
+			&i.DatabaseUrlVariable,
 		); err != nil {
 			return nil, err
 		}
@@ -414,7 +422,7 @@ func (q *Queries) ListProjectVolumes(ctx context.Context, projectID int64) ([]Vo
 }
 
 const listServices = `-- name: ListServices :many
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at FROM services WHERE environment_id = ? ORDER BY name
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE environment_id = ? ORDER BY name
 `
 
 func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Service, error) {
@@ -442,6 +450,8 @@ func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Serv
 			&i.PendingSettings,
 			&i.CreatedAt,
 			&i.ArchivedAt,
+			&i.Database,
+			&i.DatabaseUrlVariable,
 		); err != nil {
 			return nil, err
 		}
@@ -618,7 +628,7 @@ UPDATE services SET
     image = ?, port = ?, health_check_path = ?, health_check_timeout_seconds = ?,
     start_command = ?, dockerfile_path = ?, build_command = ?, memory_mb = ?, cpus = ?
 WHERE id = ?
-RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at
+RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable
 `
 
 type UpdateServiceParams struct {
@@ -664,6 +674,8 @@ func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) (S
 		&i.PendingSettings,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Database,
+		&i.DatabaseUrlVariable,
 	)
 	return i, err
 }

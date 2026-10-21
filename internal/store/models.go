@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+type AuditDetail struct {
+	ID         int64
+	Sql        string
+	Rows       int64
+	DurationMs int64
+	Outcome    string
+}
+
 type AuditEvent struct {
 	ID            int64
 	Actor         string
@@ -20,6 +28,27 @@ type AuditEvent struct {
 	Target        string
 	Summary       string
 	CreatedAt     time.Time
+	DetailID      *int64
+}
+
+type Changeset struct {
+	ID           int64
+	ServiceID    int64
+	Status       string
+	Author       string
+	AuthorKind   string
+	UserID       *int64
+	TokenID      *int64
+	Message      string
+	Changes      string
+	Sql          string
+	RowsAffected string
+	Conflicts    string
+	Reason       string
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
+	DecidedAt    *time.Time
+	DecidedBy    string
 }
 
 type CliLogin struct {
@@ -34,6 +63,27 @@ type CliLogin struct {
 	ExpiresAt  time.Time
 	Status     string
 	UserID     *int64
+}
+
+type DataAccess struct {
+	ServiceID        int64
+	Engine           string
+	ServerVersion    string
+	ReaderSecret     []byte
+	WriterSecret     []byte
+	MaskedSyncedHash string
+	SetUpAt          time.Time
+	SetUpBy          string
+}
+
+type DataPolicyRule struct {
+	ID            int64
+	ProjectID     *int64
+	EnvironmentID *int64
+	Subject       string
+	Kind          string
+	Level         string
+	Sensitive     string
 }
 
 type Domain struct {
@@ -100,6 +150,23 @@ type ReleaseEvent struct {
 	CreatedAt time.Time
 }
 
+type SavedQuery struct {
+	ID        int64
+	ServiceID int64
+	UserID    int64
+	Name      string
+	Sql       string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type SensitiveColumn struct {
+	ServiceID  int64
+	SchemaName string
+	TableName  string
+	ColumnName string
+}
+
 type Server struct {
 	ID                   int64
 	Name                 string
@@ -141,6 +208,8 @@ type Service struct {
 	PendingSettings           *string
 	CreatedAt                 time.Time
 	ArchivedAt                *time.Time
+	Database                  string
+	DatabaseUrlVariable       string
 }
 
 type ServiceStat struct {
@@ -162,18 +231,21 @@ type Session struct {
 }
 
 type Token struct {
-	ID            int64
-	Name          string
-	Hash          string
-	Scope         string
-	ProjectID     *int64
-	EnvironmentID *int64
-	CreatedBy     string
-	CreatedAt     time.Time
-	ExpiresAt     *time.Time
-	LastUsedAt    *time.Time
-	RevokedAt     *time.Time
-	Origin        string
+	ID                int64
+	Name              string
+	Hash              string
+	Scope             string
+	ProjectID         *int64
+	EnvironmentID     *int64
+	CreatedBy         string
+	CreatedAt         time.Time
+	ExpiresAt         *time.Time
+	LastUsedAt        *time.Time
+	RevokedAt         *time.Time
+	Origin            string
+	DataProduction    *string
+	DataNonProduction *string
+	DataSensitive     *string
 }
 
 type User struct {
