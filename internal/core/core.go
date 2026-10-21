@@ -70,6 +70,11 @@ type Core struct {
 	statusMu sync.Mutex
 	status   map[int64]apitypes.ServiceStatus // by service ID
 
+	// loginLimit throttles password attempts per client IP and per email;
+	// bcryptSem caps concurrent password checks (each is ~50ms of CPU).
+	loginLimit *limiter
+	bcryptSem  chan struct{}
+
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
 	uploads   map[int64]bool
@@ -101,6 +106,8 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		domainKick: make(chan struct{}, 1),
 		status:     map[int64]apitypes.ServiceStatus{},
 		uploads:    map[int64]bool{},
+		loginLimit: newLimiter(5, 10*time.Second),
+		bcryptSem:  make(chan struct{}, 2),
 		drain:      DefaultCutoverDrain,
 	}
 	if o.CutoverDrain > 0 {

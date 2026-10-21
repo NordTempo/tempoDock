@@ -132,6 +132,7 @@ type User struct {
 	PasswordHash string
 	Role         string
 	CreatedAt    time.Time
+	DisabledAt   *time.Time
 }
 
 type Variable struct {

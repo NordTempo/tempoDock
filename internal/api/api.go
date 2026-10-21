@@ -119,6 +119,8 @@ func codeForStatus(status int) apitypes.ErrorCode {
 		return apitypes.CodeConflict
 	case http.StatusRequestEntityTooLarge:
 		return apitypes.CodeTooLarge
+	case http.StatusTooManyRequests:
+		return apitypes.CodeRateLimited
 	}
 	return apitypes.CodeInternal
 }
@@ -137,6 +139,8 @@ func statusForCode(code apitypes.ErrorCode) int {
 		return http.StatusConflict
 	case apitypes.CodeTooLarge:
 		return http.StatusRequestEntityTooLarge
+	case apitypes.CodeRateLimited:
+		return http.StatusTooManyRequests
 	}
 	return http.StatusInternalServerError
 }

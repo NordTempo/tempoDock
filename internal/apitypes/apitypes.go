@@ -493,6 +493,15 @@ type User struct {
 	Name      string    `json:"name"`
 	Role      Scope     `json:"role" enum:"read,deploy,admin"`
 	CreatedAt time.Time `json:"created_at"`
+	// DisabledAt is set while the user can't log in.
+	DisabledAt *time.Time `json:"disabled_at,omitempty"`
+}
+
+// ChangePasswordRequest changes the caller's own password. All their
+// sessions end; the response carries a fresh one.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password" minLength:"12"`
 }
 
 // CreateUserRequest creates a user.

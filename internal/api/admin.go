@@ -47,6 +47,31 @@ func registerAdmin(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.CreateUserRequest }) (*out[apitypes.User], error) {
 		return reply(s.core.CreateUser(ctx, actor, in.Body))
 	})
+	userIDOp := func(op huma.Operation, disable bool) {
+		authed(s, a, op, func(ctx context.Context, actor core.Actor, in *struct {
+			ID int64 `path:"id"`
+		}) (*out[apitypes.User], error) {
+			return reply(s.core.SetUserDisabled(ctx, actor, in.ID, disable))
+		})
+	}
+	userIDOp(huma.Operation{
+		OperationID: "disable-user", Method: http.MethodPost, Path: Prefix + "/users/{id}/disable",
+		Summary: "Disable a user", Tags: tags,
+		Description: "The user can't log in and their sessions end now. Tokens they created keep working until revoked. Scope: admin, unlimited.",
+	}, true)
+	userIDOp(huma.Operation{
+		OperationID: "enable-user", Method: http.MethodPost, Path: Prefix + "/users/{id}/enable",
+		Summary: "Enable a user", Description: "Lets a disabled user log in again. Scope: admin, unlimited.", Tags: tags,
+	}, false)
+	authed(s, a, huma.Operation{
+		OperationID: "delete-user", Method: http.MethodDelete, Path: Prefix + "/users/{id}",
+		Summary: "Delete a user", Description: "Ends their sessions. Their audit history and the tokens they created stay. Scope: admin, unlimited.",
+		Tags: tags, DefaultStatus: http.StatusNoContent,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID int64 `path:"id"`
+	}) (*struct{}, error) {
+		return nil, s.core.DeleteUser(ctx, actor, in.ID)
+	})
 
 	authed(s, a, huma.Operation{
 		OperationID: "list-audit", Method: http.MethodGet, Path: Prefix + "/audit",

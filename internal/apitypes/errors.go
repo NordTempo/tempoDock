@@ -17,7 +17,9 @@ const (
 	// CodeHostnameTaken means the hostname belongs to another service.
 	CodeHostnameTaken ErrorCode = "hostname_taken"
 	CodeTooLarge      ErrorCode = "too_large"
-	CodeInternal      ErrorCode = "internal"
+	// CodeRateLimited means too many attempts (e.g. logins); wait and retry.
+	CodeRateLimited ErrorCode = "rate_limited"
+	CodeInternal    ErrorCode = "internal"
 )
 
 // Release failure codes (Release.ErrorCode). Release.Error has the details.
