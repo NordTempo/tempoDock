@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -30,11 +31,10 @@ const (
 
 // HealthCheck waits until c passes hc (see node.HealthCheck). It fails fast
 // if the container exits or restarts while being checked; c.RestartCount is
-// the baseline for detecting restarts.
+// the baseline for detecting restarts. The container's state is checked
+// before anything else, so an app that exits right away is reported as
+// exited, not as missing a port (an exited container publishes none).
 func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.HealthCheck) error {
-	if hc.Path != "" && c.HostPort == 0 {
-		return errors.New("health check path is set but the container publishes no port")
-	}
 	parent := ctx
 	if hc.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -48,13 +48,16 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 
 	// Die events make crashes visible immediately and carry the exit code,
 	// which Docker resets once the restart policy brings the container back.
+	// OOM events are kept for the same reason: Docker clears OOMKilled when
+	// the container starts again, often before the die can be inspected.
 	evCtx, stopEvents := context.WithCancel(ctx)
 	defer stopEvents()
-	events := r.cli.Events(evCtx, client.EventsListOptions{Filters: client.Filters{}.
+	sub := r.cli.Events(evCtx, client.EventsListOptions{Filters: client.Filters{}.
 		Add("type", "container").
 		Add("container", c.ID).
-		Add("event", "die")})
-	dies, evErrs := events.Messages, events.Err
+		Add("event", "die", "oom")})
+	evs, evErrs := sub.Messages, sub.Err
+	oom := false
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -67,10 +70,14 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 				return err
 			}
 		} else {
-			if err := crashed(st, c.RestartCount); err != nil {
+			if err := crashed(st, c.RestartCount, oom); err != nil {
 				return err
 			}
-			lastErr = probe(ctx, toContainer(st), hc)
+			cur := toContainer(st)
+			if hc.Path != "" && cur.HostPort == 0 {
+				return errors.New("health check path is set but the container publishes no port")
+			}
+			lastErr = probe(ctx, cur, hc)
 			if lastErr == nil {
 				return nil
 			}
@@ -85,36 +92,79 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 				return fmt.Errorf("health check timed out after %s: %w", hc.Timeout, lastErr)
 			}
 			return fmt.Errorf("health check timed out after %s", hc.Timeout)
-		case ev := <-dies:
+		case ev := <-evs:
+			if ev.Action == "oom" {
+				oom = true
+				continue
+			}
 			code, _ := strconv.Atoi(ev.Actor.Attributes["exitCode"])
 			st, err := r.inspect(ctx, c.ID)
-			return errExited(code, err == nil && st.State != nil && st.State.OOMKilled)
+			oom = oom || err == nil && st.State != nil && st.State.OOMKilled
+			if !oom && code == oomExitCode {
+				// Killed: the oom event may still be on its way.
+				oom = awaitOOM(ctx, evs)
+			}
+			return errExited(code, oom, memoryLimit(st))
 		case err := <-evErrs:
 			// Polling still catches crashes via state and restart count,
 			// just less promptly.
 			if ctx.Err() == nil {
 				slog.Debug("health check event stream failed", "container", c.ID, "err", err)
 			}
-			dies, evErrs = nil, nil
+			evs, evErrs = nil, nil
 		case <-ticker.C:
 		}
 	}
 }
 
+// oomExitCode is the exit code of a process killed by SIGKILL, which is how
+// the kernel's OOM killer ends it.
+const oomExitCode = 137
+
+// awaitOOM waits briefly for an oom event after a die with oomExitCode,
+// since Docker doesn't guarantee their order.
+func awaitOOM(ctx context.Context, evs <-chan events.Message) bool {
+	t := time.NewTimer(500 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case ev := <-evs:
+			if ev.Action == "oom" {
+				return true
+			}
+		case <-t.C:
+			return false
+		case <-ctx.Done():
+			return false
+		}
+	}
+}
+
+// memoryLimit is a container's memory limit in bytes (0: none or unknown).
+func memoryLimit(st container.InspectResponse) int64 {
+	if st.HostConfig == nil {
+		return 0
+	}
+	return st.HostConfig.Memory
+}
+
 // crashed reports whether st shows the container died or restarted since
-// the baseline restart count.
-func crashed(st container.InspectResponse, baseRestarts int) error {
+// the baseline restart count. oom says an oom event was seen.
+func crashed(st container.InspectResponse, baseRestarts int, oom bool) error {
 	s := st.State
 	if s == nil {
 		return nil
 	}
 	switch s.Status {
 	case container.StateExited, container.StateDead, container.StateRestarting:
-		return errExited(s.ExitCode, s.OOMKilled)
+		return errExited(s.ExitCode, oom || s.OOMKilled, memoryLimit(st))
 	case container.StateRemoving:
 		return errors.New("container was removed during health check")
 	}
 	if st.RestartCount > baseRestarts {
+		if oom {
+			return errExited(oomExitCode, true, memoryLimit(st))
+		}
 		return errRestarted
 	}
 	return nil

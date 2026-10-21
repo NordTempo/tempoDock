@@ -39,6 +39,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.applyVolumeStmt, err = db.PrepareContext(ctx, applyVolume); err != nil {
 		return nil, fmt.Errorf("error preparing query ApplyVolume: %w", err)
 	}
+	if q.archiveProjectStmt, err = db.PrepareContext(ctx, archiveProject); err != nil {
+		return nil, fmt.Errorf("error preparing query ArchiveProject: %w", err)
+	}
 	if q.archiveServiceStmt, err = db.PrepareContext(ctx, archiveService); err != nil {
 		return nil, fmt.Errorf("error preparing query ArchiveService: %w", err)
 	}
@@ -165,6 +168,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.hostnameExistsStmt, err = db.PrepareContext(ctx, hostnameExists); err != nil {
 		return nil, fmt.Errorf("error preparing query HostnameExists: %w", err)
 	}
+	if q.insertRestoredVariableStmt, err = db.PrepareContext(ctx, insertRestoredVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertRestoredVariable: %w", err)
+	}
 	if q.insertVariableStmt, err = db.PrepareContext(ctx, insertVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertVariable: %w", err)
 	}
@@ -246,8 +252,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.nextReleaseNumberStmt, err = db.PrepareContext(ctx, nextReleaseNumber); err != nil {
 		return nil, fmt.Errorf("error preparing query NextReleaseNumber: %w", err)
 	}
+	if q.restoreVariableStmt, err = db.PrepareContext(ctx, restoreVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query RestoreVariable: %w", err)
+	}
 	if q.revokeTokenStmt, err = db.PrepareContext(ctx, revokeToken); err != nil {
 		return nil, fmt.Errorf("error preparing query RevokeToken: %w", err)
+	}
+	if q.setEnvironmentApplyErrorStmt, err = db.PrepareContext(ctx, setEnvironmentApplyError); err != nil {
+		return nil, fmt.Errorf("error preparing query SetEnvironmentApplyError: %w", err)
 	}
 	if q.setPendingSettingsStmt, err = db.PrepareContext(ctx, setPendingSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPendingSettings: %w", err)
@@ -278,6 +290,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.touchTokenStmt, err = db.PrepareContext(ctx, touchToken); err != nil {
 		return nil, fmt.Errorf("error preparing query TouchToken: %w", err)
+	}
+	if q.unapplyVolumeStmt, err = db.PrepareContext(ctx, unapplyVolume); err != nil {
+		return nil, fmt.Errorf("error preparing query UnapplyVolume: %w", err)
 	}
 	if q.updateDomainStatusStmt, err = db.PrepareContext(ctx, updateDomainStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateDomainStatus: %w", err)
@@ -313,6 +328,11 @@ func (q *Queries) Close() error {
 	if q.applyVolumeStmt != nil {
 		if cerr := q.applyVolumeStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing applyVolumeStmt: %w", cerr)
+		}
+	}
+	if q.archiveProjectStmt != nil {
+		if cerr := q.archiveProjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing archiveProjectStmt: %w", cerr)
 		}
 	}
 	if q.archiveServiceStmt != nil {
@@ -525,6 +545,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing hostnameExistsStmt: %w", cerr)
 		}
 	}
+	if q.insertRestoredVariableStmt != nil {
+		if cerr := q.insertRestoredVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertRestoredVariableStmt: %w", cerr)
+		}
+	}
 	if q.insertVariableStmt != nil {
 		if cerr := q.insertVariableStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertVariableStmt: %w", cerr)
@@ -660,9 +685,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing nextReleaseNumberStmt: %w", cerr)
 		}
 	}
+	if q.restoreVariableStmt != nil {
+		if cerr := q.restoreVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing restoreVariableStmt: %w", cerr)
+		}
+	}
 	if q.revokeTokenStmt != nil {
 		if cerr := q.revokeTokenStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing revokeTokenStmt: %w", cerr)
+		}
+	}
+	if q.setEnvironmentApplyErrorStmt != nil {
+		if cerr := q.setEnvironmentApplyErrorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setEnvironmentApplyErrorStmt: %w", cerr)
 		}
 	}
 	if q.setPendingSettingsStmt != nil {
@@ -713,6 +748,11 @@ func (q *Queries) Close() error {
 	if q.touchTokenStmt != nil {
 		if cerr := q.touchTokenStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing touchTokenStmt: %w", cerr)
+		}
+	}
+	if q.unapplyVolumeStmt != nil {
+		if cerr := q.unapplyVolumeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing unapplyVolumeStmt: %w", cerr)
 		}
 	}
 	if q.updateDomainStatusStmt != nil {
@@ -769,6 +809,7 @@ type Queries struct {
 	addReleaseEventStmt           *sql.Stmt
 	applyVariableStmt             *sql.Stmt
 	applyVolumeStmt               *sql.Stmt
+	archiveProjectStmt            *sql.Stmt
 	archiveServiceStmt            *sql.Stmt
 	clearReleaseHostPortStmt      *sql.Stmt
 	countEnvironmentsByServerStmt *sql.Stmt
@@ -811,6 +852,7 @@ type Queries struct {
 	getUserByEmailStmt            *sql.Stmt
 	getVariableStmt               *sql.Stmt
 	hostnameExistsStmt            *sql.Stmt
+	insertRestoredVariableStmt    *sql.Stmt
 	insertVariableStmt            *sql.Stmt
 	listActiveReleasesStmt        *sql.Stmt
 	listAuditEventsStmt           *sql.Stmt
@@ -838,7 +880,9 @@ type Queries struct {
 	listVariablesStmt             *sql.Stmt
 	listVolumesStmt               *sql.Stmt
 	nextReleaseNumberStmt         *sql.Stmt
+	restoreVariableStmt           *sql.Stmt
 	revokeTokenStmt               *sql.Stmt
+	setEnvironmentApplyErrorStmt  *sql.Stmt
 	setPendingSettingsStmt        *sql.Stmt
 	setReleaseContainerStmt       *sql.Stmt
 	setReleaseImageStmt           *sql.Stmt
@@ -849,6 +893,7 @@ type Queries struct {
 	supersedeReleaseStmt          *sql.Stmt
 	touchLocalServerStmt          *sql.Stmt
 	touchTokenStmt                *sql.Stmt
+	unapplyVolumeStmt             *sql.Stmt
 	updateDomainStatusStmt        *sql.Stmt
 	updateServiceStmt             *sql.Stmt
 }
@@ -862,6 +907,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addReleaseEventStmt:           q.addReleaseEventStmt,
 		applyVariableStmt:             q.applyVariableStmt,
 		applyVolumeStmt:               q.applyVolumeStmt,
+		archiveProjectStmt:            q.archiveProjectStmt,
 		archiveServiceStmt:            q.archiveServiceStmt,
 		clearReleaseHostPortStmt:      q.clearReleaseHostPortStmt,
 		countEnvironmentsByServerStmt: q.countEnvironmentsByServerStmt,
@@ -904,6 +950,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getUserByEmailStmt:            q.getUserByEmailStmt,
 		getVariableStmt:               q.getVariableStmt,
 		hostnameExistsStmt:            q.hostnameExistsStmt,
+		insertRestoredVariableStmt:    q.insertRestoredVariableStmt,
 		insertVariableStmt:            q.insertVariableStmt,
 		listActiveReleasesStmt:        q.listActiveReleasesStmt,
 		listAuditEventsStmt:           q.listAuditEventsStmt,
@@ -931,7 +978,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listVariablesStmt:             q.listVariablesStmt,
 		listVolumesStmt:               q.listVolumesStmt,
 		nextReleaseNumberStmt:         q.nextReleaseNumberStmt,
+		restoreVariableStmt:           q.restoreVariableStmt,
 		revokeTokenStmt:               q.revokeTokenStmt,
+		setEnvironmentApplyErrorStmt:  q.setEnvironmentApplyErrorStmt,
 		setPendingSettingsStmt:        q.setPendingSettingsStmt,
 		setReleaseContainerStmt:       q.setReleaseContainerStmt,
 		setReleaseImageStmt:           q.setReleaseImageStmt,
@@ -942,6 +991,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		supersedeReleaseStmt:          q.supersedeReleaseStmt,
 		touchLocalServerStmt:          q.touchLocalServerStmt,
 		touchTokenStmt:                q.touchTokenStmt,
+		unapplyVolumeStmt:             q.unapplyVolumeStmt,
 		updateDomainStatusStmt:        q.updateDomainStatusStmt,
 		updateServiceStmt:             q.updateServiceStmt,
 	}

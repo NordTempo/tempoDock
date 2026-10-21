@@ -159,66 +159,20 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 	if err != nil {
 		return releaseConfig{}, err
 	}
+	var target store.Service
 	for i := range svcs {
 		if svcs[i].ID == ss.svc.ID {
 			repo.apply(&svcs[i])
+			target = svcs[i]
 		}
 	}
-	rows, err := q.ListVariables(ctx, ss.env.ID)
+	r, err := c.envResolver(ctx, q, ss.envScope, svcs, target.ID, false)
 	if err != nil {
 		return releaseConfig{}, err
 	}
-	shared := map[string]string{}
-	own := map[int64]map[string]string{}
-	for _, v := range rows {
-		val, err := c.openValue(v.Value)
-		if err != nil {
-			return releaseConfig{}, err
-		}
-		if val == nil {
-			continue // staged only
-		}
-		if v.ServiceID == nil {
-			shared[v.Key] = *val
-			continue
-		}
-		if own[*v.ServiceID] == nil {
-			own[*v.ServiceID] = map[string]string{}
-		}
-		own[*v.ServiceID][v.Key] = *val
-	}
-
-	r := &resolver{env: ss.envScope.String(), vars: map[string]map[string]string{sharedScope: shared}, done: map[string]string{}, visiting: map[string]bool{}}
-	var target store.Service
-	var targetDomains []store.Domain
-	for _, s := range svcs {
-		if s.ID == ss.svc.ID {
-			target = s
-		} else if s.ArchivedAt != nil {
-			continue
-		}
-		domains, err := q.ListDomainsByService(ctx, s.ID)
-		if err != nil {
-			return releaseConfig{}, err
-		}
-		if s.ID == ss.svc.ID {
-			targetDomains = domains
-		}
-		vars := maps.Clone(shared)
-		maps.Copy(vars, own[s.ID])
-		// Injected variables win over user ones.
-		vars["PORT"] = strconv.Itoa(servicePort(s))
-		vars["DOCK_PROJECT"] = ss.project.Name
-		vars["DOCK_ENVIRONMENT"] = ss.env.Name
-		vars["DOCK_SERVICE"] = s.Name
-		vars["DOCK_PRIVATE_DOMAIN"] = s.Name
-		for _, d := range domains {
-			if d.RedirectTo == "" {
-				vars["DOCK_PUBLIC_DOMAIN"] = d.Hostname
-				break
-			}
-		}
-		r.vars[s.Name] = vars
+	targetDomains, err := q.ListDomainsByService(ctx, target.ID)
+	if err != nil {
+		return releaseConfig{}, err
 	}
 
 	cfg := releaseConfig{
@@ -262,6 +216,108 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 	return cfg, nil
 }
 
+// envResolver sets up resolving variable references in an environment:
+// the variables each service gets (shared, then its own, then injected
+// ones). Archived services are left out, except include. With staged, the
+// environment's staged variable and port changes count as applied, to
+// preview what applying them would do.
+func (c *Core) envResolver(ctx context.Context, q *store.Queries, es envScope, svcs []store.Service, include int64, staged bool) (*resolver, error) {
+	rows, err := q.ListVariables(ctx, es.env.ID)
+	if err != nil {
+		return nil, err
+	}
+	shared := map[string]string{}
+	own := map[int64]map[string]string{}
+	for _, v := range rows {
+		sealed := v.Value
+		if staged {
+			switch v.Pending {
+			case "set":
+				sealed = v.PendingValue
+			case "unset":
+				continue
+			}
+		}
+		val, err := c.openValue(sealed)
+		if err != nil {
+			return nil, err
+		}
+		if val == nil {
+			continue // staged only
+		}
+		if v.ServiceID == nil {
+			shared[v.Key] = *val
+			continue
+		}
+		if own[*v.ServiceID] == nil {
+			own[*v.ServiceID] = map[string]string{}
+		}
+		own[*v.ServiceID][v.Key] = *val
+	}
+
+	r := &resolver{env: es.String(), vars: map[string]map[string]string{sharedScope: shared}, done: map[string]string{}, visiting: map[string]bool{}}
+	for _, s := range svcs {
+		if s.ArchivedAt != nil && s.ID != include {
+			continue
+		}
+		if next, err := pendingSettings(s); staged && err == nil && next != nil {
+			s.Port = int64(next.Port)
+		}
+		domains, err := q.ListDomainsByService(ctx, s.ID)
+		if err != nil {
+			return nil, err
+		}
+		vars := maps.Clone(shared)
+		maps.Copy(vars, own[s.ID])
+		// Injected variables win over user ones.
+		vars["PORT"] = strconv.Itoa(servicePort(s))
+		vars["DOCK_PROJECT"] = es.project.Name
+		vars["DOCK_ENVIRONMENT"] = es.env.Name
+		vars["DOCK_SERVICE"] = s.Name
+		vars["DOCK_PRIVATE_DOMAIN"] = s.Name
+		for _, d := range domains {
+			if d.RedirectTo == "" {
+				vars["DOCK_PUBLIC_DOMAIN"] = d.Hostname
+				break
+			}
+		}
+		r.vars[s.Name] = vars
+	}
+	return r, nil
+}
+
+// resolveEnvs resolves the variables of every non-archived service in an
+// environment, by service ID (see envResolver for staged). A service whose
+// references don't resolve is in broken instead.
+func (c *Core) resolveEnvs(ctx context.Context, q *store.Queries, es envScope, staged bool) (envs map[int64]map[string]string, broken map[int64]error, err error) {
+	svcs, err := q.ListServices(ctx, es.env.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	r, err := c.envResolver(ctx, q, es, svcs, 0, staged)
+	if err != nil {
+		return nil, nil, err
+	}
+	envs, broken = map[int64]map[string]string{}, map[int64]error{}
+	for _, s := range svcs {
+		if s.ArchivedAt != nil {
+			continue
+		}
+		env := map[string]string{}
+		for _, k := range slices.Sorted(maps.Keys(r.vars[s.Name])) {
+			v, err := r.value(s.Name, k)
+			if err != nil {
+				broken[s.ID] = err
+				env = nil
+				break
+			}
+			env[k] = v
+		}
+		envs[s.ID] = env
+	}
+	return envs, broken, nil
+}
+
 func servicePort(s store.Service) int {
 	if s.Port != 0 {
 		return int(s.Port)
@@ -299,6 +355,9 @@ type releaseSpec struct {
 	// dock.toml found in it (nil if none).
 	upload string
 	repo   *repoconfig.Config
+	// carried are staged changes applied for this release (by applyEnv);
+	// upload and image deploys add the service's own when they apply them.
+	carried carried
 }
 
 var errNoActiveRelease = errors.New("service has no active release")
@@ -327,20 +386,33 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 			return invalid("service %s is archived", ss)
 		}
 		ss.svc = svc
+		ch := spec.carried
 		if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage {
 			// A deploy takes the service's own staged changes with it.
-			if _, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID); err != nil {
+			res, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID)
+			if err != nil {
 				return err
+			}
+			if own := res.own[ss.svc.ID]; own != nil {
+				ch.Variables = append(slices.Clone(ch.Variables), own.Variables...)
+				ch.Volumes = append(slices.Clone(ch.Volumes), own.Volumes...)
+				if own.Settings != nil {
+					ch.Settings = own.Settings
+				}
 			}
 			if ss.svc, err = q.GetService(ctx, ss.svc.ID); err != nil {
 				return err
 			}
 		}
+		carriedJSON, err := ch.encode()
+		if err != nil {
+			return err
+		}
 		number, err := q.NextReleaseNumber(ctx, ss.svc.ID)
 		if err != nil {
 			return err
 		}
-		params := store.CreateReleaseParams{ServiceID: ss.svc.ID, Number: number, Source: string(spec.source), CreatedBy: a.Name}
+		params := store.CreateReleaseParams{ServiceID: ss.svc.ID, Number: number, Source: string(spec.source), CreatedBy: a.Name, Carried: carriedJSON}
 		var repo *repoDeploy
 		switch spec.source {
 		case apitypes.SourceImage:
@@ -546,6 +618,9 @@ func readRepoConfig(path string) (*repoconfig.Config, error) {
 	}
 	defer func() { _ = f.Close() }()
 	rc, found, err := repoconfig.FromTar(f)
+	if errors.Is(err, repoconfig.ErrNotArchive) {
+		return nil, invalid("upload is not a tar or tar.gz archive")
+	}
 	if err != nil {
 		return nil, invalid("%s: %v", repoconfig.FileName, err)
 	}

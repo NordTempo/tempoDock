@@ -314,6 +314,9 @@ func (d *deployment) fail(ctx context.Context, err error) {
 			d.event(ctx, fmt.Sprintf("Not starting release %d again while the new container may still be running; redeploy or roll back once it is gone", d.old.Number))
 		}
 	}
+	// Before the release reads as failed, so "failed" means the changes it
+	// carried are staged again.
+	c.restage(ctx, d.ss, d.rel, msg)
 	if err := c.store.FailRelease(ctx, store.FailReleaseParams{Error: msg, ErrorCode: string(code), FinishedAt: ptr(now()), ID: d.rel.ID}); err != nil {
 		c.log.Error("mark release failed", "release", d.rel.ID, "err", err)
 	}
@@ -400,16 +403,48 @@ func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) 
 }
 
 // removeContainer stops (gracefully) and removes a container. Missing
-// containers are fine.
+// containers are fine. Until its destroy event arrives, the container's
+// events are ignored (see onContainerEvent): stopping an active release's
+// container (stateful recreate, archive) is not a crash or drift.
 func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) error {
+	c.setRemoving(id, true)
 	rt := c.runtime(serverID)
-	if err := rt.Stop(ctx, id, stopTimeout); err != nil && !errors.Is(err, node.ErrNotFound) {
+	if err := rt.Stop(ctx, id, stopTimeout); errors.Is(err, node.ErrNotFound) {
+		c.setRemoving(id, false) // already gone: no destroy event to wait for
+		return nil
+	} else if err != nil {
+		c.setRemoving(id, false)
 		return fmt.Errorf("stop container %s: %w", id, err)
 	}
 	if err := rt.Remove(ctx, id); err != nil && !errors.Is(err, node.ErrNotFound) {
+		c.setRemoving(id, false)
 		return fmt.Errorf("remove container %s: %w", id, err)
 	}
 	return nil
+}
+
+func (c *Core) setRemoving(id string, on bool) {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+	if on {
+		c.removing[id] = true
+	} else {
+		delete(c.removing, id)
+	}
+}
+
+// ownRemoval reports whether ev belongs to a container the daemon is
+// removing, forgetting the container once it is destroyed.
+func (c *Core) ownRemoval(ev node.ContainerEvent) bool {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+	if !c.removing[ev.ContainerID] {
+		return false
+	}
+	if ev.Action == "destroy" {
+		delete(c.removing, ev.ContainerID)
+	}
+	return true
 }
 
 func (c *Core) removeContainers(ctx context.Context, serverID int64, ctrs []node.Container) error {

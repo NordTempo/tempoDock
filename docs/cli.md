@@ -26,7 +26,8 @@ What scripts, CI and agents can rely on. The goals behind these are in
   Color only when the stream is a terminal and `NO_COLOR` is unset.
 - The CLI only prompts when stdin is a terminal. Otherwise missing input is a
   usage error naming the flag to pass, and commands that ask for
-  confirmation (`discard`, `domain remove`, `service archive`) need `--yes`.
+  confirmation (`discard`, `domain remove`, `service archive`, `project archive`)
+  need `--yes`.
 
 ## Exit codes
 
@@ -118,7 +119,7 @@ keeps the linked service, so it means "this service, in staging".
 | `domain list [-w]\|add HOST [--redirect-to]\|generate\|remove HOST` | Domains; `list -w` adds the URL, last DNS check and what the hostname resolved to; `add` prints the DNS record and waits (`--timeout`, default 5m) for DNS and the certificate, then prints the URL |
 | `volume list\|add NAME PATH` | Volumes (staged) |
 | `service list\|create\|show\|update\|archive` | Services; `update` stages only the settings passed |
-| `project list\|create`, `environment list\|create` | Projects and environments (`env` is variables) |
+| `project list [--all]\|create\|archive <name>`, `environment list\|create` | Projects and environments (`env` is variables). `project archive` (admin) archives every service in the project and hides it from `project list` (`--all` shows it) |
 | `token list\|create NAME --scope\|revoke ID`, `user list\|create`, `server list` | Administration |
 | `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
 | `serve`, `admin bootstrap\|caddy-config\|firewall apply\|remove` | Server side, run on the server with `--config`: the daemon, the first admin token, Caddy's initial config, and the app firewall (root; installed as `dock-firewall.service`) |

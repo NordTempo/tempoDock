@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+const archiveProject = `-- name: ArchiveProject :exec
+UPDATE projects SET archived_at = ? WHERE id = ? AND archived_at IS NULL
+`
+
+type ArchiveProjectParams struct {
+	ArchivedAt *time.Time
+	ID         int64
+}
+
+func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) error {
+	_, err := q.exec(ctx, q.archiveProjectStmt, archiveProject, arg.ArchivedAt, arg.ID)
+	return err
+}
+
 const countEnvironmentsByServer = `-- name: CountEnvironmentsByServer :many
 SELECT server_id, count(*) AS environments FROM environments GROUP BY server_id
 `
@@ -43,7 +57,7 @@ func (q *Queries) CountEnvironmentsByServer(ctx context.Context) ([]CountEnviron
 }
 
 const createEnvironment = `-- name: CreateEnvironment :one
-INSERT INTO environments (project_id, name, server_id) VALUES (?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network
+INSERT INTO environments (project_id, name, server_id) VALUES (?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network, apply_error
 `
 
 type CreateEnvironmentParams struct {
@@ -62,18 +76,24 @@ func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentPa
 		&i.ServerID,
 		&i.CreatedAt,
 		&i.Network,
+		&i.ApplyError,
 	)
 	return i, err
 }
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (name) VALUES (?) RETURNING id, name, created_at
+INSERT INTO projects (name) VALUES (?) RETURNING id, name, created_at, archived_at
 `
 
 func (q *Queries) CreateProject(ctx context.Context, name string) (Project, error) {
 	row := q.queryRow(ctx, q.createProjectStmt, createProject, name)
 	var i Project
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
 	return i, err
 }
 
@@ -114,7 +134,7 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 }
 
 const getEnvironment = `-- name: GetEnvironment :one
-SELECT id, project_id, name, server_id, created_at, network FROM environments WHERE id = ?
+SELECT id, project_id, name, server_id, created_at, network, apply_error FROM environments WHERE id = ?
 `
 
 func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, error) {
@@ -127,12 +147,13 @@ func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, er
 		&i.ServerID,
 		&i.CreatedAt,
 		&i.Network,
+		&i.ApplyError,
 	)
 	return i, err
 }
 
 const getEnvironmentByName = `-- name: GetEnvironmentByName :one
-SELECT id, project_id, name, server_id, created_at, network FROM environments WHERE project_id = ? AND name = ?
+SELECT id, project_id, name, server_id, created_at, network, apply_error FROM environments WHERE project_id = ? AND name = ?
 `
 
 type GetEnvironmentByNameParams struct {
@@ -150,6 +171,7 @@ func (q *Queries) GetEnvironmentByName(ctx context.Context, arg GetEnvironmentBy
 		&i.ServerID,
 		&i.CreatedAt,
 		&i.Network,
+		&i.ApplyError,
 	)
 	return i, err
 }
@@ -175,24 +197,34 @@ func (q *Queries) GetLocalServer(ctx context.Context) (Server, error) {
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, created_at FROM projects WHERE id = ?
+SELECT id, name, created_at, archived_at FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
 	row := q.queryRow(ctx, q.getProjectStmt, getProject, id)
 	var i Project
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
 	return i, err
 }
 
 const getProjectByName = `-- name: GetProjectByName :one
-SELECT id, name, created_at FROM projects WHERE name = ?
+SELECT id, name, created_at, archived_at FROM projects WHERE name = ?
 `
 
 func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, error) {
 	row := q.queryRow(ctx, q.getProjectByNameStmt, getProjectByName, name)
 	var i Project
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
 	return i, err
 }
 
@@ -217,7 +249,7 @@ func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
 }
 
 const listEnvironments = `-- name: ListEnvironments :many
-SELECT id, project_id, name, server_id, created_at, network FROM environments WHERE project_id = ? ORDER BY name
+SELECT id, project_id, name, server_id, created_at, network, apply_error FROM environments WHERE project_id = ? ORDER BY name
 `
 
 func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Environment, error) {
@@ -236,6 +268,7 @@ func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Envi
 			&i.ServerID,
 			&i.CreatedAt,
 			&i.Network,
+			&i.ApplyError,
 		); err != nil {
 			return nil, err
 		}
@@ -251,7 +284,7 @@ func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Envi
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, created_at FROM projects ORDER BY name
+SELECT id, name, created_at, archived_at FROM projects ORDER BY name
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -263,7 +296,12 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 	var items []Project
 	for rows.Next() {
 		var i Project
-		if err := rows.Scan(&i.ID, &i.Name, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.ArchivedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -42,3 +42,6 @@ SELECT * FROM environments WHERE id = ?;
 
 -- name: ListEnvironments :many
 SELECT * FROM environments WHERE project_id = ? ORDER BY name;
+
+-- name: ArchiveProject :exec
+UPDATE projects SET archived_at = ? WHERE id = ? AND archived_at IS NULL;

@@ -144,7 +144,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List projects */
+        /**
+         * List projects
+         * @description Archived projects only with `archived=true`.
+         */
         get: operations["list-projects"];
         put?: never;
         /**
@@ -169,6 +172,26 @@ export interface paths {
         get: operations["get-project"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a project
+         * @description Archives every service in the project (routes removed, containers stopped in the background; volumes and history kept) and hides the project from lists. Refused while a service is deploying. Scope: admin.
+         */
+        post: operations["archive-project"];
         delete?: never;
         options?: never;
         head?: never;
@@ -329,7 +352,7 @@ export interface paths {
         put?: never;
         /**
          * Archive a service
-         * @description Stops its container and removes its routes. Volumes and history are kept. Scope: admin.
+         * @description Removes its routes, then stops its container in the background. Volumes and history are kept. Scope: admin.
          */
         post: operations["archive-service"];
         delete?: never;
@@ -1021,15 +1044,19 @@ export interface components {
             scope: "read" | "deploy" | "admin";
         };
         PendingChanges: {
+            affected: string[] | null;
             /** Format: int64 */
             count: number;
             environment: string;
+            last_failure?: string;
             project: string;
             settings: components["schemas"]["SettingChange"][] | null;
             variables: components["schemas"]["VariableChange"][] | null;
             volumes: components["schemas"]["VolumeAddition"][] | null;
         };
         Project: {
+            /** Format: date-time */
+            archived_at?: string;
             /** Format: date-time */
             created_at: string;
             /** Format: int64 */
@@ -1166,6 +1193,8 @@ export interface components {
         ServiceStatus: {
             /** Format: int64 */
             exit_code: number;
+            /** Format: int64 */
+            memory_limit_mb?: number;
             oom_killed: boolean;
             /** Format: int64 */
             restart_count: number;
@@ -1817,7 +1846,10 @@ export interface operations {
     };
     "list-projects": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Include archived projects */
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1871,6 +1903,15 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1977,6 +2018,92 @@ export interface operations {
         };
     };
     "get-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "archive-project": {
         parameters: {
             query?: never;
             header?: never;

@@ -190,6 +190,7 @@ func printService(g *globals, svc apitypes.Service) error {
 	if svc.Status.RestartCount > 0 {
 		state += fmt.Sprintf(" (%d restarts)", svc.Status.RestartCount)
 	}
+	state += oomNote(svc.Status)
 	kind := ""
 	if svc.Stateful {
 		kind = "stateful (has volumes; deploys replace the container)"
@@ -289,7 +290,7 @@ func newServiceArchiveCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(svc, func() error {
-				g.io.Successf("Archived %s. Volumes and release history are kept.", t)
+				g.io.Successf("Archived %s. Its container is stopping; volumes and release history are kept.", t)
 				return nil
 			})
 		},

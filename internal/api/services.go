@@ -51,7 +51,7 @@ func registerServices(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "archive-service", Method: http.MethodPost, Path: servicePathT + "/archive",
-		Summary: "Archive a service", Description: "Stops its container and removes its routes. Volumes and history are kept. Scope: admin.",
+		Summary: "Archive a service", Description: "Removes its routes, then stops its container in the background. Volumes and history are kept. Scope: admin.",
 		Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.Service], error) {
 		return reply(s.core.ArchiveService(ctx, actor, in.ref()))

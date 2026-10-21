@@ -88,23 +88,25 @@ func (e notFoundError) Is(target error) bool {
 }
 
 // Pull pulls ref, writing one readable line per status change to logs.
+// Errors are Docker's own, without a "pull <ref>" prefix: callers say what
+// they were pulling.
 func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer) (string, error) {
 	if logs == nil {
 		logs = io.Discard
 	}
 	resp, err := r.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {
-		return "", fmt.Errorf("pull %s: %w", ref, err)
+		return "", err
 	}
 	defer func() { _ = resp.Close() }()
 
 	seen := map[string]string{}
 	for msg, err := range resp.JSONMessages(ctx) {
 		if err != nil {
-			return "", fmt.Errorf("pull %s: %w", ref, err)
+			return "", err
 		}
 		if msg.Error != nil {
-			return "", fmt.Errorf("pull %s: %s", ref, msg.Error.Message)
+			return "", errors.New(msg.Error.Message)
 		}
 		if line, ok := pullLine(msg, seen); ok {
 			_, _ = fmt.Fprintln(logs, line)
@@ -344,8 +346,12 @@ func createOptions(spec node.ContainerSpec) client.ContainerCreateOptions {
 			Config: map[string]string{"max-size": "10m", "max-file": "3"},
 		},
 		Resources: container.Resources{
-			Memory:   spec.Resources.MemoryBytes,
-			NanoCPUs: spec.Resources.NanoCPUs,
+			Memory: spec.Resources.MemoryBytes,
+			// Swap equal to memory means no swap (Docker's default is twice
+			// the limit), so the limit is what the app gets and an app over
+			// it is killed instead of thrashing the disk.
+			MemorySwap: spec.Resources.MemoryBytes,
+			NanoCPUs:   spec.Resources.NanoCPUs,
 		},
 		SecurityOpt: []string{"no-new-privileges"},
 	}
@@ -491,10 +497,14 @@ func hostPort(ports network.PortMap) int {
 	return 0
 }
 
-// errExited reports a container that died while being waited on.
-func errExited(code int, oom bool) error {
-	if oom {
-		return fmt.Errorf("container ran out of memory and was killed (exit code %d) during health check", code)
+// errExited reports a container that died while being waited on. limit is
+// its memory limit in bytes (0: none).
+func errExited(code int, oom bool, limit int64) error {
+	switch {
+	case oom && limit > 0:
+		return fmt.Errorf("container ran out of memory (limit %d MB) and was killed during health check", limit>>20)
+	case oom:
+		return errors.New("container ran out of memory and was killed during health check")
 	}
 	return fmt.Errorf("container exited with code %d during health check", code)
 }

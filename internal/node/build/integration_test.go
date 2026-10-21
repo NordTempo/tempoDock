@@ -363,6 +363,89 @@ RUN node -e 'const a = []; for (;;) a.push(Buffer.alloc(16 << 20, 1))'
 	}
 }
 
+// The memory cap holds even after something outside the platform loosens
+// it: `docker update`, or systemd re-applying the scope's MemorySwapMax
+// (infinity) on a daemon-reload, which only changes the cgroup file.
+func TestDaemonLimitsRestored(t *testing.T) {
+	docker := dockerClient(t)
+	ctx := t.Context()
+	b := newBuilder(t, docker, 512)
+	const mem = 512 << 20
+	ensure := func() {
+		t.Helper()
+		var logs bytes.Buffer
+		bk, err := b.ensureDaemon(ctx, &logs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = bk.Close()
+		t.Logf("ensure: %q", logs.String())
+		inspect, err := docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h := inspect.Container.HostConfig; h.Memory != mem || h.MemorySwap != mem {
+			t.Fatalf("HostConfig memory = %d, swap = %d", h.Memory, h.MemorySwap)
+		}
+		if p := cgroupProblem(b.readCgroupLimits(ctx), mem); p != "" {
+			t.Fatal(p)
+		}
+	}
+	ensure()
+
+	if _, err := docker.ContainerUpdate(ctx, ContainerName, client.ContainerUpdateOptions{
+		Resources: &container.Resources{Memory: mem, MemorySwap: -1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ensure()
+
+	// What a daemon-reload does: the cgroup's swap limit goes back to max
+	// while Docker's HostConfig still says no swap. buildkitd runs in a
+	// child cgroup ("init") of the container's scope, which holds the limit.
+	// Only the systemd cgroup driver's scope paths are handled.
+	inspect, err := docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := fmt.Sprintf(`p=$(sed -n 's/^0::\(.*\.scope\).*/\1/p' /proc/%d/cgroup) && [ -n "$p" ] && echo max > /sys/fs/cgroup$p/memory.swap.max`, inspect.Container.State.Pid)
+	if code := runHelper(t, docker, container.HostConfig{Privileged: true, CgroupnsMode: "host", PidMode: "host"}, script); code != 0 {
+		t.Skipf("could not loosen the cgroup swap limit (exit %d)", code)
+	}
+	if p := cgroupProblem(b.readCgroupLimits(ctx), mem); !strings.Contains(p, "swap") {
+		t.Fatalf("loosened limit not detected: %q", p)
+	}
+	ensure()
+}
+
+// runHelper runs sh -c script in a throwaway alpine container with host
+// and returns its exit code.
+func runHelper(t *testing.T, docker *client.Client, host container.HostConfig, script string) int64 {
+	t.Helper()
+	ctx := t.Context()
+	created, err := docker.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     &container.Config{Image: "alpine:latest", Cmd: []string{"sh", "-c", script}},
+		HostConfig: &host,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true})
+	}()
+	wait := docker.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNextExit})
+	if _, err := docker.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case res := <-wait.Result:
+		return res.StatusCode
+	case err := <-wait.Error:
+		t.Fatal(err)
+	}
+	return -1
+}
+
 // TestSpike measures the numbers the M0 spike asks for. It builds a real
 // Next.js app, so it's slow and only runs with DOCK_SPIKE=1.
 func TestSpike(t *testing.T) {

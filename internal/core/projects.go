@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -112,8 +113,9 @@ func (c *Core) serviceFor(ctx context.Context, a Actor, ref ServiceRef, need api
 	return ss, a.checkEnv(need, action, ss.project, ss.env)
 }
 
-// ListProjects returns the projects the actor can see.
-func (c *Core) ListProjects(ctx context.Context, a Actor) ([]apitypes.Project, error) {
+// ListProjects returns the projects the actor can see; archived ones only
+// with archived.
+func (c *Core) ListProjects(ctx context.Context, a Actor, archived bool) ([]apitypes.Project, error) {
 	if err := a.require(apitypes.ScopeRead, "listing projects"); err != nil {
 		return nil, err
 	}
@@ -123,11 +125,68 @@ func (c *Core) ListProjects(ctx context.Context, a Actor) ([]apitypes.Project, e
 	}
 	out := []apitypes.Project{}
 	for _, p := range rows {
-		if a.ProjectID == 0 || a.ProjectID == p.ID {
+		if (a.ProjectID == 0 || a.ProjectID == p.ID) && (archived || p.ArchivedAt == nil) {
 			out = append(out, toProject(p))
 		}
 	}
 	return out, nil
+}
+
+// ArchiveProject archives a project and every service in it, the same
+// non-destructive way as ArchiveService: routes removed, containers stopped
+// in the background, volumes and history kept. The project is hidden from
+// lists and gets no new environments or services. Refused while any of its
+// services is deploying.
+func (c *Core) ArchiveProject(ctx context.Context, a Actor, name string) (apitypes.Project, error) {
+	p, err := c.projectFor(ctx, a, name, apitypes.ScopeAdmin, "archiving a project")
+	if err != nil {
+		return apitypes.Project{}, err
+	}
+	var done []archivedService
+	already := false
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if p, err = q.GetProject(ctx, p.ID); err != nil {
+			return err
+		}
+		if already = p.ArchivedAt != nil; already {
+			return nil
+		}
+		envs, err := q.ListEnvironments(ctx, p.ID)
+		if err != nil {
+			return err
+		}
+		svcs, err := q.ListProjectServices(ctx, p.ID)
+		if err != nil {
+			return err
+		}
+		for _, s := range svcs {
+			i := slices.IndexFunc(envs, func(e store.Environment) bool { return e.ID == s.EnvironmentID })
+			as, ok, err := archiveTx(ctx, q, svcScope{envScope{p, envs[i]}, s})
+			if err != nil {
+				return err
+			}
+			if ok {
+				done = append(done, as)
+			}
+		}
+		n := now()
+		p.ArchivedAt = &n
+		return q.ArchiveProject(ctx, store.ArchiveProjectParams{ArchivedAt: &n, ID: p.ID})
+	})
+	if err != nil || already {
+		return toProject(p), err
+	}
+	c.finishArchive(ctx, done)
+	c.audit(ctx, a, "project.archive", &p, nil, p.Name, fmt.Sprintf("archived project and its %d services; volumes kept", len(done)))
+	return toProject(p), nil
+}
+
+// notArchived refuses adding to an archived project.
+func notArchived(p store.Project) error {
+	if p.ArchivedAt != nil {
+		return invalid("project %s is archived", p.Name)
+	}
+	return nil
 }
 
 // GetProject returns one project.
@@ -236,6 +295,9 @@ func (c *Core) CreateEnvironment(ctx context.Context, a Actor, project string, r
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
+	if err := notArchived(p); err != nil {
+		return apitypes.Environment{}, err
+	}
 	if err := validName("environment", req.Name); err != nil {
 		return apitypes.Environment{}, err
 	}
@@ -294,7 +356,7 @@ func (c *Core) serverNames(ctx context.Context) (map[int64]string, error) {
 }
 
 func toProject(p store.Project) apitypes.Project {
-	return apitypes.Project{ID: p.ID, Name: p.Name, CreatedAt: p.CreatedAt}
+	return apitypes.Project{ID: p.ID, Name: p.Name, CreatedAt: p.CreatedAt, ArchivedAt: p.ArchivedAt}
 }
 
 func toEnvironment(p store.Project, e store.Environment, server string) apitypes.Environment {

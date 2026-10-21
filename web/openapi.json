@@ -792,11 +792,23 @@
       "PendingChanges": {
         "additionalProperties": false,
         "properties": {
+          "affected": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "count": {
             "format": "int64",
             "type": "integer"
           },
           "environment": {
+            "type": "string"
+          },
+          "last_failure": {
             "type": "string"
           },
           "project": {
@@ -836,13 +848,18 @@
           "count",
           "variables",
           "settings",
-          "volumes"
+          "volumes",
+          "affected"
         ],
         "type": "object"
       },
       "Project": {
         "additionalProperties": false,
         "properties": {
+          "archived_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -1317,6 +1334,10 @@
         "additionalProperties": false,
         "properties": {
           "exit_code": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "memory_limit_mb": {
             "format": "int64",
             "type": "integer"
           },
@@ -2520,7 +2541,20 @@
     },
     "/api/v1/projects": {
       "get": {
+        "description": "Archived projects only with `archived=true`.",
         "operationId": "list-projects",
+        "parameters": [
+          {
+            "description": "Include archived projects",
+            "explode": false,
+            "in": "query",
+            "name": "archived",
+            "schema": {
+              "description": "Include archived projects",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2587,6 +2621,16 @@
               }
             },
             "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
@@ -2827,6 +2871,118 @@
           }
         ],
         "summary": "Get a project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/archive": {
+      "post": {
+        "description": "Archives every service in the project (routes removed, containers stopped in the background; volumes and history kept) and hides the project from lists. Refused while a service is deploying. Scope: admin.",
+        "operationId": "archive-project",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Archive a project",
         "tags": [
           "projects"
         ]
@@ -4106,7 +4262,7 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/archive": {
       "post": {
-        "description": "Stops its container and removes its routes. Volumes and history are kept. Scope: admin.",
+        "description": "Removes its routes, then stops its container in the background. Volumes and history are kept. Scope: admin.",
         "operationId": "archive-service",
         "parameters": [
           {

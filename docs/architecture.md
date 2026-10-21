@@ -65,7 +65,9 @@ AuditEvent      who did what, when, with which token
 - **Staged changes.** Setting variables, changing service settings and adding
   volumes are staged next to the live values, Railway-style. Applying an
   environment's changes is one transaction followed by one `config` release per
-  affected running service. A source or image deploy of a service takes that
+  affected running service, including services whose variables reference a
+  changed one. Each release records the changes it carried; if it fails they
+  are staged again, so live values always match the active release. A source or image deploy of a service takes that
   service's own staged changes with it; environment-level variables wait for
   an explicit apply because they affect every service.
 

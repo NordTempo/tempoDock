@@ -45,6 +45,7 @@ type Runtime struct {
 	exitOnStart bool
 	routesErr   error
 	healthGate  chan struct{}
+	stopGate    chan struct{}
 	domainCheck func(hostname string) node.DomainCheck
 }
 
@@ -102,6 +103,24 @@ func (r *Runtime) HoldHealthChecks() (release func()) {
 		once.Do(func() {
 			r.mu.Lock()
 			r.healthGate = nil
+			r.mu.Unlock()
+			close(gate)
+		})
+	}
+}
+
+// HoldStops blocks Stop until the returned func is called, like a container
+// that takes its whole stop timeout to exit.
+func (r *Runtime) HoldStops() (release func()) {
+	gate := make(chan struct{})
+	r.mu.Lock()
+	r.stopGate = gate
+	r.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			r.mu.Lock()
+			r.stopGate = nil
 			r.mu.Unlock()
 			close(gate)
 		})
@@ -195,12 +214,17 @@ func (r *Runtime) Emit(ev node.ContainerEvent) {
 			c.OOMKilled = true
 		}
 	}
+	r.sendLocked(ev)
+	r.mu.Unlock()
+}
+
+// sendLocked delivers ev to subscribers without blocking (r.mu held), like
+// the events Docker emits for the runtime's own Stop and Remove.
+func (r *Runtime) sendLocked(ev node.ContainerEvent) {
 	if ev.Time.IsZero() {
 		ev.Time = time.Now()
 	}
-	subs := slices.Clone(r.subs)
-	r.mu.Unlock()
-	for _, ch := range subs {
+	for _, ch := range r.subs {
 		select {
 		case ch <- ev:
 		default:
@@ -318,8 +342,19 @@ func (r *Runtime) Start(_ context.Context, spec node.ContainerSpec) (node.Contai
 	return out, nil
 }
 
-// Stop implements node.Containers.
-func (r *Runtime) Stop(_ context.Context, id string, _ time.Duration) error {
+// Stop implements node.Containers. Like Docker, it emits a die event for a
+// running container (and Remove a destroy event).
+func (r *Runtime) Stop(ctx context.Context, id string, _ time.Duration) error {
+	r.mu.Lock()
+	gate := r.stopGate
+	r.mu.Unlock()
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c, ok := r.containers[id]
@@ -330,7 +365,10 @@ func (r *Runtime) Stop(_ context.Context, id string, _ time.Duration) error {
 	if r.stopErr != nil {
 		return r.stopErr
 	}
-	c.State = node.StateExited
+	if c.State == node.StateRunning {
+		c.State, c.ExitCode = node.StateExited, 0
+		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "die"})
+	}
 	return nil
 }
 
@@ -348,6 +386,7 @@ func (r *Runtime) Remove(_ context.Context, id string) error {
 	r.op("remove %s", c.Name)
 	delete(r.containers, id)
 	delete(r.specs, id)
+	r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "destroy"})
 	return nil
 }
 

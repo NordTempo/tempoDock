@@ -63,6 +63,19 @@ func serviceState(svc apitypes.Service) string {
 	return string(svc.Status.State)
 }
 
+// oomNote says a service's container was killed for running out of
+// memory, or is empty.
+func oomNote(s apitypes.ServiceStatus) string {
+	switch {
+	case !s.OOMKilled:
+		return ""
+	case s.MemoryLimitMB > 0:
+		return fmt.Sprintf(", ran out of memory (limit %d MB)", s.MemoryLimitMB)
+	default:
+		return ", ran out of memory"
+	}
+}
+
 func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 	e := env.Environment
 	header := fmt.Sprintf("%s/%s on %s", e.Project, e.Name, e.Server)
@@ -103,9 +116,7 @@ func printServiceStatus(g *globals, so apitypes.ServiceOverview) error {
 	if svc.Status.RestartCount > 0 {
 		state += fmt.Sprintf(" (%d restarts)", svc.Status.RestartCount)
 	}
-	if svc.Status.OOMKilled {
-		state += ", killed for running out of memory"
-	}
+	state += oomNote(svc.Status)
 	summary := func(r *apitypes.ReleaseSummary) string {
 		if r == nil {
 			return ""

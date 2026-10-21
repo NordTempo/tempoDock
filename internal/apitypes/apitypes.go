@@ -62,6 +62,9 @@ type Project struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+	// ArchivedAt is set for archived projects, which are hidden from lists
+	// unless asked for.
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 }
 
 // CreateProjectRequest creates a project.
@@ -102,8 +105,11 @@ type ServiceStatus struct {
 	State        ServiceState `json:"state" enum:"running,restarting,crashed,stopped,none"`
 	RestartCount int          `json:"restart_count"`
 	OOMKilled    bool         `json:"oom_killed"`
-	ExitCode     int          `json:"exit_code"`
-	UpdatedAt    *time.Time   `json:"updated_at,omitempty"`
+	// MemoryLimitMB is the active release's memory limit, set along with
+	// OOMKilled so clients can say which limit was hit.
+	MemoryLimitMB int        `json:"memory_limit_mb,omitempty"`
+	ExitCode      int        `json:"exit_code"`
+	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
 }
 
 // ServiceSettings are a service's DB-held settings. Zero values mean "use
@@ -330,6 +336,14 @@ type PendingChanges struct {
 	Variables   []VariableChange `json:"variables"`
 	Settings    []SettingChange  `json:"settings"`
 	Volumes     []VolumeAddition `json:"volumes"`
+	// Affected names the services whose config applying would change:
+	// those with changes of their own, and those whose resolved variables
+	// change through shared variables or references to another service's.
+	// The ones with an active release get a config release.
+	Affected []string `json:"affected"`
+	// LastFailure explains why changes are staged again: the release that
+	// carried them failed, so they never went live.
+	LastFailure string `json:"last_failure,omitempty"`
 }
 
 // CountFor counts the staged changes that belong to one service (its own

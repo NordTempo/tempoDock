@@ -74,6 +74,10 @@ type Core struct {
 
 	statusMu sync.Mutex
 	status   map[int64]apitypes.ServiceStatus // by service ID
+	// removing holds the IDs of containers the daemon itself is stopping
+	// and removing, so their die and destroy events aren't taken for a
+	// crash or drift. An ID leaves the set on its destroy event.
+	removing map[string]bool
 
 	// loginLimit throttles password attempts per client IP and per email;
 	// bcryptSem caps concurrent password checks (each is ~50ms of CPU).
@@ -111,6 +115,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		domainKick: make(chan struct{}, 1),
 		checks:     map[int64]domainCheck{},
 		status:     map[int64]apitypes.ServiceStatus{},
+		removing:   map[string]bool{},
 		uploads:    map[int64]bool{},
 		loginLimit: newLimiter(5, 10*time.Second),
 		bcryptSem:  make(chan struct{}, 2),

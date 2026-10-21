@@ -341,6 +341,191 @@ func TestStatefulServiceIsRecreated(t *testing.T) {
 	}
 }
 
+// settleEvents waits until the runtime events of every container the daemon
+// removed (up to their destroy event) have been handled.
+func (h *harness) settleEvents() {
+	h.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		h.c.statusMu.Lock()
+		n := len(h.c.removing)
+		h.c.statusMu.Unlock()
+		if n == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			h.t.Fatalf("%d removed containers still have unhandled events", n)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+func (h *harness) drift() []apitypes.AuditEvent {
+	h.t.Helper()
+	evs, err := h.c.ListAudit(h.ctx, System, AuditFilter{Action: "reconcile.drift"})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return evs
+}
+
+// The die and destroy events of containers the daemon stops itself (the
+// active one in a stateful recreate, an archived service's) are neither a
+// crash nor drift.
+func TestOwnRemovalsAreNotDrift(t *testing.T) {
+	h := newHarness(t)
+	db := h.service("db", apitypes.CreateServiceRequest{Port: 5432})
+	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(db, "postgres:17")
+	h.deploy(db, "postgres:17.1")
+	h.settleEvents()
+	if svc, _ := h.c.GetService(h.ctx, System, db); svc.Status.State != apitypes.ServiceRunning {
+		t.Fatalf("status after recreate = %+v", svc.Status)
+	}
+	if _, err := h.c.ArchiveService(h.ctx, System, db); err != nil {
+		t.Fatal(err)
+	}
+	h.waitRunning()
+	h.settleEvents()
+	if svc, _ := h.c.GetService(h.ctx, System, db); svc.Status.State != apitypes.ServiceNone {
+		t.Fatalf("status after archive = %+v", svc.Status)
+	}
+	if d := h.drift(); len(d) > 0 {
+		t.Fatalf("drift reported: %+v", d)
+	}
+}
+
+// Archiving answers without waiting for the container to stop: routes go
+// first, the container is stopped in the background, and its port is only
+// freed once it is gone.
+func TestArchiveStopsInBackground(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "web.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(web, "app:1")
+	release := h.rt.HoldStops()
+	defer release()
+
+	svc, err := h.c.ArchiveService(h.ctx, System, web)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if svc.ArchivedAt == nil || svc.Status.State != apitypes.ServiceNone || svc.ActiveRelease != nil {
+		t.Fatalf("archived service = %+v", svc)
+	}
+	if routes := h.rt.Routes(); len(routes) != 0 {
+		t.Fatalf("routes = %+v", routes)
+	}
+	if got := h.rt.Running(); !slices.Equal(got, []string{h.ctr(web, 1)}) {
+		t.Fatalf("running = %v; the stop should still be in progress", got)
+	}
+	ss, _ := h.c.loadService(h.ctx, web)
+	if ports, _ := h.c.store.ListUsedHostPorts(h.ctx, ss.env.ServerID); len(ports) != 1 {
+		t.Fatalf("port freed while the container still runs: %v", ports)
+	}
+
+	release()
+	h.waitRunning()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if ports, _ := h.c.store.ListUsedHostPorts(h.ctx, ss.env.ServerID); len(ports) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("port never freed")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	r1, _ := h.c.GetRelease(h.ctx, System, web, 1)
+	if r1.Status != apitypes.ReleaseSuperseded || !slices.ContainsFunc(r1.Events, func(e apitypes.ReleaseEvent) bool {
+		return strings.HasPrefix(e.Message, "Stopped release 1")
+	}) {
+		t.Fatalf("release 1 = %s, events %+v", r1.Status, r1.Events)
+	}
+}
+
+// Archiving a project archives every service in every environment the same
+// way (volumes kept), hides the project from lists and takes nothing new.
+func TestArchiveProject(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	db := h.service("db", apitypes.CreateServiceRequest{})
+	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.CreateEnvironment(h.ctx, System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+		t.Fatal(err)
+	}
+	staging := ServiceRef{"shop", "staging", "web"}
+	if _, err := h.c.CreateService(h.ctx, System, staging.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(web, "app:1")
+	h.deploy(db, "postgres:17")
+	h.deploy(staging, "app:1")
+
+	deployer := Actor{Name: "ci", Kind: "token", Scope: apitypes.ScopeDeploy}
+	if _, err := h.c.ArchiveProject(h.ctx, deployer, "shop"); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("deploy scope archived a project: %v", err)
+	}
+	p, err := h.c.ArchiveProject(h.ctx, System, "shop")
+	if err != nil || p.ArchivedAt == nil {
+		t.Fatalf("archive = %+v, %v", p, err)
+	}
+	h.waitRunning()
+	for _, ref := range []ServiceRef{web, db, staging} {
+		if svc, _ := h.c.GetService(h.ctx, System, ref); svc.ArchivedAt == nil || svc.ActiveRelease != nil {
+			t.Errorf("%s = %+v", ref, svc)
+		}
+	}
+	if vols, _ := h.c.ListVolumes(h.ctx, System, db); len(vols) != 1 {
+		t.Errorf("volumes = %+v", vols)
+	}
+	if ps, _ := h.c.ListProjects(h.ctx, System, false); len(ps) != 0 {
+		t.Errorf("listed by default: %+v", ps)
+	}
+	if ps, _ := h.c.ListProjects(h.ctx, System, true); len(ps) != 1 || ps[0].ArchivedAt == nil {
+		t.Errorf("listed with archived: %+v", ps)
+	}
+	if _, err := h.c.CreateService(h.ctx, System, web.Env(), apitypes.CreateServiceRequest{Name: "new"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Errorf("service created in archived project: %v", err)
+	}
+	if _, err := h.c.ArchiveProject(h.ctx, System, "shop"); err != nil {
+		t.Errorf("archiving again: %v", err)
+	}
+}
+
+// An OOM kill of the running container shows in the service's status with
+// the limit it hit.
+func TestOOMKillStatusHasLimit(t *testing.T) {
+	h := newHarness(t)
+	mem := 128
+	web := h.service("web", apitypes.CreateServiceRequest{MemoryMB: mem})
+	h.deploy(web, "app:1")
+	ss, _ := h.c.loadService(h.ctx, web)
+	active, _ := h.c.store.GetActiveRelease(h.ctx, ss.svc.ID)
+	h.rt.Emit(node.ContainerEvent{ContainerID: active.ContainerID, Action: "oom"})
+	h.rt.Emit(node.ContainerEvent{ContainerID: active.ContainerID, Action: "die", ExitCode: 137})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		svc, _ := h.c.GetService(h.ctx, System, web)
+		if s := svc.Status; s.State == apitypes.ServiceCrashed {
+			if !s.OOMKilled || s.MemoryLimitMB != mem || s.ExitCode != 137 {
+				t.Fatalf("status = %+v", s)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status = %+v", svc.Status)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 func TestVariableReferences(t *testing.T) {
 	h := newHarness(t)
 	api := h.service("api", apitypes.CreateServiceRequest{})
@@ -470,5 +655,9 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 
 	if _, err := h.c.DeploySource(h.ctx, System, web, strings.NewReader(strings.Repeat("x", 100)), 10); CodeOf(err) != apitypes.CodeTooLarge {
 		t.Fatalf("oversized upload: %v", err)
+	}
+	notTar := strings.NewReader(strings.Repeat("this is a zip file, honest\n", 40))
+	if _, err := h.c.DeploySource(h.ctx, System, web, notTar, 1<<20); CodeOf(err) != apitypes.CodeValidation || err.Error() != "upload is not a tar or tar.gz archive" {
+		t.Fatalf("non-tar upload: %v", err)
 	}
 }

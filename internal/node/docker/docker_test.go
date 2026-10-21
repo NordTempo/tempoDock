@@ -52,6 +52,9 @@ func TestCreateOptions(t *testing.T) {
 	if h.Memory != spec.Resources.MemoryBytes || h.NanoCPUs != spec.Resources.NanoCPUs {
 		t.Errorf("Resources = %d, %d", h.Memory, h.NanoCPUs)
 	}
+	if h.MemorySwap != h.Memory {
+		t.Errorf("MemorySwap = %d, want %d (no swap)", h.MemorySwap, h.Memory)
+	}
 	if !slices.Contains(h.SecurityOpt, "no-new-privileges") {
 		t.Errorf("SecurityOpt = %v", h.SecurityOpt)
 	}
@@ -119,17 +122,21 @@ func TestCrashed(t *testing.T) {
 		name string
 		st   container.State
 		rc   int
+		oom  bool // an oom event was seen
 		want string
 	}{
-		{"running", container.State{Status: container.StateRunning}, 0, ""},
-		{"exited", container.State{Status: container.StateExited, ExitCode: 1}, 0, "container exited with code 1 during health check"},
-		{"restarting", container.State{Status: container.StateRestarting, ExitCode: 2}, 0, "container exited with code 2 during health check"},
-		{"oom", container.State{Status: container.StateExited, ExitCode: 137, OOMKilled: true}, 0, "container ran out of memory and was killed (exit code 137) during health check"},
-		{"restarted", container.State{Status: container.StateRunning}, 1, "container restarted during health check"},
+		{"running", container.State{Status: container.StateRunning}, 0, false, ""},
+		{"exited", container.State{Status: container.StateExited, ExitCode: 1}, 0, false, "container exited with code 1 during health check"},
+		{"restarting", container.State{Status: container.StateRestarting, ExitCode: 2}, 0, false, "container exited with code 2 during health check"},
+		{"oom", container.State{Status: container.StateExited, ExitCode: 137, OOMKilled: true}, 0, false, "container ran out of memory (limit 64 MB) and was killed during health check"},
+		{"oom event", container.State{Status: container.StateRestarting, ExitCode: 137}, 0, true, "container ran out of memory (limit 64 MB) and was killed during health check"},
+		{"restarted after oom", container.State{Status: container.StateRunning}, 1, true, "container ran out of memory (limit 64 MB) and was killed during health check"},
+		{"restarted", container.State{Status: container.StateRunning}, 1, false, "container restarted during health check"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := crashed(container.InspectResponse{State: &tc.st, RestartCount: tc.rc}, 0)
+			st := container.InspectResponse{State: &tc.st, RestartCount: tc.rc, HostConfig: &container.HostConfig{Resources: container.Resources{Memory: 64 << 20}}}
+			err := crashed(st, 0, tc.oom)
 			got := ""
 			if err != nil {
 				got = err.Error()

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/spf13/cobra"
@@ -9,31 +10,43 @@ import (
 )
 
 func newProjectCmd(g *globals) *cobra.Command {
-	cmd := group(&cobra.Command{Use: "project", Short: "List and create projects"})
-	cmd.AddCommand(
-		&cobra.Command{
-			Use:     "list",
-			Aliases: []string{"ls"},
-			Short:   "List projects",
-			Args:    cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, _ []string) error {
-				s, err := g.connect()
-				if err != nil {
-					return err
-				}
-				projects, err := get[[]apitypes.Project](cmd.Context(), s, apiPrefix+"/projects")
-				if err != nil {
-					return err
-				}
-				return g.io.Print(projects, func() error {
-					t := g.io.Table("name", "created")
-					for _, p := range projects {
-						t.Row(p.Name, ago(p.CreatedAt))
+	cmd := group(&cobra.Command{Use: "project", Short: "List, create and archive projects"})
+	var all bool
+	list := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List projects",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			path := apiPrefix + "/projects"
+			if all {
+				path += "?archived=true"
+			}
+			projects, err := get[[]apitypes.Project](cmd.Context(), s, path)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(projects, func() error {
+				t := g.io.Table("name", "created")
+				for _, p := range projects {
+					created := ago(p.CreatedAt)
+					if p.ArchivedAt != nil {
+						created += ", archived " + ago(*p.ArchivedAt)
 					}
-					return t.Flush()
-				})
-			},
+					t.Row(p.Name, created)
+				}
+				return t.Flush()
+			})
 		},
+	}
+	list.Flags().BoolVar(&all, "all", false, "include archived projects")
+	cmd.AddCommand(
+		list,
+		newProjectArchiveCmd(g),
 		&cobra.Command{
 			Use:   "create <name>",
 			Short: "Create a project (with a production environment)",
@@ -55,6 +68,40 @@ func newProjectCmd(g *globals) *cobra.Command {
 			},
 		},
 	)
+	return cmd
+}
+
+// newProjectArchiveCmd archives a project. The name is required, never
+// taken from the directory's link.
+func newProjectArchiveCmd(g *globals) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "archive <name>",
+		Short: "Archive a project and all its services, keeping volumes and history",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			t := target{Project: args[0]}
+			if !yes {
+				if err := g.io.Confirm(fmt.Sprintf("Archive project %s? Every service in it stops and its domains stop routing.", t.Project), "yes"); err != nil {
+					return err
+				}
+			}
+			p, err := send[apitypes.Project](cmd.Context(), s, http.MethodPost, t.projectPath()+"/archive", nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(p, func() error {
+				g.io.Successf("Archived project %s. Its containers are stopping; volumes and release history are kept.", p.Name)
+				g.io.Progressf("It is hidden from `dock project list`; see it with --all.")
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	return cmd
 }
 
