@@ -11,7 +11,7 @@ import (
 	"github.com/NordTempo/platform/internal/core"
 )
 
-// sessionCookie holds the UI session secret (HttpOnly, SameSite=Lax).
+// sessionCookie holds the UI session secret (HttpOnly, SameSite=Strict).
 const sessionCookie = "dock_session"
 
 type actorKey struct{}
@@ -97,7 +97,7 @@ func registerAuth(s *Server, a huma.API) {
 		return &loginOutput{
 			SetCookie: http.Cookie{
 				Name: sessionCookie, Value: secret, Path: "/", Expires: expires,
-				HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: in.secure,
+				HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: in.secure,
 			},
 			Body: actor.Me(),
 		}, nil
@@ -111,7 +111,7 @@ func registerAuth(s *Server, a huma.API) {
 				return nil, err
 			}
 		}
-		return &logoutOutput{SetCookie: http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode}}, nil
+		return &logoutOutput{SetCookie: http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode}}, nil
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "me", Method: http.MethodGet, Path: Prefix + "/me",

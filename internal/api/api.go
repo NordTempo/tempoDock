@@ -49,7 +49,7 @@ func New(c *core.Core, opts Options) http.Handler {
 	mux := http.NewServeMux()
 	newAPI(mux, &Server{core: c, opts: opts})
 	mux.Handle("/", uiHandler())
-	return mux
+	return guard(mux)
 }
 
 // Spec returns the OpenAPI document (JSON) without a running daemon.

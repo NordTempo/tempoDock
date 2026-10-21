@@ -315,7 +315,7 @@ func TestLoginSessionAndEvents(t *testing.T) {
 	}
 	resp, _ = f.do("", "POST", "/api/v1/auth/login", apitypes.LoginRequest{Email: "ada@example.com", Password: "correct horse battery"})
 	cookies := resp.Cookies()
-	if resp.StatusCode != 200 || len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode {
+	if resp.StatusCode != 200 || len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatalf("login: %d %+v", resp.StatusCode, cookies)
 	}
 
