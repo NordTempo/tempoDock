@@ -9,6 +9,7 @@ import (
 	"github.com/NordTempo/platform/internal/api"
 	"github.com/NordTempo/platform/internal/config"
 	"github.com/NordTempo/platform/internal/core"
+	"github.com/NordTempo/platform/internal/node/caddy"
 )
 
 // newAdminCmd groups server-side commands that run on the server itself
@@ -18,7 +19,33 @@ func newAdminCmd() *cobra.Command {
 		Use:   "admin",
 		Short: "Server-side administration (run on the server)",
 	})
-	cmd.AddCommand(newBootstrapCmd())
+	cmd.AddCommand(newBootstrapCmd(), newCaddyConfigCmd())
+	return cmd
+}
+
+// newCaddyConfigCmd prints Caddy's initial config: admin on the Unix socket
+// and the 404 page, before the daemon has loaded any routes. The install
+// script writes it to the file Caddy starts from.
+func newCaddyConfigCmd() *cobra.Command {
+	configPath := config.DefaultPath
+	cmd := &cobra.Command{
+		Use:   "caddy-config",
+		Short: "Print the initial Caddy config for this server",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return err
+			}
+			b, err := caddy.BootstrapConfig(caddyOptions(cfg))
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
 	return cmd
 }
 
