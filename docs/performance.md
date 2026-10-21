@@ -166,6 +166,10 @@ Everything periodic in the daemon and CLI:
 - Don't load config, open the database or dial the network for commands
   that don't need it (`--help`, `context list`, `version`).
 - Commands print as they go; follow streams instead of polling.
+- The client-only build (`make build-cli`, tag `dockcli`, 8.5 MB against
+  34 MB) must not pull in the daemon: code that needs `core`, `api`,
+  `store` or `node/*` goes in `internal/cli` files tagged `//go:build
+  !dockcli` (see `server_cmds.go`).
 
 ## UI
 

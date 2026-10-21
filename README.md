@@ -24,6 +24,7 @@ needed for integration tests and real deploys.
 ```sh
 make dev               # daemon on an in-memory fake runtime, API on 127.0.0.1:7070
 make web && make build # build the UI, then bin/dock with the UI embedded
+make build-cli         # bin/dock-cli: the client alone (no daemon), 8.5 MB
 make test              # unit tests
 make test-integration  # tests against the local Docker Engine and Caddy
 make lint
