@@ -121,7 +121,7 @@ if [[ -n "$token" ]]; then
   say "  admin token: $token"
   say "  (shown once; store it now)"
   say ""
-  say "  On your laptop:  dock login http://$listen_addr --token <token>"
+  say "  On your laptop:  dock login http://$listen_addr   (paste the token when asked)"
 else
   say "  An admin already exists; no new token was created."
 fi
