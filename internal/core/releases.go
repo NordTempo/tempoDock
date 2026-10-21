@@ -1,0 +1,634 @@
+package core
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"time"
+
+	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/platform/internal/repoconfig"
+	"github.com/NordTempo/platform/internal/store"
+)
+
+// defaultPort is the container port (and PORT) for services without one.
+const defaultPort = 8080
+
+// releaseConfig is a release's fully resolved container config. It is
+// stored encrypted (it holds variable values) so a release can be started
+// again exactly as it was.
+type releaseConfig struct {
+	Env map[string]string `json:"env"`
+	Cmd string            `json:"cmd,omitempty"`
+	// Port is the container port; Published means it is bound to a fixed
+	// loopback host port (the release row's host_port) for routing.
+	Port               int           `json:"port"`
+	Published          bool          `json:"published"`
+	HealthCheckPath    string        `json:"health_check_path,omitempty"`
+	HealthCheckTimeout int           `json:"health_check_timeout_seconds"`
+	MemoryMB           int           `json:"memory_mb"`
+	CPUs               float64       `json:"cpus"`
+	Mounts             []configMount `json:"mounts"`
+	Network            string        `json:"network"`
+	Aliases            []string      `json:"aliases"`
+	// Repo holds the deploy settings that came from platform.toml, so config
+	// releases built on this one keep them.
+	Repo *repoDeploy `json:"repo,omitempty"`
+}
+
+// repoDeploy is the deploy section of platform.toml (ADR 0007). Set fields
+// win over the service's DB settings.
+type repoDeploy struct {
+	StartCommand              string `json:"start_command,omitempty"`
+	Port                      int    `json:"port,omitempty"`
+	HealthCheckPath           string `json:"health_check_path,omitempty"`
+	HealthCheckTimeoutSeconds int    `json:"health_check_timeout_seconds,omitempty"`
+}
+
+func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
+	if rc == nil || rc.Deploy == (repoconfig.Deploy{}) {
+		return nil
+	}
+	return &repoDeploy{
+		StartCommand: rc.Deploy.StartCommand, Port: rc.Deploy.Port, HealthCheckPath: rc.Deploy.HealthCheckPath,
+		HealthCheckTimeoutSeconds: int(rc.Deploy.HealthCheckTimeout / time.Second),
+	}
+}
+
+// apply overrides s with the file's set fields.
+func (r *repoDeploy) apply(s *store.Service) {
+	if r == nil {
+		return
+	}
+	if r.StartCommand != "" {
+		s.StartCommand = r.StartCommand
+	}
+	if r.Port != 0 {
+		s.Port = int64(r.Port)
+	}
+	if r.HealthCheckPath != "" {
+		s.HealthCheckPath = r.HealthCheckPath
+	}
+	if r.HealthCheckTimeoutSeconds != 0 {
+		s.HealthCheckTimeoutSeconds = int64(r.HealthCheckTimeoutSeconds)
+	}
+}
+
+// fields lists the settings the file set, by API field name.
+func (r *repoDeploy) fields() []string {
+	if r == nil {
+		return []string{}
+	}
+	var out []string
+	for name, set := range map[string]bool{
+		"start_command": r.StartCommand != "", "port": r.Port != 0,
+		"health_check_path": r.HealthCheckPath != "", "health_check_timeout_seconds": r.HealthCheckTimeoutSeconds != 0,
+	} {
+		if set {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+type configMount struct {
+	Volume     string `json:"volume"`
+	DockerName string `json:"docker_name"`
+	Path       string `json:"path"`
+}
+
+func (c *Core) sealConfig(cfg releaseConfig) ([]byte, error) {
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return c.box.Seal(b)
+}
+
+func (c *Core) openConfig(sealed []byte) (releaseConfig, error) {
+	var cfg releaseConfig
+	b, err := c.box.Open(sealed)
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, json.Unmarshal(b, &cfg)
+}
+
+func networkName(es envScope) string { return "platform-" + es.project.Name + "-" + es.env.Name }
+
+func containerName(ss svcScope, number int64) string {
+	return fmt.Sprintf("%s-%s-%s-%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
+}
+
+func buildTag(ss svcScope, number int64) string {
+	return fmt.Sprintf("platform/%s-%s-%s:%d", ss.project.Name, ss.env.Name, ss.svc.Name, number)
+}
+
+// resolveConfig builds the container config for a service from its live
+// settings (overridden by platform.toml values in repo), volumes and
+// variables, expanding references.
+func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope, repo *repoDeploy) (releaseConfig, error) {
+	svcs, err := q.ListServices(ctx, ss.env.ID)
+	if err != nil {
+		return releaseConfig{}, err
+	}
+	for i := range svcs {
+		if svcs[i].ID == ss.svc.ID {
+			repo.apply(&svcs[i])
+		}
+	}
+	rows, err := q.ListVariables(ctx, ss.env.ID)
+	if err != nil {
+		return releaseConfig{}, err
+	}
+	shared := map[string]string{}
+	own := map[int64]map[string]string{}
+	for _, v := range rows {
+		val, err := c.openValue(v.Value)
+		if err != nil {
+			return releaseConfig{}, err
+		}
+		if val == nil {
+			continue // staged only
+		}
+		if v.ServiceID == nil {
+			shared[v.Key] = *val
+			continue
+		}
+		if own[*v.ServiceID] == nil {
+			own[*v.ServiceID] = map[string]string{}
+		}
+		own[*v.ServiceID][v.Key] = *val
+	}
+
+	r := &resolver{env: ss.envScope.String(), vars: map[string]map[string]string{sharedScope: shared}, done: map[string]string{}, visiting: map[string]bool{}}
+	var target store.Service
+	var targetDomains []store.Domain
+	for _, s := range svcs {
+		if s.ID == ss.svc.ID {
+			target = s
+		} else if s.ArchivedAt != nil {
+			continue
+		}
+		domains, err := q.ListDomainsByService(ctx, s.ID)
+		if err != nil {
+			return releaseConfig{}, err
+		}
+		if s.ID == ss.svc.ID {
+			targetDomains = domains
+		}
+		vars := maps.Clone(shared)
+		maps.Copy(vars, own[s.ID])
+		// Injected variables win over user ones.
+		vars["PORT"] = strconv.Itoa(servicePort(s))
+		vars["PLATFORM_PROJECT"] = ss.project.Name
+		vars["PLATFORM_ENVIRONMENT"] = ss.env.Name
+		vars["PLATFORM_SERVICE"] = s.Name
+		vars["PLATFORM_PRIVATE_DOMAIN"] = s.Name
+		for _, d := range domains {
+			if d.RedirectTo == "" {
+				vars["PLATFORM_PUBLIC_DOMAIN"] = d.Hostname
+				break
+			}
+		}
+		r.vars[s.Name] = vars
+	}
+
+	cfg := releaseConfig{
+		Env:                map[string]string{},
+		Cmd:                target.StartCommand,
+		Port:               servicePort(target),
+		Published:          target.Port != 0 || len(targetDomains) > 0 || target.HealthCheckPath != "",
+		Repo:               repo,
+		HealthCheckPath:    target.HealthCheckPath,
+		HealthCheckTimeout: int(target.HealthCheckTimeoutSeconds),
+		MemoryMB:           int(target.MemoryMb),
+		CPUs:               target.Cpus,
+		Mounts:             []configMount{},
+		Network:            networkName(ss.envScope),
+		Aliases:            []string{target.Name},
+	}
+	if cfg.HealthCheckTimeout == 0 {
+		cfg.HealthCheckTimeout = c.cfg.Defaults.HealthCheckTimeout
+	}
+	if cfg.MemoryMB == 0 {
+		cfg.MemoryMB = c.cfg.Defaults.MemoryMB
+	}
+	if cfg.CPUs == 0 {
+		cfg.CPUs = c.cfg.Defaults.CPUs
+	}
+	for _, k := range slices.Sorted(maps.Keys(r.vars[target.Name])) {
+		v, err := r.value(target.Name, k)
+		if err != nil {
+			return releaseConfig{}, err
+		}
+		cfg.Env[k] = v
+	}
+	vols, err := q.ListVolumes(ctx, target.ID)
+	if err != nil {
+		return releaseConfig{}, err
+	}
+	for _, v := range vols {
+		if !v.Pending {
+			cfg.Mounts = append(cfg.Mounts, configMount{Volume: v.Name, DockerName: v.DockerName, Path: v.MountPath})
+		}
+	}
+	return cfg, nil
+}
+
+func servicePort(s store.Service) int {
+	if s.Port != 0 {
+		return int(s.Port)
+	}
+	return defaultPort
+}
+
+// allocateHostPort picks the lowest free port in the configured range among
+// releases that are deploying or serving on the server.
+func (c *Core) allocateHostPort(ctx context.Context, q *store.Queries, serverID int64) (int64, error) {
+	used, err := q.ListUsedHostPorts(ctx, serverID)
+	if err != nil {
+		return 0, err
+	}
+	taken := map[int64]bool{}
+	for _, p := range used {
+		taken[p] = true
+	}
+	for p := int64(c.cfg.HostPorts.Min); p <= int64(c.cfg.HostPorts.Max); p++ {
+		if !taken[p] {
+			return p, nil
+		}
+	}
+	return 0, fmt.Errorf("no free host port in %d-%d", c.cfg.HostPorts.Min, c.cfg.HostPorts.Max)
+}
+
+// releaseSpec says how to create a release.
+type releaseSpec struct {
+	source apitypes.ReleaseSource
+	// from is copied (image and resolved config) for rollback and restart.
+	from *store.Release
+	// imageRef is the image for image deploys (empty: the service setting).
+	imageRef string
+	// upload is the source tarball path for upload deploys, and repo the
+	// platform.toml found in it (nil if none).
+	upload string
+	repo   *repoconfig.Config
+}
+
+var errNoActiveRelease = errors.New("service has no active release")
+
+// startRelease creates a queued release and starts deploying it in the
+// background. The one-deploy-per-service rule is enforced here (and by a
+// unique index).
+func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec releaseSpec) (store.Release, error) {
+	if ss.svc.ArchivedAt != nil {
+		return store.Release{}, invalid("service %s is archived", ss)
+	}
+	if c.ctx.Err() != nil {
+		return store.Release{}, errf(apitypes.CodeConflict, "the daemon is shutting down; try again in a moment")
+	}
+	var rel store.Release
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		if r, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+			return deployInProgress(ss, r)
+		}
+		if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage {
+			// A deploy takes the service's own staged changes with it.
+			if _, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID); err != nil {
+				return err
+			}
+			svc, err := q.GetService(ctx, ss.svc.ID)
+			if err != nil {
+				return err
+			}
+			ss.svc = svc
+		}
+		number, err := q.NextReleaseNumber(ctx, ss.svc.ID)
+		if err != nil {
+			return err
+		}
+		params := store.CreateReleaseParams{ServiceID: ss.svc.ID, Number: number, Source: string(spec.source), CreatedBy: a.Name}
+		var repo *repoDeploy
+		switch spec.source {
+		case apitypes.SourceImage:
+			params.ImageRef = spec.imageRef
+			if params.ImageRef == "" {
+				params.ImageRef = ss.svc.Image
+			}
+			if params.ImageRef == "" {
+				return invalid("no image given and service %s has no image setting", ss)
+			}
+		case apitypes.SourceUpload:
+			params.ImageRef = buildTag(ss, number)
+			repo = repoDeployOf(spec.repo)
+		case apitypes.SourceConfig:
+			active, err := q.GetActiveRelease(ctx, ss.svc.ID)
+			if store.IsNotFound(err) {
+				return errNoActiveRelease
+			}
+			if err != nil {
+				return err
+			}
+			params.ImageRef, params.ImageID = active.ImageRef, active.ImageID
+			activeCfg, err := c.openConfig(active.Config)
+			if err != nil {
+				return err
+			}
+			repo = activeCfg.Repo // same code, same platform.toml
+		}
+		var cfg releaseConfig
+		if spec.from != nil {
+			params.FromRelease = spec.from.Number
+			params.ImageRef, params.ImageID = spec.from.ImageRef, spec.from.ImageID
+			params.Config = spec.from.Config
+			if cfg, err = c.openConfig(spec.from.Config); err != nil {
+				return err
+			}
+		} else {
+			if cfg, err = c.resolveConfig(ctx, q, ss, repo); err != nil {
+				return err
+			}
+			if params.Config, err = c.sealConfig(cfg); err != nil {
+				return err
+			}
+		}
+		if cfg.Published {
+			if params.HostPort, err = c.allocateHostPort(ctx, q, ss.env.ServerID); err != nil {
+				return err
+			}
+		}
+		rel, err = q.CreateRelease(ctx, params)
+		return err
+	})
+	if store.IsUnique(err) {
+		return rel, errf(apitypes.CodeDeployInProgress, "another deploy of %s just started; wait for it to finish", ss)
+	}
+	if err != nil {
+		return rel, err
+	}
+	c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Release %d queued by %s (%s)", rel.Number, a.Name, rel.Source))
+	c.publishRelease(ctx, ss, rel)
+	c.wg.Add(1)
+	go c.deploy(ss, rel, spec)
+	return rel, nil
+}
+
+func deployInProgress(ss svcScope, r store.Release) error {
+	return errf(apitypes.CodeDeployInProgress, "release %d of %s is already deploying (%s); wait for it to finish", r.Number, ss, r.Status)
+}
+
+// DeployImage deploys a prebuilt image (default: the service's image
+// setting), taking the service's staged changes with it.
+func (c *Core) DeployImage(ctx context.Context, a Actor, ref ServiceRef, req apitypes.DeployImageRequest) (apitypes.Release, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "deploying")
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceImage, imageRef: req.Image})
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	c.audit(ctx, a, "release.deploy", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d from image %s", rel.Number, rel.ImageRef))
+	return c.toRelease(ctx, ss, rel, false)
+}
+
+// DeploySource streams a source tarball (tar or tar.gz) to disk, then builds
+// and deploys it. Uploads larger than maxBytes fail with CodeTooLarge.
+func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body io.Reader, maxBytes int64) (apitypes.Release, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "deploying")
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	// Fail fast, before receiving a large upload.
+	if ss.svc.ArchivedAt != nil {
+		return apitypes.Release{}, invalid("service %s is archived", ss)
+	}
+	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+		return apitypes.Release{}, deployInProgress(ss, r)
+	}
+	path, err := c.saveUpload(body, maxBytes)
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	repo, err := readRepoConfig(path)
+	if err != nil {
+		_ = os.Remove(path)
+		return apitypes.Release{}, err
+	}
+	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceUpload, upload: path, repo: repo})
+	if err != nil {
+		_ = os.Remove(path)
+		return apitypes.Release{}, err
+	}
+	c.audit(ctx, a, "release.deploy", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d from source upload", rel.Number))
+	return c.toRelease(ctx, ss, rel, false)
+}
+
+func (c *Core) saveUpload(body io.Reader, maxBytes int64) (string, error) {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	path := filepath.Join(c.cfg.DataDir, "uploads", hex.EncodeToString(b)+".tar")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", err
+	}
+	n, err := io.Copy(f, io.LimitReader(body, maxBytes+1))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	switch {
+	case err != nil:
+		_ = os.Remove(path)
+		return "", fmt.Errorf("receive upload: %w", err)
+	case n > maxBytes:
+		_ = os.Remove(path)
+		return "", errf(apitypes.CodeTooLarge, "upload is larger than the server's limit of %d MB; add large files to .dockerignore or deploy a prebuilt image", maxBytes>>20)
+	case n == 0:
+		_ = os.Remove(path)
+		return "", invalid("upload is empty")
+	}
+	return path, nil
+}
+
+// readRepoConfig reads platform.toml from an uploaded build context.
+func readRepoConfig(path string) (*repoconfig.Config, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	rc, found, err := repoconfig.FromTar(f)
+	if err != nil {
+		return nil, invalid("%s: %v", repoconfig.FileName, err)
+	}
+	if !found {
+		return nil, nil
+	}
+	return &rc, nil
+}
+
+// Rollback creates a new release from an earlier release's image and
+// resolved config, through the same health-checked path.
+func (c *Core) Rollback(ctx context.Context, a Actor, ref ServiceRef, number int64) (apitypes.Release, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "rolling back")
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	from, err := c.releaseByNumber(ctx, ss, number)
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	if from.Status != string(apitypes.ReleaseSuperseded) && from.Status != string(apitypes.ReleaseActive) {
+		return apitypes.Release{}, invalid("release %d never went live (status %s); roll back to a release that served traffic", number, from.Status)
+	}
+	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRollback, from: &from})
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	c.audit(ctx, a, "release.rollback", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d rolls back to release %d", rel.Number, number))
+	return c.toRelease(ctx, ss, rel, false)
+}
+
+// Restart creates a new release identical to the active one.
+func (c *Core) Restart(ctx context.Context, a Actor, ref ServiceRef) (apitypes.Release, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "restarting")
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	active, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
+	if store.IsNotFound(err) {
+		return apitypes.Release{}, invalid("service %s has no active release to restart; deploy it first", ss)
+	}
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRestart, from: &active})
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	c.audit(ctx, a, "release.restart", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d restarts release %d", rel.Number, active.Number))
+	return c.toRelease(ctx, ss, rel, false)
+}
+
+// ListReleases returns a service's releases, newest first.
+func (c *Core) ListReleases(ctx context.Context, a Actor, ref ServiceRef, limit int) ([]apitypes.Release, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "listing releases")
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := c.store.ListReleases(ctx, store.ListReleasesParams{ServiceID: ss.svc.ID, Limit: int64(limit)})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]apitypes.Release, 0, len(rows))
+	for _, r := range rows {
+		rel, err := c.toRelease(ctx, ss, r, false)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rel)
+	}
+	return out, nil
+}
+
+// GetRelease returns one release with its progress events.
+func (c *Core) GetRelease(ctx context.Context, a Actor, ref ServiceRef, number int64) (apitypes.Release, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "reading releases")
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	r, err := c.releaseByNumber(ctx, ss, number)
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	return c.toRelease(ctx, ss, r, true)
+}
+
+func (c *Core) releaseByNumber(ctx context.Context, ss svcScope, number int64) (store.Release, error) {
+	r, err := c.store.GetReleaseByNumber(ctx, store.GetReleaseByNumberParams{ServiceID: ss.svc.ID, Number: number})
+	if store.IsNotFound(err) {
+		return r, notFound("release %d of %s not found", number, ss)
+	}
+	return r, err
+}
+
+func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, withEvents bool) (apitypes.Release, error) {
+	out := apitypes.Release{
+		ID: r.ID, Number: r.Number, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
+		Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source), FromRelease: r.FromRelease,
+		ImageRef: r.ImageRef, ImageID: r.ImageID, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
+		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt,
+	}
+	cfg, err := c.openConfig(r.Config)
+	if err != nil {
+		return out, fmt.Errorf("release %d config: %w", r.ID, err)
+	}
+	out.Config = apitypes.ReleaseConfig{
+		Port: cfg.Port, Published: cfg.Published, StartCommand: cfg.Cmd, HealthCheckPath: cfg.HealthCheckPath,
+		MemoryMB: cfg.MemoryMB, CPUs: cfg.CPUs, VariableKeys: slices.Sorted(maps.Keys(cfg.Env)),
+		Mounts: make([]apitypes.VolumeMount, 0, len(cfg.Mounts)), FromRepoFile: cfg.Repo.fields(),
+	}
+	for _, m := range cfg.Mounts {
+		out.Config.Mounts = append(out.Config.Mounts, apitypes.VolumeMount{Volume: m.Volume, Path: m.Path})
+	}
+	if withEvents {
+		evs, err := c.store.ListReleaseEvents(ctx, r.ID)
+		if err != nil {
+			return out, err
+		}
+		out.Events = make([]apitypes.ReleaseEvent, 0, len(evs))
+		for _, e := range evs {
+			out.Events = append(out.Events, apitypes.ReleaseEvent{ReleaseNumber: r.Number, Message: e.Message, CreatedAt: e.CreatedAt})
+		}
+	}
+	return out, nil
+}
+
+func summarize(r store.Release) *apitypes.ReleaseSummary {
+	return &apitypes.ReleaseSummary{
+		Number: r.Number, Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source),
+		ImageRef: r.ImageRef, ImageID: r.ImageID, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt,
+	}
+}
+
+// releaseEvent records a progress line and publishes it.
+func (c *Core) releaseEvent(ctx context.Context, ss svcScope, r store.Release, msg string) {
+	row, err := c.store.AddReleaseEvent(ctx, store.AddReleaseEventParams{ReleaseID: r.ID, Message: msg, CreatedAt: now()})
+	if err != nil {
+		c.log.Error("write release event", "release", r.ID, "err", err)
+		return
+	}
+	c.log.Info(msg, "service", ss.String())
+	c.publish(ss, apitypes.Event{
+		Type:         apitypes.EventReleaseEvent,
+		ReleaseEvent: &apitypes.ReleaseEvent{ReleaseNumber: r.Number, Message: msg, CreatedAt: row.CreatedAt},
+	})
+}
+
+func (c *Core) publishRelease(ctx context.Context, ss svcScope, r store.Release) {
+	rel, err := c.toRelease(ctx, ss, r, false)
+	if err != nil {
+		c.log.Error("publish release", "release", r.ID, "err", err)
+		return
+	}
+	c.publish(ss, apitypes.Event{Type: apitypes.EventRelease, Release: &rel})
+}
+
+// publish sends a service-scoped event.
+func (c *Core) publish(ss svcScope, ev apitypes.Event) {
+	ev.Project, ev.Environment, ev.Service = ss.project.Name, ss.env.Name, ss.svc.Name
+	c.bus.publish(busEvent{projectID: ss.project.ID, envID: ss.env.ID, serviceID: ss.svc.ID, ev: ev})
+}

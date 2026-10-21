@@ -1,0 +1,356 @@
+package core
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"strings"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/platform/internal/store"
+)
+
+// Secret prefixes make leaked credentials easy to recognise and scan for.
+const (
+	tokenPrefix   = "pt_"
+	sessionPrefix = "ps_"
+)
+
+// SessionTTL is how long a UI login lasts.
+const SessionTTL = 30 * 24 * time.Hour
+
+// tokenTouchInterval throttles last_used_at writes.
+const tokenTouchInterval = time.Minute
+
+// dummyHash keeps failed logins for unknown emails as slow as wrong passwords.
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("platform-dummy-password"), bcrypt.DefaultCost)
+
+func newSecret(prefix string) (secret, hash string) {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	secret = prefix + base64.RawURLEncoding.EncodeToString(b)
+	return secret, hashSecret(secret)
+}
+
+func hashSecret(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+var errUnauthenticated = errf(apitypes.CodeUnauthorized, "invalid, expired or revoked credentials; log in again or use a valid token")
+
+// AuthenticateToken resolves an API token to an actor.
+func (c *Core) AuthenticateToken(ctx context.Context, secret string) (Actor, error) {
+	if !strings.HasPrefix(secret, tokenPrefix) {
+		return Actor{}, errUnauthenticated
+	}
+	t, err := c.store.GetTokenByHash(ctx, hashSecret(secret))
+	if store.IsNotFound(err) {
+		return Actor{}, errUnauthenticated
+	}
+	if err != nil {
+		return Actor{}, err
+	}
+	n := now()
+	if t.RevokedAt != nil || (t.ExpiresAt != nil && n.After(*t.ExpiresAt)) {
+		return Actor{}, errUnauthenticated
+	}
+	if t.LastUsedAt == nil || n.Sub(*t.LastUsedAt) > tokenTouchInterval {
+		if err := c.store.TouchToken(ctx, store.TouchTokenParams{LastUsedAt: &n, ID: t.ID}); err != nil {
+			c.log.Warn("touch token", "err", err)
+		}
+	}
+	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope)}
+	if t.ProjectID != nil {
+		p, err := c.store.GetProject(ctx, *t.ProjectID)
+		if err != nil {
+			return Actor{}, err
+		}
+		a.ProjectID, a.ProjectName = p.ID, p.Name
+	}
+	if t.EnvironmentID != nil {
+		e, err := c.store.GetEnvironment(ctx, *t.EnvironmentID)
+		if err != nil {
+			return Actor{}, err
+		}
+		a.EnvironmentID, a.EnvironmentName = e.ID, e.Name
+	}
+	return a, nil
+}
+
+// AuthenticateSession resolves a UI session cookie to an actor.
+func (c *Core) AuthenticateSession(ctx context.Context, secret string) (Actor, error) {
+	if !strings.HasPrefix(secret, sessionPrefix) {
+		return Actor{}, errUnauthenticated
+	}
+	row, err := c.store.GetSessionUser(ctx, hashSecret(secret))
+	if store.IsNotFound(err) {
+		return Actor{}, errUnauthenticated
+	}
+	if err != nil {
+		return Actor{}, err
+	}
+	if now().After(row.SessionExpiresAt) {
+		return Actor{}, errUnauthenticated
+	}
+	return userActor(row.User), nil
+}
+
+func userActor(u store.User) Actor {
+	return Actor{Kind: "user", Name: u.Email, Email: u.Email, UserID: u.ID, Scope: apitypes.Scope(u.Role)}
+}
+
+// Login checks a user's password and starts a session. It returns the
+// session secret for the cookie.
+func (c *Core) Login(ctx context.Context, email, password string) (secret string, expires time.Time, a Actor, err error) {
+	u, err := c.store.GetUserByEmail(ctx, email)
+	if store.IsNotFound(err) {
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		return "", time.Time{}, Actor{}, errf(apitypes.CodeUnauthorized, "wrong email or password")
+	}
+	if err != nil {
+		return "", time.Time{}, Actor{}, err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+		return "", time.Time{}, Actor{}, errf(apitypes.CodeUnauthorized, "wrong email or password")
+	}
+	secret, hash := newSecret(sessionPrefix)
+	expires = now().Add(SessionTTL)
+	if err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires}); err != nil {
+		return "", time.Time{}, Actor{}, err
+	}
+	_ = c.store.DeleteExpiredSessions(ctx, now())
+	a = userActor(u)
+	c.audit(ctx, a, "user.login", nil, nil, u.Email, "logged in")
+	return secret, expires, a, nil
+}
+
+// Logout ends a session. Unknown sessions are ignored.
+func (c *Core) Logout(ctx context.Context, secret string) error {
+	return c.store.DeleteSession(ctx, hashSecret(secret))
+}
+
+// ListTokens returns all tokens (never their secrets).
+func (c *Core) ListTokens(ctx context.Context, a Actor) ([]apitypes.Token, error) {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
+		return nil, err
+	}
+	rows, err := c.store.ListTokens(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := newNames(c.store)
+	out := make([]apitypes.Token, 0, len(rows))
+	for _, t := range rows {
+		out = append(out, toToken(ctx, names, t))
+	}
+	return out, nil
+}
+
+// CreateToken creates a token and returns its secret, shown only once.
+func (c *Core) CreateToken(ctx context.Context, a Actor, req apitypes.CreateTokenRequest) (apitypes.CreatedToken, error) {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
+		return apitypes.CreatedToken{}, err
+	}
+	return c.createToken(ctx, a, req)
+}
+
+func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateTokenRequest) (apitypes.CreatedToken, error) {
+	if strings.TrimSpace(req.Name) == "" {
+		return apitypes.CreatedToken{}, invalid("token name is required")
+	}
+	if !validScope(req.Scope) {
+		return apitypes.CreatedToken{}, invalid("scope must be read, deploy or admin")
+	}
+	params := store.CreateTokenParams{Name: req.Name, Scope: string(req.Scope), CreatedBy: a.Name}
+	var p *store.Project
+	var e *store.Environment
+	switch {
+	case req.Environment != "" && req.Project == "":
+		return apitypes.CreatedToken{}, invalid("environment limit needs a project too")
+	case req.Environment != "":
+		es, err := c.loadEnv(ctx, EnvRef{req.Project, req.Environment})
+		if err != nil {
+			return apitypes.CreatedToken{}, err
+		}
+		p, e = &es.project, &es.env
+		params.ProjectID, params.EnvironmentID = &es.project.ID, &es.env.ID
+	case req.Project != "":
+		proj, err := c.loadProject(ctx, req.Project)
+		if err != nil {
+			return apitypes.CreatedToken{}, err
+		}
+		p = &proj
+		params.ProjectID = &proj.ID
+	}
+	if req.ExpiresInDays > 0 {
+		exp := now().Add(time.Duration(req.ExpiresInDays) * 24 * time.Hour)
+		params.ExpiresAt = &exp
+	}
+	secret, hash := newSecret(tokenPrefix)
+	params.Hash = hash
+	t, err := c.store.CreateToken(ctx, params)
+	if err != nil {
+		return apitypes.CreatedToken{}, err
+	}
+	out := toToken(ctx, newNames(c.store), t)
+	c.audit(ctx, a, "token.create", p, e, "token "+t.Name, fmt.Sprintf("created %s token %q (id %d)", t.Scope, t.Name, t.ID))
+	return apitypes.CreatedToken{Token: out, Secret: secret}, nil
+}
+
+// RevokeToken revokes a token by ID.
+func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
+		return err
+	}
+	t, err := c.store.GetToken(ctx, id)
+	if store.IsNotFound(err) {
+		return notFound("token %d not found", id)
+	}
+	if err != nil {
+		return err
+	}
+	n := now()
+	if err := c.store.RevokeToken(ctx, store.RevokeTokenParams{RevokedAt: &n, ID: id}); err != nil {
+		return err
+	}
+	c.audit(ctx, a, "token.revoke", nil, nil, "token "+t.Name, fmt.Sprintf("revoked token %q (id %d)", t.Name, t.ID))
+	return nil
+}
+
+// ListUsers returns all users.
+func (c *Core) ListUsers(ctx context.Context, a Actor) ([]apitypes.User, error) {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing users"); err != nil {
+		return nil, err
+	}
+	rows, err := c.store.ListUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]apitypes.User, 0, len(rows))
+	for _, u := range rows {
+		out = append(out, toUser(u))
+	}
+	return out, nil
+}
+
+// CreateUser creates a user who can log in to the UI.
+func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserRequest) (apitypes.User, error) {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing users"); err != nil {
+		return apitypes.User{}, err
+	}
+	u, err := c.createUser(ctx, req)
+	if err != nil {
+		return apitypes.User{}, err
+	}
+	c.audit(ctx, a, "user.create", nil, nil, u.Email, fmt.Sprintf("created %s user %s", u.Role, u.Email))
+	return toUser(u), nil
+}
+
+func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest) (store.User, error) {
+	if !strings.Contains(req.Email, "@") {
+		return store.User{}, invalid("email %q is not valid", req.Email)
+	}
+	if len(req.Password) < 12 {
+		return store.User{}, invalid("password must be at least 12 characters")
+	}
+	if !validScope(req.Role) {
+		return store.User{}, invalid("role must be read, deploy or admin")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return store.User{}, err
+	}
+	u, err := c.store.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), Role: string(req.Role)})
+	if store.IsUnique(err) {
+		return store.User{}, conflict("a user with email %s already exists", req.Email)
+	}
+	return u, err
+}
+
+// Bootstrapped is the first admin's credentials, shown once.
+type Bootstrapped struct {
+	Email    string
+	Password string
+	Token    string
+}
+
+// Bootstrap creates the first admin user and an admin token if no users
+// exist yet. It returns ok=false (and no error) when already bootstrapped.
+func (c *Core) Bootstrap(ctx context.Context, email string) (b Bootstrapped, ok bool, err error) {
+	n, err := c.store.CountUsers(ctx)
+	if err != nil || n > 0 {
+		return b, false, err
+	}
+	pw := make([]byte, 18)
+	_, _ = rand.Read(pw)
+	b = Bootstrapped{Email: email, Password: base64.RawURLEncoding.EncodeToString(pw)}
+	u, err := c.createUser(ctx, apitypes.CreateUserRequest{Email: email, Name: "admin", Password: b.Password, Role: apitypes.ScopeAdmin})
+	if err != nil {
+		return b, false, err
+	}
+	created, err := c.createToken(ctx, userActor(u), apitypes.CreateTokenRequest{Name: "bootstrap", Scope: apitypes.ScopeAdmin})
+	if err != nil {
+		return b, false, err
+	}
+	b.Token = created.Secret
+	c.audit(ctx, System, "user.bootstrap", nil, nil, u.Email, "created the first admin user and token")
+	return b, true, nil
+}
+
+func toUser(u store.User) apitypes.User {
+	return apitypes.User{ID: u.ID, Email: u.Email, Name: u.Name, Role: apitypes.Scope(u.Role), CreatedAt: u.CreatedAt}
+}
+
+func toToken(ctx context.Context, names *names, t store.Token) apitypes.Token {
+	out := apitypes.Token{
+		ID: t.ID, Name: t.Name, Scope: apitypes.Scope(t.Scope), CreatedBy: t.CreatedBy, CreatedAt: t.CreatedAt,
+		ExpiresAt: t.ExpiresAt, LastUsedAt: t.LastUsedAt, RevokedAt: t.RevokedAt,
+	}
+	if t.ProjectID != nil {
+		out.Project = names.project(ctx, *t.ProjectID)
+	}
+	if t.EnvironmentID != nil {
+		out.Environment = names.environment(ctx, *t.EnvironmentID)
+	}
+	return out
+}
+
+// names caches project and environment names by ID for list conversions.
+type names struct {
+	q        *store.Store
+	projects map[int64]string
+	envs     map[int64]string
+}
+
+func newNames(q *store.Store) *names {
+	return &names{q: q, projects: map[int64]string{}, envs: map[int64]string{}}
+}
+
+func (n *names) project(ctx context.Context, id int64) string {
+	if s, ok := n.projects[id]; ok {
+		return s
+	}
+	p, err := n.q.GetProject(ctx, id)
+	if err == nil {
+		n.projects[id] = p.Name
+	}
+	return p.Name
+}
+
+func (n *names) environment(ctx context.Context, id int64) string {
+	if s, ok := n.envs[id]; ok {
+		return s
+	}
+	e, err := n.q.GetEnvironment(ctx, id)
+	if err == nil {
+		n.envs[id] = e.Name
+	}
+	return e.Name
+}

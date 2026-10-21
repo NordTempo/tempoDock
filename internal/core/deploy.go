@@ -1,0 +1,450 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/platform/internal/store"
+)
+
+// cleanupTimeout bounds cleanup after a failed or interrupted deploy, which
+// runs even when the deploy's own context is cancelled.
+const cleanupTimeout = time.Minute
+
+// healthGrace is how long a container without a port must stay up.
+const healthGrace = 5 * time.Second
+
+// deployment runs one release through the state machine:
+// queued → building → starting → health_checking → active | failed.
+type deployment struct {
+	c    *Core
+	ss   svcScope
+	rel  store.Release
+	rt   node.Runtime
+	cfg  releaseConfig
+	log  *logWriter
+	spec releaseSpec
+
+	old        *store.Release // active release when the deploy started
+	stateful   bool
+	oldRemoved bool   // stateful recreate removed the old container
+	newID      string // the new container, once started
+}
+
+type stepError struct {
+	code apitypes.ErrorCode
+	err  error
+}
+
+func (e *stepError) Error() string { return e.err.Error() }
+
+func step(code apitypes.ErrorCode, format string, args ...any) error {
+	return &stepError{code: code, err: fmt.Errorf(format, args...)}
+}
+
+// deploy runs in its own goroutine; the upload is removed when it finishes.
+func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
+	defer c.wg.Done()
+	if spec.upload != "" {
+		defer func() { _ = os.Remove(spec.upload) }()
+	}
+	d := &deployment{c: c, ss: ss, rel: rel, rt: c.runtime(ss.env.ServerID), spec: spec}
+	ctx := c.ctx
+	err := d.run(ctx)
+	if d.log != nil {
+		d.log.Close()
+	}
+	if err != nil {
+		d.fail(ctx, err)
+	}
+}
+
+func (d *deployment) run(ctx context.Context) error {
+	c := d.c
+	var err error
+	if d.cfg, err = c.openConfig(d.rel.Config); err != nil {
+		return err
+	}
+	if d.log, err = c.newBuildLog(d.ss, d.rel); err != nil {
+		return err
+	}
+
+	// building: build from source or make sure the image is on the server.
+	d.setStatus(ctx, apitypes.ReleaseBuilding)
+	imageID, err := d.image(ctx)
+	if err != nil {
+		return err
+	}
+	d.rel.ImageID = imageID
+	if err := c.store.SetReleaseImage(ctx, store.SetReleaseImageParams{ImageRef: d.rel.ImageRef, ImageID: imageID, ID: d.rel.ID}); err != nil {
+		return err
+	}
+
+	// starting: new container next to the old one, or instead of it for
+	// stateful services.
+	d.setStatus(ctx, apitypes.ReleaseStarting)
+	if old, err := c.store.GetActiveRelease(ctx, d.ss.svc.ID); err == nil {
+		d.old = &old
+	} else if !store.IsNotFound(err) {
+		return err
+	}
+	d.stateful = len(d.cfg.Mounts) > 0
+	if err := d.rt.EnsureNetwork(ctx, d.cfg.Network); err != nil {
+		return step(apitypes.CodeDeployFailed, "create network %s: %w", d.cfg.Network, err)
+	}
+	for _, m := range d.cfg.Mounts {
+		if err := d.rt.EnsureVolume(ctx, m.DockerName, labels(d.ss, 0)); err != nil {
+			return step(apitypes.CodeDeployFailed, "create volume %s: %w", m.Volume, err)
+		}
+	}
+	if d.stateful && d.old != nil && d.old.ContainerID != "" {
+		d.event(ctx, fmt.Sprintf("Stopping release %d first: services with volumes are replaced, never run side by side", d.old.Number))
+		c.removeContainer(ctx, d.ss.env.ServerID, d.old.ContainerID)
+		d.oldRemoved = true
+	}
+	ctr, err := d.rt.Start(ctx, c.containerSpec(d.ss, d.rel, d.cfg))
+	if err != nil {
+		return step(apitypes.CodeDeployFailed, "start container: %w", err)
+	}
+	d.newID = ctr.ID
+	if err := c.store.SetReleaseContainer(ctx, store.SetReleaseContainerParams{ContainerID: ctr.ID, ID: d.rel.ID}); err != nil {
+		return err
+	}
+	d.event(ctx, "Started container "+ctr.Name)
+
+	// health_checking
+	d.setStatus(ctx, apitypes.ReleaseHealthChecking)
+	hc := node.HealthCheck{
+		Path:     d.cfg.HealthCheckPath,
+		Timeout:  time.Duration(d.cfg.HealthCheckTimeout) * time.Second,
+		Interval: time.Second,
+		Grace:    min(healthGrace, time.Duration(d.cfg.HealthCheckTimeout)*time.Second),
+	}
+	if err := d.rt.HealthCheck(ctx, ctr, hc); err != nil {
+		what := "TCP check on port " + strconv.Itoa(d.cfg.Port)
+		switch {
+		case hc.Path != "":
+			what = "HTTP check on " + hc.Path
+		case !d.cfg.Published:
+			what = "container must stay running"
+		}
+		return step(apitypes.CodeHealthCheckFailed, "health check failed (%s, timeout %s): %w", what, hc.Timeout, err)
+	}
+	d.event(ctx, "Health check passed")
+	return d.cutover(ctx)
+}
+
+// image builds or fetches the release's image and returns its ID.
+func (d *deployment) image(ctx context.Context) (string, error) {
+	ref := d.rel.ImageRef
+	switch apitypes.ReleaseSource(d.rel.Source) {
+	case apitypes.SourceUpload:
+		f, err := os.Open(d.spec.upload)
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = f.Close() }()
+		select {
+		case d.c.buildSem <- struct{}{}:
+		default:
+			d.event(ctx, "Waiting for another build on this server to finish")
+			select {
+			case d.c.buildSem <- struct{}{}:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		defer func() { <-d.c.buildSem }()
+		req := node.BuildRequest{
+			Source: f, Dockerfile: d.ss.svc.DockerfilePath, BuildCommand: d.ss.svc.BuildCommand,
+			StartCommand: d.cfg.Cmd, BuildArgs: d.cfg.Env, Tag: ref, Logs: d.log,
+		}
+		if rc := d.spec.repo; rc != nil {
+			d.event(ctx, "Using settings from platform.toml")
+			// The file wins over the service's build settings (ADR 0007).
+			if rc.Build.Dockerfile != "" {
+				req.Dockerfile, req.BuildCommand = rc.Build.Dockerfile, ""
+			}
+			if rc.Build.Command != "" {
+				req.Dockerfile, req.BuildCommand = "", rc.Build.Command
+			}
+		}
+		d.event(ctx, "Building "+ref)
+		id, err := d.rt.Build(ctx, req)
+		if err != nil {
+			return "", step(apitypes.CodeBuildFailed, "build failed: %w", err)
+		}
+		d.event(ctx, "Built "+ref)
+		return id, nil
+	case apitypes.SourceImage:
+		d.event(ctx, "Pulling "+ref)
+		id, err := d.rt.Pull(ctx, ref, d.log)
+		if err != nil {
+			return "", step(apitypes.CodeBuildFailed, "pull %s: %w", ref, err)
+		}
+		return id, nil
+	default:
+		// Config changes, rollbacks and restarts reuse an existing image.
+		ok, err := d.rt.HasImage(ctx, ref)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return d.rel.ImageID, nil
+		}
+		d.event(ctx, fmt.Sprintf("Image %s is no longer on the server; pulling it", ref))
+		id, err := d.rt.Pull(ctx, ref, d.log)
+		if err != nil {
+			return "", step(apitypes.CodeBuildFailed, "image %s is gone and could not be pulled: %w", ref, err)
+		}
+		return id, nil
+	}
+}
+
+// cutover switches traffic to the new release, records it as active, then
+// retires the old container. Routes are rendered with the new release's port
+// and applied before the DB changes, under the routes lock, so "active"
+// always means "receiving traffic" and no other render can interleave.
+func (d *deployment) cutover(ctx context.Context) error {
+	c := d.c
+	serverID := d.ss.env.ServerID
+	canFallBack := d.old != nil && !d.oldRemoved
+
+	c.routesMu.Lock()
+	routeErr := c.applyRoutesLocked(ctx, serverID, map[int64]int64{d.ss.svc.ID: d.rel.HostPort})
+	if routeErr != nil && canFallBack {
+		c.routesMu.Unlock()
+		// The old release never stopped serving and keeps doing so.
+		return step(apitypes.CodeDeployFailed, "routes could not be updated: %w", routeErr)
+	}
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		if d.old != nil {
+			if err := q.SupersedeRelease(ctx, d.old.ID); err != nil {
+				return err
+			}
+		}
+		return q.ActivateRelease(ctx, store.ActivateReleaseParams{FinishedAt: ptr(now()), ID: d.rel.ID})
+	})
+	if err != nil {
+		// Point routes back at what the DB says is active.
+		if rerr := c.applyRoutesLocked(ctx, serverID, nil); rerr != nil {
+			c.log.Error("restore routes", "err", rerr)
+		}
+		c.routesMu.Unlock()
+		return err
+	}
+	c.routesMu.Unlock()
+
+	if routeErr != nil {
+		// Nothing to fall back to (first release, or stateful): keep it.
+		d.event(ctx, "Warning: routes could not be updated: "+routeErr.Error())
+	} else {
+		d.event(ctx, fmt.Sprintf("Traffic switched to release %d", d.rel.Number))
+	}
+	c.setStatus(d.ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
+	d.event(ctx, fmt.Sprintf("Release %d is live", d.rel.Number))
+	d.publish(ctx)
+	if d.old != nil {
+		if old, err := c.store.GetRelease(ctx, d.old.ID); err == nil {
+			c.publishRelease(ctx, d.ss, old)
+		}
+		if !d.oldRemoved && d.old.ContainerID != "" {
+			// Let connections still on the old upstream finish. On shutdown,
+			// skip the wait but still stop it: it no longer gets traffic.
+			select {
+			case <-time.After(c.drain):
+			case <-ctx.Done():
+			}
+			cctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+			defer cancel()
+			d.event(cctx, fmt.Sprintf("Stopping release %d", d.old.Number))
+			c.removeContainer(cctx, serverID, d.old.ContainerID)
+		}
+	}
+	return nil
+}
+
+// fail cleans up and marks the release failed. The old release keeps
+// serving; for stateful services (already stopped) it is started again
+// before the failure is recorded, so "failed" means "back to the previous
+// state".
+func (d *deployment) fail(ctx context.Context, err error) {
+	c := d.c
+	code, msg := apitypes.CodeInternal, err.Error()
+	var se *stepError
+	switch {
+	case ctx.Err() != nil:
+		code, msg = apitypes.CodeDeployFailed, "daemon stopped during deploy"
+	case errors.As(err, &se):
+		code = se.code
+	}
+	// Cleanup must happen even if the deploy context is cancelled.
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+	if d.newID != "" {
+		c.removeContainer(ctx, d.ss.env.ServerID, d.newID)
+	}
+	if d.oldRemoved && d.old != nil {
+		d.event(ctx, fmt.Sprintf("Starting release %d again", d.old.Number))
+		if err := c.restartRelease(ctx, d.ss, *d.old); err != nil {
+			d.event(ctx, fmt.Sprintf("Could not start release %d again: %v", d.old.Number, err))
+		}
+	}
+	if err := c.store.FailRelease(ctx, store.FailReleaseParams{Error: msg, ErrorCode: string(code), FinishedAt: ptr(now()), ID: d.rel.ID}); err != nil {
+		c.log.Error("mark release failed", "release", d.rel.ID, "err", err)
+	}
+	d.event(ctx, fmt.Sprintf("Release %d failed: %s", d.rel.Number, msg))
+	d.publish(ctx)
+}
+
+func (d *deployment) setStatus(ctx context.Context, s apitypes.ReleaseStatus) {
+	if err := d.c.store.SetReleaseStatus(ctx, store.SetReleaseStatusParams{Status: string(s), ID: d.rel.ID}); err != nil {
+		d.c.log.Error("set release status", "release", d.rel.ID, "err", err)
+	}
+	d.rel.Status = string(s)
+	d.publish(ctx)
+}
+
+func (d *deployment) publish(ctx context.Context) {
+	if r, err := d.c.store.GetRelease(ctx, d.rel.ID); err == nil {
+		d.c.publishRelease(ctx, d.ss, r)
+	}
+}
+
+func (d *deployment) event(ctx context.Context, msg string) { d.c.releaseEvent(ctx, d.ss, d.rel, msg) }
+
+// restartRelease starts an existing release's container again (after a
+// stateful deploy failed, or when recovery finds it missing).
+func (c *Core) restartRelease(ctx context.Context, ss svcScope, rel store.Release) error {
+	cfg, err := c.openConfig(rel.Config)
+	if err != nil {
+		return err
+	}
+	ctr, err := c.runtime(ss.env.ServerID).Start(ctx, c.containerSpec(ss, rel, cfg))
+	if err != nil {
+		return err
+	}
+	if err := c.store.SetReleaseContainer(ctx, store.SetReleaseContainerParams{ContainerID: ctr.ID, ID: rel.ID}); err != nil {
+		return err
+	}
+	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
+	return nil
+}
+
+func labels(ss svcScope, releaseID int64) node.Labels {
+	l := node.Labels{
+		Project:     strconv.FormatInt(ss.project.ID, 10),
+		Environment: strconv.FormatInt(ss.env.ID, 10),
+		Service:     strconv.FormatInt(ss.svc.ID, 10),
+	}
+	if releaseID != 0 {
+		l.Release = strconv.FormatInt(releaseID, 10)
+	}
+	return l
+}
+
+func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) node.ContainerSpec {
+	image := rel.ImageRef
+	if rel.ImageID != "" {
+		// The content-addressed ID pins exactly what was deployed, even if
+		// the tag moved since.
+		image = rel.ImageID
+	}
+	spec := node.ContainerSpec{
+		Name:    containerName(ss, rel.Number),
+		Image:   image,
+		Labels:  labels(ss, rel.ID),
+		Env:     cfg.Env,
+		Cmd:     cfg.Cmd,
+		Network: cfg.Network,
+		Aliases: cfg.Aliases,
+		Resources: node.Resources{
+			MemoryBytes: int64(cfg.MemoryMB) << 20,
+			NanoCPUs:    int64(cfg.CPUs * 1e9),
+		},
+	}
+	if cfg.Published {
+		spec.Port, spec.HostPort = cfg.Port, int(rel.HostPort)
+	}
+	for _, m := range cfg.Mounts {
+		spec.Mounts = append(spec.Mounts, node.Mount{Volume: m.DockerName, Path: m.Path})
+	}
+	return spec
+}
+
+// removeContainer stops (gracefully) and removes a container, logging
+// failures. Missing containers are fine.
+func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) {
+	rt := c.runtime(serverID)
+	if err := rt.Stop(ctx, id, stopTimeout); err != nil && !errors.Is(err, node.ErrNotFound) {
+		c.log.Warn("stop container", "id", id, "err", err)
+	}
+	if err := rt.Remove(ctx, id); err != nil && !errors.Is(err, node.ErrNotFound) {
+		c.log.Warn("remove container", "id", id, "err", err)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// buildLogPath is the build (and pull) log of a release.
+func (c *Core) buildLogPath(releaseID int64) string {
+	return filepath.Join(c.cfg.DataDir, "builds", strconv.FormatInt(releaseID, 10)+".log")
+}
+
+func (c *Core) newBuildLog(ss svcScope, rel store.Release) (*logWriter, error) {
+	f, err := os.OpenFile(c.buildLogPath(rel.ID), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	return &logWriter{f: f, emit: func(seq int, line string) {
+		c.publish(ss, apitypes.Event{Type: apitypes.EventBuildLog, BuildLog: &apitypes.BuildLogLine{ReleaseNumber: rel.Number, Seq: seq, Text: line}})
+	}}, nil
+}
+
+// logWriter appends build output to the log file and publishes each
+// complete line with its zero-based line number.
+type logWriter struct {
+	mu   sync.Mutex
+	f    *os.File
+	buf  []byte
+	seq  int
+	emit func(seq int, line string)
+}
+
+func (w *logWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.f.Write(p)
+	w.buf = append(w.buf, p[:n]...)
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			break
+		}
+		w.emit(w.seq, string(w.buf[:i]))
+		w.seq++
+		w.buf = w.buf[i+1:]
+	}
+	return n, err
+}
+
+// Close terminates a trailing partial line and closes the file.
+func (w *logWriter) Close() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.buf) > 0 {
+		_, _ = w.f.Write([]byte("\n"))
+		w.emit(w.seq, string(w.buf))
+		w.buf = nil
+	}
+	_ = w.f.Close()
+}

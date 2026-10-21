@@ -33,10 +33,22 @@ type Config struct {
 	// BaseDomain enables generated hostnames (<service>-<env>.<base>).
 	// Requires a wildcard DNS record pointing at PublicIP.
 	BaseDomain string `toml:"base_domain"`
+	// MaxUploadMB caps source uploads (`platform deploy` tarballs).
+	MaxUploadMB int `toml:"max_upload_mb"`
+	// HostPorts is the range of 127.0.0.1 ports published app containers are
+	// bound to. Each release gets a fixed port so routes survive container
+	// restarts while the daemon is down.
+	HostPorts PortRange `toml:"host_ports"`
 
 	Caddy    Caddy    `toml:"caddy"`
 	BuildKit BuildKit `toml:"buildkit"`
 	Defaults Defaults `toml:"defaults"`
+}
+
+// PortRange is an inclusive range of TCP ports.
+type PortRange struct {
+	Min int `toml:"min"`
+	Max int `toml:"max"`
 }
 
 // Caddy configures how the daemon drives the Caddy process.
@@ -78,6 +90,8 @@ func Default() Config {
 		DataDir:        "/var/lib/platform",
 		Listen:         "127.0.0.1:7070",
 		InternalListen: "127.0.0.1:7071",
+		MaxUploadMB:    512,
+		HostPorts:      PortRange{Min: 20000, Max: 29999},
 		Caddy: Caddy{
 			AdminSocket: "/run/platform-caddy/admin.sock",
 			HTTPPort:    80,
