@@ -142,6 +142,7 @@ func (c *Core) Start(ctx context.Context) error {
 	if c.rt == nil {
 		return errors.New("core: no runtime")
 	}
+	c.clearTempFiles()
 	if err := c.recover(ctx); err != nil {
 		return fmt.Errorf("recover: %w", err)
 	}
@@ -160,6 +161,25 @@ func (c *Core) Start(ctx context.Context) error {
 	go c.watchRuntime(events)
 	go c.checkDomains()
 	return nil
+}
+
+// clearTempFiles removes source uploads and unpacked build contexts left by
+// deploys that a crash or restart cut short; only the deploy that created
+// them deletes them otherwise. Nothing can be using them yet: Start runs
+// before the API serves (and not in admin commands, which use New alone).
+// builds/work is where the local builder unpacks contexts (internal/cli).
+func (c *Core) clearTempFiles() {
+	for _, pattern := range []string{
+		filepath.Join(c.cfg.DataDir, "uploads", "*"),
+		filepath.Join(c.cfg.DataDir, "builds", "work", "build-*"),
+	} {
+		paths, _ := filepath.Glob(pattern)
+		for _, p := range paths {
+			if err := os.RemoveAll(p); err != nil {
+				c.log.Warn("remove temp file", "path", p, "err", err)
+			}
+		}
+	}
 }
 
 // Close abandons in-flight deploys and waits for background work to finish.

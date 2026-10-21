@@ -3,6 +3,8 @@ package core
 import (
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -108,6 +110,32 @@ func TestConcurrentUploadsAreLimited(t *testing.T) {
 	}
 	if n := uploading(); n != 0 {
 		t.Fatalf("%d uploads still claimed after they ended", n)
+	}
+}
+
+// Uploads and build contexts left by a crash are removed on the next
+// start; build logs stay.
+func TestStartClearsTempFiles(t *testing.T) {
+	h := newHarness(t)
+	dir := h.opts.Config.DataDir
+	leftovers := []string{filepath.Join(dir, "uploads", "abc.tar"), filepath.Join(dir, "builds", "work", "build-123", "main.go")}
+	keep := filepath.Join(dir, "builds", "1.log")
+	for _, p := range append(leftovers, keep) {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.restart()
+	for _, p := range leftovers {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s survived the start: %v", p, err)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("build log removed: %v", err)
 	}
 }
 
