@@ -38,6 +38,9 @@ const (
 // config and is running, then returns a client connected to it.
 func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.Client, error) {
 	want := fmt.Sprintf("%s mem=%dMB cpus=%g", b.cfg.Image, b.cfg.MemoryMB, b.cfg.CPUs)
+	if b.Network != "" {
+		want += " net=" + b.Network
+	}
 
 	inspect, err := b.docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{})
 	switch {
@@ -96,6 +99,7 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 			// Rootful BuildKit needs privileges to create the sandboxes
 			// build steps run in. See the package doc.
 			Privileged:    true,
+			NetworkMode:   container.NetworkMode(b.Network), // "" is the default bridge
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
 			LogConfig: container.LogConfig{
 				Type:   "local",

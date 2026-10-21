@@ -191,7 +191,7 @@ func TestDockerfileMustResolveInsideSource(t *testing.T) {
 	if err := os.Symlink("../host", filepath.Join(src, "l")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dockerfileOpt(src, "l/Dockerfile", nil); err == nil {
+	if _, err := dockerfileOpt(src, "l/Dockerfile", nil, "ns", io.Discard); err == nil {
 		t.Fatal("expected an error for a Dockerfile outside the source")
 	}
 }
@@ -199,7 +199,7 @@ func TestDockerfileMustResolveInsideSource(t *testing.T) {
 func TestRailpackPathVarsMustBeLocal(t *testing.T) {
 	for _, k := range []string{"RAILPACK_CONFIG_FILE", "RAILPACK_SHELL_SCRIPT"} {
 		req := node.BuildRequest{BuildArgs: map[string]string{k: "../../secret.key"}}
-		if _, err := railpackOpt(t.TempDir(), t.TempDir(), req, io.Discard); err == nil {
+		if _, err := railpackOpt(t.Context(), t.TempDir(), t.TempDir(), req, "ns", io.Discard); err == nil {
 			t.Errorf("%s outside the source was accepted", k)
 		}
 	}

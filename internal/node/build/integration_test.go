@@ -3,8 +3,10 @@
 package build
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -166,8 +168,9 @@ func TestBuildRailpack(t *testing.T) {
 	docker := dockerClient(t)
 	b := newBuilder(t, docker, 1024)
 	id, logs, err := build(t, b, node.BuildRequest{
-		Source: sourceTar(t, map[string]string{"server.js": serverJS, "package.json": packageJSON}),
-		Tag:    "dock-test/hello:railpack",
+		Source:     sourceTar(t, map[string]string{"server.js": serverJS, "package.json": packageJSON}),
+		CacheScope: "test_railpack",
+		Tag:        "dock-test/hello:railpack",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -177,6 +180,160 @@ func TestBuildRailpack(t *testing.T) {
 	}
 	if body := get(t, run(t, docker, "dock-test-railpack", id)); body != "hello railpack" {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+// TestBuildDockerfileSecrets checks that variables reach RUN steps as
+// secret mounts without landing in the image history, and that ARG-declared
+// ones still arrive as build args.
+func TestBuildDockerfileSecrets(t *testing.T) {
+	docker := dockerClient(t)
+	b := newBuilder(t, docker, 1024)
+	secret := fmt.Sprintf("s3cret-%d", time.Now().UnixNano())
+	// The Dockerfile itself is in the history, so it only names the hash.
+	sum := fmt.Sprintf("%x", sha256.Sum256([]byte(secret)))
+	id, logs, err := build(t, b, node.BuildRequest{
+		Source: sourceTar(t, map[string]string{"Dockerfile": `FROM node:22-alpine
+ARG GREETING
+RUN --mount=type=secret,id=API_TOKEN,env=API_TOKEN printf %s "$API_TOKEN" | sha256sum | grep -q ` + sum + ` && echo env-secret-ok
+RUN --mount=type=secret,id=API_TOKEN sha256sum /run/secrets/API_TOKEN | grep -q ` + sum + ` && echo file-secret-ok
+RUN test "$GREETING" = hi && test -z "$API_TOKEN" && echo arg-ok
+`}),
+		BuildArgs:  map[string]string{"API_TOKEN": secret, "GREETING": "hi"},
+		CacheScope: "test_secrets",
+		Tag:        "dock-test/hello:secrets",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"env-secret-ok", "file-secret-ok", "arg-ok"} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("logs lack %q", want)
+		}
+	}
+	history, err := docker.ImageHistory(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawArg bool
+	for _, h := range history.Items {
+		if strings.Contains(h.CreatedBy, secret) {
+			t.Errorf("secret in image history: %s", h.CreatedBy)
+		}
+		sawArg = sawArg || strings.Contains(h.CreatedBy, "GREETING=hi")
+	}
+	if !sawArg {
+		t.Error("the ARG isn't in the history; is the history check looking at the right thing?")
+	}
+	inspect, err := docker.ImageInspect(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env := strings.Join(inspect.Config.Env, " "); strings.Contains(env, secret) {
+		t.Errorf("secret in image env: %s", env)
+	}
+}
+
+// TestBuildCacheScope checks that cache mounts with the same ID are separate
+// per scope, even when the Dockerfile asks for an external frontend.
+func TestBuildCacheScope(t *testing.T) {
+	b := newBuilder(t, dockerClient(t), 1024)
+	nonce := fmt.Sprint(time.Now().UnixNano())
+	df := `# syntax=docker/dockerfile:1
+FROM node:22-alpine
+ARG OWNER
+ARG NONCE
+RUN --mount=type=cache,id=shared,target=/cache echo "nonce $NONCE"; cat /cache/owner 2>/dev/null | sed 's/^/found /'; echo "$OWNER" > /cache/owner
+`
+	step := func(scope, owner string) string {
+		t.Helper()
+		_, logs, err := build(t, b, node.BuildRequest{
+			Source:     sourceTar(t, map[string]string{"Dockerfile": df}),
+			BuildArgs:  map[string]string{"OWNER": owner, "NONCE": fmt.Sprint(time.Now().UnixNano())},
+			CacheScope: scope + "_" + nonce,
+			Tag:        "dock-test/hello:cache-" + scope,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return logs
+	}
+	a, other := "owner-a-"+nonce, "owner-b-"+nonce
+	logs := step("a", a)
+	if !strings.Contains(logs, "ignoring the syntax directive") || strings.Contains(logs, "docker.io/docker/dockerfile") {
+		t.Errorf("the syntax directive wasn't ignored:\n%s", logs)
+	}
+	if logs := step("b", other); strings.Contains(logs, "found "+a) {
+		t.Fatalf("scope b saw scope a's cache:\n%s", logs)
+	}
+	if logs := step("a", a); !strings.Contains(logs, "found "+a) {
+		t.Fatalf("scope a lost its own cache:\n%s", logs)
+	}
+}
+
+func TestBuildNetwork(t *testing.T) {
+	docker := dockerClient(t)
+	const name = "dock-test-build"
+	if _, err := docker.NetworkCreate(t.Context(), name, client.NetworkCreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		// The next build recreates BuildKit on the default bridge.
+		_, _ = docker.ContainerRemove(context.Background(), ContainerName, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.NetworkRemove(context.Background(), name, client.NetworkRemoveOptions{})
+	})
+	b := newBuilder(t, docker, 1024)
+	b.Network = name
+	if _, _, err := build(t, b, node.BuildRequest{
+		Source: sourceTar(t, map[string]string{"Dockerfile": "FROM node:22-alpine\nRUN true\n"}),
+		Tag:    "dock-test/hello:network",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	inspect, err := docker.ContainerInspect(t.Context(), ContainerName, client.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := inspect.Container.HostConfig.NetworkMode; string(mode) != name {
+		t.Fatalf("BuildKit network = %q", mode)
+	}
+}
+
+func TestBuildEntitlementsRefused(t *testing.T) {
+	b := newBuilder(t, dockerClient(t), 1024)
+	for _, flag := range []string{"--network=host", "--security=insecure"} {
+		_, _, err := build(t, b, node.BuildRequest{
+			Source: sourceTar(t, map[string]string{"Dockerfile": "FROM node:22-alpine\nRUN " + flag + " true\n"}),
+			Tag:    "dock-test/hello:entitlement",
+		})
+		if err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("RUN %s: err = %v", flag, err)
+		}
+	}
+}
+
+// TestBuildRailpackSymlinkLoop checks that a source Railpack can't finish
+// walking fails the build instead of hanging the daemon.
+func TestBuildRailpackSymlinkLoop(t *testing.T) {
+	defer func(d time.Duration) { planTimeout = d }(planTimeout)
+	planTimeout = 10 * time.Second
+	b := newBuilder(t, dockerClient(t), 1024)
+	start := time.Now()
+	_, _, err := build(t, b, node.BuildRequest{
+		Source: tarball(t, true,
+			entry{name: "package.json", body: packageJSON},
+			entry{name: "server.js", body: serverJS},
+			entry{name: "a", typ: tar.TypeSymlink, link: "."},
+			entry{name: "b", typ: tar.TypeSymlink, link: "."},
+		),
+		Tag: "dock-test/hello:loop",
+	})
+	t.Logf("error users see after %s: %v", time.Since(start).Round(time.Second), err)
+	if err == nil || !strings.Contains(err.Error(), "symlink loops") {
+		t.Fatalf("err = %v", err)
+	}
+	if time.Since(start) > planTimeout+10*time.Second {
+		t.Fatalf("took %s", time.Since(start))
 	}
 }
 
