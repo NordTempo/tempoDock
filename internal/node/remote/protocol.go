@@ -65,6 +65,8 @@ const (
 	opBuild         = "build"
 	opApplyRoutes   = "apply-routes"
 	opCheckDomain   = "check-domain"
+	opHostStats     = "host-stats"
+	opCtrStats      = "container-stats"
 )
 
 // Request bodies start with one line of JSON arguments. Build follows it
@@ -74,6 +76,7 @@ type (
 	refArgs     struct{ Ref string }
 	nameArgs    struct{ Name string }
 	idArgs      struct{ ID string }
+	idsArgs     struct{ IDs []string }
 	labeledArgs struct {
 		Name   string
 		Labels node.Labels

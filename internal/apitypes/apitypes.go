@@ -72,19 +72,32 @@ type CreateProjectRequest struct {
 	Name string `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name"`
 }
 
+// EnvironmentKind decides which servers an environment may be placed on.
+// It never changes after the environment is created.
+type EnvironmentKind string
+
+// Environment kinds.
+const (
+	KindProduction    EnvironmentKind = "production"
+	KindNonProduction EnvironmentKind = "non_production"
+)
+
 // Environment is a set of services placed together on one server.
 type Environment struct {
-	ID        int64     `json:"id"`
-	Project   string    `json:"project"`
-	Name      string    `json:"name"`
-	Server    string    `json:"server" doc:"Server the environment runs on"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64           `json:"id"`
+	Project   string          `json:"project"`
+	Name      string          `json:"name"`
+	Kind      EnvironmentKind `json:"kind" enum:"production,non_production"`
+	Server    string          `json:"server" doc:"Server the environment runs on"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
-// CreateEnvironmentRequest creates an environment. Environments named
-// `production` go to the production server, others to a non-production one.
+// CreateEnvironmentRequest creates an environment. It goes where the
+// project's other environments of its kind are; the first of a kind picks
+// the eligible server with the most free memory.
 type CreateEnvironmentRequest struct {
-	Name string `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name"`
+	Name string          `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name"`
+	Kind EnvironmentKind `json:"kind,omitempty" enum:"production,non_production" doc:"Default: production for an environment named production, otherwise non_production. Never changes."`
 }
 
 // ServiceState is the runtime state of a service's active container.
@@ -141,6 +154,17 @@ type Service struct {
 	// ActiveRelease is the number of the release serving traffic, if any.
 	ActiveRelease *int64        `json:"active_release,omitempty"`
 	Status        ServiceStatus `json:"status"`
+	// EffectiveMemoryMB and EffectiveCPUs are the limits releases get:
+	// memory_mb and cpus, or the server's defaults when those are 0.
+	EffectiveMemoryMB int     `json:"effective_memory_mb"`
+	EffectiveCPUs     float64 `json:"effective_cpus"`
+	// MemoryFromDefault and CPUsFromDefault say the effective limit is the
+	// default rather than set on the service.
+	MemoryFromDefault bool `json:"memory_from_default"`
+	CPUsFromDefault   bool `json:"cpus_from_default"`
+	// Usage is the latest resource sample of the active container (at most
+	// a minute old), when there is one.
+	Usage *ServiceUsage `json:"usage,omitempty"`
 	// PendingChanges counts staged changes to this service (settings,
 	// volumes, its own variables). Environment-level ones are counted on
 	// the environment.
@@ -560,6 +584,24 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	// DisabledAt is set while the user can't log in.
 	DisabledAt *time.Time `json:"disabled_at,omitempty"`
+	// Sessions counts the user's live UI sessions.
+	Sessions int `json:"sessions"`
+	// Tokens counts the usable (not revoked or expired) tokens they created.
+	Tokens int `json:"tokens"`
+}
+
+// ResetPasswordRequest sets another user's password. Without a password
+// one is generated and returned once. Their sessions end either way.
+type ResetPasswordRequest struct {
+	Password string `json:"password,omitempty" minLength:"12" doc:"New password; omit to generate one"`
+}
+
+// ResetPasswordResult is a user after a password reset.
+type ResetPasswordResult struct {
+	User User `json:"user"`
+	// Password is the generated password, shown once. Empty when the
+	// request set one.
+	Password string `json:"password,omitempty"`
 }
 
 // ChangePasswordRequest changes the caller's own password. All their
@@ -592,14 +634,148 @@ type AuditEvent struct {
 
 // Server is a machine running a node runtime.
 type Server struct {
-	ID           int64      `json:"id"`
-	Name         string     `json:"name"`
-	Role         string     `json:"role" enum:"production,non-production"`
-	Builder      bool       `json:"builder"`
-	Local        bool       `json:"local" doc:"Runs the control plane"`
-	Status       string     `json:"status" enum:"online,offline"`
-	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
-	Environments int        `json:"environments"`
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Builder bool   `json:"builder"`
+	Local   bool   `json:"local" doc:"Runs the control plane"`
+	Status  string `json:"status" enum:"online,offline"`
+	// Version is the dock version the server runs.
+	Version    string     `json:"version"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	// AcceptsProduction and AcceptsNonProduction say which environment
+	// kinds may be placed here.
+	AcceptsProduction    bool `json:"accepts_production"`
+	AcceptsNonProduction bool `json:"accepts_non_production"`
+	// DisabledForPlacement stops new automatic placements; what is
+	// already here stays, and admins can still pin projects here.
+	DisabledForPlacement bool `json:"disabled_for_placement"`
+	// MemoryBytes is the server's total memory (0 until it reported it).
+	MemoryBytes int64 `json:"memory_bytes"`
+	// ReservedMemoryBytes is the sum of the memory limits of the services
+	// placed here (the default limit for those without one).
+	ReservedMemoryBytes int64 `json:"reserved_memory_bytes"`
+	Projects            int   `json:"projects" doc:"Projects with environments placed here"`
+	Environments        int   `json:"environments"`
+}
+
+// UpdateServerRequest changes what may be placed on a server. Only fields
+// that are set change.
+type UpdateServerRequest struct {
+	AcceptsProduction    *bool `json:"accepts_production,omitempty"`
+	AcceptsNonProduction *bool `json:"accepts_non_production,omitempty"`
+	DisabledForPlacement *bool `json:"disabled_for_placement,omitempty"`
+}
+
+// ServerDetail is one server with what is placed on it and its latest
+// resource sample.
+type ServerDetail struct {
+	Server     Server            `json:"server"`
+	Placements []ServerPlacement `json:"placements"`
+	Usage      *ServerUsage      `json:"usage,omitempty"`
+}
+
+// ServerPlacement is one project's environments of one kind on a server.
+type ServerPlacement struct {
+	Project      string          `json:"project"`
+	Kind         EnvironmentKind `json:"kind" enum:"production,non_production"`
+	Pinned       bool            `json:"pinned" doc:"Set by an admin rather than chosen automatically"`
+	Environments []string        `json:"environments"`
+}
+
+// Placement is where a project's environments of one kind live.
+type Placement struct {
+	Kind   EnvironmentKind `json:"kind" enum:"production,non_production"`
+	Server string          `json:"server"`
+	Pinned bool            `json:"pinned"`
+}
+
+// PinPlacementRequest pins a project's environments of a kind to a server,
+// before any of them exist.
+type PinPlacementRequest struct {
+	Server string `json:"server" minLength:"1"`
+}
+
+// ServerUsage is one resource sample of a server.
+type ServerUsage struct {
+	Time time.Time `json:"time"`
+	// CPUPercent is the use of all cores together: 100 means every core
+	// is busy.
+	CPUPercent       float64     `json:"cpu_percent"`
+	CPUs             int         `json:"cpus"`
+	MemoryUsedBytes  int64       `json:"memory_used_bytes" doc:"Total minus available, as free(1) shows"`
+	MemoryTotalBytes int64       `json:"memory_total_bytes"`
+	Load1            float64     `json:"load1"`
+	Disks            []DiskUsage `json:"disks"`
+}
+
+// DiskUsage is one filesystem dock uses (the data dir, Docker's root).
+type DiskUsage struct {
+	Paths      []string `json:"paths"`
+	UsedBytes  int64    `json:"used_bytes"`
+	TotalBytes int64    `json:"total_bytes"`
+}
+
+// ServiceUsage is one resource sample of a service's active container.
+type ServiceUsage struct {
+	Time time.Time `json:"time"`
+	// CPUPercent is relative to one core, like docker stats: a service
+	// using two full cores shows 200.
+	CPUPercent  float64 `json:"cpu_percent"`
+	MemoryBytes int64   `json:"memory_bytes" doc:"Working set: usage minus inactive page cache, as docker stats shows"`
+	// MemoryLimitBytes is the container's hard limit; 0 means none.
+	MemoryLimitBytes   int64 `json:"memory_limit_bytes"`
+	IOReadBytesPerSec  int64 `json:"io_read_bytes_per_sec"`
+	IOWriteBytesPerSec int64 `json:"io_write_bytes_per_sec"`
+}
+
+// StatsRange is how far back statistics go: 1h and 24h have a point per
+// minute, 7d a point per 10 minutes.
+type StatsRange string
+
+// Statistics ranges.
+const (
+	Range1h  StatsRange = "1h"
+	Range24h StatsRange = "24h"
+	Range7d  StatsRange = "7d"
+)
+
+// ServerStats is a server's statistics history.
+type ServerStats struct {
+	Server            string             `json:"server"`
+	Range             StatsRange         `json:"range" enum:"1h,24h,7d"`
+	ResolutionSeconds int                `json:"resolution_seconds"`
+	Current           *ServerUsage       `json:"current,omitempty"`
+	Points            []ServerStatsPoint `json:"points"`
+}
+
+// ServerStatsPoint is a server's average over one interval.
+type ServerStatsPoint struct {
+	Time            time.Time `json:"time" doc:"Start of the interval"`
+	CPUPercent      float64   `json:"cpu_percent"`
+	MemoryUsedBytes int64     `json:"memory_used_bytes"`
+	// DiskUsedBytes is the use of the filesystem holding Docker's root.
+	DiskUsedBytes int64   `json:"disk_used_bytes"`
+	Load1         float64 `json:"load1"`
+}
+
+// ServiceStats is a service's statistics history. It spans releases.
+type ServiceStats struct {
+	Project           string              `json:"project"`
+	Environment       string              `json:"environment"`
+	Service           string              `json:"service"`
+	Range             StatsRange          `json:"range" enum:"1h,24h,7d"`
+	ResolutionSeconds int                 `json:"resolution_seconds"`
+	Current           *ServiceUsage       `json:"current,omitempty"`
+	Points            []ServiceStatsPoint `json:"points"`
+}
+
+// ServiceStatsPoint is a service's average over one interval.
+type ServiceStatsPoint struct {
+	Time               time.Time `json:"time" doc:"Start of the interval"`
+	CPUPercent         float64   `json:"cpu_percent"`
+	MemoryBytes        int64     `json:"memory_bytes"`
+	IOReadBytesPerSec  int64     `json:"io_read_bytes_per_sec"`
+	IOWriteBytesPerSec int64     `json:"io_write_bytes_per_sec"`
 }
 
 // ProjectOverview is everything a project page needs in one call.

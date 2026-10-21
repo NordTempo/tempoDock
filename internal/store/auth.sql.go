@@ -298,27 +298,41 @@ func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
 	return items, nil
 }
 
-const listUsers = `-- name: ListUsers :many
-SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users ORDER BY id
+const listUsersWithCounts = `-- name: ListUsersWithCounts :many
+SELECT users.id, users.email, users.name, users.password_hash, users.role, users.created_at, users.disabled_at,
+    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > ?1) AS INTEGER) AS sessions,
+    CAST((SELECT count(*) FROM tokens WHERE tokens.created_by = users.email AND tokens.revoked_at IS NULL
+        AND (tokens.expires_at IS NULL OR tokens.expires_at > ?1)) AS INTEGER) AS tokens
+FROM users ORDER BY users.id
 `
 
-func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := q.query(ctx, q.listUsersStmt, listUsers)
+type ListUsersWithCountsRow struct {
+	User     User
+	Sessions int64
+	Tokens   int64
+}
+
+// ListUsersWithCounts adds each user's live sessions and usable tokens.
+// Tokens record their creator by name, which for users is their email.
+func (q *Queries) ListUsersWithCounts(ctx context.Context, now time.Time) ([]ListUsersWithCountsRow, error) {
+	rows, err := q.query(ctx, q.listUsersWithCountsStmt, listUsersWithCounts, now)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []User
+	var items []ListUsersWithCountsRow
 	for rows.Next() {
-		var i User
+		var i ListUsersWithCountsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Email,
-			&i.Name,
-			&i.PasswordHash,
-			&i.Role,
-			&i.CreatedAt,
-			&i.DisabledAt,
+			&i.User.ID,
+			&i.User.Email,
+			&i.User.Name,
+			&i.User.PasswordHash,
+			&i.User.Role,
+			&i.User.CreatedAt,
+			&i.User.DisabledAt,
+			&i.Sessions,
+			&i.Tokens,
 		); err != nil {
 			return nil, err
 		}

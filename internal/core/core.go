@@ -22,6 +22,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/version"
 )
 
 // stopTimeout is how long a replaced container gets to exit gracefully.
@@ -41,7 +42,11 @@ type Options struct {
 	// Runtime is the local server's node runtime. It may be nil for
 	// commands that only touch the database (e.g. admin bootstrap).
 	Runtime node.Runtime
-	Logger  *slog.Logger
+	// Remote returns the runtime of another server while it is connected,
+	// nil while it isn't. Nil means there are no remote servers (until M3
+	// plugs in the node hub).
+	Remote func(serverID int64) node.Runtime
+	Logger *slog.Logger
 	// CutoverDrain overrides DefaultCutoverDrain when positive (tests use
 	// a tiny value).
 	CutoverDrain time.Duration
@@ -49,14 +54,15 @@ type Options struct {
 
 // Core is the control plane.
 type Core struct {
-	cfg   config.Config
-	store *store.Store
-	box   *secrets.Box
-	rt    node.Runtime
-	log   *slog.Logger
-	bus   *bus
-	local store.Server
-	drain time.Duration
+	cfg    config.Config
+	store  *store.Store
+	box    *secrets.Box
+	rt     node.Runtime
+	remote func(serverID int64) node.Runtime
+	log    *slog.Logger
+	bus    *bus
+	local  store.Server
+	drain  time.Duration
 
 	// buildSem allows one build at a time on this server.
 	buildSem chan struct{}
@@ -84,6 +90,9 @@ type Core struct {
 	loginLimit *limiter
 	bcryptSem  chan struct{}
 
+	// stats holds the latest resource samples and the live samplers.
+	stats *statsState
+
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
 	uploads   map[int64]bool
@@ -109,6 +118,8 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		store:      o.Store,
 		box:        o.Secrets,
 		rt:         o.Runtime,
+		remote:     o.Remote,
+		stats:      newStatsState(),
 		log:        o.Logger,
 		bus:        newBus(),
 		buildSem:   make(chan struct{}, 1),
@@ -139,12 +150,16 @@ func (c *Core) registerLocalServer(ctx context.Context) error {
 		if name == "" {
 			name = "local"
 		}
-		// The control plane lives on the production server (ADR 0010).
+		// The first server takes every kind of environment. Once a
+		// second one joins, an admin decides which kinds go where.
 		srv, err = c.store.CreateServer(ctx, store.CreateServerParams{
-			Name: name, Role: "production", Builder: c.cfg.BuildKit.Enabled, Local: true, LastSeenAt: &now,
+			Name: name, AcceptsProduction: true, AcceptsNonProduction: true,
+			Builder: c.cfg.BuildKit.Enabled, Local: true, LastSeenAt: &now, Version: version.Version,
 		})
 	} else if err == nil {
-		srv, err = c.store.TouchLocalServer(ctx, store.TouchLocalServerParams{Builder: c.cfg.BuildKit.Enabled, LastSeenAt: &now, ID: srv.ID})
+		srv, err = c.store.TouchLocalServer(ctx, store.TouchLocalServerParams{
+			Builder: c.cfg.BuildKit.Enabled, LastSeenAt: &now, Version: version.Version, ID: srv.ID,
+		})
 	}
 	if err != nil {
 		return fmt.Errorf("register local server: %w", err)
@@ -175,9 +190,10 @@ func (c *Core) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("runtime events: %w", err)
 	}
-	c.wg.Add(2)
+	c.wg.Add(3)
 	go c.watchRuntime(events)
 	go c.checkDomains()
+	go c.collectStats()
 	return nil
 }
 
@@ -204,13 +220,10 @@ func (c *Core) clearTempFiles() {
 // It never stops or waits on app containers: the next Start's recovery
 // fails abandoned releases and removes their containers.
 func (c *Core) Close() {
+	c.closeStats()
 	c.cancel()
 	c.wg.Wait()
 }
-
-// runtime returns the node runtime for a server. Only the local server
-// exists until remote nodes land (M3).
-func (c *Core) runtime(int64) node.Runtime { return c.rt }
 
 func now() time.Time { return time.Now().UTC() }
 

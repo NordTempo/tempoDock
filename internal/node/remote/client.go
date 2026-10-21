@@ -154,6 +154,16 @@ func (c *Client) CheckDomain(ctx context.Context, hostname string) (node.DomainC
 	return unaryCall[node.DomainCheck](ctx, c, opCheckDomain, nameArgs{hostname})
 }
 
+// HostStats implements node.Stats.
+func (c *Client) HostStats(ctx context.Context) (node.HostStats, error) {
+	return unaryCall[node.HostStats](ctx, c, opHostStats, noArgs{})
+}
+
+// ContainerStats implements node.Stats. One call for all containers.
+func (c *Client) ContainerStats(ctx context.Context, ids []string) ([]node.ContainerStats, error) {
+	return unaryCall[[]node.ContainerStats](ctx, c, opCtrStats, idsArgs{ids})
+}
+
 func unaryCall[R any](ctx context.Context, c *Client, op string, args any) (R, error) {
 	return withLogsCall[R](ctx, c, op, args, nil, nil)
 }

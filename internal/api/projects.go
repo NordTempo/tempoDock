@@ -98,7 +98,7 @@ func registerProjects(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "create-environment", Method: http.MethodPost, Path: envsPath,
-		Summary: "Create an environment", Description: "Placed on a server automatically: `production` on the production server, others on a non-production one. Scope: deploy.",
+		Summary: "Create an environment", Description: "Placed where the project's environments of the same kind are; the first of a kind goes to the eligible server with the most free memory. Scope: deploy.",
 		Tags: tags, DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ProjectPath

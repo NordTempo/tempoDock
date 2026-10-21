@@ -37,7 +37,7 @@ func registerAdmin(s *Server, a huma.API) {
 	tags = []string{"users"}
 	authed(s, a, huma.Operation{
 		OperationID: "list-users", Method: http.MethodGet, Path: Prefix + "/users",
-		Summary: "List users", Description: "Scope: admin, unlimited.", Tags: tags,
+		Summary: "List users", Description: "With each user's live sessions and usable tokens. Scope: admin, unlimited.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.User], error) {
 		return reply(s.core.ListUsers(ctx, actor))
 	})
@@ -63,6 +63,20 @@ func registerAdmin(s *Server, a huma.API) {
 		OperationID: "enable-user", Method: http.MethodPost, Path: Prefix + "/users/{id}/enable",
 		Summary: "Enable a user", Description: "Lets a disabled user log in again. Scope: admin, unlimited.", Tags: tags,
 	}, false)
+	authed(s, a, huma.Operation{
+		OperationID: "reset-password", Method: http.MethodPost, Path: Prefix + "/users/{id}/reset-password",
+		Summary: "Reset a user's password", Tags: tags,
+		Description: "Sets the given password, or generates one and returns it once. The user's sessions end. Not for your own account (use change-password). Scope: admin, unlimited.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID   int64 `path:"id"`
+		Body *apitypes.ResetPasswordRequest
+	}) (*out[apitypes.ResetPasswordResult], error) {
+		var req apitypes.ResetPasswordRequest
+		if in.Body != nil {
+			req = *in.Body
+		}
+		return reply(s.core.ResetPassword(ctx, actor, in.ID, req))
+	})
 	authed(s, a, huma.Operation{
 		OperationID: "delete-user", Method: http.MethodDelete, Path: Prefix + "/users/{id}",
 		Summary: "Delete a user", Description: "Ends their sessions. Their audit history and the tokens they created stay. Scope: admin, unlimited.",
@@ -90,10 +104,4 @@ func registerAdmin(s *Server, a huma.API) {
 		}))
 	})
 
-	authed(s, a, huma.Operation{
-		OperationID: "list-servers", Method: http.MethodGet, Path: Prefix + "/servers",
-		Summary: "List servers", Tags: []string{"servers"},
-	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Server], error) {
-		return reply(s.core.ListServers(ctx, actor))
-	})
 }

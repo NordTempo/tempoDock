@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
 // Admin commands: tokens, users, the audit log and servers.
@@ -183,9 +184,13 @@ func newUserCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(users, func() error {
-				t := g.io.Table("id", "email", "name", "role", "created")
+				t := g.io.Table("id", "email", "name", "role", "status", "sessions", "tokens", "created")
 				for _, u := range users {
-					t.Row(itoa(u.ID), u.Email, u.Name, string(u.Role), ago(u.CreatedAt))
+					status := "active"
+					if u.DisabledAt != nil {
+						status = "disabled"
+					}
+					t.Row(itoa(u.ID), u.Email, u.Name, string(u.Role), status, strconv.Itoa(u.Sessions), strconv.Itoa(u.Tokens), ago(u.CreatedAt))
 				}
 				return t.Flush()
 			})
@@ -241,7 +246,124 @@ func newUserCmd(g *globals) *cobra.Command {
 	create.Flags().StringVar(&role, "role", "", "read, deploy or admin")
 	create.Flags().StringVar(&req.Password, "password", "", "password (prompted for on a terminal)")
 
-	cmd.AddCommand(list, create)
+	cmd.AddCommand(list, create,
+		newUserStateCmd(g, "disable", "Disable a user: they can't log in and their sessions end", "disable", "Disabled"),
+		newUserStateCmd(g, "enable", "Let a disabled user log in again", "enable", "Enabled"),
+		newUserDeleteCmd(g), newUserResetPasswordCmd(g))
+	return cmd
+}
+
+// findUser resolves a user given by email or id.
+func findUser(cmd *cobra.Command, s *session, who string) (apitypes.User, error) {
+	users, err := get[[]apitypes.User](cmd.Context(), s, apiPrefix+"/users")
+	if err != nil {
+		return apitypes.User{}, err
+	}
+	for _, u := range users {
+		if strings.EqualFold(u.Email, who) || itoa(u.ID) == who {
+			return u, nil
+		}
+	}
+	return apitypes.User{}, &output.Error{Exit: output.ExitNotFound, Message: fmt.Sprintf("no user %q", who), Hint: "Users are shown by `dock user list`."}
+}
+
+func newUserStateCmd(g *globals, use, short, action, done string) *cobra.Command {
+	return &cobra.Command{
+		Use:   use + " <email|id>",
+		Short: short,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			u, err := findUser(cmd, s, args[0])
+			if err != nil {
+				return err
+			}
+			u, err = send[apitypes.User](cmd.Context(), s, http.MethodPost, apiPrefix+"/users/"+itoa(u.ID)+"/"+action, nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(u, func() error {
+				g.io.Successf("%s user %s", done, u.Email)
+				return nil
+			})
+		},
+	}
+}
+
+func newUserDeleteCmd(g *globals) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <email|id>",
+		Short: "Delete a user; their audit history and tokens stay",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			u, err := findUser(cmd, s, args[0])
+			if err != nil {
+				return err
+			}
+			if !yes {
+				if err := g.io.Confirm(fmt.Sprintf("Delete user %s?", u.Email), "yes"); err != nil {
+					return err
+				}
+			}
+			if err := del(cmd.Context(), s, apiPrefix+"/users/"+itoa(u.ID)); err != nil {
+				return err
+			}
+			v := struct {
+				ID      int64  `json:"id"`
+				Email   string `json:"email"`
+				Deleted bool   `json:"deleted"`
+			}{u.ID, u.Email, true}
+			return g.io.Print(v, func() error {
+				g.io.Successf("Deleted user %s", u.Email)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
+}
+
+func newUserResetPasswordCmd(g *globals) *cobra.Command {
+	var password string
+	cmd := &cobra.Command{
+		Use:   "reset-password <email|id> [--password <new>]",
+		Short: "Set a user's password, or generate one; their sessions end",
+		Long: `Reset another user's password. Without --password a password is generated
+and printed once. Your own password is changed in the web UI.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			u, err := findUser(cmd, s, args[0])
+			if err != nil {
+				return err
+			}
+			res, err := send[apitypes.ResetPasswordResult](cmd.Context(), s, http.MethodPost, apiPrefix+"/users/"+itoa(u.ID)+"/reset-password",
+				apitypes.ResetPasswordRequest{Password: password})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(res, func() error {
+				g.io.Successf("Reset the password of %s; their sessions ended", res.User.Email)
+				if res.Password != "" {
+					_, _ = fmt.Fprintln(g.io.Out, res.Password)
+					g.io.Warnf("Pass the password on now; it is never shown again.")
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&password, "password", "", "the new password (at least 12 characters); generated when omitted")
 	return cmd
 }
 
@@ -282,37 +404,5 @@ func newAuditCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVarP(&service, "service", "s", "", "only events targeting this service of --project and --environment")
 	cmd.Flags().StringVar(&action, "action", "", "action prefix, e.g. release. or domain.add")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "how many events (max 500)")
-	return cmd
-}
-
-func newServerCmd(g *globals) *cobra.Command {
-	cmd := group(&cobra.Command{Use: "server", Short: "Show the servers environments run on"})
-	cmd.AddCommand(&cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List servers",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := g.connect()
-			if err != nil {
-				return err
-			}
-			servers, err := get[[]apitypes.Server](cmd.Context(), s, apiPrefix+"/servers")
-			if err != nil {
-				return err
-			}
-			return g.io.Print(servers, func() error {
-				t := g.io.Table("name", "role", "builder", "status", "environments")
-				for _, sv := range servers {
-					builder := "no"
-					if sv.Builder {
-						builder = "yes"
-					}
-					t.Row(sv.Name, sv.Role, builder, sv.Status, strconv.Itoa(sv.Environments))
-				}
-				return t.Flush()
-			})
-		},
-	})
 	return cmd
 }

@@ -47,6 +47,7 @@ func newProjectCmd(g *globals) *cobra.Command {
 	cmd.AddCommand(
 		list,
 		newProjectArchiveCmd(g),
+		newProjectPinCmd(g),
 		&cobra.Command{
 			Use:   "create <name>",
 			Short: "Create a project (with a production environment)",
@@ -127,35 +128,46 @@ func newEnvironmentCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(envs, func() error {
-				tb := g.io.Table("name", "server", "created")
+				tb := g.io.Table("name", "kind", "server", "created")
 				for _, e := range envs {
-					tb.Row(e.Name, e.Server, ago(e.CreatedAt))
+					tb.Row(e.Name, kindWords(e.Kind), e.Server, ago(e.CreatedAt))
 				}
 				return tb.Flush()
 			})
 		},
 	}
 	listFlags.add(list, needProject)
+	var kind string
 	create := &cobra.Command{
-		Use:   "create <name>",
+		Use:   "create <name> [--kind production|non-production]",
 		Short: "Create an environment; it is placed on a server automatically",
-		Args:  cobra.ExactArgs(1),
+		Long: `Create an environment. Its kind (production or non-production) never
+changes: an environment named production is production unless --kind says
+otherwise, every other one non-production. It goes to the server the
+project's environments of that kind are on; the first of a kind goes to the
+eligible server with the most free memory.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			k, err := parseKind(kind)
+			if err != nil {
+				return err
+			}
 			s, t, err := g.open(createFlags, needProject)
 			if err != nil {
 				return err
 			}
-			e, err := send[apitypes.Environment](cmd.Context(), s, http.MethodPost, t.projectPath()+"/environments", apitypes.CreateEnvironmentRequest{Name: args[0]})
+			e, err := send[apitypes.Environment](cmd.Context(), s, http.MethodPost, t.projectPath()+"/environments", apitypes.CreateEnvironmentRequest{Name: args[0], Kind: k})
 			if err != nil {
 				return err
 			}
 			return g.io.Print(e, func() error {
-				g.io.Successf("Created environment %s/%s on %s", e.Project, e.Name, e.Server)
+				g.io.Successf("Created %s environment %s/%s on %s", kindWords(e.Kind), e.Project, e.Name, e.Server)
 				return nil
 			})
 		},
 	}
 	createFlags.add(create, needProject)
+	create.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
 	cmd.AddCommand(list, create)
 	return cmd
 }

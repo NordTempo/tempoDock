@@ -370,20 +370,64 @@ func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
 	return nil
 }
 
-// ListUsers returns all users.
+// ListUsers returns all users with their live sessions and usable tokens.
 func (c *Core) ListUsers(ctx context.Context, a Actor) ([]apitypes.User, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing users"); err != nil {
 		return nil, err
 	}
-	rows, err := c.store.ListUsers(ctx)
+	rows, err := c.store.ListUsersWithCounts(ctx, now())
 	if err != nil {
 		return nil, err
 	}
 	out := make([]apitypes.User, 0, len(rows))
-	for _, u := range rows {
-		out = append(out, toUser(u))
+	for _, r := range rows {
+		u := toUser(r.User)
+		u.Sessions, u.Tokens = int(r.Sessions), int(r.Tokens)
+		out = append(out, u)
 	}
 	return out, nil
+}
+
+// ResetPassword sets another user's password, generating one when the
+// request has none, and ends their sessions. Admins change their own
+// password with ChangePassword, which asks for the current one.
+func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitypes.ResetPasswordRequest) (apitypes.ResetPasswordResult, error) {
+	u, err := c.otherUser(ctx, a, id, "reset the password of")
+	if err != nil {
+		return apitypes.ResetPasswordResult{}, err
+	}
+	var out apitypes.ResetPasswordResult
+	pw := req.Password
+	if pw == "" {
+		pw = generatePassword()
+		out.Password = pw
+	}
+	if len(pw) < 12 {
+		return out, invalid("password must be at least 12 characters")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	if err != nil {
+		return out, err
+	}
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: string(hash), ID: u.ID}); err != nil {
+			return err
+		}
+		return q.DeleteUserSessions(ctx, u.ID)
+	})
+	if err != nil {
+		return out, err
+	}
+	c.audit(ctx, a, "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions")
+	out.User = toUser(u)
+	return out, nil
+}
+
+// generatePassword returns a random 24-character password.
+func generatePassword() string {
+	b := make([]byte, 18)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // CreateUser creates a user who can log in to the UI.
@@ -434,9 +478,7 @@ func (c *Core) Bootstrap(ctx context.Context, email string) (b Bootstrapped, ok 
 	if err != nil || n > 0 {
 		return b, false, err
 	}
-	pw := make([]byte, 18)
-	_, _ = rand.Read(pw)
-	b = Bootstrapped{Email: email, Password: base64.RawURLEncoding.EncodeToString(pw)}
+	b = Bootstrapped{Email: email, Password: generatePassword()}
 	u, err := c.createUser(ctx, apitypes.CreateUserRequest{Email: email, Name: "admin", Password: b.Password, Role: apitypes.ScopeAdmin})
 	if err != nil {
 		return b, false, err

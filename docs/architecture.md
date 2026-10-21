@@ -40,10 +40,16 @@ transport detail, and is where a hosted control plane would split later. See
 ```
 User            humans; log in to the UI, own tokens
 Token           hashed, with scopes and optional project/environment limits
-Server          a node: role (production / non-production), builder flag, status
+Server          a node: accepts production and/or non-production, disabled
+                for placement, total memory, version, builder flag
+ServerStat      1-minute (24 h) and 10-minute (7 d) points per server
+ServiceStat     the same per service, across releases
 
 Project
- └─ Environment            production, staging, ...; placed on one Server
+ ├─ Placement              per kind (production, non-production): the Server
+ │                         its environments of that kind live on
+ └─ Environment            production, staging, ...; a kind that never
+     │                     changes; placed on its project's Server for that kind
      ├─ Variable           environment-level, shared by all services
      └─ Service            built from source or a prebuilt image
          ├─ Variable       service-level, overrides environment-level
@@ -119,8 +125,7 @@ Details in [ADR 0010](decisions/0010-environments-on-servers.md).
 - One control plane, on the production server. Other servers run
   `dock node`, dial out to it, and receive commands over that connection.
 - An environment lives entirely on one server: its services, volumes and
-  private network. Production environments go to the production server;
-  everything else goes to the homelab unless pinned elsewhere.
+  private network. See [Placement](#placement).
 - Builds run only on builder servers. Images go to the registry next to the
   control plane; `dock promote` ships a tested image to production without
   rebuilding.
@@ -129,6 +134,27 @@ Details in [ADR 0010](decisions/0010-environments-on-servers.md).
   production can't rely on it.
 - If the homelab is down, production is unaffected. If the control plane is
   down, apps everywhere keep running; only deploys stop.
+
+## Placement
+
+Details in [ADR 0015](decisions/0015-server-pools-and-placement.md).
+
+- Every environment is **production** or **non-production**, decided when
+  it's created (`production` by name, or explicitly) and never changed.
+- Servers **accept** production, non-production or both, and can be
+  **disabled for placement** (nothing new lands there).
+- A project keeps all its environments of one kind on **one server**,
+  recorded as a placement `(project, kind) → server`. The first environment
+  of a kind picks it: among online servers that accept the kind and aren't
+  disabled, the most free memory (total memory, reported by the node,
+  minus the limits of the services placed there, or the default limit),
+  then fewer projects. One aggregate query loads every server's load, so
+  placing is O(servers). Admins can **pin** a kind to a server before
+  anything is placed. No eligible server: the environment isn't created and
+  the error names the servers that accept the kind and why they're out.
+- Core reaches a server through `runtimeFor(server)`: the local runtime for
+  the control plane's own server, the node connection for others (M3);
+  calls to a server that isn't connected fail with `server_offline` (503).
 
 ## Networking
 
@@ -174,8 +200,17 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
 
 - An in-process event bus feeds SSE streams to the UI and CLI.
 - The daemon subscribes to Docker's event stream instead of polling.
-- Resource stats are only collected while someone is viewing them (until we
-  add stored metrics in M4).
+- Resource statistics are the one periodic job. Once a minute the node
+  runtime reads `/proc` (host CPU, memory, load, disk of the data dir and
+  Docker's root) and each active container's cgroup v2 files (`cpu.stat`,
+  `memory.current` minus inactive file cache, `memory.max`, `io.stat`),
+  found at `system.slice/docker-<id>.scope` or `docker/<id>` depending on
+  Docker's cgroup driver. No Docker API calls. Core turns counters into
+  rates and writes one point per server and service in one transaction;
+  each 10-minute boundary averages the last ten points and prunes points
+  older than 24 hours (1-minute) and 7 days (10-minute), all as range
+  queries on time-first keys. Watching a server or service live samples
+  every 3 seconds, and only while someone watches.
 - App logs are read from Docker (`local` log driver with rotation). We don't
   copy or store them.
 
@@ -208,6 +243,7 @@ internal/store/      SQLite, migrations, sqlc queries
 internal/secrets/    AES-GCM encryption of values at rest, key file
 internal/node/       runtime interface, local implementation (Docker, BuildKit, Caddy),
                      remote client + node-side server for the node connection
+internal/node/stats/ resource statistics from /proc and cgroup files
 internal/node/fake/  in-memory runtime for tests and `make dev`
 internal/cli/        CLI commands, output formatting (human and --json)
 web/                 React app; build output embedded into the binary

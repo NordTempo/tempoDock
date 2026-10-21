@@ -41,6 +41,7 @@ type Environment struct {
 	CreatedAt  time.Time
 	Network    string
 	ApplyError string
+	Kind       string
 }
 
 type Project struct {
@@ -48,6 +49,14 @@ type Project struct {
 	Name       string
 	CreatedAt  time.Time
 	ArchivedAt *time.Time
+}
+
+type ProjectPlacement struct {
+	ProjectID int64
+	Kind      string
+	ServerID  int64
+	Pinned    bool
+	CreatedAt time.Time
 }
 
 type Release struct {
@@ -78,14 +87,28 @@ type ReleaseEvent struct {
 }
 
 type Server struct {
-	ID         int64
-	Name       string
-	Role       string
-	Builder    bool
-	Local      bool
-	Status     string
-	LastSeenAt *time.Time
-	CreatedAt  time.Time
+	ID                   int64
+	Name                 string
+	Builder              bool
+	Local                bool
+	Status               string
+	LastSeenAt           *time.Time
+	CreatedAt            time.Time
+	AcceptsProduction    bool
+	AcceptsNonProduction bool
+	DisabledForPlacement bool
+	MemoryBytes          int64
+	Version              string
+}
+
+type ServerStat struct {
+	Res      int64
+	At       int64
+	ServerID int64
+	Cpu      int64
+	Memory   int64
+	Disk     int64
+	Load1    int64
 }
 
 type Service struct {
@@ -104,6 +127,16 @@ type Service struct {
 	PendingSettings           *string
 	CreatedAt                 time.Time
 	ArchivedAt                *time.Time
+}
+
+type ServiceStat struct {
+	Res       int64
+	At        int64
+	ServiceID int64
+	Cpu       int64
+	Memory    int64
+	IoRead    int64
+	IoWrite   int64
 }
 
 type Session struct {

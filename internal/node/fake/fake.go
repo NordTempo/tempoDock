@@ -47,6 +47,11 @@ type Runtime struct {
 	healthGate  chan struct{}
 	stopGate    chan struct{}
 	domainCheck func(hostname string) node.DomainCheck
+
+	host       node.HostStats
+	hostSet    bool
+	ctrStats   map[string]node.ContainerStats
+	statsCalls atomic.Int64
 }
 
 var _ node.Runtime = (*Runtime)(nil)
@@ -60,6 +65,7 @@ func New() *Runtime {
 		networks:   map[string]node.Labels{},
 		volumes:    map[string]node.Labels{},
 		logs:       map[string][]node.LogLine{},
+		ctrStats:   map[string]node.ContainerStats{},
 		nextPort:   40000,
 	}
 }
@@ -522,4 +528,66 @@ func (r *Runtime) CheckDomain(_ context.Context, hostname string) (node.DomainCh
 		return fn(hostname), nil
 	}
 	return node.DomainCheck{ExpectedIPs: []string{"127.0.0.1"}, ResolvedIPs: []string{"127.0.0.1"}, DNSOK: true, CertificateOK: true}, nil
+}
+
+// SetHostStats fixes what HostStats returns. Until it is called, every
+// sample adds a quarter-busy second of CPU on a 4-CPU, 8 GiB host.
+func (r *Runtime) SetHostStats(h node.HostStats) {
+	r.mu.Lock()
+	r.host, r.hostSet = h, true
+	r.mu.Unlock()
+}
+
+// SetContainerStats fixes what ContainerStats returns for the container
+// with this ID (Time included). Running containers without one use 64 MiB
+// and a quarter of a core.
+func (r *Runtime) SetContainerStats(s node.ContainerStats) {
+	r.mu.Lock()
+	r.ctrStats[s.ID] = s
+	r.mu.Unlock()
+}
+
+// StatsCalls counts HostStats and ContainerStats calls, so tests can see
+// sampling start and stop.
+func (r *Runtime) StatsCalls() int64 { return r.statsCalls.Load() }
+
+// HostStats implements node.Stats.
+func (r *Runtime) HostStats(context.Context) (node.HostStats, error) {
+	r.statsCalls.Add(1)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.hostSet {
+		r.host.CPUs, r.host.MemoryTotal, r.host.MemoryAvailable = 4, 8<<30, 6<<30
+		r.host.CPUBusy += 25
+		r.host.CPUTotal += 100
+	}
+	return r.host, nil
+}
+
+// ContainerStats implements node.Stats.
+func (r *Runtime) ContainerStats(_ context.Context, ids []string) ([]node.ContainerStats, error) {
+	r.statsCalls.Add(1)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []node.ContainerStats
+	now := time.Now()
+	for _, id := range ids {
+		c, ok := r.containers[id]
+		if !ok {
+			continue
+		}
+		if s, ok := r.ctrStats[id]; ok {
+			out = append(out, s)
+			continue
+		}
+		if c.State != node.StateRunning {
+			continue
+		}
+		s := node.ContainerStats{
+			ID: id, Time: now, CPUUsec: uint64(now.Sub(c.StartedAt).Microseconds() / 4), //nolint:gosec // started in the past
+			Memory: 64 << 20, MemoryLimit: uint64(r.specs[id].Resources.MemoryBytes), //nolint:gosec // limits are positive
+		}
+		out = append(out, s)
+	}
+	return out, nil
 }

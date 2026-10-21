@@ -210,7 +210,7 @@ export interface paths {
         put?: never;
         /**
          * Create an environment
-         * @description Placed on a server automatically: `production` on the production server, others on a non-production one. Scope: deploy.
+         * @description Placed where the project's environments of the same kind are; the first of a kind goes to the eligible server with the most free memory. Scope: deploy.
          */
         post: operations["create-environment"];
         delete?: never;
@@ -593,6 +593,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Service statistics
+         * @description CPU, memory and IO history of the service (across releases) plus the latest sample.
+         */
+        get: operations["service-stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/stats/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live service statistics
+         * @description A `sample` event every few seconds while the service has a running container; the first is the latest minute sample. Sampling stops when the last watcher disconnects.
+         *
+         *     Server-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.
+         */
+        get: operations["service-stats-live"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/volumes": {
         parameters: {
             query?: never;
@@ -658,6 +700,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/placements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project placements
+         * @description Which server the project's production and non-production environments live on.
+         */
+        get: operations["list-placements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/placements/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pin a project to a server
+         * @description Puts the project's environments of a kind on a server, before any exist. The server must accept the kind; it may be disabled for placement. Scope: admin, unlimited.
+         */
+        put: operations["pin-placement"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers": {
         parameters: {
             query?: never;
@@ -665,8 +747,77 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List servers */
+        /**
+         * List servers
+         * @description Status, version, accepted environment kinds and load of every server.
+         */
         get: operations["list-servers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a server
+         * @description The server, the projects and environments placed on it and its latest resource sample. Scope: admin, unlimited.
+         */
+        get: operations["get-server"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a server
+         * @description Which environment kinds the server accepts, and whether it takes new placements. Environments already there stay. Scope: admin, unlimited.
+         */
+        patch: operations["update-server"];
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server statistics
+         * @description CPU, memory, disk and load history plus the latest sample. Scope: admin, unlimited.
+         */
+        get: operations["server-stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/stats/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live server statistics
+         * @description A `sample` event every few seconds while connected; the first is the latest minute sample. Sampling stops when the last watcher disconnects. Scope: admin, unlimited.
+         *
+         *     Server-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.
+         */
+        get: operations["server-stats-live"];
         put?: never;
         post?: never;
         delete?: never;
@@ -728,7 +879,7 @@ export interface paths {
         };
         /**
          * List users
-         * @description Scope: admin, unlimited.
+         * @description With each user's live sessions and usable tokens. Scope: admin, unlimited.
          */
         get: operations["list-users"];
         put?: never;
@@ -797,6 +948,26 @@ export interface paths {
          * @description Lets a disabled user log in again. Scope: admin, unlimited.
          */
         post: operations["enable-user"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a user's password
+         * @description Sets the given password, or generates one and returns it once. The user's sessions end. Not for your own account (use change-password). Scope: admin, unlimited.
+         */
+        post: operations["reset-password"];
         delete?: never;
         options?: never;
         head?: never;
@@ -874,6 +1045,11 @@ export interface components {
             pending: components["schemas"]["PendingChanges"];
         };
         CreateEnvironmentRequest: {
+            /**
+             * @description Default: production for an environment named production, otherwise non_production. Never changes.
+             * @enum {string}
+             */
+            kind?: "production" | "non_production";
             /** @description DNS-safe name */
             name: string;
         };
@@ -939,6 +1115,13 @@ export interface components {
             variables?: components["schemas"]["VariableRef"][] | null;
             volumes?: components["schemas"]["VolumeRef"][] | null;
         };
+        DiskUsage: {
+            paths: string[] | null;
+            /** Format: int64 */
+            total_bytes: number;
+            /** Format: int64 */
+            used_bytes: number;
+        };
         Domain: {
             /** Format: date-time */
             checked_at?: string;
@@ -967,6 +1150,8 @@ export interface components {
             created_at: string;
             /** Format: int64 */
             id: number;
+            /** @enum {string} */
+            kind: "production" | "non_production";
             name: string;
             project: string;
             /** @description Server the environment runs on */
@@ -1054,6 +1239,15 @@ export interface components {
             variables: components["schemas"]["VariableChange"][] | null;
             volumes: components["schemas"]["VolumeAddition"][] | null;
         };
+        PinPlacementRequest: {
+            server: string;
+        };
+        Placement: {
+            /** @enum {string} */
+            kind: "production" | "non_production";
+            pinned: boolean;
+            server: string;
+        };
         Project: {
             /** Format: date-time */
             archived_at?: string;
@@ -1133,8 +1327,19 @@ export interface components {
             /** @enum {string} */
             status: "queued" | "building" | "starting" | "health_checking" | "active" | "failed" | "superseded";
         };
+        ResetPasswordRequest: {
+            /** @description New password; omit to generate one */
+            password?: string;
+        };
+        ResetPasswordResult: {
+            password?: string;
+            user: components["schemas"]["User"];
+        };
         Server: {
+            accepts_non_production: boolean;
+            accepts_production: boolean;
             builder: boolean;
+            disabled_for_placement: boolean;
             /** Format: int64 */
             environments: number;
             /** Format: int64 */
@@ -1143,11 +1348,74 @@ export interface components {
             last_seen_at?: string;
             /** @description Runs the control plane */
             local: boolean;
+            /** Format: int64 */
+            memory_bytes: number;
             name: string;
-            /** @enum {string} */
-            role: "production" | "non-production";
+            /**
+             * Format: int64
+             * @description Projects with environments placed here
+             */
+            projects: number;
+            /** Format: int64 */
+            reserved_memory_bytes: number;
             /** @enum {string} */
             status: "online" | "offline";
+            version: string;
+        };
+        ServerDetail: {
+            placements: components["schemas"]["ServerPlacement"][] | null;
+            server: components["schemas"]["Server"];
+            usage?: components["schemas"]["ServerUsage"];
+        };
+        ServerPlacement: {
+            environments: string[] | null;
+            /** @enum {string} */
+            kind: "production" | "non_production";
+            /** @description Set by an admin rather than chosen automatically */
+            pinned: boolean;
+            project: string;
+        };
+        ServerStats: {
+            current?: components["schemas"]["ServerUsage"];
+            points: components["schemas"]["ServerStatsPoint"][] | null;
+            /** @enum {string} */
+            range: "1h" | "24h" | "7d";
+            /** Format: int64 */
+            resolution_seconds: number;
+            server: string;
+        };
+        ServerStatsPoint: {
+            /** Format: double */
+            cpu_percent: number;
+            /** Format: int64 */
+            disk_used_bytes: number;
+            /** Format: double */
+            load1: number;
+            /** Format: int64 */
+            memory_used_bytes: number;
+            /**
+             * Format: date-time
+             * @description Start of the interval
+             */
+            time: string;
+        };
+        ServerUsage: {
+            /** Format: double */
+            cpu_percent: number;
+            /** Format: int64 */
+            cpus: number;
+            disks: components["schemas"]["DiskUsage"][] | null;
+            /** Format: double */
+            load1: number;
+            /** Format: int64 */
+            memory_total_bytes: number;
+            /**
+             * Format: int64
+             * @description Total minus available, as free(1) shows
+             */
+            memory_used_bytes: number;
+            /** Format: date-time */
+            time: string;
         };
         Service: {
             /** Format: int64 */
@@ -1157,9 +1425,14 @@ export interface components {
             build_command: string;
             /** Format: double */
             cpus: number;
+            cpus_from_default: boolean;
             /** Format: date-time */
             created_at: string;
             dockerfile_path: string;
+            /** Format: double */
+            effective_cpus: number;
+            /** Format: int64 */
+            effective_memory_mb: number;
             environment: string;
             /** @description HTTP path; empty means a TCP check */
             health_check_path: string;
@@ -1168,6 +1441,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             image: string;
+            memory_from_default: boolean;
             /** Format: int64 */
             memory_mb: number;
             name: string;
@@ -1182,6 +1456,7 @@ export interface components {
             start_command: string;
             stateful: boolean;
             status: components["schemas"]["ServiceStatus"];
+            usage?: components["schemas"]["ServiceUsage"];
         };
         ServiceOverview: {
             active_release?: components["schemas"]["ReleaseSummary"];
@@ -1189,6 +1464,32 @@ export interface components {
             domains: components["schemas"]["Domain"][] | null;
             latest_release?: components["schemas"]["ReleaseSummary"];
             service: components["schemas"]["Service"];
+        };
+        ServiceStats: {
+            current?: components["schemas"]["ServiceUsage"];
+            environment: string;
+            points: components["schemas"]["ServiceStatsPoint"][] | null;
+            project: string;
+            /** @enum {string} */
+            range: "1h" | "24h" | "7d";
+            /** Format: int64 */
+            resolution_seconds: number;
+            service: string;
+        };
+        ServiceStatsPoint: {
+            /** Format: double */
+            cpu_percent: number;
+            /** Format: int64 */
+            io_read_bytes_per_sec: number;
+            /** Format: int64 */
+            io_write_bytes_per_sec: number;
+            /** Format: int64 */
+            memory_bytes: number;
+            /**
+             * Format: date-time
+             * @description Start of the interval
+             */
+            time: string;
         };
         ServiceStatus: {
             /** Format: int64 */
@@ -1202,6 +1503,23 @@ export interface components {
             state: "running" | "restarting" | "crashed" | "stopped" | "none";
             /** Format: date-time */
             updated_at?: string;
+        };
+        ServiceUsage: {
+            /** Format: double */
+            cpu_percent: number;
+            /** Format: int64 */
+            io_read_bytes_per_sec: number;
+            /** Format: int64 */
+            io_write_bytes_per_sec: number;
+            /**
+             * Format: int64
+             * @description Working set: usage minus inactive page cache, as docker stats shows
+             */
+            memory_bytes: number;
+            /** Format: int64 */
+            memory_limit_bytes: number;
+            /** Format: date-time */
+            time: string;
         };
         SetVariablesRequest: {
             /** @description Also apply all staged changes in the environment */
@@ -1242,6 +1560,11 @@ export interface components {
             /** @enum {string} */
             scope: "read" | "deploy" | "admin";
         };
+        UpdateServerRequest: {
+            accepts_non_production?: boolean;
+            accepts_production?: boolean;
+            disabled_for_placement?: boolean;
+        };
         UpdateServiceRequest: {
             /** @description Also apply all staged changes in the environment */
             apply?: boolean;
@@ -1270,6 +1593,10 @@ export interface components {
             name: string;
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
+            /** Format: int64 */
+            sessions: number;
+            /** Format: int64 */
+            tokens: number;
         };
         Variable: {
             key: string;
@@ -4398,6 +4725,203 @@ export interface operations {
             };
         };
     };
+    "service-stats": {
+        parameters: {
+            query?: {
+                /** @description 1h and 24h: a point per minute; 7d: a point per 10 minutes */
+                range?: "1h" | "24h" | "7d";
+            };
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceStats"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "service-stats-live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        data: components["schemas"]["ServiceUsage"];
+                        /** @enum {string} */
+                        event: "sample" | "ready" | "end" | "error";
+                        id?: string;
+                    }[];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-volumes": {
         parameters: {
             query?: never;
@@ -4853,6 +5377,183 @@ export interface operations {
             };
         };
     };
+    "list-placements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Placement"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "pin-placement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+                kind: "production" | "non_production";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinPlacementRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Placement"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-servers": {
         parameters: {
             query?: never;
@@ -4918,6 +5619,371 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "update-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateServerRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Server"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "server-stats": {
+        parameters: {
+            query?: {
+                /** @description 1h and 24h: a point per minute; 7d: a point per 10 minutes */
+                range?: "1h" | "24h" | "7d";
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerStats"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "server-stats-live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        data: components["schemas"]["ServerUsage"];
+                        /** @enum {string} */
+                        event: "sample" | "ready" | "end" | "error";
+                        id?: string;
+                    }[];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5518,6 +6584,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResetPasswordResult"];
                 };
             };
             /** @description Bad Request */
