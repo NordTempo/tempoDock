@@ -1,38 +1,7184 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "platform",
-    "version": "dev"
-  },
-  "paths": {
-    "/api/v1/health": {
-      "get": {
-        "operationId": "health",
-        "summary": "Daemon health and version",
-        "tags": ["system"],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/HealthOutputBody" }
-              }
-            }
+  "components": {
+    "schemas": {
+      "AddDomainRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "hostname": {
+            "maxLength": 253,
+            "type": "string"
+          },
+          "redirect_to": {
+            "description": "Permanently redirect to this hostname instead of proxying",
+            "type": "string"
           }
-        }
+        },
+        "required": [
+          "hostname"
+        ],
+        "type": "object"
+      },
+      "AddVolumeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "description": "Also apply all staged changes in the environment",
+            "type": "boolean"
+          },
+          "mount_path": {
+            "description": "Absolute path inside the container",
+            "pattern": "^/",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "mount_path"
+        ],
+        "type": "object"
+      },
+      "AppliedChanges": {
+        "additionalProperties": false,
+        "properties": {
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/Release"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "releases",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "AuditEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "examples": [
+              "release.deploy"
+            ],
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "actor_kind": {
+            "enum": [
+              "user",
+              "token",
+              "system"
+            ],
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "actor",
+          "actor_kind",
+          "action",
+          "target",
+          "summary",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "BuildLogLine": {
+        "additionalProperties": false,
+        "properties": {
+          "release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "seq": {
+            "description": "Zero-based line number within the build log",
+            "format": "int64",
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "release",
+          "seq",
+          "text"
+        ],
+        "type": "object"
+      },
+      "ChangeResult": {
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "$ref": "#/components/schemas/AppliedChanges"
+          },
+          "pending": {
+            "$ref": "#/components/schemas/PendingChanges"
+          }
+        },
+        "required": [
+          "pending"
+        ],
+        "type": "object"
+      },
+      "CreateEnvironmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "DNS-safe name",
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateProjectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "DNS-safe name",
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateServiceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "build_command": {
+            "type": "string"
+          },
+          "cpus": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "dockerfile_path": {
+            "type": "string"
+          },
+          "health_check_path": {
+            "type": "string"
+          },
+          "health_check_timeout_seconds": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "image": {
+            "type": "string"
+          },
+          "memory_mb": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "DNS-safe name, also the private hostname",
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
+            "type": "string"
+          },
+          "port": {
+            "format": "int64",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start_command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateTokenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "description": "Requires project",
+            "type": "string"
+          },
+          "expires_in_days": {
+            "description": "0 means never",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "read",
+              "deploy",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "CreateUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "minLength": 12,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "read",
+              "deploy",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name",
+          "password",
+          "role"
+        ],
+        "type": "object"
+      },
+      "CreatedToken": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "examples": [
+              "pt_3q2..."
+            ],
+            "type": "string"
+          },
+          "token": {
+            "$ref": "#/components/schemas/Token"
+          }
+        },
+        "required": [
+          "token",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "DNSRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "A",
+              "CNAME"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "value"
+        ],
+        "type": "object"
+      },
+      "DeployImageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "image": {
+            "description": "Image reference; defaults to the service's image setting",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Domain": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dns_records": {
+            "items": {
+              "$ref": "#/components/schemas/DNSRecord"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "environment": {
+            "type": "string"
+          },
+          "generated": {
+            "type": "boolean"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "redirect_to": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "added",
+              "waiting_for_dns",
+              "issuing_certificate",
+              "active",
+              "error"
+            ],
+            "type": "string"
+          },
+          "status_reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname",
+          "project",
+          "environment",
+          "service",
+          "generated",
+          "status",
+          "dns_records",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "DomainChange": {
+        "additionalProperties": false,
+        "properties": {
+          "domain": {
+            "$ref": "#/components/schemas/Domain"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
+          }
+        },
+        "required": [
+          "domain"
+        ],
+        "type": "object"
+      },
+      "Environment": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "server": {
+            "description": "Server the environment runs on",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "name",
+          "server",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "EnvironmentOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "$ref": "#/components/schemas/Environment"
+          },
+          "pending_changes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceOverview"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "environment",
+          "pending_changes",
+          "services"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "examples": [
+              "forbidden"
+            ],
+            "type": "string"
+          },
+          "detail": {
+            "examples": [
+              "this token has scope deploy; archiving a service requires admin"
+            ],
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "examples": [
+              403
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "examples": [
+              "Forbidden"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "description": "URI identifying the problem type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "detail",
+          "code"
+        ],
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "examples": [
+              "body.name"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "Event": {
+        "additionalProperties": false,
+        "properties": {
+          "audit": {
+            "$ref": "#/components/schemas/AuditEvent"
+          },
+          "build_log": {
+            "$ref": "#/components/schemas/BuildLogLine"
+          },
+          "domain": {
+            "$ref": "#/components/schemas/Domain"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
+          },
+          "release_event": {
+            "$ref": "#/components/schemas/ReleaseEvent"
+          },
+          "service": {
+            "type": "string"
+          },
+          "service_status": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "time"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "examples": [
+              "ok"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "examples": [
+              "v0.1.0"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "type": "object"
+      },
+      "LogLine": {
+        "additionalProperties": false,
+        "properties": {
+          "stream": {
+            "enum": [
+              "stdout",
+              "stderr"
+            ],
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "time",
+          "stream",
+          "text"
+        ],
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "Me": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "user",
+              "token"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "read",
+              "deploy",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "PendingChanges": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/SettingChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "variables": {
+            "items": {
+              "$ref": "#/components/schemas/VariableChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/VolumeAddition"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "count",
+          "variables",
+          "settings",
+          "volumes"
+        ],
+        "type": "object"
+      },
+      "Project": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ProjectOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentOverview"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          }
+        },
+        "required": [
+          "project",
+          "environments"
+        ],
+        "type": "object"
+      },
+      "Release": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ReleaseConfig"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "events": {
+            "description": "Progress lines; only included when fetching one release",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "from_release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "image_id": {
+            "type": "string"
+          },
+          "image_ref": {
+            "type": "string"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "upload",
+              "image",
+              "config",
+              "rollback",
+              "restart",
+              "promote"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "building",
+              "starting",
+              "health_checking",
+              "active",
+              "failed",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "project",
+          "environment",
+          "service",
+          "status",
+          "source",
+          "image_ref",
+          "image_id",
+          "config",
+          "created_by",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ReleaseConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "cpus": {
+            "format": "double",
+            "type": "number"
+          },
+          "from_repo_file": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "health_check_path": {
+            "type": "string"
+          },
+          "memory_mb": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mounts": {
+            "items": {
+              "$ref": "#/components/schemas/VolumeMount"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "published": {
+            "description": "Port is published for routing",
+            "type": "boolean"
+          },
+          "start_command": {
+            "type": "string"
+          },
+          "variable_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "port",
+          "published",
+          "start_command",
+          "health_check_path",
+          "memory_mb",
+          "cpus",
+          "variable_keys",
+          "mounts",
+          "from_repo_file"
+        ],
+        "type": "object"
+      },
+      "ReleaseEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "release": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "release",
+          "message",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ReleaseSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "image_id": {
+            "type": "string"
+          },
+          "image_ref": {
+            "type": "string"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "upload",
+              "image",
+              "config",
+              "rollback",
+              "restart",
+              "promote"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "building",
+              "starting",
+              "health_checking",
+              "active",
+              "failed",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "status",
+          "source",
+          "image_ref",
+          "image_id",
+          "created_by",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "Server": {
+        "additionalProperties": false,
+        "properties": {
+          "builder": {
+            "type": "boolean"
+          },
+          "environments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "local": {
+            "description": "Runs the control plane",
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "production",
+              "non-production"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "online",
+              "offline"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "builder",
+          "local",
+          "status",
+          "environments"
+        ],
+        "type": "object"
+      },
+      "Service": {
+        "additionalProperties": false,
+        "properties": {
+          "active_release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "archived_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "build_command": {
+            "type": "string"
+          },
+          "cpus": {
+            "format": "double",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dockerfile_path": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "health_check_path": {
+            "description": "HTTP path; empty means a TCP check",
+            "type": "string"
+          },
+          "health_check_timeout_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "image": {
+            "type": "string"
+          },
+          "memory_mb": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending_changes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "port": {
+            "description": "Container port. 0 means 8080 (published only once the service has a domain)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "start_command": {
+            "type": "string"
+          },
+          "stateful": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "environment",
+          "name",
+          "stateful",
+          "status",
+          "pending_changes",
+          "created_at",
+          "image",
+          "port",
+          "health_check_path",
+          "health_check_timeout_seconds",
+          "start_command",
+          "dockerfile_path",
+          "build_command",
+          "memory_mb",
+          "cpus"
+        ],
+        "type": "object"
+      },
+      "ServiceOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "active_release": {
+            "$ref": "#/components/schemas/ReleaseSummary"
+          },
+          "deploying": {
+            "$ref": "#/components/schemas/ReleaseSummary"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/Domain"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "service": {
+            "$ref": "#/components/schemas/Service"
+          }
+        },
+        "required": [
+          "service",
+          "domains"
+        ],
+        "type": "object"
+      },
+      "ServiceStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "exit_code": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "oom_killed": {
+            "type": "boolean"
+          },
+          "restart_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "restarting",
+              "crashed",
+              "stopped",
+              "none"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "restart_count",
+          "oom_killed",
+          "exit_code"
+        ],
+        "type": "object"
+      },
+      "SetVariablesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "description": "Also apply all staged changes in the environment",
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string"
+          },
+          "set": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "unset": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SettingChange": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "examples": [
+              "port"
+            ],
+            "type": "string"
+          },
+          "new": {
+            "type": "string"
+          },
+          "old": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "field",
+          "old",
+          "new"
+        ],
+        "type": "object"
+      },
+      "Token": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "read",
+              "deploy",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scope",
+          "created_by",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "UpdateServiceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "description": "Also apply all staged changes in the environment",
+            "type": "boolean"
+          },
+          "build_command": {
+            "type": "string"
+          },
+          "cpus": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "dockerfile_path": {
+            "type": "string"
+          },
+          "health_check_path": {
+            "type": "string"
+          },
+          "health_check_timeout_seconds": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "image": {
+            "type": "string"
+          },
+          "memory_mb": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "port": {
+            "format": "int64",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start_command": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "User": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "read",
+              "deploy",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "Variable": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "pending": {
+            "description": "Staged change, if any",
+            "enum": [
+              "add",
+              "update",
+              "remove"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "environment",
+              "service"
+            ],
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "scope",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "VariableChange": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "update",
+              "remove"
+            ],
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "new": {
+            "type": "string"
+          },
+          "old": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "environment",
+              "service"
+            ],
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "scope",
+          "action"
+        ],
+        "type": "object"
+      },
+      "Version": {
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "examples": [
+              "v1"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "examples": [
+              "v0.1.0"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "api_version"
+        ],
+        "type": "object"
+      },
+      "Volume": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "docker_name": {
+            "type": "string"
+          },
+          "mount_path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending": {
+            "description": "Staged; mounted once applied",
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "service",
+          "mount_path",
+          "docker_name",
+          "pending",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "VolumeAddition": {
+        "additionalProperties": false,
+        "properties": {
+          "mount_path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "name",
+          "mount_path"
+        ],
+        "type": "object"
+      },
+      "VolumeMount": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "volume",
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "description": "API token (pt_...)",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "session": {
+        "description": "UI session from /auth/login",
+        "in": "cookie",
+        "name": "platform_session",
+        "type": "apiKey"
       }
     }
   },
-  "components": {
-    "schemas": {
-      "HealthOutputBody": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["status", "version"],
-        "properties": {
-          "status": { "type": "string", "examples": ["ok"] },
-          "version": { "type": "string", "examples": ["v0.1.0"] }
-        }
+  "info": {
+    "description": "The platform API. The CLI and web UI are thin clients of it.",
+    "title": "platform",
+    "version": "dev"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/audit": {
+      "get": {
+        "description": "Newest first. Tokens limited to a project or environment only see events there.",
+        "operationId": "list-audit",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "project",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Requires project",
+            "explode": false,
+            "in": "query",
+            "name": "environment",
+            "schema": {
+              "description": "Requires project",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Action prefix, e.g. release. or domain.add",
+            "explode": false,
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "description": "Action prefix, e.g. release. or domain.add",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events with a smaller ID (paging)",
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "description": "Only events with a smaller ID (paging)",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEvent"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Audit log",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Sets an HttpOnly session cookie.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Log in to the UI",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "platform_session",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "End the UI session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "description": "Release progress, build logs, service status, domain status and audit events the caller may see. The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.\n\nServer-Sent Events. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
+        "operationId": "events",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "project",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Requires project",
+            "explode": false,
+            "in": "query",
+            "name": "environment",
+            "schema": {
+              "description": "Requires project",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Requires environment",
+            "explode": false,
+            "in": "query",
+            "name": "service",
+            "schema": {
+              "description": "Requires environment",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "data": {
+                        "$ref": "#/components/schemas/Event"
+                      },
+                      "event": {
+                        "enum": [
+                          "release",
+                          "release_event",
+                          "build_log",
+                          "service_status",
+                          "domain",
+                          "audit",
+                          "drift",
+                          "lagged",
+                          "end",
+                          "error"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "data"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Event stream"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Live events",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Daemon health and version",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Who the caller is and what it may do",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "operationId": "list-projects",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List projects",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "description": "Creates the project with a `production` environment. Scope: deploy, unlimited.",
+        "operationId": "create-project",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}": {
+      "get": {
+        "operationId": "get-project",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments": {
+      "get": {
+        "operationId": "list-environments",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Environment"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List environments",
+        "tags": [
+          "environments"
+        ]
+      },
+      "post": {
+        "description": "Placed on a server automatically: `production` on the production server, others on a non-production one. Scope: deploy.",
+        "operationId": "create-environment",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnvironmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create an environment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}": {
+      "get": {
+        "operationId": "get-environment",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get an environment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/changes": {
+      "get": {
+        "description": "The environment's staged (not yet live) changes as a diff. Values are masked unless `reveal=true` (admin).",
+        "operationId": "get-changes",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include secret values (admin only)",
+            "explode": false,
+            "in": "query",
+            "name": "reveal",
+            "schema": {
+              "description": "Include secret values (admin only)",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingChanges"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Staged changes",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/changes/apply": {
+      "post": {
+        "description": "Applies all staged changes atomically and starts a config release for every affected running service. Scope: deploy.",
+        "operationId": "apply-changes",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppliedChanges"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Apply staged changes",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/changes/discard": {
+      "post": {
+        "operationId": "discard-changes",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingChanges"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Discard staged changes",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services": {
+      "get": {
+        "description": "Includes archived services.",
+        "operationId": "list-services",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Service"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List services",
+        "tags": [
+          "services"
+        ]
+      },
+      "post": {
+        "description": "Creates the service without deploying it. Scope: deploy.",
+        "operationId": "create-service",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a service",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}": {
+      "get": {
+        "operationId": "get-service",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a service",
+        "tags": [
+          "services"
+        ]
+      },
+      "patch": {
+        "description": "Changed settings are staged; they go live on the next deploy of the service or when the environment's changes are applied (`apply: true` does that now). Scope: deploy.",
+        "operationId": "update-service",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Stage settings changes",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/archive": {
+      "post": {
+        "description": "Stops its container and removes its routes. Volumes and history are kept. Scope: admin.",
+        "operationId": "archive-service",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Archive a service",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains": {
+      "get": {
+        "description": "With status and the exact DNS records to create.",
+        "operationId": "list-domains",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Domain"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List domains",
+        "tags": [
+          "domains"
+        ]
+      },
+      "post": {
+        "description": "Any hostname, unique across all services. DNS can be set up before or after. Scope: deploy.",
+        "operationId": "add-domain",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddDomainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainChange"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add a domain",
+        "tags": [
+          "domains"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains/generate": {
+      "post": {
+        "description": "A hostname under the server's base domain; no DNS work needed. Scope: deploy.",
+        "operationId": "generate-domain",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainChange"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Generate a domain",
+        "tags": [
+          "domains"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains/{hostname}": {
+      "delete": {
+        "description": "Scope: deploy.",
+        "operationId": "remove-domain",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "hostname",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a domain",
+        "tags": [
+          "domains"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/logs": {
+      "get": {
+        "description": "Output of the active release's container (or `release`), read from the runtime.\n\nServer-Sent Events. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
+        "operationId": "service-logs",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Release number; default the active release",
+            "explode": false,
+            "in": "query",
+            "name": "release",
+            "schema": {
+              "description": "Release number; default the active release",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Keep streaming new lines",
+            "explode": false,
+            "in": "query",
+            "name": "follow",
+            "schema": {
+              "description": "Keep streaming new lines",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Last N lines of backlog; 0 for all",
+            "explode": false,
+            "in": "query",
+            "name": "tail",
+            "schema": {
+              "default": 100,
+              "description": "Last N lines of backlog; 0 for all",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "RFC 3339 time or a duration like 10m",
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "description": "RFC 3339 time or a duration like 10m",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "data": {
+                        "$ref": "#/components/schemas/LogLine"
+                      },
+                      "event": {
+                        "enum": [
+                          "line",
+                          "end",
+                          "error"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "data"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Event stream"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Service logs",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases": {
+      "get": {
+        "description": "Newest first.",
+        "operationId": "list-releases",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Release"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List releases",
+        "tags": [
+          "releases"
+        ]
+      },
+      "post": {
+        "description": "Queues a release from a prebuilt image, taking the service's staged changes with it. Returns immediately; follow `/events` or poll the release. Scope: deploy.",
+        "operationId": "deploy-image",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeployImageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Release"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Deploy an image",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases/source": {
+      "post": {
+        "description": "Upload a build context as a tar (optionally gzipped) stream. It is streamed to disk, built on this server, and deployed. A `platform.toml` at its root overrides build and deploy settings. Scope: deploy.",
+        "operationId": "deploy-source",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/gzip": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/x-tar": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Release"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Deploy source",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases/{number}": {
+      "get": {
+        "description": "Includes its progress events.",
+        "operationId": "get-release",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Release number",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "Release number",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Release"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a release",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases/{number}/build-log": {
+      "get": {
+        "description": "Build (or image pull) output as plain text. Follow it live with `/build-log/stream`.",
+        "operationId": "get-build-log",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Release number",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "Release number",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Build log"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Build log",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases/{number}/build-log/stream": {
+      "get": {
+        "description": "The build log so far, then new lines until the build phase ends.\n\nServer-Sent Events. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
+        "operationId": "follow-build-log",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Release number",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "Release number",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "data": {
+                        "$ref": "#/components/schemas/BuildLogLine"
+                      },
+                      "event": {
+                        "enum": [
+                          "line",
+                          "end",
+                          "error"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "data"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Event stream"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Follow a build log",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases/{number}/rollback": {
+      "post": {
+        "description": "Creates a new release with that release's image and resolved config, through the same health-checked path. Scope: deploy.",
+        "operationId": "rollback",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Release number",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "Release number",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Release"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Roll back to a release",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/restart": {
+      "post": {
+        "description": "Creates a new release identical to the active one. Scope: deploy.",
+        "operationId": "restart",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Release"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Restart a service",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/volumes": {
+      "get": {
+        "operationId": "list-volumes",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Volume"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List volumes",
+        "tags": [
+          "volumes"
+        ]
+      },
+      "post": {
+        "description": "A service with a volume is stateful: deploys stop the old container before starting the new one. Volumes are never deleted as a side effect. Scope: deploy.",
+        "operationId": "add-volume",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddVolumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeResult"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Stage a volume",
+        "tags": [
+          "volumes"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/variables": {
+      "get": {
+        "description": "Shared (environment-level) and service variables. Names only unless `reveal=true` (admin).",
+        "operationId": "list-variables",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include secret values (admin only)",
+            "explode": false,
+            "in": "query",
+            "name": "reveal",
+            "schema": {
+              "description": "Include secret values (admin only)",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Only shared variables and this service's",
+            "explode": false,
+            "in": "query",
+            "name": "service",
+            "schema": {
+              "description": "Only shared variables and this service's",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Variable"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List variables",
+        "tags": [
+          "variables"
+        ]
+      },
+      "patch": {
+        "description": "Sets and unsets variables as staged changes; `apply: true` also applies the environment's staged changes. Values may reference `${{service.KEY}}` or `${{shared.KEY}}`. Scope: deploy.",
+        "operationId": "set-variables",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetVariablesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Stage variable changes",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/overview": {
+      "get": {
+        "description": "Environments → services with status, releases, domains and staged-change counts, in one call.",
+        "operationId": "project-overview",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOverview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Project overview",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/servers": {
+      "get": {
+        "operationId": "list-servers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Server"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List servers",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/tokens": {
+      "get": {
+        "description": "Scope: admin, unlimited.",
+        "operationId": "list-tokens",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Token"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List tokens",
+        "tags": [
+          "tokens"
+        ]
+      },
+      "post": {
+        "description": "The secret is returned once and never again. Scope: admin, unlimited.",
+        "operationId": "create-token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedToken"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a token",
+        "tags": [
+          "tokens"
+        ]
+      }
+    },
+    "/api/v1/tokens/{id}": {
+      "delete": {
+        "description": "Scope: admin, unlimited.",
+        "operationId": "revoke-token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Revoke a token",
+        "tags": [
+          "tokens"
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "description": "Scope: admin, unlimited.",
+        "operationId": "list-users",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List users",
+        "tags": [
+          "users"
+        ]
+      },
+      "post": {
+        "description": "Scope: admin, unlimited.",
+        "operationId": "create-user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/version": {
+      "get": {
+        "operationId": "version",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Server and API version, for client compatibility checks",
+        "tags": [
+          "system"
+        ]
       }
     }
   }

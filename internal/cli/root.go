@@ -54,6 +54,8 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 	root.SetErr(io.Err)
 	root.AddCommand(
 		newServeCmd(),
+		newAdminCmd(),
+		newOpenAPICmd(),
 		newContextCmd(g),
 		newLogoutCmd(g),
 		newUnlinkCmd(g),
