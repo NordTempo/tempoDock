@@ -50,14 +50,6 @@ func (c carried) empty() bool {
 	return len(c.Variables) == 0 && c.Settings == nil && len(c.Volumes) == 0
 }
 
-func (c carried) count() int {
-	n := len(c.Variables) + len(c.Volumes)
-	if c.Settings != nil {
-		n += len(settingChanges("", c.Settings.Old, c.Settings.New))
-	}
-	return n
-}
-
 // encode renders c for releases.carried ("" when empty).
 func (c carried) encode() (string, error) {
 	if c.empty() {
