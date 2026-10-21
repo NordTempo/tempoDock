@@ -44,6 +44,27 @@ func TestResourceNamesDontCollideAcrossProjects(t *testing.T) {
 	}
 }
 
+// A deploy that loaded the service just before it was archived must not
+// go live: startRelease re-checks inside its transaction.
+func TestDeployRacingArchiveIsRefused(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	ss, err := h.c.serviceFor(h.ctx, System, web, apitypes.ScopeDeploy, "deploying")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.ArchiveService(h.ctx, System, web); err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.c.startRelease(h.ctx, System, ss, releaseSpec{source: apitypes.SourceImage, imageRef: "app:1"})
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "archived") {
+		t.Fatalf("deploy after archive: %v", err)
+	}
+	if rels, _ := h.c.ListReleases(h.ctx, System, web, 10); len(rels) != 0 {
+		t.Fatalf("releases = %d, want none", len(rels))
+	}
+}
+
 // waitOp waits until the runtime has seen op.
 func (h *harness) waitOp(op string) {
 	h.t.Helper()

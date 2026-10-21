@@ -318,16 +318,23 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 		if r, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
 			return deployInProgress(ss, r)
 		}
+		// Re-checked in the transaction: ArchiveService may have won a race.
+		svc, err := q.GetService(ctx, ss.svc.ID)
+		if err != nil {
+			return err
+		}
+		if svc.ArchivedAt != nil {
+			return invalid("service %s is archived", ss)
+		}
+		ss.svc = svc
 		if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage {
 			// A deploy takes the service's own staged changes with it.
 			if _, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID); err != nil {
 				return err
 			}
-			svc, err := q.GetService(ctx, ss.svc.ID)
-			if err != nil {
+			if ss.svc, err = q.GetService(ctx, ss.svc.ID); err != nil {
 				return err
 			}
-			ss.svc = svc
 		}
 		number, err := q.NextReleaseNumber(ctx, ss.svc.ID)
 		if err != nil {

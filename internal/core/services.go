@@ -173,17 +173,33 @@ func (c *Core) ArchiveService(ctx context.Context, a Actor, ref ServiceRef) (api
 	if err != nil {
 		return apitypes.Service{}, err
 	}
-	if ss.svc.ArchivedAt != nil {
-		return c.toService(ctx, ss, apitypes.PendingChanges{})
-	}
-	if inflight, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
-		return apitypes.Service{}, errf(apitypes.CodeDeployInProgress, "release %d of %s is deploying; wait for it to finish before archiving", inflight.Number, ss)
-	}
-	n := now()
-	if err := c.store.ArchiveService(ctx, store.ArchiveServiceParams{ArchivedAt: &n, ID: ss.svc.ID}); err != nil {
+	// One transaction, so no deploy can start between the check and the
+	// archive (startRelease re-checks archived_at in its own).
+	already := false
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		svc, err := q.GetService(ctx, ss.svc.ID)
+		if err != nil {
+			return err
+		}
+		if ss.svc = svc; svc.ArchivedAt != nil {
+			already = true
+			return nil
+		}
+		if inflight, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+			return errf(apitypes.CodeDeployInProgress, "release %d of %s is deploying; wait for it to finish before archiving", inflight.Number, ss)
+		} else if !store.IsNotFound(err) {
+			return err
+		}
+		n := now()
+		ss.svc.ArchivedAt = &n
+		return q.ArchiveService(ctx, store.ArchiveServiceParams{ArchivedAt: &n, ID: ss.svc.ID})
+	})
+	if err != nil {
 		return apitypes.Service{}, err
 	}
-	ss.svc.ArchivedAt = &n
+	if already {
+		return c.toService(ctx, ss, apitypes.PendingChanges{})
+	}
 	// Routes first, so no traffic goes to a container that is stopping.
 	if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
 		c.log.Error("apply routes after archive", "service", ss.String(), "err", err)
