@@ -9,6 +9,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
@@ -136,7 +137,11 @@ type ContainerSpec struct {
 	Aliases []string
 	// Port is the container port to publish on 127.0.0.1 with an ephemeral
 	// host port. Zero means nothing is published.
-	Port      int
+	Port int
+	// HostPort is the fixed 127.0.0.1 port Port is published on. Zero picks
+	// an ephemeral port, which changes on every restart, so routed services
+	// must always get a fixed one.
+	HostPort  int
 	Mounts    []Mount
 	Resources Resources
 }
@@ -256,3 +261,7 @@ type DomainCheck struct {
 	// Error explains a failed check in plain words.
 	Error string
 }
+
+// ErrNotFound is returned (wrapped) when a container, image or other resource
+// does not exist or is not platform-managed.
+var ErrNotFound = errors.New("not found")

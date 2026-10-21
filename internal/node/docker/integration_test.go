@@ -5,7 +5,9 @@ package docker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -244,6 +246,38 @@ func TestHealthCheckTCP(t *testing.T) {
 	err := e.HealthCheck(ctx, idle, node.HealthCheck{Timeout: 2 * time.Second, Interval: 200 * time.Millisecond})
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A fixed host port survives restarts, so proxy upstreams stay valid while
+// the daemon is down.
+func TestFixedHostPortSurvivesRestart(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+
+	c := e.start(node.ContainerSpec{Name: e.name("fixed"), Image: httpImage, Port: 80, HostPort: port})
+	if c.HostPort != port {
+		t.Fatalf("HostPort = %d, want %d", c.HostPort, port)
+	}
+	if _, err := e.cli.ContainerRestart(ctx, c.ID, client.ContainerRestartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := e.Inspect(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.HostPort != port {
+		t.Fatalf("HostPort after restart = %d, want %d", after.HostPort, port)
+	}
+	if !errors.Is(notFound("container", "x"), node.ErrNotFound) {
+		t.Fatal("notFound does not match node.ErrNotFound")
 	}
 }
 

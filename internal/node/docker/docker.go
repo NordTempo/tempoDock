@@ -56,8 +56,17 @@ func isManaged(labels map[string]string) bool { return labels[node.LabelManaged]
 
 // notFound is returned for missing and for unmanaged resources alike, so
 // callers can't tell (or care) that something unmanaged exists.
+// The error matches both node.ErrNotFound and containerd's not-found class.
 func notFound(kind, name string) error {
-	return cerrdefs.ErrNotFound.WithMessage(fmt.Sprintf("%s %q not found", kind, name))
+	return notFoundError(fmt.Sprintf("%s %q not found", kind, name))
+}
+
+type notFoundError string
+
+func (e notFoundError) Error() string { return string(e) }
+
+func (e notFoundError) Is(target error) bool {
+	return target == node.ErrNotFound || cerrdefs.IsNotFound(target)
 }
 
 // Pull pulls ref, writing one readable line per status change to logs.
@@ -241,7 +250,11 @@ func createOptions(spec node.ContainerSpec) client.ContainerCreateOptions {
 	if spec.Port > 0 {
 		port, _ := network.PortFrom(uint16(spec.Port), network.TCP)
 		cfg.ExposedPorts = network.PortSet{port: {}}
-		host.PortBindings = network.PortMap{port: {{HostIP: netip.MustParseAddr("127.0.0.1")}}}
+		binding := network.PortBinding{HostIP: netip.MustParseAddr("127.0.0.1")}
+		if spec.HostPort > 0 {
+			binding.HostPort = strconv.Itoa(spec.HostPort)
+		}
+		host.PortBindings = network.PortMap{port: {binding}}
 	}
 
 	opts := client.ContainerCreateOptions{Name: spec.Name, Config: cfg, HostConfig: host}
