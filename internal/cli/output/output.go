@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -41,6 +43,8 @@ type IO struct {
 	Interactive bool
 	// OutColor and ErrColor enable ANSI colors on Out and Err.
 	OutColor, ErrColor bool
+
+	in *bufio.Reader // In, buffered once so prompts never lose read-ahead
 }
 
 // Std returns IO on the process's standard streams with terminal detection.
@@ -85,6 +89,44 @@ func (o *IO) Warnf(format string, a ...any) {
 	line(o.Err, paint(o.ErrColor, yellow, GlyphWarn)+" "+fmt.Sprintf(format, a...))
 }
 
+// Progressf prints "· message" to Err: a step of something in progress.
+// Silent with --json.
+func (o *IO) Progressf(format string, a ...any) {
+	if o.JSON {
+		return
+	}
+	line(o.Err, paint(o.ErrColor, faint, GlyphPending)+" "+fmt.Sprintf(format, a...))
+}
+
+// Failf prints "✗ message" to Err. Silent with --json.
+func (o *IO) Failf(format string, a ...any) {
+	if o.JSON {
+		return
+	}
+	line(o.Err, paint(o.ErrColor, red, GlyphFail)+" "+fmt.Sprintf(format, a...))
+}
+
+// Detail prints output relayed from the server (such as build log lines)
+// indented and faint on Err. Silent with --json.
+func (o *IO) Detail(s string) {
+	if o.JSON {
+		return
+	}
+	line(o.Err, paint(o.ErrColor, faint, "  "+s))
+}
+
+// Fields writes aligned "key  value" lines to Out from alternating keys and
+// values. Pairs with an empty value are left out.
+func (o *IO) Fields(kv ...string) error {
+	tw := tabwriter.NewWriter(o.Out, 0, 0, 2, ' ', 0)
+	for i := 0; i+1 < len(kv); i += 2 {
+		if kv[i+1] != "" {
+			line(tw, kv[i]+"\t"+cellSpace.Replace(kv[i+1]))
+		}
+	}
+	return tw.Flush()
+}
+
 // Table writes aligned columns to Out. Cells must not contain color codes
 // (they would break alignment); put status in a glyph or word instead.
 type Table struct {
@@ -102,10 +144,19 @@ func (o *IO) Table(headers ...string) *Table {
 	return t
 }
 
+// Rows starts a table without a header row.
+func (o *IO) Rows() *Table {
+	return &Table{tw: tabwriter.NewWriter(o.Out, 0, 0, 2, ' ', 0)}
+}
+
 var cellSpace = strings.NewReplacer("\t", " ", "\n", " ")
 
-// Row adds one row. Tabs and newlines in cells are replaced by spaces.
+// Row adds one row. Tabs and newlines in cells are replaced by spaces, and
+// trailing empty cells are dropped.
 func (t *Table) Row(cells ...string) {
+	for len(cells) > 1 && cells[len(cells)-1] == "" {
+		cells = cells[:len(cells)-1] // no trailing padding
+	}
 	var b strings.Builder
 	for i, c := range cells {
 		if i > 0 {
@@ -154,12 +205,62 @@ func (o *IO) Prompt(label, flag string) (string, error) {
 	if !o.Interactive {
 		return "", MissingFlag(flag)
 	}
-	_, _ = io.WriteString(o.Err, label+": ")
-	s, err := bufio.NewReader(o.In).ReadString('\n')
-	if err != nil && s == "" {
+	s, err := o.readLine(label + ": ")
+	if err != nil {
 		return "", MissingFlag(flag)
 	}
-	return nonEmpty(strings.TrimSpace(s), flag)
+	return nonEmpty(s, flag)
+}
+
+func (o *IO) readLine(prompt string) (string, error) {
+	if o.in == nil {
+		o.in = bufio.NewReader(o.In)
+	}
+	_, _ = io.WriteString(o.Err, prompt)
+	s, err := o.in.ReadString('\n')
+	if err != nil && s == "" {
+		return "", err
+	}
+	return strings.TrimSpace(s), nil
+}
+
+// Choose asks for one of options, by number or by name, or fails with a
+// usage error naming flag when stdin isn't a terminal.
+func (o *IO) Choose(label, flag string, options []string) (string, error) {
+	if !o.Interactive {
+		return "", MissingFlag(flag)
+	}
+	for i, opt := range options {
+		_, _ = fmt.Fprintf(o.Err, "  %d) %s\n", i+1, opt)
+	}
+	s, err := o.Prompt(label, flag)
+	if err != nil {
+		return "", err
+	}
+	if n, err := strconv.Atoi(s); err == nil && n >= 1 && n <= len(options) {
+		return options[n-1], nil
+	}
+	if slices.Contains(options, s) {
+		return s, nil
+	}
+	return "", &Error{Exit: ExitUsage, Message: fmt.Sprintf("%q is not one of the choices", s), Hint: "Pass --" + flag + "."}
+}
+
+// Confirm asks a yes/no question that defaults to no. Without a terminal it
+// fails with a usage error naming flag (the one that skips the question).
+func (o *IO) Confirm(question, flag string) error {
+	if !o.Interactive {
+		return &Error{
+			Exit:    ExitUsage,
+			Message: "confirmation required: " + question,
+			Hint:    "Pass --" + flag + " to confirm. The CLI only prompts when stdin is a terminal.",
+		}
+	}
+	s, err := o.readLine(question + " [y/N] ")
+	if err == nil && (strings.EqualFold(s, "y") || strings.EqualFold(s, "yes")) {
+		return nil
+	}
+	return &Error{Exit: ExitError, Message: "cancelled; nothing was changed"}
 }
 
 // PromptSecret is Prompt without echoing the input.
@@ -199,6 +300,7 @@ func MissingFlag(flag string) *Error {
 func line(w io.Writer, s string) { _, _ = io.WriteString(w, s+"\n") }
 
 const (
+	faint  = "2"
 	red    = "31"
 	green  = "32"
 	yellow = "33"
