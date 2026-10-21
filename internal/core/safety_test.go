@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/platform/internal/node"
 	"github.com/NordTempo/platform/internal/store"
 )
 
@@ -164,6 +165,36 @@ func TestImageRefValidation(t *testing.T) {
 		if err := validateImageRef(ref); (err == nil) != ok {
 			t.Errorf("validateImageRef(%q) err = %v, want ok %v", ref, err, ok)
 		}
+	}
+}
+
+// A failed release's container is removed, but its last lines are kept so
+// its logs still say why it failed.
+func TestFailedReleaseKeepsContainerLogs(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	release := h.rt.HoldHealthChecks()
+	defer release()
+	rel, err := h.c.DeployImage(h.ctx, System, web, apitypes.DeployImageRequest{Image: "app:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitStatus(web, rel.Number, apitypes.ReleaseHealthChecking)
+	h.rt.AddLogs(h.ctr(web, 1), "listening on :3000", "panic: no DATABASE_URL")
+	h.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("connection refused") })
+	release()
+	if r := h.wait(web, rel.Number); r.Status != apitypes.ReleaseFailed || len(h.rt.Running()) != 0 {
+		t.Fatalf("release %s, running %v", r.Status, h.rt.Running())
+	}
+
+	stream, err := h.c.ServiceLogs(h.ctx, System, web, LogQuery{Release: rel.Number, Tail: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	err = stream(h.ctx, func() {}, func(l apitypes.LogLine) error { got = append(got, l.Text); return nil })
+	if err != nil || !slices.Equal(got, []string{"panic: no DATABASE_URL"}) {
+		t.Fatalf("logs = %v, %v", got, err)
 	}
 }
 

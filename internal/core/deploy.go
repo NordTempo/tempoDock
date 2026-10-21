@@ -297,6 +297,7 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	serverID := d.ss.env.ServerID
+	c.saveContainerLogs(ctx, serverID, d.rel.ID)
 	removeErr := c.removeReleaseContainers(ctx, serverID, d.rel.ID)
 	if removeErr != nil {
 		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, removeErr))

@@ -214,7 +214,7 @@ func registerStreams(s *Server, a huma.API) {
 	sse(s, a, huma.Operation{
 		OperationID: "service-logs", Method: http.MethodGet, Path: servicePathT + "/logs",
 		Summary: "Service logs", Tags: []string{"services"},
-		Description: "Output of the active release's container (or `release`), read from the runtime.",
+		Description: "Output of the active release's container (or `release`), read from the runtime. For a failed release, the last 200 lines its container wrote before it was removed.",
 	}, []string{"line"}, func(apitypes.LogLine) string { return "line" }, func(apitypes.LogLine) string { return "" },
 		func(ctx context.Context, actor core.Actor, in *struct {
 			ServicePath

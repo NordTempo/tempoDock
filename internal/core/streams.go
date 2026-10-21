@@ -3,9 +3,12 @@ package core
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -197,8 +200,65 @@ type LogQuery struct {
 	Since   time.Time
 }
 
+// savedLogLines is how much of a failed release's container output is kept.
+const savedLogLines = 200
+
+func (c *Core) containerLogPath(releaseID int64) string {
+	return filepath.Join(c.cfg.DataDir, "builds", strconv.FormatInt(releaseID, 10)+"-container.jsonl")
+}
+
+// saveContainerLogs keeps the last lines of a failed release's container
+// (one JSON LogLine per line) before the container is removed, so its logs
+// still explain why it failed. Best effort.
+func (c *Core) saveContainerLogs(ctx context.Context, serverID, releaseID int64) {
+	rt := c.runtime(serverID)
+	ctrs, err := rt.List(ctx)
+	if err != nil {
+		return
+	}
+	cs := ofRelease(ctrs, releaseID)
+	if len(cs) == 0 {
+		return
+	}
+	lines, err := rt.Logs(ctx, cs[0].ID, node.LogOptions{Tail: savedLogLines})
+	if err != nil {
+		c.log.Warn("save container logs", "release", releaseID, "err", err)
+		return
+	}
+	f, err := os.OpenFile(c.containerLogPath(releaseID), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		c.log.Warn("save container logs", "release", releaseID, "err", err)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	enc := json.NewEncoder(f)
+	for l := range lines {
+		_ = enc.Encode(apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text})
+	}
+}
+
+// readSavedLogs reads what saveContainerLogs kept; nil if nothing was.
+func readSavedLogs(path string) ([]apitypes.LogLine, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := []apitypes.LogLine{}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
+		var l apitypes.LogLine
+		if json.Unmarshal([]byte(line), &l) == nil {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
 // ServiceLogs streams a release container's output from the runtime. Logs
-// are read from Docker, never copied or stored by the platform.
+// are read from Docker; the platform only keeps the last lines of failed
+// releases' containers (saveContainerLogs), which are served instead.
 func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQuery) (Stream[apitypes.LogLine], error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "reading logs")
 	if err != nil {
@@ -215,6 +275,25 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 	}
 	if err != nil {
 		return nil, err
+	}
+	if saved, err := readSavedLogs(c.containerLogPath(rel.ID)); err != nil {
+		return nil, err
+	} else if saved != nil && rel.Status == string(apitypes.ReleaseFailed) {
+		if q.Tail > 0 && len(saved) > q.Tail {
+			saved = saved[len(saved)-q.Tail:]
+		}
+		return func(_ context.Context, ready func(), send func(apitypes.LogLine) error) error {
+			ready()
+			for _, l := range saved {
+				if l.Time.Before(q.Since) {
+					continue
+				}
+				if err := send(l); err != nil {
+					return err
+				}
+			}
+			return nil
+		}, nil
 	}
 	if rel.ContainerID == "" {
 		return nil, notFound("release %d of %s never started a container; see its build log", rel.Number, ss)
