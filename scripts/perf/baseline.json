@@ -1,0 +1,152 @@
+{
+  "about": "Recorded by `make perf-baseline` (scripts/perf). Commit it with the change that moved the numbers; see docs/performance.md.",
+  "go": "go1.27.3",
+  "binary_bytes": 33636512,
+  "calibration_ns": 292914.4642010431,
+  "benchmarks": {
+    "api.BenchmarkSSEWrite/batch=1": {
+      "ns_op": 131.4,
+      "bytes_op": 56,
+      "allocs_op": 2
+    },
+    "api.BenchmarkSSEWrite/batch=16": {
+      "ns_op": 319.1,
+      "bytes_op": 56,
+      "allocs_op": 2
+    },
+    "core.BenchmarkBusFanOut/subscribers=1": {
+      "ns_op": 1706,
+      "bytes_op": 1120,
+      "allocs_op": 5
+    },
+    "core.BenchmarkBusFanOut/subscribers=100": {
+      "ns_op": 16557,
+      "bytes_op": 16979,
+      "allocs_op": 104
+    },
+    "core.BenchmarkBusFanOut/subscribers=20": {
+      "ns_op": 4334,
+      "bytes_op": 4166,
+      "allocs_op": 24
+    },
+    "core.BenchmarkCoreReads/GetRelease": {
+      "ns_op": 58262,
+      "bytes_op": 15750,
+      "allocs_op": 346
+    },
+    "core.BenchmarkCoreReads/ListAudit/all,limit=100": {
+      "ns_op": 245384,
+      "bytes_op": 128192,
+      "allocs_op": 2454
+    },
+    "core.BenchmarkCoreReads/ListAudit/project,limit=100": {
+      "ns_op": 298393,
+      "bytes_op": 148008,
+      "allocs_op": 2496
+    },
+    "core.BenchmarkCoreReads/ListAudit/service,limit=100": {
+      "ns_op": 786487,
+      "bytes_op": 119248,
+      "allocs_op": 2128
+    },
+    "core.BenchmarkCoreReads/ListReleases/limit=100": {
+      "ns_op": 836374,
+      "bytes_op": 549631,
+      "allocs_op": 5115
+    },
+    "core.BenchmarkCoreReads/ListReleases/limit=20": {
+      "ns_op": 205264,
+      "bytes_op": 118577,
+      "allocs_op": 1188
+    },
+    "core.BenchmarkCoreReads/ListServices/services=20": {
+      "ns_op": 754985,
+      "bytes_op": 213576,
+      "allocs_op": 3795
+    },
+    "core.BenchmarkCoreReads/ListVariables/services=20": {
+      "ns_op": 199250,
+      "bytes_op": 97600,
+      "allocs_op": 1236
+    },
+    "core.BenchmarkCoreReads/Overview/services=60": {
+      "ns_op": 1578228,
+      "bytes_op": 711252,
+      "allocs_op": 8453
+    },
+    "core.BenchmarkCoreReads/Overview/services=60,parallel=8": {
+      "ns_op": 1071199,
+      "bytes_op": 711283,
+      "allocs_op": 8453
+    },
+    "core.BenchmarkCoreReads/Overview/services=60,staged": {
+      "ns_op": 3168108,
+      "bytes_op": 1245043,
+      "allocs_op": 17321
+    },
+    "core.BenchmarkCoreReads/ResolveVariables/services=20": {
+      "ns_op": 733118,
+      "bytes_op": 261022,
+      "allocs_op": 4399
+    },
+    "node/caddy.BenchmarkRender/routes=500,tls=false": {
+      "ns_op": 413042,
+      "bytes_op": 463244,
+      "allocs_op": 2360
+    },
+    "node/caddy.BenchmarkRender/routes=500,tls=true": {
+      "ns_op": 437484,
+      "bytes_op": 496439,
+      "allocs_op": 2385
+    },
+    "pack.BenchmarkWrite": {
+      "ns_op": 9333098,
+      "bytes_op": 2920071,
+      "allocs_op": 8297
+    },
+    "repoconfig.BenchmarkFromTar": {
+      "ns_op": 312796,
+      "bytes_op": 85476,
+      "allocs_op": 2635
+    },
+    "repoconfig.BenchmarkParse": {
+      "ns_op": 1317,
+      "bytes_op": 768,
+      "allocs_op": 15
+    },
+    "store.BenchmarkPreparedQuery/param": {
+      "ns_op": 39199,
+      "bytes_op": 6016,
+      "allocs_op": 228
+    },
+    "store.BenchmarkPreparedQuery/param,parallel=8": {
+      "ns_op": 17436,
+      "bytes_op": 6015,
+      "allocs_op": 228
+    },
+    "store.BenchmarkPreparedQuery/plus-param": {
+      "ns_op": 28832,
+      "bytes_op": 6016,
+      "allocs_op": 228
+    },
+    "store.BenchmarkPreparedQuery/plus-param,parallel=8": {
+      "ns_op": 7417,
+      "bytes_op": 6015,
+      "allocs_op": 228
+    },
+    "store.BenchmarkPreparedQuery/sqlc": {
+      "ns_op": 51719,
+      "bytes_op": 21984,
+      "allocs_op": 256
+    },
+    "store.BenchmarkPreparedQuery/sqlc,parallel=8": {
+      "ns_op": 30370,
+      "bytes_op": 21984,
+      "allocs_op": 256
+    }
+  },
+  "waivers": {
+    "API p95 GET /projects/big/overview (staged change)": "18-31 ms on an 8-core Ryzen. With a staged change the overview resolves every service's variables twice per environment (one ListDomainsByService query per service, internal/core/releases.go envResolver), and every `col = ?` query is re-prepared on each call, whose parser mallocs serialize on modernc's global libc lock under concurrency. Fix both (docs/performance.md, SQLite) and remove this waiver.",
+    "API p95 GET /projects/big/environments/production/changes (staged change)": "10-28 ms: the same variable resolution and re-prepare cost as the staged overview. Remove with that waiver."
+  }
+}
