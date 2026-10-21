@@ -14,6 +14,7 @@ containers and keep running when the daemon is stopped or upgraded.
 | Access | root (`sudo`) |
 | Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-m0)). Builds are capped at 2 GB by default |
 | Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) private |
+| cgroups | cgroup v2 (the default on current distributions) for per-service statistics. Docker's systemd and cgroupfs drivers both work |
 | Optional | Tailscale, so the API listens on the tailnet by default |
 
 ## Install
@@ -191,6 +192,59 @@ yourself:
 Routing works, but domain status stays `waiting_for_dns`: the check compares
 DNS answers with `public_ip`, and a tunnelled hostname resolves to
 Cloudflare. The marker-header check from ADR 0013 replaces this in M3.
+
+## Servers and placement
+
+The server `install.sh` sets up is the first server. It accepts both kinds
+of environment, production and non-production, so a single-server install
+needs no setup. More servers join as nodes (M3); then an admin decides which
+kinds go where:
+
+```sh
+dock server list                                       # status, version, accepted kinds, memory reserved
+dock server update vps --no-non-production              # production only from now on
+dock server update homelab --non-production --no-production
+dock server update vps-2 --disable-placement            # nothing new lands here
+dock server show homelab                                # what's placed there, current CPU, memory, disk
+```
+
+An environment's kind comes from its name (`production` is production,
+everything else non-production) unless `dock environment create --kind`
+says otherwise, and never changes. A project keeps all its environments of
+one kind on one server: the first one picks the online server accepting the
+kind with the most free memory (the memory limits of the services already
+placed there against the server's total; ties go to the server with fewer
+projects), and later ones follow it. Turning a kind off on a server only
+stops new placements; environments already there stay.
+
+To choose the server yourself, pin the project before its first
+environment of that kind exists:
+
+```sh
+dock project pin shop --kind production --server vps-2
+```
+
+When no server can take an environment, creating it fails and names the
+servers that accept the kind and why each is out (offline or disabled).
+Moving a placed project to another server is a later feature.
+
+Upgrading from a version with server roles keeps every environment where it
+is. A production-role server accepts production, a non-production one
+non-production; a lone server accepts both. Each project's placement per
+kind is taken from its environments; a project whose environments of one
+kind were already spread over servers keeps them there, and new ones follow
+the most recently created.
+
+### Statistics
+
+The daemon samples CPU, memory, disk and load of every server, and CPU,
+memory and IO of every running service, once a minute from `/proc` and the
+containers' cgroup files (no Docker API calls). Points are kept in SQLite:
+one per minute for 24 hours, one per 10 minutes for 7 days, pruned
+automatically. While someone watches a server or service live in the UI (or
+the `/stats/live` streams), it samples every 3 seconds, and stops when they
+leave. Service memory is the working set, the same number `docker stats`
+shows.
 
 ## Upgrading
 

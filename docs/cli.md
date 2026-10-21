@@ -26,8 +26,8 @@ What scripts, CI and agents can rely on. The goals behind these are in
   Color only when the stream is a terminal and `NO_COLOR` is unset.
 - The CLI only prompts when stdin is a terminal. Otherwise missing input is a
   usage error naming the flag to pass, and commands that ask for
-  confirmation (`discard`, `domain remove`, `service archive`, `project archive`)
-  need `--yes`.
+  confirmation (`discard`, `domain remove`, `service archive`, `project archive`,
+  `user delete`) need `--yes`.
 
 ## Exit codes
 
@@ -42,7 +42,7 @@ Stable; never renumbered.
 | 4 | `not_found` | The project, service, context, link, ... doesn't exist |
 | 5 | `conflict` | Already exists, or another operation (e.g. a deploy) holds the lock |
 | 6 | `deploy_failed` | Build or health check failed. Traffic was not switched |
-| 7 | `unreachable` | Could not reach the server (or its proxy answered 502/503/504) |
+| 7 | `unreachable` | Could not reach the server (or its proxy answered 502/503/504), or the server an environment is placed on is offline (`server_offline`) |
 | 8 | `incompatible` | CLI and server versions don't work together |
 
 API errors are RFC 7807 `application/problem+json` bodies. The exit code
@@ -119,8 +119,11 @@ keeps the linked service, so it means "this service, in staging".
 | `domain list [-w]\|add HOST [--redirect-to]\|generate\|remove HOST` | Domains; `list -w` adds the URL, last DNS check and what the hostname resolved to; `add` prints the DNS record and waits (`--timeout`, default 5m) for DNS and the certificate, then prints the URL |
 | `volume list\|add NAME PATH` | Volumes (staged) |
 | `service list\|create\|show\|update\|archive` | Services; `update` stages only the settings passed |
-| `project list [--all]\|create\|archive <name>`, `environment list\|create` | Projects and environments (`env` is variables). `project archive` (admin) archives every service in the project and hides it from `project list` (`--all` shows it) |
-| `token list\|create NAME --scope\|revoke ID`, `user list\|create`, `server list` | Administration |
+| `project list [--all]\|create\|archive <name>`, `environment list\|create [--kind]` | Projects and environments (`env` is variables). `project archive` (admin) archives every service in the project and hides it from `project list` (`--all` shows it). An environment's kind (production or non-production) defaults from its name and never changes |
+| `project pin <project> --kind production\|non-production --server NAME` | Admin: choose the server a project's environments of a kind go to, before any exist |
+| `server list`, `server show NAME`, `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement]` | Servers: status, version, accepted kinds, memory reserved, what's placed, current usage. `show` and `update` are admin |
+| `token list\|create NAME --scope\|revoke ID` | Tokens (admin) |
+| `user list\|create\|disable\|enable\|delete\|reset-password` | Users (admin). Users are named by email or id. `list` shows status, live sessions and usable tokens; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions |
 | `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
 | `serve`, `admin bootstrap\|caddy-config\|firewall apply\|remove` | Server side, run on the server with `--config`: the daemon, the first admin token, Caddy's initial config, and the app firewall (root; installed as `dock-firewall.service`) |
 

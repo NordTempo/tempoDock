@@ -57,8 +57,11 @@ access goes through the daemon's API, which enforces permissions.
   credential, which can be revoked from the control plane.
 - Nodes only execute commands from the control plane; they expose no API of
   their own to the network.
-- Production and non-production environments live on different servers, so a
-  runaway staging app or build can't starve production.
+- Each server accepts production, non-production or both. With production
+  servers that accept only production, a runaway staging app or build can't
+  starve production. (A lone server accepts both until a second one joins.)
+- Server and user administration (accepted kinds, pins, statistics,
+  password resets) needs an `admin` token that isn't limited to a project.
 
 ## Network isolation
 

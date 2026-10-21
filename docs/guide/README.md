@@ -18,7 +18,8 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | Term | Means |
 |---|---|
 | Project | A group of environments, e.g. `shop` |
-| Environment | `production`, `staging`, ...: a set of services on one server with a private network |
+| Environment | `production`, `staging`, ...: a set of services on one server with a private network. Its kind, production or non-production, decides which servers it may go to |
+| Server | A machine running apps. It accepts production and/or non-production environments; a project keeps each kind on one server |
 | Service | One container, built from source or a prebuilt image |
 | Release | An immutable image + resolved config. Every deploy, rollback, restart and config change creates one |
 | Variable | Shared (environment-level) or service-level, staged before it goes live |
@@ -33,9 +34,9 @@ Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit
 | Area | Commands |
 |---|---|
 | Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock context add\|list\|use\|current\|remove` |
-| Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|archive`, `dock environment list\|create`, `dock service list\|create\|show\|update\|archive` |
+| Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|archive\|pin`, `dock environment list\|create`, `dock service list\|create\|show\|update\|archive` |
 | Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|rollback`, `dock rollback`, `dock restart` |
 | Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock apply`, `dock discard`, `dock volume list\|add` |
 | Domains | `dock domain add\|list\|remove\|generate` |
-| Admin | `dock token list\|create\|revoke`, `dock user list\|create`, `dock audit`, `dock server list` |
+| Admin | `dock token list\|create\|revoke`, `dock user list\|create\|disable\|enable\|delete\|reset-password`, `dock audit`, `dock server list\|show\|update` |
 | On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config` |
