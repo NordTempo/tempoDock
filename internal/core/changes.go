@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -65,6 +66,9 @@ func (c *Core) DiscardChanges(ctx context.Context, a Actor, ref EnvRef, sel apit
 			return err
 		}
 		summary = fmt.Sprintf("discarded %d staged changes", before.Count)
+		if err := q.SetEnvironmentApplyError(ctx, store.SetEnvironmentApplyErrorParams{ApplyError: "", ID: es.env.ID}); err != nil {
+			return err
+		}
 		vars, err := q.ListVariables(ctx, es.env.ID)
 		if err != nil {
 			return err
@@ -265,19 +269,30 @@ func (c *Core) changeResult(ctx context.Context, a Actor, es envScope, apply boo
 	return out, err
 }
 
-// applied records what applyPending changed, per service ID.
+// applied records what applyPending made live.
 type applied struct {
-	count   int
-	envVars bool
-	// services maps service ID → whether its new image setting must be
-	// pulled (true) or the active image reused (false).
+	count int
+	// services maps the ID of each service whose own changes need a release
+	// to whether its new image setting must be pulled (true) or the active
+	// image reused (false).
 	services map[int64]bool
+	// shared are the environment-level variable changes and own each
+	// service's own changes, as releases carry them (see carried).
+	shared []carriedVar
+	own    map[int64]*carried
+}
+
+func (a *applied) ownOf(serviceID int64) *carried {
+	if a.own[serviceID] == nil {
+		a.own[serviceID] = &carried{}
+	}
+	return a.own[serviceID]
 }
 
 // applyPending makes staged changes live. With only set, it applies just
 // that service's own changes (variables, settings, volumes).
 func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int64) (applied, error) {
-	res := applied{services: map[int64]bool{}}
+	res := applied{services: map[int64]bool{}, own: map[int64]*carried{}}
 	vars, err := q.ListVariables(ctx, envID)
 	if err != nil {
 		return res, err
@@ -286,9 +301,11 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 		if v.Pending == "" || (only != nil && (v.ServiceID == nil || *v.ServiceID != *only)) {
 			continue
 		}
+		cv := carriedVar{ServiceID: v.ServiceID, Key: v.Key, Old: v.Value}
 		if v.Pending == "unset" {
 			err = q.DeleteVariable(ctx, v.ID)
 		} else {
+			cv.New = v.PendingValue
 			err = q.ApplyVariable(ctx, v.ID)
 		}
 		if err != nil {
@@ -296,8 +313,10 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 		}
 		res.count++
 		if v.ServiceID == nil {
-			res.envVars = true
+			res.shared = append(res.shared, cv)
 		} else {
+			own := res.ownOf(*v.ServiceID)
+			own.Variables = append(own.Variables, cv)
 			res.services[*v.ServiceID] = res.services[*v.ServiceID] || false
 		}
 	}
@@ -315,18 +334,14 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 		}
 		if next != nil {
 			live := settingsOf(s)
-			if _, err := q.UpdateService(ctx, store.UpdateServiceParams{
-				Image: next.Image, Port: int64(next.Port), HealthCheckPath: next.HealthCheckPath,
-				HealthCheckTimeoutSeconds: int64(next.HealthCheckTimeoutSeconds), StartCommand: next.StartCommand,
-				DockerfilePath: next.DockerfilePath, BuildCommand: next.BuildCommand,
-				MemoryMb: int64(next.MemoryMB), Cpus: next.CPUs, ID: s.ID,
-			}); err != nil {
+			if err := setSettings(ctx, q, s.ID, *next); err != nil {
 				return res, err
 			}
 			if err := q.SetPendingSettings(ctx, store.SetPendingSettingsParams{PendingSettings: nil, ID: s.ID}); err != nil {
 				return res, err
 			}
 			res.count += len(settingChanges(s.Name, live, *next))
+			res.ownOf(s.ID).Settings = &carriedSettings{Old: live, New: *next}
 			// Build-only settings take effect on the next build; no release.
 			buildOnly := live
 			buildOnly.DockerfilePath, buildOnly.BuildCommand = next.DockerfilePath, next.BuildCommand
@@ -344,6 +359,8 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 					return res, err
 				}
 				res.count++
+				own := res.ownOf(s.ID)
+				own.Volumes = append(own.Volumes, v.ID)
 				res.services[s.ID] = res.services[s.ID] || false
 			}
 		}
@@ -352,26 +369,41 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 }
 
 // applyEnv applies all staged changes in an environment atomically, then
-// starts a release for every affected service that has an active release.
+// starts a release for every affected service that has an active release:
+// those with changes of their own, and those whose resolved variables
+// change, through shared variables or references to another service's
+// (`${{postgres.DATABASE_URL}}`), however indirect.
 func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.AppliedChanges, error) {
 	out := apitypes.AppliedChanges{Releases: []apitypes.Release{}, Skipped: []string{}}
 	var res applied
+	affected := map[int64]bool{}
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
-		var err error
+		if err := q.SetEnvironmentApplyError(ctx, store.SetEnvironmentApplyErrorParams{ApplyError: "", ID: es.env.ID}); err != nil {
+			return err
+		}
+		before, _, err := c.resolveEnvs(ctx, q, es, false)
+		if err != nil {
+			return err
+		}
 		if res, err = applyPending(ctx, q, es.env.ID, nil); err != nil {
 			return err
 		}
-		// Resolve every affected service now, so a broken reference rolls
-		// the whole apply back instead of failing releases one by one.
-		svcs, err := q.ListServices(ctx, es.env.ID)
+		after, broken, err := c.resolveEnvs(ctx, q, es, false)
+		if err != nil {
+			return err
+		}
+		svcs, err := q.ListServices(ctx, es.env.ID) // by name
 		if err != nil {
 			return err
 		}
 		for _, s := range svcs {
-			if _, affected := res.services[s.ID]; s.ArchivedAt == nil && (affected || res.envVars) {
-				if _, err := c.resolveConfig(ctx, q, svcScope{es, s}, nil); err != nil {
+			if _, own := res.services[s.ID]; s.ArchivedAt == nil && (own || !maps.Equal(before[s.ID], after[s.ID])) {
+				// A broken reference rolls the whole apply back instead of
+				// failing releases one by one.
+				if err := broken[s.ID]; err != nil {
 					return err
 				}
+				affected[s.ID] = true
 			}
 		}
 		return nil
@@ -384,14 +416,13 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 		return out, err
 	}
 	for _, s := range svcs {
-		pull, affected := res.services[s.ID]
-		if s.ArchivedAt != nil || (!affected && !res.envVars) {
+		if !affected[s.ID] {
 			continue
 		}
 		ss := svcScope{es, s}
-		spec := releaseSpec{source: apitypes.SourceConfig}
-		if pull {
-			spec = releaseSpec{source: apitypes.SourceImage, imageRef: s.Image}
+		spec := releaseSpec{source: apitypes.SourceConfig, carried: res.carriedBy(s.ID)}
+		if res.services[s.ID] {
+			spec.source, spec.imageRef = apitypes.SourceImage, s.Image
 		}
 		rel, err := c.startRelease(ctx, a, ss, spec)
 		switch {
@@ -471,6 +502,40 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 		out.Variables = append(out.Variables, vc)
 	}
 	out.Count = len(out.Variables) + len(out.Settings) + len(out.Volumes)
+	out.Affected = []string{}
+	if out.Count == 0 {
+		return out, nil
+	}
+	env, err := q.GetEnvironment(ctx, es.env.ID) // es may predate an apply
+	if err != nil {
+		return out, err
+	}
+	out.LastFailure = env.ApplyError
+	// Services with changes of their own, plus those whose resolved
+	// variables would change (or stop resolving).
+	own := map[string]bool{}
+	for _, v := range out.Variables {
+		own[v.Service] = true
+	}
+	for _, s := range out.Settings {
+		own[s.Service] = true
+	}
+	for _, v := range out.Volumes {
+		own[v.Service] = true
+	}
+	live, _, err := c.resolveEnvs(ctx, q, es, false)
+	if err != nil {
+		return out, err
+	}
+	next, broken, err := c.resolveEnvs(ctx, q, es, true)
+	if err != nil {
+		return out, err
+	}
+	for _, s := range svcs { // by name
+		if s.ArchivedAt == nil && (own[s.Name] || broken[s.ID] != nil || !maps.Equal(live[s.ID], next[s.ID])) {
+			out.Affected = append(out.Affected, s.Name)
+		}
+	}
 	return out, nil
 }
 

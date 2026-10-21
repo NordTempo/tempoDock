@@ -333,6 +333,14 @@ type PendingChanges struct {
 	Variables   []VariableChange `json:"variables"`
 	Settings    []SettingChange  `json:"settings"`
 	Volumes     []VolumeAddition `json:"volumes"`
+	// Affected names the services whose config applying would change:
+	// those with changes of their own, and those whose resolved variables
+	// change through shared variables or references to another service's.
+	// The ones with an active release get a config release.
+	Affected []string `json:"affected"`
+	// LastFailure explains why changes are staged again: the release that
+	// carried them failed, so they never went live.
+	LastFailure string `json:"last_failure,omitempty"`
 }
 
 // CountFor counts the staged changes that belong to one service (its own

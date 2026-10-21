@@ -34,12 +34,13 @@ type Domain struct {
 }
 
 type Environment struct {
-	ID        int64
-	ProjectID int64
-	Name      string
-	ServerID  int64
-	CreatedAt time.Time
-	Network   string
+	ID         int64
+	ProjectID  int64
+	Name       string
+	ServerID   int64
+	CreatedAt  time.Time
+	Network    string
+	ApplyError string
 }
 
 type Project struct {
@@ -65,6 +66,7 @@ type Release struct {
 	CreatedBy   string
 	CreatedAt   time.Time
 	FinishedAt  *time.Time
+	Carried     string
 }
 
 type ReleaseEvent struct {

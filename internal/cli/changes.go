@@ -174,6 +174,12 @@ func printChanges(g *globals, p apitypes.PendingChanges, reveal bool) error {
 	if err := t.Flush(); err != nil {
 		return err
 	}
+	if len(p.Affected) > 0 {
+		_, _ = fmt.Fprintf(g.io.Out, "Applying redeploys: %s\n", strings.Join(p.Affected, ", "))
+	}
+	if p.LastFailure != "" {
+		g.io.Warnf("Staged again: %s", p.LastFailure)
+	}
 	g.io.Progressf("Apply with `dock apply`, or drop them with `dock discard`.")
 	return nil
 }

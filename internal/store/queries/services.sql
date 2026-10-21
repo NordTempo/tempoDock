@@ -84,3 +84,20 @@ SELECT volumes.* FROM volumes
 JOIN services ON services.id = volumes.service_id
 WHERE services.environment_id = ?
 ORDER BY volumes.service_id, volumes.name;
+
+-- name: RestoreVariable :exec
+-- Puts back a variable's live value and staged change (restaging the changes
+-- of a failed release).
+UPDATE variables SET value = ?, pending = ?, pending_value = ?, updated_at = ? WHERE id = ?;
+
+-- name: InsertRestoredVariable :exec
+-- Re-creates a variable an applied unset deleted, with the unset staged.
+INSERT INTO variables (environment_id, service_id, key, value, pending, updated_at)
+VALUES (?, ?, ?, ?, 'unset', ?);
+
+-- name: UnapplyVolume :exec
+-- Stages an applied volume again (its release failed). Never deletes it.
+UPDATE volumes SET pending = 1 WHERE id = ? AND pending = 0;
+
+-- name: SetEnvironmentApplyError :exec
+UPDATE environments SET apply_error = ? WHERE id = ?;

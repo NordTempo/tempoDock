@@ -95,9 +95,24 @@ The UI's per-row undo does the same, for variables, settings and volumes
 (API: `POST .../changes/discard` with a selection, see [API](api.md)).
 
 Applying is one transaction, then one `config` release per affected running
-service, each health-checked like any deploy. Services that aren't running
+service, each health-checked like any deploy. Affected means a service with
+changes of its own, or one whose resolved variables change: every service
+for a shared variable, and every service referencing a changed variable,
+however indirectly (changing `postgres`'s `DATABASE_URL` also redeploys the
+`api` that uses `${{postgres.DATABASE_URL}}`). `dock changes` lists them
+under "Applying redeploys" (API: `affected`). Services that aren't running
 pick the change up on their first deploy. A service already deploying is
 listed under `skipped` and picks it up on its next release.
+
+**If a release fails, its changes are staged again.** The values in effect
+are those of the active release, so a failed release's variable, setting
+and volume changes go back to staged (live values back to what is running),
+and `dock changes` shows them with the failure (API: `last_failure`). Fix
+them and apply again, or discard them. Nothing broken ships with the next
+unrelated deploy. This covers a service's own changes and the shared
+variables applied with it; a shared variable goes back to staged even if
+other services already went live with it. A change made again since the
+failed release is left as it is.
 
 Setting a variable back to its live value un-stages it.
 

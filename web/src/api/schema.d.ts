@@ -1021,9 +1021,11 @@ export interface components {
             scope: "read" | "deploy" | "admin";
         };
         PendingChanges: {
+            affected: string[] | null;
             /** Format: int64 */
             count: number;
             environment: string;
+            last_failure?: string;
             project: string;
             settings: components["schemas"]["SettingChange"][] | null;
             variables: components["schemas"]["VariableChange"][] | null;

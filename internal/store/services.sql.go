@@ -238,6 +238,31 @@ func (q *Queries) GetVariable(ctx context.Context, arg GetVariableParams) (Varia
 	return i, err
 }
 
+const insertRestoredVariable = `-- name: InsertRestoredVariable :exec
+INSERT INTO variables (environment_id, service_id, key, value, pending, updated_at)
+VALUES (?, ?, ?, ?, 'unset', ?)
+`
+
+type InsertRestoredVariableParams struct {
+	EnvironmentID int64
+	ServiceID     *int64
+	Key           string
+	Value         []byte
+	UpdatedAt     time.Time
+}
+
+// Re-creates a variable an applied unset deleted, with the unset staged.
+func (q *Queries) InsertRestoredVariable(ctx context.Context, arg InsertRestoredVariableParams) error {
+	_, err := q.exec(ctx, q.insertRestoredVariableStmt, insertRestoredVariable,
+		arg.EnvironmentID,
+		arg.ServiceID,
+		arg.Key,
+		arg.Value,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const insertVariable = `-- name: InsertVariable :exec
 INSERT INTO variables (environment_id, service_id, key, pending, pending_value, updated_at)
 VALUES (?, ?, ?, 'set', ?, ?)
@@ -504,6 +529,45 @@ func (q *Queries) ListVolumes(ctx context.Context, serviceID int64) ([]Volume, e
 	return items, nil
 }
 
+const restoreVariable = `-- name: RestoreVariable :exec
+UPDATE variables SET value = ?, pending = ?, pending_value = ?, updated_at = ? WHERE id = ?
+`
+
+type RestoreVariableParams struct {
+	Value        []byte
+	Pending      string
+	PendingValue []byte
+	UpdatedAt    time.Time
+	ID           int64
+}
+
+// Puts back a variable's live value and staged change (restaging the changes
+// of a failed release).
+func (q *Queries) RestoreVariable(ctx context.Context, arg RestoreVariableParams) error {
+	_, err := q.exec(ctx, q.restoreVariableStmt, restoreVariable,
+		arg.Value,
+		arg.Pending,
+		arg.PendingValue,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const setEnvironmentApplyError = `-- name: SetEnvironmentApplyError :exec
+UPDATE environments SET apply_error = ? WHERE id = ?
+`
+
+type SetEnvironmentApplyErrorParams struct {
+	ApplyError string
+	ID         int64
+}
+
+func (q *Queries) SetEnvironmentApplyError(ctx context.Context, arg SetEnvironmentApplyErrorParams) error {
+	_, err := q.exec(ctx, q.setEnvironmentApplyErrorStmt, setEnvironmentApplyError, arg.ApplyError, arg.ID)
+	return err
+}
+
 const setPendingSettings = `-- name: SetPendingSettings :exec
 UPDATE services SET pending_settings = ? WHERE id = ?
 `
@@ -536,6 +600,16 @@ func (q *Queries) SetVariablePending(ctx context.Context, arg SetVariablePending
 		arg.UpdatedAt,
 		arg.ID,
 	)
+	return err
+}
+
+const unapplyVolume = `-- name: UnapplyVolume :exec
+UPDATE volumes SET pending = 1 WHERE id = ? AND pending = 0
+`
+
+// Stages an applied volume again (its release failed). Never deletes it.
+func (q *Queries) UnapplyVolume(ctx context.Context, id int64) error {
+	_, err := q.exec(ctx, q.unapplyVolumeStmt, unapplyVolume, id)
 	return err
 }
 

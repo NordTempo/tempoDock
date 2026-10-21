@@ -792,11 +792,23 @@
       "PendingChanges": {
         "additionalProperties": false,
         "properties": {
+          "affected": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "count": {
             "format": "int64",
             "type": "integer"
           },
           "environment": {
+            "type": "string"
+          },
+          "last_failure": {
             "type": "string"
           },
           "project": {
@@ -836,7 +848,8 @@
           "count",
           "variables",
           "settings",
-          "volumes"
+          "volumes",
+          "affected"
         ],
         "type": "object"
       },

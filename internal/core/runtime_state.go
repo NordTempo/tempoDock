@@ -147,6 +147,7 @@ func (c *Core) recover(ctx context.Context) error {
 			return err
 		}
 		c.releaseEvent(ctx, ss, r, fmt.Sprintf("Release %d failed: %s", r.Number, msg))
+		c.restage(ctx, ss, r, msg)
 		interrupted = append(interrupted, ss)
 	}
 	if err := c.sweepRetired(ctx); err != nil {

@@ -314,6 +314,9 @@ func (d *deployment) fail(ctx context.Context, err error) {
 			d.event(ctx, fmt.Sprintf("Not starting release %d again while the new container may still be running; redeploy or roll back once it is gone", d.old.Number))
 		}
 	}
+	// Before the release reads as failed, so "failed" means the changes it
+	// carried are staged again.
+	c.restage(ctx, d.ss, d.rel, msg)
 	if err := c.store.FailRelease(ctx, store.FailReleaseParams{Error: msg, ErrorCode: string(code), FinishedAt: ptr(now()), ID: d.rel.ID}); err != nil {
 		c.log.Error("mark release failed", "release", d.rel.ID, "err", err)
 	}
