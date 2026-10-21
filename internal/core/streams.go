@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,8 @@ import (
 // ready once it is live (subscribed to the event bus, or attached to the
 // runtime) and before its first send, so nothing published after a client
 // sees "ready" is missed. An error before ready means nothing was sent.
-type Stream[T any] func(ctx context.Context, ready func(), send func(T) error) error
+// Each send delivers one or more items, written to the client together.
+type Stream[T any] func(ctx context.Context, ready func(), send func(...T) error) error
 
 // EventFilter narrows the event stream. Environment needs Project, and
 // Service needs Environment.
@@ -33,8 +35,9 @@ type EventFilter struct {
 
 // Events streams live events the actor may see. When the client is too
 // slow and events were dropped, it receives an EventLagged event and
-// should refetch what it shows.
-func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[apitypes.Event], error) {
+// should refetch what it shows. Events queued while the client was being
+// written to are sent together.
+func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveEvent], error) {
 	if err := a.require(apitypes.ScopeRead, "following events"); err != nil {
 		return nil, err
 	}
@@ -60,7 +63,7 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[apity
 			(f.Environment == "" || e.ev.Environment == f.Environment) &&
 			(f.Service == "" || e.ev.Service == f.Service)
 	}
-	return func(ctx context.Context, ready func(), send func(apitypes.Event) error) error {
+	return func(ctx context.Context, ready func(), send func(...LiveEvent) error) error {
 		sub := c.bus.subscribe(match)
 		defer sub.close()
 		ready()
@@ -71,12 +74,7 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[apity
 			case <-c.ctx.Done():
 				return nil
 			case ev := <-sub.ch:
-				if sub.takeLagged() {
-					if err := send(apitypes.Event{Type: apitypes.EventLagged, Time: now()}); err != nil {
-						return err
-					}
-				}
-				if err := send(ev); err != nil {
+				if err := send(sub.drain(ev)...); err != nil {
 					return err
 				}
 			}
@@ -115,7 +113,7 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 	building := func(status string) bool {
 		return status == string(apitypes.ReleaseQueued) || status == string(apitypes.ReleaseBuilding)
 	}
-	return func(ctx context.Context, ready func(), send func(apitypes.BuildLogLine) error) error {
+	return func(ctx context.Context, ready func(), send func(...apitypes.BuildLogLine) error) error {
 		// Subscribe before reading the file so no line falls in between;
 		// line numbers (Seq) drop the duplicates.
 		sub := c.bus.subscribe(func(e busEvent) bool {
@@ -131,11 +129,17 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 			if err != nil {
 				return err
 			}
-			for ; sent < len(lines); sent++ {
-				if err := send(apitypes.BuildLogLine{ReleaseNumber: number, Seq: sent, Text: lines[sent]}); err != nil {
-					return err
-				}
+			if sent >= len(lines) {
+				return nil
 			}
+			batch := make([]apitypes.BuildLogLine, 0, len(lines)-sent)
+			for seq := sent; seq < len(lines); seq++ {
+				batch = append(batch, apitypes.BuildLogLine{ReleaseNumber: number, Seq: seq, Text: lines[seq]})
+			}
+			if err := send(batch...); err != nil {
+				return err
+			}
+			sent = len(lines)
 			return nil
 		}
 		if err := catchUp(); err != nil {
@@ -282,23 +286,19 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 		if q.Tail > 0 && len(saved) > q.Tail {
 			saved = saved[len(saved)-q.Tail:]
 		}
-		return func(_ context.Context, ready func(), send func(apitypes.LogLine) error) error {
+		return func(_ context.Context, ready func(), send func(...apitypes.LogLine) error) error {
 			ready()
-			for _, l := range saved {
-				if l.Time.Before(q.Since) {
-					continue
-				}
-				if err := send(l); err != nil {
-					return err
-				}
+			lines := slices.DeleteFunc(saved, func(l apitypes.LogLine) bool { return l.Time.Before(q.Since) })
+			if len(lines) == 0 {
+				return nil
 			}
-			return nil
+			return send(lines...)
 		}, nil
 	}
 	if rel.ContainerID == "" {
 		return nil, notFound("release %d of %s never started a container; see its build log", rel.Number, ss)
 	}
-	return func(ctx context.Context, ready func(), send func(apitypes.LogLine) error) error {
+	return func(ctx context.Context, ready func(), send func(...apitypes.LogLine) error) error {
 		lines, err := c.runtime(ss.env.ServerID).Logs(ctx, rel.ContainerID, node.LogOptions{Follow: q.Follow, Tail: q.Tail, Since: q.Since})
 		if errors.Is(err, node.ErrNotFound) {
 			return notFound("the container of release %d of %s is gone", rel.Number, ss)

@@ -192,7 +192,12 @@ func TestFailedReleaseKeepsContainerLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []string
-	err = stream(h.ctx, func() {}, func(l apitypes.LogLine) error { got = append(got, l.Text); return nil })
+	err = stream(h.ctx, func() {}, func(ls ...apitypes.LogLine) error {
+		for _, l := range ls {
+			got = append(got, l.Text)
+		}
+		return nil
+	})
 	if err != nil || !slices.Equal(got, []string{"panic: no DATABASE_URL"}) {
 		t.Fatalf("logs = %v, %v", got, err)
 	}
