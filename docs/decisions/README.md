@@ -23,6 +23,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0013](0013-homelab-ingress-cloudflare-tunnel.md) | Homelab ingress through Cloudflare Tunnel | accepted |
 | [0014](0014-node-protocol.md) | Node protocol: reverse HTTP/2 over pinned TLS | accepted |
 | [0015](0015-server-pools-and-placement.md) | Server pools, placement and the admin dashboard | accepted |
+| [0016](0016-database-panel.md) | Database panel: native data browsing, querying and editing | proposed |
 
 ## Template
 
