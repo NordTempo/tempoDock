@@ -1,131 +1,183 @@
-import type { ComponentProps, ReactNode } from "react";
-import type { Tone } from "./status";
+import { type ComponentProps, type ReactNode, useState } from "react";
+import type { AuditEvent } from "../data/types";
+import { type GlyphChar, type State, toneText } from "./status";
 
-// Tailwind needs whole class names, so tones map to literal classes.
-export const toneText: Record<Tone, string> = {
-  ok: "text-ok",
-  bad: "text-bad",
-  warn: "text-warn",
-  run: "text-run",
-  off: "text-off",
-};
-
-const toneBg: Record<Tone, string> = {
-  ok: "bg-ok",
-  bad: "bg-bad",
-  warn: "bg-warn",
-  run: "bg-run",
-  off: "bg-off",
-};
-
-/** Static status square. Hollow means "not started". */
-export function Glyph({ tone, hollow }: { tone: Tone; hollow?: boolean }) {
-  return (
-    <i
-      aria-hidden
-      className={`mr-[7px] inline-block size-2 shrink-0 ${
-        hollow ? "border border-off" : toneBg[tone]
-      }`}
-    />
-  );
+/** A status glyph. ◐ is a static CSS half circle, everything else text. */
+export function Glyph({ char }: { char: GlyphChar }) {
+  if (char === "◐") return <span className="pi" aria-hidden />;
+  return <span aria-hidden>{char}</span>;
 }
 
-/** Glyph plus label, the label colored only when it needs attention. */
-export function Status({
-  tone,
-  label,
-  colorLabel = tone === "bad" || tone === "warn",
+/** Glyph and label in the state's color: "● running". */
+export function StateText({
+  state,
+  className = "",
 }: {
-  tone: Tone;
-  label: string;
-  colorLabel?: boolean;
+  state: State;
+  className?: string;
 }) {
   return (
-    <span className="inline-flex items-baseline">
-      <Glyph tone={tone} />
-      <span className={colorLabel ? toneText[tone] : undefined}>{label}</span>
+    <span className={`${toneText[state.tone]} ${className}`}>
+      {state.glyph && (
+        <>
+          <Glyph char={state.glyph} />{" "}
+        </>
+      )}
+      {state.label}
     </span>
   );
 }
+
+/** Who did something: ◇ for tokens (agents, CI), ○ for people. */
+export function Actor({
+  name,
+  kind,
+}: {
+  name: string;
+  kind: AuditEvent["actor_kind"];
+}) {
+  switch (kind) {
+    case "token":
+      return <span className="font-mono text-prog">◇ {name}</span>;
+    case "user":
+      return <span>○ {name}</span>;
+    case "system":
+      return <span className="text-mut">{name}</span>;
+  }
+}
+
+/** A release's author, which is a token or a user by name only. */
+export const actorKind = (name: string): AuditEvent["actor_kind"] =>
+  name.includes("@") ? "user" : name === "system" ? "system" : "token";
+
+type ButtonProps = ComponentProps<"button"> & {
+  primary?: boolean;
+  small?: boolean;
+  danger?: boolean;
+};
 
 export function Button({
   primary,
+  small,
+  danger,
   className = "",
   ...props
-}: ComponentProps<"button"> & { primary?: boolean }) {
+}: ButtonProps) {
   return (
     <button
       type="button"
-      className={`border px-2.5 py-[3px] disabled:border-line2! disabled:text-faint ${
-        primary ? "border-white" : "border-line2 hover:border-[#444]"
-      } ${className}`}
+      className={`btn ${primary ? "pri" : ""} ${small ? "sm" : ""} ${danger ? "danger" : ""} ${className}`}
       {...props}
     />
   );
 }
 
-/** Text-only action, dim until hovered. */
-export function Action({ className = "", ...props }: ComponentProps<"button">) {
+/** An action button with its `dock` CLI equivalent shown on hover. */
+export function Act({ cli, ...props }: ButtonProps & { cli: string }) {
   return (
-    <button
-      type="button"
-      className={`text-dim hover:text-white disabled:text-faint ${className}`}
-      {...props}
-    />
-  );
-}
-
-export function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="border border-line2 px-1 font-mono text-2xs text-dim">
-      {children}
-    </kbd>
-  );
-}
-
-/** Section heading with an optional dim note and right-aligned actions. */
-export function Heading({
-  children,
-  note,
-  actions,
-  id,
-}: {
-  children: ReactNode;
-  note?: ReactNode;
-  actions?: ReactNode;
-  id?: string;
-}) {
-  return (
-    <h2
-      id={id}
-      className="flex items-baseline gap-3 pt-[18px] pb-1.5 font-semibold"
-    >
-      {children}
-      {note && <span className="font-normal text-dim">{note}</span>}
-      {actions && (
-        <span className="ml-auto flex gap-4 font-normal">{actions}</span>
-      )}
-    </h2>
-  );
-}
-
-/** Usage bar for memory and disk; turns yellow above 80%. */
-export function Bar({ fraction }: { fraction: number }) {
-  const clamped = Math.min(1, Math.max(0, fraction));
-  return (
-    <span className="relative ml-1.5 inline-block h-[3px] w-[46px] bg-[#222] align-middle">
-      <i
-        className={`absolute inset-y-0 left-0 ${clamped >= 0.8 ? "bg-warn" : "bg-[#bbb]"}`}
-        style={{ width: `${clamped * 100}%` }}
-      />
+    <span className="act">
+      <Button {...props} />
+      <span className="cli">{cli}</span>
     </span>
   );
 }
 
-export function ErrorText({ error }: { error: Error | null }) {
-  if (!error) return null;
-  return <span className="text-xs text-bad">{error.message}</span>;
+/** Copies text to the clipboard and says so for a moment. */
+export function CopyButton({
+  text,
+  label = "Copy",
+  primary,
+}: {
+  text: string;
+  label?: string;
+  primary?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      small
+      primary={primary}
+      aria-label={`${label}: ${text}`}
+      onClick={async () => {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? "Copied" : label}
+    </Button>
+  );
 }
 
-export const inputClass =
-  "border-b border-line2 bg-black px-0 py-0.5 outline-none focus:border-white placeholder:text-faint";
+export function ErrorText({ error }: { error: Error | null | undefined }) {
+  if (!error) return null;
+  return <span className="text-fail">{error.message}</span>;
+}
+
+/** The centered content column every page but the overview uses. */
+export function Page({
+  width = "max-w-[1240px]",
+  gap = "gap-[22px]",
+  children,
+}: {
+  width?: string;
+  gap?: string;
+  children: ReactNode;
+}) {
+  return (
+    <main className={`mx-auto flex w-full flex-1 flex-col p-5 ${width} ${gap}`}>
+      {children}
+    </main>
+  );
+}
+
+/** Page title with its context next to it and actions on the right. */
+export function TitleRow({
+  title,
+  context,
+  actions,
+}: {
+  title: ReactNode;
+  context?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <h1 className="text-xl font-semibold">{title}</h1>
+      {context && <span className="text-mut">{context}</span>}
+      {actions && (
+        <div className="ml-auto flex flex-wrap items-start gap-2.5">
+          {actions}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Section heading with a muted aside and optional right-aligned links. */
+export function SectionHead({
+  id,
+  children,
+  aside,
+  right,
+}: {
+  id?: string;
+  children: ReactNode;
+  aside?: ReactNode;
+  right?: ReactNode;
+}) {
+  return (
+    <div className="mb-1 flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
+      <h2 id={id} className="text-md font-semibold">
+        {children}
+      </h2>
+      {aside && <span className="text-mut">{aside}</span>}
+      {right && <span className="ml-auto flex gap-4">{right}</span>}
+    </div>
+  );
+}
+
+/** A table that scrolls sideways instead of squeezing on narrow screens. */
+export function Scroll({ children }: { children: ReactNode }) {
+  return <div className="overflow-x-auto">{children}</div>;
+}

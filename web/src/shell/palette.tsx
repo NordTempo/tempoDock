@@ -8,46 +8,75 @@ import {
   useRef,
   useState,
 } from "react";
-import { ErrorText, Kbd } from "../ui/kit";
-import { type Match, matchCommands, useCommands } from "./commands";
-import { useKeydown } from "./keys";
+import { ErrorText } from "../ui/kit";
+import { toneText } from "../ui/status";
+import {
+  type Command,
+  type Match,
+  matchCommands,
+  recentIds,
+  rememberCommand,
+  useCommands,
+} from "./commands";
+import { modKey, useKeydown } from "./keys";
 import { useCurrentContext } from "./location";
 
-const PaletteContext = createContext<() => void>(() => {});
+/** Opens the command palette, optionally with a query typed in. */
+const PaletteContext = createContext<(query?: string) => void>(() => {});
 
-/** Opens the command palette. */
 export const usePalette = () => use(PaletteContext);
 
 /** Owns the palette's open state and the global Cmd+K / Ctrl+K binding. */
 export function PaletteProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState<string | null>(null);
   useKeydown((event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
-      setOpen((o) => !o);
+      setQuery((q) => (q === null ? "" : null));
     }
   });
   return (
-    <PaletteContext value={() => setOpen(true)}>
+    <PaletteContext value={(q = "") => setQuery(q)}>
       {children}
-      {open && <Palette onClose={() => setOpen(false)} />}
+      {query !== null && (
+        <Palette initial={query} onClose={() => setQuery(null)} />
+      )}
     </PaletteContext>
   );
 }
 
-function Palette({ onClose }: { onClose: () => void }) {
+type Row = Match & { group: string };
+
+function Palette({
+  initial,
+  onClose,
+}: {
+  initial: string;
+  onClose: () => void;
+}) {
   const commands = useCommands();
   const here = useCurrentContext();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initial);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState<Error | null>(null);
   const [busy, setBusy] = useState(false);
   const list = useRef<HTMLDivElement>(null);
-  const matches = useMemo(
-    () => matchCommands(commands, query),
-    [commands, query],
-  );
-  const selected = matches[Math.min(index, matches.length - 1)];
+
+  const rows = useMemo((): Row[] => {
+    const matches = matchCommands(commands, query).map((m) => ({
+      ...m,
+      group: m.command.group,
+    }));
+    if (query) return matches;
+    // With nothing typed, the last few commands come first.
+    const recent = recentIds().flatMap((id) => {
+      const command = commands.find((c) => c.id === id);
+      return command ? [{ command, score: 0, group: "Recent" }] : [];
+    });
+    const seen = new Set(recent.map((r) => r.command.id));
+    return [...recent, ...matches.filter((m) => !seen.has(m.command.id))];
+  }, [commands, query]);
+  const selected = rows[Math.min(index, rows.length - 1)];
 
   // Hand focus back to wherever it was when the palette opened.
   useEffect(() => {
@@ -63,12 +92,13 @@ function Palette({ onClose }: { onClose: () => void }) {
       ?.scrollIntoView({ block: "nearest" });
   });
 
-  async function run(match: Match | undefined) {
-    if (!match || busy) return;
+  async function run(command: Command | undefined) {
+    if (!command || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await match.command.run();
+      rememberCommand(command.id);
+      await command.run();
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e : new Error(String(e)));
@@ -79,41 +109,44 @@ function Palette({ onClose }: { onClose: () => void }) {
   function onKeyDown(event: KeyboardEvent) {
     const move = (delta: number) => {
       event.preventDefault();
-      setIndex(
-        (i) => (i + delta + matches.length) % Math.max(1, matches.length),
-      );
+      setIndex((i) => (i + delta + rows.length) % Math.max(1, rows.length));
     };
     if (event.key === "ArrowDown") move(1);
     else if (event.key === "ArrowUp") move(-1);
     else if (event.key === "Enter") {
       event.preventDefault();
-      run(selected);
+      run(selected?.command);
     } else if (event.key === "Escape") {
       event.preventDefault();
       onClose();
+    } else if (
+      (event.metaKey || event.ctrlKey) &&
+      event.key === "c" &&
+      selected?.command.cli.startsWith("dock") &&
+      !window.getSelection()?.toString()
+    ) {
+      event.preventDefault();
+      navigator.clipboard.writeText(selected.command.cli);
     }
   }
 
-  const contextLabel = [here.project, here.environment]
-    .filter(Boolean)
-    .join(" / ");
-
   return (
-    <>
-      <div
-        className="fixed inset-0 z-20 bg-black/70"
-        onClick={onClose}
-        aria-hidden
-      />
+    // biome-ignore lint/a11y/noStaticElementInteractions: a click outside the dialog closes it; Escape does too
+    <div
+      className="fixed inset-0 z-30 flex items-start justify-center bg-black/70 px-4 pt-24"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
         role="dialog"
         aria-modal
         aria-label="Command palette"
-        className="fixed top-[12vh] left-1/2 z-30 w-[640px] max-w-[calc(100vw-32px)] -translate-x-1/2 border border-[#3a3a3a] bg-black"
+        className="w-full max-w-[720px] overflow-hidden rounded-md border border-field bg-hover"
         onKeyDown={onKeyDown}
       >
-        <div className="flex items-center gap-2.5 border-b border-line2 px-3.5 py-3 text-lg">
-          <span className="text-dim">›</span>
+        <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5">
+          <span className="font-mono text-mut">›</span>
           <input
             // biome-ignore lint/a11y/noAutofocus: the palette exists to be typed into
             autoFocus
@@ -122,111 +155,118 @@ function Palette({ onClose }: { onClose: () => void }) {
               setQuery(e.target.value);
               setIndex(0);
             }}
-            placeholder="Type a command or a name"
-            aria-label="Command"
+            placeholder="Search or run"
+            aria-label="Search or run"
             role="combobox"
             aria-expanded
             aria-controls="palette-list"
-            className="min-w-0 flex-1 bg-black outline-none placeholder:text-faint"
+            className="min-w-0 flex-1 bg-transparent font-mono text-[15px] outline-none"
           />
-          <span className="text-xs text-dim">{contextLabel}</span>
+          {here.project && (
+            <span className="text-xs text-mut">in {here.project}</span>
+          )}
         </div>
 
         <div
           ref={list}
           id="palette-list"
           role="listbox"
-          className="max-h-[52vh] overflow-auto pb-1"
+          aria-label="Results"
+          className="max-h-[56vh] overflow-auto pb-1"
         >
-          {matches.length === 0 && (
-            <div className="px-3.5 py-3 text-dim">No matches</div>
+          {rows.length === 0 && (
+            <div className="px-4 py-3 text-mut">No matches</div>
           )}
-          {matches.map((match, i) => {
-            const groupStart =
-              matches[i - 1]?.command.group !== match.command.group;
-            const isSelected = match === selected;
-            return (
-              <div key={match.command.id}>
-                {groupStart && (
-                  <div className="px-3.5 pt-2 pb-0.5 text-2xs tracking-[.06em] text-dim uppercase">
-                    {match.command.group}
-                  </div>
-                )}
-                {/* biome-ignore lint/a11y/useKeyWithClickEvents: keys go through the combobox input */}
-                <div
-                  role="option"
-                  aria-selected={isSelected}
-                  tabIndex={-1}
-                  onMouseMove={() => setIndex(i)}
-                  onClick={() => run(match)}
-                  className={`grid cursor-pointer grid-cols-[1fr_auto] gap-3 px-3.5 py-[5px] ${
-                    isSelected ? "bg-sel shadow-[inset_2px_0_0_#fff]" : ""
-                  }`}
-                >
-                  <span className="truncate">
-                    <Highlight
-                      text={match.command.label}
-                      ranges={match.ranges}
-                    />
-                  </span>
-                  <span className="text-dim">
-                    {isSelected ? <Kbd>↵</Kbd> : match.command.hint}
-                  </span>
+          {rows.map((row, i) => (
+            <div key={`${row.group}:${row.command.id}`}>
+              {rows[i - 1]?.group !== row.group && (
+                <div className="px-4 pt-2.5 pb-1 text-xs text-mut">
+                  {row.group}
                 </div>
-              </div>
-            );
-          })}
+              )}
+              <Item
+                command={row.command}
+                selected={row === selected}
+                onHover={() => setIndex(i)}
+                onRun={() => run(row.command)}
+              />
+            </div>
+          ))}
         </div>
 
-        <div className="flex gap-4 border-t border-line2 px-3.5 py-2 text-xs text-dim">
+        <div className="flex flex-wrap gap-x-[18px] gap-y-1.5 border-t border-line px-4 py-2.5 text-xs text-mut">
           <span>
-            <Kbd>↑↓</Kbd> move
+            <kbd>↑</kbd> <kbd>↓</kbd> move
           </span>
           <span>
-            <Kbd>↵</Kbd> run
+            <kbd>↵</kbd> run
           </span>
           <span>
-            <Kbd>esc</Kbd> close
+            <kbd>{modKey.trim()}C</kbd> copy command
           </span>
-          <span className="flex-1" />
-          {error ? (
-            <ErrorText error={error} />
-          ) : (
-            selected && (
-              <span className="truncate font-mono">
-                equivalent: {selected.command.cli}
-              </span>
-            )
-          )}
+          <ErrorText error={error} />
+          <span className="ml-auto">
+            <kbd>esc</kbd> close
+          </span>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
-function Highlight({
-  text,
-  ranges,
+function Item({
+  command,
+  selected,
+  onHover,
+  onRun,
 }: {
-  text: string;
-  ranges: Array<[number, number]>;
+  command: Command;
+  selected: boolean;
+  onHover: () => void;
+  onRun: () => void;
 }) {
-  if (ranges.length === 0) return text;
-  const marked = new Array<boolean>(text.length).fill(false);
-  for (const [from, to] of ranges) marked.fill(true, from, to);
-  const parts: Array<{ text: string; marked: boolean }> = [];
-  for (let i = 0; i < text.length; i++) {
-    const last = parts.at(-1);
-    if (last && last.marked === marked[i]) last.text += text[i];
-    else parts.push({ text: text[i] ?? "", marked: marked[i] ?? false });
-  }
-  return parts.map((part, i) =>
-    part.marked ? (
-      <em key={i} className="not-italic underline underline-offset-3">
-        {part.text}
-      </em>
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: keys go through the combobox input
+    <div
+      role="option"
+      aria-selected={selected}
+      tabIndex={-1}
+      onMouseMove={onHover}
+      onClick={onRun}
+      className={`flex cursor-pointer flex-wrap items-baseline gap-x-3.5 gap-y-0.5 px-4 py-2 ${
+        selected ? "bg-sel shadow-[inset_2px_0_0_#fff]" : "hover:bg-[#141414]"
+      }`}
+    >
+      <span>
+        <Label text={command.label} strong={command.strong} />
+      </span>
+      {command.note && (
+        <span className={`text-xs ${toneText[command.note.tone]}`}>
+          {command.note.text}
+        </span>
+      )}
+      <span
+        className={`ml-auto font-mono text-xs ${selected ? "text-white" : "text-mut"}`}
+      >
+        {command.cli}
+      </span>
+    </div>
+  );
+}
+
+/** The label with its strong part bold and release numbers in mono. */
+function Label({ text, strong }: { text: string; strong?: string }) {
+  return text.split(/(\s+)/).map((word, i) =>
+    word === strong ? (
+      <b key={i} className="font-semibold">
+        {word}
+      </b>
+    ) : /^r\d+$/.test(word) ? (
+      <span key={i} className="font-mono">
+        {word}
+      </span>
     ) : (
-      part.text
+      word
     ),
   );
 }

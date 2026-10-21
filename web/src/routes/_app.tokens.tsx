@@ -1,11 +1,25 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useCreateToken, useRevokeToken } from "../data/mutations";
-import { queries, useTokens } from "../data/queries";
-import type { NewToken, Scope, Token } from "../data/types";
-import { TopBar } from "../shell/TopBar";
-import { day, since, until } from "../ui/format";
-import { Action, Button, ErrorText, inputClass } from "../ui/kit";
+import {
+  queries,
+  useProjects,
+  useProjectTree,
+  useTokens,
+} from "../data/queries";
+import type { Scope, Token } from "../data/types";
+import { isoDay, plural, since } from "../ui/format";
+import {
+  Actor,
+  actorKind,
+  Button,
+  CopyButton,
+  ErrorText,
+  Page,
+  Scroll,
+  SectionHead,
+  TitleRow,
+} from "../ui/kit";
 
 export const Route = createFileRoute("/_app/tokens")({
   loader: ({ context }) =>
@@ -15,84 +29,81 @@ export const Route = createFileRoute("/_app/tokens")({
 
 function Tokens() {
   const tokens = useTokens();
-  const [creating, setCreating] = useState(false);
-  const [secret, setSecret] = useState<{ name: string; value: string }>();
+  const live = tokens.filter((t) => !t.revoked_at);
+  const [created, setCreated] = useState<{
+    name: string;
+    secret: string;
+    project?: string;
+  }>();
 
   return (
-    <>
-      <TopBar
-        actions={
-          <Button primary onClick={() => setCreating(true)}>
-            New token
-          </Button>
-        }
-      >
-        <span className="font-semibold">Tokens</span>
-      </TopBar>
-      <div className="px-5 pt-3">
-        {creating && (
-          <CreateToken
-            onDone={(created) => {
-              setCreating(false);
-              if (created) setSecret(created);
-            }}
-          />
-        )}
-        {secret && (
-          <div className="mb-3 max-w-[760px] border border-line2 px-2.5 py-2">
-            <p>
-              Token <b>{secret.name}</b>. Copy it now, it is not shown again.
-            </p>
-            <div className="flex items-baseline gap-3 pt-1">
-              <code className="font-mono text-xs break-all">
-                {secret.value}
-              </code>
-              <Action
-                onClick={() => navigator.clipboard.writeText(secret.value)}
-              >
-                copy
-              </Action>
-              <Action onClick={() => setSecret(undefined)}>done</Action>
-            </div>
+    <Page>
+      <TitleRow
+        title="Tokens"
+        context="For agents, CI and scripts. Every action a token takes shows in the audit log under its name."
+      />
+      {created && (
+        <section
+          aria-labelledby="new-token"
+          className="flex flex-col gap-2.5 border border-ok p-4"
+        >
+          <h2 id="new-token" className="text-[15px] font-semibold">
+            <span className="text-ok">✓</span> Created{" "}
+            <span className="font-mono font-medium">{created.name}</span>
+          </h2>
+          <p>
+            <b className="font-semibold">Copy it now.</b>{" "}
+            <span className="text-mut">
+              This is the only time the secret is shown. If you lose it, create
+              a new token.
+            </span>
+          </p>
+          <div className="flex flex-wrap items-center gap-2.5 border border-line bg-[#050505] px-3 py-2.5">
+            <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
+              {created.secret}
+            </code>
+            <CopyButton text={created.secret} primary />
           </div>
-        )}
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Scope</th>
-              <th>Limited to</th>
-              <th>Created</th>
-              <th>Last used</th>
-              <th>Expires</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {tokens.map((token) => (
-              <TokenRow key={token.id} token={token} />
-            ))}
-          </tbody>
-        </table>
-        {tokens.length === 0 && <p className="py-2 text-dim">No tokens.</p>}
-      </div>
-    </>
+          <p className="font-mono text-xs text-mut">
+            export DOCK_TOKEN=… then: dock deploy
+            {created.project ? ` -p ${created.project}` : ""}
+          </p>
+          <div>
+            <Button small onClick={() => setCreated(undefined)}>
+              I've saved it
+            </Button>
+          </div>
+        </section>
+      )}
+
+      <section aria-labelledby="tokens">
+        <SectionHead id="tokens">{plural(live.length, "token")}</SectionHead>
+        <Scroll>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Scope</th>
+                <th>Limited to</th>
+                <th>Created by</th>
+                <th>Last used</th>
+                <th>Expires</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {tokens.map((token) => (
+                <TokenRow key={token.id} token={token} />
+              ))}
+            </tbody>
+          </table>
+        </Scroll>
+        {tokens.length === 0 && <p className="py-2 text-mut">No tokens yet.</p>}
+      </section>
+
+      <CreateToken onCreated={setCreated} />
+    </Page>
   );
-}
-
-/** "shop/staging", "shop/*" or "all projects". */
-function limitText(token: Token) {
-  if (!token.project) return "all projects";
-  return `${token.project}/${token.environment ?? "*"}`;
-}
-
-/** Parses "shop", "shop/*" or "shop/staging" into a token's limit. */
-function parseLimit(input: string): Pick<NewToken, "project" | "environment"> {
-  const [project, environment] = input.trim().split("/");
-  if (!project) return {};
-  return environment && environment !== "*"
-    ? { project, environment }
-    : { project };
 }
 
 function TokenRow({ token }: { token: Token }) {
@@ -100,126 +111,231 @@ function TokenRow({ token }: { token: Token }) {
   const [confirming, setConfirming] = useState(false);
   const expired =
     !!token.expires_at && Date.parse(token.expires_at) < Date.now();
+  const dead = !!token.revoked_at || expired;
   return (
-    <tr className={token.revoked_at || expired ? "text-faint" : undefined}>
-      <td className="font-semibold">{token.name}</td>
-      <td>{token.scope}</td>
-      <td className="font-mono text-xs">{limitText(token)}</td>
-      <td className="text-dim">
-        {day(token.created_at)} by {token.created_by}
+    <tr className={dead ? "text-faint" : undefined}>
+      <td className={`py-2.5 font-mono ${dead ? "" : "text-prog"}`}>
+        ◇ {token.name}
       </td>
-      <td className="text-dim">
-        {token.last_used_at ? since(token.last_used_at) : "never"}
-      </td>
-      <td className="w-full text-dim">
-        {!token.expires_at
-          ? "never"
-          : expired
-            ? "expired"
-            : `in ${until(token.expires_at)}`}
-      </td>
-      <td className="text-right">
-        {token.revoked_at ? (
-          <span className="text-dim">revoked</span>
-        ) : confirming ? (
-          <span className="flex gap-3">
-            <button
-              type="button"
-              className="text-bad"
-              disabled={revoke.isPending}
-              onClick={() => revoke.mutate(token.id)}
-            >
-              Revoke
-            </button>
-            <Action onClick={() => setConfirming(false)}>Cancel</Action>
-          </span>
+      <td className="py-2.5">{token.scope}</td>
+      <td className="py-2.5 font-mono">
+        {token.project ? (
+          `${token.project}${token.environment ? `/${token.environment}` : ""}`
         ) : (
-          <Action onClick={() => setConfirming(true)}>revoke</Action>
+          <span className="font-sans text-mut">all projects</span>
         )}
-        <ErrorText error={revoke.error} />
+      </td>
+      <td className="py-2.5">
+        <Actor name={token.created_by} kind={actorKind(token.created_by)} />
+      </td>
+      <td className={`py-2.5 ${token.last_used_at ? "" : "text-mut"}`}>
+        {token.last_used_at ? `${since(token.last_used_at)} ago` : "never"}
+      </td>
+      <td className="py-2.5 font-mono">
+        {token.revoked_at ? (
+          <span className="font-sans">revoked</span>
+        ) : !token.expires_at ? (
+          <span className="font-sans text-mut">never</span>
+        ) : expired ? (
+          <span className="font-sans">expired</span>
+        ) : (
+          isoDay(token.expires_at)
+        )}
+      </td>
+      <td className="w-full py-1.5 text-right">
+        <span className="inline-flex items-center gap-3">
+          <Link to="/audit" search={{ actor: token.name }}>
+            Activity
+          </Link>
+          {!token.revoked_at &&
+            (confirming ? (
+              <>
+                <Button
+                  small
+                  danger
+                  disabled={revoke.isPending}
+                  onClick={() => revoke.mutate(token.id)}
+                >
+                  Revoke now
+                </Button>
+                <Button small onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button small onClick={() => setConfirming(true)}>
+                Revoke
+              </Button>
+            ))}
+          <ErrorText error={revoke.error} />
+        </span>
       </td>
     </tr>
   );
 }
 
-const scopes: Scope[] = ["read", "deploy", "admin"];
+const scopes: Array<{ scope: Scope; note: string }> = [
+  { scope: "read", note: "see status, releases, logs" },
+  {
+    scope: "deploy",
+    note: "also deploy, restart, roll back, stage variables. Cannot reveal secrets or manage tokens and users.",
+  },
+  { scope: "admin", note: "everything, including tokens and users" },
+];
+
+const expiries = [
+  { days: 90, label: "in 90 days" },
+  { days: 30, label: "in 30 days" },
+  { days: 365, label: "in a year" },
+  { days: 0, label: "never" },
+];
 
 function CreateToken({
-  onDone,
+  onCreated,
 }: {
-  onDone: (created?: { name: string; value: string }) => void;
+  onCreated: (created: {
+    name: string;
+    secret: string;
+    project?: string;
+  }) => void;
 }) {
   const create = useCreateToken();
+  const projects = useProjects();
+  const tree = useProjectTree();
   const [name, setName] = useState("");
   const [scope, setScope] = useState<Scope>("deploy");
-  const [limit, setLimit] = useState("");
-  const [days, setDays] = useState("30");
+  const [project, setProject] = useState("");
+  const [environment, setEnvironment] = useState("");
+  const [days, setDays] = useState(90);
+  const environments =
+    tree
+      .find((p) => p.project.name === project)
+      ?.environments.map((e) => e.environment.name) ?? [];
+  const cli = [
+    `dock token create ${name || "<name>"} --scope ${scope}`,
+    project && `-p ${project}`,
+    project && environment && `-e ${environment}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <form
-      className="flex flex-wrap items-baseline gap-3 pb-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        create.mutate(
-          {
-            name,
-            scope,
-            ...parseLimit(limit),
-            expires_in_days: Number(days) > 0 ? Number(days) : undefined,
-          },
-          {
-            onSuccess: ({ token, secret }) =>
-              onDone({ name: token.name, value: secret }),
-          },
-        );
-      }}
+    <section
+      aria-labelledby="create"
+      className="flex max-w-[760px] flex-col gap-4 border-t border-line pt-[18px]"
     >
-      <input
-        // biome-ignore lint/a11y/noAutofocus: opened on request
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="name, e.g. agent-shop-deploy"
-        aria-label="Name"
-        className={`${inputClass} w-60`}
-      />
-      <select
-        value={scope}
-        aria-label="Scope"
-        onChange={(e) =>
-          setScope(scopes.find((s) => s === e.target.value) ?? "read")
-        }
-        className="border-b border-line2 bg-black outline-none focus:border-white"
+      <h2 id="create" className="text-md font-semibold">
+        Create a token
+      </h2>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          create.mutate(
+            {
+              name: name.trim(),
+              scope,
+              ...(project && { project }),
+              ...(project && environment && { environment }),
+              ...(days > 0 && { expires_in_days: days }),
+            },
+            {
+              onSuccess: ({ token, secret }) => {
+                setName("");
+                onCreated({ name: token.name, secret, project: token.project });
+              },
+            },
+          );
+        }}
       >
-        {scopes.map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
-      <input
-        value={limit}
-        onChange={(e) => setLimit(e.target.value)}
-        placeholder="limit, e.g. shop/staging"
-        aria-label="Limited to"
-        className={`${inputClass} w-52 font-mono text-xs`}
-      />
-      <label className="flex items-baseline gap-1.5 text-dim">
-        expires in
-        <input
-          value={days}
-          onChange={(e) => setDays(e.target.value)}
-          inputMode="numeric"
-          aria-label="Expires in days"
-          className={`${inputClass} w-10 text-right text-white`}
-        />
-        days
-      </label>
-      <Button primary type="submit" disabled={create.isPending}>
-        Create
-      </Button>
-      <Action onClick={() => onDone()}>Cancel</Action>
-      <ErrorText error={create.error} />
-    </form>
+        <label className="flex flex-col gap-1.5">
+          <span>
+            Name <span className="text-mut">shown in the audit log</span>
+          </span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="agent-…"
+            className="field py-[7px] font-mono"
+          />
+        </label>
+        <fieldset>
+          <legend className="mb-1.5">Scope</legend>
+          <div className="flex flex-col gap-1.5">
+            {scopes.map((s) => (
+              <label key={s.scope} className="flex items-baseline gap-2">
+                <input
+                  type="radio"
+                  name="scope"
+                  checked={scope === s.scope}
+                  onChange={() => setScope(s.scope)}
+                />
+                <span>
+                  <b className="font-medium">{s.scope}</b>{" "}
+                  <span className="text-mut">{s.note}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <div className="flex flex-wrap gap-3">
+          <label className="flex flex-[1_1_200px] flex-col gap-1.5">
+            <span>Limit to project</span>
+            <select
+              value={project}
+              onChange={(e) => {
+                setProject(e.target.value);
+                setEnvironment("");
+              }}
+              className="field py-[7px]"
+            >
+              <option value="">all projects</option>
+              {projects.map((p) => (
+                <option key={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-[1_1_200px] flex-col gap-1.5">
+            <span>Limit to environment</span>
+            <select
+              value={environment}
+              disabled={!project}
+              onChange={(e) => setEnvironment(e.target.value)}
+              className="field py-[7px]"
+            >
+              <option value="">all environments</option>
+              {environments.map((e) => (
+                <option key={e}>{e}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-[1_1_200px] flex-col gap-1.5">
+            <span>Expires</span>
+            <select
+              value={days}
+              onChange={(e) => setDays(Number(e.target.value))}
+              className="field py-[7px]"
+            >
+              {expiries.map((x) => (
+                <option key={x.days} value={x.days}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            className="btn pri"
+            disabled={!name.trim() || create.isPending}
+          >
+            Create token
+          </button>
+          <span className="font-mono text-2xs text-mut">{cli}</span>
+          <ErrorText error={create.error} />
+        </div>
+      </form>
+    </section>
   );
 }

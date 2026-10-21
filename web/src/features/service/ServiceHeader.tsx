@@ -4,173 +4,283 @@ import { useDeploy, useRestart, useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   useChanges,
-  useEnvironment,
+  useProjectOverview,
   useReleases,
   useService,
-  useVolumes,
 } from "../../data/queries";
-import type { ServiceRef } from "../../data/types";
-import { isTyping, useKeydown } from "../../shell/keys";
-import { Crumbs, TopBar } from "../../shell/TopBar";
-import { Button, ErrorText, Status } from "../../ui/kit";
-import { serviceStatus, shortId } from "../../ui/status";
-import { formatSetting } from "../settings/settings";
-import { copiedConfig, rollbackTarget } from "./releases";
+import type { ServiceRef, ServiceView } from "../../data/types";
+import { type Shortcut, useShortcuts } from "../../shell/keys";
+import { ago, limits, since } from "../../ui/format";
+import { Act, Button, ErrorText, Glyph, StateText } from "../../ui/kit";
+import {
+  failurePhrase,
+  isCrashLooping,
+  oomPhrase,
+  serviceState,
+  stepPhrase,
+} from "../../ui/status";
+import { copiedConfig, errorSummary, rollbackTarget } from "./releases";
 
 const tabs = [
-  { label: "Releases", to: "/$project/$environment/$service" },
-  { label: "Logs", to: "/$project/$environment/$service/logs" },
-  { label: "Domains", to: "/$project/$environment/$service/domains" },
-  { label: "Variables", to: "/$project/$environment/$service/variables" },
-  { label: "Settings", to: "/$project/$environment/$service/settings" },
-  { label: "Metrics", to: "/$project/$environment/$service/metrics" },
-  { label: "Audit", to: "/$project/$environment/$service/audit" },
+  { label: "Overview", to: "/$project/$environment/$service", key: "g o" },
+  { label: "Logs", to: "/$project/$environment/$service/logs", key: "g l" },
+  {
+    label: "Releases",
+    to: "/$project/$environment/$service/releases",
+    key: "g r",
+  },
+  {
+    label: "Domains",
+    to: "/$project/$environment/$service/domains",
+    key: "g d",
+  },
+  {
+    label: "Variables",
+    to: "/$project/$environment/$service/variables",
+    key: "g v",
+  },
+  {
+    label: "Settings",
+    to: "/$project/$environment/$service/settings",
+    key: "g s",
+  },
+  { label: "Audit", to: "/$project/$environment/$service/audit", key: "g a" },
 ] as const;
 
-/** Top bar, tabs (keys 1-7) and the at-a-glance meta row of a service. */
-export function ServiceHeader({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+/**
+ * Title, plain-language status, actions (Overview tab only) and tabs of a
+ * service. G then a letter switches tabs.
+ */
+export function ServiceHeader({
+  serviceRef: ref,
+  full,
+}: {
+  serviceRef: ServiceRef;
+  /** With the status sentence and actions, as on the Overview tab. */
+  full: boolean;
+}) {
   const view = useService(ref);
-  const { environment } = useEnvironment(ref);
-  const volumes = useVolumes(ref);
   const changes = useChanges(ref);
   const navigate = useNavigate();
-  useKeydown((event) => {
-    if (isTyping(event) || event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-    const tab = tabs[Number(event.key) - 1];
-    if (!tab) return;
-    event.preventDefault();
-    navigate({ to: tab.to, params: ref });
-  });
-  const { service, active_release: active, domains } = view;
-  const mine = (c: { service?: string }) => c.service === ref.service;
-  // Tabs count what needs a look: domains not active, staged changes.
-  const badges: Partial<Record<(typeof tabs)[number]["label"], number>> = {
-    Domains: domains.filter(domainNeedsAttention).length,
-    Variables: changes.variables.filter((v) => !v.service || mine(v)).length,
+  const { service } = view;
+  useShortcuts(
+    tabs.map((tab) => ({
+      key: tab.key,
+      run: () => navigate({ to: tab.to, params: ref }),
+    })),
+  );
+  const mine = (c: { service?: string }) =>
+    !c.service || c.service === ref.service;
+  const marks: Partial<Record<(typeof tabs)[number]["label"], boolean>> = {
+    Domains: view.domains.some(domainNeedsAttention),
+    Variables: changes.variables.some(mine),
     Settings:
-      changes.settings.filter(mine).length +
-      changes.volumes.filter(mine).length,
+      changes.settings.some(mine) ||
+      changes.volumes.some((v) => v.service === ref.service),
   };
 
   return (
-    <>
-      <TopBar actions={<ServiceActions serviceRef={ref} />}>
-        <Crumbs>
-          {[
-            <Link
-              key="p"
-              to="/$project"
-              params={{ project: ref.project }}
-              className="hover:text-white"
-            >
-              {ref.project}
-            </Link>,
-            <Link
-              key="e"
-              to="/$project/$environment"
-              params={{ project: ref.project, environment: ref.environment }}
-              className="hover:text-white"
-            >
-              {ref.environment}
-            </Link>,
-            ref.service,
-          ]}
-        </Crumbs>
-        <Status {...serviceStatus(view)} />
-      </TopBar>
-
-      <nav className="sticky top-[41px] z-10 flex gap-5 border-b border-line bg-black px-5">
-        {tabs.map((tab, i) => (
+    <section aria-labelledby="service" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
+        <h1 id="service" className="text-xl font-semibold">
+          {service.name}
+        </h1>
+        <span className="text-mut">
+          {ref.environment}
+          {full && (
+            <>
+              {" "}
+              · <span className="font-mono">:{service.port || 8080}</span> ·{" "}
+              {limits(service)}
+            </>
+          )}
+        </span>
+        <span className="ml-auto flex gap-4">
+          <Siblings serviceRef={ref} />
+        </span>
+      </div>
+      {full && <StatusSentence view={view} />}
+      {full && <Actions serviceRef={ref} />}
+      <nav
+        aria-label="Service"
+        className="tabs mt-2.5 flex flex-wrap gap-x-[22px] gap-y-1 border-b border-line"
+      >
+        {tabs.map((tab) => (
           <Link
             key={tab.to}
             to={tab.to}
             params={ref}
             activeOptions={{ exact: true, includeSearch: false }}
-            title={`${tab.label} (${i + 1})`}
-            className="-mb-px border-b border-transparent py-[7px] text-dim hover:border-white hover:text-white"
-            activeProps={{ className: "border-white! text-white!" }}
+            title={`${tab.label} (${tab.key.toUpperCase()})`}
           >
             {tab.label}
-            {!!badges[tab.label] && (
-              <span className="text-warn"> {badges[tab.label]}</span>
-            )}
+            {marks[tab.label] && <span className="text-warn"> ▲</span>}
           </Link>
         ))}
       </nav>
+    </section>
+  );
+}
 
-      <div className="flex gap-7 border-b border-line px-5 py-3">
-        <Meta label="Active">
-          <b className="font-mono">{active ? `r${active.number}` : "-"}</b>
-        </Meta>
-        <Meta label="Server">{environment.server}</Meta>
-        <Meta label="Image" mono>
-          {active
-            ? `${active.image_ref} ${shortId(active.image_id)}`
-            : service.image || "-"}
-        </Meta>
-        <Meta label="Limits" mono>
-          {formatSetting("cpus", service.cpus)} cpu ·{" "}
-          {formatSetting("memory_mb", service.memory_mb)}
-        </Meta>
-        <Meta label="Private" mono>
-          {service.name}:{service.port || 8080}
-        </Meta>
-        {volumes.length > 0 && (
-          <Meta label="Volumes" mono>
-            {volumes.map((v) => `${v.name} ${v.mount_path}`).join(", ")}
-          </Meta>
+/** The same service in the other environments: "staging: ● r92". */
+function Siblings({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const { environments } = useProjectOverview(ref.project);
+  return environments.flatMap(({ environment, services }) => {
+    if (environment.name === ref.environment) return [];
+    const twin = services.find((s) => s.service.name === ref.service);
+    if (!twin) return [];
+    const state = serviceState(twin);
+    return [
+      <Link
+        key={environment.id}
+        to="/$project/$environment/$service"
+        params={{ ...ref, environment: environment.name }}
+        className="text-mut"
+      >
+        {environment.name}: <StateText state={{ ...state, label: "" }} />
+        <span className="font-mono">
+          {twin.service.active_release
+            ? `r${twin.service.active_release}`
+            : "none"}
+        </span>
+      </Link>,
+    ];
+  });
+}
+
+/** One sentence on what the service is doing and what happens next. */
+export function StatusSentence({ view }: { view: ServiceView }) {
+  const { service, deploying, latest_release: latest } = view;
+  const { status } = service;
+  const serving = service.active_release;
+  const mut = (text: string) => <span className="text-mut">{text}</span>;
+  const mono = (text: string) => (
+    <b className="font-mono font-medium">{text}</b>
+  );
+
+  let sentence: ReactNode;
+  if (deploying) {
+    const r = `r${deploying.number}`;
+    sentence = (
+      <>
+        <span className="text-prog">
+          <Glyph char="◐" />
+        </span>{" "}
+        Deploying {mono(r)}, {stepPhrase[deploying.status]}.{" "}
+        {serving
+          ? mut(
+              service.stateful
+                ? `r${serving} was stopped first: a volume allows one writer.`
+                : `r${serving} keeps serving until cutover. If the check fails, ${r} is stopped.`,
+            )
+          : mut("Nothing served yet.")}
+      </>
+    );
+  } else if (isCrashLooping(status)) {
+    sentence = (
+      <>
+        <span className="text-fail">↻</span> Crash looping:{" "}
+        {mono(`r${serving}`)} restarted {status.restart_count} times, last exit{" "}
+        {status.exit_code}.{" "}
+        {status.oom_killed && mut(`It ${oomPhrase(status)}.`)}
+      </>
+    );
+  } else if (status.state === "crashed") {
+    sentence = (
+      <>
+        <span className="text-fail">✕</span> {mono(`r${serving}`)}{" "}
+        {status.oom_killed
+          ? oomPhrase(status)
+          : `crashed with exit ${status.exit_code}`}
+        . {mut("Restart it, or roll back.")}
+      </>
+    );
+  } else if (!serving) {
+    sentence = (
+      <>
+        <span className="text-mut">○</span> Not deployed yet.{" "}
+        {latest?.status === "failed" &&
+          mut(
+            `r${latest.number} ${failurePhrase(latest)}: ${errorSummary(latest)}.`,
+          )}
+      </>
+    );
+  } else if (status.state !== "running") {
+    sentence = (
+      <>
+        <span className="text-fail">○</span> {mono(`r${serving}`)} has no
+        running container. {mut("Restart it, or roll back.")}
+      </>
+    );
+  } else {
+    const domain = view.domains.find((d) => d.status === "active");
+    sentence = (
+      <>
+        <span className="text-ok">●</span> {mono(`r${serving}`)} is serving
+        {status.updated_at &&
+          (since(status.updated_at) === "now"
+            ? ", just started"
+            : `, up ${since(status.updated_at)}`)}
+        . {domain && mut(`At ${domain.hostname}.`)}{" "}
+        {latest?.status === "failed" && latest.number > serving && (
+          <span className="text-fail">
+            r{latest.number} {failurePhrase(latest)} {ago(latest.created_at)}.
+          </span>
         )}
-      </div>
-    </>
-  );
+      </>
+    );
+  }
+  return <p className="text-lg leading-normal">{sentence}</p>;
 }
 
-function Meta({
-  label,
-  mono,
-  children,
-}: {
-  label: string;
-  mono?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <span className="block text-2xs text-dim">{label}</span>
-      <span className={`block truncate ${mono ? "font-mono text-xs" : ""}`}>
-        {children}
-      </span>
-    </div>
-  );
-}
-
-function ServiceActions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+/** Deploy, restart, roll back: buttons with keys and CLI equivalents. */
+function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service, deploying } = useService(ref);
   const releases = useReleases(ref);
   const deploy = useDeploy();
   const restart = useRestart();
   const rollback = useRollback();
   const target = rollbackTarget(releases);
-  const busy = deploying ? `r${deploying.number} is deploying` : undefined;
-  const error = deploy.error ?? rollback.error ?? restart.error;
   const [confirming, setConfirming] = useState(false);
+  const busy = deploying ? `r${deploying.number} is deploying` : undefined;
+  const flags = `-s ${ref.service} -e ${ref.environment}`;
+
+  const canDeploy = !!service.image && !busy && !deploy.isPending;
+  const canRestart = !!service.active_release && !busy && !restart.isPending;
+  const canRollback = !!target && !busy && !rollback.isPending;
+
+  const shortcuts: Shortcut[] = [
+    {
+      key: "d",
+      label: "deploy",
+      disabled: !canDeploy,
+      run: () => deploy.mutate(ref),
+    },
+    {
+      key: "r",
+      label: "restart",
+      disabled: !canRestart,
+      run: () => restart.mutate(ref),
+    },
+    {
+      key: "b",
+      label: "roll back",
+      disabled: !canRollback,
+      run: () => setConfirming(true),
+    },
+  ];
+  useShortcuts(shortcuts);
 
   if (confirming && target) {
     return (
-      <>
-        <ErrorText error={rollback.error} />
-        <span className="text-dim">
-          Roll back to r{target.number}:{" "}
-          <span className="font-mono text-xs text-white">
-            {copiedConfig(target)}
-          </span>
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span>
+          Roll back to <b className="font-mono font-medium">r{target.number}</b>
+          : <span className="font-mono text-mut">{copiedConfig(target)}</span>
         </span>
         <Button
           primary
-          disabled={!!busy || rollback.isPending}
-          title={busy}
+          disabled={!canRollback}
           onClick={() =>
             rollback.mutate(
               { ref, to: target.number },
@@ -181,50 +291,51 @@ function ServiceActions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           Roll back
         </Button>
         <Button onClick={() => setConfirming(false)}>Cancel</Button>
-      </>
+        <ErrorText error={rollback.error} />
+      </div>
     );
   }
 
   return (
-    <>
-      <ErrorText error={error} />
-      <Button
-        disabled={!service.active_release || !!busy || restart.isPending}
-        title={
-          busy ??
-          (service.active_release
-            ? "Start a new release identical to the active one"
-            : "Nothing to restart")
-        }
-        onClick={() => restart.mutate(ref)}
-      >
-        Restart
-      </Button>
-      <Button
-        disabled={!target || !!busy || rollback.isPending}
-        title={
-          busy ??
-          (target
-            ? `Roll back to r${target.number}: ${copiedConfig(target)}`
-            : "No earlier release to roll back to")
-        }
-        onClick={() => setConfirming(true)}
-      >
-        Rollback
-      </Button>
-      <Button
+    <div className="flex flex-wrap items-start gap-2.5">
+      <Act
         primary
-        disabled={!service.image || !!busy || deploy.isPending}
+        cli={`dock deploy ${flags}`}
+        disabled={!canDeploy}
         title={
           busy ??
           (service.image
             ? `Deploy ${service.image}`
-            : "Built from source: deploy with `dock deploy`")
+            : "Built from source: deploy with dock deploy")
         }
         onClick={() => deploy.mutate(ref)}
       >
-        Deploy
-      </Button>
-    </>
+        Deploy <kbd>D</kbd>
+      </Act>
+      <Act
+        cli={`dock restart ${flags}`}
+        disabled={!canRestart}
+        title={busy ?? "Start a copy of the active release"}
+        onClick={() => restart.mutate(ref)}
+      >
+        Restart <kbd>R</kbd>
+      </Act>
+      <Act
+        cli={`dock rollback ${target?.number ?? ""} ${flags}`.replace(
+          "  ",
+          " ",
+        )}
+        disabled={!canRollback}
+        title={
+          busy ?? (target ? undefined : "No earlier release to roll back to")
+        }
+        onClick={() => setConfirming(true)}
+      >
+        {target ? `Roll back to r${target.number}` : "Roll back"} <kbd>B</kbd>
+      </Act>
+      <span className="self-center">
+        <ErrorText error={deploy.error ?? restart.error ?? rollback.error} />
+      </span>
+    </div>
   );
 }

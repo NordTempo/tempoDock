@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { queries, servicePath, useAuditLog } from "../data/queries";
 import { AuditTable } from "../features/audit/AuditTable";
-import { Heading } from "../ui/kit";
 
 // The service's own events: releases, settings, variables, volumes, domains.
 export const Route = createFileRoute(
@@ -13,11 +12,5 @@ export const Route = createFileRoute(
 });
 
 function AuditTab() {
-  const events = useAuditLog(servicePath(Route.useParams()));
-  return (
-    <div className="px-5">
-      <Heading>Audit</Heading>
-      <AuditTable events={events} />
-    </div>
-  );
+  return <AuditTable events={useAuditLog(servicePath(Route.useParams()))} />;
 }

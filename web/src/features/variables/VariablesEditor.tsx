@@ -1,15 +1,21 @@
-import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { type RefObject, useRef, useState } from "react";
 import { useDiscardChanges, useStageVariables } from "../../data/mutations";
 import {
+  useEnvironment,
   useIsAdmin,
   useRevealedChanges,
   useRevealedVariables,
   useVariables,
 } from "../../data/queries";
 import type { EnvRef, Variable } from "../../data/types";
-import { Action, ErrorText, Heading } from "../../ui/kit";
-import { ApplyBar } from "./ApplyBar";
-import { AddVariable, PasteEnv } from "./VariableForms";
+import { useShortcuts } from "../../shell/keys";
+import { plural } from "../../ui/format";
+import { Act, Button, ErrorText, Glyph, TitleRow } from "../../ui/kit";
+import { serviceState } from "../../ui/status";
+import { ApplyBox } from "./ApplyBox";
+import { parseDotenv } from "./dotenv";
+import { hasReference, maskUrlPasswords, resolve } from "./references";
 
 const MASK = "••••••••••••";
 
@@ -17,304 +23,431 @@ const MASK = "••••••••••••";
 const idOf = (v: { key: string; scope: string; service?: string }) =>
   `${v.scope}:${v.service ?? ""}:${v.key}`;
 
-type Values = { live?: string; old?: string; new?: string };
-
 /**
- * Variables of a service (with the environment's shared ones below it) or
- * an environment's shared variables. Values stay hidden unless an admin
- * reveals them. Edits are staged, highlighted, and applied together.
+ * An environment's variables as an .env-like editor: pick what to look at
+ * (the environment's shared lines, or what one service sees at runtime),
+ * edit lines in place, paste a .env, and apply staged lines together.
+ * Values stay masked until an admin reveals them.
  */
 export function VariablesEditor({
   env,
   service,
-  note,
 }: {
   env: EnvRef;
-  /** The service whose page this is; null on the environment page. */
+  /** The service whose runtime view to show; null for shared lines only. */
   service: string | null;
-  note: string;
 }) {
-  const all = useVariables(env, service);
+  const all = useVariables(env, null);
+  const { services } = useEnvironment(env);
   const isAdmin = useIsAdmin();
-  const [reveal, setReveal] = useState(false);
-  const [form, setForm] = useState<"add" | "paste" | null>(null);
-  const revealed = useRevealedVariables(env, service, reveal);
+  const [revealAll, setRevealAll] = useState(false);
+  const [revealedIds, setRevealedIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [pasting, setPasting] = useState(false);
+  const newLine = useRef<HTMLInputElement>(null);
+  const reveal = revealAll || revealedIds.size > 0;
+  const revealed = useRevealedVariables(env, null, reveal);
   const revealedChanges = useRevealedChanges(env, reveal);
 
-  // Without a service the API lists every service's variables too.
-  const variables = service
-    ? all
-    : all.filter((v) => v.scope === "environment");
-  const order = (v: Variable) => (v.scope === "service" ? 0 : 1);
-  const rows = [...variables].sort(
-    (a, b) => order(a) - order(b) || a.key.localeCompare(b.key),
-  );
-  const serviceKeys = new Set(
-    variables.filter((v) => v.scope === "service").map((v) => v.key),
-  );
+  useShortcuts([
+    { key: "p", label: "paste .env", run: () => setPasting(true) },
+    { key: "n", label: "add variable", run: () => newLine.current?.focus() },
+  ]);
 
-  const values = new Map<string, Values>();
-  for (const v of revealed.data ?? []) {
-    values.set(idOf(v), { live: v.value });
-  }
+  const shared = all.filter((v) => v.scope === "environment");
+  const own = service
+    ? all.filter((v) => v.scope === "service" && v.service === service)
+    : [];
+  const ownKeys = new Set(own.map((v) => v.key));
+  const byKey = (a: Variable, b: Variable) => a.key.localeCompare(b.key);
+  const rows = [...shared.sort(byKey), ...own.sort(byKey)];
+
+  const values = new Map<
+    string,
+    { live?: string; old?: string; new?: string }
+  >();
+  for (const v of revealed.data ?? []) values.set(idOf(v), { live: v.value });
   for (const c of revealedChanges.data?.variables ?? []) {
     values.set(idOf(c), { ...values.get(idOf(c)), old: c.old, new: c.new });
   }
+  const shown = (v: Variable) => revealAll || revealedIds.has(idOf(v));
 
   return (
-    <div className="px-5">
-      <Heading
-        note={note}
+    <>
+      <TitleRow
+        title="Variables"
+        context={env.environment}
         actions={
           <>
-            <Action onClick={() => setForm(form === "paste" ? null : "paste")}>
-              Paste .env
-            </Action>
-            <Action
-              disabled={!isAdmin}
-              title={isAdmin ? undefined : "Requires admin"}
-              onClick={() => setReveal(!reveal)}
-            >
-              {reveal ? "Hide values" : "Reveal values"}
-            </Action>
-            <button
-              type="button"
-              className="hover:underline"
-              onClick={() => setForm(form === "add" ? null : "add")}
-            >
-              Add
-            </button>
+            {isAdmin && (
+              <Button onClick={() => setRevealAll(!revealAll)}>
+                {revealAll ? "Hide values" : "Reveal values"}
+              </Button>
+            )}
+            <Button onClick={() => setPasting(!pasting)}>
+              Paste .env <kbd>P</kbd>
+            </Button>
+            <Button onClick={() => newLine.current?.focus()}>
+              Add variable <kbd>N</kbd>
+            </Button>
           </>
         }
-      >
-        Variables
-      </Heading>
-      <ErrorText error={revealed.error ?? revealedChanges.error} />
-      {form === "add" && (
-        <AddVariable env={env} service={service} onDone={() => setForm(null)} />
-      )}
-      {form === "paste" && (
-        <PasteEnv env={env} service={service} onDone={() => setForm(null)} />
-      )}
+      />
 
-      <table className="tbl">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Value</th>
-            <th>Scope</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((variable) => (
-            <VariableRow
-              key={idOf(variable)}
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
+        <span className="text-mut">What</span>
+        <div role="tablist" aria-label="Scope" className="seg">
+          <Link
+            role="tab"
+            to="/$project/$environment"
+            params={env}
+            search={{}}
+            aria-selected={service === null}
+          >
+            environment
+          </Link>
+          {services.map((s) => {
+            const state = serviceState(s);
+            return (
+              <Link
+                key={s.service.id}
+                role="tab"
+                to="/$project/$environment"
+                params={env}
+                search={{ service: s.service.name }}
+                aria-selected={service === s.service.name}
+              >
+                {state.tone === "fail" && state.glyph && (
+                  <span className="text-fail">
+                    <Glyph char={state.glyph} />{" "}
+                  </span>
+                )}
+                {s.service.name}
+              </Link>
+            );
+          })}
+        </div>
+        <span className="text-mut">
+          {service
+            ? "sees at runtime. Grey lines come from the environment."
+            : `is shared with every service in ${env.environment}.`}
+        </span>
+      </div>
+
+      {pasting && (
+        <PasteEnv
+          env={env}
+          service={service}
+          onDone={() => setPasting(false)}
+        />
+      )}
+      <ErrorText error={revealed.error ?? revealedChanges.error} />
+
+      <section
+        aria-label={`${service ?? env.environment} variables`}
+        className="overflow-x-auto border border-line py-2 font-mono text-[12.5px]"
+      >
+        <div className="min-w-[720px]">
+          {rows.map((v, i) => (
+            <Line
+              key={idOf(v)}
+              n={i + 1}
               env={env}
-              variable={variable}
-              values={reveal ? values.get(idOf(variable)) : undefined}
-              shared={!!service && variable.scope === "environment"}
-              overrides={
-                !!service &&
-                variable.scope === "service" &&
-                variables.some(
-                  (v) => v.scope === "environment" && v.key === variable.key,
-                )
-              }
+              variable={v}
+              inherited={!!service && v.scope === "environment"}
               overridden={
-                variable.scope === "environment" &&
-                serviceKeys.has(variable.key)
+                !!service && v.scope === "environment" && ownKeys.has(v.key)
+              }
+              values={shown(v) ? values.get(idOf(v)) : undefined}
+              all={revealed.data ?? []}
+              canReveal={isAdmin && !shown(v)}
+              onReveal={() =>
+                setRevealedIds(new Set([...revealedIds, idOf(v)]))
               }
             />
           ))}
-        </tbody>
-      </table>
-      {rows.length === 0 && <p className="py-2 text-dim">No variables.</p>}
+          <NewLine
+            n={rows.length + 1}
+            env={env}
+            service={service}
+            inputRef={newLine}
+          />
+        </div>
+      </section>
+      <p className="-mt-1 text-xs text-mut">
+        <span className="text-warn">+</span> added ·{" "}
+        <span className="text-warn">~</span> changed ·{" "}
+        <span className="text-warn">−</span> removed
+        {service &&
+          ` · a ${service} line with the same name as an env line overrides it`}{" "}
+        · → resolved reference
+      </p>
 
-      <ApplyBar env={env} />
-    </div>
+      <ApplyBox env={env} reveal={revealAll} variables={all} />
+    </>
   );
 }
 
-const pendingLabel = { add: "added", update: "edited", remove: "removed" };
+const pendingMark = { add: "+", update: "~", remove: "−" } satisfies Record<
+  NonNullable<Variable["pending"]>,
+  string
+>;
 
-function VariableRow({
+const grid =
+  "grid grid-cols-[34px_16px_70px_minmax(0,1fr)_auto] items-baseline gap-x-2.5 py-1 pr-3.5";
+
+function Line({
+  n,
   env,
-  variable,
-  values,
-  shared,
-  overrides,
+  variable: v,
+  inherited,
   overridden,
+  values,
+  all,
+  canReveal,
+  onReveal,
 }: {
+  n: number;
   env: EnvRef;
   variable: Variable;
-  /** Revealed values, when an admin asked for them. */
-  values: Values | undefined;
-  /** An environment variable shown on a service page. */
-  shared: boolean;
-  /** A service variable that replaces a shared one of the same name. */
-  overrides: boolean;
-  /** A shared variable replaced by this service's own. */
+  /** A shared line on a service's view: grey. */
+  inherited: boolean;
+  /** A shared line this service replaces with its own. */
   overridden: boolean;
+  values: { live?: string; old?: string; new?: string } | undefined;
+  /** Every revealed variable, to resolve references. */
+  all: Variable[];
+  canReveal: boolean;
+  onReveal: () => void;
 }) {
   const stage = useStageVariables();
-  const undo = useDiscardChanges();
+  const discard = useDiscardChanges();
   const [editing, setEditing] = useState(false);
-  const { key, pending } = variable;
-  const service =
-    variable.scope === "service" ? (variable.service ?? null) : null;
-  const dim = shared ? "text-dim" : "";
-
+  const service = v.scope === "service" ? (v.service ?? null) : null;
+  const current = values?.new ?? values?.live;
+  const resolved =
+    current !== undefined && hasReference(current)
+      ? maskUrlPasswords(resolve(current, all))
+      : undefined;
   const save = (value: string) =>
     stage.mutate(
-      { env, service, set: { [key]: value } },
+      { env, service, set: { [v.key]: value } },
       { onSuccess: () => setEditing(false) },
     );
 
   return (
-    <tr className={`group ${pending ? "staged" : ""}`}>
-      <td className={`font-mono text-xs ${dim}`}>{key}</td>
-      <td className="w-[52%] font-mono text-xs whitespace-normal">
-        {editing ? (
-          <EditValue
-            initial={values?.new ?? values?.live ?? ""}
-            onSave={save}
-            onCancel={() => setEditing(false)}
+    <div
+      className={`${grid} group ${v.pending ? "bg-stage-bg" : "hover:bg-hover"}`}
+    >
+      <span className="text-right text-faint">{n}</span>
+      <span className="text-warn">{v.pending && pendingMark[v.pending]}</span>
+      <span className={inherited ? "text-mut" : ""}>{service ?? "env"}</span>
+      {editing ? (
+        <span className="flex items-baseline">
+          {v.key}=
+          <input
+            // biome-ignore lint/a11y/noAutofocus: opened by clicking Edit
+            autoFocus
+            defaultValue={current ?? ""}
+            placeholder={current === undefined ? "new value" : undefined}
+            aria-label={`${v.key} value`}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save(e.currentTarget.value);
+              if (e.key === "Escape") setEditing(false);
+            }}
+            className="min-w-0 flex-1 bg-transparent outline-none"
           />
-        ) : (
-          <ValueView
-            pending={pending}
-            values={values}
-            struck={overridden}
-            dim={shared}
-          />
-        )}
-        <ErrorText error={stage.error ?? undo.error} />
-      </td>
-      <td className={dim}>
-        {variable.scope === "environment" ? "shared" : "service"}
-        {overrides && (
-          <span className="text-xs text-warn"> overrides shared</span>
-        )}
-      </td>
-      <td className="w-px text-right">
-        {pending ? (
-          <span className="flex justify-end gap-3">
-            <span className="text-warn">{pendingLabel[pending]}</span>
-            <Action
-              disabled={undo.isPending}
-              title="Drop this staged change"
-              onClick={() =>
-                undo.mutate({
-                  env,
-                  selection: {
-                    variables: [{ key, ...(service && { service }) }],
-                  },
-                })
-              }
+        </span>
+      ) : (
+        <span
+          className={`${inherited ? "text-mut" : ""} ${overridden ? "line-through" : ""}`}
+        >
+          {v.key}=<Value pending={v.pending} values={values} />
+          {canReveal && (
+            <button
+              type="button"
+              className="lnk ml-2 font-sans"
+              onClick={onReveal}
             >
-              undo
-            </Action>
-          </span>
+              Reveal
+            </button>
+          )}
+        </span>
+      )}
+      <span className="flex gap-3 font-sans">
+        <ErrorText error={stage.error ?? discard.error} />
+        {overridden && <span className="text-xs text-mut">overridden</span>}
+        {v.pending ? (
+          <button
+            type="button"
+            className="lnk"
+            disabled={discard.isPending}
+            onClick={() =>
+              discard.mutate({
+                env,
+                selection: {
+                  variables: [{ key: v.key, ...(service && { service }) }],
+                },
+              })
+            }
+          >
+            Discard
+          </button>
         ) : (
           !editing && (
-            <span className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-              <Action onClick={() => setEditing(true)}>edit</Action>
-              <Action
-                disabled={stage.isPending}
-                onClick={() => stage.mutate({ env, service, unset: [key] })}
+            <span className="flex gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+              <button
+                type="button"
+                className="lnk"
+                onClick={() => setEditing(true)}
               >
-                remove
-              </Action>
+                Edit
+              </button>
+              <button
+                type="button"
+                className="lnk"
+                disabled={stage.isPending}
+                onClick={() => stage.mutate({ env, service, unset: [v.key] })}
+              >
+                Remove
+              </button>
             </span>
           )
         )}
-      </td>
-    </tr>
-  );
-}
-
-/** A value, with `${{service.KEY}}` references highlighted. */
-function Text({ value, dim }: { value: string; dim?: boolean }) {
-  const parts = value.split(/(\$\{\{[^}]*\}\})/);
-  return parts.map((part, i) =>
-    part.startsWith("${{") ? (
-      <span key={i} className={dim ? "text-dim" : "text-run"}>
-        {part}
       </span>
-    ) : (
-      part
-    ),
+      {resolved !== undefined && resolved !== current && (
+        <span className="col-start-4 col-end-6 text-xs text-mut">
+          → {resolved}
+        </span>
+      )}
+    </div>
   );
 }
 
-function ValueView({
+function Value({
   pending,
   values,
-  struck,
-  dim,
 }: {
   pending: Variable["pending"];
-  values: Values | undefined;
-  struck: boolean;
-  dim: boolean;
+  values: { live?: string; old?: string; new?: string } | undefined;
 }) {
-  const strike = struck ? "line-through text-dim" : dim ? "text-dim" : "";
-  const masked = <span className="text-dim">{MASK}</span>;
   switch (pending) {
     case "add":
-      return (
-        <span className="text-ok">
-          {values?.new === undefined ? MASK : <Text value={values.new} />}
-        </span>
-      );
+      return <span className="text-white">{values?.new ?? MASK}</span>;
     case "update":
       return (
         <>
-          <span className="text-bad line-through">{values?.old ?? MASK}</span>{" "}
-          <span className="text-ok">
-            {values?.new === undefined ? MASK : <Text value={values.new} />}
-          </span>
+          <span className="text-white">{values?.new ?? MASK}</span>{" "}
+          <span className="line-through">{values?.old ?? ""}</span>
         </>
       );
     case "remove":
-      return (
-        <span className="text-bad line-through">{values?.old ?? MASK}</span>
-      );
+      return <span className="line-through">{values?.old ?? MASK}</span>;
     case undefined:
-      return values?.live === undefined ? (
-        masked
-      ) : (
-        <span className={strike}>
-          <Text value={values.live} dim={dim || struck} />
-        </span>
-      );
+      return <>{values?.live ?? MASK}</>;
   }
 }
 
-function EditValue({
-  initial,
-  onSave,
-  onCancel,
+/** The last line: type NAME=value and press Enter to stage it. */
+function NewLine({
+  n,
+  env,
+  service,
+  inputRef,
 }: {
-  initial: string;
-  onSave: (value: string) => void;
-  onCancel: () => void;
+  n: number;
+  env: EnvRef;
+  service: string | null;
+  inputRef: RefObject<HTMLInputElement | null>;
 }) {
-  const [draft, setDraft] = useState(initial);
+  const stage = useStageVariables();
+  const [text, setText] = useState("");
+  const parsed = parseDotenv(text);
   return (
-    <input
-      // biome-ignore lint/a11y/noAutofocus: opened by clicking edit
-      autoFocus
-      value={draft}
-      placeholder="new value"
-      aria-label="Value"
-      onChange={(e) => setDraft(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onSave(draft);
-        if (e.key === "Escape") onCancel();
-      }}
-      className="w-full border-b border-white bg-black outline-none placeholder:text-faint"
-    />
+    <div
+      className={`${grid} focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-prog`}
+    >
+      <span className="text-right text-faint">{n}</span>
+      <span />
+      <span>{service ?? "env"}</span>
+      <input
+        ref={inputRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") e.currentTarget.blur();
+          if (e.key !== "Enter" || parsed.length === 0) return;
+          stage.mutate(
+            {
+              env,
+              service,
+              set: Object.fromEntries(parsed.map((p) => [p.name, p.value])),
+            },
+            { onSuccess: () => setText("") },
+          );
+        }}
+        placeholder="NAME=value"
+        aria-label="New variable, NAME=value"
+        className="min-w-0 bg-transparent outline-none"
+      />
+      <span className="font-sans text-2xs text-mut">
+        <ErrorText error={stage.error} /> ↵ add
+      </span>
+    </div>
+  );
+}
+
+/** Bulk paste of a .env file, staged as one change set. */
+function PasteEnv({
+  env,
+  service,
+  onDone,
+}: {
+  env: EnvRef;
+  service: string | null;
+  onDone: () => void;
+}) {
+  const stage = useStageVariables();
+  const [text, setText] = useState("");
+  const parsed = parseDotenv(text);
+  return (
+    <div className="flex flex-col gap-2">
+      <textarea
+        // biome-ignore lint/a11y/noAutofocus: opened on request
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && onDone()}
+        placeholder={"DATABASE_URL=postgres://...\nLOG_LEVEL=info"}
+        aria-label=".env contents"
+        rows={6}
+        className="field w-full resize-y font-mono text-xs"
+      />
+      <div className="flex flex-wrap items-start gap-2.5">
+        <Act
+          primary
+          cli={`dock env import .env -e ${env.environment}${service ? ` -s ${service}` : ""}`}
+          disabled={parsed.length === 0 || stage.isPending}
+          onClick={() =>
+            stage.mutate(
+              {
+                env,
+                service,
+                set: Object.fromEntries(parsed.map((v) => [v.name, v.value])),
+              },
+              { onSuccess: onDone },
+            )
+          }
+        >
+          Stage {plural(parsed.length, "variable")} for{" "}
+          {service ?? "the environment"}
+        </Act>
+        <Button onClick={onDone}>Cancel</Button>
+        <span className="self-center">
+          <ErrorText error={stage.error} />
+        </span>
+      </div>
+    </div>
   );
 }

@@ -1,8 +1,16 @@
-import { createFileRoute, notFound, Outlet } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  notFound,
+  Outlet,
+  useMatches,
+} from "@tanstack/react-router";
+import { useEffect } from "react";
 import { findService, queries, servicePath } from "../data/queries";
 import { ServiceHeader } from "../features/service/ServiceHeader";
+import { rememberProject } from "../shell/location";
+import { Page } from "../ui/kit";
 
-// Service layout: header, tabs and meta stay put while tabs swap below.
+// Service layout: title and tabs stay put while tabs swap below.
 // Addressed by name, like the API: /shop/production/api.
 export const Route = createFileRoute("/_app/$project/$environment/$service")({
   loader: async ({ context: { queryClient }, params }) => {
@@ -21,10 +29,15 @@ export const Route = createFileRoute("/_app/$project/$environment/$service")({
 
 function ServiceLayout() {
   const ref = servicePath(Route.useParams());
+  const onOverview = useMatches({
+    select: (matches) =>
+      matches.at(-1)?.routeId === "/_app/$project/$environment/$service/",
+  });
+  useEffect(() => rememberProject(ref.project), [ref.project]);
   return (
-    <>
-      <ServiceHeader serviceRef={ref} />
+    <Page>
+      <ServiceHeader serviceRef={ref} full={onOverview} />
       <Outlet />
-    </>
+    </Page>
   );
 }

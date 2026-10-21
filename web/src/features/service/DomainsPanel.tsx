@@ -4,123 +4,260 @@ import {
   useGenerateDomain,
   useRemoveDomain,
 } from "../../data/mutations";
+import { domainNeedsAttention } from "../../data/problems";
 import { useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
-import { since } from "../../ui/format";
+import { ago, since } from "../../ui/format";
 import {
-  Action,
   Button,
+  CopyButton,
   ErrorText,
-  Heading,
-  inputClass,
-  Status,
+  Scroll,
+  SectionHead,
+  StateText,
 } from "../../ui/kit";
-import { domainStatus } from "../../ui/status";
+import { domainState } from "../../ui/status";
 
-/** Domains with TLS state, and the exact DNS records for any still waiting. */
+/** Add form, a card per domain that needs a human, and every domain. */
 export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service, domains } = useService(ref);
-  const generate = useGenerateDomain();
-  const [adding, setAdding] = useState(false);
   const port = service.port || 8080;
-  // Generated domains are covered by the wildcard record.
-  const waiting = domains.filter(
-    (d) =>
-      (d.status === "waiting_for_dns" || d.status === "added") &&
-      (d.dns_records ?? []).length > 0,
-  );
+  const waiting = domains.filter(domainNeedsAttention);
 
   return (
-    <div className="px-5">
-      <Heading
-        note={`port ${port}`}
-        actions={
-          <>
-            <Action
-              disabled={generate.isPending}
-              onClick={() => generate.mutate(ref)}
-            >
-              Generate
-            </Action>
-            <button
-              type="button"
-              className="hover:underline"
-              onClick={() => setAdding(true)}
-            >
-              Add domain
-            </button>
-          </>
-        }
-      >
-        Domains
-      </Heading>
-      <ErrorText error={generate.error} />
-      {adding && <AddDomain serviceRef={ref} onDone={() => setAdding(false)} />}
-
-      {domains.length === 0 ? (
-        <p className="py-2 text-dim">
-          No domains. The service is reachable on the private network at{" "}
-          <span className="font-mono text-xs">
-            {service.name}:{port}
-          </span>
-          .
-        </p>
-      ) : (
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Hostname</th>
-              <th>Status</th>
-              <th>Certificate</th>
-              <th>Target</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {domains.map((domain) => (
-              <DomainRow
-                key={domain.hostname}
-                serviceRef={ref}
-                domain={domain}
-                port={port}
-              />
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {waiting.map((domain) => (
-        <DnsInstructions key={domain.hostname} domain={domain} />
+    <>
+      <AddDomain
+        serviceRef={ref}
+        hasGenerated={domains.some((d) => d.generated)}
+      />
+      {waiting.map((d) => (
+        <DnsCard key={d.hostname} domain={d} />
       ))}
-    </div>
+      <section aria-labelledby="all-domains">
+        <SectionHead id="all-domains">All domains</SectionHead>
+        {domains.length === 0 ? (
+          <p className="py-2 text-mut">
+            No domains. The service is reachable on the private network at{" "}
+            <span className="font-mono text-white">
+              {service.name}:{port}
+            </span>
+            .
+          </p>
+        ) : (
+          <Scroll>
+            <table>
+              <thead>
+                <tr>
+                  <th>Hostname</th>
+                  <th>Status</th>
+                  <th>Detail</th>
+                  <th>Added</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {domains.map((d) => (
+                  <DomainRow
+                    key={d.hostname}
+                    serviceRef={ref}
+                    domain={d}
+                    port={port}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </Scroll>
+        )}
+      </section>
+    </>
   );
 }
 
-function certificate(domain: Domain) {
-  switch (domain.status) {
-    case "active":
-      return "issued";
-    case "issuing_certificate":
-      return "issuing";
-    case "added":
-    case "waiting_for_dns":
-      return "not issued";
-    case "error":
-      return domain.status_reason ?? "error";
-  }
+function AddDomain({
+  serviceRef: ref,
+  hasGenerated,
+}: {
+  serviceRef: ServiceRef;
+  hasGenerated: boolean;
+}) {
+  const add = useAddDomain();
+  const generate = useGenerateDomain();
+  const [hostname, setHostname] = useState("");
+  return (
+    <form
+      aria-label="Add domain"
+      className="flex flex-wrap items-center gap-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        add.mutate(
+          { ref, hostname: hostname.trim() },
+          { onSuccess: () => setHostname("") },
+        );
+      }}
+    >
+      <label htmlFor="hostname" className="text-mut">
+        Add a hostname
+      </label>
+      <input
+        id="hostname"
+        value={hostname}
+        onChange={(e) => setHostname(e.target.value)}
+        placeholder="app.example.com"
+        className="field min-w-0 flex-[1_1_320px] py-[7px] font-mono"
+      />
+      <button
+        type="submit"
+        className="btn pri"
+        disabled={add.isPending || !hostname.trim()}
+      >
+        Add domain
+      </button>
+      {!hasGenerated && (
+        <Button
+          disabled={generate.isPending}
+          onClick={() => generate.mutate(ref)}
+        >
+          Generate one
+        </Button>
+      )}
+      <span className="font-mono text-2xs text-mut">
+        dock domain add {"<host>"} -s {ref.service} -e {ref.environment}
+      </span>
+      <ErrorText error={add.error ?? generate.error} />
+    </form>
+  );
 }
 
-/** "checked 20s ago, now resolves to 198.51.100.7" */
-function lastCheck(checkedAt: string, resolved: string[]) {
-  const ago = since(checkedAt);
-  const when = ago === "now" ? "checked just now" : `checked ${ago} ago`;
-  const ips = resolved.length ? resolved.join(", ") : "nothing";
-  return `${when}, now resolves to ${ips}`;
+/** The DNS record to create, what the name resolves to now, and progress. */
+function DnsCard({ domain }: { domain: Domain }) {
+  const records = domain.dns_records ?? [];
+  const resolved = domain.resolved_ips ?? [];
+  const error = domain.status === "error";
+  const step =
+    domain.status === "waiting_for_dns" || domain.status === "added"
+      ? 1
+      : domain.status === "issuing_certificate"
+        ? 2
+        : 3;
+  return (
+    <section
+      aria-labelledby={`dns-${domain.hostname}`}
+      className={`flex flex-col gap-3.5 border p-4 ${error ? "border-fail-edge" : "border-warn-edge"}`}
+    >
+      <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
+        <h2
+          id={`dns-${domain.hostname}`}
+          className="font-mono text-[15px] font-medium"
+        >
+          {domain.hostname}
+        </h2>
+        <StateText state={domainState(domain)} />
+        {domain.checked_at && (
+          <span className="ml-auto text-mut">
+            Checked {ago(domain.checked_at)}
+          </span>
+        )}
+      </div>
+      {error ? (
+        <p className="text-md text-fail">
+          {domain.status_reason ?? "The certificate could not be issued."}
+        </p>
+      ) : (
+        <p className="text-md">
+          Create {records.length > 1 ? "one of these records" : "this record"}{" "}
+          at your DNS provider. Nothing else is needed; the certificate is
+          issued automatically once it resolves.
+        </p>
+      )}
+      {records.length > 0 && (
+        <Scroll>
+          <table className="font-mono">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Name</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((r) => (
+                <tr key={`${r.type} ${r.value}`}>
+                  <td>{r.type}</td>
+                  <td>
+                    {r.name} <CopyButton text={r.name} />
+                  </td>
+                  <td className="w-full">
+                    {r.value} <CopyButton text={r.value} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Scroll>
+      )}
+      {domain.checked_at && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1">
+          <span className="text-mut">Resolves now to</span>
+          <span className="font-mono">
+            {resolved.length ? (
+              <>
+                <span className="text-fail">✕</span> {resolved.join(", ")}
+              </>
+            ) : (
+              <span className="text-mut">nothing yet</span>
+            )}
+          </span>
+          {!error && domain.status_reason && (
+            <span className="text-mut">{domain.status_reason}</span>
+          )}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-x-[22px] gap-y-1.5 text-xs">
+        {["Waiting for DNS", "Issuing certificate", "Active"].map(
+          (label, i) => (
+            <span
+              key={label}
+              className={
+                i + 1 === step
+                  ? error
+                    ? "text-fail"
+                    : "text-warn"
+                  : "text-mut"
+              }
+            >
+              {i + 1 === step ? (error ? "✕" : "▲") : i + 1 < step ? "✓" : "○"}{" "}
+              {i + 1} {label}
+            </span>
+          ),
+        )}
+      </div>
+    </section>
+  );
+}
+
+function detail(d: Domain) {
+  switch (d.status) {
+    case "active":
+      return d.generated
+        ? "generated · certificate issued"
+        : "certificate issued";
+    case "issuing_certificate":
+      return "DNS ok · issuing the certificate";
+    case "added":
+      return "checking DNS";
+    case "waiting_for_dns": {
+      const record = d.dns_records?.[0];
+      const ips = d.resolved_ips ?? [];
+      return `needs ${record ? `${record.type} ${record.value}` : "a DNS record"}${ips.length ? `, resolves to ${ips.join(", ")}` : ""}`;
+    }
+    case "error":
+      return d.status_reason ?? "error";
+  }
 }
 
 function DomainRow({
   serviceRef: ref,
-  domain,
+  domain: d,
   port,
 }: {
   serviceRef: ServiceRef;
@@ -131,123 +268,49 @@ function DomainRow({
   const [confirming, setConfirming] = useState(false);
   return (
     <tr>
-      <td>
+      <td className="font-mono">
         <a
-          href={domain.url}
+          href={d.url}
           target="_blank"
           rel="noreferrer"
-          className="hover:underline"
+          className="no-underline hover:underline"
         >
-          {domain.hostname}
+          {d.hostname}
         </a>
-        {domain.generated && <span className="text-dim"> generated</span>}
       </td>
       <td>
-        <Status {...domainStatus(domain)} />
-        {domain.status !== "active" && domain.checked_at && (
-          <span className="block text-xs text-dim">
-            {lastCheck(domain.checked_at, domain.resolved_ips ?? [])}
-          </span>
-        )}
+        <StateText state={domainState(d)} />
       </td>
-      <td className={domain.status === "error" ? "text-bad" : "text-dim"}>
-        {certificate(domain)}
+      <td
+        className={`w-full whitespace-normal ${d.status === "error" ? "text-fail" : "text-mut"}`}
+      >
+        {detail(d)}
+        {d.redirect_to ? ` · redirects to ${d.redirect_to}` : ` · to :${port}`}
       </td>
-      <td className="font-mono text-xs text-dim">
-        {domain.redirect_to ? `→ ${domain.redirect_to}` : `:${port}`}
-      </td>
-      <td className="w-px text-right">
+      <td className="text-mut">{since(d.created_at)}</td>
+      <td className="py-1">
         {confirming ? (
-          <span className="flex justify-end gap-3">
-            <span className="text-dim">Traffic to this host stops.</span>
-            <button
-              type="button"
-              className="text-bad"
+          <span className="flex items-center gap-2">
+            <span className="text-mut">Traffic to it stops.</span>
+            <Button
+              small
+              danger
               disabled={remove.isPending}
-              onClick={() => remove.mutate({ ref, hostname: domain.hostname })}
+              onClick={() => remove.mutate({ ref, hostname: d.hostname })}
             >
               Remove
-            </button>
-            <Action onClick={() => setConfirming(false)}>Cancel</Action>
+            </Button>
+            <Button small onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
           </span>
         ) : (
-          <Action onClick={() => setConfirming(true)}>remove</Action>
+          <Button small onClick={() => setConfirming(true)}>
+            Remove
+          </Button>
         )}
         <ErrorText error={remove.error} />
       </td>
     </tr>
-  );
-}
-
-function DnsInstructions({ domain }: { domain: Domain }) {
-  const records = domain.dns_records ?? [];
-  return (
-    <div className="pt-1.5">
-      <p className="pb-1 text-xs">
-        {domain.hostname}
-        {domain.status_reason && (
-          <span className="text-dim"> · {domain.status_reason}</span>
-        )}
-      </p>
-      <div className="grid max-w-[640px] grid-cols-[60px_1fr_1fr_70px] gap-x-3 border border-line2 px-2.5 py-2 font-mono text-xs">
-        <span className="text-dim">Type</span>
-        <span className="text-dim">Name</span>
-        <span className="text-dim">Value</span>
-        <span />
-        {records.map((record) => (
-          <div key={`${record.type} ${record.value}`} className="contents">
-            <span>{record.type}</span>
-            <span>{record.name}</span>
-            <span>{record.value}</span>
-            <Action
-              className="text-left"
-              onClick={() => navigator.clipboard.writeText(record.value)}
-            >
-              copy
-            </Action>
-          </div>
-        ))}
-      </div>
-      <p className="pt-0.5 text-xs text-dim">
-        {records.length > 1 ? "Any one of these is enough. " : ""}
-        The certificate is issued once DNS points here.
-      </p>
-    </div>
-  );
-}
-
-function AddDomain({
-  serviceRef: ref,
-  onDone,
-}: {
-  serviceRef: ServiceRef;
-  onDone: () => void;
-}) {
-  const add = useAddDomain();
-  const [hostname, setHostname] = useState("");
-  return (
-    <form
-      className="flex items-baseline gap-3 py-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        add.mutate({ ref, hostname: hostname.trim() }, { onSuccess: onDone });
-      }}
-    >
-      <input
-        // biome-ignore lint/a11y/noAutofocus: opened on request
-        autoFocus
-        value={hostname}
-        onChange={(e) => setHostname(e.target.value)}
-        onKeyDown={(e) => e.key === "Escape" && onDone()}
-        placeholder="shop.example.com"
-        aria-label="Hostname"
-        className={`${inputClass} w-72`}
-      />
-      <Button primary type="submit" disabled={add.isPending}>
-        Add
-      </Button>
-      <Action onClick={onDone}>Cancel</Action>
-      <ErrorText error={add.error} />
-    </form>
   );
 }
