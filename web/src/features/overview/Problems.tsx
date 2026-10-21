@@ -5,7 +5,7 @@ import { serviceRef } from "../../data/queries";
 import type { Problem, ServiceView } from "../../data/types";
 import { since } from "../../ui/format";
 import { Glyph } from "../../ui/kit";
-import { outOfMemory, releaseStatus, type Tone } from "../../ui/status";
+import { releaseStatus, type Tone } from "../../ui/status";
 
 /** The overview's "needs a human" list. Renders nothing when all is well. */
 export function Problems({ project }: { project: string }) {
@@ -80,7 +80,7 @@ function ProblemRow({ problem: p }: { problem: Problem }) {
             ? `Restarting: ${status.restart_count} restarts`
             : "Crashed"}
           , exit code <span className={mono}>{status.exit_code}</span>
-          {status.oom_killed && `, ${outOfMemory(status)}`}
+          {status.oom_killed && ", out of memory"}
           {when}.
         </ServiceRow>
       );
