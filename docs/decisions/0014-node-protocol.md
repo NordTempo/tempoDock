@@ -1,6 +1,6 @@
 # 0014: Node protocol
 
-Status: proposed
+Status: accepted
 
 ## Context
 
@@ -387,15 +387,14 @@ integration with the real Docker runtime.
 - Events during an outage are lost by design; correctness rests on the
   reconnect reconcile.
 
-## Open questions
+## Resolved questions
 
-1. **Node port exposure.** Public `:7443` (simplest; unknown keys fail in the
-   handshake), or Tailscale only (homelab must be on the tailnet)?
-2. **Registry exposure.** Public `registry.<cp-domain>` through Caddy with
-   token auth, or Tailscale only?
-3. **Deploys to an offline server.** Reject immediately (proposed), or queue
-   until it returns?
-4. **Promote with missing services.** Skip and report (proposed), or offer to
-   create them in production?
-5. **Control plane key rotation.** Worth building in M3, or document re-join
-   as the procedure?
+Decided 2026-10-21.
+
+| Question | Decision |
+|---|---|
+| Node port `:7443` exposure | Tailscale only. Public stays possible later (unknown keys fail in the handshake) for nodes off the tailnet. |
+| Registry exposure | Tailscale only. CI images keep coming from external registries (`--image`). |
+| Deploy to an offline server | Rejected immediately with "server X is offline". No queue. |
+| Promote with services missing in production | Skipped and listed in the output. Production services are only created on purpose. |
+| Control plane key rotation | Not built in M3. Re-joining nodes is the documented procedure. |
