@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -268,16 +269,76 @@ func TestHealthCheckOOM(t *testing.T) {
 		Cmd:       "sleep 1; tail /dev/zero", // buffers forever, looking for a newline
 		Resources: node.Resources{MemoryBytes: 16 << 20},
 	})
-	raw, err := e.cli.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+	err := e.HealthCheck(ctx, c, node.HealthCheck{Timeout: 30 * time.Second, Interval: 200 * time.Millisecond})
+	if err == nil || !strings.Contains(err.Error(), "ran out of memory (limit 16 MB)") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// An app's container has no swap, and on systemd hosts its scope unit says
+// so too, so a `systemctl daemon-reload` can't hand it unlimited swap.
+func TestNoSwap(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	c := e.start(node.ContainerSpec{
+		Name: e.name("noswap"), Image: shellImage,
+		Cmd:       "cat /sys/fs/cgroup/memory.swap.max; sleep 600",
+		Resources: node.Resources{MemoryBytes: 32 << 20},
+	})
+	var out string
+	for deadline := time.Now().Add(10 * time.Second); out == "" && time.Now().Before(deadline); {
+		time.Sleep(100 * time.Millisecond)
+		lines, err := e.Logs(ctx, c.ID, node.LogOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for l := range lines {
+			out = l.Text
+		}
+	}
+	if out != "0" {
+		t.Errorf("memory.swap.max = %q, want 0", out)
+	}
+
+	unit := "docker-" + c.ID + ".scope"
+	prop, err := exec.CommandContext(ctx, "systemctl", "show", unit, "-p", "MemorySwapMax", "--value").Output()
+	if err != nil {
+		t.Skipf("systemctl show %s: %v (not a systemd host)", unit, err)
+	}
+	switch got := strings.TrimSpace(string(prop)); got {
+	case "", "infinity":
+		t.Errorf("%s MemorySwapMax = %q: a daemon-reload would give the container unlimited swap", unit, got)
+	}
+}
+
+// Containers created with Docker's plain "no swap" are switched to NoSwap.
+func TestUpgradeSwapLimits(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	const mem = 32 << 20
+	opts := createOptions(node.ContainerSpec{
+		Name: e.name("oldswap"), Image: shellImage, Cmd: "sleep 600",
+		Labels:    node.Labels{Project: "p", Environment: "e", Service: "s", Release: "1"},
+		Resources: node.Resources{MemoryBytes: mem},
+	})
+	opts.HostConfig.MemorySwap = mem
+	created, err := e.cli.ContainerCreate(ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h := raw.Container.HostConfig; h.MemorySwap != h.Memory {
-		t.Errorf("MemorySwap = %d, want %d (no swap)", h.MemorySwap, h.Memory)
+	if _, err := e.cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		t.Fatal(err)
 	}
-	err = e.HealthCheck(ctx, c, node.HealthCheck{Timeout: 30 * time.Second, Interval: 200 * time.Millisecond})
-	if err == nil || !strings.Contains(err.Error(), "ran out of memory (limit 16 MB)") {
-		t.Fatalf("err = %v", err)
+
+	if n, err := e.UpgradeSwapLimits(ctx); err != nil || n < 1 {
+		t.Fatalf("UpgradeSwapLimits = %d, %v", n, err)
+	}
+	raw, err := e.cli.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := raw.Container.HostConfig; h.Memory != mem || h.MemorySwap != NoSwap(mem) {
+		t.Errorf("memory = %d, swap = %d", h.Memory, h.MemorySwap)
 	}
 }
 

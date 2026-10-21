@@ -26,6 +26,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/node"
+	dockerrt "github.com/NordTempo/tempoDock/internal/node/docker"
 )
 
 const (
@@ -364,8 +365,8 @@ RUN node -e 'const a = []; for (;;) a.push(Buffer.alloc(16 << 20, 1))'
 }
 
 // The memory cap holds even after something outside the platform loosens
-// it: `docker update`, or systemd re-applying the scope's MemorySwapMax
-// (infinity) on a daemon-reload, which only changes the cgroup file.
+// it: `docker update`, or a write to the cgroup file that leaves Docker's
+// HostConfig as it was.
 func TestDaemonLimitsRestored(t *testing.T) {
 	docker := dockerClient(t)
 	ctx := t.Context()
@@ -384,7 +385,7 @@ func TestDaemonLimitsRestored(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if h := inspect.Container.HostConfig; h.Memory != mem || h.MemorySwap != mem {
+		if h := inspect.Container.HostConfig; h.Memory != mem || h.MemorySwap != dockerrt.NoSwap(mem) {
 			t.Fatalf("HostConfig memory = %d, swap = %d", h.Memory, h.MemorySwap)
 		}
 		if p := cgroupProblem(b.readCgroupLimits(ctx), mem); p != "" {
@@ -400,8 +401,8 @@ func TestDaemonLimitsRestored(t *testing.T) {
 	}
 	ensure()
 
-	// What a daemon-reload does: the cgroup's swap limit goes back to max
-	// while Docker's HostConfig still says no swap. buildkitd runs in a
+	// The cgroup's swap limit goes back to max while Docker's HostConfig
+	// still says no swap. buildkitd runs in a
 	// child cgroup ("init") of the container's scope, which holds the limit.
 	// Only the systemd cgroup driver's scope paths are handled.
 	inspect, err := docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -20,13 +21,19 @@ import (
 // newRuntime builds the local server's node runtime from Docker, BuildKit
 // and Caddy. DOCK_FAKE_RUNTIME=1 uses an in-memory fake (no Docker), for
 // local development of the API, CLI and UI.
-func newRuntime(cfg config.Config) (node.Runtime, error) {
+func newRuntime(ctx context.Context, cfg config.Config, log *slog.Logger) (node.Runtime, error) {
 	if os.Getenv("DOCK_FAKE_RUNTIME") == "1" {
 		return fake.New(), nil
 	}
 	containers, err := docker.New(cfg.Network.Pool)
 	if err != nil {
 		return nil, err
+	}
+	// Apps keep running if this fails; only their swap limit stays loose.
+	if n, err := containers.UpgradeSwapLimits(ctx); err != nil {
+		log.Error("upgrade container swap limits", "err", err)
+	} else if n > 0 {
+		log.Info("upgraded container swap limits", "containers", n)
 	}
 	proxy, err := caddy.New(caddyOptions(cfg))
 	if err != nil {
@@ -40,7 +47,7 @@ func newRuntime(cfg config.Config) (node.Runtime, error) {
 		}
 		// BuildKit gets its own network from the pool, so the app firewall
 		// covers build steps like any app.
-		if err := containers.EnsureNetwork(context.Background(), buildkitNetwork, node.Labels{}); err != nil {
+		if err := containers.EnsureNetwork(ctx, buildkitNetwork, node.Labels{}); err != nil {
 			return nil, err
 		}
 		b := build.New(cli, cfg.BuildKit, filepath.Join(cfg.DataDir, "builds", "work"))

@@ -12,9 +12,13 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/railwayapp/railpack v0.43.0
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/tonistiigi/fsutil v0.0.0-20261009124904-c1c5bffae3b5
+	golang.org/x/crypto v0.58.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/term v0.47.0
 	google.golang.org/grpc v1.84.0
+	modernc.org/sqlite v1.61.0
 )
 
 require (
@@ -82,7 +86,6 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.11.1 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/objx v0.8.0 // indirect
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect
 	github.com/tidwall/pretty v1.2.2 // indirect
@@ -101,10 +104,8 @@ require (
 	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
@@ -115,6 +116,5 @@ require (
 	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.61.0 // indirect
 	mvdan.cc/sh/v3 v3.14.1 // indirect
 )

@@ -52,8 +52,8 @@ func TestCreateOptions(t *testing.T) {
 	if h.Memory != spec.Resources.MemoryBytes || h.NanoCPUs != spec.Resources.NanoCPUs {
 		t.Errorf("Resources = %d, %d", h.Memory, h.NanoCPUs)
 	}
-	if h.MemorySwap != h.Memory {
-		t.Errorf("MemorySwap = %d, want %d (no swap)", h.MemorySwap, h.Memory)
+	if h.MemorySwap != h.Memory+1 {
+		t.Errorf("MemorySwap = %d, want %d (no swap)", h.MemorySwap, h.Memory+1)
 	}
 	if !slices.Contains(h.SecurityOpt, "no-new-privileges") {
 		t.Errorf("SecurityOpt = %v", h.SecurityOpt)

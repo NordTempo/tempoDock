@@ -18,6 +18,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/docker"
 )
 
 const (
@@ -39,11 +40,11 @@ const (
 // config and limits and is running, then returns a client connected to it.
 //
 // The memory cap is verified where it takes effect, in the container's
-// cgroup, before every build. With Docker's systemd cgroup driver, runc
-// writes memory.swap.max = 0 but leaves the scope's MemorySwapMax at
-// infinity, so any `systemctl daemon-reload` (package upgrades, the install
-// script) silently gives the container unlimited swap and builds swap past
-// the cap. A container whose limits are off is recreated.
+// cgroup, before every build, and a container whose limits are off is
+// recreated. The swap setting (docker.NoSwap) survives a systemd
+// daemon-reload; this catches `docker update` and anything else outside
+// the platform that loosens it, since a build swapping past the cap
+// thrashes the disk.
 func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.Client, error) {
 	want := fmt.Sprintf("%s mem=%dMB cpus=%g", b.cfg.Image, b.cfg.MemoryMB, b.cfg.CPUs)
 	if b.Network != "" {
@@ -65,7 +66,7 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 		switch h := ctr.HostConfig; {
 		case ctr.Config.Labels[labelConfig] != want:
 			problem = "settings changed to " + want
-		case h == nil || h.Memory != mem || h.MemorySwap != mem:
+		case h == nil || h.Memory != mem || h.MemorySwap != docker.NoSwap(mem):
 			problem = "its memory limit or swap was changed"
 		case ctr.State.Running:
 			problem = cgroupProblem(b.readCgroupLimits(ctx), mem)
@@ -130,7 +131,7 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 			Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: CacheVolume, Target: "/var/lib/buildkit"}},
 			Resources: container.Resources{
 				Memory:     mem,
-				MemorySwap: mem, // no swap: hitting the cap fails the build instead of thrashing the disk
+				MemorySwap: docker.NoSwap(mem), // hitting the cap fails the build instead of thrashing the disk
 				NanoCPUs:   int64(b.cfg.CPUs * 1e9),
 				CPUShares:  cpuShares,
 			},

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -27,6 +28,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/NordTempo/tempoDock/internal/node"
 )
@@ -328,6 +330,26 @@ func (r *Runtime) checkDeps(ctx context.Context, spec node.ContainerSpec) error 
 	return nil
 }
 
+// NoSwap returns the HostConfig.MemorySwap that caps a container at memory
+// bytes with no swap, in a way that survives `systemctl daemon-reload`.
+// A memory of 0 (no limit) stays 0.
+//
+// Docker's usual "no swap", MemorySwap == Memory, is lost on systemd hosts:
+// with the systemd cgroup driver, runc writes memory.swap.max = 0 but never
+// tells systemd (it skips a zero MemorySwapMax), so the container's scope
+// unit keeps MemorySwapMax=infinity, and after any daemon-reload (package
+// upgrades, the install script) systemd writes "max" back the next time it
+// touches cgroups in the slice. One byte of swap is a value runc does pass
+// to systemd, and the kernel rounds it down to zero pages: memory.swap.max
+// reads 0 and systemd re-applies that on every reload. `docker update` with
+// this value fixes the scope of an existing container too.
+func NoSwap(memory int64) int64 {
+	if memory <= 0 {
+		return 0
+	}
+	return memory + 1
+}
+
 // createOptions translates spec into Docker's create request.
 func createOptions(spec node.ContainerSpec) client.ContainerCreateOptions {
 	cfg := &container.Config{
@@ -347,10 +369,10 @@ func createOptions(spec node.ContainerSpec) client.ContainerCreateOptions {
 		},
 		Resources: container.Resources{
 			Memory: spec.Resources.MemoryBytes,
-			// Swap equal to memory means no swap (Docker's default is twice
-			// the limit), so the limit is what the app gets and an app over
-			// it is killed instead of thrashing the disk.
-			MemorySwap: spec.Resources.MemoryBytes,
+			// No swap (Docker's default is twice the limit), so the limit is
+			// what the app gets and an app over it is killed instead of
+			// thrashing the disk.
+			MemorySwap: NoSwap(spec.Resources.MemoryBytes),
 			NanoCPUs:   spec.Resources.NanoCPUs,
 		},
 		SecurityOpt: []string{"no-new-privileges"},
@@ -419,6 +441,49 @@ func (r *Runtime) Inspect(ctx context.Context, id string) (node.Container, error
 		return node.Container{}, err
 	}
 	return toContainer(c), nil
+}
+
+// UpgradeSwapLimits gives app containers created with Docker's plain "no
+// swap" (MemorySwap == Memory) the NoSwap setting, which systemd keeps
+// across a daemon-reload: one `docker update` per such container, a few at
+// a time. Containers already set up right aren't touched. Run it once on
+// startup; it returns how many containers it updated.
+func (r *Runtime) UpgradeSwapLimits(ctx context.Context) (int, error) {
+	res, err := r.cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: managedFilter()})
+	if err != nil {
+		return 0, fmt.Errorf("list containers: %w", err)
+	}
+	var updated atomic.Int32
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(4)
+	for _, s := range res.Items {
+		g.Go(func() error {
+			c, err := r.inspect(ctx, s.ID)
+			if cerrdefs.IsNotFound(err) {
+				return nil // removed since listing, or not an app
+			}
+			if err != nil {
+				return err
+			}
+			h := c.HostConfig
+			if h == nil || h.Memory <= 0 || h.MemorySwap != h.Memory {
+				return nil
+			}
+			_, err = r.cli.ContainerUpdate(ctx, s.ID, client.ContainerUpdateOptions{
+				Resources: &container.Resources{Memory: h.Memory, MemorySwap: NoSwap(h.Memory)},
+			})
+			switch {
+			case cerrdefs.IsNotFound(err):
+			case err != nil:
+				return fmt.Errorf("update swap limit of %s: %w", c.Name, err)
+			default:
+				updated.Add(1)
+			}
+			return nil
+		})
+	}
+	err = g.Wait()
+	return int(updated.Load()), err
 }
 
 // List returns all managed containers, running or not.
