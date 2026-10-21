@@ -68,6 +68,23 @@ func (h *harness) start() *Core {
 	return c
 }
 
+// restart stops the daemon gracefully and starts a new one on the same
+// database and runtime.
+func (h *harness) restart() {
+	h.t.Helper()
+	h.c.Close()
+	h.c = h.start()
+}
+
+// crash starts a new daemon without stopping the current one, like a
+// process that died mid-work: the old one's goroutines are abandoned (and
+// closed at cleanup).
+func (h *harness) crash() {
+	h.t.Helper()
+	h.t.Cleanup(h.c.Close)
+	h.c = h.start()
+}
+
 // service creates project shop (with its production environment) if
 // needed, and a service in it.
 func (h *harness) service(name string, req apitypes.CreateServiceRequest) ServiceRef {

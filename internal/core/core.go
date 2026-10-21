@@ -157,8 +157,9 @@ func (c *Core) Start(ctx context.Context) error {
 	return nil
 }
 
-// Close cancels in-flight deploys (they fail with "interrupted" and clean up
-// their containers) and waits for background work to finish.
+// Close abandons in-flight deploys and waits for background work to finish.
+// It never stops or waits on app containers: the next Start's recovery
+// fails abandoned releases and removes their containers.
 func (c *Core) Close() {
 	c.cancel()
 	c.wg.Wait()

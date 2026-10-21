@@ -36,8 +36,7 @@ type deployment struct {
 
 	old        *store.Release // active release when the deploy started
 	stateful   bool
-	oldRemoved bool   // stateful recreate removed the old container
-	newID      string // the new container, once started
+	oldRemoved bool // stateful recreate stopped (or tried to stop) the old container
 }
 
 type stepError struct {
@@ -107,16 +106,17 @@ func (d *deployment) run(ctx context.Context) error {
 			return step(apitypes.CodeDeployFailed, "create volume %s: %w", m.Volume, err)
 		}
 	}
-	if d.stateful && d.old != nil && d.old.ContainerID != "" {
+	if d.stateful && d.old != nil {
 		d.event(ctx, fmt.Sprintf("Stopping release %d first: services with volumes are replaced, never run side by side", d.old.Number))
-		c.removeContainer(ctx, d.ss.env.ServerID, d.old.ContainerID)
-		d.oldRemoved = true
+		d.oldRemoved = true // from here on, failing brings it back
+		if err := c.removeReleaseContainers(ctx, d.ss.env.ServerID, d.old.ID); err != nil {
+			return step(apitypes.CodeDeployFailed, "stop release %d: %w", d.old.Number, err)
+		}
 	}
 	ctr, err := d.rt.Start(ctx, c.containerSpec(d.ss, d.rel, d.cfg))
 	if err != nil {
 		return step(apitypes.CodeDeployFailed, "start container: %w", err)
 	}
-	d.newID = ctr.ID
 	if err := c.store.SetReleaseContainer(ctx, store.SetReleaseContainerParams{ContainerID: ctr.ID, ID: d.rel.ID}); err != nil {
 		return err
 	}
@@ -258,17 +258,19 @@ func (d *deployment) cutover(ctx context.Context) error {
 		if old, err := c.store.GetRelease(ctx, d.old.ID); err == nil {
 			c.publishRelease(ctx, d.ss, old)
 		}
-		if !d.oldRemoved && d.old.ContainerID != "" {
+		if !d.oldRemoved {
 			// Let connections still on the old upstream finish. On shutdown,
-			// skip the wait but still stop it: it no longer gets traffic.
+			// leave it: it gets no traffic, keeps its port, and recovery
+			// stops it on the next start.
 			select {
 			case <-time.After(c.drain):
 			case <-ctx.Done():
+				return nil
 			}
-			cctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
-			defer cancel()
-			d.event(cctx, fmt.Sprintf("Stopping release %d", d.old.Number))
-			c.removeContainer(cctx, serverID, d.old.ContainerID)
+			d.event(ctx, fmt.Sprintf("Stopping release %d", d.old.Number))
+			if err := c.retire(ctx, serverID, d.old.ID); err != nil {
+				d.event(ctx, fmt.Sprintf("Could not stop release %d (it keeps its port until it is removed): %v", d.old.Number, err))
+			}
 		}
 	}
 	return nil
@@ -278,30 +280,40 @@ func (d *deployment) cutover(ctx context.Context) error {
 // serving; for stateful services (already stopped) it is started again
 // before the failure is recorded, so "failed" means "back to the previous
 // state".
+//
+// On shutdown it does nothing: the release stays in flight and recovery
+// finishes it on the next start, so stopping the daemon never waits on
+// containers (systemd gives it TimeoutStopSec=20).
 func (d *deployment) fail(ctx context.Context, err error) {
 	c := d.c
+	if c.ctx.Err() != nil {
+		c.log.Warn("deploy abandoned on shutdown; it fails on the next start", "service", d.ss.String(), "release", d.rel.Number)
+		return
+	}
 	code, msg := apitypes.CodeInternal, err.Error()
-	var se *stepError
-	switch {
-	case ctx.Err() != nil:
-		code, msg = apitypes.CodeDeployFailed, "daemon stopped during deploy"
-	case errors.As(err, &se):
+	if se, ok := errors.AsType[*stepError](err); ok {
 		code = se.code
 	}
-	// Cleanup must happen even if the deploy context is cancelled.
-	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
-	if d.newID != "" {
-		c.removeContainer(ctx, d.ss.env.ServerID, d.newID)
+	serverID := d.ss.env.ServerID
+	removeErr := c.removeReleaseContainers(ctx, serverID, d.rel.ID)
+	if removeErr != nil {
+		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, removeErr))
 	}
 	if d.oldRemoved && d.old != nil {
-		d.event(ctx, fmt.Sprintf("Starting release %d again", d.old.Number))
-		if err := c.restartRelease(ctx, d.ss, *d.old); err != nil {
-			d.event(ctx, fmt.Sprintf("Could not start release %d again: %v", d.old.Number, err))
+		if removeErr == nil {
+			c.ensureRunning(ctx, d.ss, *d.old)
+		} else {
+			// Two containers must never share a volume.
+			d.event(ctx, fmt.Sprintf("Not starting release %d again while the new container may still be running; redeploy or roll back once it is gone", d.old.Number))
 		}
 	}
 	if err := c.store.FailRelease(ctx, store.FailReleaseParams{Error: msg, ErrorCode: string(code), FinishedAt: ptr(now()), ID: d.rel.ID}); err != nil {
 		c.log.Error("mark release failed", "release", d.rel.ID, "err", err)
+	}
+	if removeErr == nil {
+		c.freePort(ctx, d.rel.ID)
 	}
 	d.event(ctx, fmt.Sprintf("Release %d failed: %s", d.rel.Number, msg))
 	d.publish(ctx)
@@ -382,15 +394,66 @@ func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) 
 	return spec
 }
 
-// removeContainer stops (gracefully) and removes a container, logging
-// failures. Missing containers are fine.
-func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) {
+// removeContainer stops (gracefully) and removes a container. Missing
+// containers are fine.
+func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) error {
 	rt := c.runtime(serverID)
 	if err := rt.Stop(ctx, id, stopTimeout); err != nil && !errors.Is(err, node.ErrNotFound) {
-		c.log.Warn("stop container", "id", id, "err", err)
+		return fmt.Errorf("stop container %s: %w", id, err)
 	}
 	if err := rt.Remove(ctx, id); err != nil && !errors.Is(err, node.ErrNotFound) {
-		c.log.Warn("remove container", "id", id, "err", err)
+		return fmt.Errorf("remove container %s: %w", id, err)
+	}
+	return nil
+}
+
+func (c *Core) removeContainers(ctx context.Context, serverID int64, ctrs []node.Container) error {
+	var errs []error
+	for _, ct := range ctrs {
+		errs = append(errs, c.removeContainer(ctx, serverID, ct.ID))
+	}
+	return errors.Join(errs...)
+}
+
+// ofRelease filters containers labelled with a release.
+func ofRelease(ctrs []node.Container, releaseID int64) []node.Container {
+	id := strconv.FormatInt(releaseID, 10)
+	var out []node.Container
+	for _, ct := range ctrs {
+		if ct.Labels.Release == id {
+			out = append(out, ct)
+		}
+	}
+	return out
+}
+
+// removeReleaseContainers stops and removes every container of a release.
+// They are found by label, not by the saved container ID, so a container
+// started just before a crash (ID never saved) is found too.
+func (c *Core) removeReleaseContainers(ctx context.Context, serverID, releaseID int64) error {
+	ctrs, err := c.runtime(serverID).List(ctx)
+	if err != nil {
+		return err
+	}
+	return c.removeContainers(ctx, serverID, ofRelease(ctrs, releaseID))
+}
+
+// retire removes a superseded or failed release's containers and then frees
+// its host port. If removal fails the port stays taken, so no new release
+// is handed a port the old container still holds.
+func (c *Core) retire(ctx context.Context, serverID, releaseID int64) error {
+	if err := c.removeReleaseContainers(ctx, serverID, releaseID); err != nil {
+		return err
+	}
+	c.freePort(ctx, releaseID)
+	return nil
+}
+
+// freePort releases a retired release's host port (a no-op for releases
+// that are still deploying or active).
+func (c *Core) freePort(ctx context.Context, releaseID int64) {
+	if err := c.store.ClearReleaseHostPort(ctx, releaseID); err != nil {
+		c.log.Error("free host port", "release", releaseID, "err", err)
 	}
 }
 

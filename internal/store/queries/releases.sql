@@ -53,9 +53,22 @@ INSERT INTO release_events (release_id, message, created_at) VALUES (?, ?, ?) RE
 SELECT * FROM release_events WHERE release_id = ? ORDER BY id;
 
 -- name: ListUsedHostPorts :many
--- Host ports held by releases that are deploying or serving on one server.
+-- Host ports held on one server. A release keeps its port until its
+-- container is confirmed removed (ClearReleaseHostPort), so a container
+-- that is still draining, or failed to stop, never shares it.
 SELECT releases.host_port FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
+WHERE environments.server_id = ? AND releases.host_port > 0;
+
+-- name: ClearReleaseHostPort :exec
+-- Frees a retired release's port once its containers are gone.
+UPDATE releases SET host_port = 0 WHERE id = ? AND status IN ('failed', 'superseded');
+
+-- name: ListRetiredPortHolders :many
+-- Failed or superseded releases on one server that still hold a host port.
+SELECT releases.id FROM releases
+JOIN services ON services.id = releases.service_id
+JOIN environments ON environments.id = services.environment_id
 WHERE environments.server_id = ? AND releases.host_port > 0
-  AND releases.status IN ('queued', 'building', 'starting', 'health_checking', 'active');
+  AND releases.status IN ('failed', 'superseded');

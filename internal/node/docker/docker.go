@@ -203,12 +203,24 @@ func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Cont
 	if err != nil {
 		return node.Container{}, fmt.Errorf("create container %s: %w", spec.Name, err)
 	}
+	// From here on, any failure (including ctx being cancelled) removes the
+	// container: the caller gets no ID, so it could never clean it up, and a
+	// stray container on a stateful service's volume must not keep running.
+	cleanup := func() {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_, _ = r.cli.ContainerRemove(cctx, created.ID, client.ContainerRemoveOptions{Force: true})
+	}
 	if _, err := r.cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		// Don't leave a half-made container holding the name.
-		_, _ = r.cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+		cleanup()
 		return node.Container{}, fmt.Errorf("start container %s: %w", spec.Name, err)
 	}
-	return r.Inspect(ctx, created.ID)
+	c, err := r.Inspect(ctx, created.ID)
+	if err != nil {
+		cleanup()
+		return node.Container{}, err
+	}
+	return c, nil
 }
 
 // checkDeps refuses to attach a container to unmanaged networks or volumes.

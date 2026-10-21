@@ -189,11 +189,15 @@ func (c *Core) ArchiveService(ctx context.Context, a Actor, ref ServiceRef) (api
 		c.log.Error("apply routes after archive", "service", ss.String(), "err", err)
 	}
 	if active, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
-		if active.ContainerID != "" {
-			c.removeContainer(ctx, ss.env.ServerID, active.ContainerID)
+		removeErr := c.removeReleaseContainers(ctx, ss.env.ServerID, active.ID)
+		if removeErr != nil {
+			c.log.Error("stop archived service", "service", ss.String(), "err", removeErr)
 		}
 		if err := c.store.SupersedeRelease(ctx, active.ID); err != nil {
 			return apitypes.Service{}, err
+		}
+		if removeErr == nil {
+			c.freePort(ctx, active.ID)
 		}
 	}
 	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceNone})

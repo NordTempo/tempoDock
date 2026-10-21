@@ -38,8 +38,6 @@ type releaseConfig struct {
 	MemoryMB           int           `json:"memory_mb"`
 	CPUs               float64       `json:"cpus"`
 	Mounts             []configMount `json:"mounts"`
-	// Network (older releases) is ignored: containers always join their
-	// environment's current network (networkName).
 	Aliases            []string      `json:"aliases"`
 	// Repo holds the deploy settings that came from dock.toml, so config
 	// releases built on this one keep them.

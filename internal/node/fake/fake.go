@@ -40,6 +40,7 @@ type Runtime struct {
 	buildErr    error
 	pullErr     error
 	startErr    error
+	stopErr     error
 	healthErr   func(node.ContainerSpec) error
 	exitOnStart bool
 	routesErr   error
@@ -70,6 +71,9 @@ func (r *Runtime) FailPull(err error) { r.mu.Lock(); r.pullErr = err; r.mu.Unloc
 
 // FailStart makes every Start return err.
 func (r *Runtime) FailStart(err error) { r.mu.Lock(); r.startErr = err; r.mu.Unlock() }
+
+// FailStop makes every Stop return err, leaving the container running.
+func (r *Runtime) FailStop(err error) { r.mu.Lock(); r.stopErr = err; r.mu.Unlock() }
 
 // FailHealthCheck makes health checks fail for containers where fn returns
 // an error. Nil makes every check pass.
@@ -323,6 +327,9 @@ func (r *Runtime) Stop(_ context.Context, id string, _ time.Duration) error {
 		return fmt.Errorf("container %s: %w", id, node.ErrNotFound)
 	}
 	r.op("stop %s", c.Name)
+	if r.stopErr != nil {
+		return r.stopErr
+	}
 	c.State = node.StateExited
 	return nil
 }
@@ -334,6 +341,9 @@ func (r *Runtime) Remove(_ context.Context, id string) error {
 	c, ok := r.containers[id]
 	if !ok {
 		return fmt.Errorf("container %s: %w", id, node.ErrNotFound)
+	}
+	if c.State == node.StateRunning {
+		return fmt.Errorf("container %s is running; stop it first", c.Name)
 	}
 	r.op("remove %s", c.Name)
 	delete(r.containers, id)
