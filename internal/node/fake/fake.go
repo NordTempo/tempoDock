@@ -10,9 +10,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -47,6 +49,7 @@ type Runtime struct {
 	healthGate  chan struct{}
 	stopGate    chan struct{}
 	domainCheck func(hostname string) node.DomainCheck
+	dialAddr    string
 
 	host       node.HostStats
 	hostSet    bool
@@ -482,6 +485,29 @@ func (r *Runtime) Events(ctx context.Context) (<-chan node.ContainerEvent, error
 		close(ch)
 	}()
 	return ch, nil
+}
+
+// DialTo makes Dial connect to addr (host:port, e.g. a test Postgres)
+// whatever container and port it is asked for.
+func (r *Runtime) DialTo(addr string) { r.mu.Lock(); r.dialAddr = addr; r.mu.Unlock() }
+
+// Dial implements node.Containers. Like the real runtime it only dials
+// running service containers; the connection goes to the DialTo address.
+func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, error) {
+	r.mu.Lock()
+	c, ok := r.containers[req.ContainerID]
+	addr := r.dialAddr
+	r.mu.Unlock()
+	switch {
+	case !ok || c.Labels.Service == "":
+		return nil, fmt.Errorf("container %s: %w", req.ContainerID, node.ErrNotFound)
+	case c.State != node.StateRunning:
+		return nil, fmt.Errorf("container %s is %s", req.ContainerID, c.State)
+	case addr == "":
+		return nil, errors.New("fake: no dial target; call DialTo")
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, "tcp", addr)
 }
 
 // Build implements node.Builder. It reads the whole source stream.

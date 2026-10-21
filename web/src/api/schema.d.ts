@@ -1139,6 +1139,8 @@ export interface components {
             actor_kind: "user" | "token" | "system";
             /** Format: date-time */
             created_at: string;
+            /** Format: int64 */
+            detail_id?: number;
             environment?: string;
             /** Format: int64 */
             id: number;
@@ -1253,6 +1255,7 @@ export interface components {
             start_command?: string;
         };
         CreateTokenRequest: {
+            data?: components["schemas"]["DataTokenAccess"];
             /** @description Requires project */
             environment?: string;
             /**
@@ -1283,6 +1286,14 @@ export interface components {
             /** @enum {string} */
             type: "A" | "CNAME";
             value: string;
+        };
+        DataTokenAccess: {
+            /** @enum {string} */
+            non_production: "none" | "schema" | "read" | "propose" | "write";
+            /** @enum {string} */
+            production: "none" | "schema" | "read" | "propose" | "write";
+            /** @enum {string} */
+            sensitive: "masked" | "visible";
         };
         DeployImageRequest: {
             /** @description Image reference; defaults to the service's image setting, which a deploy of another image updates */
@@ -1606,6 +1617,11 @@ export interface components {
             cpus_from_default: boolean;
             /** Format: date-time */
             created_at: string;
+            /** @enum {string} */
+            data_engine?: "postgres";
+            /** @enum {string} */
+            database: "" | "postgres" | "none";
+            database_url_variable: string;
             dockerfile_path: string;
             /** Format: double */
             effective_cpus: number;
@@ -1724,6 +1740,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             created_by: string;
+            data?: components["schemas"]["DataTokenAccess"];
             environment?: string;
             /** Format: date-time */
             expires_at?: string;

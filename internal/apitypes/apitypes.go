@@ -151,6 +151,15 @@ type Service struct {
 	ServiceSettings
 	// Stateful services have volumes and deploy with a recreate strategy.
 	Stateful bool `json:"stateful"`
+	// Database overrides database detection (ADR 0016); empty detects from
+	// the image. DatabaseURLVariable names the variable the panel reads
+	// connection details from, e.g. DATABASE_URL or api.DATABASE_URL.
+	// Both apply immediately and are never staged.
+	Database            DatabaseSetting `json:"database" enum:",postgres,none"`
+	DatabaseURLVariable string          `json:"database_url_variable"`
+	// DataEngine is the detected database engine; the Data tab shows when
+	// it is set.
+	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres"`
 	// ActiveRelease is the number of the release serving traffic, if any.
 	ActiveRelease *int64        `json:"active_release,omitempty"`
 	Status        ServiceStatus `json:"status"`
@@ -557,9 +566,15 @@ type Token struct {
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
 	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
+<<<<<<< HEAD
 	// Origin is "cli_login" for tokens created by approving `dock login`
 	// in the browser, else "manual".
 	Origin string `json:"origin" enum:"manual,cli_login"`
+=======
+	// Data is the token's own database access; without it the token
+	// follows the data policy's tokens rule (ADR 0016).
+	Data *DataTokenAccess `json:"data,omitempty"`
+>>>>>>> worktree-agent-a6e1b226c1314216b
 }
 
 // CreateTokenRequest creates a token, optionally limited to one project or
@@ -570,6 +585,8 @@ type CreateTokenRequest struct {
 	Project       string `json:"project,omitempty"`
 	Environment   string `json:"environment,omitempty" doc:"Requires project"`
 	ExpiresInDays int    `json:"expires_in_days,omitempty" minimum:"0" doc:"0 means never"`
+	// Data overrides the data policy's tokens rule for this token.
+	Data *DataTokenAccess `json:"data,omitempty"`
 }
 
 // CreatedToken is returned once, on creation. Secret is never shown again.
@@ -624,15 +641,18 @@ type CreateUserRequest struct {
 
 // AuditEvent records one mutating action.
 type AuditEvent struct {
-	ID          int64     `json:"id"`
-	Actor       string    `json:"actor"`
-	ActorKind   string    `json:"actor_kind" enum:"user,token,system"`
-	Action      string    `json:"action" example:"release.deploy"`
-	Project     string    `json:"project,omitempty"`
-	Environment string    `json:"environment,omitempty"`
-	Target      string    `json:"target"`
-	Summary     string    `json:"summary"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          int64  `json:"id"`
+	Actor       string `json:"actor"`
+	ActorKind   string `json:"actor_kind" enum:"user,token,system"`
+	Action      string `json:"action" example:"release.deploy"`
+	Project     string `json:"project,omitempty"`
+	Environment string `json:"environment,omitempty"`
+	Target      string `json:"target"`
+	Summary     string `json:"summary"`
+	// DetailID points at an AuditDetail (SQL, rows, duration, outcome) for
+	// data.* events.
+	DetailID  *int64    `json:"detail_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Server is a machine running a node runtime.

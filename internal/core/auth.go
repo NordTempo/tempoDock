@@ -314,6 +314,9 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	if !validScope(req.Scope) {
 		return apitypes.CreatedToken{}, invalid("scope must be read, deploy or admin")
 	}
+	if req.Data != nil { // TODO(ADR 0016 phase 3, Core track)
+		return apitypes.CreatedToken{}, ErrDataNotImplemented
+	}
 	params := store.CreateTokenParams{Name: req.Name, Scope: string(req.Scope), CreatedBy: a.Name}
 	var p *store.Project
 	var e *store.Environment

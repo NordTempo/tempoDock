@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"time"
 )
 
@@ -66,6 +67,24 @@ type Containers interface {
 	// ctx ends. Implementations reconnect on their own; the channel only
 	// closes when ctx is done.
 	Events(ctx context.Context) (<-chan ContainerEvent, error)
+
+	// Dial opens a TCP connection to a port of a platform-managed service
+	// container (ADR 0016), e.g. the database panel reaching Postgres. It
+	// dials the container's IP on its environment network from the host
+	// that runs it; on a remote server the bytes stream over the node link.
+	// It is not an open proxy: the target must carry LabelManaged and a
+	// service label, and no other network or address is ever used. ctx only
+	// bounds connecting; closing the returned conn ends it. A container
+	// that doesn't exist or isn't a service is ErrNotFound (wrapped).
+	Dial(ctx context.Context, req DialRequest) (net.Conn, error)
+}
+
+// DialRequest names what Containers.Dial connects to.
+type DialRequest struct {
+	// ContainerID is the full ID of a running service container.
+	ContainerID string
+	// Port is the container port (e.g. 5432), not a published host port.
+	Port int
 }
 
 // Builder turns source code into an image available to this server.

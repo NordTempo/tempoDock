@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -131,6 +133,13 @@ func (c *Client) Events(ctx context.Context) (<-chan node.ContainerEvent, error)
 		}
 	}()
 	return out, nil
+}
+
+// Dial implements node.Containers.
+// TODO(ADR 0016 phase 2, Dial track): run the dial on the node and stream
+// the bytes over a full-duplex call, the shape Build uses.
+func (c *Client) Dial(context.Context, node.DialRequest) (net.Conn, error) {
+	return nil, fmt.Errorf("server %s: dial is not implemented yet: %w", c.server, errors.ErrUnsupported)
 }
 
 // Build implements node.Builder. The build context streams up while build
