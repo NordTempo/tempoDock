@@ -73,6 +73,17 @@ func TestCalls(t *testing.T) {
 	if info, ok := h.hub.Info("homelab"); !ok || info.Protocol != Protocol {
 		t.Fatalf("hello = %+v, %v", info, ok)
 	}
+
+	h.rt.SetHostStats(node.HostStats{CPUs: 8, MemoryTotal: 16 << 30, Disks: []node.Disk{{Paths: []string{"/var/lib/dock"}, Total: 100, Used: 40}}})
+	if hs, err := h.client.HostStats(ctx); err != nil || hs.CPUs != 8 || hs.MemoryTotal != 16<<30 || hs.Disks[0].Used != 40 {
+		t.Fatalf("host stats = %+v, %v", hs, err)
+	}
+	sampled := time.Now().UTC().Truncate(time.Second)
+	h.rt.SetContainerStats(node.ContainerStats{ID: ct.ID, Time: sampled, CPUUsec: 1500, Memory: 64 << 20, MemoryLimit: 128 << 20})
+	cs, err := h.client.ContainerStats(ctx, []string{ct.ID, "gone"})
+	if err != nil || len(cs) != 1 || cs[0].CPUUsec != 1500 || cs[0].MemoryLimit != 128<<20 || !cs[0].Time.Equal(sampled) {
+		t.Fatalf("container stats = %+v, %v", cs, err)
+	}
 }
 
 func TestLogsStreamAndCancel(t *testing.T) {

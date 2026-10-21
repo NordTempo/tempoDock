@@ -142,6 +142,10 @@ func Handler(rt node.Runtime) http.Handler {
 	h(opCheckDomain, unary(func(ctx context.Context, a nameArgs) (node.DomainCheck, error) {
 		return rt.CheckDomain(ctx, a.Name)
 	}))
+	h(opHostStats, unary(func(ctx context.Context, _ noArgs) (node.HostStats, error) { return rt.HostStats(ctx) }))
+	h(opCtrStats, unary(func(ctx context.Context, a idsArgs) ([]node.ContainerStats, error) {
+		return rt.ContainerStats(ctx, a.IDs)
+	}))
 	return mux
 }
 

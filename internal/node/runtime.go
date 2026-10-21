@@ -19,6 +19,7 @@ type Runtime interface {
 	Containers
 	Builder
 	Proxy
+	Stats
 }
 
 // Containers manages platform-owned containers, networks and volumes.
@@ -82,6 +83,59 @@ type Proxy interface {
 	// CheckDomain reports whether hostname's DNS points at this server and
 	// whether a valid certificate is being served for it.
 	CheckDomain(ctx context.Context, hostname string) (DomainCheck, error)
+}
+
+// Stats reads resource usage straight from the kernel (/proc and cgroup
+// files), never through Docker, so sampling stays a few small file reads.
+// Counters are cumulative; callers turn two samples into rates.
+type Stats interface {
+	// HostStats samples the whole server.
+	HostStats(ctx context.Context) (HostStats, error)
+	// ContainerStats samples the given containers (full IDs). Containers
+	// that don't exist (any more) are left out of the result.
+	ContainerStats(ctx context.Context, ids []string) ([]ContainerStats, error)
+}
+
+// HostStats is one sample of a server's resources.
+type HostStats struct {
+	// CPUBusy and CPUTotal are cumulative CPU time across all cores, in
+	// clock ticks; busy/total between two samples is the CPU use.
+	CPUBusy  uint64
+	CPUTotal uint64
+	CPUs     int
+	// MemoryTotal and MemoryAvailable are bytes (MemAvailable, as `free`).
+	MemoryTotal     uint64
+	MemoryAvailable uint64
+	// Load1 is the one-minute load average.
+	Load1 float64
+	// Disks are the filesystems of the data dir and Docker's root, once
+	// each when they are the same filesystem.
+	Disks []Disk
+}
+
+// Disk is the usage of one filesystem.
+type Disk struct {
+	// Paths are the directories on it that dock uses.
+	Paths []string
+	Total uint64
+	Used  uint64
+}
+
+// ContainerStats is one sample of a container's cgroup.
+type ContainerStats struct {
+	ID string
+	// Time is when the node took the sample, for rates over CPUUsec and IO.
+	Time time.Time
+	// CPUUsec is cumulative CPU time in microseconds.
+	CPUUsec uint64
+	// Memory is the working set in bytes: usage minus inactive page
+	// cache, the number `docker stats` shows.
+	Memory uint64
+	// MemoryLimit is the hard limit in bytes; 0 means none.
+	MemoryLimit uint64
+	// IORead and IOWrite are cumulative block IO bytes.
+	IORead  uint64
+	IOWrite uint64
 }
 
 // Docker label keys put on every platform-managed resource.
