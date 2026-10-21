@@ -6,7 +6,13 @@ import {
   useRestart,
   useRollback,
 } from "../data/mutations";
-import { queries, serviceRef, useProjectTree } from "../data/queries";
+import {
+  queries,
+  serviceRef,
+  useIsAdmin,
+  useProjectTree,
+  useServers,
+} from "../data/queries";
 import { rollbackTarget } from "../features/service/releases";
 import { serviceState, type Tone } from "../ui/status";
 import { useCurrentContext } from "./location";
@@ -29,6 +35,7 @@ export type Command = {
 
 const serviceTabs = [
   ["logs", "Logs", "g l"],
+  ["metrics", "Metrics", "g m"],
   ["releases", "Releases", "g r"],
   ["domains", "Domains", "g d"],
   ["settings", "Settings", "g s"],
@@ -44,6 +51,8 @@ export function useCommands(): Command[] {
   const restart = useRestart();
   const rollback = useRollback();
   const logout = useLogout();
+  const admin = useIsAdmin();
+  const servers = useServers();
 
   // Rollback targets need release history, cached for the current project.
   const local = projects
@@ -215,7 +224,7 @@ export function useCommands(): Command[] {
   const org = [
     ["Servers", "/servers", "dock server list"],
     ["Tokens", "/tokens", "dock token list"],
-    ["Users", "/users", "dock user list"],
+    ...(admin ? ([["Users", "/users", "dock user list"]] as const) : []),
     ["Audit log", "/audit", "dock audit"],
   ] as const;
   for (const [label, to, cli] of org) {
@@ -226,6 +235,18 @@ export function useCommands(): Command[] {
       cli,
       weight: 0,
       run: () => navigate({ to }),
+    });
+  }
+  // Server pages (statistics, placement) are for admins.
+  for (const { name } of admin ? servers : []) {
+    add({
+      id: `go:server:${name}`,
+      group: "Go to",
+      label: `Server ${name}`,
+      strong: name,
+      cli: `dock server show ${name}`,
+      weight: 0,
+      run: () => navigate({ to: "/servers/$server", params: { server: name } }),
     });
   }
   add({

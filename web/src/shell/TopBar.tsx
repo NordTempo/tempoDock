@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useLogout } from "../data/mutations";
 import {
+  useIsAdmin,
   useProjects,
   useProjectTree,
   useServers,
@@ -23,6 +24,7 @@ export function TopBar() {
   const openPalette = usePalette();
   const inEnvironment = !!here.environment;
   const project = here.project ?? lastProject() ?? undefined;
+  const admin = useIsAdmin();
 
   return (
     <header className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line px-5 py-2">
@@ -57,7 +59,7 @@ export function TopBar() {
             [
               ["/servers", "Servers"],
               ["/tokens", "Tokens"],
-              ["/users", "Users"],
+              ...(admin ? ([["/users", "Users"]] as const) : []),
               ["/audit", "Audit"],
             ] as const
           ).map(([to, label]) => (
@@ -219,6 +221,7 @@ function ServerDots() {
   const here = useCurrentContext();
   const servers = useServers();
   const tree = useProjectTree();
+  const admin = useIsAdmin();
   if (!here.project) return null;
   const environments =
     tree.find((p) => p.project.name === here.project)?.environments ?? [];
@@ -235,7 +238,9 @@ function ServerDots() {
       {shown.map((s) => (
         <Link
           key={s.id}
-          to="/servers"
+          // Server pages are for admins; everyone else gets the list.
+          to={admin ? "/servers/$server" : "/servers"}
+          params={{ server: s.name }}
           className="no-underline"
           title={`${s.name} is ${s.status}`}
         >
