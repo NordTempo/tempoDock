@@ -1,48 +1,52 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { queries, useService } from "../data/queries";
+import { servicePath } from "../data/queries";
 import { type LogFilter, LogsPane } from "../features/service/LogsPane";
 
-type LogSearch = { release?: number | "build"; warn?: boolean; q?: string };
+type LogSearch = {
+  release?: number;
+  build?: boolean;
+  stderr?: boolean;
+  q?: string;
+};
 
 // Full-height logs. Filters live in the URL so a filtered view can be shared.
-export const Route = createFileRoute("/_app/services/$serviceId/logs")({
+export const Route = createFileRoute(
+  "/_app/$project/$environment/$service/logs",
+)({
   validateSearch: (search: Record<string, unknown>): LogSearch => ({
     release:
-      search.release === "build" || typeof search.release === "number"
+      typeof search.release === "number" && search.release > 0
         ? search.release
         : undefined,
-    warn: search.warn === true ? true : undefined,
+    build: search.build === true ? true : undefined,
+    stderr: search.stderr === true ? true : undefined,
     q: typeof search.q === "string" && search.q ? search.q : undefined,
   }),
-  loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(queries.logs(params.serviceId)),
   component: LogsTab,
 });
 
 function LogsTab() {
-  const { serviceId } = Route.useParams();
+  const ref = servicePath(Route.useParams());
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const service = useService(serviceId);
   const filter: LogFilter = {
-    release: search.release ?? "all",
-    warnUp: search.warn ?? false,
+    release: search.release ?? null,
+    build: search.build ?? false,
+    stderr: search.stderr ?? false,
     query: search.q ?? "",
   };
 
   return (
     <div className="px-5 pt-3">
       <LogsPane
-        serviceId={serviceId}
-        inFlight={
-          service.state.state === "deploying" ? service.state.release : null
-        }
+        serviceRef={ref}
         filter={filter}
         onFilter={(next) =>
           navigate({
             search: {
-              release: next.release === "all" ? undefined : next.release,
-              warn: next.warnUp || undefined,
+              release: next.release ?? undefined,
+              build: next.build || undefined,
+              stderr: next.stderr || undefined,
               q: next.query || undefined,
             },
             replace: true,

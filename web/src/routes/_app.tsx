@@ -12,11 +12,17 @@ export const Route = createFileRoute("/_app")({
       throw redirect({ to: "/login", search: { redirect: location.href } });
     }
   },
-  loader: ({ context: { queryClient } }) =>
-    Promise.all([
-      queryClient.ensureQueryData(queries.org()),
+  // The sidebar tree and palette show every project's services.
+  loader: async ({ context: { queryClient } }) => {
+    const [projects] = await Promise.all([
       queryClient.ensureQueryData(queries.projects()),
       queryClient.ensureQueryData(queries.servers()),
-    ]),
+    ]);
+    await Promise.all(
+      projects.map((p) =>
+        queryClient.ensureQueryData(queries.overview(p.name)),
+      ),
+    );
+  },
   component: Shell,
 });

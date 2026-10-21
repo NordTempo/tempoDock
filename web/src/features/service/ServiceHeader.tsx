@@ -1,27 +1,38 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useDeploy, useRestart, useRollback } from "../../data/mutations";
-import { useReleases, useService } from "../../data/queries";
+import { domainNeedsAttention } from "../../data/problems";
+import {
+  useChanges,
+  useEnvironment,
+  useReleases,
+  useService,
+  useVolumes,
+} from "../../data/queries";
+import type { ServiceRef } from "../../data/types";
 import { isTyping, useKeydown } from "../../shell/keys";
 import { Crumbs, TopBar } from "../../shell/TopBar";
-import { mb } from "../../ui/format";
 import { Button, ErrorText, Status } from "../../ui/kit";
-import { serviceStatus } from "../../ui/status";
+import { serviceStatus, shortId } from "../../ui/status";
+import { formatSetting } from "../settings/settings";
 import { rollbackTarget } from "./releases";
 
 const tabs = [
-  { label: "Releases", to: "/services/$serviceId" },
-  { label: "Logs", to: "/services/$serviceId/logs" },
-  { label: "Domains", to: "/services/$serviceId/domains" },
-  { label: "Variables", to: "/services/$serviceId/variables" },
-  { label: "Settings", to: "/services/$serviceId/settings" },
-  { label: "Metrics", to: "/services/$serviceId/metrics" },
-  { label: "Audit", to: "/services/$serviceId/audit" },
+  { label: "Releases", to: "/$project/$environment/$service" },
+  { label: "Logs", to: "/$project/$environment/$service/logs" },
+  { label: "Domains", to: "/$project/$environment/$service/domains" },
+  { label: "Variables", to: "/$project/$environment/$service/variables" },
+  { label: "Settings", to: "/$project/$environment/$service/settings" },
+  { label: "Metrics", to: "/$project/$environment/$service/metrics" },
+  { label: "Audit", to: "/$project/$environment/$service/audit" },
 ] as const;
 
 /** Top bar, tabs (keys 1-7) and the at-a-glance meta row of a service. */
-export function ServiceHeader({ serviceId }: { serviceId: string }) {
-  const service = useService(serviceId);
+export function ServiceHeader({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const view = useService(ref);
+  const { environment } = useEnvironment(ref);
+  const volumes = useVolumes(ref);
+  const changes = useChanges(ref);
   const navigate = useNavigate();
   useKeydown((event) => {
     if (isTyping(event) || event.metaKey || event.ctrlKey || event.altKey) {
@@ -30,27 +41,44 @@ export function ServiceHeader({ serviceId }: { serviceId: string }) {
     const tab = tabs[Number(event.key) - 1];
     if (!tab) return;
     event.preventDefault();
-    navigate({ to: tab.to, params: { serviceId } });
+    navigate({ to: tab.to, params: ref });
   });
+  const { service, active_release: active, domains } = view;
+  const mine = (c: { service?: string }) => c.service === ref.service;
+  // Tabs count what needs a look: domains not active, staged changes.
+  const badges: Partial<Record<(typeof tabs)[number]["label"], number>> = {
+    Domains: domains.filter(domainNeedsAttention).length,
+    Variables: changes.variables.filter((v) => !v.service || mine(v)).length,
+    Settings:
+      changes.settings.filter(mine).length +
+      changes.volumes.filter(mine).length,
+  };
 
   return (
     <>
-      <TopBar actions={<ServiceActions serviceId={serviceId} />}>
+      <TopBar actions={<ServiceActions serviceRef={ref} />}>
         <Crumbs>
           {[
             <Link
               key="p"
-              to="/projects/$projectId"
-              params={{ projectId: service.projectId }}
+              to="/$project"
+              params={{ project: ref.project }}
               className="hover:text-white"
             >
-              {service.projectName}
+              {ref.project}
             </Link>,
-            service.environmentName,
-            service.name,
+            <Link
+              key="e"
+              to="/$project/$environment"
+              params={{ project: ref.project, environment: ref.environment }}
+              className="hover:text-white"
+            >
+              {ref.environment}
+            </Link>,
+            ref.service,
           ]}
         </Crumbs>
-        <Status {...serviceStatus(service.state)} />
+        <Status {...serviceStatus(view)} />
       </TopBar>
 
       <nav className="sticky top-[41px] z-10 flex gap-5 border-b border-line bg-black px-5">
@@ -58,15 +86,15 @@ export function ServiceHeader({ serviceId }: { serviceId: string }) {
           <Link
             key={tab.to}
             to={tab.to}
-            params={{ serviceId }}
-            activeOptions={{ exact: true }}
+            params={ref}
+            activeOptions={{ exact: true, includeSearch: false }}
             title={`${tab.label} (${i + 1})`}
             className="-mb-px border-b border-transparent py-[7px] text-dim hover:border-white hover:text-white"
             activeProps={{ className: "border-white! text-white!" }}
           >
             {tab.label}
-            {tab.label === "Domains" && service.domains.attention > 0 && (
-              <span className="text-warn"> {service.domains.attention}</span>
+            {!!badges[tab.label] && (
+              <span className="text-warn"> {badges[tab.label]}</span>
             )}
           </Link>
         ))}
@@ -74,26 +102,24 @@ export function ServiceHeader({ serviceId }: { serviceId: string }) {
 
       <div className="flex gap-7 border-b border-line px-5 py-3">
         <Meta label="Active">
-          <b className="font-mono">
-            {service.activeRelease ? `r${service.activeRelease.number}` : "-"}
-          </b>
+          <b className="font-mono">{active ? `r${active.number}` : "-"}</b>
         </Meta>
-        <Meta label="Server">{service.server.name}</Meta>
+        <Meta label="Server">{environment.server}</Meta>
         <Meta label="Image" mono>
-          {service.imageDigest ?? "-"}
+          {active
+            ? `${active.image_ref} ${shortId(active.image_id)}`
+            : service.image || "-"}
         </Meta>
-        <Meta label="CPU" mono>
-          {service.cpuPercent}% of {service.settings.cpuLimit.toFixed(1)}
-        </Meta>
-        <Meta label="Memory" mono>
-          {mb(service.memory.usedMb)} of {mb(service.settings.memoryLimitMb)}
+        <Meta label="Limits" mono>
+          {formatSetting("cpus", service.cpus)} cpu ·{" "}
+          {formatSetting("memory_mb", service.memory_mb)}
         </Meta>
         <Meta label="Private" mono>
-          {service.privateAddress}
+          {service.name}:{service.port || 8080}
         </Meta>
-        {service.volume && (
-          <Meta label="Volume" mono>
-            {service.volume.name} {mb(service.volume.sizeMb)}
+        {volumes.length > 0 && (
+          <Meta label="Volumes" mono>
+            {volumes.map((v) => `${v.name} ${v.mount_path}`).join(", ")}
           </Meta>
         )}
       </div>
@@ -111,32 +137,37 @@ function Meta({
   children: ReactNode;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <span className="block text-2xs text-dim">{label}</span>
-      <span className={mono ? "font-mono text-xs" : undefined}>{children}</span>
+      <span className={`block truncate ${mono ? "font-mono text-xs" : ""}`}>
+        {children}
+      </span>
     </div>
   );
 }
 
-function ServiceActions({ serviceId }: { serviceId: string }) {
-  const service = useService(serviceId);
-  const releases = useReleases(serviceId);
+function ServiceActions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const { service, deploying } = useService(ref);
+  const releases = useReleases(ref);
   const deploy = useDeploy();
   const restart = useRestart();
   const rollback = useRollback();
   const target = rollbackTarget(releases);
-  const busy =
-    service.state.state === "deploying"
-      ? `r${service.state.release} is deploying`
-      : undefined;
+  const busy = deploying ? `r${deploying.number} is deploying` : undefined;
   const error = deploy.error ?? rollback.error ?? restart.error;
 
   return (
     <>
       <ErrorText error={error} />
       <Button
-        disabled={restart.isPending}
-        onClick={() => restart.mutate(serviceId)}
+        disabled={!service.active_release || !!busy || restart.isPending}
+        title={
+          busy ??
+          (service.active_release
+            ? "Start a new release identical to the active one"
+            : "Nothing to restart")
+        }
+        onClick={() => restart.mutate(ref)}
       >
         Restart
       </Button>
@@ -148,17 +179,20 @@ function ServiceActions({ serviceId }: { serviceId: string }) {
             ? `Roll back to r${target.number}`
             : "No earlier release to roll back to")
         }
-        onClick={() =>
-          target && rollback.mutate({ serviceId, to: target.number })
-        }
+        onClick={() => target && rollback.mutate({ ref, to: target.number })}
       >
         Rollback
       </Button>
       <Button
         primary
-        disabled={!!busy || deploy.isPending}
-        title={busy ?? "Rebuild and deploy the current source"}
-        onClick={() => deploy.mutate(serviceId)}
+        disabled={!service.image || !!busy || deploy.isPending}
+        title={
+          busy ??
+          (service.image
+            ? `Deploy ${service.image}`
+            : "Built from source: deploy with `dock deploy`")
+        }
+        onClick={() => deploy.mutate(ref)}
       >
         Deploy
       </Button>

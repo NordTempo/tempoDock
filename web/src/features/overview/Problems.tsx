@@ -1,13 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { usePruneBuildCache } from "../../data/mutations";
-import type { Problem } from "../../data/types";
+import { useProblems } from "../../data/problems";
+import { serviceRef } from "../../data/queries";
+import type { Problem, ServiceView } from "../../data/types";
 import { since } from "../../ui/format";
-import { Action, ErrorText, Glyph } from "../../ui/kit";
-import { diskFraction, type Tone } from "../../ui/status";
+import { Glyph } from "../../ui/kit";
+import { releaseStatus, type Tone } from "../../ui/status";
 
 /** The overview's "needs a human" list. Renders nothing when all is well. */
-export function Problems({ problems }: { problems: Problem[] }) {
+export function Problems({ project }: { project: string }) {
+  const problems = useProblems(project);
   if (problems.length === 0) return null;
   return (
     <div className="border-b border-line">
@@ -19,9 +21,16 @@ export function Problems({ problems }: { problems: Problem[] }) {
 }
 
 function problemKey(p: Problem) {
-  return p.kind === "disk"
-    ? `disk:${p.server.id}`
-    : `${p.kind}:${p.service.id}`;
+  switch (p.kind) {
+    case "server_offline":
+      return `server:${p.server.id}`;
+    case "staged":
+      return `staged:${p.environment.environment.id}`;
+    case "domain":
+      return `domain:${p.domain.hostname}`;
+    default:
+      return `${p.kind}:${p.service.service.id}`;
+  }
 }
 
 const tab = "text-dim hover:text-white";
@@ -29,119 +38,176 @@ const mono = "font-mono text-xs";
 
 function ProblemRow({ problem: p }: { problem: Problem }) {
   switch (p.kind) {
-    case "crash_loop": {
-      const [code, ...rest] = p.exit.split(": ");
+    case "crashed": {
+      const { status, active_release } = p.service.service;
+      const when = status.updated_at ? ` (${since(status.updated_at)})` : "";
+      if (status.state !== "restarting" && status.state !== "crashed") {
+        return (
+          <ServiceRow
+            tone="bad"
+            service={p.service}
+            actions={
+              <Link
+                to="/$project/$environment/$service"
+                params={serviceRef(p.service.service)}
+                className={tab}
+              >
+                Releases
+              </Link>
+            }
+          >
+            No running container for r{active_release}
+            {when}. Redeploy or roll back.
+          </ServiceRow>
+        );
+      }
       return (
-        <Row
+        <ServiceRow
           tone="bad"
-          subject={p.service.name}
-          where={p.service.environmentName}
+          service={p.service}
           actions={
             <>
-              <ServiceLink id={p.service.id} tab="logs" label="Logs" />
+              <ServiceLink service={p.service} tab="logs" label="Logs" />
               <ServiceLink
-                id={p.service.id}
+                service={p.service}
                 tab="variables"
                 label="Variables"
               />
             </>
           }
         >
-          Crash loop: {p.restarts} restarts in {p.window}.{" "}
-          {rest.length ? (
-            <>
-              {code}: <span className={mono}>{rest.join(": ")}</span>
-            </>
-          ) : (
-            <span className={mono}>{p.exit}</span>
-          )}
-        </Row>
+          {status.state === "restarting"
+            ? `Restarting: ${status.restart_count} restarts`
+            : "Crashed"}
+          , exit code <span className={mono}>{status.exit_code}</span>
+          {status.oom_killed && ", out of memory"}
+          {when}.
+        </ServiceRow>
       );
     }
     case "deploy_failed":
       return (
-        <Row
+        <ServiceRow
           tone="bad"
-          subject={p.service.name}
-          where={p.service.environmentName}
-          actions={<ServiceLink id={p.service.id} tab="logs" label="Logs" />}
-        >
-          r{p.release} failed: {p.reason}
-        </Row>
-      );
-    case "dns_waiting":
-      return (
-        <Row
-          tone="warn"
-          subject={p.service.name}
-          where={p.service.environmentName}
-          actions={
-            <ServiceLink id={p.service.id} tab="domains" label="Domain" />
-          }
-        >
-          Waiting for DNS on <span className={mono}>{p.domain.hostname}</span>
-          {p.domain.status.state === "waiting_dns" &&
-            ` for ${since(p.domain.status.since)}`}
-          . Create{" "}
-          <span className={mono}>
-            {p.record.type} {p.record.name} {p.record.value}
-          </span>
-        </Row>
-      );
-    case "deploying":
-      return (
-        <Row
-          tone="run"
-          subject={p.service.name}
-          where={p.service.environmentName}
+          service={p.service}
           actions={
             <Link
-              to="/services/$serviceId"
-              params={{ serviceId: p.service.id }}
+              to="/$project/$environment/$service/logs"
+              params={serviceRef(p.service.service)}
+              search={{ release: p.release.number, build: true }}
+              className={tab}
+            >
+              Build log
+            </Link>
+          }
+        >
+          r{p.release.number} failed: {p.release.error ?? "unknown error"}
+        </ServiceRow>
+      );
+    case "domain": {
+      const record = p.domain.dns_records?.[0];
+      return (
+        <ServiceRow
+          tone={p.domain.status === "error" ? "bad" : "warn"}
+          service={p.service}
+          actions={
+            <ServiceLink service={p.service} tab="domains" label="Domain" />
+          }
+        >
+          {p.domain.status === "error"
+            ? "Domain error on "
+            : "Waiting for DNS on "}
+          <span className={mono}>{p.domain.hostname}</span>
+          {p.domain.status_reason && `: ${p.domain.status_reason}`}
+          {p.domain.status === "waiting_for_dns" && record && (
+            <>
+              . Create{" "}
+              <span className={mono}>
+                {record.type} {record.name} {record.value}
+              </span>
+            </>
+          )}
+        </ServiceRow>
+      );
+    }
+    case "deploying":
+      return (
+        <ServiceRow
+          tone="run"
+          service={p.service}
+          actions={
+            <Link
+              to="/$project/$environment/$service"
+              params={serviceRef(p.service.service)}
               className={tab}
             >
               Follow
             </Link>
           }
         >
-          Deploying r{p.release}: {p.step}
+          Deploying r{p.release.number}: {releaseStatus(p.release.status).label}
+        </ServiceRow>
+      );
+    case "staged": {
+      const { environment, pending_changes: n } = p.environment;
+      return (
+        <Row
+          tone="warn"
+          subject={environment.name}
+          where="environment"
+          actions={
+            <Link
+              to="/$project/$environment"
+              params={{
+                project: environment.project,
+                environment: environment.name,
+              }}
+              className={tab}
+            >
+              Review
+            </Link>
+          }
+        >
+          {n} staged {n === 1 ? "change" : "changes"} not applied yet.
         </Row>
       );
-    case "disk":
-      return <DiskRow problem={p} />;
+    }
+    case "server_offline":
+      return (
+        <Row
+          tone="bad"
+          subject={p.server.name}
+          where="server"
+          actions={
+            <Link to="/servers" hash={p.server.name} className={tab}>
+              Servers
+            </Link>
+          }
+        >
+          Offline
+          {p.server.last_seen_at &&
+            `, last seen ${since(p.server.last_seen_at)} ago`}
+          .
+        </Row>
+      );
   }
 }
 
-function DiskRow({
-  problem: p,
+function ServiceRow({
+  service,
+  ...props
 }: {
-  problem: Extract<Problem, { kind: "disk" }>;
+  tone: Tone;
+  service: ServiceView;
+  actions: ReactNode;
+  children: ReactNode;
 }) {
-  const prune = usePruneBuildCache();
-  const { disk } = p.server;
   return (
     <Row
-      tone="warn"
-      subject={p.server.name}
-      where="server"
-      actions={
-        <>
-          <ErrorText error={prune.error} />
-          {disk.prunableGb > 0 && (
-            <Action
-              disabled={prune.isPending}
-              onClick={() => prune.mutate(p.server.id)}
-            >
-              Prune
-            </Action>
-          )}
-        </>
-      }
-    >
-      Disk {Math.round(diskFraction(p.server) * 100)}% ({disk.usedGb} /{" "}
-      {disk.totalGb} GB).
-      {disk.prunableGb > 0 && ` Build cache ${disk.prunableGb} GB, prunable.`}
-    </Row>
+      subject={service.service.name}
+      where={service.service.environment}
+      {...props}
+    />
   );
 }
 
@@ -172,22 +238,26 @@ function Row({
 }
 
 const serviceTabs = {
-  logs: "/services/$serviceId/logs",
-  variables: "/services/$serviceId/variables",
-  domains: "/services/$serviceId/domains",
+  logs: "/$project/$environment/$service/logs",
+  variables: "/$project/$environment/$service/variables",
+  domains: "/$project/$environment/$service/domains",
 } as const;
 
 function ServiceLink({
-  id,
+  service,
   tab: name,
   label,
 }: {
-  id: string;
+  service: ServiceView;
   tab: keyof typeof serviceTabs;
   label: string;
 }) {
   return (
-    <Link to={serviceTabs[name]} params={{ serviceId: id }} className={tab}>
+    <Link
+      to={serviceTabs[name]}
+      params={serviceRef(service.service)}
+      className={tab}
+    >
       {label}
     </Link>
   );

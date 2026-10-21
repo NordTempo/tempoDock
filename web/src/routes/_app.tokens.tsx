@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useCreateToken, useRevokeToken } from "../data/mutations";
 import { queries, useTokens } from "../data/queries";
-import type { Scope, Token } from "../data/types";
+import type { NewToken, Scope, Token } from "../data/types";
 import { TopBar } from "../shell/TopBar";
 import { day, since, until } from "../ui/format";
 import { Action, Button, ErrorText, inputClass } from "../ui/kit";
@@ -74,32 +74,54 @@ function Tokens() {
             ))}
           </tbody>
         </table>
+        {tokens.length === 0 && <p className="py-2 text-dim">No tokens.</p>}
       </div>
     </>
   );
 }
 
+/** "shop/staging", "shop/*" or "all projects". */
+function limitText(token: Token) {
+  if (!token.project) return "all projects";
+  return `${token.project}/${token.environment ?? "*"}`;
+}
+
+/** Parses "shop", "shop/*" or "shop/staging" into a token's limit. */
+function parseLimit(input: string): Pick<NewToken, "project" | "environment"> {
+  const [project, environment] = input.trim().split("/");
+  if (!project) return {};
+  return environment && environment !== "*"
+    ? { project, environment }
+    : { project };
+}
+
 function TokenRow({ token }: { token: Token }) {
   const revoke = useRevokeToken();
   const [confirming, setConfirming] = useState(false);
+  const expired =
+    !!token.expires_at && Date.parse(token.expires_at) < Date.now();
   return (
-    <tr>
+    <tr className={token.revoked_at || expired ? "text-faint" : undefined}>
       <td className="font-semibold">{token.name}</td>
       <td>{token.scope}</td>
-      <td className="font-mono text-xs">
-        {token.limits.length ? token.limits.join(", ") : "all projects"}
+      <td className="font-mono text-xs">{limitText(token)}</td>
+      <td className="text-dim">
+        {day(token.created_at)} by {token.created_by}
       </td>
       <td className="text-dim">
-        {day(token.createdAt)} by {token.createdBy}
-      </td>
-      <td className="text-dim">
-        {token.lastUsedAt ? since(token.lastUsedAt) : "never"}
+        {token.last_used_at ? since(token.last_used_at) : "never"}
       </td>
       <td className="w-full text-dim">
-        {token.expiresAt ? `in ${until(token.expiresAt)}` : "never"}
+        {!token.expires_at
+          ? "never"
+          : expired
+            ? "expired"
+            : `in ${until(token.expires_at)}`}
       </td>
       <td className="text-right">
-        {confirming ? (
+        {token.revoked_at ? (
+          <span className="text-dim">revoked</span>
+        ) : confirming ? (
           <span className="flex gap-3">
             <button
               type="button"
@@ -130,7 +152,7 @@ function CreateToken({
   const create = useCreateToken();
   const [name, setName] = useState("");
   const [scope, setScope] = useState<Scope>("deploy");
-  const [limits, setLimits] = useState("");
+  const [limit, setLimit] = useState("");
   const [days, setDays] = useState("30");
 
   return (
@@ -142,8 +164,8 @@ function CreateToken({
           {
             name,
             scope,
-            limits: limits.split(/[\s,]+/).filter(Boolean),
-            expiresInDays: Number(days) > 0 ? Number(days) : null,
+            ...parseLimit(limit),
+            expires_in_days: Number(days) > 0 ? Number(days) : undefined,
           },
           {
             onSuccess: ({ token, secret }) =>
@@ -176,8 +198,8 @@ function CreateToken({
         ))}
       </select>
       <input
-        value={limits}
-        onChange={(e) => setLimits(e.target.value)}
+        value={limit}
+        onChange={(e) => setLimit(e.target.value)}
         placeholder="limit, e.g. shop/staging"
         aria-label="Limited to"
         className={`${inputClass} w-52 font-mono text-xs`}

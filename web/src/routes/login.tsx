@@ -20,7 +20,7 @@ function Login() {
   const { redirect: back } = Route.useSearch();
   const navigate = useNavigate();
   const login = useLogin();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   return (
@@ -30,7 +30,7 @@ function Login() {
         onSubmit={(e) => {
           e.preventDefault();
           login.mutate(
-            { username, password },
+            { email, password },
             {
               // Same-origin paths only, never an absolute URL from the query.
               onSuccess: () =>
@@ -41,13 +41,14 @@ function Login() {
       >
         <h1 className="pb-2 font-semibold">Tempo Dock</h1>
         <label className="flex flex-col gap-0.5 text-dim">
-          <span className="text-2xs">Username</span>
+          <span className="text-2xs">Email</span>
           <input
             // biome-ignore lint/a11y/noAutofocus: the only thing to do on this page
             autoFocus
+            type="email"
             autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className={`${inputClass} text-white`}
           />
         </label>

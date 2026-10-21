@@ -1,12 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
-import {
-  useDeploy,
-  useLogout,
-  usePromote,
-  usePruneBuildCache,
-  useRestart,
-} from "../data/mutations";
-import { useProjects, useServers } from "../data/queries";
+import { useDeploy, useLogout, useRestart } from "../data/mutations";
+import { serviceRef, useProjectTree } from "../data/queries";
 import { serviceStatus } from "../ui/status";
 import { useCurrentContext } from "./location";
 
@@ -23,7 +17,6 @@ export type Command = {
 };
 
 const serviceTabs = [
-  ["releases", "dock release list"],
   ["logs", "dock logs"],
   ["domains", "dock domain list"],
   ["variables", "dock env list"],
@@ -32,157 +25,123 @@ const serviceTabs = [
 
 /** Every palette command, built from the project tree and current location. */
 export function useCommands(): Command[] {
-  const projects = useProjects();
-  const servers = useServers();
+  const projects = useProjectTree();
   const here = useCurrentContext();
   const navigate = useNavigate();
   const deploy = useDeploy();
   const restart = useRestart();
-  const promote = usePromote();
-  const prune = usePruneBuildCache();
   const logout = useLogout();
 
   const commands: Command[] = [];
   const add = (c: Command) => commands.push(c);
 
-  for (const project of projects) {
-    const inProject = project.id === here.project?.id;
-    const p = inProject ? "" : ` -p ${project.name}`;
-    const projectId = project.id;
+  for (const { project: p, environments } of projects) {
+    const project = p.name;
+    const inProject = project === here.project;
+    const pFlag = inProject ? "" : ` -p ${project}`;
     add({
-      id: `go:${projectId}`,
+      id: `go:${project}`,
       group: "Go to",
-      label: project.name,
-      cli: `dock status${p}`,
+      label: project,
+      cli: `dock status${pFlag}`,
       weight: inProject ? 2 : 0,
-      run: () =>
-        navigate({ to: "/projects/$projectId", params: { projectId } }),
+      run: () => navigate({ to: "/$project", params: { project } }),
     });
 
-    for (const env of project.environments) {
-      const inEnv = env.id === here.env?.id;
+    for (const { environment: env, services } of environments) {
+      const environment = env.name;
+      const inEnv = inProject && environment === here.environment;
       add({
-        id: `vars:${env.id}`,
+        id: `vars:${project}/${environment}`,
         group: "Go to",
-        label: `${project.name} / ${env.name} / variables`,
-        cli: `dock env list -e ${env.name}${p}`,
+        label: `${project} / ${environment} / shared variables`,
+        cli: `dock env list -e ${environment}${pFlag}`,
         weight: inProject ? 1 : 0,
         run: () =>
           navigate({
-            to: "/projects/$projectId/variables",
-            params: { projectId },
-            search: { env: env.name },
+            to: "/$project/$environment",
+            params: { project, environment },
           }),
       });
 
-      for (const svc of env.services) {
-        const serviceId = svc.id;
-        const flags = ` -s ${svc.name} -e ${env.name}${p}`;
+      for (const svc of services) {
+        const params = serviceRef(svc.service);
+        const { service } = params;
+        const id = `${project}/${environment}/${service}`;
+        const flags = ` -s ${service} -e ${environment}${pFlag}`;
         const weight =
-          svc.id === here.service?.id
+          inEnv && service === here.service
             ? 4
             : (inProject ? 2 : 0) + (inEnv ? 1 : 0);
-        const path = `${project.name} / ${env.name} / ${svc.name}`;
+        const path = `${project} / ${environment} / ${service}`;
         // Outside the current project, actions name the project too.
-        const name = inProject ? svc.name : `${project.name} / ${svc.name}`;
-        const status = serviceStatus(svc.state);
+        const name = inProject ? service : `${project} / ${service}`;
+        const status = serviceStatus(svc);
+        const hint = status.tone === "ok" ? undefined : status.label;
         const open = () =>
-          navigate({ to: "/services/$serviceId", params: { serviceId } });
+          navigate({ to: "/$project/$environment/$service", params });
 
+        // Image deploys only; source deploys upload from the CLI.
+        if (svc.service.image) {
+          add({
+            id: `deploy:${id}`,
+            group: "Actions",
+            label: `Deploy ${name} to ${environment}`,
+            hint,
+            cli: `dock deploy${flags}`,
+            weight,
+            run: async () => {
+              await deploy.mutateAsync(params);
+              await open();
+            },
+          });
+        }
+        if (svc.service.active_release) {
+          add({
+            id: `restart:${id}`,
+            group: "Actions",
+            label: `Restart ${name} in ${environment}`,
+            cli: `dock restart${flags}`,
+            weight: weight - 0.5,
+            run: () => restart.mutateAsync(params),
+          });
+        }
         add({
-          id: `deploy:${serviceId}`,
-          group: "Actions",
-          label: `Deploy ${name} to ${env.name}`,
-          hint: status.tone === "ok" ? undefined : status.label,
-          cli: `dock deploy${flags}`,
-          weight,
-          run: async () => {
-            await deploy.mutateAsync(serviceId);
-            await open();
-          },
-        });
-        add({
-          id: `restart:${serviceId}`,
-          group: "Actions",
-          label: `Restart ${name} in ${env.name}`,
-          cli: `dock restart${flags}`,
-          weight: weight - 0.5,
-          run: () => restart.mutateAsync(serviceId),
-        });
-        add({
-          id: `go:${serviceId}`,
+          id: `go:${id}`,
           group: "Go to",
           label: path,
-          hint: status.tone === "ok" ? undefined : status.label,
+          hint,
           cli: `dock status${flags}`,
           weight,
           run: open,
         });
-        if (svc.state.state === "deploying") {
+        if (svc.deploying) {
+          const r = svc.deploying.number;
           add({
-            id: `go:${serviceId}:deploy`,
+            id: `go:${id}:deploy`,
             group: "Go to",
-            label: `${path} / deploy r${svc.state.release}`,
+            label: `${path} / deploy r${r}`,
             hint: "in progress",
-            cli: `dock release show r${svc.state.release}${flags}`,
+            cli: `dock release show r${r}${flags}`,
             weight: weight + 1,
             run: open,
           });
         }
         for (const [tab, cli] of serviceTabs) {
           add({
-            id: `go:${serviceId}:${tab}`,
+            id: `go:${id}:${tab}`,
             group: "Go to",
             label: `${path} / ${tab}`,
             cli: `${cli}${flags}`,
             weight: weight - 1,
             run: () =>
-              tab === "releases"
-                ? open()
-                : navigate({
-                    to: `/services/$serviceId/${tab}`,
-                    params: { serviceId },
-                  }),
+              navigate({
+                to: `/$project/$environment/$service/${tab}`,
+                params,
+              }),
           });
         }
       }
-    }
-
-    const names = project.environments.map((e) => e.name);
-    if (names.includes("staging") && names.includes("production")) {
-      const staging = project.environments.find((e) => e.name === "staging");
-      add({
-        id: `promote:${projectId}`,
-        group: "Actions",
-        label: `Promote ${project.name} staging to production`,
-        hint: staging?.services
-          .map((s) => `${s.name} r${s.release}`)
-          .join(", "),
-        cli: `dock promote staging production${p}`,
-        weight: inProject ? 1 : 0,
-        run: async () => {
-          await promote.mutateAsync({
-            projectId,
-            from: "staging",
-            to: "production",
-          });
-          await navigate({ to: "/projects/$projectId", params: { projectId } });
-        },
-      });
-    }
-  }
-
-  for (const server of servers) {
-    if (server.disk.prunableGb > 0) {
-      add({
-        id: `prune:${server.id}`,
-        group: "Actions",
-        label: `Prune build cache on ${server.name}`,
-        hint: `${server.disk.prunableGb} GB`,
-        cli: `dock server prune ${server.name}`,
-        weight: 0,
-        run: () => prune.mutateAsync(server.id),
-      });
     }
   }
 
@@ -208,10 +167,7 @@ export function useCommands(): Command[] {
     label: "Log out",
     cli: "dock logout",
     weight: -1,
-    run: async () => {
-      await logout.mutateAsync();
-      await navigate({ to: "/login" });
-    },
+    run: () => logout.mutateAsync(),
   });
 
   return commands;
