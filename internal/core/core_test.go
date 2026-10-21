@@ -448,6 +448,33 @@ func TestArchiveStopsInBackground(t *testing.T) {
 	}
 }
 
+// An OOM kill of the running container shows in the service's status with
+// the limit it hit.
+func TestOOMKillStatusHasLimit(t *testing.T) {
+	h := newHarness(t)
+	mem := 128
+	web := h.service("web", apitypes.CreateServiceRequest{MemoryMB: mem})
+	h.deploy(web, "app:1")
+	ss, _ := h.c.loadService(h.ctx, web)
+	active, _ := h.c.store.GetActiveRelease(h.ctx, ss.svc.ID)
+	h.rt.Emit(node.ContainerEvent{ContainerID: active.ContainerID, Action: "oom"})
+	h.rt.Emit(node.ContainerEvent{ContainerID: active.ContainerID, Action: "die", ExitCode: 137})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		svc, _ := h.c.GetService(h.ctx, System, web)
+		if s := svc.Status; s.State == apitypes.ServiceCrashed {
+			if !s.OOMKilled || s.MemoryLimitMB != mem || s.ExitCode != 137 {
+				t.Fatalf("status = %+v", s)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status = %+v", svc.Status)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 func TestVariableReferences(t *testing.T) {
 	h := newHarness(t)
 	api := h.service("api", apitypes.CreateServiceRequest{})

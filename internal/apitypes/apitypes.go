@@ -102,8 +102,11 @@ type ServiceStatus struct {
 	State        ServiceState `json:"state" enum:"running,restarting,crashed,stopped,none"`
 	RestartCount int          `json:"restart_count"`
 	OOMKilled    bool         `json:"oom_killed"`
-	ExitCode     int          `json:"exit_code"`
-	UpdatedAt    *time.Time   `json:"updated_at,omitempty"`
+	// MemoryLimitMB is the active release's memory limit, set along with
+	// OOMKilled so clients can say which limit was hit.
+	MemoryLimitMB int        `json:"memory_limit_mb,omitempty"`
+	ExitCode      int        `json:"exit_code"`
+	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
 }
 
 // ServiceSettings are a service's DB-held settings. Zero values mean "use

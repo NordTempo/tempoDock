@@ -190,6 +190,7 @@ func printService(g *globals, svc apitypes.Service) error {
 	if svc.Status.RestartCount > 0 {
 		state += fmt.Sprintf(" (%d restarts)", svc.Status.RestartCount)
 	}
+	state += oomNote(svc.Status)
 	kind := ""
 	if svc.Stateful {
 		kind = "stateful (has volumes; deploys replace the container)"

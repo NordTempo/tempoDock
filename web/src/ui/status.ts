@@ -11,6 +11,12 @@ export type Tone = "ok" | "bad" | "warn" | "run" | "off";
 
 type Status = { tone: Tone; label: string };
 
+/** "out of memory (limit 512 MB)", for a container the kernel killed. */
+export const outOfMemory = (s: ServiceView["service"]["status"]) =>
+  s.memory_limit_mb
+    ? `out of memory (limit ${s.memory_limit_mb} MB)`
+    : "out of memory";
+
 export function serviceStatus(s: ServiceView): Status {
   if (s.deploying) {
     return { tone: "run", label: `deploying r${s.deploying.number}` };
@@ -25,7 +31,7 @@ export function serviceStatus(s: ServiceView): Status {
       return {
         tone: "bad",
         label: status.oom_killed
-          ? "out of memory"
+          ? outOfMemory(status)
           : `crashed, exit ${status.exit_code}`,
       };
     // With an active release, no running container is a failure.

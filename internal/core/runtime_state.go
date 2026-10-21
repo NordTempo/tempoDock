@@ -54,6 +54,15 @@ func statusOf(ct node.Container) apitypes.ServiceStatus {
 	return s
 }
 
+// memoryLimitMB is a release's memory limit (0 if its config can't be read).
+func (c *Core) memoryLimitMB(rel store.Release) int {
+	cfg, err := c.openConfig(rel.Config)
+	if err != nil {
+		return 0
+	}
+	return cfg.MemoryMB
+}
+
 // scopeOf loads a service with its environment and project.
 func (c *Core) scopeOf(ctx context.Context, serviceID int64) (svcScope, error) {
 	s, err := c.store.GetService(ctx, serviceID)
@@ -107,7 +116,7 @@ func (c *Core) onContainerEvent(ctx context.Context, ev node.ContainerEvent) {
 	case "die":
 		s.State, s.ExitCode = apitypes.ServiceCrashed, ev.ExitCode
 	case "oom":
-		s.OOMKilled = true
+		s.OOMKilled, s.MemoryLimitMB = true, c.memoryLimitMB(rel)
 	case "destroy":
 		s.State = apitypes.ServiceStopped
 		c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s was removed outside the platform", rel.Number, ss))
@@ -269,7 +278,11 @@ func (c *Core) reconcile(ctx context.Context) error {
 			c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s is missing; redeploy or roll back to start it", r.Number, ss))
 			continue
 		}
-		c.setStatus(ss, statusOf(ct))
+		s := statusOf(ct)
+		if s.OOMKilled {
+			s.MemoryLimitMB = c.memoryLimitMB(r)
+		}
+		c.setStatus(ss, s)
 	}
 	for _, ct := range ctrs {
 		if !activeIDs[ct.Labels.Release] {

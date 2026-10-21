@@ -329,7 +329,7 @@ export interface paths {
         put?: never;
         /**
          * Archive a service
-         * @description Stops its container and removes its routes. Volumes and history are kept. Scope: admin.
+         * @description Removes its routes, then stops its container in the background. Volumes and history are kept. Scope: admin.
          */
         post: operations["archive-service"];
         delete?: never;
@@ -1166,6 +1166,8 @@ export interface components {
         ServiceStatus: {
             /** Format: int64 */
             exit_code: number;
+            /** Format: int64 */
+            memory_limit_mb?: number;
             oom_killed: boolean;
             /** Format: int64 */
             restart_count: number;
