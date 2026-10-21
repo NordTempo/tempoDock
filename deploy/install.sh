@@ -90,6 +90,12 @@ fi
 /usr/local/bin/platform admin caddy-config --config /etc/platform/config.toml > /etc/platform/caddy.json
 chmod 0644 /etc/platform/caddy.json
 
+say "==> kernel"
+# Hand queued connections to the new listener when Caddy reloads, instead of
+# resetting them.
+echo 'net.ipv4.tcp_migrate_req = 1' > /etc/sysctl.d/90-platform.conf
+sysctl -q -p /etc/sysctl.d/90-platform.conf
+
 say "==> buildkit image"
 docker pull -q "$BUILDKIT_IMAGE" >/dev/null
 
@@ -117,4 +123,4 @@ else
   say "  An admin already exists; no new token was created."
 fi
 say ""
-say "Open ports 80 and 443 to the internet. Keep the API port private (Tailscale)."
+say "Open 80/tcp and 443/tcp+udp (HTTP/3) to the internet. Keep the API port private (Tailscale)."

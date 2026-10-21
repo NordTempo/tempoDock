@@ -75,6 +75,10 @@ type handler struct {
 	StatusCode int                 `json:"status_code,omitempty"`
 	Headers    map[string][]string `json:"headers,omitempty"`
 	Body       string              `json:"body,omitempty"`
+	// StreamCloseDelay keeps upgraded connections (websockets) open across
+	// config reloads, so deploying one app doesn't disconnect every other
+	// app's websockets.
+	StreamCloseDelay string `json:"stream_close_delay,omitempty"`
 }
 
 type upstream struct {
@@ -128,6 +132,10 @@ type pkiCA struct {
 // `systemctl stop caddy` hanging until systemd kills it.
 const defaultGracePeriod = 10 * time.Second
 
+// streamCloseDelay is how long websockets survive a reload. Streams to a
+// container that gets replaced still end when that container stops.
+const streamCloseDelay = time.Hour
+
 // notFoundPage is served for hostnames that have no route.
 const notFoundPage = `<!doctype html>
 <html lang="en">
@@ -179,7 +187,11 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 	var hostnames []string
 	for _, r := range routes {
 		hostnames = append(hostnames, r.Hostnames...)
-		h := handler{Handler: "reverse_proxy", Upstreams: []upstream{{Dial: r.Upstream}}}
+		h := handler{
+			Handler:          "reverse_proxy",
+			Upstreams:        []upstream{{Dial: r.Upstream}},
+			StreamCloseDelay: streamCloseDelay.String(),
+		}
 		if r.RedirectTo != "" {
 			h = redirect(scheme + "://" + r.RedirectTo + portSuffix(scheme, port) + "{http.request.uri}")
 		}
