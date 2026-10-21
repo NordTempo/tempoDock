@@ -557,6 +557,9 @@ type Token struct {
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
 	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
+	// Origin is "cli_login" for tokens created by approving `dock login`
+	// in the browser, else "manual".
+	Origin string `json:"origin" enum:"manual,cli_login"`
 }
 
 // CreateTokenRequest creates a token, optionally limited to one project or

@@ -39,7 +39,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 const createToken = `-- name: CreateToken :one
 INSERT INTO tokens (name, hash, scope, project_id, environment_id, created_by, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at
+RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin
 `
 
 type CreateTokenParams struct {
@@ -75,6 +75,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		&i.ExpiresAt,
 		&i.LastUsedAt,
 		&i.RevokedAt,
+		&i.Origin,
 	)
 	return i, err
 }
@@ -176,7 +177,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 }
 
 const getToken = `-- name: GetToken :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at FROM tokens WHERE id = ?
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin FROM tokens WHERE id = ?
 `
 
 func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
@@ -194,12 +195,13 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
 		&i.ExpiresAt,
 		&i.LastUsedAt,
 		&i.RevokedAt,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const getTokenByHash = `-- name: GetTokenByHash :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at FROM tokens WHERE hash = ?
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin FROM tokens WHERE hash = ?
 `
 
 func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (Token, error) {
@@ -217,6 +219,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (Token, error
 		&i.ExpiresAt,
 		&i.LastUsedAt,
 		&i.RevokedAt,
+		&i.Origin,
 	)
 	return i, err
 }
@@ -260,7 +263,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const listTokens = `-- name: ListTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at FROM tokens ORDER BY id
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin FROM tokens ORDER BY id
 `
 
 func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
@@ -284,6 +287,7 @@ func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
 			&i.ExpiresAt,
 			&i.LastUsedAt,
 			&i.RevokedAt,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}

@@ -499,7 +499,7 @@ func toUser(u store.User) apitypes.User {
 func toToken(ctx context.Context, names *names, t store.Token) apitypes.Token {
 	out := apitypes.Token{
 		ID: t.ID, Name: t.Name, Scope: apitypes.Scope(t.Scope), CreatedBy: t.CreatedBy, CreatedAt: t.CreatedAt,
-		ExpiresAt: t.ExpiresAt, LastUsedAt: t.LastUsedAt, RevokedAt: t.RevokedAt,
+		ExpiresAt: t.ExpiresAt, LastUsedAt: t.LastUsedAt, RevokedAt: t.RevokedAt, Origin: t.Origin,
 	}
 	if t.ProjectID != nil {
 		out.Project = names.project(ctx, *t.ProjectID)

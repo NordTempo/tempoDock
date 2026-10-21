@@ -92,6 +92,8 @@ type Core struct {
 
 	// stats holds the latest resource samples and the live samplers.
 	stats *statsState
+	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
+	cliLogins *cliLogins
 
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
@@ -130,6 +132,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		uploads:    map[int64]bool{},
 		loginLimit: newLimiter(5, 10*time.Second),
 		bcryptSem:  make(chan struct{}, 2),
+		cliLogins:  newCLILogins(),
 		drain:      DefaultCutoverDrain,
 	}
 	if o.CutoverDrain > 0 {

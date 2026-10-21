@@ -22,6 +22,20 @@ type AuditEvent struct {
 	CreatedAt     time.Time
 }
 
+type CliLogin struct {
+	ID         int64
+	DeviceHash string
+	UserCode   string
+	ClientName string
+	Hostname   string
+	Os         string
+	Ip         string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	Status     string
+	UserID     *int64
+}
+
 type Domain struct {
 	ID           int64
 	Hostname     string
@@ -159,6 +173,7 @@ type Token struct {
 	ExpiresAt     *time.Time
 	LastUsedAt    *time.Time
 	RevokedAt     *time.Time
+	Origin        string
 }
 
 type User struct {

@@ -22,7 +22,11 @@ const (
 	// CodeServerOffline means the server an operation needs isn't
 	// connected (HTTP 503).
 	CodeServerOffline ErrorCode = "server_offline"
-	CodeInternal      ErrorCode = "internal"
+	// CodeDenied means a user denied a browser login (`dock login`).
+	CodeDenied ErrorCode = "denied"
+	// CodeExpired means a browser login expired or was already used.
+	CodeExpired  ErrorCode = "expired"
+	CodeInternal ErrorCode = "internal"
 )
 
 // Release failure codes (Release.ErrorCode). Release.Error has the details.

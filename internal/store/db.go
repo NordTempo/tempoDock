@@ -57,8 +57,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countKindEnvironmentsStmt, err = db.PrepareContext(ctx, countKindEnvironments); err != nil {
 		return nil, fmt.Errorf("error preparing query CountKindEnvironments: %w", err)
 	}
+	if q.countPendingCLILoginsStmt, err = db.PrepareContext(ctx, countPendingCLILogins); err != nil {
+		return nil, fmt.Errorf("error preparing query CountPendingCLILogins: %w", err)
+	}
 	if q.countUsersStmt, err = db.PrepareContext(ctx, countUsers); err != nil {
 		return nil, fmt.Errorf("error preparing query CountUsers: %w", err)
+	}
+	if q.createCLILoginStmt, err = db.PrepareContext(ctx, createCLILogin); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateCLILogin: %w", err)
+	}
+	if q.createCLILoginTokenStmt, err = db.PrepareContext(ctx, createCLILoginToken); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateCLILoginToken: %w", err)
 	}
 	if q.createDomainStmt, err = db.PrepareContext(ctx, createDomain); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateDomain: %w", err)
@@ -90,8 +99,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createVolumeStmt, err = db.PrepareContext(ctx, createVolume); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateVolume: %w", err)
 	}
+	if q.decideCLILoginStmt, err = db.PrepareContext(ctx, decideCLILogin); err != nil {
+		return nil, fmt.Errorf("error preparing query DecideCLILogin: %w", err)
+	}
+	if q.deleteCLILoginStmt, err = db.PrepareContext(ctx, deleteCLILogin); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteCLILogin: %w", err)
+	}
 	if q.deleteDomainStmt, err = db.PrepareContext(ctx, deleteDomain); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteDomain: %w", err)
+	}
+	if q.deleteExpiredCLILoginsStmt, err = db.PrepareContext(ctx, deleteExpiredCLILogins); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteExpiredCLILogins: %w", err)
 	}
 	if q.deleteExpiredSessionsStmt, err = db.PrepareContext(ctx, deleteExpiredSessions); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteExpiredSessions: %w", err)
@@ -122,6 +140,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getActiveReleaseStmt, err = db.PrepareContext(ctx, getActiveRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActiveRelease: %w", err)
+	}
+	if q.getCLILoginByDeviceHashStmt, err = db.PrepareContext(ctx, getCLILoginByDeviceHash); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCLILoginByDeviceHash: %w", err)
+	}
+	if q.getCLILoginByUserCodeStmt, err = db.PrepareContext(ctx, getCLILoginByUserCode); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCLILoginByUserCode: %w", err)
 	}
 	if q.getDomainByHostnameStmt, err = db.PrepareContext(ctx, getDomainByHostname); err != nil {
 		return nil, fmt.Errorf("error preparing query GetDomainByHostname: %w", err)
@@ -414,9 +438,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing countKindEnvironmentsStmt: %w", cerr)
 		}
 	}
+	if q.countPendingCLILoginsStmt != nil {
+		if cerr := q.countPendingCLILoginsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countPendingCLILoginsStmt: %w", cerr)
+		}
+	}
 	if q.countUsersStmt != nil {
 		if cerr := q.countUsersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countUsersStmt: %w", cerr)
+		}
+	}
+	if q.createCLILoginStmt != nil {
+		if cerr := q.createCLILoginStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createCLILoginStmt: %w", cerr)
+		}
+	}
+	if q.createCLILoginTokenStmt != nil {
+		if cerr := q.createCLILoginTokenStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createCLILoginTokenStmt: %w", cerr)
 		}
 	}
 	if q.createDomainStmt != nil {
@@ -469,9 +508,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createVolumeStmt: %w", cerr)
 		}
 	}
+	if q.decideCLILoginStmt != nil {
+		if cerr := q.decideCLILoginStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing decideCLILoginStmt: %w", cerr)
+		}
+	}
+	if q.deleteCLILoginStmt != nil {
+		if cerr := q.deleteCLILoginStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteCLILoginStmt: %w", cerr)
+		}
+	}
 	if q.deleteDomainStmt != nil {
 		if cerr := q.deleteDomainStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteDomainStmt: %w", cerr)
+		}
+	}
+	if q.deleteExpiredCLILoginsStmt != nil {
+		if cerr := q.deleteExpiredCLILoginsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteExpiredCLILoginsStmt: %w", cerr)
 		}
 	}
 	if q.deleteExpiredSessionsStmt != nil {
@@ -522,6 +576,16 @@ func (q *Queries) Close() error {
 	if q.getActiveReleaseStmt != nil {
 		if cerr := q.getActiveReleaseStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getActiveReleaseStmt: %w", cerr)
+		}
+	}
+	if q.getCLILoginByDeviceHashStmt != nil {
+		if cerr := q.getCLILoginByDeviceHashStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCLILoginByDeviceHashStmt: %w", cerr)
+		}
+	}
+	if q.getCLILoginByUserCodeStmt != nil {
+		if cerr := q.getCLILoginByUserCodeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCLILoginByUserCodeStmt: %w", cerr)
 		}
 	}
 	if q.getDomainByHostnameStmt != nil {
@@ -959,7 +1023,10 @@ type Queries struct {
 	archiveServiceStmt           *sql.Stmt
 	clearReleaseHostPortStmt     *sql.Stmt
 	countKindEnvironmentsStmt    *sql.Stmt
+	countPendingCLILoginsStmt    *sql.Stmt
 	countUsersStmt               *sql.Stmt
+	createCLILoginStmt           *sql.Stmt
+	createCLILoginTokenStmt      *sql.Stmt
 	createDomainStmt             *sql.Stmt
 	createEnvironmentStmt        *sql.Stmt
 	createProjectStmt            *sql.Stmt
@@ -970,7 +1037,10 @@ type Queries struct {
 	createTokenStmt              *sql.Stmt
 	createUserStmt               *sql.Stmt
 	createVolumeStmt             *sql.Stmt
+	decideCLILoginStmt           *sql.Stmt
+	deleteCLILoginStmt           *sql.Stmt
 	deleteDomainStmt             *sql.Stmt
+	deleteExpiredCLILoginsStmt   *sql.Stmt
 	deleteExpiredSessionsStmt    *sql.Stmt
 	deleteSessionStmt            *sql.Stmt
 	deleteUserStmt               *sql.Stmt
@@ -981,6 +1051,8 @@ type Queries struct {
 	downsampleServiceStatsStmt   *sql.Stmt
 	failReleaseStmt              *sql.Stmt
 	getActiveReleaseStmt         *sql.Stmt
+	getCLILoginByDeviceHashStmt  *sql.Stmt
+	getCLILoginByUserCodeStmt    *sql.Stmt
 	getDomainByHostnameStmt      *sql.Stmt
 	getEnvironmentStmt           *sql.Stmt
 	getEnvironmentByNameStmt     *sql.Stmt
@@ -1075,7 +1147,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		archiveServiceStmt:           q.archiveServiceStmt,
 		clearReleaseHostPortStmt:     q.clearReleaseHostPortStmt,
 		countKindEnvironmentsStmt:    q.countKindEnvironmentsStmt,
+		countPendingCLILoginsStmt:    q.countPendingCLILoginsStmt,
 		countUsersStmt:               q.countUsersStmt,
+		createCLILoginStmt:           q.createCLILoginStmt,
+		createCLILoginTokenStmt:      q.createCLILoginTokenStmt,
 		createDomainStmt:             q.createDomainStmt,
 		createEnvironmentStmt:        q.createEnvironmentStmt,
 		createProjectStmt:            q.createProjectStmt,
@@ -1086,7 +1161,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createTokenStmt:              q.createTokenStmt,
 		createUserStmt:               q.createUserStmt,
 		createVolumeStmt:             q.createVolumeStmt,
+		decideCLILoginStmt:           q.decideCLILoginStmt,
+		deleteCLILoginStmt:           q.deleteCLILoginStmt,
 		deleteDomainStmt:             q.deleteDomainStmt,
+		deleteExpiredCLILoginsStmt:   q.deleteExpiredCLILoginsStmt,
 		deleteExpiredSessionsStmt:    q.deleteExpiredSessionsStmt,
 		deleteSessionStmt:            q.deleteSessionStmt,
 		deleteUserStmt:               q.deleteUserStmt,
@@ -1097,6 +1175,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		downsampleServiceStatsStmt:   q.downsampleServiceStatsStmt,
 		failReleaseStmt:              q.failReleaseStmt,
 		getActiveReleaseStmt:         q.getActiveReleaseStmt,
+		getCLILoginByDeviceHashStmt:  q.getCLILoginByDeviceHashStmt,
+		getCLILoginByUserCodeStmt:    q.getCLILoginByUserCodeStmt,
 		getDomainByHostnameStmt:      q.getDomainByHostnameStmt,
 		getEnvironmentStmt:           q.getEnvironmentStmt,
 		getEnvironmentByNameStmt:     q.getEnvironmentByNameStmt,

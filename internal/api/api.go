@@ -76,6 +76,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 
 	registerSystem(s, a)
 	registerAuth(s, a)
+	registerCLILogin(s, a)
 	registerProjects(s, a)
 	registerServices(s, a)
 	registerReleases(s, a)
@@ -124,6 +125,8 @@ func codeForStatus(status int) apitypes.ErrorCode {
 		return apitypes.CodeRateLimited
 	case http.StatusServiceUnavailable:
 		return apitypes.CodeServerOffline
+	case http.StatusGone:
+		return apitypes.CodeExpired
 	}
 	return apitypes.CodeInternal
 }
@@ -146,6 +149,10 @@ func statusForCode(code apitypes.ErrorCode) int {
 		return http.StatusTooManyRequests
 	case apitypes.CodeServerOffline:
 		return http.StatusServiceUnavailable
+	case apitypes.CodeDenied:
+		return http.StatusForbidden
+	case apitypes.CodeExpired:
+		return http.StatusGone
 	}
 	return http.StatusInternalServerError
 }
