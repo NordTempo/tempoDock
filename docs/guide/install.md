@@ -104,7 +104,10 @@ running).
 | `[defaults] keep_releases` | `5` | Release images kept for rollback. Not enforced yet: nothing prunes old images |
 
 Changing `[buildkit]` settings recreates the `dock-buildkit` container
-before the next build.
+before the next build. So does finding its memory cap loosened: before each
+build the daemon checks the container's cgroup, because with Docker's
+systemd cgroup driver a `systemctl daemon-reload` resets its swap limit to
+unlimited.
 
 ## Network access
 

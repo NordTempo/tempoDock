@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,12 +36,20 @@ const (
 )
 
 // ensureDaemon makes sure the BuildKit container exists with the current
-// config and is running, then returns a client connected to it.
+// config and limits and is running, then returns a client connected to it.
+//
+// The memory cap is verified where it takes effect, in the container's
+// cgroup, before every build. With Docker's systemd cgroup driver, runc
+// writes memory.swap.max = 0 but leaves the scope's MemorySwapMax at
+// infinity, so any `systemctl daemon-reload` (package upgrades, the install
+// script) silently gives the container unlimited swap and builds swap past
+// the cap. A container whose limits are off is recreated.
 func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.Client, error) {
 	want := fmt.Sprintf("%s mem=%dMB cpus=%g", b.cfg.Image, b.cfg.MemoryMB, b.cfg.CPUs)
 	if b.Network != "" {
 		want += " net=" + b.Network
 	}
+	mem := int64(b.cfg.MemoryMB) << 20
 
 	inspect, err := b.docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{})
 	switch {
@@ -50,16 +59,29 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 		}
 	case err != nil:
 		return nil, fmt.Errorf("inspect %s: %w", ContainerName, err)
-	case inspect.Container.Config.Labels[labelConfig] != want:
-		_, _ = fmt.Fprintf(logs, "recreating %s with %s\n", ContainerName, want)
-		if _, err := b.docker.ContainerRemove(ctx, ContainerName, client.ContainerRemoveOptions{Force: true}); err != nil {
-			return nil, fmt.Errorf("remove %s: %w", ContainerName, err)
+	default:
+		ctr := inspect.Container
+		var problem string
+		switch h := ctr.HostConfig; {
+		case ctr.Config.Labels[labelConfig] != want:
+			problem = "settings changed to " + want
+		case h == nil || h.Memory != mem || h.MemorySwap != mem:
+			problem = "its memory limit or swap was changed"
+		case ctr.State.Running:
+			problem = cgroupProblem(b.readCgroupLimits(ctx), mem)
 		}
-		if err := b.createDaemon(ctx, want, logs); err != nil {
-			return nil, err
+		if problem == "" && ctr.State.Running {
+			return b.connect(ctx)
 		}
-	case inspect.Container.State.Running:
-		return b.connect(ctx)
+		if problem != "" {
+			_, _ = fmt.Fprintf(logs, "recreating %s: %s\n", ContainerName, problem)
+			if _, err := b.docker.ContainerRemove(ctx, ContainerName, client.ContainerRemoveOptions{Force: true}); err != nil {
+				return nil, fmt.Errorf("remove %s: %w", ContainerName, err)
+			}
+			if err := b.createDaemon(ctx, want, logs); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if _, err := b.docker.ContainerStart(ctx, ContainerName, client.ContainerStartOptions{}); err != nil {
@@ -118,6 +140,40 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 		return fmt.Errorf("create %s: %w", ContainerName, err)
 	}
 	return nil
+}
+
+// cgroupLimitsScript prints the container's cgroup v2 memory.max and
+// memory.swap.max, or "unknown" for each one that doesn't exist (cgroup v1,
+// or swap accounting off).
+const cgroupLimitsScript = `for f in memory.max memory.swap.max; do cat /sys/fs/cgroup/$f 2>/dev/null || echo unknown; done`
+
+// readCgroupLimits returns cgroupLimitsScript's output from the running
+// BuildKit container, or "" if it can't be read.
+func (b *Builder) readCgroupLimits(ctx context.Context) string {
+	conn, err := b.exec(ctx, "sh", "-c", cgroupLimitsScript)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = conn.Close() }()
+	out, _ := io.ReadAll(io.LimitReader(conn, 1<<10))
+	return string(out)
+}
+
+// cgroupProblem explains how the effective limits in out (see
+// cgroupLimitsScript) differ from a memory cap of mem bytes with no swap,
+// or returns "" if they match or can't be told.
+func cgroupProblem(out string, mem int64) string {
+	f := strings.Fields(out)
+	if len(f) != 2 || mem == 0 {
+		return ""
+	}
+	if f[0] != "unknown" && f[0] != strconv.FormatInt(mem, 10) {
+		return fmt.Sprintf("its cgroup memory.max is %s, want %d", f[0], mem)
+	}
+	if f[1] != "unknown" && f[1] != "0" {
+		return fmt.Sprintf("its cgroup memory.swap.max is %s, want 0 (no swap)", f[1])
+	}
+	return ""
 }
 
 func withLabel(m map[string]string, k, v string) map[string]string {
