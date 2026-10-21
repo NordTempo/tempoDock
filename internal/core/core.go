@@ -62,6 +62,11 @@ type Core struct {
 	buildSem chan struct{}
 	// domainKick wakes the domain checker.
 	domainKick chan struct{}
+	// checks holds each domain's latest DNS check, by domain ID. It is
+	// only in memory: pending domains are checked again soon after a
+	// restart, active ones no longer matter.
+	checksMu sync.Mutex
+	checks   map[int64]domainCheck
 
 	// routesMu serialises render-and-apply, so a slow render can't
 	// overwrite a newer routing table.
@@ -104,6 +109,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		bus:        newBus(),
 		buildSem:   make(chan struct{}, 1),
 		domainKick: make(chan struct{}, 1),
+		checks:     map[int64]domainCheck{},
 		status:     map[int64]apitypes.ServiceStatus{},
 		uploads:    map[int64]bool{},
 		loginLimit: newLimiter(5, 10*time.Second),

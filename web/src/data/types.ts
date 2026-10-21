@@ -27,6 +27,8 @@ export type User = Schemas["User"];
 export type AuditEvent = Schemas["AuditEvent"];
 export type LiveEvent = Schemas["Event"];
 export type SettingsPatch = Schemas["UpdateServiceRequest"];
+/** Staged changes to discard; an empty selection means all of them. */
+export type DiscardSelection = Schemas["DiscardChangesRequest"];
 
 /** An environment, addressed by name like every API path. */
 export type EnvRef = { project: string; environment: string };
@@ -57,7 +59,11 @@ export type PendingChanges = Omit<
   volumes: Schemas["VolumeAddition"][];
 };
 
-export type AuditFilter = { project?: string; environment?: string };
+export type AuditFilter = {
+  project?: string;
+  environment?: string;
+  service?: string;
+};
 
 /** One line in a log view: container output or build output. */
 export type LogLine = {

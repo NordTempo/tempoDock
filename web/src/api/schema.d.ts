@@ -262,7 +262,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Discard staged changes */
+        /**
+         * Discard staged changes
+         * @description Discards the selected staged changes, or all of them without a body (or an empty selection). Selecting a change that isn't staged is a 404 and discards nothing. Scope: deploy.
+         */
         post: operations["discard-changes"];
         delete?: never;
         options?: never;
@@ -905,10 +908,17 @@ export interface components {
             value: string;
         };
         DeployImageRequest: {
-            /** @description Image reference; defaults to the service's image setting */
+            /** @description Image reference; defaults to the service's image setting, which a deploy of another image updates */
             image?: string;
         };
+        DiscardChangesRequest: {
+            settings?: components["schemas"]["SettingRef"][] | null;
+            variables?: components["schemas"]["VariableRef"][] | null;
+            volumes?: components["schemas"]["VolumeRef"][] | null;
+        };
         Domain: {
+            /** Format: date-time */
+            checked_at?: string;
             /** Format: date-time */
             created_at: string;
             dns_records: components["schemas"]["DNSRecord"][] | null;
@@ -917,10 +927,13 @@ export interface components {
             hostname: string;
             project: string;
             redirect_to?: string;
+            resolved_ips?: string[] | null;
             service: string;
             /** @enum {string} */
             status: "added" | "waiting_for_dns" | "issuing_certificate" | "active" | "error";
             status_reason?: string;
+            /** @example https://shop.example.com */
+            url: string;
         };
         DomainChange: {
             domain: components["schemas"]["Domain"];
@@ -976,7 +989,8 @@ export interface components {
             service_status?: components["schemas"]["ServiceStatus"];
             /** Format: date-time */
             time: string;
-            type: string;
+            /** @enum {string} */
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged";
         };
         Health: {
             /** @example ok */
@@ -1173,6 +1187,11 @@ export interface components {
             old: string;
             service: string;
         };
+        SettingRef: {
+            /** @example port */
+            field: string;
+            service: string;
+        };
         Token: {
             /** Format: date-time */
             created_at: string;
@@ -1244,6 +1263,11 @@ export interface components {
             scope: "environment" | "service";
             service?: string;
         };
+        VariableRef: {
+            key: string;
+            /** @description Empty for a shared (environment-level) variable */
+            service?: string;
+        };
         Version: {
             /** @example v1 */
             api_version: string;
@@ -1271,6 +1295,10 @@ export interface components {
             path: string;
             volume: string;
         };
+        VolumeRef: {
+            name: string;
+            service: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -1286,6 +1314,8 @@ export interface operations {
                 project?: string;
                 /** @description Requires project */
                 environment?: string;
+                /** @description Only events targeting this service; requires project and environment */
+                service?: string;
                 /** @description Action prefix, e.g. release. or domain.add */
                 action?: string;
                 /** @description Only events with a smaller ID (paging) */
@@ -2484,7 +2514,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DiscardChangesRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

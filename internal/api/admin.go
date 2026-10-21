@@ -80,12 +80,13 @@ func registerAdmin(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Project     string `query:"project"`
 		Environment string `query:"environment" doc:"Requires project"`
+		Service     string `query:"service" doc:"Only events targeting this service; requires project and environment"`
 		Action      string `query:"action" doc:"Action prefix, e.g. release. or domain.add"`
 		Before      int64  `query:"before" doc:"Only events with a smaller ID (paging)"`
 		Limit       int    `query:"limit" default:"100" minimum:"1" maximum:"500"`
 	}) (*out[[]apitypes.AuditEvent], error) {
 		return reply(s.core.ListAudit(ctx, actor, core.AuditFilter{
-			Project: in.Project, Environment: in.Environment, Action: in.Action, Before: in.Before, Limit: in.Limit,
+			Project: in.Project, Environment: in.Environment, Service: in.Service, Action: in.Action, Before: in.Before, Limit: in.Limit,
 		}))
 	})
 

@@ -1,9 +1,11 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useRollback } from "../../data/mutations";
 import type { Release, ServiceRef } from "../../data/types";
 import { since } from "../../ui/format";
 import { Action, ErrorText, Status } from "../../ui/kit";
 import { changeText, releaseStatus, shortId } from "../../ui/status";
+import { copiedConfig } from "./releases";
 
 /** Release history with failure reasons and one-click rollback. */
 export function ReleasesTable({
@@ -17,6 +19,8 @@ export function ReleasesTable({
   deploying: boolean;
 }) {
   const rollback = useRollback();
+  // A rollback first shows the image and config it brings back.
+  const [confirming, setConfirming] = useState<number | null>(null);
   if (releases.length === 0) {
     return <p className="py-2 text-dim">Not deployed yet.</p>;
   }
@@ -68,17 +72,40 @@ export function ReleasesTable({
                     build log
                   </Link>
                 )}
-                {release.status === "superseded" && (
-                  <Action
-                    disabled={deploying || rollback.isPending}
-                    title={
-                      deploying ? "Wait for the current deploy" : undefined
-                    }
-                    onClick={() => rollback.mutate({ ref, to: release.number })}
-                  >
-                    rollback
-                  </Action>
-                )}
+                {release.status === "superseded" &&
+                  (confirming === release.number ? (
+                    <span className="flex justify-end gap-3">
+                      <span className="font-mono text-xs">
+                        {copiedConfig(release)}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-white"
+                        disabled={deploying || rollback.isPending}
+                        onClick={() =>
+                          rollback.mutate(
+                            { ref, to: release.number },
+                            { onSuccess: () => setConfirming(null) },
+                          )
+                        }
+                      >
+                        Roll back to r{release.number}
+                      </button>
+                      <Action onClick={() => setConfirming(null)}>
+                        Cancel
+                      </Action>
+                    </span>
+                  ) : (
+                    <Action
+                      disabled={deploying || rollback.isPending}
+                      title={
+                        deploying ? "Wait for the current deploy" : undefined
+                      }
+                      onClick={() => setConfirming(release.number)}
+                    >
+                      rollback
+                    </Action>
+                  ))}
               </td>
             </tr>
           ))}

@@ -13,12 +13,11 @@ As an admin, with an unlimited admin token (the one from install):
 
 ```sh
 dock token create claude-shop-staging \
-  --scope deploy --project shop --environment staging --expires-in-days 30 --json
+  --scope deploy --project shop --environment staging --expires 30d --json
 ```
 
-<!-- verify: `dock token create` flags (API body: name, scope, project, environment, expires_in_days) and whether --json prints the API's CreatedToken shape {"token": {...}, "secret": "dock_..."}. -->
-
-The secret (`dock_...`) is shown once. Pick the narrowest fit:
+With `--json` it prints `{"token": {...}, "secret": "dock_..."}`. The secret
+is shown once. Pick the narrowest fit:
 
 | Scope | Use for |
 |---|---|
@@ -61,7 +60,9 @@ persistent workspace:
 dock deploy --project shop --environment staging --service web --json
 ```
 
-<!-- verify: --project/--environment/--service flags on service commands, and whether a link is still honoured when DOCK_URL is set. -->
+Every command that acts on a service takes `--project/-p`,
+`--environment/-e` and `--service/-s`. A directory's link still supplies
+them when `DOCK_URL` is set; only its context (server) is ignored.
 
 ## 3. Output and exit codes
 
@@ -113,8 +114,8 @@ health check: remove a domain, or set a wrong variable. So:
 ## Deploy, verify, roll back
 
 `dock deploy` waits until the release is `active` or `failed` and streams
-progress to stderr.
-<!-- verify: dock deploy blocks until done by default, and prints the final Release as JSON (fields `number`, `status`, `error_code`). -->
+progress to stderr. With `--json` it then prints the final release
+(`number`, `status`, `error_code`, ...), also when it failed.
 
 A failed deploy needs no rollback. Rollback is for a release that went live
 but misbehaves:

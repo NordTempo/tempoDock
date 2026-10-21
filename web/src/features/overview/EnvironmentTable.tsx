@@ -60,7 +60,16 @@ export function EnvironmentTable({ services }: { services: ServiceView[] }) {
               <td>
                 {domains[0] ? (
                   <>
-                    {domains[0].hostname}
+                    <a
+                      href={domains[0].url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="hover:underline"
+                      // The row opens the service; the link opens the site.
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {domains[0].hostname}
+                    </a>
                     {domains.length > 1 && (
                       <span className={attention ? "text-warn" : "text-dim"}>
                         {" "}

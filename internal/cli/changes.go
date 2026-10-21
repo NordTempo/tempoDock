@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -221,40 +222,106 @@ unless --detach.`,
 
 func newDiscardCmd(g *globals) *cobra.Command {
 	var f targetFlags
-	var yes bool
+	var yes, shared bool
 	cmd := &cobra.Command{
-		Use:   "discard",
-		Short: "Drop the environment's staged changes",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, t, err := g.open(f, needEnvironment)
+		Use:   "discard [KEY...]",
+		Short: "Drop staged changes: all, one service's, or some variables'",
+		Long: `Drop staged changes so they never go live.
+
+Without arguments, every staged change in the environment is dropped. With
+--service, only that service's own changes (its variables, settings and
+volumes). With KEYs, only those variables' changes: the service's own, or
+the shared ones with --shared.`,
+		Example: `  dock discard                 # everything staged in the environment
+  dock discard -s web          # web's own changes
+  dock discard LOG_LEVEL PORT  # two of the linked service's variables
+  dock discard API_URL --shared`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			need := needEnvironment
+			if len(args) > 0 && !shared {
+				need = needService
+			}
+			s, t, err := g.open(f, need)
 			if err != nil {
 				return err
 			}
 			ctx := cmd.Context()
+			p, err := get[apitypes.PendingChanges](ctx, s, t.envPath()+"/changes")
+			if err != nil {
+				return err
+			}
+			// Keys name the service's variables unless --shared. Without
+			// keys, the linked service only narrows the selection when
+			// named explicitly: plain `dock discard` stays environment-wide.
+			owner, only := t.Service, ""
+			if shared {
+				owner = ""
+			} else if cmd.Flags().Changed("service") {
+				only = t.Service
+			}
+			sel, what := discardSelection(p, args, owner, only)
+			var body any // no body: everything
+			switch {
+			case sel != nil && !sel.Empty():
+				body = sel
+			case sel != nil || p.Count == 0:
+				return g.io.Print(p, func() error {
+					g.io.Successf("Nothing to discard: %s", what)
+					return nil
+				})
+			}
 			if !yes {
-				p, err := get[apitypes.PendingChanges](ctx, s, t.envPath()+"/changes")
-				if err != nil {
-					return err
-				}
-				if p.Count == 0 {
-					return g.io.Print(p, func() error { return printChanges(g, p, false) })
-				}
-				if err := g.io.Confirm(fmt.Sprintf("Discard %s in %s/%s?", plural(p.Count, "staged change"), t.Project, t.Environment), "yes"); err != nil {
+				if err := g.io.Confirm(fmt.Sprintf("Discard %s in %s/%s?", what, t.Project, t.Environment), "yes"); err != nil {
 					return err
 				}
 			}
-			p, err := send[apitypes.PendingChanges](ctx, s, http.MethodPost, t.envPath()+"/changes/discard", nil)
+			p, err = send[apitypes.PendingChanges](ctx, s, http.MethodPost, t.envPath()+"/changes/discard", body)
 			if err != nil {
 				return err
 			}
 			return g.io.Print(p, func() error {
-				g.io.Successf("Discarded staged changes in %s/%s", t.Project, t.Environment)
+				g.io.Successf("Discarded %s in %s/%s", what, t.Project, t.Environment)
 				return nil
 			})
 		},
 	}
-	f.add(cmd, needEnvironment)
+	f.add(cmd, needService)
+	cmd.Flags().BoolVar(&shared, "shared", false, "the KEYs are shared (environment-level) variables")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	return cmd
+}
+
+// discardSelection builds what `dock discard` sends: nil for everything,
+// or the selected changes, plus a description of them. Keys select
+// variables of owner (shared ones when empty); otherwise only selects all
+// of one service's own changes.
+func discardSelection(p apitypes.PendingChanges, keys []string, owner, only string) (*apitypes.DiscardChangesRequest, string) {
+	switch {
+	case len(keys) > 0:
+		sel := &apitypes.DiscardChangesRequest{}
+		for _, k := range keys {
+			sel.Variables = append(sel.Variables, apitypes.VariableRef{Key: k, Service: owner})
+		}
+		return sel, "staged changes to " + strings.Join(keys, ", ")
+	case only != "":
+		sel := &apitypes.DiscardChangesRequest{}
+		for _, v := range p.Variables {
+			if v.Service == only {
+				sel.Variables = append(sel.Variables, apitypes.VariableRef{Key: v.Key, Service: only})
+			}
+		}
+		for _, c := range p.Settings {
+			if c.Service == only {
+				sel.Settings = append(sel.Settings, apitypes.SettingRef{Service: only, Field: c.Field})
+			}
+		}
+		for _, v := range p.Volumes {
+			if v.Service == only {
+				sel.Volumes = append(sel.Volumes, apitypes.VolumeRef{Service: only, Name: v.Name})
+			}
+		}
+		return sel, plural(p.CountFor(only), "staged change") + " of " + only
+	default:
+		return nil, plural(p.Count, "staged change")
+	}
 }

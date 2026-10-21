@@ -14,10 +14,25 @@ served traffic can be started again exactly as it was.
 | Git push | GitHub webhook per service and branch | On a builder server | M4 |
 | Promote | `dock promote staging production` | Nowhere: reuses the exact image that ran in staging | M3 |
 
-A service's `image` setting (e.g. `postgres:17`) is the default for image
-deploys when no reference is given, and changing it and applying deploys the
-new image.
-<!-- verify: how the CLI deploys a service's image setting without naming a reference (API: POST .../releases with an empty body). -->
+### Image services and source services
+
+A service's `image` setting says which kind it is:
+
+- **Image service** (`image` set, e.g. `postgres:17`): every image deploy
+  sets `image` to the image it deployed, so `dock deploy --image X` and the
+  UI agree. The UI's **Deploy** button redeploys (and pulls again) the
+  `image` setting, i.e. the last image deployed. Changing the setting with
+  `dock service update --image` and applying deploys the new image.
+- **Source service** (`image` empty): built from uploaded source. The UI's
+  Deploy button is disabled; deploy with `dock deploy`.
+
+A service switches kind with its deploys: deploying an image to a source
+service makes it an image service, and a source deploy clears `image`
+again. Rollbacks and restarts don't change the setting, so after rolling
+back an image service, Deploy brings the newer image back.
+
+The CLI always names the image (`dock deploy --image <ref>`); the API's
+`POST .../releases` with an empty body deploys the `image` setting.
 
 Both paths take the service's own [staged changes](variables.md#staged-changes)
 live with them.
@@ -32,8 +47,8 @@ tar:
 - `.git` is always left out. `Dockerfile`, `.dockerignore` and `dock.toml`
   are always kept.
 - Uploads over `max_upload_mb` (default 512) fail with `too_large`, before
-  anything is built. Ignore large files or deploy an image.
-  <!-- verify: too_large is HTTP 413, which cli.md maps to exit 1. -->
+  anything is built (HTTP 413, exit code 1). Ignore large files or deploy
+  an image.
 
 ## How the image is built
 
@@ -57,8 +72,9 @@ tar:
   `/tmp/railpack`.
 - Servers with `[buildkit] enabled = false` reject source deploys.
 
-Build output is kept per release: `dock logs --build`.
-<!-- verify: `dock logs` flags used across the guide: --build, --release <n>, --follow, --since (API: GET .../releases/{n}/build-log[/stream], GET .../logs?release&follow&tail&since) -->
+Build output is kept per release: `dock logs --build` (the newest build),
+`dock logs --build --release 41`. Service output: `dock logs`, with
+`--follow`, `--since 10m`, `--tail 500` and `--release N`.
 
 ## Settings: where they come from
 
@@ -66,9 +82,8 @@ For each setting, first match wins:
 
 1. `dock.toml` in the uploaded source ([reference](../dock-toml.md)). Shown
    as locked in the UI and listed in the release's `config.from_repo_file`.
-2. The service's settings (`dock service create`, `dock service set`).
+2. The service's settings (`dock service create`, `dock service update`).
    Changes are [staged](variables.md#staged-changes) like variables.
-   <!-- verify: command for updating service settings (API: PATCH .../services/{service}, staged) -->
 3. Server defaults from `[defaults]` in `config.toml`.
 
 | Setting | Default |
@@ -137,10 +152,11 @@ dock rollback                # to the previous live release
 dock rollback 41             # to a specific one
 ```
 
-<!-- verify: `dock rollback` with no number picks the previous live release (the API always needs a number). -->
-
 A rollback creates a **new** release with the old release's image and its
-resolved config, through the same health-checked path. That includes the old
+resolved config, through the same health-checked path. The CLI says what
+it copies ("release 43 copies release 41, image ghcr.io/acme/web:1.4.1
+(4be1c0ffee12), port 8080, 7 variables"), and the UI shows the same
+before you confirm. That includes the old
 variable values: rolling back also rolls back config. Only releases that
 went live (`active` or `superseded`) can be rolled back to. If the image is
 no longer on the server it is pulled again, which only works for images
@@ -153,7 +169,7 @@ dock restart
 ```
 
 Creates a new release identical to the active one: same image, same resolved
-config. It does not pick up staged changes; use `dock changes apply` for
+config. It does not pick up staged changes; use `dock apply` for
 that.
 
 ## Release sources
@@ -163,7 +179,7 @@ The `source` field of a release says what created it.
 | Source | Created by |
 |---|---|
 | `upload` | Source deploy |
-| `image` | Image deploy, or applying a change to the service's `image` setting |
+| `image` | Image deploy (which also sets the service's `image` setting), or applying a change to that setting |
 | `config` | Applying staged changes, or adding a domain to a service whose port wasn't published yet |
 | `rollback` | `dock rollback` (`from_release` is the copied release) |
 | `restart` | `dock restart` |
@@ -172,5 +188,5 @@ The `source` field of a release says what created it.
 ## Archiving a service
 
 `dock service archive web` stops the container and removes its routes.
-Volumes, releases and history are kept. Needs the `admin` scope.
-<!-- verify: CLI command name for archiving (API: POST .../services/{service}/archive). -->
+Volumes, releases and history are kept. Needs the `admin` scope, and
+`--yes` when not on a terminal.

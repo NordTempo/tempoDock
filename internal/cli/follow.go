@@ -239,7 +239,7 @@ func (g *globals) finishRelease(ctx context.Context, s *session, r apitypes.Rele
 		}
 		for _, d := range domains {
 			if d.RedirectTo == "" {
-				_, _ = fmt.Fprintln(g.io.Out, "  https://"+d.Hostname)
+				_, _ = fmt.Fprintln(g.io.Out, "  "+d.URL)
 			}
 		}
 		return nil

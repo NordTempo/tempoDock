@@ -2,8 +2,10 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -43,32 +45,32 @@ func (c *Core) ApplyChanges(ctx context.Context, a Actor, ref EnvRef) (apitypes.
 	return c.applyEnv(ctx, a, es)
 }
 
-// DiscardChanges drops an environment's staged changes.
-func (c *Core) DiscardChanges(ctx context.Context, a Actor, ref EnvRef) (apitypes.PendingChanges, error) {
+// DiscardChanges drops the selected staged changes of an environment, or
+// all of them when nothing is selected. It is all or nothing: selecting a
+// change that isn't staged discards nothing.
+func (c *Core) DiscardChanges(ctx context.Context, a Actor, ref EnvRef, sel apitypes.DiscardChangesRequest) (apitypes.PendingChanges, error) {
 	es, err := c.envFor(ctx, a, ref, apitypes.ScopeDeploy, "discarding staged changes")
 	if err != nil {
 		return apitypes.PendingChanges{}, err
 	}
-	var discarded int
+	var summary string
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		before, err := c.pendingChanges(ctx, q, es, false)
-		if err != nil {
+		if !sel.Empty() {
+			s, err := discardSelected(ctx, q, es, sel)
+			summary = s
 			return err
 		}
-		discarded = before.Count
+		before, err := c.pendingChanges(ctx, q, es, false)
+		if err != nil || before.Count == 0 {
+			return err
+		}
+		summary = fmt.Sprintf("discarded %d staged changes", before.Count)
 		vars, err := q.ListVariables(ctx, es.env.ID)
 		if err != nil {
 			return err
 		}
 		for _, v := range vars {
-			switch {
-			case v.Pending == "":
-			case v.Value == nil:
-				err = q.DeleteVariable(ctx, v.ID)
-			default:
-				err = q.SetVariablePending(ctx, store.SetVariablePendingParams{Pending: "", PendingValue: nil, UpdatedAt: now(), ID: v.ID})
-			}
-			if err != nil {
+			if err := discardVariable(ctx, q, v); err != nil {
 				return err
 			}
 		}
@@ -97,10 +99,155 @@ func (c *Core) DiscardChanges(ctx context.Context, a Actor, ref EnvRef) (apitype
 	if err != nil {
 		return apitypes.PendingChanges{}, err
 	}
-	if discarded > 0 {
-		c.audit(ctx, a, "changes.discard", &es.project, &es.env, es.String(), fmt.Sprintf("discarded %d staged changes", discarded))
+	if summary != "" {
+		c.audit(ctx, a, "changes.discard", &es.project, &es.env, es.String(), summary)
 	}
 	return c.pendingChanges(ctx, c.store.Queries, es, false)
+}
+
+// discardVariable drops a variable's staged change, if any: a staged
+// addition disappears, an edit or removal goes back to the live value.
+func discardVariable(ctx context.Context, q *store.Queries, v store.Variable) error {
+	switch {
+	case v.Pending == "":
+		return nil
+	case v.Value == nil:
+		return q.DeleteVariable(ctx, v.ID)
+	default:
+		return q.SetVariablePending(ctx, store.SetVariablePendingParams{Pending: "", PendingValue: nil, UpdatedAt: now(), ID: v.ID})
+	}
+}
+
+// discardSelected drops the selected staged changes and describes them for
+// the audit log.
+func discardSelected(ctx context.Context, q *store.Queries, es envScope, sel apitypes.DiscardChangesRequest) (string, error) {
+	svcs, err := q.ListServices(ctx, es.env.ID)
+	if err != nil {
+		return "", err
+	}
+	byName := map[string]store.Service{}
+	for _, s := range svcs {
+		byName[s.Name] = s
+	}
+	service := func(name string) (store.Service, error) {
+		s, ok := byName[name]
+		if !ok {
+			return s, notFound("service %q not found in %s", name, es)
+		}
+		return s, nil
+	}
+	var done []string
+
+	vars, err := q.ListVariables(ctx, es.env.ID)
+	if err != nil {
+		return "", err
+	}
+	for _, ref := range sel.Variables {
+		var owner *int64
+		label := ref.Key + " (shared)"
+		if ref.Service != "" {
+			s, err := service(ref.Service)
+			if err != nil {
+				return "", err
+			}
+			owner, label = &s.ID, ref.Key+" ("+s.Name+")"
+		}
+		i := slices.IndexFunc(vars, func(v store.Variable) bool {
+			return v.Key == ref.Key && v.Pending != "" && ((owner == nil && v.ServiceID == nil) ||
+				(owner != nil && v.ServiceID != nil && *v.ServiceID == *owner))
+		})
+		if i < 0 {
+			return "", notFound("variable %s has no staged change in %s", label, es)
+		}
+		if err := discardVariable(ctx, q, vars[i]); err != nil {
+			return "", err
+		}
+		vars[i].Pending = ""
+		done = append(done, "variable "+label)
+	}
+
+	// Settings are staged as one value per service; reverting a field
+	// copies the live value back, and nothing left staged clears it.
+	staged := map[string]*apitypes.ServiceSettings{}
+	for _, ref := range sel.Settings {
+		s, err := service(ref.Service)
+		if err != nil {
+			return "", err
+		}
+		next, ok := staged[s.Name]
+		if !ok {
+			if next, err = pendingSettings(s); err != nil {
+				return "", err
+			}
+			staged[s.Name] = next
+		}
+		live := settingsOf(s)
+		if next == nil || !slices.ContainsFunc(settingChanges(s.Name, live, *next), func(ch apitypes.SettingChange) bool { return ch.Field == ref.Field }) {
+			return "", notFound("setting %s of %s has no staged change", ref.Field, s.Name)
+		}
+		revertSetting(next, live, ref.Field)
+		done = append(done, "setting "+ref.Field+" ("+s.Name+")")
+	}
+	for name, next := range staged {
+		s := byName[name]
+		var value *string
+		if *next != settingsOf(s) {
+			b, err := json.Marshal(next)
+			if err != nil {
+				return "", err
+			}
+			v := string(b)
+			value = &v
+		}
+		if err := q.SetPendingSettings(ctx, store.SetPendingSettingsParams{PendingSettings: value, ID: s.ID}); err != nil {
+			return "", err
+		}
+	}
+
+	for _, ref := range sel.Volumes {
+		s, err := service(ref.Service)
+		if err != nil {
+			return "", err
+		}
+		vols, err := q.ListVolumes(ctx, s.ID)
+		if err != nil {
+			return "", err
+		}
+		i := slices.IndexFunc(vols, func(v store.Volume) bool { return v.Name == ref.Name && v.Pending })
+		if i < 0 {
+			return "", notFound("volume %s of %s is not staged", ref.Name, s.Name)
+		}
+		if err := q.DeleteVolume(ctx, vols[i].ID); err != nil {
+			return "", err
+		}
+		done = append(done, "volume "+ref.Name+" ("+s.Name+")")
+	}
+	return "discarded staged " + strings.Join(done, ", "), nil
+}
+
+// revertSetting sets one field (by API name, as in SettingChange.Field) of
+// next back to its live value.
+func revertSetting(next *apitypes.ServiceSettings, live apitypes.ServiceSettings, field string) {
+	switch field {
+	case "image":
+		next.Image = live.Image
+	case "port":
+		next.Port = live.Port
+	case "health_check_path":
+		next.HealthCheckPath = live.HealthCheckPath
+	case "health_check_timeout_seconds":
+		next.HealthCheckTimeoutSeconds = live.HealthCheckTimeoutSeconds
+	case "start_command":
+		next.StartCommand = live.StartCommand
+	case "dockerfile_path":
+		next.DockerfilePath = live.DockerfilePath
+	case "build_command":
+		next.BuildCommand = live.BuildCommand
+	case "memory_mb":
+		next.MemoryMB = live.MemoryMB
+	case "cpus":
+		next.CPUs = live.CPUs
+	}
 }
 
 // changeResult finishes a staging endpoint: optionally apply, then report.

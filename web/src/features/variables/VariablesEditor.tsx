@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useStageVariables, useUndoVariable } from "../../data/mutations";
+import { useDiscardChanges, useStageVariables } from "../../data/mutations";
 import {
   useIsAdmin,
   useRevealedChanges,
@@ -158,15 +158,12 @@ function VariableRow({
   overridden: boolean;
 }) {
   const stage = useStageVariables();
-  const undo = useUndoVariable();
-  const isAdmin = useIsAdmin();
+  const undo = useDiscardChanges();
   const [editing, setEditing] = useState(false);
   const { key, pending } = variable;
   const service =
     variable.scope === "service" ? (variable.service ?? null) : null;
   const dim = shared ? "text-dim" : "";
-  // Undoing an edit or removal restores the live value, which needs admin.
-  const canUndo = pending === "add" || isAdmin;
 
   const save = (value: string) =>
     stage.mutate(
@@ -205,13 +202,16 @@ function VariableRow({
           <span className="flex justify-end gap-3">
             <span className="text-warn">{pendingLabel[pending]}</span>
             <Action
-              disabled={!canUndo || undo.isPending}
-              title={
-                canUndo
-                  ? undefined
-                  : "Restoring the live value requires admin; Discard all drops every staged change"
+              disabled={undo.isPending}
+              title="Drop this staged change"
+              onClick={() =>
+                undo.mutate({
+                  env,
+                  selection: {
+                    variables: [{ key, ...(service && { service }) }],
+                  },
+                })
               }
-              onClick={() => undo.mutate({ env, variable })}
             >
               undo
             </Action>

@@ -6,6 +6,7 @@ import {
 } from "../../data/mutations";
 import { useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
+import { since } from "../../ui/format";
 import {
   Action,
   Button,
@@ -109,6 +110,14 @@ function certificate(domain: Domain) {
   }
 }
 
+/** "checked 20s ago, now resolves to 198.51.100.7" */
+function lastCheck(checkedAt: string, resolved: string[]) {
+  const ago = since(checkedAt);
+  const when = ago === "now" ? "checked just now" : `checked ${ago} ago`;
+  const ips = resolved.length ? resolved.join(", ") : "nothing";
+  return `${when}, now resolves to ${ips}`;
+}
+
 function DomainRow({
   serviceRef: ref,
   domain,
@@ -123,11 +132,23 @@ function DomainRow({
   return (
     <tr>
       <td>
-        {domain.hostname}
+        <a
+          href={domain.url}
+          target="_blank"
+          rel="noreferrer"
+          className="hover:underline"
+        >
+          {domain.hostname}
+        </a>
         {domain.generated && <span className="text-dim"> generated</span>}
       </td>
       <td>
         <Status {...domainStatus(domain)} />
+        {domain.status !== "active" && domain.checked_at && (
+          <span className="block text-xs text-dim">
+            {lastCheck(domain.checked_at, domain.resolved_ips ?? [])}
+          </span>
+        )}
       </td>
       <td className={domain.status === "error" ? "text-bad" : "text-dim"}>
         {certificate(domain)}

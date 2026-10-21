@@ -165,14 +165,31 @@ release that was serving before the active one.`,
 				return err
 			}
 			return g.startAndFollow(ctx, s, t, detach, func() (apitypes.Release, error) {
-				g.io.Progressf("Rolling %s back to release %d", t, n)
-				return send[apitypes.Release](ctx, s, http.MethodPost, t.servicePath()+"/releases/"+itoa(n)+"/rollback", nil)
+				r, err := send[apitypes.Release](ctx, s, http.MethodPost, t.servicePath()+"/releases/"+itoa(n)+"/rollback", nil)
+				if err == nil {
+					g.io.Progressf("Rolling %s back: release %d copies release %d, %s", t, r.Number, r.FromRelease, describeCopy(r))
+				}
+				return r, err
 			})
 		},
 	}
 	f.add(cmd, needService)
 	addDetachFlag(cmd, &detach)
 	return cmd
+}
+
+// describeCopy names the image and config a rollback or restart copied:
+// "image app:1 (4be1c0ffee12), port 8080, 3 variables".
+func describeCopy(r apitypes.Release) string {
+	image := "image " + r.ImageRef
+	if r.ImageID != "" {
+		image += " (" + shortID(r.ImageID) + ")"
+	}
+	parts := []string{image, "port " + strconv.Itoa(r.Config.Port), plural(len(r.Config.VariableKeys), "variable")}
+	if len(r.Config.Mounts) > 0 {
+		parts = append(parts, plural(len(r.Config.Mounts), "volume"))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // previousRelease is the newest release that served traffic before the

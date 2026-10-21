@@ -38,7 +38,9 @@ dock status
 dock logs --follow
 ```
 
-<!-- verify: flags of `dock service create` (--project/--environment) and `dock link` (--project/--environment/--service, or an interactive picker on a TTY). Does `dock deploy` create a missing service? If so, step 3 can go. -->
+On a terminal, `dock link` without flags offers pickers instead. Without a
+link, `dock deploy -p shop -e production -s web` also creates a missing
+service, so step 3 is optional there.
 
 What happens on step 6:
 

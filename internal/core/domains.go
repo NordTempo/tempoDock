@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -132,7 +133,7 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 	if err != nil {
 		return apitypes.DomainChange{}, err
 	}
-	c.audit(ctx, a, "domain.add", &ss.project, &ss.env, host, "added to "+ss.String())
+	c.audit(ctx, a, "domain.add", &ss.project, &ss.env, ss.String(), "added domain "+host)
 
 	var out apitypes.DomainChange
 	// A running service whose port isn't published yet needs a release that
@@ -188,8 +189,11 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 	if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
 		c.log.Error("apply routes after removing domain", "domain", host, "err", err)
 	}
-	c.audit(ctx, a, "domain.remove", &ss.project, &ss.env, host, "removed from "+ss.String())
+	c.audit(ctx, a, "domain.remove", &ss.project, &ss.env, ss.String(), "removed domain "+host)
 	dom := c.toDomain(ss, d, nil)
+	c.checksMu.Lock()
+	delete(c.checks, d.ID)
+	c.checksMu.Unlock()
 	c.publish(ss, apitypes.Event{Type: apitypes.EventDomain, Domain: &dom, Message: "removed"})
 	return nil
 }
@@ -218,11 +222,20 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 // toDomain converts a domain; siblings (the service's other domains) are
 // used to offer a CNAME to a generated domain.
 func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain) apitypes.Domain {
+	scheme := "https://"
+	if c.cfg.Caddy.DisableTLS {
+		scheme = "http://"
+	}
 	out := apitypes.Domain{
-		Hostname: d.Hostname, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
+		Hostname: d.Hostname, URL: scheme + d.Hostname, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		Generated: d.Generated, RedirectTo: d.RedirectTo, Status: apitypes.DomainStatus(d.Status),
 		StatusReason: d.StatusReason, DNSRecords: []apitypes.DNSRecord{}, CreatedAt: d.CreatedAt,
 	}
+	c.checksMu.Lock()
+	if check, ok := c.checks[d.ID]; ok {
+		out.CheckedAt, out.ResolvedIPs = &check.at, check.resolved
+	}
+	c.checksMu.Unlock()
 	if d.Generated {
 		return out // covered by the wildcard record for the base domain
 	}
@@ -315,6 +328,13 @@ func (c *Core) checkDomains() {
 	}
 }
 
+// domainCheck is when a domain was last checked and what its hostname
+// resolved to.
+type domainCheck struct {
+	at       time.Time
+	resolved []string
+}
+
 // certPatience is how long a certificate may stay pending after DNS is
 // right before the domain shows an error.
 const certPatience = 10 * time.Minute
@@ -353,14 +373,19 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 	default:
 		status, reason = apitypes.DomainError, fmt.Sprintf("no certificate after %s; check that ports 80 and 443 reach this server and see Caddy's log", certPatience)
 	}
-	if string(status) == d.Status && reason == d.StatusReason {
-		return
+	if err == nil {
+		c.checksMu.Lock()
+		c.checks[d.ID] = domainCheck{at: now(), resolved: slices.Clone(check.ResolvedIPs)}
+		c.checksMu.Unlock()
 	}
-	if err := c.store.UpdateDomainStatus(ctx, store.UpdateDomainStatusParams{Status: string(status), StatusReason: reason, ID: d.ID}); err != nil {
-		c.log.Error("update domain status", "domain", d.Hostname, "err", err)
-		return
+	if string(status) != d.Status || reason != d.StatusReason {
+		if err := c.store.UpdateDomainStatus(ctx, store.UpdateDomainStatusParams{Status: string(status), StatusReason: reason, ID: d.ID}); err != nil {
+			c.log.Error("update domain status", "domain", d.Hostname, "err", err)
+			return
+		}
+		d.Status, d.StatusReason = string(status), reason
 	}
-	d.Status, d.StatusReason = string(status), reason
+	// Published after every check, so clients see when it last ran.
 	siblings, _ := c.store.ListDomainsByService(ctx, d.ServiceID)
 	dom := c.toDomain(ss, d, siblings)
 	c.publish(ss, apitypes.Event{Type: apitypes.EventDomain, Domain: &dom})

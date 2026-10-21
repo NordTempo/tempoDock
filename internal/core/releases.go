@@ -354,9 +354,18 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 			if err := validateImageRef(params.ImageRef); err != nil {
 				return err
 			}
+			// The image setting follows image deploys, so deploying the
+			// setting again (the UI's Deploy) redeploys this image.
+			if ss.svc, err = setServiceImage(ctx, q, ss.svc, params.ImageRef); err != nil {
+				return err
+			}
 		case apitypes.SourceUpload:
 			params.ImageRef = buildTag(ss, number)
 			repo = repoDeployOf(spec.repo)
+			// A source deploy makes it a source service again.
+			if ss.svc, err = setServiceImage(ctx, q, ss.svc, ""); err != nil {
+				return err
+			}
 		case apitypes.SourceConfig:
 			active, err := q.GetActiveRelease(ctx, ss.svc.ID)
 			if store.IsNotFound(err) {
@@ -407,6 +416,18 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	c.wg.Add(1)
 	go c.deploy(ss, rel, spec)
 	return rel, nil
+}
+
+// setServiceImage changes a service's live image setting, if it differs.
+func setServiceImage(ctx context.Context, q *store.Queries, s store.Service, image string) (store.Service, error) {
+	if s.Image == image {
+		return s, nil
+	}
+	return q.UpdateService(ctx, store.UpdateServiceParams{
+		Image: image, Port: s.Port, HealthCheckPath: s.HealthCheckPath, HealthCheckTimeoutSeconds: s.HealthCheckTimeoutSeconds,
+		StartCommand: s.StartCommand, DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
+		MemoryMb: s.MemoryMb, Cpus: s.Cpus, ID: s.ID,
+	})
 }
 
 func deployInProgress(ss svcScope, r store.Release) error {
