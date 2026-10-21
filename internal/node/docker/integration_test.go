@@ -1,0 +1,411 @@
+//go:build integration
+
+package docker
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+
+	"github.com/NordTempo/platform/internal/node"
+)
+
+const (
+	httpImage  = "traefik/whoami:latest"
+	shellImage = "alpine:latest"
+)
+
+// testEnv is a Runtime plus a unique name prefix. Everything created under
+// the prefix is force-removed when the test ends.
+type testEnv struct {
+	*Runtime
+	t      *testing.T
+	prefix string
+}
+
+func newEnv(t *testing.T) *testEnv {
+	t.Helper()
+	r, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &testEnv{Runtime: r, t: t, prefix: fmt.Sprintf("pt-%d", time.Now().UnixNano())}
+	ctx := context.Background()
+	for _, img := range []string{httpImage, shellImage} {
+		if ok, _ := r.HasImage(ctx, img); !ok {
+			if _, err := r.Pull(ctx, img, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		f := client.Filters{}.Add("name", e.prefix)
+		list, _ := r.cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
+		for _, c := range list.Items {
+			_, _ = r.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+		}
+		vols, _ := r.cli.VolumeList(ctx, client.VolumeListOptions{Filters: f})
+		for _, v := range vols.Items {
+			_, _ = r.cli.VolumeRemove(ctx, v.Name, client.VolumeRemoveOptions{})
+		}
+		_, _ = r.cli.NetworkRemove(ctx, e.name("net"), client.NetworkRemoveOptions{})
+		_ = r.Close()
+	})
+	return e
+}
+
+func (e *testEnv) name(s string) string { return e.prefix + "-" + s }
+
+func (e *testEnv) start(spec node.ContainerSpec) node.Container {
+	e.t.Helper()
+	c, err := e.Start(context.Background(), spec)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return c
+}
+
+func ctxTimeout(t *testing.T, d time.Duration) context.Context {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	t.Cleanup(cancel)
+	return ctx
+}
+
+func TestPull(t *testing.T) {
+	e := newEnv(t)
+	const ref = "busybox:latest"
+	if had, _ := e.HasImage(context.Background(), ref); !had {
+		t.Cleanup(func() { _, _ = e.cli.ImageRemove(context.Background(), ref, client.ImageRemoveOptions{}) })
+	}
+	var out bytes.Buffer
+	id, err := e.Pull(ctxTimeout(t, 2*time.Minute), ref, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("pull output:\n%s", out.String())
+	if !strings.HasPrefix(id, "sha256:") {
+		t.Errorf("id = %q", id)
+	}
+	if !strings.Contains(out.String(), "Status:") || strings.Contains(out.String(), "{") {
+		t.Errorf("progress output not readable:\n%s", out.String())
+	}
+	if ok, err := e.HasImage(context.Background(), ref); !ok || err != nil {
+		t.Errorf("HasImage = %v, %v", ok, err)
+	}
+	if ok, err := e.HasImage(context.Background(), "platform-test/does-not-exist:nope"); ok || err != nil {
+		t.Errorf("HasImage(missing) = %v, %v", ok, err)
+	}
+}
+
+func TestLifecycle(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+
+	evCtx, stopEvents := context.WithCancel(ctx)
+	events, err := e.Events(evCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	net, vol := e.name("net"), e.name("data")
+	for range 2 { // idempotent
+		if err := e.EnsureNetwork(ctx, net); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.EnsureVolume(ctx, vol, node.Labels{Project: "p1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	labels := node.Labels{Project: "p1", Environment: "e1", Service: "s1", Release: "r1"}
+	spec := node.ContainerSpec{
+		Name:      e.name("web"),
+		Image:     httpImage,
+		Labels:    labels,
+		Env:       map[string]string{"WHOAMI_NAME": "platform"},
+		Network:   net,
+		Aliases:   []string{"web"},
+		Port:      80,
+		Mounts:    []node.Mount{{Volume: vol, Path: "/data"}},
+		Resources: node.Resources{MemoryBytes: 64 << 20, NanoCPUs: 5e8},
+	}
+	c := e.start(spec)
+	if c.State != node.StateRunning || c.HostPort == 0 || c.Labels != labels || c.Name != spec.Name {
+		t.Fatalf("started container = %+v", c)
+	}
+
+	if err := e.HealthCheck(ctx, c, node.HealthCheck{Path: "/", Timeout: 20 * time.Second, Interval: 200 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", c.HostPort))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	if _, err := e.Start(ctx, spec); err == nil || !strings.Contains(err.Error(), "already in use") {
+		t.Errorf("duplicate Start err = %v", err)
+	}
+
+	list, err := e.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsID(list, c.ID) {
+		t.Errorf("List does not include %s", c.ID)
+	}
+
+	if err := e.Stop(ctx, c.ID, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := e.Inspect(ctx, c.ID)
+	if err != nil || stopped.State != node.StateExited {
+		t.Errorf("after Stop: %+v, %v", stopped, err)
+	}
+
+	want := map[string]bool{"start": false, "die": false}
+	for !want["start"] || !want["die"] {
+		select {
+		case ev := <-events:
+			if ev.ContainerID == c.ID {
+				want[ev.Action] = true
+				if ev.Labels != labels {
+					t.Errorf("event labels = %+v", ev.Labels)
+				}
+			}
+		case <-ctx.Done():
+			t.Fatalf("missing events: %v", want)
+		}
+	}
+	stopEvents()
+	for range events { // channel must close once ctx is done
+	}
+
+	if err := e.Remove(ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Inspect(ctx, c.ID); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Inspect after Remove err = %v", err)
+	}
+	if _, err := e.cli.VolumeInspect(ctx, vol, client.VolumeInspectOptions{}); err != nil {
+		t.Errorf("volume gone after Remove: %v", err)
+	}
+}
+
+func TestHealthCheckCrashFailsFast(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	cases := []struct {
+		name string
+		spec node.ContainerSpec
+		hc   node.HealthCheck
+	}{
+		{"grace", node.ContainerSpec{Image: shellImage, Cmd: "exit 1"}, node.HealthCheck{Grace: 20 * time.Second}},
+		{"tcp", node.ContainerSpec{Image: shellImage, Cmd: "sleep 1; exit 1", Port: 8080}, node.HealthCheck{}},
+		{"http", node.ContainerSpec{Image: shellImage, Cmd: "sleep 1; exit 1", Port: 8080}, node.HealthCheck{Path: "/"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.spec.Name = e.name("crash-" + tc.name)
+			tc.hc.Timeout = 30 * time.Second
+			c := e.start(tc.spec)
+			began := time.Now()
+			err := e.HealthCheck(ctx, c, tc.hc)
+			if err == nil || !strings.Contains(err.Error(), "container exited with code 1 during health check") {
+				t.Fatalf("err = %v", err)
+			}
+			if d := time.Since(began); d > 5*time.Second {
+				t.Errorf("took %s to notice the crash", d)
+			}
+		})
+	}
+}
+
+func TestHealthCheckTCP(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+
+	up := e.start(node.ContainerSpec{Name: e.name("tcp-up"), Image: httpImage, Port: 80})
+	if err := e.HealthCheck(ctx, up, node.HealthCheck{Timeout: 10 * time.Second, Interval: 200 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+
+	// docker-proxy accepts on the host port even though nothing listens.
+	idle := e.start(node.ContainerSpec{Name: e.name("tcp-idle"), Image: shellImage, Cmd: "sleep 300", Port: 8080})
+	err := e.HealthCheck(ctx, idle, node.HealthCheck{Timeout: 2 * time.Second, Interval: 200 * time.Millisecond})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHealthCheckGrace(t *testing.T) {
+	e := newEnv(t)
+	c := e.start(node.ContainerSpec{Name: e.name("grace"), Image: shellImage, Cmd: "sleep 300"})
+	err := e.HealthCheck(ctxTimeout(t, time.Minute), c, node.HealthCheck{Grace: time.Second, Timeout: 10 * time.Second, Interval: 200 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLogs(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	c := e.start(node.ContainerSpec{
+		Name:  e.name("logs"),
+		Image: shellImage,
+		Cmd:   "echo one; echo two >&2; i=0; while true; do i=$((i+1)); echo tick $i; sleep 0.1; done",
+	})
+	time.Sleep(500 * time.Millisecond)
+
+	lines, err := e.Logs(ctx, c.ID, node.LogOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backlog []node.LogLine
+	for l := range lines { // must close after the backlog
+		backlog = append(backlog, l)
+	}
+	if len(backlog) < 3 {
+		t.Fatalf("backlog = %+v", backlog)
+	}
+	// stdout and stderr are separate pipes, so their relative order isn't
+	// guaranteed.
+	if !containsLine(backlog, node.LogLine{Stream: "stdout", Text: "one"}) ||
+		!containsLine(backlog, node.LogLine{Stream: "stderr", Text: "two"}) {
+		t.Errorf("backlog = %+v", backlog)
+	}
+	for _, l := range backlog {
+		if l.Time.IsZero() {
+			t.Errorf("line without timestamp: %+v", l)
+		}
+	}
+
+	tail, err := e.Logs(ctx, c.ID, node.LogOptions{Tail: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countLines(tail); n != 1 {
+		t.Errorf("Tail: 1 returned %d lines", n)
+	}
+
+	future, err := e.Logs(ctx, c.ID, node.LogOptions{Since: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countLines(future); n != 0 {
+		t.Errorf("Since future returned %d lines", n)
+	}
+
+	fctx, cancel := context.WithCancel(ctx)
+	follow, err := e.Logs(fctx, c.ID, node.LogOptions{Follow: true, Since: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		select {
+		case l := <-follow:
+			if !strings.HasPrefix(l.Text, "tick ") {
+				t.Errorf("followed line = %+v", l)
+			}
+		case <-ctx.Done():
+			t.Fatal("no followed lines")
+		}
+	}
+	cancel()
+	done := make(chan struct{})
+	go func() { countLines(follow); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("follow channel did not close after cancel")
+	}
+}
+
+func TestUnmanagedIsInvisible(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+
+	created, err := e.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Name:   e.name("foreign"),
+		Config: &container.Config{Image: shellImage, Cmd: []string{"sleep", "300"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := e.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsID(list, created.ID) {
+		t.Error("List includes an unmanaged container")
+	}
+	if _, err := e.Inspect(ctx, created.ID); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Inspect err = %v", err)
+	}
+	if err := e.Stop(ctx, created.ID, 0); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Stop err = %v", err)
+	}
+	if err := e.Remove(ctx, created.ID); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Remove err = %v", err)
+	}
+	if _, err := e.Logs(ctx, created.ID, node.LogOptions{}); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Logs err = %v", err)
+	}
+	if st, _ := e.cli.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{}); !st.Container.State.Running {
+		t.Error("unmanaged container was stopped")
+	}
+
+	foreignVol := e.name("foreign-vol")
+	if _, err := e.cli.VolumeCreate(ctx, client.VolumeCreateOptions{Name: foreignVol}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.EnsureVolume(ctx, foreignVol, node.Labels{}); err == nil {
+		t.Error("EnsureVolume accepted an unmanaged volume")
+	}
+	_, err = e.Start(ctx, node.ContainerSpec{
+		Name: e.name("mounts-foreign"), Image: shellImage, Cmd: "sleep 300",
+		Mounts: []node.Mount{{Volume: foreignVol, Path: "/data"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not managed") {
+		t.Errorf("Start with unmanaged volume err = %v", err)
+	}
+}
+
+func containsID(list []node.Container, id string) bool {
+	for _, c := range list {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func containsLine(lines []node.LogLine, want node.LogLine) bool {
+	for _, l := range lines {
+		if l.Stream == want.Stream && l.Text == want.Text {
+			return true
+		}
+	}
+	return false
+}
+
+func countLines(ch <-chan node.LogLine) int {
+	n := 0
+	for range ch {
+		n++
+	}
+	return n
+}
