@@ -53,7 +53,7 @@ export function ApplyBar({ env }: { env: EnvRef }) {
       <Button primary disabled={busy} onClick={() => apply.mutate(env)}>
         Apply {n} {n === 1 ? "change" : "changes"}
       </Button>
-      <Button disabled={busy} onClick={() => discard.mutate(env)}>
+      <Button disabled={busy} onClick={() => discard.mutate({ env })}>
         Discard all
       </Button>
       <span className="text-dim">

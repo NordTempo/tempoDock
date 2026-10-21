@@ -109,7 +109,9 @@ type ServiceStatus struct {
 // ServiceSettings are a service's DB-held settings. Zero values mean "use
 // the default".
 type ServiceSettings struct {
-	// Image is the default image for image deploys (e.g. postgres:17).
+	// Image is the image an image service runs (e.g. postgres:17) and the
+	// default for image deploys. Image deploys set it to their image and
+	// source deploys clear it, so empty means "built from source".
 	Image                     string  `json:"image"`
 	Port                      int     `json:"port" doc:"Container port. 0 means 8080 (published only once the service has a domain)"`
 	HealthCheckPath           string  `json:"health_check_path" doc:"HTTP path; empty means a TCP check"`
@@ -261,7 +263,7 @@ type ReleaseEvent struct {
 
 // DeployImageRequest deploys a prebuilt image.
 type DeployImageRequest struct {
-	Image string `json:"image,omitempty" doc:"Image reference; defaults to the service's image setting"`
+	Image string `json:"image,omitempty" doc:"Image reference; defaults to the service's image setting, which a deploy of another image updates"`
 }
 
 // BuildLogLine is one line of build output.
@@ -378,6 +380,39 @@ type VolumeAddition struct {
 	MountPath string `json:"mount_path"`
 }
 
+// DiscardChangesRequest picks staged changes to discard. Without any
+// selection (or without a body) every staged change in the environment is
+// discarded. Selecting a change that isn't staged is an error.
+type DiscardChangesRequest struct {
+	Variables []VariableRef `json:"variables,omitempty"`
+	Settings  []SettingRef  `json:"settings,omitempty"`
+	Volumes   []VolumeRef   `json:"volumes,omitempty"`
+}
+
+// Empty reports whether nothing is selected, i.e. discard everything.
+func (r DiscardChangesRequest) Empty() bool {
+	return len(r.Variables)+len(r.Settings)+len(r.Volumes) == 0
+}
+
+// VariableRef names a variable: a service's, or a shared one when Service
+// is empty.
+type VariableRef struct {
+	Key     string `json:"key"`
+	Service string `json:"service,omitempty" doc:"Empty for a shared (environment-level) variable"`
+}
+
+// SettingRef names one setting of a service.
+type SettingRef struct {
+	Service string `json:"service"`
+	Field   string `json:"field" example:"port"`
+}
+
+// VolumeRef names a volume of a service.
+type VolumeRef struct {
+	Service string `json:"service"`
+	Name    string `json:"name"`
+}
+
 // AppliedChanges reports what applying staged changes started.
 type AppliedChanges struct {
 	// Releases are the config releases created, one per affected service
@@ -417,7 +452,10 @@ type DNSRecord struct {
 
 // Domain is a public hostname routed to a service.
 type Domain struct {
-	Hostname     string       `json:"hostname"`
+	Hostname string `json:"hostname"`
+	// URL is where the domain serves: https://, or http:// when the
+	// server has TLS disabled.
+	URL          string       `json:"url" example:"https://shop.example.com"`
 	Project      string       `json:"project"`
 	Environment  string       `json:"environment"`
 	Service      string       `json:"service"`
@@ -428,7 +466,13 @@ type Domain struct {
 	// DNSRecords are the records to create; any one of them is enough.
 	// Empty for generated domains (covered by the wildcard record).
 	DNSRecords []DNSRecord `json:"dns_records"`
-	CreatedAt  time.Time   `json:"created_at"`
+	// CheckedAt is when the daemon last checked the domain's DNS and
+	// certificate, and ResolvedIPs what the hostname resolved to then.
+	// Unset until the running daemon has checked it; active domains aren't
+	// checked again.
+	CheckedAt   *time.Time `json:"checked_at,omitempty"`
+	ResolvedIPs []string   `json:"resolved_ips,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // AddDomainRequest adds a hostname to a service.
@@ -597,7 +641,7 @@ const (
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type          EventType      `json:"type"`
+	Type          EventType      `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged"`
 	Time          time.Time      `json:"time"`
 	Project       string         `json:"project,omitempty"`
 	Environment   string         `json:"environment,omitempty"`

@@ -369,8 +369,41 @@
         "additionalProperties": false,
         "properties": {
           "image": {
-            "description": "Image reference; defaults to the service's image setting",
+            "description": "Image reference; defaults to the service's image setting, which a deploy of another image updates",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DiscardChangesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/SettingRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "variables": {
+            "items": {
+              "$ref": "#/components/schemas/VariableRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/VolumeRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -378,6 +411,10 @@
       "Domain": {
         "additionalProperties": false,
         "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -406,6 +443,15 @@
           "redirect_to": {
             "type": "string"
           },
+          "resolved_ips": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "service": {
             "type": "string"
           },
@@ -421,10 +467,17 @@
           },
           "status_reason": {
             "type": "string"
+          },
+          "url": {
+            "examples": [
+              "https://shop.example.com"
+            ],
+            "type": "string"
           }
         },
         "required": [
           "hostname",
+          "url",
           "project",
           "environment",
           "service",
@@ -614,6 +667,16 @@
             "type": "string"
           },
           "type": {
+            "enum": [
+              "release",
+              "release_event",
+              "build_log",
+              "service_status",
+              "domain",
+              "audit",
+              "drift",
+              "lagged"
+            ],
             "type": "string"
           }
         },
@@ -1333,6 +1396,25 @@
         ],
         "type": "object"
       },
+      "SettingRef": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "examples": [
+              "port"
+            ],
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "field"
+        ],
+        "type": "object"
+      },
       "Token": {
         "additionalProperties": false,
         "properties": {
@@ -1549,6 +1631,22 @@
         ],
         "type": "object"
       },
+      "VariableRef": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "service": {
+            "description": "Empty for a shared (environment-level) variable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
       "Version": {
         "additionalProperties": false,
         "properties": {
@@ -1645,6 +1743,22 @@
           "path"
         ],
         "type": "object"
+      },
+      "VolumeRef": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "name"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -1688,6 +1802,16 @@
             "name": "environment",
             "schema": {
               "description": "Requires project",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events targeting this service; requires project and environment",
+            "explode": false,
+            "in": "query",
+            "name": "service",
+            "schema": {
+              "description": "Only events targeting this service; requires project and environment",
               "type": "string"
             }
           },
@@ -3313,6 +3437,7 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/changes/discard": {
       "post": {
+        "description": "Discards the selected staged changes, or all of them without a body (or an empty selection). Selecting a change that isn't staged is a 404 and discards nothing. Scope: deploy.",
         "operationId": "discard-changes",
         "parameters": [
           {
@@ -3336,6 +3461,15 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscardChangesRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

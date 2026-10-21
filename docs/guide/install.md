@@ -98,7 +98,7 @@ running).
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
 | `[defaults] cpus` | `1` | CPU limit for services that don't set one |
 | `[defaults] health_check_timeout_seconds` | `60` | Health check timeout for services that don't set one |
-| `[defaults] keep_releases` | `5` | Release images kept for rollback <!-- verify: keep_releases is parsed but no pruning uses it yet (grep internal/). Say "not enforced yet" if still true. --> |
+| `[defaults] keep_releases` | `5` | Release images kept for rollback. Not enforced yet: nothing prunes old images |
 
 Changing `[buildkit]` settings recreates the `dock-buildkit` container
 before the next build.

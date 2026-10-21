@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useDeploy, useRestart, useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
@@ -15,7 +15,7 @@ import { Crumbs, TopBar } from "../../shell/TopBar";
 import { Button, ErrorText, Status } from "../../ui/kit";
 import { serviceStatus, shortId } from "../../ui/status";
 import { formatSetting } from "../settings/settings";
-import { rollbackTarget } from "./releases";
+import { copiedConfig, rollbackTarget } from "./releases";
 
 const tabs = [
   { label: "Releases", to: "/$project/$environment/$service" },
@@ -155,6 +155,35 @@ function ServiceActions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const target = rollbackTarget(releases);
   const busy = deploying ? `r${deploying.number} is deploying` : undefined;
   const error = deploy.error ?? rollback.error ?? restart.error;
+  const [confirming, setConfirming] = useState(false);
+
+  if (confirming && target) {
+    return (
+      <>
+        <ErrorText error={rollback.error} />
+        <span className="text-dim">
+          Roll back to r{target.number}:{" "}
+          <span className="font-mono text-xs text-white">
+            {copiedConfig(target)}
+          </span>
+        </span>
+        <Button
+          primary
+          disabled={!!busy || rollback.isPending}
+          title={busy}
+          onClick={() =>
+            rollback.mutate(
+              { ref, to: target.number },
+              { onSuccess: () => setConfirming(false) },
+            )
+          }
+        >
+          Roll back
+        </Button>
+        <Button onClick={() => setConfirming(false)}>Cancel</Button>
+      </>
+    );
+  }
 
   return (
     <>
@@ -176,10 +205,10 @@ function ServiceActions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         title={
           busy ??
           (target
-            ? `Roll back to r${target.number}`
+            ? `Roll back to r${target.number}: ${copiedConfig(target)}`
             : "No earlier release to roll back to")
         }
-        onClick={() => target && rollback.mutate({ ref, to: target.number })}
+        onClick={() => setConfirming(true)}
       >
         Rollback
       </Button>

@@ -23,11 +23,15 @@ func newDomainCmd(g *globals) *cobra.Command {
 
 func newDomainListCmd(g *globals) *cobra.Command {
 	var f targetFlags
+	var wide bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List domains with their status and the DNS records to create",
-		Args:    cobra.NoArgs,
+		Long: `List the service's domains with their status and the DNS record to create.
+--wide adds each domain's URL, when the server last checked its DNS, and
+what the hostname resolved to then.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, t, err := g.open(f, needService)
 			if err != nil {
@@ -42,7 +46,11 @@ func newDomainListCmd(g *globals) *cobra.Command {
 					g.io.Successf("%s has no domains. Add one with `dock domain add <host>` or `dock domain generate`.", t)
 					return nil
 				}
-				tb := g.io.Table("hostname", "status", "redirect", "dns")
+				headers := []string{"hostname", "status", "redirect", "dns"}
+				if wide {
+					headers = append(headers, "url", "checked", "resolves to")
+				}
+				tb := g.io.Table(headers...)
 				for _, d := range domains {
 					dns := "-"
 					if d.Status != apitypes.DomainActive && len(d.DNSRecords) > 0 {
@@ -53,13 +61,18 @@ func newDomainListCmd(g *globals) *cobra.Command {
 					if d.StatusReason != "" {
 						status += ": " + d.StatusReason
 					}
-					tb.Row(d.Hostname, status, dash(d.RedirectTo), dns)
+					row := []string{d.Hostname, status, dash(d.RedirectTo), dns}
+					if wide {
+						row = append(row, d.URL, agoPtr(d.CheckedAt), dash(strings.Join(d.ResolvedIPs, ", ")))
+					}
+					tb.Row(row...)
 				}
 				return tb.Flush()
 			})
 		},
 	}
 	f.add(cmd, needService)
+	cmd.Flags().BoolVarP(&wide, "wide", "w", false, "also show the URL, the last DNS check and what the hostname resolved to")
 	return cmd
 }
 
@@ -159,7 +172,7 @@ func (g *globals) addDomain(ctx context.Context, f domainFlags, path string, bod
 	return g.io.Print(dc, func() error {
 		switch dc.Domain.Status {
 		case apitypes.DomainActive:
-			_, err := fmt.Fprintf(g.io.Out, "https://%s is live.\n", dc.Domain.Hostname)
+			_, err := fmt.Fprintf(g.io.Out, "%s is live.\n", dc.Domain.URL)
 			return err
 		case apitypes.DomainError:
 			return nil // reported as an error below

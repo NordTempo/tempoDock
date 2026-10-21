@@ -80,7 +80,7 @@ type settingsFlags struct {
 }
 
 func (f *settingsFlags) add(fs *pflag.FlagSet) {
-	fs.StringVar(&f.image, "image", "", "default image for image deploys, e.g. postgres:17")
+	fs.StringVar(&f.image, "image", "", "image to deploy, e.g. postgres:17 (image deploys keep it up to date)")
 	fs.IntVar(&f.port, "port", 0, "container port that receives traffic (0: 8080)")
 	fs.StringVar(&f.healthCheckPath, "health-check-path", "", "HTTP path that must answer 2xx/3xx (empty: TCP check)")
 	fs.DurationVar(&f.healthCheckTimeout, "health-check-timeout", 0, "how long a new release may take to pass, e.g. 60s")

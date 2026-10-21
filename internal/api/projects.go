@@ -124,8 +124,16 @@ func registerProjects(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "discard-changes", Method: http.MethodPost, Path: envPathT + "/changes/discard",
 		Summary: "Discard staged changes", Tags: tags,
-	}, func(ctx context.Context, actor core.Actor, in *EnvPath) (*out[apitypes.PendingChanges], error) {
-		return reply(s.core.DiscardChanges(ctx, actor, in.ref()))
+		Description: "Discards the selected staged changes, or all of them without a body (or an empty selection). Selecting a change that isn't staged is a 404 and discards nothing. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		EnvPath
+		Body *apitypes.DiscardChangesRequest
+	}) (*out[apitypes.PendingChanges], error) {
+		var sel apitypes.DiscardChangesRequest
+		if in.Body != nil {
+			sel = *in.Body
+		}
+		return reply(s.core.DiscardChanges(ctx, actor, in.ref(), sel))
 	})
 
 	tags = []string{"variables"}

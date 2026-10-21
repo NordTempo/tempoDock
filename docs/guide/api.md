@@ -155,6 +155,21 @@ curl -fsS -X PATCH -H "$auth" -H 'Content-Type: application/json' \
   "$api/projects/shop/environments/staging/variables"
 ```
 
+Discard one staged change (no body discards everything staged; selecting
+something that isn't staged is a `404` and discards nothing):
+
+```sh
+curl -fsS -X POST -H "$auth" -H 'Content-Type: application/json' \
+  -d '{"variables":[{"key":"LOG_LEVEL","service":"web"}],"settings":[{"service":"web","field":"port"}]}' \
+  "$api/projects/shop/environments/staging/changes/discard"
+```
+
+One service's audit log:
+
+```sh
+curl -fsS -H "$auth" "$api/audit?project=shop&environment=staging&service=web"
+```
+
 Roll back to release 41:
 
 ```sh

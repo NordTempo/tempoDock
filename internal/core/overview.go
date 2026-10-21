@@ -69,10 +69,11 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 
 // AuditFilter narrows the audit log. Action matches as a prefix
 // ("release." matches every release action). Before pages backwards by ID.
+// Service needs Project and Environment.
 type AuditFilter struct {
-	Project, Environment, Action string
-	Before                       int64
-	Limit                        int
+	Project, Environment, Service, Action string
+	Before                                int64
+	Limit                                 int
 }
 
 // ListAudit returns audit events, newest first. Actors limited to a
@@ -80,6 +81,9 @@ type AuditFilter struct {
 func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitypes.AuditEvent, error) {
 	if err := a.require(apitypes.ScopeRead, "reading the audit log"); err != nil {
 		return nil, err
+	}
+	if f.Service != "" {
+		return c.listServiceAudit(ctx, a, f)
 	}
 	params := store.ListAuditEventsParams{MaxRows: int64(f.Limit)}
 	if params.MaxRows <= 0 || params.MaxRows > 500 {

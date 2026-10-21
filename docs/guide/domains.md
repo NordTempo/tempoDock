@@ -41,18 +41,21 @@ added → waiting_for_dns → issuing_certificate → active
 | `added` | Not checked yet | Wait a few seconds |
 | `waiting_for_dns` | DNS doesn't point here yet. `status_reason` says what it resolves to | Create the record; DNS caches may take a while |
 | `issuing_certificate` | DNS is right, certificate on its way | Wait |
-| `active` | Serving HTTPS | |
-| `error` | DNS is right but no valid certificate is served. `status_reason` says why. Can show briefly while the first certificate is issued | Fix and wait for the next check |
-
-<!-- verify: core.checkDomain only sets issuing_certificate when the check has no error and no certificate, but caddy.CheckDomain always sets Error when the certificate isn't there yet ("no certificate for X yet"), so real servers go waiting_for_dns → error → active. Either fix the code or drop issuing_certificate from this table. -->
+| `active` | Serving at `url` (`https://`, or `http://` with `disable_tls`) | |
+| `error` | DNS is right but the certificate is invalid, or still missing after 10 minutes, or DNS also points somewhere else. `status_reason` says why | Fix and wait for the next check |
 
 Checks back off from 5 s to 5 min per domain, so a fix can take up to five
 minutes to show. With `disable_tls`, a domain is `active` as soon as DNS is
-right.
+right. Until then each domain also carries `checked_at` (the last check)
+and `resolved_ips` (what the hostname resolved to then), shown in the UI as
+"checked 20s ago, now resolves to ...". They are kept in memory, so they
+are empty for a moment after the daemon restarts, and active domains are not
+checked again.
 
 ```sh
 dock domain list            # status, reason, DNS records
-dock domain list --json     # same, machine-readable
+dock domain list --wide     # plus URL, last check and what it resolved to
+dock domain list --json     # everything, machine-readable
 ```
 
 ## Generated domains
@@ -80,8 +83,6 @@ to add your own domain.
 ```sh
 dock domain add www.example.com --redirect-to example.com
 ```
-
-<!-- verify: --redirect-to flag name (API: `redirect_to`). -->
 
 Permanent `308` redirect to the other hostname, keeping path and query.
 Typical: `www` → apex. A redirect domain gets its own certificate.

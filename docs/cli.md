@@ -105,20 +105,22 @@ keeps the linked service, so it means "this service, in staging".
 | `login <url> [--token-stdin]` | Verify a token against `/version` and `/me` (prompted for on a terminal, or read from stdin), store it as a context and use it. Warns when the server runs another version |
 | `whoami` | Who the token belongs to and its scope |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
-| `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. Exit 6 when the release fails |
+| `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails |
 | `status [-a]` | The service's state, releases, domains and staged changes; `-a` (or no service) for the whole environment |
 | `logs [-f] [-n N] [--since] [-r N] [--build]` | Service output, or a build log |
 | `releases`, `release list\|show N` | Release history and one release with its events |
-| `rollback [N]`, `release rollback [N]` | New release from an earlier one; default the one that served before the active one |
+| `rollback [N]`, `release rollback [N]` | New release from an earlier one; default the one that served before the active one. Says which release it copies and that release's image and config |
 | `restart` | New release identical to the active one |
 | `env list [--reveal]` | Shared and service variables |
 | `env set K=V... \| unset K... \| import FILE [--shared] [--deploy]` | Stage variable changes; `--shared` for environment-level, `--deploy` to apply right away |
-| `changes [--reveal]`, `apply`, `discard` | Show, apply (and follow the resulting releases) or drop the environment's staged changes |
-| `domain list\|add HOST [--redirect-to]\|generate\|remove HOST` | Domains; `add` prints the DNS record and waits (`--timeout`, default 5m) for DNS and the certificate |
+| `changes [--reveal]`, `apply` | Show or apply (and follow the resulting releases) the environment's staged changes |
+| `discard [KEY...] [-s service] [--shared]` | Drop staged changes: all in the environment; with `-s`, that service's own; with KEYs, those variables' (the service's, or shared with `--shared`) |
+| `domain list [-w]\|add HOST [--redirect-to]\|generate\|remove HOST` | Domains; `list -w` adds the URL, last DNS check and what the hostname resolved to; `add` prints the DNS record and waits (`--timeout`, default 5m) for DNS and the certificate, then prints the URL |
 | `volume list\|add NAME PATH` | Volumes (staged) |
 | `service list\|create\|show\|update\|archive` | Services; `update` stages only the settings passed |
 | `project list\|create`, `environment list\|create` | Projects and environments (`env` is variables) |
-| `token list\|create NAME --scope\|revoke ID`, `user list\|create`, `audit`, `server list` | Administration |
+| `token list\|create NAME --scope\|revoke ID`, `user list\|create`, `server list` | Administration |
+| `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
 
 Commands that start releases (`deploy`, `rollback`, `restart`, `apply`,
 `--deploy`) follow them until they are live or failed; `--detach` returns

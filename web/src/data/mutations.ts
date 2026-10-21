@@ -6,13 +6,13 @@ import {
 } from "@tanstack/react-query";
 import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
 import { api, body, done } from "../api/client";
-import { envPath, keys, queries, servicePath } from "./queries";
+import { envPath, keys, servicePath } from "./queries";
 import type {
+  DiscardSelection,
   EnvRef,
   NewToken,
   ServiceRef,
   SettingsPatch,
-  Variable,
 } from "./types";
 
 // Mutation hooks. Each one names the cache subtrees it touches; they are
@@ -110,34 +110,7 @@ function setVariables({ env, service, set, unset }: VariableEdit) {
 export const useStageVariables = () =>
   useAction(setVariables, ({ env }) => staging(env));
 
-/**
- * Un-stages one variable's change. A staged addition is simply unset; an
- * edit or removal is undone by setting the live value again, which needs the
- * revealed value (admin).
- */
-export const useUndoVariable = () => {
-  const queryClient = useQueryClient();
-  return useAction(
-    async ({ env, variable }: { env: EnvRef; variable: Variable }) => {
-      const service = variable.service ?? null;
-      if (variable.pending === "add") {
-        return setVariables({ env, service, unset: [variable.key] });
-      }
-      const changes = await queryClient.fetchQuery(queries.changes(env, true));
-      const old = changes.variables.find(
-        (c) =>
-          c.key === variable.key &&
-          c.scope === variable.scope &&
-          (c.service ?? null) === service,
-      )?.old;
-      if (old === undefined) throw new Error("Live value is not available");
-      return setVariables({ env, service, set: { [variable.key]: old } });
-    },
-    ({ env }) => staging(env),
-  );
-};
-
-/** Stages service settings; undo stages the old value again. */
+/** Stages service settings. */
 export const useStageSettings = () =>
   useAction(
     ({ ref, patch }: { ref: ServiceRef; patch: SettingsPatch }) =>
@@ -150,16 +123,20 @@ export const useStageSettings = () =>
     ({ ref }) => staging(ref),
   );
 
+/**
+ * Drops staged changes: the selected ones (per-row undo), or all of them
+ * without a selection.
+ */
 export const useDiscardChanges = () =>
   useAction(
-    (env: EnvRef) =>
+    ({ env, selection }: { env: EnvRef; selection?: DiscardSelection }) =>
       body(
         api.POST(
           "/api/v1/projects/{project}/environments/{environment}/changes/discard",
-          { params: { path: envPath(env) } },
+          { params: { path: envPath(env) }, body: selection },
         ),
       ),
-    staging,
+    ({ env }) => staging(env),
   );
 
 /** Applies staged changes; every affected running service gets a release. */

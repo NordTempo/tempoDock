@@ -18,6 +18,7 @@ import type {
 // /api/v1/events patches or invalidates the query cache, and log views
 // follow their own streams.
 
+// Build output is followed on its own stream (useBuildLog), not the bus.
 const busEvents = [
   "release",
   "release_event",
@@ -26,7 +27,7 @@ const busEvents = [
   "audit",
   "drift",
   "lagged",
-] as const;
+] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
   e.project && e.environment && e.service
@@ -127,6 +128,11 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Events were dropped: everything on screen may be stale.
       queryClient.invalidateQueries();
       return;
+    case "build_log":
+      return; // not subscribed, see busEvents
+    default:
+      // A new event type in the API fails the build until handled here.
+      event.type satisfies never;
   }
 }
 

@@ -246,7 +246,7 @@ func newUserCmd(g *globals) *cobra.Command {
 }
 
 func newAuditCmd(g *globals) *cobra.Command {
-	var project, env, action string
+	var project, env, service, action string
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "audit",
@@ -259,7 +259,7 @@ func newAuditCmd(g *globals) *cobra.Command {
 				return err
 			}
 			q := url.Values{"limit": {strconv.Itoa(limit)}}
-			for k, v := range map[string]string{"project": project, "environment": env, "action": action} {
+			for k, v := range map[string]string{"project": project, "environment": env, "service": service, "action": action} {
 				if v != "" {
 					q.Set(k, v)
 				}
@@ -279,6 +279,7 @@ func newAuditCmd(g *globals) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&project, "project", "p", "", "only this project")
 	cmd.Flags().StringVarP(&env, "environment", "e", "", "only this environment of --project")
+	cmd.Flags().StringVarP(&service, "service", "s", "", "only events targeting this service of --project and --environment")
 	cmd.Flags().StringVar(&action, "action", "", "action prefix, e.g. release. or domain.add")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "how many events (max 500)")
 	return cmd

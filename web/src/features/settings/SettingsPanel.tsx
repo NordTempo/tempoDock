@@ -1,6 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { useArchiveService, useStageSettings } from "../../data/mutations";
+import {
+  useArchiveService,
+  useDiscardChanges,
+  useStageSettings,
+} from "../../data/mutations";
 import {
   envPath,
   useChanges,
@@ -30,6 +34,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { environment } = useEnvironment(ref);
   const volumes = useVolumes(ref);
   const pending = useChanges(ref);
+  const discard = useDiscardChanges();
   const changes = pending.settings.flatMap((c) =>
     c.service === ref.service && isSettingKey(c.field)
       ? [{ ...c, key: c.field }]
@@ -87,7 +92,24 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             volumes.map((v) => (
               <Mono key={v.name}>
                 {v.name} at {v.mount_path}
-                {v.pending && <span className="text-warn"> staged</span>}{" "}
+                {v.pending && (
+                  <>
+                    <span className="text-warn"> staged</span>{" "}
+                    <Action
+                      disabled={discard.isPending}
+                      onClick={() =>
+                        discard.mutate({
+                          env: envPath(ref),
+                          selection: {
+                            volumes: [{ service: ref.service, name: v.name }],
+                          },
+                        })
+                      }
+                    >
+                      undo
+                    </Action>
+                  </>
+                )}{" "}
               </Mono>
             ))
           )}
@@ -136,6 +158,7 @@ function EditableSetting({
   change: KeyedChange | undefined;
 }) {
   const stage = useStageSettings();
+  const undo = useDiscardChanges();
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
@@ -189,13 +212,18 @@ function EditableSetting({
       {change && (
         <Action
           className="text-xs"
-          disabled={stage.isPending}
-          onClick={() => submit(change.old)}
+          disabled={undo.isPending}
+          onClick={() =>
+            undo.mutate({
+              env: envPath(ref),
+              selection: { settings: [{ service: ref.service, field: key }] },
+            })
+          }
         >
           undo
         </Action>
       )}
-      <ErrorText error={error ?? stage.error} />
+      <ErrorText error={error ?? stage.error ?? undo.error} />
     </span>
   );
 }

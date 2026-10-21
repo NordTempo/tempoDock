@@ -28,16 +28,14 @@ reasons behind it, see the [docs index](../../README.md#docs).
 
 ## Commands at a glance
 
-<!-- verify: this guide was written against the command set in docs/experience.md and the task brief while the CLI was being built. Check every command name and flag below against `dock <cmd> --help`. -->
-
 Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit-codes).
 
 | Area | Commands |
 |---|---|
-| Auth and servers | `dock login`, `dock logout`, `dock context add\|list\|use\|current\|remove` |
-| Where you deploy | `dock link`, `dock unlink`, `dock project`, `dock environment`, `dock service` |
-| Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock rollback`, `dock restart` |
-| Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock changes apply\|discard`, `dock volume` |
+| Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock context add\|list\|use\|current\|remove` |
+| Where you deploy | `dock link`, `dock unlink`, `dock project list\|create`, `dock environment list\|create`, `dock service list\|create\|show\|update\|archive` |
+| Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|rollback`, `dock rollback`, `dock restart` |
+| Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock apply`, `dock discard`, `dock volume list\|add` |
 | Domains | `dock domain add\|list\|remove\|generate` |
-| Admin | `dock token`, `dock user`, `dock audit`, `dock server` |
+| Admin | `dock token list\|create\|revoke`, `dock user list\|create`, `dock audit`, `dock server list` |
 | On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config` |

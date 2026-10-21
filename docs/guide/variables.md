@@ -10,7 +10,9 @@ args at build time, see [deploying](deploying.md#how-the-image-is-built)).
 | Shared (environment) | `dock env set KEY=value --shared` | Every service in the environment |
 | Service | `dock env set KEY=value` (linked service) or `--service web` | That service only; overrides a shared variable with the same name |
 
-<!-- verify: flag names --shared and --service for env set/unset/list/import. API: PATCH .../variables, no `service` field = shared. -->
+`set`, `unset` and `import` take `--shared` or `--service/-s`; `dock env
+list` shows the shared variables plus the service's (every service's
+without one).
 
 ```sh
 dock env set LOG_LEVEL=info --shared
@@ -69,17 +71,28 @@ are **staged**: stored next to the live values, not yet running.
 ```sh
 dock env set FEATURE_X=on            # staged
 dock changes                         # diff of everything staged in the environment
-dock changes apply                   # make it all live
-dock changes discard                 # or drop it
+dock apply                           # make it all live
+dock discard                         # or drop it all
 ```
 
 | Change | Goes live when |
 |---|---|
-| Service variable, setting or volume | The next `dock deploy` of that service, or `dock changes apply` |
-| Shared variable | Only `dock changes apply`, because it affects every service |
+| Service variable, setting or volume | The next `dock deploy` of that service, or `dock apply` |
+| Shared variable | Only `dock apply`, because it affects every service |
 
-`dock env set ... --apply` stages and applies in one step.
-<!-- verify: --apply flag on env set/unset/import (API: `apply: true`). -->
+`dock env set ... --deploy` (also on `unset` and `import`) stages and
+applies in one step.
+
+Single changes can be dropped too; the rest stays staged:
+
+```sh
+dock discard FEATURE_X               # the linked service's FEATURE_X
+dock discard LOG_LEVEL --shared      # a shared variable
+dock discard -s web                  # everything staged for web
+```
+
+The UI's per-row undo does the same, for variables, settings and volumes
+(API: `POST .../changes/discard` with a selection, see [API](api.md)).
 
 Applying is one transaction, then one `config` release per affected running
 service, each health-checked like any deploy. Services that aren't running
@@ -104,7 +117,7 @@ Setting a variable back to its live value un-stages it.
 |---|---|---|---|
 | `read` | yes | no | no |
 | `deploy` | yes | yes | no (write-only) |
-| `admin` | yes | yes | yes, with `dock env list --reveal` <!-- verify: --reveal flag name (API: `?reveal=true`) --> |
+| `admin` | yes | yes | yes, with `dock env list --reveal` or `dock changes --reveal` |
 
 A `deploy` token can replace a value but never read one, including in the
 staged-changes diff. Values still reach the app, so anything the app prints
