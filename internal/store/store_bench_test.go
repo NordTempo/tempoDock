@@ -30,7 +30,7 @@ func BenchmarkPreparedQuery(b *testing.B) {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = s.Close() })
-	srv, err := s.CreateServer(ctx, CreateServerParams{Name: "local", Role: "production", Local: true})
+	srv, err := s.CreateServer(ctx, CreateServerParams{Name: "local", AcceptsProduction: true, AcceptsNonProduction: true, Local: true})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func BenchmarkPreparedQuery(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	env, err := s.CreateEnvironment(ctx, CreateEnvironmentParams{ProjectID: p.ID, Name: "production", ServerID: srv.ID})
+	env, err := s.CreateEnvironment(ctx, CreateEnvironmentParams{ProjectID: p.ID, Name: "production", Kind: "production", ServerID: srv.ID})
 	if err != nil {
 		b.Fatal(err)
 	}

@@ -42,6 +42,7 @@ daemon. Install on a server with [`deploy/install.sh`](deploy/install.sh).
 | [Experience](docs/experience.md) | How the CLI and UI should feel, performance targets |
 | [CLI](docs/cli.md) | CLI conventions, `--json`, exit codes |
 | [dock.toml](docs/dock-toml.md) | The optional repo config file |
+| [Performance](docs/performance.md) | Budgets, rules and `make perf` |
 | [Tech stack](docs/tech-stack.md) | The chosen technologies at a glance |
 | [Architecture](docs/architecture.md) | Components, data model, deploy flow, code layout |
 | [Safety model](docs/safety-model.md) | Permissions, non-destructive defaults, keeping the box alive |
