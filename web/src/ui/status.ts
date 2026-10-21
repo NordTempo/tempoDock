@@ -171,3 +171,15 @@ export function failurePhrase(r: { error_code?: string }) {
       return "failed";
   }
 }
+
+/** Which environment kinds a server accepts, as shown in tables. */
+export function serverKinds(s: {
+  accepts_production: boolean;
+  accepts_non_production: boolean;
+}) {
+  const kinds = [
+    s.accepts_production && "production",
+    s.accepts_non_production && "non-production",
+  ].filter(Boolean);
+  return kinds.length ? kinds.join(", ") : "nothing";
+}

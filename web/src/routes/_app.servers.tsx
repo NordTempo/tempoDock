@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useProjectTree, useServers } from "../data/queries";
 import { since } from "../ui/format";
 import { Page, Scroll, TitleRow } from "../ui/kit";
+import { serverKinds } from "../ui/status";
 
 export const Route = createFileRoute("/_app/servers")({
   component: Servers,
@@ -37,7 +38,7 @@ function Servers() {
             <tr>
               <th>Server</th>
               <th>Status</th>
-              <th>Role</th>
+              <th>Accepts</th>
               <th>Builds images</th>
               <th>Environments on it</th>
               <th>Control plane</th>
@@ -68,7 +69,7 @@ function Servers() {
                       <span className="text-ok">● online</span>
                     )}
                   </td>
-                  <td className="py-2.5">{s.role}</td>
+                  <td className="py-2.5">{serverKinds(s)}</td>
                   <td className={`py-2.5 ${s.builder ? "" : "text-mut"}`}>
                     {s.builder ? "yes" : "no"}
                   </td>

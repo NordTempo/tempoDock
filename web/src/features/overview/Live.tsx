@@ -9,6 +9,7 @@ import {
 import type { AuditEvent } from "../../data/types";
 import { clockSec } from "../../ui/format";
 import { Actor, Glyph } from "../../ui/kit";
+import { serverKinds } from "../../ui/status";
 import { pastLabel } from "../audit/AuditTable";
 
 type Entry = { id: string; time: string; body: ReactNode };
@@ -135,7 +136,7 @@ function ProjectServers({ project }: { project: string }) {
                 <span className="font-mono">{s.name}</span>
               </td>
               <td className="text-mut">
-                {s.role}
+                {serverKinds(s)}
                 {s.builder && ", builder"}
               </td>
               <td className="pr-0 text-right text-mut">{s.status}</td>
