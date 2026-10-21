@@ -127,6 +127,9 @@ function TokenRow({ token }: { token: Token }) {
       </td>
       <td className="py-2.5">
         <Actor name={token.created_by} kind={actorKind(token.created_by)} />
+        {token.origin === "cli_login" && (
+          <span className="text-mut"> via dock login</span>
+        )}
       </td>
       <td className={`py-2.5 ${token.last_used_at ? "" : "text-mut"}`}>
         {token.last_used_at ? `${since(token.last_used_at)} ago` : "never"}

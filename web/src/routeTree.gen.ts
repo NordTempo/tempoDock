@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as CliLoginRouteImport } from './routes/cli-login'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
@@ -31,6 +32,11 @@ import { Route as AppProjectEnvironmentServiceReleasesNumberRouteImport } from '
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CliLoginRoute = CliLoginRouteImport.update({
+  id: '/cli-login',
+  path: '/cli-login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -136,6 +142,7 @@ const AppProjectEnvironmentServiceReleasesNumberRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/audit': typeof AppAuditRoute
   '/servers': typeof AppServersRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/$project/$environment/$service/releases/$number': typeof AppProjectEnvironmentServiceReleasesNumberRoute
 }
 export interface FileRoutesByTo {
+  '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/audit': typeof AppAuditRoute
   '/servers': typeof AppServersRoute
@@ -176,6 +184,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/_app/audit': typeof AppAuditRoute
   '/_app/servers': typeof AppServersRoute
@@ -199,6 +208,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/cli-login'
     | '/login'
     | '/audit'
     | '/servers'
@@ -218,6 +228,7 @@ export interface FileRouteTypes {
     | '/$project/$environment/$service/releases/$number'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/cli-login'
     | '/login'
     | '/audit'
     | '/servers'
@@ -238,6 +249,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_app'
+    | '/cli-login'
     | '/login'
     | '/_app/audit'
     | '/_app/servers'
@@ -260,6 +272,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  CliLoginRoute: typeof CliLoginRoute
   LoginRoute: typeof LoginRoute
 }
 
@@ -270,6 +283,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cli-login': {
+      id: '/cli-login'
+      path: '/cli-login'
+      fullPath: '/cli-login'
+      preLoaderRoute: typeof CliLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -466,6 +486,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  CliLoginRoute: CliLoginRoute,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
