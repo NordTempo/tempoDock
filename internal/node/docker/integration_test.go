@@ -105,6 +105,18 @@ func TestPull(t *testing.T) {
 	if ok, err := e.HasImage(context.Background(), ref); !ok || err != nil {
 		t.Errorf("HasImage = %v, %v", ok, err)
 	}
+	// A digest-pinned ref that is on the server isn't pulled again.
+	img, err := e.cli.ImageInspect(context.Background(), ref)
+	if err != nil || len(img.RepoDigests) == 0 {
+		t.Fatalf("inspect %s: %v, digests %v", ref, err, img.RepoDigests)
+	}
+	out.Reset()
+	if pinned, err := e.Pull(ctxTimeout(t, time.Minute), img.RepoDigests[0], &out); err != nil || pinned != id {
+		t.Errorf("Pull(%s) = %q, %v; want %q", img.RepoDigests[0], pinned, err, id)
+	}
+	if !strings.Contains(out.String(), "already on the server") {
+		t.Errorf("digest pull output = %q, want no pull", out.String())
+	}
 	if ok, err := e.HasImage(context.Background(), "dock-test/does-not-exist:nope"); ok || err != nil {
 		t.Errorf("HasImage(missing) = %v, %v", ok, err)
 	}

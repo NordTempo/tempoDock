@@ -91,10 +91,19 @@ func (e notFoundError) Is(target error) bool {
 
 // Pull pulls ref, writing one readable line per status change to logs.
 // Errors are Docker's own, without a "pull <ref>" prefix: callers say what
-// they were pulling.
+// they were pulling. A digest-pinned ref (name@sha256:...) that is already
+// on the server is immutable, so it is not pulled again: that saves the
+// registry round trips (1.5-2 s) of every redeploy. Tags are always pulled,
+// since they may have moved.
 func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer) (string, error) {
 	if logs == nil {
 		logs = io.Discard
+	}
+	if strings.Contains(ref, "@sha256:") {
+		if img, err := r.cli.ImageInspect(ctx, ref); err == nil {
+			_, _ = fmt.Fprintln(logs, "Image is already on the server")
+			return img.ID, nil
+		}
 	}
 	resp, err := r.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {
