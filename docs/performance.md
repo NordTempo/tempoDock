@@ -91,7 +91,7 @@ Everything periodic in the daemon and CLI:
 | Live statistics | `internal/core/stats.go` | 3 s | someone watches a server or service live | the same reads for what is watched |
 | SSE heartbeat | `internal/api/streams.go` | 25 s | an SSE stream is open | one small write per stream |
 | Domain DNS/TLS checks | `internal/core/domains.go` | 5 s, backing off to 5 min | a domain is pending | a DNS lookup and TLS dial per domain |
-| Health check | `internal/node/docker/health.go` | 1 s (configurable) | a release is health checking | one inspect + HTTP/TCP probe |
+| Health check | `internal/node/docker/health.go` | at once, then 50, 100, 200, 400 ms, then 1 s | a release is health checking | one inspect + HTTP/TCP probe |
 | Cutover drain | `internal/core/deploy.go` | once, 12 s after a cutover | a release was replaced | one timer |
 | Docker event stream reconnect | `internal/node/docker/events.go` | backoff | the stream failed | one reconnect |
 | BuildKit readiness | `internal/node/build/buildkitd.go` | 250 ms | BuildKit is starting for a build | one gRPC call |

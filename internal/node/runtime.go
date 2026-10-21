@@ -280,6 +280,9 @@ type Container struct {
 //   - Path set: HTTP GET http://127.0.0.1:HostPort{Path} returns 2xx/3xx.
 //   - No Path, container publishes a port: TCP connect succeeds.
 //   - Neither: the container stays running for Grace.
+//
+// Interval is the steady probe interval; the first probes come sooner (the
+// Docker runtime backs off from 50 ms).
 type HealthCheck struct {
 	Path     string
 	Timeout  time.Duration
