@@ -20,7 +20,7 @@ type ActivateReleaseParams struct {
 }
 
 func (q *Queries) ActivateRelease(ctx context.Context, arg ActivateReleaseParams) error {
-	_, err := q.db.ExecContext(ctx, activateRelease, arg.FinishedAt, arg.ID)
+	_, err := q.exec(ctx, q.activateReleaseStmt, activateRelease, arg.FinishedAt, arg.ID)
 	return err
 }
 
@@ -35,7 +35,7 @@ type AddReleaseEventParams struct {
 }
 
 func (q *Queries) AddReleaseEvent(ctx context.Context, arg AddReleaseEventParams) (ReleaseEvent, error) {
-	row := q.db.QueryRowContext(ctx, addReleaseEvent, arg.ReleaseID, arg.Message, arg.CreatedAt)
+	row := q.queryRow(ctx, q.addReleaseEventStmt, addReleaseEvent, arg.ReleaseID, arg.Message, arg.CreatedAt)
 	var i ReleaseEvent
 	err := row.Scan(
 		&i.ID,
@@ -52,7 +52,7 @@ UPDATE releases SET host_port = 0 WHERE id = ? AND status IN ('failed', 'superse
 
 // Frees a retired release's port once its containers are gone.
 func (q *Queries) ClearReleaseHostPort(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, clearReleaseHostPort, id)
+	_, err := q.exec(ctx, q.clearReleaseHostPortStmt, clearReleaseHostPort, id)
 	return err
 }
 
@@ -75,7 +75,7 @@ type CreateReleaseParams struct {
 }
 
 func (q *Queries) CreateRelease(ctx context.Context, arg CreateReleaseParams) (Release, error) {
-	row := q.db.QueryRowContext(ctx, createRelease,
+	row := q.queryRow(ctx, q.createReleaseStmt, createRelease,
 		arg.ServiceID,
 		arg.Number,
 		arg.Source,
@@ -120,7 +120,7 @@ type FailReleaseParams struct {
 }
 
 func (q *Queries) FailRelease(ctx context.Context, arg FailReleaseParams) error {
-	_, err := q.db.ExecContext(ctx, failRelease,
+	_, err := q.exec(ctx, q.failReleaseStmt, failRelease,
 		arg.Error,
 		arg.ErrorCode,
 		arg.FinishedAt,
@@ -134,7 +134,7 @@ SELECT id, service_id, number, status, source, from_release, image_ref, image_id
 `
 
 func (q *Queries) GetActiveRelease(ctx context.Context, serviceID int64) (Release, error) {
-	row := q.db.QueryRowContext(ctx, getActiveRelease, serviceID)
+	row := q.queryRow(ctx, q.getActiveReleaseStmt, getActiveRelease, serviceID)
 	var i Release
 	err := row.Scan(
 		&i.ID,
@@ -163,7 +163,7 @@ WHERE service_id = ? AND status IN ('queued', 'building', 'starting', 'health_ch
 `
 
 func (q *Queries) GetInFlightRelease(ctx context.Context, serviceID int64) (Release, error) {
-	row := q.db.QueryRowContext(ctx, getInFlightRelease, serviceID)
+	row := q.queryRow(ctx, q.getInFlightReleaseStmt, getInFlightRelease, serviceID)
 	var i Release
 	err := row.Scan(
 		&i.ID,
@@ -191,7 +191,7 @@ SELECT id, service_id, number, status, source, from_release, image_ref, image_id
 `
 
 func (q *Queries) GetRelease(ctx context.Context, id int64) (Release, error) {
-	row := q.db.QueryRowContext(ctx, getRelease, id)
+	row := q.queryRow(ctx, q.getReleaseStmt, getRelease, id)
 	var i Release
 	err := row.Scan(
 		&i.ID,
@@ -224,7 +224,7 @@ type GetReleaseByNumberParams struct {
 }
 
 func (q *Queries) GetReleaseByNumber(ctx context.Context, arg GetReleaseByNumberParams) (Release, error) {
-	row := q.db.QueryRowContext(ctx, getReleaseByNumber, arg.ServiceID, arg.Number)
+	row := q.queryRow(ctx, q.getReleaseByNumberStmt, getReleaseByNumber, arg.ServiceID, arg.Number)
 	var i Release
 	err := row.Scan(
 		&i.ID,
@@ -252,7 +252,7 @@ SELECT id, service_id, number, status, source, from_release, image_ref, image_id
 `
 
 func (q *Queries) ListActiveReleases(ctx context.Context) ([]Release, error) {
-	rows, err := q.db.QueryContext(ctx, listActiveReleases)
+	rows, err := q.query(ctx, q.listActiveReleasesStmt, listActiveReleases)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +296,66 @@ SELECT id, service_id, number, status, source, from_release, image_ref, image_id
 `
 
 func (q *Queries) ListInFlightReleases(ctx context.Context) ([]Release, error) {
-	rows, err := q.db.QueryContext(ctx, listInFlightReleases)
+	rows, err := q.query(ctx, q.listInFlightReleasesStmt, listInFlightReleases)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Release
+	for rows.Next() {
+		var i Release
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.Number,
+			&i.Status,
+			&i.Source,
+			&i.FromRelease,
+			&i.ImageRef,
+			&i.ImageID,
+			&i.Config,
+			&i.ContainerID,
+			&i.HostPort,
+			&i.Error,
+			&i.ErrorCode,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectReleaseHeads = `-- name: ListProjectReleaseHeads :many
+WITH svc AS (
+    SELECT services.id FROM services
+    JOIN environments ON environments.id = services.environment_id
+    WHERE environments.project_id = ?
+)
+SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at FROM releases
+WHERE releases.status = 'active' AND releases.service_id IN (SELECT id FROM svc)
+UNION ALL
+SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at FROM releases
+WHERE releases.status IN ('queued', 'building', 'starting', 'health_checking')
+  AND releases.service_id IN (SELECT id FROM svc)
+UNION ALL
+SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at FROM svc JOIN releases ON releases.service_id = svc.id
+WHERE releases.number = (SELECT max(latest.number) FROM releases latest WHERE latest.service_id = svc.id)
+`
+
+// For every service in a project: its active, in-flight and latest
+// releases. A release in several of these roles appears once per role.
+func (q *Queries) ListProjectReleaseHeads(ctx context.Context, projectID int64) ([]Release, error) {
+	rows, err := q.query(ctx, q.listProjectReleaseHeadsStmt, listProjectReleaseHeads, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +399,7 @@ SELECT id, release_id, message, created_at FROM release_events WHERE release_id 
 `
 
 func (q *Queries) ListReleaseEvents(ctx context.Context, releaseID int64) ([]ReleaseEvent, error) {
-	rows, err := q.db.QueryContext(ctx, listReleaseEvents, releaseID)
+	rows, err := q.query(ctx, q.listReleaseEventsStmt, listReleaseEvents, releaseID)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +436,7 @@ type ListReleasesParams struct {
 }
 
 func (q *Queries) ListReleases(ctx context.Context, arg ListReleasesParams) ([]Release, error) {
-	rows, err := q.db.QueryContext(ctx, listReleases, arg.ServiceID, arg.Limit)
+	rows, err := q.query(ctx, q.listReleasesStmt, listReleases, arg.ServiceID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -426,7 +485,7 @@ WHERE environments.server_id = ? AND releases.host_port > 0
 
 // Failed or superseded releases on one server that still hold a host port.
 func (q *Queries) ListRetiredPortHolders(ctx context.Context, serverID int64) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listRetiredPortHolders, serverID)
+	rows, err := q.query(ctx, q.listRetiredPortHoldersStmt, listRetiredPortHolders, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +518,7 @@ WHERE environments.server_id = ? AND releases.host_port > 0
 // container is confirmed removed (ClearReleaseHostPort), so a container
 // that is still draining, or failed to stop, never shares it.
 func (q *Queries) ListUsedHostPorts(ctx context.Context, serverID int64) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listUsedHostPorts, serverID)
+	rows, err := q.query(ctx, q.listUsedHostPortsStmt, listUsedHostPorts, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -486,7 +545,7 @@ SELECT CAST(coalesce(max(number), 0) + 1 AS INTEGER) AS next FROM releases WHERE
 `
 
 func (q *Queries) NextReleaseNumber(ctx context.Context, serviceID int64) (int64, error) {
-	row := q.db.QueryRowContext(ctx, nextReleaseNumber, serviceID)
+	row := q.queryRow(ctx, q.nextReleaseNumberStmt, nextReleaseNumber, serviceID)
 	var next int64
 	err := row.Scan(&next)
 	return next, err
@@ -502,7 +561,7 @@ type SetReleaseContainerParams struct {
 }
 
 func (q *Queries) SetReleaseContainer(ctx context.Context, arg SetReleaseContainerParams) error {
-	_, err := q.db.ExecContext(ctx, setReleaseContainer, arg.ContainerID, arg.ID)
+	_, err := q.exec(ctx, q.setReleaseContainerStmt, setReleaseContainer, arg.ContainerID, arg.ID)
 	return err
 }
 
@@ -517,7 +576,7 @@ type SetReleaseImageParams struct {
 }
 
 func (q *Queries) SetReleaseImage(ctx context.Context, arg SetReleaseImageParams) error {
-	_, err := q.db.ExecContext(ctx, setReleaseImage, arg.ImageRef, arg.ImageID, arg.ID)
+	_, err := q.exec(ctx, q.setReleaseImageStmt, setReleaseImage, arg.ImageRef, arg.ImageID, arg.ID)
 	return err
 }
 
@@ -531,7 +590,7 @@ type SetReleaseStatusParams struct {
 }
 
 func (q *Queries) SetReleaseStatus(ctx context.Context, arg SetReleaseStatusParams) error {
-	_, err := q.db.ExecContext(ctx, setReleaseStatus, arg.Status, arg.ID)
+	_, err := q.exec(ctx, q.setReleaseStatusStmt, setReleaseStatus, arg.Status, arg.ID)
 	return err
 }
 
@@ -540,6 +599,6 @@ UPDATE releases SET status = 'superseded' WHERE id = ? AND status = 'active'
 `
 
 func (q *Queries) SupersedeRelease(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, supersedeRelease, id)
+	_, err := q.exec(ctx, q.supersedeReleaseStmt, supersedeRelease, id)
 	return err
 }

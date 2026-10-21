@@ -21,7 +21,7 @@ type CreateDomainParams struct {
 }
 
 func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Domain, error) {
-	row := q.db.QueryRowContext(ctx, createDomain,
+	row := q.queryRow(ctx, q.createDomainStmt, createDomain,
 		arg.Hostname,
 		arg.ServiceID,
 		arg.Generated,
@@ -46,7 +46,7 @@ DELETE FROM domains WHERE id = ?
 `
 
 func (q *Queries) DeleteDomain(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteDomain, id)
+	_, err := q.exec(ctx, q.deleteDomainStmt, deleteDomain, id)
 	return err
 }
 
@@ -55,7 +55,7 @@ SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason
 `
 
 func (q *Queries) GetDomainByHostname(ctx context.Context, hostname string) (Domain, error) {
-	row := q.db.QueryRowContext(ctx, getDomainByHostname, hostname)
+	row := q.queryRow(ctx, q.getDomainByHostnameStmt, getDomainByHostname, hostname)
 	var i Domain
 	err := row.Scan(
 		&i.ID,
@@ -75,7 +75,7 @@ SELECT EXISTS (SELECT 1 FROM domains WHERE hostname = ?)
 `
 
 func (q *Queries) HostnameExists(ctx context.Context, hostname string) (bool, error) {
-	row := q.db.QueryRowContext(ctx, hostnameExists, hostname)
+	row := q.queryRow(ctx, q.hostnameExistsStmt, hostnameExists, hostname)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -86,7 +86,7 @@ SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason
 `
 
 func (q *Queries) ListDomainsByService(ctx context.Context, serviceID int64) ([]Domain, error) {
-	rows, err := q.db.QueryContext(ctx, listDomainsByService, serviceID)
+	rows, err := q.query(ctx, q.listDomainsByServiceStmt, listDomainsByService, serviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,48 @@ SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason
 `
 
 func (q *Queries) ListPendingDomains(ctx context.Context) ([]Domain, error) {
-	rows, err := q.db.QueryContext(ctx, listPendingDomains)
+	rows, err := q.query(ctx, q.listPendingDomainsStmt, listPendingDomains)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Domain
+	for rows.Next() {
+		var i Domain
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hostname,
+			&i.ServiceID,
+			&i.Generated,
+			&i.RedirectTo,
+			&i.Status,
+			&i.StatusReason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectDomains = `-- name: ListProjectDomains :many
+SELECT domains.id, domains.hostname, domains.service_id, domains."generated", domains.redirect_to, domains.status, domains.status_reason, domains.created_at FROM domains
+JOIN services ON services.id = domains.service_id
+JOIN environments ON environments.id = services.environment_id
+WHERE environments.project_id = ?
+ORDER BY domains.service_id, domains.id
+`
+
+// Every domain of every service in a project.
+func (q *Queries) ListProjectDomains(ctx context.Context, projectID int64) ([]Domain, error) {
+	rows, err := q.query(ctx, q.listProjectDomainsStmt, listProjectDomains, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +215,7 @@ type ListRoutableDomainsRow struct {
 // Every domain of a non-archived service in an environment on one server,
 // with the host port of the service's active release (0 if none).
 func (q *Queries) ListRoutableDomains(ctx context.Context, serverID int64) ([]ListRoutableDomainsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listRoutableDomains, serverID)
+	rows, err := q.query(ctx, q.listRoutableDomainsStmt, listRoutableDomains, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +253,6 @@ type UpdateDomainStatusParams struct {
 }
 
 func (q *Queries) UpdateDomainStatus(ctx context.Context, arg UpdateDomainStatusParams) error {
-	_, err := q.db.ExecContext(ctx, updateDomainStatus, arg.Status, arg.StatusReason, arg.ID)
+	_, err := q.exec(ctx, q.updateDomainStatusStmt, updateDomainStatus, arg.Status, arg.StatusReason, arg.ID)
 	return err
 }

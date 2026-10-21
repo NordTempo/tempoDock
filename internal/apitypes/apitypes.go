@@ -564,7 +564,10 @@ type ServiceOverview struct {
 	ActiveRelease *ReleaseSummary `json:"active_release,omitempty"`
 	// Deploying is the in-flight release, if a deploy is running.
 	Deploying *ReleaseSummary `json:"deploying,omitempty"`
-	Domains   []Domain        `json:"domains"`
+	// LatestRelease is the newest release whatever its status, so a failed
+	// last deploy shows without reading the release history.
+	LatestRelease *ReleaseSummary `json:"latest_release,omitempty"`
+	Domains       []Domain        `json:"domains"`
 }
 
 // ReleaseSummary is the short form of a release.
@@ -576,6 +579,9 @@ type ReleaseSummary struct {
 	ImageID   string        `json:"image_id"`
 	CreatedBy string        `json:"created_by"`
 	CreatedAt time.Time     `json:"created_at"`
+	// Error and ErrorCode explain a failed release.
+	Error     string    `json:"error,omitempty"`
+	ErrorCode ErrorCode `json:"error_code,omitempty"`
 }
 
 // EventType names a live event. It is also the SSE `event:` field.

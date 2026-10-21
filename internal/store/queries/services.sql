@@ -62,3 +62,25 @@ UPDATE variables SET value = pending_value, pending = '', pending_value = NULL W
 
 -- name: DeleteVariable :exec
 DELETE FROM variables WHERE id = ?;
+
+-- name: ListProjectServices :many
+-- Every service in a project, by environment, then name.
+SELECT services.* FROM services
+JOIN environments ON environments.id = services.environment_id
+WHERE environments.project_id = ?
+ORDER BY services.environment_id, services.name;
+
+-- name: ListProjectVolumes :many
+-- Every volume of every service in a project, including staged ones.
+SELECT volumes.* FROM volumes
+JOIN services ON services.id = volumes.service_id
+JOIN environments ON environments.id = services.environment_id
+WHERE environments.project_id = ?
+ORDER BY volumes.service_id, volumes.name;
+
+-- name: ListEnvironmentVolumes :many
+-- Every volume of every service in an environment, including staged ones.
+SELECT volumes.* FROM volumes
+JOIN services ON services.id = volumes.service_id
+WHERE services.environment_id = ?
+ORDER BY volumes.service_id, volumes.name;

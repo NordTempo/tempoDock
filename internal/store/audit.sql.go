@@ -30,7 +30,7 @@ type AddAuditEventParams struct {
 }
 
 func (q *Queries) AddAuditEvent(ctx context.Context, arg AddAuditEventParams) (AuditEvent, error) {
-	row := q.db.QueryRowContext(ctx, addAuditEvent,
+	row := q.queryRow(ctx, q.addAuditEventStmt, addAuditEvent,
 		arg.Actor,
 		arg.ActorKind,
 		arg.UserID,
@@ -60,51 +60,136 @@ func (q *Queries) AddAuditEvent(ctx context.Context, arg AddAuditEventParams) (A
 }
 
 const listAuditEvents = `-- name: ListAuditEvents :many
-SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at FROM audit_events
-WHERE (project_id = ?1 OR ?1 IS NULL)
-  AND (environment_id = ?2 OR ?2 IS NULL)
-  AND (action LIKE ?3 OR ?3 IS NULL)
-  AND (id < ?4 OR ?4 IS NULL)
-ORDER BY id DESC
-LIMIT ?5
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at,
+       coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
+FROM audit_events
+LEFT JOIN projects ON projects.id = audit_events.project_id
+LEFT JOIN environments ON environments.id = audit_events.environment_id
+WHERE audit_events.id < ?1
+  AND (audit_events.environment_id = ?2 OR ?2 IS NULL)
+  AND (audit_events.action LIKE ?3 OR ?3 IS NULL)
+ORDER BY audit_events.id DESC
+LIMIT ?4
 `
 
 type ListAuditEventsParams struct {
-	ProjectID     *int64
+	BeforeID      int64
 	EnvironmentID *int64
 	ActionPrefix  *string
-	BeforeID      *int64
 	MaxRows       int64
 }
 
-// Newest first. Nil filters match everything; before_id pages backwards.
-func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]AuditEvent, error) {
-	rows, err := q.db.QueryContext(ctx, listAuditEvents,
-		arg.ProjectID,
+type ListAuditEventsRow struct {
+	AuditEvent      AuditEvent
+	ProjectName     string
+	EnvironmentName string
+}
+
+// Newest first, with project and environment names. Nil filters match
+// everything; only events with IDs below before_id are returned (pass
+// math.MaxInt64 for the newest). Use ListProjectAuditEvents to filter by
+// project: an optional project filter here would keep SQLite from using
+// the audit_events_project index.
+func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]ListAuditEventsRow, error) {
+	rows, err := q.query(ctx, q.listAuditEventsStmt, listAuditEvents,
+		arg.BeforeID,
 		arg.EnvironmentID,
 		arg.ActionPrefix,
-		arg.BeforeID,
 		arg.MaxRows,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AuditEvent
+	var items []ListAuditEventsRow
 	for rows.Next() {
-		var i AuditEvent
+		var i ListAuditEventsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Actor,
-			&i.ActorKind,
-			&i.UserID,
-			&i.TokenID,
-			&i.Action,
-			&i.ProjectID,
-			&i.EnvironmentID,
-			&i.Target,
-			&i.Summary,
-			&i.CreatedAt,
+			&i.AuditEvent.ID,
+			&i.AuditEvent.Actor,
+			&i.AuditEvent.ActorKind,
+			&i.AuditEvent.UserID,
+			&i.AuditEvent.TokenID,
+			&i.AuditEvent.Action,
+			&i.AuditEvent.ProjectID,
+			&i.AuditEvent.EnvironmentID,
+			&i.AuditEvent.Target,
+			&i.AuditEvent.Summary,
+			&i.AuditEvent.CreatedAt,
+			&i.ProjectName,
+			&i.EnvironmentName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectAuditEvents = `-- name: ListProjectAuditEvents :many
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at,
+       coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
+FROM audit_events
+LEFT JOIN projects ON projects.id = audit_events.project_id
+LEFT JOIN environments ON environments.id = audit_events.environment_id
+WHERE audit_events.project_id = ?1
+  AND audit_events.id < ?2
+  AND (audit_events.environment_id = ?3 OR ?3 IS NULL)
+  AND (audit_events.action LIKE ?4 OR ?4 IS NULL)
+ORDER BY audit_events.id DESC
+LIMIT ?5
+`
+
+type ListProjectAuditEventsParams struct {
+	ProjectID     *int64
+	BeforeID      int64
+	EnvironmentID *int64
+	ActionPrefix  *string
+	MaxRows       int64
+}
+
+type ListProjectAuditEventsRow struct {
+	AuditEvent      AuditEvent
+	ProjectName     string
+	EnvironmentName string
+}
+
+// ListAuditEvents for one project, read through audit_events_project.
+func (q *Queries) ListProjectAuditEvents(ctx context.Context, arg ListProjectAuditEventsParams) ([]ListProjectAuditEventsRow, error) {
+	rows, err := q.query(ctx, q.listProjectAuditEventsStmt, listProjectAuditEvents,
+		arg.ProjectID,
+		arg.BeforeID,
+		arg.EnvironmentID,
+		arg.ActionPrefix,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectAuditEventsRow
+	for rows.Next() {
+		var i ListProjectAuditEventsRow
+		if err := rows.Scan(
+			&i.AuditEvent.ID,
+			&i.AuditEvent.Actor,
+			&i.AuditEvent.ActorKind,
+			&i.AuditEvent.UserID,
+			&i.AuditEvent.TokenID,
+			&i.AuditEvent.Action,
+			&i.AuditEvent.ProjectID,
+			&i.AuditEvent.EnvironmentID,
+			&i.AuditEvent.Target,
+			&i.AuditEvent.Summary,
+			&i.AuditEvent.CreatedAt,
+			&i.ProjectName,
+			&i.EnvironmentName,
 		); err != nil {
 			return nil, err
 		}

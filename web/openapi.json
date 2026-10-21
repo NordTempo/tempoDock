@@ -1024,6 +1024,12 @@
           "created_by": {
             "type": "string"
           },
+          "error": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          },
           "image_id": {
             "type": "string"
           },
@@ -1230,6 +1236,9 @@
               "array",
               "null"
             ]
+          },
+          "latest_release": {
+            "$ref": "#/components/schemas/ReleaseSummary"
           },
           "service": {
             "$ref": "#/components/schemas/Service"

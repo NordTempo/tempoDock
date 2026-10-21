@@ -83,7 +83,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
         keys.release(ref, release.number),
         (old) => old && { ...release, events: old.events },
       );
-      // Which release is active or deploying lives in the overview.
+      // Which release is active, deploying or latest lives in the overview.
       queryClient.invalidateQueries({ queryKey: keys.overview(ref.project) });
       return;
     }

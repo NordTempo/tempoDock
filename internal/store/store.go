@@ -47,16 +47,27 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	// Keep every connection open (the default keeps 2 idle): reopening one
+	// reruns the pragmas and re-prepares every statement on it.
 	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(8)
 	if err := migrate(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{Queries: New(db), DB: db}, nil
+	// Every query is a prepared statement (prepared once per connection), so
+	// SQLite doesn't parse its SQL on each call; transactions reuse them
+	// (WithTx). Prepared after migrating, since statements bind to the schema.
+	queries, err := Prepare(ctx, db)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("prepare queries: %w", err)
+	}
+	return &Store{Queries: queries, DB: db}, nil
 }
 
-// Close closes the database.
-func (s *Store) Close() error { return s.DB.Close() }
+// Close closes the prepared statements and the database.
+func (s *Store) Close() error { return errors.Join(s.Queries.Close(), s.DB.Close()) }
 
 // Tx runs fn in a write transaction, committing if fn returns nil.
 func (s *Store) Tx(ctx context.Context, fn func(q *Queries) error) error {

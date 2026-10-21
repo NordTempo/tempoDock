@@ -4,11 +4,32 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListAuditEvents :many
--- Newest first. Nil filters match everything; before_id pages backwards.
-SELECT * FROM audit_events
-WHERE (project_id = sqlc.narg(project_id) OR sqlc.narg(project_id) IS NULL)
-  AND (environment_id = sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
-  AND (action LIKE sqlc.narg(action_prefix) OR sqlc.narg(action_prefix) IS NULL)
-  AND (id < sqlc.narg(before_id) OR sqlc.narg(before_id) IS NULL)
-ORDER BY id DESC
+-- Newest first, with project and environment names. Nil filters match
+-- everything; only events with IDs below before_id are returned (pass
+-- math.MaxInt64 for the newest). Use ListProjectAuditEvents to filter by
+-- project: an optional project filter here would keep SQLite from using
+-- the audit_events_project index.
+SELECT sqlc.embed(audit_events),
+       coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
+FROM audit_events
+LEFT JOIN projects ON projects.id = audit_events.project_id
+LEFT JOIN environments ON environments.id = audit_events.environment_id
+WHERE audit_events.id < sqlc.arg(before_id)
+  AND (audit_events.environment_id = sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
+  AND (audit_events.action LIKE sqlc.narg(action_prefix) OR sqlc.narg(action_prefix) IS NULL)
+ORDER BY audit_events.id DESC
+LIMIT sqlc.arg(max_rows);
+
+-- name: ListProjectAuditEvents :many
+-- ListAuditEvents for one project, read through audit_events_project.
+SELECT sqlc.embed(audit_events),
+       coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
+FROM audit_events
+LEFT JOIN projects ON projects.id = audit_events.project_id
+LEFT JOIN environments ON environments.id = audit_events.environment_id
+WHERE audit_events.project_id = sqlc.arg(project_id)
+  AND audit_events.id < sqlc.arg(before_id)
+  AND (audit_events.environment_id = sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
+  AND (audit_events.action LIKE sqlc.narg(action_prefix) OR sqlc.narg(action_prefix) IS NULL)
+ORDER BY audit_events.id DESC
 LIMIT sqlc.arg(max_rows);

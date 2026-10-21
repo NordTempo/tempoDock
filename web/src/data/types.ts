@@ -72,7 +72,7 @@ export type LogLine = {
 export type Problem =
   | { kind: "crashed"; service: ServiceView }
   | { kind: "deploying"; service: ServiceView; release: ReleaseSummary }
-  | { kind: "deploy_failed"; service: ServiceView; release: Release }
+  | { kind: "deploy_failed"; service: ServiceView; release: ReleaseSummary }
   | { kind: "domain"; service: ServiceView; domain: Domain }
   | { kind: "staged"; environment: EnvironmentView }
   | { kind: "server_offline"; server: Server };

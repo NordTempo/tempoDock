@@ -15,7 +15,7 @@ SELECT count(*) FROM users
 `
 
 func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countUsers)
+	row := q.queryRow(ctx, q.countUsersStmt, countUsers)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -32,7 +32,7 @@ type CreateSessionParams struct {
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
-	_, err := q.db.ExecContext(ctx, createSession, arg.UserID, arg.Hash, arg.ExpiresAt)
+	_, err := q.exec(ctx, q.createSessionStmt, createSession, arg.UserID, arg.Hash, arg.ExpiresAt)
 	return err
 }
 
@@ -53,7 +53,7 @@ type CreateTokenParams struct {
 }
 
 func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token, error) {
-	row := q.db.QueryRowContext(ctx, createToken,
+	row := q.queryRow(ctx, q.createTokenStmt, createToken,
 		arg.Name,
 		arg.Hash,
 		arg.Scope,
@@ -93,7 +93,7 @@ type CreateUserParams struct {
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser,
+	row := q.queryRow(ctx, q.createUserStmt, createUser,
 		arg.Email,
 		arg.Name,
 		arg.PasswordHash,
@@ -117,7 +117,7 @@ DELETE FROM sessions WHERE expires_at < ?
 `
 
 func (q *Queries) DeleteExpiredSessions(ctx context.Context, expiresAt time.Time) error {
-	_, err := q.db.ExecContext(ctx, deleteExpiredSessions, expiresAt)
+	_, err := q.exec(ctx, q.deleteExpiredSessionsStmt, deleteExpiredSessions, expiresAt)
 	return err
 }
 
@@ -126,7 +126,7 @@ DELETE FROM sessions WHERE hash = ?
 `
 
 func (q *Queries) DeleteSession(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, deleteSession, hash)
+	_, err := q.exec(ctx, q.deleteSessionStmt, deleteSession, hash)
 	return err
 }
 
@@ -135,7 +135,7 @@ DELETE FROM users WHERE id = ?
 `
 
 func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteUser, id)
+	_, err := q.exec(ctx, q.deleteUserStmt, deleteUser, id)
 	return err
 }
 
@@ -144,7 +144,7 @@ DELETE FROM sessions WHERE user_id = ?
 `
 
 func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteUserSessions, userID)
+	_, err := q.exec(ctx, q.deleteUserSessionsStmt, deleteUserSessions, userID)
 	return err
 }
 
@@ -160,7 +160,7 @@ type GetSessionUserRow struct {
 }
 
 func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUserRow, error) {
-	row := q.db.QueryRowContext(ctx, getSessionUser, hash)
+	row := q.queryRow(ctx, q.getSessionUserStmt, getSessionUser, hash)
 	var i GetSessionUserRow
 	err := row.Scan(
 		&i.User.ID,
@@ -180,7 +180,7 @@ SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at
 `
 
 func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
-	row := q.db.QueryRowContext(ctx, getToken, id)
+	row := q.queryRow(ctx, q.getTokenStmt, getToken, id)
 	var i Token
 	err := row.Scan(
 		&i.ID,
@@ -203,7 +203,7 @@ SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at
 `
 
 func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (Token, error) {
-	row := q.db.QueryRowContext(ctx, getTokenByHash, hash)
+	row := q.queryRow(ctx, q.getTokenByHashStmt, getTokenByHash, hash)
 	var i Token
 	err := row.Scan(
 		&i.ID,
@@ -226,7 +226,7 @@ SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users 
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUser, id)
+	row := q.queryRow(ctx, q.getUserStmt, getUser, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -245,7 +245,7 @@ SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users 
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
+	row := q.queryRow(ctx, q.getUserByEmailStmt, getUserByEmail, email)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -264,7 +264,7 @@ SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at
 `
 
 func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
-	rows, err := q.db.QueryContext(ctx, listTokens)
+	rows, err := q.query(ctx, q.listTokensStmt, listTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +303,7 @@ SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users 
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := q.db.QueryContext(ctx, listUsers)
+	rows, err := q.query(ctx, q.listUsersStmt, listUsers)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ type RevokeTokenParams struct {
 }
 
 func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) error {
-	_, err := q.db.ExecContext(ctx, revokeToken, arg.RevokedAt, arg.ID)
+	_, err := q.exec(ctx, q.revokeTokenStmt, revokeToken, arg.RevokedAt, arg.ID)
 	return err
 }
 
@@ -357,7 +357,7 @@ type SetUserDisabledParams struct {
 }
 
 func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error {
-	_, err := q.db.ExecContext(ctx, setUserDisabled, arg.DisabledAt, arg.ID)
+	_, err := q.exec(ctx, q.setUserDisabledStmt, setUserDisabled, arg.DisabledAt, arg.ID)
 	return err
 }
 
@@ -371,7 +371,7 @@ type SetUserPasswordParams struct {
 }
 
 func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
-	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
+	_, err := q.exec(ctx, q.setUserPasswordStmt, setUserPassword, arg.PasswordHash, arg.ID)
 	return err
 }
 
@@ -385,6 +385,6 @@ type TouchTokenParams struct {
 }
 
 func (q *Queries) TouchToken(ctx context.Context, arg TouchTokenParams) error {
-	_, err := q.db.ExecContext(ctx, touchToken, arg.LastUsedAt, arg.ID)
+	_, err := q.exec(ctx, q.touchTokenStmt, touchToken, arg.LastUsedAt, arg.ID)
 	return err
 }

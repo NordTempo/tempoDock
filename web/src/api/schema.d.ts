@@ -1081,6 +1081,8 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             created_by: string;
+            error?: string;
+            error_code?: string;
             image_id: string;
             image_ref: string;
             /** Format: int64 */
@@ -1144,6 +1146,7 @@ export interface components {
             active_release?: components["schemas"]["ReleaseSummary"];
             deploying?: components["schemas"]["ReleaseSummary"];
             domains: components["schemas"]["Domain"][] | null;
+            latest_release?: components["schemas"]["ReleaseSummary"];
             service: components["schemas"]["Service"];
         };
         ServiceStatus: {

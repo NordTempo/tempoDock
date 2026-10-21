@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"math"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -9,6 +10,9 @@ import (
 
 // Overview returns a project's environments and services with status,
 // releases, domains and staged-change counts in one call, for project pages.
+// It reads the whole project in a few queries (services, release heads,
+// volumes, domains, plus staged changes per environment), however many
+// services it has.
 func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.ProjectOverview, error) {
 	p, err := c.projectFor(ctx, a, project, apitypes.ScopeRead, "reading a project")
 	if err != nil {
@@ -23,6 +27,37 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 	if err != nil {
 		return out, err
 	}
+	svcs, err := c.store.ListProjectServices(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+	heads, err := c.store.ListProjectReleaseHeads(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+	vols, err := c.store.ListProjectVolumes(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+	domains, err := c.store.ListProjectDomains(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+
+	svcsByEnv := map[int64][]store.Service{}
+	for _, s := range svcs {
+		svcsByEnv[s.EnvironmentID] = append(svcsByEnv[s.EnvironmentID], s)
+	}
+	releases := releaseHeadsByService(heads)
+	stateful := map[int64]bool{}
+	for _, v := range vols {
+		stateful[v.ServiceID] = stateful[v.ServiceID] || !v.Pending
+	}
+	domainsBySvc := map[int64][]store.Domain{}
+	for _, d := range domains {
+		domainsBySvc[d.ServiceID] = append(domainsBySvc[d.ServiceID], d)
+	}
+
 	for _, e := range envs {
 		if !a.canSee(p.ID, e.ID) {
 			continue
@@ -34,37 +69,57 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 		}
 		eo := apitypes.EnvironmentOverview{
 			Environment: toEnvironment(p, e, servers[e.ServerID]), PendingChanges: pending.Count,
-			Services: []apitypes.ServiceOverview{},
+			Services: make([]apitypes.ServiceOverview, 0, len(svcsByEnv[e.ID])),
 		}
-		svcs, err := c.store.ListServices(ctx, e.ID)
-		if err != nil {
-			return out, err
-		}
-		for _, s := range svcs {
+		for _, s := range svcsByEnv[e.ID] {
 			ss := svcScope{es, s}
-			svc, err := c.toService(ctx, ss, pending)
-			if err != nil {
-				return out, err
+			rh := releases[s.ID]
+			var active *int64
+			so := apitypes.ServiceOverview{Domains: make([]apitypes.Domain, 0, len(domainsBySvc[s.ID]))}
+			if rh.active != nil {
+				active = &rh.active.Number
+				so.ActiveRelease = summarize(*rh.active)
 			}
-			so := apitypes.ServiceOverview{Service: svc}
-			if r, err := c.store.GetActiveRelease(ctx, s.ID); err == nil {
-				so.ActiveRelease = summarize(r)
-			} else if !store.IsNotFound(err) {
-				return out, err
+			if rh.deploying != nil {
+				so.Deploying = summarize(*rh.deploying)
 			}
-			if r, err := c.store.GetInFlightRelease(ctx, s.ID); err == nil {
-				so.Deploying = summarize(r)
-			} else if !store.IsNotFound(err) {
-				return out, err
+			if rh.latest != nil {
+				so.LatestRelease = summarize(*rh.latest)
 			}
-			if so.Domains, err = c.domainsOf(ctx, ss); err != nil {
-				return out, err
+			so.Service = c.serviceOf(ss, pending, active, stateful[s.ID])
+			for _, d := range domainsBySvc[s.ID] {
+				so.Domains = append(so.Domains, c.toDomain(ss, d, domainsBySvc[s.ID]))
 			}
 			eo.Services = append(eo.Services, so)
 		}
 		out.Environments = append(out.Environments, eo)
 	}
 	return out, nil
+}
+
+// releaseHeads are the releases an overview shows for one service.
+type releaseHeads struct {
+	active, deploying, latest *store.Release
+}
+
+// releaseHeadsByService sorts ListProjectReleaseHeads rows by service and role.
+func releaseHeadsByService(rows []store.Release) map[int64]releaseHeads {
+	out := map[int64]releaseHeads{}
+	for i := range rows {
+		r := &rows[i]
+		h := out[r.ServiceID]
+		switch status := apitypes.ReleaseStatus(r.Status); {
+		case status == apitypes.ReleaseActive:
+			h.active = r
+		case !status.Done():
+			h.deploying = r
+		}
+		if h.latest == nil || r.Number > h.latest.Number {
+			h.latest = r
+		}
+		out[r.ServiceID] = h
+	}
+	return out
 }
 
 // AuditFilter narrows the audit log. Action matches as a prefix
@@ -81,26 +136,30 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 	if err := a.require(apitypes.ScopeRead, "reading the audit log"); err != nil {
 		return nil, err
 	}
-	params := store.ListAuditEventsParams{MaxRows: int64(f.Limit)}
+	params := store.ListAuditEventsParams{MaxRows: int64(f.Limit), BeforeID: f.Before}
 	if params.MaxRows <= 0 || params.MaxRows > 500 {
 		params.MaxRows = 100
 	}
+	if params.BeforeID <= 0 {
+		params.BeforeID = math.MaxInt64
+	}
+	var projectID *int64
 	switch {
 	case f.Environment != "":
 		es, err := c.envFor(ctx, a, EnvRef{f.Project, f.Environment}, apitypes.ScopeRead, "reading the audit log")
 		if err != nil {
 			return nil, err
 		}
-		params.ProjectID, params.EnvironmentID = &es.project.ID, &es.env.ID
+		projectID, params.EnvironmentID = &es.project.ID, &es.env.ID
 	case f.Project != "":
 		p, err := c.projectFor(ctx, a, f.Project, apitypes.ScopeRead, "reading the audit log")
 		if err != nil {
 			return nil, err
 		}
-		params.ProjectID = &p.ID
+		projectID = &p.ID
 	}
 	if a.ProjectID != 0 {
-		params.ProjectID = &a.ProjectID
+		projectID = &a.ProjectID
 	}
 	if a.EnvironmentID != 0 {
 		params.EnvironmentID = &a.EnvironmentID
@@ -109,27 +168,35 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 		prefix := f.Action + "%"
 		params.ActionPrefix = &prefix
 	}
-	if f.Before > 0 {
-		params.BeforeID = &f.Before
+	var rows []store.ListAuditEventsRow
+	if projectID != nil {
+		// A separate query, so SQLite reads the project's events through
+		// audit_events_project instead of scanning the whole log.
+		prows, err := c.store.ListProjectAuditEvents(ctx, store.ListProjectAuditEventsParams{
+			ProjectID: projectID, BeforeID: params.BeforeID, EnvironmentID: params.EnvironmentID,
+			ActionPrefix: params.ActionPrefix, MaxRows: params.MaxRows,
+		})
+		if err != nil {
+			return nil, err
+		}
+		rows = make([]store.ListAuditEventsRow, len(prows))
+		for i, r := range prows {
+			rows[i] = store.ListAuditEventsRow(r)
+		}
+	} else {
+		var err error
+		if rows, err = c.store.ListAuditEvents(ctx, params); err != nil {
+			return nil, err
+		}
 	}
-	rows, err := c.store.ListAuditEvents(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	names := newNames(c.store)
 	out := make([]apitypes.AuditEvent, 0, len(rows))
 	for _, r := range rows {
-		ae := apitypes.AuditEvent{
-			ID: r.ID, Actor: r.Actor, ActorKind: r.ActorKind, Action: r.Action,
-			Target: r.Target, Summary: r.Summary, CreatedAt: r.CreatedAt,
-		}
-		if r.ProjectID != nil {
-			ae.Project = names.project(ctx, *r.ProjectID)
-		}
-		if r.EnvironmentID != nil {
-			ae.Environment = names.environment(ctx, *r.EnvironmentID)
-		}
-		out = append(out, ae)
+		e := r.AuditEvent
+		out = append(out, apitypes.AuditEvent{
+			ID: e.ID, Actor: e.Actor, ActorKind: e.ActorKind, Action: e.Action,
+			Project: r.ProjectName, Environment: r.EnvironmentName,
+			Target: e.Target, Summary: e.Summary, CreatedAt: e.CreatedAt,
+		})
 	}
 	return out, nil
 }

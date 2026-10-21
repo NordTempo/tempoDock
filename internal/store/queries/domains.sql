@@ -30,3 +30,11 @@ JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.server_id = ? AND services.archived_at IS NULL
 ORDER BY domains.service_id, domains.id;
+
+-- name: ListProjectDomains :many
+-- Every domain of every service in a project.
+SELECT domains.* FROM domains
+JOIN services ON services.id = domains.service_id
+JOIN environments ON environments.id = services.environment_id
+WHERE environments.project_id = ?
+ORDER BY domains.service_id, domains.id;
