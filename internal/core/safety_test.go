@@ -106,7 +106,9 @@ func TestConcurrentUploadsAreLimited(t *testing.T) {
 		_ = pw.CloseWithError(errors.New("client went away"))
 	}
 	for range clients {
-		<-errs
+		if err := <-errs; err == nil {
+			t.Error("an aborted upload succeeded")
+		}
 	}
 	if n := uploading(); n != 0 {
 		t.Fatalf("%d uploads still claimed after they ended", n)
