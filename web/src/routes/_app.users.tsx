@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { queries, useUsers } from "../data/queries";
 import { TopBar } from "../shell/TopBar";
-import { day, since } from "../ui/format";
+import { day } from "../ui/format";
 
 export const Route = createFileRoute("/_app/users")({
   loader: ({ context }) => context.queryClient.ensureQueryData(queries.users()),
@@ -19,21 +19,19 @@ function Users() {
         <table className="tbl">
           <thead>
             <tr>
-              <th>Username</th>
+              <th>Name</th>
+              <th>Email</th>
               <th>Role</th>
-              <th>Created</th>
-              <th className="w-full">Last seen</th>
+              <th className="w-full">Created</th>
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
-                <td className="font-semibold">{u.username}</td>
+                <td className="font-semibold">{u.name}</td>
+                <td>{u.email}</td>
                 <td>{u.role}</td>
-                <td className="text-dim">{day(u.createdAt)}</td>
-                <td className="text-dim">
-                  {u.lastSeenAt ? since(u.lastSeenAt) : "never"}
-                </td>
+                <td className="text-dim">{day(u.created_at)}</td>
               </tr>
             ))}
           </tbody>

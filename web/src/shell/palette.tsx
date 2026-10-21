@@ -94,7 +94,7 @@ function Palette({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const contextLabel = [here.project?.name, here.env?.name]
+  const contextLabel = [here.project, here.environment]
     .filter(Boolean)
     .join(" / ");
 

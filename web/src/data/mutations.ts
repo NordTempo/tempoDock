@@ -1,15 +1,23 @@
 import {
+  type QueryClient,
   type QueryKey,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { api } from "./fixtures";
-import { keys } from "./queries";
-import type { NewChange, NewToken } from "./types";
+import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
+import { api, body, done } from "../api/client";
+import { envPath, keys, queries, servicePath } from "./queries";
+import type {
+  EnvRef,
+  NewToken,
+  ServiceRef,
+  SettingsPatch,
+  Variable,
+} from "./types";
 
 // Mutation hooks. Each one names the cache subtrees it touches; they are
-// refetched once the call settles. Live events (./live.ts) cover changes that
-// happen later, such as deploy progress.
+// refetched once the call settles. Live events (./live.ts) cover what happens
+// later, such as deploy progress, and changes made from the CLI.
 
 function useAction<Vars, Data>(
   mutationFn: (vars: Vars) => Promise<Data>,
@@ -27,147 +35,239 @@ function useAction<Vars, Data>(
   });
 }
 
-const serviceWide = (serviceId: string): QueryKey[] => [
-  keys.service(serviceId),
-  keys.projects,
+const serviceWide = (ref: ServiceRef): QueryKey[] => [
+  keys.service(ref),
+  keys.overview(ref.project),
   ["audit"],
 ];
 
+/** Deploys the service's image setting again (source deploys need the CLI). */
 export const useDeploy = () =>
-  useAction((serviceId: string) => api.deploy(serviceId), serviceWide);
+  useAction(
+    (ref: ServiceRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases",
+          { params: { path: servicePath(ref) }, body: {} },
+        ),
+      ),
+    serviceWide,
+  );
 
 export const useRollback = () =>
   useAction(
-    ({ serviceId, to }: { serviceId: string; to: number }) =>
-      api.rollback(serviceId, to),
-    ({ serviceId }) => serviceWide(serviceId),
+    ({ ref, to }: { ref: ServiceRef; to: number }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases/{number}/rollback",
+          { params: { path: { ...servicePath(ref), number: to } } },
+        ),
+      ),
+    ({ ref }) => serviceWide(ref),
   );
 
 export const useRestart = () =>
-  useAction((serviceId: string) => api.restart(serviceId), serviceWide);
-
-export const usePromote = () =>
   useAction(
-    (v: { projectId: string; from: string; to: string }) =>
-      api.promote(v.projectId, v.from, v.to),
-    () => [["services"], keys.projects, ["audit"]],
+    (ref: ServiceRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/restart",
+          { params: { path: servicePath(ref) } },
+        ),
+      ),
+    serviceWide,
   );
 
-type StageInput<K extends NewChange["kind"]> = {
-  environmentId: string;
-  change: Extract<NewChange, { kind: K }>;
-};
-
-export const useStageVariable = () =>
-  useAction(
-    ({
-      environmentId,
-      change,
-    }: StageInput<"variable.set" | "variable.delete">) =>
-      api.stageChange(environmentId, change),
-    ({ environmentId }) => [keys.pending(environmentId)],
-  );
-
-export const useStageSetting = () =>
-  useAction(
-    ({ environmentId, change }: StageInput<"setting">) =>
-      api.stageChange(environmentId, change),
-    ({ environmentId }) => [keys.pending(environmentId)],
-  );
-
-type ChangeSet = { environmentId: string; changeIds: string[] };
-
-export const useDiscardChanges = () =>
-  useAction(
-    ({ environmentId, changeIds }: ChangeSet) =>
-      api.discardChanges(environmentId, changeIds),
-    ({ environmentId }) => [keys.pending(environmentId)],
-  );
-
-/** Applies staged changes; every affected service gets a new release. */
-export const useApplyChanges = () =>
-  useAction(
-    ({ environmentId, changeIds }: ChangeSet) =>
-      api.applyChanges(environmentId, changeIds),
-    ({ environmentId }) => [
-      ["environments", environmentId],
-      ["services"],
-      keys.projects,
-      ["audit"],
-    ],
-  );
-
-const domainWide = (serviceId: string): QueryKey[] => [
-  keys.domains(serviceId),
-  keys.service(serviceId),
-  keys.projects,
+// Staging touches the environment (changes, variables) and the overview,
+// which counts staged changes per service.
+const staging = (env: EnvRef): QueryKey[] => [
+  keys.env(env),
+  keys.overview(env.project),
   ["audit"],
 ];
 
+type VariableEdit = {
+  env: EnvRef;
+  /** null for shared (environment-level) variables. */
+  service: string | null;
+  set?: Record<string, string>;
+  unset?: string[];
+};
+
+function setVariables({ env, service, set, unset }: VariableEdit) {
+  return body(
+    api.PATCH(
+      "/api/v1/projects/{project}/environments/{environment}/variables",
+      {
+        params: { path: envPath(env) },
+        body: { set, unset, ...(service && { service }) },
+      },
+    ),
+  );
+}
+
+/** Stages setting and unsetting variables. */
+export const useStageVariables = () =>
+  useAction(setVariables, ({ env }) => staging(env));
+
+/**
+ * Un-stages one variable's change. A staged addition is simply unset; an
+ * edit or removal is undone by setting the live value again, which needs the
+ * revealed value (admin).
+ */
+export const useUndoVariable = () => {
+  const queryClient = useQueryClient();
+  return useAction(
+    async ({ env, variable }: { env: EnvRef; variable: Variable }) => {
+      const service = variable.service ?? null;
+      if (variable.pending === "add") {
+        return setVariables({ env, service, unset: [variable.key] });
+      }
+      const changes = await queryClient.fetchQuery(queries.changes(env, true));
+      const old = changes.variables.find(
+        (c) =>
+          c.key === variable.key &&
+          c.scope === variable.scope &&
+          (c.service ?? null) === service,
+      )?.old;
+      if (old === undefined) throw new Error("Live value is not available");
+      return setVariables({ env, service, set: { [variable.key]: old } });
+    },
+    ({ env }) => staging(env),
+  );
+};
+
+/** Stages service settings; undo stages the old value again. */
+export const useStageSettings = () =>
+  useAction(
+    ({ ref, patch }: { ref: ServiceRef; patch: SettingsPatch }) =>
+      body(
+        api.PATCH(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}",
+          { params: { path: servicePath(ref) }, body: patch },
+        ),
+      ),
+    ({ ref }) => staging(ref),
+  );
+
+export const useDiscardChanges = () =>
+  useAction(
+    (env: EnvRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/changes/discard",
+          { params: { path: envPath(env) } },
+        ),
+      ),
+    staging,
+  );
+
+/** Applies staged changes; every affected running service gets a release. */
+export const useApplyChanges = () =>
+  useAction(
+    (env: EnvRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/changes/apply",
+          { params: { path: envPath(env) } },
+        ),
+      ),
+    (env) => [keys.project(env.project), ["audit"]],
+  );
+
 export const useAddDomain = () =>
   useAction(
-    ({ serviceId, hostname }: { serviceId: string; hostname: string }) =>
-      api.addDomain(serviceId, hostname),
-    ({ serviceId }) => domainWide(serviceId),
+    ({ ref, hostname }: { ref: ServiceRef; hostname: string }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains",
+          { params: { path: servicePath(ref) }, body: { hostname } },
+        ),
+      ),
+    ({ ref }) => serviceWide(ref),
   );
 
 export const useGenerateDomain = () =>
-  useAction((serviceId: string) => api.generateDomain(serviceId), domainWide);
+  useAction(
+    (ref: ServiceRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains/generate",
+          { params: { path: servicePath(ref) } },
+        ),
+      ),
+    serviceWide,
+  );
 
 export const useRemoveDomain = () =>
   useAction(
-    ({ domainId }: { serviceId: string; domainId: string }) =>
-      api.removeDomain(domainId),
-    ({ serviceId }) => domainWide(serviceId),
+    ({ ref, hostname }: { ref: ServiceRef; hostname: string }) =>
+      done(
+        api.DELETE(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains/{hostname}",
+          { params: { path: { ...servicePath(ref), hostname } } },
+        ),
+      ),
+    ({ ref }) => serviceWide(ref),
   );
 
-/** Stops and archives a service. Admin only; purged after 7 days. */
+/** Stops and archives a service. Admin only; volumes are kept. */
 export const useArchiveService = () =>
   useAction(
-    (serviceId: string) => api.archiveService(serviceId),
-    () => [keys.projects, ["audit"]],
-  );
-
-export const usePruneBuildCache = () =>
-  useAction(
-    (serverId: string) => api.pruneBuildCache(serverId),
-    () => [keys.servers, keys.projects, ["audit"]],
+    (ref: ServiceRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/archive",
+          { params: { path: servicePath(ref) } },
+        ),
+      ),
+    (ref) => [keys.overview(ref.project), ["audit"]],
   );
 
 /** Resolves with the token and its secret, which is shown exactly once. */
 export const useCreateToken = () =>
   useAction(
-    (input: NewToken) => api.createToken(input),
-    () => [keys.tokens, keys.org, ["audit"]],
+    (input: NewToken) => body(api.POST("/api/v1/tokens", { body: input })),
+    () => [keys.tokens, ["audit"]],
   );
 
 export const useRevokeToken = () =>
   useAction(
-    (tokenId: string) => api.revokeToken(tokenId),
-    () => [keys.tokens, keys.org, ["audit"]],
+    (id: number) =>
+      done(api.DELETE("/api/v1/tokens/{id}", { params: { path: { id } } })),
+    () => [keys.tokens, ["audit"]],
   );
 
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      username,
-      password,
-    }: {
-      username: string;
-      password: string;
-    }) => api.login(username, password),
+    mutationFn: (credentials: { email: string; password: string }) =>
+      body(api.POST("/api/v1/auth/login", { body: credentials })),
     onSuccess: (session) => queryClient.setQueryData(keys.session, session),
   });
 }
 
 export function useLogout() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   return useMutation({
-    mutationFn: api.logout,
-    onSuccess: () => {
-      queryClient.clear();
-      queryClient.setQueryData(keys.session, null);
-    },
+    mutationFn: () => done(api.POST("/api/v1/auth/logout")),
+    onSuccess: () => signedOut(queryClient, router),
+  });
+}
+
+/**
+ * Leaves for the login page (which comes back to `redirect` afterwards) and
+ * drops everything cached for the old session once its screens are gone.
+ */
+export async function signedOut(
+  queryClient: QueryClient,
+  router: RegisteredRouter,
+  redirect?: string,
+) {
+  queryClient.setQueryData(keys.session, null);
+  await router.navigate({ to: "/login", search: { redirect } });
+  queryClient.removeQueries({
+    predicate: (query) => query.queryKey[0] !== "session",
   });
 }

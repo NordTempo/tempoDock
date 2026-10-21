@@ -8,9 +8,6 @@ export const Route = createFileRoute("/_app/")({
       queries.projects(),
     );
     if (!first) throw redirect({ to: "/servers" });
-    throw redirect({
-      to: "/projects/$projectId",
-      params: { projectId: first.id },
-    });
+    throw redirect({ to: "/$project", params: { project: first.name } });
   },
 });

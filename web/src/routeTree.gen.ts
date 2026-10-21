@@ -16,16 +16,16 @@ import { Route as AppAuditRouteImport } from './routes/_app.audit'
 import { Route as AppServersRouteImport } from './routes/_app.servers'
 import { Route as AppTokensRouteImport } from './routes/_app.tokens'
 import { Route as AppUsersRouteImport } from './routes/_app.users'
-import { Route as AppServicesServiceIdRouteImport } from './routes/_app.services.$serviceId'
-import { Route as AppProjectsProjectIdIndexRouteImport } from './routes/_app.projects.$projectId.index'
-import { Route as AppProjectsProjectIdVariablesRouteImport } from './routes/_app.projects.$projectId.variables'
-import { Route as AppServicesServiceIdIndexRouteImport } from './routes/_app.services.$serviceId.index'
-import { Route as AppServicesServiceIdAuditRouteImport } from './routes/_app.services.$serviceId.audit'
-import { Route as AppServicesServiceIdDomainsRouteImport } from './routes/_app.services.$serviceId.domains'
-import { Route as AppServicesServiceIdLogsRouteImport } from './routes/_app.services.$serviceId.logs'
-import { Route as AppServicesServiceIdMetricsRouteImport } from './routes/_app.services.$serviceId.metrics'
-import { Route as AppServicesServiceIdSettingsRouteImport } from './routes/_app.services.$serviceId.settings'
-import { Route as AppServicesServiceIdVariablesRouteImport } from './routes/_app.services.$serviceId.variables'
+import { Route as AppProjectIndexRouteImport } from './routes/_app.$project.index'
+import { Route as AppProjectEnvironmentIndexRouteImport } from './routes/_app.$project.$environment.index'
+import { Route as AppProjectEnvironmentServiceRouteImport } from './routes/_app.$project.$environment.$service'
+import { Route as AppProjectEnvironmentServiceIndexRouteImport } from './routes/_app.$project.$environment.$service.index'
+import { Route as AppProjectEnvironmentServiceAuditRouteImport } from './routes/_app.$project.$environment.$service.audit'
+import { Route as AppProjectEnvironmentServiceDomainsRouteImport } from './routes/_app.$project.$environment.$service.domains'
+import { Route as AppProjectEnvironmentServiceLogsRouteImport } from './routes/_app.$project.$environment.$service.logs'
+import { Route as AppProjectEnvironmentServiceMetricsRouteImport } from './routes/_app.$project.$environment.$service.metrics'
+import { Route as AppProjectEnvironmentServiceSettingsRouteImport } from './routes/_app.$project.$environment.$service.settings'
+import { Route as AppProjectEnvironmentServiceVariablesRouteImport } from './routes/_app.$project.$environment.$service.variables'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -61,64 +61,64 @@ const AppUsersRoute = AppUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AppRoute,
 } as any)
-const AppServicesServiceIdRoute = AppServicesServiceIdRouteImport.update({
-  id: '/services/$serviceId',
-  path: '/services/$serviceId',
+const AppProjectIndexRoute = AppProjectIndexRouteImport.update({
+  id: '/$project/',
+  path: '/$project/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppProjectsProjectIdIndexRoute =
-  AppProjectsProjectIdIndexRouteImport.update({
-    id: '/projects/$projectId/',
-    path: '/projects/$projectId/',
+const AppProjectEnvironmentIndexRoute =
+  AppProjectEnvironmentIndexRouteImport.update({
+    id: '/$project/$environment/',
+    path: '/$project/$environment/',
     getParentRoute: () => AppRoute,
   } as any)
-const AppProjectsProjectIdVariablesRoute =
-  AppProjectsProjectIdVariablesRouteImport.update({
-    id: '/projects/$projectId/variables',
-    path: '/projects/$projectId/variables',
+const AppProjectEnvironmentServiceRoute =
+  AppProjectEnvironmentServiceRouteImport.update({
+    id: '/$project/$environment/$service',
+    path: '/$project/$environment/$service',
     getParentRoute: () => AppRoute,
   } as any)
-const AppServicesServiceIdIndexRoute =
-  AppServicesServiceIdIndexRouteImport.update({
+const AppProjectEnvironmentServiceIndexRoute =
+  AppProjectEnvironmentServiceIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => AppServicesServiceIdRoute,
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
-const AppServicesServiceIdAuditRoute =
-  AppServicesServiceIdAuditRouteImport.update({
+const AppProjectEnvironmentServiceAuditRoute =
+  AppProjectEnvironmentServiceAuditRouteImport.update({
     id: '/audit',
     path: '/audit',
-    getParentRoute: () => AppServicesServiceIdRoute,
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
-const AppServicesServiceIdDomainsRoute =
-  AppServicesServiceIdDomainsRouteImport.update({
+const AppProjectEnvironmentServiceDomainsRoute =
+  AppProjectEnvironmentServiceDomainsRouteImport.update({
     id: '/domains',
     path: '/domains',
-    getParentRoute: () => AppServicesServiceIdRoute,
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
-const AppServicesServiceIdLogsRoute =
-  AppServicesServiceIdLogsRouteImport.update({
+const AppProjectEnvironmentServiceLogsRoute =
+  AppProjectEnvironmentServiceLogsRouteImport.update({
     id: '/logs',
     path: '/logs',
-    getParentRoute: () => AppServicesServiceIdRoute,
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
-const AppServicesServiceIdMetricsRoute =
-  AppServicesServiceIdMetricsRouteImport.update({
+const AppProjectEnvironmentServiceMetricsRoute =
+  AppProjectEnvironmentServiceMetricsRouteImport.update({
     id: '/metrics',
     path: '/metrics',
-    getParentRoute: () => AppServicesServiceIdRoute,
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
-const AppServicesServiceIdSettingsRoute =
-  AppServicesServiceIdSettingsRouteImport.update({
+const AppProjectEnvironmentServiceSettingsRoute =
+  AppProjectEnvironmentServiceSettingsRouteImport.update({
     id: '/settings',
     path: '/settings',
-    getParentRoute: () => AppServicesServiceIdRoute,
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
-const AppServicesServiceIdVariablesRoute =
-  AppServicesServiceIdVariablesRouteImport.update({
+const AppProjectEnvironmentServiceVariablesRoute =
+  AppProjectEnvironmentServiceVariablesRouteImport.update({
     id: '/variables',
     path: '/variables',
-    getParentRoute: () => AppServicesServiceIdRoute,
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -128,16 +128,16 @@ export interface FileRoutesByFullPath {
   '/servers': typeof AppServersRoute
   '/tokens': typeof AppTokensRoute
   '/users': typeof AppUsersRoute
-  '/services/$serviceId': typeof AppServicesServiceIdRouteWithChildren
-  '/projects/$projectId/variables': typeof AppProjectsProjectIdVariablesRoute
-  '/services/$serviceId/audit': typeof AppServicesServiceIdAuditRoute
-  '/services/$serviceId/domains': typeof AppServicesServiceIdDomainsRoute
-  '/services/$serviceId/logs': typeof AppServicesServiceIdLogsRoute
-  '/services/$serviceId/metrics': typeof AppServicesServiceIdMetricsRoute
-  '/services/$serviceId/settings': typeof AppServicesServiceIdSettingsRoute
-  '/services/$serviceId/variables': typeof AppServicesServiceIdVariablesRoute
-  '/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
-  '/services/$serviceId/': typeof AppServicesServiceIdIndexRoute
+  '/$project/': typeof AppProjectIndexRoute
+  '/$project/$environment/$service': typeof AppProjectEnvironmentServiceRouteWithChildren
+  '/$project/$environment/': typeof AppProjectEnvironmentIndexRoute
+  '/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
+  '/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
+  '/$project/$environment/$service/metrics': typeof AppProjectEnvironmentServiceMetricsRoute
+  '/$project/$environment/$service/settings': typeof AppProjectEnvironmentServiceSettingsRoute
+  '/$project/$environment/$service/variables': typeof AppProjectEnvironmentServiceVariablesRoute
+  '/$project/$environment/$service/': typeof AppProjectEnvironmentServiceIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -146,15 +146,15 @@ export interface FileRoutesByTo {
   '/tokens': typeof AppTokensRoute
   '/users': typeof AppUsersRoute
   '/': typeof AppIndexRoute
-  '/projects/$projectId/variables': typeof AppProjectsProjectIdVariablesRoute
-  '/services/$serviceId/audit': typeof AppServicesServiceIdAuditRoute
-  '/services/$serviceId/domains': typeof AppServicesServiceIdDomainsRoute
-  '/services/$serviceId/logs': typeof AppServicesServiceIdLogsRoute
-  '/services/$serviceId/metrics': typeof AppServicesServiceIdMetricsRoute
-  '/services/$serviceId/settings': typeof AppServicesServiceIdSettingsRoute
-  '/services/$serviceId/variables': typeof AppServicesServiceIdVariablesRoute
-  '/projects/$projectId': typeof AppProjectsProjectIdIndexRoute
-  '/services/$serviceId': typeof AppServicesServiceIdIndexRoute
+  '/$project': typeof AppProjectIndexRoute
+  '/$project/$environment': typeof AppProjectEnvironmentIndexRoute
+  '/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
+  '/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
+  '/$project/$environment/$service/metrics': typeof AppProjectEnvironmentServiceMetricsRoute
+  '/$project/$environment/$service/settings': typeof AppProjectEnvironmentServiceSettingsRoute
+  '/$project/$environment/$service/variables': typeof AppProjectEnvironmentServiceVariablesRoute
+  '/$project/$environment/$service': typeof AppProjectEnvironmentServiceIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -165,16 +165,16 @@ export interface FileRoutesById {
   '/_app/tokens': typeof AppTokensRoute
   '/_app/users': typeof AppUsersRoute
   '/_app/': typeof AppIndexRoute
-  '/_app/services/$serviceId': typeof AppServicesServiceIdRouteWithChildren
-  '/_app/projects/$projectId/variables': typeof AppProjectsProjectIdVariablesRoute
-  '/_app/services/$serviceId/audit': typeof AppServicesServiceIdAuditRoute
-  '/_app/services/$serviceId/domains': typeof AppServicesServiceIdDomainsRoute
-  '/_app/services/$serviceId/logs': typeof AppServicesServiceIdLogsRoute
-  '/_app/services/$serviceId/metrics': typeof AppServicesServiceIdMetricsRoute
-  '/_app/services/$serviceId/settings': typeof AppServicesServiceIdSettingsRoute
-  '/_app/services/$serviceId/variables': typeof AppServicesServiceIdVariablesRoute
-  '/_app/projects/$projectId/': typeof AppProjectsProjectIdIndexRoute
-  '/_app/services/$serviceId/': typeof AppServicesServiceIdIndexRoute
+  '/_app/$project/': typeof AppProjectIndexRoute
+  '/_app/$project/$environment/$service': typeof AppProjectEnvironmentServiceRouteWithChildren
+  '/_app/$project/$environment/': typeof AppProjectEnvironmentIndexRoute
+  '/_app/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/_app/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
+  '/_app/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
+  '/_app/$project/$environment/$service/metrics': typeof AppProjectEnvironmentServiceMetricsRoute
+  '/_app/$project/$environment/$service/settings': typeof AppProjectEnvironmentServiceSettingsRoute
+  '/_app/$project/$environment/$service/variables': typeof AppProjectEnvironmentServiceVariablesRoute
+  '/_app/$project/$environment/$service/': typeof AppProjectEnvironmentServiceIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -185,16 +185,16 @@ export interface FileRouteTypes {
     | '/servers'
     | '/tokens'
     | '/users'
-    | '/services/$serviceId'
-    | '/projects/$projectId/variables'
-    | '/services/$serviceId/audit'
-    | '/services/$serviceId/domains'
-    | '/services/$serviceId/logs'
-    | '/services/$serviceId/metrics'
-    | '/services/$serviceId/settings'
-    | '/services/$serviceId/variables'
-    | '/projects/$projectId/'
-    | '/services/$serviceId/'
+    | '/$project/'
+    | '/$project/$environment/$service'
+    | '/$project/$environment/'
+    | '/$project/$environment/$service/audit'
+    | '/$project/$environment/$service/domains'
+    | '/$project/$environment/$service/logs'
+    | '/$project/$environment/$service/metrics'
+    | '/$project/$environment/$service/settings'
+    | '/$project/$environment/$service/variables'
+    | '/$project/$environment/$service/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -203,15 +203,15 @@ export interface FileRouteTypes {
     | '/tokens'
     | '/users'
     | '/'
-    | '/projects/$projectId/variables'
-    | '/services/$serviceId/audit'
-    | '/services/$serviceId/domains'
-    | '/services/$serviceId/logs'
-    | '/services/$serviceId/metrics'
-    | '/services/$serviceId/settings'
-    | '/services/$serviceId/variables'
-    | '/projects/$projectId'
-    | '/services/$serviceId'
+    | '/$project'
+    | '/$project/$environment'
+    | '/$project/$environment/$service/audit'
+    | '/$project/$environment/$service/domains'
+    | '/$project/$environment/$service/logs'
+    | '/$project/$environment/$service/metrics'
+    | '/$project/$environment/$service/settings'
+    | '/$project/$environment/$service/variables'
+    | '/$project/$environment/$service'
   id:
     | '__root__'
     | '/_app'
@@ -221,16 +221,16 @@ export interface FileRouteTypes {
     | '/_app/tokens'
     | '/_app/users'
     | '/_app/'
-    | '/_app/services/$serviceId'
-    | '/_app/projects/$projectId/variables'
-    | '/_app/services/$serviceId/audit'
-    | '/_app/services/$serviceId/domains'
-    | '/_app/services/$serviceId/logs'
-    | '/_app/services/$serviceId/metrics'
-    | '/_app/services/$serviceId/settings'
-    | '/_app/services/$serviceId/variables'
-    | '/_app/projects/$projectId/'
-    | '/_app/services/$serviceId/'
+    | '/_app/$project/'
+    | '/_app/$project/$environment/$service'
+    | '/_app/$project/$environment/'
+    | '/_app/$project/$environment/$service/audit'
+    | '/_app/$project/$environment/$service/domains'
+    | '/_app/$project/$environment/$service/logs'
+    | '/_app/$project/$environment/$service/metrics'
+    | '/_app/$project/$environment/$service/settings'
+    | '/_app/$project/$environment/$service/variables'
+    | '/_app/$project/$environment/$service/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -289,101 +289,111 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppUsersRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/services/$serviceId': {
-      id: '/_app/services/$serviceId'
-      path: '/services/$serviceId'
-      fullPath: '/services/$serviceId'
-      preLoaderRoute: typeof AppServicesServiceIdRouteImport
+    '/_app/$project/': {
+      id: '/_app/$project/'
+      path: '/$project'
+      fullPath: '/$project/'
+      preLoaderRoute: typeof AppProjectIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/projects/$projectId/': {
-      id: '/_app/projects/$projectId/'
-      path: '/projects/$projectId'
-      fullPath: '/projects/$projectId/'
-      preLoaderRoute: typeof AppProjectsProjectIdIndexRouteImport
+    '/_app/$project/$environment/': {
+      id: '/_app/$project/$environment/'
+      path: '/$project/$environment'
+      fullPath: '/$project/$environment/'
+      preLoaderRoute: typeof AppProjectEnvironmentIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/projects/$projectId/variables': {
-      id: '/_app/projects/$projectId/variables'
-      path: '/projects/$projectId/variables'
-      fullPath: '/projects/$projectId/variables'
-      preLoaderRoute: typeof AppProjectsProjectIdVariablesRouteImport
+    '/_app/$project/$environment/$service': {
+      id: '/_app/$project/$environment/$service'
+      path: '/$project/$environment/$service'
+      fullPath: '/$project/$environment/$service'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/services/$serviceId/': {
-      id: '/_app/services/$serviceId/'
+    '/_app/$project/$environment/$service/': {
+      id: '/_app/$project/$environment/$service/'
       path: '/'
-      fullPath: '/services/$serviceId/'
-      preLoaderRoute: typeof AppServicesServiceIdIndexRouteImport
-      parentRoute: typeof AppServicesServiceIdRoute
+      fullPath: '/$project/$environment/$service/'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceIndexRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
-    '/_app/services/$serviceId/audit': {
-      id: '/_app/services/$serviceId/audit'
+    '/_app/$project/$environment/$service/audit': {
+      id: '/_app/$project/$environment/$service/audit'
       path: '/audit'
-      fullPath: '/services/$serviceId/audit'
-      preLoaderRoute: typeof AppServicesServiceIdAuditRouteImport
-      parentRoute: typeof AppServicesServiceIdRoute
+      fullPath: '/$project/$environment/$service/audit'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceAuditRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
-    '/_app/services/$serviceId/domains': {
-      id: '/_app/services/$serviceId/domains'
+    '/_app/$project/$environment/$service/domains': {
+      id: '/_app/$project/$environment/$service/domains'
       path: '/domains'
-      fullPath: '/services/$serviceId/domains'
-      preLoaderRoute: typeof AppServicesServiceIdDomainsRouteImport
-      parentRoute: typeof AppServicesServiceIdRoute
+      fullPath: '/$project/$environment/$service/domains'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceDomainsRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
-    '/_app/services/$serviceId/logs': {
-      id: '/_app/services/$serviceId/logs'
+    '/_app/$project/$environment/$service/logs': {
+      id: '/_app/$project/$environment/$service/logs'
       path: '/logs'
-      fullPath: '/services/$serviceId/logs'
-      preLoaderRoute: typeof AppServicesServiceIdLogsRouteImport
-      parentRoute: typeof AppServicesServiceIdRoute
+      fullPath: '/$project/$environment/$service/logs'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceLogsRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
-    '/_app/services/$serviceId/metrics': {
-      id: '/_app/services/$serviceId/metrics'
+    '/_app/$project/$environment/$service/metrics': {
+      id: '/_app/$project/$environment/$service/metrics'
       path: '/metrics'
-      fullPath: '/services/$serviceId/metrics'
-      preLoaderRoute: typeof AppServicesServiceIdMetricsRouteImport
-      parentRoute: typeof AppServicesServiceIdRoute
+      fullPath: '/$project/$environment/$service/metrics'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceMetricsRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
-    '/_app/services/$serviceId/settings': {
-      id: '/_app/services/$serviceId/settings'
+    '/_app/$project/$environment/$service/settings': {
+      id: '/_app/$project/$environment/$service/settings'
       path: '/settings'
-      fullPath: '/services/$serviceId/settings'
-      preLoaderRoute: typeof AppServicesServiceIdSettingsRouteImport
-      parentRoute: typeof AppServicesServiceIdRoute
+      fullPath: '/$project/$environment/$service/settings'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceSettingsRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
-    '/_app/services/$serviceId/variables': {
-      id: '/_app/services/$serviceId/variables'
+    '/_app/$project/$environment/$service/variables': {
+      id: '/_app/$project/$environment/$service/variables'
       path: '/variables'
-      fullPath: '/services/$serviceId/variables'
-      preLoaderRoute: typeof AppServicesServiceIdVariablesRouteImport
-      parentRoute: typeof AppServicesServiceIdRoute
+      fullPath: '/$project/$environment/$service/variables'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceVariablesRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
   }
 }
 
-interface AppServicesServiceIdRouteChildren {
-  AppServicesServiceIdAuditRoute: typeof AppServicesServiceIdAuditRoute
-  AppServicesServiceIdDomainsRoute: typeof AppServicesServiceIdDomainsRoute
-  AppServicesServiceIdLogsRoute: typeof AppServicesServiceIdLogsRoute
-  AppServicesServiceIdMetricsRoute: typeof AppServicesServiceIdMetricsRoute
-  AppServicesServiceIdSettingsRoute: typeof AppServicesServiceIdSettingsRoute
-  AppServicesServiceIdVariablesRoute: typeof AppServicesServiceIdVariablesRoute
-  AppServicesServiceIdIndexRoute: typeof AppServicesServiceIdIndexRoute
+interface AppProjectEnvironmentServiceRouteChildren {
+  AppProjectEnvironmentServiceAuditRoute: typeof AppProjectEnvironmentServiceAuditRoute
+  AppProjectEnvironmentServiceDomainsRoute: typeof AppProjectEnvironmentServiceDomainsRoute
+  AppProjectEnvironmentServiceLogsRoute: typeof AppProjectEnvironmentServiceLogsRoute
+  AppProjectEnvironmentServiceMetricsRoute: typeof AppProjectEnvironmentServiceMetricsRoute
+  AppProjectEnvironmentServiceSettingsRoute: typeof AppProjectEnvironmentServiceSettingsRoute
+  AppProjectEnvironmentServiceVariablesRoute: typeof AppProjectEnvironmentServiceVariablesRoute
+  AppProjectEnvironmentServiceIndexRoute: typeof AppProjectEnvironmentServiceIndexRoute
 }
 
-const AppServicesServiceIdRouteChildren: AppServicesServiceIdRouteChildren = {
-  AppServicesServiceIdAuditRoute: AppServicesServiceIdAuditRoute,
-  AppServicesServiceIdDomainsRoute: AppServicesServiceIdDomainsRoute,
-  AppServicesServiceIdLogsRoute: AppServicesServiceIdLogsRoute,
-  AppServicesServiceIdMetricsRoute: AppServicesServiceIdMetricsRoute,
-  AppServicesServiceIdSettingsRoute: AppServicesServiceIdSettingsRoute,
-  AppServicesServiceIdVariablesRoute: AppServicesServiceIdVariablesRoute,
-  AppServicesServiceIdIndexRoute: AppServicesServiceIdIndexRoute,
-}
+const AppProjectEnvironmentServiceRouteChildren: AppProjectEnvironmentServiceRouteChildren =
+  {
+    AppProjectEnvironmentServiceAuditRoute:
+      AppProjectEnvironmentServiceAuditRoute,
+    AppProjectEnvironmentServiceDomainsRoute:
+      AppProjectEnvironmentServiceDomainsRoute,
+    AppProjectEnvironmentServiceLogsRoute:
+      AppProjectEnvironmentServiceLogsRoute,
+    AppProjectEnvironmentServiceMetricsRoute:
+      AppProjectEnvironmentServiceMetricsRoute,
+    AppProjectEnvironmentServiceSettingsRoute:
+      AppProjectEnvironmentServiceSettingsRoute,
+    AppProjectEnvironmentServiceVariablesRoute:
+      AppProjectEnvironmentServiceVariablesRoute,
+    AppProjectEnvironmentServiceIndexRoute:
+      AppProjectEnvironmentServiceIndexRoute,
+  }
 
-const AppServicesServiceIdRouteWithChildren =
-  AppServicesServiceIdRoute._addFileChildren(AppServicesServiceIdRouteChildren)
+const AppProjectEnvironmentServiceRouteWithChildren =
+  AppProjectEnvironmentServiceRoute._addFileChildren(
+    AppProjectEnvironmentServiceRouteChildren,
+  )
 
 interface AppRouteChildren {
   AppAuditRoute: typeof AppAuditRoute
@@ -391,9 +401,9 @@ interface AppRouteChildren {
   AppTokensRoute: typeof AppTokensRoute
   AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
-  AppServicesServiceIdRoute: typeof AppServicesServiceIdRouteWithChildren
-  AppProjectsProjectIdVariablesRoute: typeof AppProjectsProjectIdVariablesRoute
-  AppProjectsProjectIdIndexRoute: typeof AppProjectsProjectIdIndexRoute
+  AppProjectIndexRoute: typeof AppProjectIndexRoute
+  AppProjectEnvironmentServiceRoute: typeof AppProjectEnvironmentServiceRouteWithChildren
+  AppProjectEnvironmentIndexRoute: typeof AppProjectEnvironmentIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -402,9 +412,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppTokensRoute: AppTokensRoute,
   AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,
-  AppServicesServiceIdRoute: AppServicesServiceIdRouteWithChildren,
-  AppProjectsProjectIdVariablesRoute: AppProjectsProjectIdVariablesRoute,
-  AppProjectsProjectIdIndexRoute: AppProjectsProjectIdIndexRoute,
+  AppProjectIndexRoute: AppProjectIndexRoute,
+  AppProjectEnvironmentServiceRoute:
+    AppProjectEnvironmentServiceRouteWithChildren,
+  AppProjectEnvironmentIndexRoute: AppProjectEnvironmentIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

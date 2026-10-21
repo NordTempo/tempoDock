@@ -1,74 +1,72 @@
 import { useMemo, useRef } from "react";
-import { useServiceLogs } from "../../data/queries";
-import type { LogLevel, LogLine } from "../../data/types";
+import { useBuildLog, useServiceLogs } from "../../data/live";
+import { useReleases, useService } from "../../data/queries";
+import type { LogLine, ServiceRef } from "../../data/types";
 import { useShortcut } from "../../shell/keys";
 import { clockPrecise } from "../../ui/format";
 
 export type LogFilter = {
-  /** "all" app output, one release's app output, or build output. */
-  release: "all" | "build" | number;
-  warnUp: boolean;
+  /** A release's output; null follows the active release. */
+  release: number | null;
+  /** Build output instead of container output. */
+  build: boolean;
+  stderr: boolean;
   query: string;
 };
 
-export const noFilter: LogFilter = { release: "all", warnUp: false, query: "" };
-
-/** Rendered lines are capped; the cache keeps more for filtering. */
-const VISIBLE = 500;
-
-const levelClass: Record<LogLevel, string> = {
-  debug: "text-dim",
-  info: "",
-  warn: "text-warn",
-  error: "text-bad",
+export const noFilter: LogFilter = {
+  release: null,
+  build: false,
+  stderr: false,
+  query: "",
 };
 
-function matches(line: LogLine, f: LogFilter, query: string) {
-  if (f.release === "build" ? line.stream !== "build" : line.stream !== "app") {
-    return false;
-  }
-  if (typeof f.release === "number" && line.release !== f.release) return false;
-  if (f.warnUp && line.level !== "warn" && line.level !== "error") return false;
-  return !query || line.message.toLowerCase().includes(query);
-}
+/** Rendered lines are capped; the stream keeps more for filtering. */
+const VISIBLE = 500;
 
-/** Live log tail, newest first, with release, level and text filters. */
+/** Live log tail, newest first, with release, stream and text filters. */
 export function LogsPane({
-  serviceId,
-  inFlight,
+  serviceRef: ref,
   filter,
   onFilter,
   className,
 }: {
-  serviceId: string;
-  /** Release being deployed; its lines are highlighted. */
-  inFlight: number | null;
+  serviceRef: ServiceRef;
   filter: LogFilter;
   onFilter: (next: LogFilter) => void;
   className: string;
 }) {
-  const lines = useServiceLogs(serviceId);
+  const { service, deploying } = useService(ref);
+  const releases = useReleases(ref);
   const input = useRef<HTMLInputElement>(null);
   useShortcut("/", () => input.current?.focus());
 
-  const recentReleases = useMemo(() => {
-    const seen = new Set<number>();
-    for (const line of lines) {
-      if (line.stream === "app") seen.add(line.release);
-      if (seen.size === 2) break;
-    }
-    return [...seen];
-  }, [lines]);
+  const active = service.active_release ?? null;
+  const release =
+    filter.release ?? (filter.build ? releases[0]?.number : active);
+  const app = useServiceLogs(ref, filter.build ? null : (release ?? null));
+  const build = useBuildLog(ref, filter.build ? (release ?? null) : null);
+  const stream = filter.build ? build : app;
+
+  // The deploy in flight and the last two others are one click away.
+  const recent = [
+    ...(deploying ? [deploying.number] : []),
+    ...releases.map((r) => r.number).filter((n) => n !== active),
+  ]
+    .filter((n, i, all) => all.indexOf(n) === i && n !== active)
+    .slice(0, 2);
 
   const shown = useMemo(() => {
     const query = filter.query.toLowerCase();
     const out: LogLine[] = [];
-    for (const line of lines) {
-      if (matches(line, filter, query)) out.push(line);
+    for (const line of stream.lines) {
+      if (filter.stderr && line.stream !== "stderr") continue;
+      if (query && !line.text.toLowerCase().includes(query)) continue;
+      out.push(line);
       if (out.length === VISIBLE) break;
     }
     return out;
-  }, [lines, filter]);
+  }, [stream.lines, filter]);
 
   const chip = (label: string, on: boolean, next: Partial<LogFilter>) => (
     <button
@@ -82,16 +80,27 @@ export function LogsPane({
     </button>
   );
 
+  const what = `${filter.build ? "build of " : ""}r${release}`;
+  const status = stream.live
+    ? `following ${what}`
+    : release
+      ? `end of ${what}`
+      : "";
+
   return (
     <div>
-      <div className="flex items-baseline gap-3.5 pb-1.5 text-xs text-dim">
-        {chip("all releases", filter.release === "all", { release: "all" })}
-        {recentReleases.map((r) =>
-          chip(`r${r}`, filter.release === r, { release: r }),
+      <div className="flex items-baseline gap-3.5 pb-1.5 text-xs whitespace-nowrap text-dim">
+        {chip(
+          active ? `active r${active}` : "active",
+          filter.release === null,
+          { release: null },
         )}
-        {chip("build", filter.release === "build", { release: "build" })}
-        {chip("warn+", filter.warnUp, { warnUp: !filter.warnUp })}
+        {recent.map((n) => chip(`r${n}`, filter.release === n, { release: n }))}
+        {chip("build", filter.build, { build: !filter.build })}
+        {!filter.build &&
+          chip("stderr", filter.stderr, { stderr: !filter.stderr })}
         <span className="flex-1" />
+        <span className="truncate">{status}</span>
         <label className="flex items-baseline gap-1">
           <span aria-hidden>/</span>
           <input
@@ -110,17 +119,23 @@ export function LogsPane({
       <div
         className={`overflow-auto font-mono text-xs leading-[1.55] whitespace-pre ${className}`}
       >
-        {shown.length === 0 && <span className="text-dim">No lines.</span>}
+        {stream.error && <div className="text-bad">{stream.error}</div>}
+        {shown.length === 0 && !stream.error && (
+          <span className="text-dim">
+            {release ? "No lines." : "Not deployed yet."}
+          </span>
+        )}
         {shown.map((line) => (
-          <div key={line.id}>
-            <span className="text-faint">{clockPrecise(line.at)}</span>{" "}
-            <span
-              className={line.release === inFlight ? "text-run" : "text-dim"}
-            >
-              r{line.release}
-            </span>{" "}
-            <span className={levelClass[line.level]}>{line.level}</span>{" "}
-            {line.message}
+          <div key={line.key}>
+            {line.time && (
+              <>
+                <span className="text-faint">
+                  {clockPrecise(line.time)}
+                </span>{" "}
+              </>
+            )}
+            {line.stream === "stderr" && <span className="text-bad">err </span>}
+            {line.text}
           </div>
         ))}
       </div>

@@ -9,7 +9,7 @@ export const Route = createFileRoute("/_app/audit")({
   loaderDeps: ({ search }) => ({ project: search.project }),
   loader: ({ context, deps }) =>
     context.queryClient.ensureQueryData(
-      queries.audit({ projectId: deps.project }),
+      queries.audit({ project: deps.project }),
     ),
   component: Audit,
 });
@@ -17,26 +17,26 @@ export const Route = createFileRoute("/_app/audit")({
 function Audit() {
   const { project } = Route.useSearch();
   const projects = useProjects();
-  const events = useAuditLog({ projectId: project });
-  const filters = [{ id: undefined, name: "all" }, ...projects];
+  const events = useAuditLog({ project });
+  const filters = [undefined, ...projects.map((p) => p.name)];
 
   return (
     <>
       <TopBar>
         <span className="font-semibold">Audit log</span>
         <span className="flex gap-3.5">
-          {filters.map((p) => (
+          {filters.map((name) => (
             <Link
-              key={p.name}
+              key={name ?? ""}
               to="/audit"
-              search={p.id ? { project: p.id } : {}}
+              search={name ? { project: name } : {}}
               className={
-                p.id === project
+                name === project
                   ? "border-b border-white"
                   : "text-dim hover:text-white"
               }
             >
-              {p.name}
+              {name ?? "all"}
             </Link>
           ))}
         </span>

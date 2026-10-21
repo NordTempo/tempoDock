@@ -1,40 +1,47 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { useArchiveService, useStageSetting } from "../../data/mutations";
+import { useArchiveService, useStageSettings } from "../../data/mutations";
 import {
-  usePendingChanges,
-  useReleases,
+  envPath,
+  useChanges,
+  useEnvironment,
+  useIsAdmin,
   useService,
-  useSession,
+  useVolumes,
 } from "../../data/queries";
-import type { PendingChange, Service, SettingChange } from "../../data/types";
-import { mb } from "../../ui/format";
+import type { ServiceRef, ServiceView, SettingChange } from "../../data/types";
 import { Action, Button, ErrorText, Heading } from "../../ui/kit";
-import { nextRelease } from "../service/releases";
 import { ApplyBar } from "../variables/ApplyBar";
 import {
+  buildOnly,
+  editText,
   formatSetting,
+  isSettingKey,
+  parseSetting,
   type SettingKey,
-  settingChange,
   settingLabel,
 } from "./settings";
 
-const isSettingChange = (c: PendingChange): c is SettingChange =>
-  c.kind === "setting";
+type KeyedChange = SettingChange & { key: SettingKey };
 
 /** Service settings with staged edits, a diff preview, and archive. */
-export function SettingsPanel({ serviceId }: { serviceId: string }) {
-  const service = useService(serviceId);
-  const releases = useReleases(serviceId);
-  const changes = usePendingChanges(service.environmentId)
-    .filter(isSettingChange)
-    .filter((c) => c.serviceId === serviceId);
-  const { settings, source, volume } = service;
+export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const view = useService(ref);
+  const { environment } = useEnvironment(ref);
+  const volumes = useVolumes(ref);
+  const pending = useChanges(ref);
+  const changes = pending.settings.flatMap((c) =>
+    c.service === ref.service && isSettingKey(c.field)
+      ? [{ ...c, key: c.field }]
+      : [],
+  );
+  const { service } = view;
 
   const field = (key: SettingKey) => (
     <EditableSetting
-      service={service}
+      serviceRef={ref}
       settingKey={key}
+      value={service[key]}
       change={changes.find((c) => c.key === key)}
     />
   );
@@ -43,83 +50,58 @@ export function SettingsPanel({ serviceId }: { serviceId: string }) {
     <div className="px-5">
       <Heading>Settings</Heading>
       <dl className="grid max-w-[760px] grid-cols-[180px_1fr] gap-x-4 gap-y-1.5 pt-1 pb-2">
-        <Item label="Source">
-          {source.kind === "upload" && (
-            <>
-              upload · Dockerfile <Mono dim>{source.dockerfile}</Mono>, context{" "}
-              <Mono dim>{source.context}</Mono>
-            </>
-          )}
-          {source.kind === "image" && (
-            <>
-              image <Mono dim>{source.ref}</Mono>
-            </>
-          )}
-          {source.kind === "git" && (
-            <>
-              git <Mono dim>{source.repo}</Mono> branch{" "}
-              <Mono dim>{source.branch}</Mono>
-            </>
-          )}
-        </Item>
-        <Item label="Port">{field("port")}</Item>
-        <Item label="Health check">
-          <Mono>{settings.healthCheckPath ? "HTTP GET " : "TCP connect"}</Mono>
-          {field("healthCheckPath")}
-          <Mono>
+        <Item label="Image">{field("image")}</Item>
+        <Item label="Port">
+          {field("port")}
+          <Mono dim>
             {" "}
-            · every {settings.healthCheckIntervalS}s · timeout{" "}
-            {settings.healthCheckTimeoutS}s
+            · private {service.name}:{service.port || 8080}
           </Mono>
         </Item>
+        <Item label="Start command">{field("start_command")}</Item>
+        <Item label="Health check">
+          {field("health_check_path")}
+          <Mono dim> · timeout </Mono>
+          {field("health_check_timeout_seconds")}
+        </Item>
         <Item label="Strategy">
-          {settings.strategy === "rolling"
-            ? "start new next to old, then cut over"
-            : "stop old, then start new (the volume allows one writer)"}
+          {service.stateful
+            ? "stop old, then start new (volumes allow one writer)"
+            : "start new next to old, then cut over"}
         </Item>
         <Item label="Limits">
-          <Mono>cpu </Mono>
-          {field("cpuLimit")}
-          <Mono> · memory </Mono>
-          {field("memoryLimitMb")}
+          <Mono dim>cpu </Mono>
+          {field("cpus")}
+          <Mono dim> · memory </Mono>
+          {field("memory_mb")}
+        </Item>
+        <Item label="Build">
+          {field("dockerfile_path")}
+          <Mono dim> · </Mono>
+          {field("build_command")}
         </Item>
         <Item label="Volumes">
-          {volume ? (
-            <Mono>
-              {volume.name} at {volume.mountPath} · {mb(volume.sizeMb)}
-            </Mono>
-          ) : (
+          {volumes.length === 0 ? (
             <span className="text-dim">none</span>
+          ) : (
+            volumes.map((v) => (
+              <Mono key={v.name}>
+                {v.name} at {v.mount_path}
+                {v.pending && <span className="text-warn"> staged</span>}{" "}
+              </Mono>
+            ))
           )}
         </Item>
         <Item label="Server">
-          {service.server.name}{" "}
-          <span className="text-dim">
-            from environment {service.environmentName}
-          </span>
-        </Item>
-        <Item label="Restart policy">
-          <Mono>{settings.restartPolicy}</Mono>
+          {environment.server}{" "}
+          <span className="text-dim">from environment {environment.name}</span>
         </Item>
       </dl>
 
-      {changes.length > 0 && (
-        <>
-          <DiffPreview
-            service={service}
-            changes={changes}
-            release={nextRelease(service, releases)}
-          />
-          <ApplyBar
-            environmentId={service.environmentId}
-            changeIds={changes.map((c) => c.id)}
-            note=""
-            label="Apply"
-          />
-        </>
-      )}
+      {changes.length > 0 && <DiffPreview view={view} changes={changes} />}
+      <ApplyBar env={envPath(ref)} />
 
-      <Archive service={service} />
+      <Archive serviceRef={ref} />
     </div>
   );
 }
@@ -141,29 +123,30 @@ function Mono({ dim, children }: { dim?: boolean; children: ReactNode }) {
   );
 }
 
+/** A setting value; click to edit. Staged values show old → new and undo. */
 function EditableSetting({
-  service,
+  serviceRef: ref,
   settingKey: key,
+  value,
   change,
 }: {
-  service: Service;
+  serviceRef: ServiceRef;
   settingKey: SettingKey;
-  change: SettingChange | undefined;
+  value: string | number;
+  change: KeyedChange | undefined;
 }) {
-  const stage = useStageSetting();
+  const stage = useStageSettings();
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const value = service.settings[key];
+
+  const submit = (raw: string, onSuccess?: () => void) => {
+    const patch = parseSetting(key, raw);
+    if (patch instanceof Error) return setError(patch);
+    setError(null);
+    stage.mutate({ ref, patch }, { onSuccess });
+  };
 
   if (draft !== null) {
-    const save = () => {
-      const next = settingChange(service.id, key, service.settings, draft);
-      if (next instanceof Error) return setError(next);
-      stage.mutate(
-        { environmentId: service.environmentId, change: next },
-        { onSuccess: () => setDraft(null) },
-      );
-    };
     return (
       <span className="inline-flex items-baseline gap-2">
         <input
@@ -171,12 +154,13 @@ function EditableSetting({
           autoFocus
           value={draft}
           aria-label={settingLabel[key]}
+          placeholder={formatSetting(key, "")}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") save();
+            if (e.key === "Enter") submit(draft, () => setDraft(null));
             if (e.key === "Escape") setDraft(null);
           }}
-          className="w-24 border-b border-white bg-black font-mono text-xs outline-none"
+          className="w-48 border-b border-white bg-black font-mono text-xs outline-none placeholder:text-faint"
         />
         <ErrorText error={error ?? stage.error} />
       </span>
@@ -184,78 +168,83 @@ function EditableSetting({
   }
 
   return (
-    <button
-      type="button"
-      title={`Edit ${settingLabel[key]}`}
-      onClick={() => {
-        setError(null);
-        setDraft(formatSetting(key, change ? change.after : value));
-      }}
-      className="font-mono text-xs hover:underline"
-    >
-      {change ? (
-        <span className="text-warn">
-          {formatSetting(key, change.before)} →{" "}
-          {formatSetting(key, change.after)}
-        </span>
-      ) : (
-        formatSetting(key, value)
+    <span className="inline-flex items-baseline gap-2">
+      <button
+        type="button"
+        title={`Edit ${settingLabel[key]}`}
+        onClick={() => {
+          setError(null);
+          setDraft(editText(key, change ? change.new : value));
+        }}
+        className="font-mono text-xs hover:underline"
+      >
+        {change ? (
+          <span className="text-warn">
+            {formatSetting(key, change.old)} → {formatSetting(key, change.new)}
+          </span>
+        ) : (
+          formatSetting(key, value)
+        )}
+      </button>
+      {change && (
+        <Action
+          className="text-xs"
+          disabled={stage.isPending}
+          onClick={() => submit(change.old)}
+        >
+          undo
+        </Action>
       )}
-    </button>
+      <ErrorText error={error ?? stage.error} />
+    </span>
   );
 }
 
 function DiffPreview({
-  service,
+  view,
   changes,
-  release,
 }: {
-  service: Service;
-  changes: SettingChange[];
-  /** e.g. "release r90 after r89 finishes" */
-  release: string;
+  view: ServiceView;
+  changes: KeyedChange[];
 }) {
-  const memory = changes.find((c) => c.key === "memoryLimitMb");
-  const belowPeak = memory && Number(memory.after) < service.memory.peak24hMb;
+  const { service, deploying } = view;
+  const releases = changes.some((c) => !buildOnly(c.key));
   const facts = [
-    memory && `peak in last 24h ${mb(service.memory.peak24hMb)}`,
-    `creates ${release}`,
-    service.settings.strategy === "rolling"
-      ? "rolling restart, no downtime"
-      : "stop then start, brief downtime",
-  ].filter(Boolean);
+    !service.active_release
+      ? "takes effect on the first deploy"
+      : releases
+        ? `creates a release${deploying ? ` after r${deploying.number} finishes` : ""}`
+        : "takes effect on the next build",
+    service.stateful
+      ? "stop then start, brief downtime"
+      : "rolling restart, no downtime",
+  ];
 
   return (
     <div className="mt-1.5 max-w-[760px] border border-line2 px-2.5 py-2 font-mono text-xs leading-[1.6] whitespace-pre-wrap">
       <div className="text-dim">Pending change preview</div>
       {changes.map((c) => (
-        <div key={c.id}>
+        <div key={c.key}>
           <div className="text-bad">
-            - {settingLabel[c.key].padEnd(14)}
-            {formatSetting(c.key, c.before)}
+            - {settingLabel[c.key].padEnd(22)}
+            {formatSetting(c.key, c.old)}
           </div>
           <div className="text-ok">
-            + {settingLabel[c.key].padEnd(14)}
-            {formatSetting(c.key, c.after)}
+            + {settingLabel[c.key].padEnd(22)}
+            {formatSetting(c.key, c.new)}
           </div>
         </div>
       ))}
       <div className="text-dim"> {facts.join(" · ")}</div>
-      {belowPeak && (
-        <div className="text-warn">
-          {"  "}Below the 24h peak: the container may be killed for memory.
-        </div>
-      )}
     </div>
   );
 }
 
-function Archive({ service }: { service: Service }) {
-  const session = useSession();
+function Archive({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const isAdmin = useIsAdmin();
   const archive = useArchiveService();
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
-  const isAdmin = session?.role === "admin";
 
   return (
     <dl className="mt-2 grid max-w-[760px] grid-cols-[180px_1fr] gap-x-4 border-t border-line pt-3">
@@ -264,23 +253,23 @@ function Archive({ service }: { service: Service }) {
         {confirming ? (
           <>
             <span>
-              Stops {service.name} in {service.environmentName} now. Volumes are
-              kept.
+              Stops {ref.service} in {ref.environment} now. Volumes and history
+              are kept.
             </span>
             <Button
               className="border-bad! text-bad"
               disabled={archive.isPending}
               onClick={() =>
-                archive.mutate(service.id, {
+                archive.mutate(ref, {
                   onSuccess: () =>
                     navigate({
-                      to: "/projects/$projectId",
-                      params: { projectId: service.projectId },
+                      to: "/$project",
+                      params: { project: ref.project },
                     }),
                 })
               }
             >
-              Archive {service.name}
+              Archive {ref.service}
             </Button>
             <Action onClick={() => setConfirming(false)}>Cancel</Action>
             <ErrorText error={archive.error} />
@@ -293,10 +282,10 @@ function Archive({ service }: { service: Service }) {
               onClick={() => setConfirming(true)}
               className="text-bad hover:underline disabled:text-faint disabled:no-underline"
             >
-              Archive {service.name}
+              Archive {ref.service}
             </button>
             <span className="text-dim">
-              requires admin. Stops it and keeps it 7 days.
+              requires admin. Stops its container and removes its routes.
             </span>
           </>
         )}

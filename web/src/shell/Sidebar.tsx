@@ -1,11 +1,18 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useLogout } from "../data/mutations";
-import { useOrg, useProjects, useServers, useSession } from "../data/queries";
+import { domainNeedsAttention, isFailing } from "../data/problems";
+import {
+  useOrgCounts,
+  useProjectTree,
+  useServers,
+  useSession,
+} from "../data/queries";
+import type { ProjectOverview } from "../data/types";
 import { Glyph, Kbd } from "../ui/kit";
 import { serverStatus, serviceStatus } from "../ui/status";
 import { modKey } from "./keys";
-import { useCurrentProjectId } from "./location";
+import { useCurrentContext } from "./location";
 import { usePalette } from "./palette";
 
 const row =
@@ -14,15 +21,15 @@ const active = { className: "bg-sel" };
 const note = "font-mono text-2xs text-dim";
 
 export function Sidebar() {
-  const org = useOrg();
   const session = useSession();
+  const counts = useOrgCounts();
   const openPalette = usePalette();
 
   return (
     <aside className="overflow-auto border-r border-line pt-2.5 pb-15">
       <div className="flex items-center justify-between border-b border-line px-3.5 pt-1 pb-2.5">
-        <b className="font-semibold">{org.name}</b>
-        <span className="text-dim">{session?.username}</span>
+        <b className="font-semibold">Tempo Dock</b>
+        <span className="text-dim">{session?.name}</span>
       </div>
       <button
         type="button"
@@ -47,14 +54,14 @@ export function Sidebar() {
       <nav>
         <Link to="/tokens" className={row} activeProps={active}>
           <span>Tokens</span>
-          <span className={note}>{org.tokenCount}</span>
+          <span className={note}>{counts.tokens}</span>
         </Link>
         <Link to="/audit" className={row} activeProps={active}>
           <span>Audit log</span>
         </Link>
         <Link to="/users" className={row} activeProps={active}>
           <span>Users</span>
-          <span className={note}>{org.userCount}</span>
+          <span className={note}>{counts.users}</span>
         </Link>
         <LogoutButton />
       </nav>
@@ -70,75 +77,96 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
+/** Failing services and domains that need attention, for the badge. */
+function health(project: ProjectOverview) {
+  const services = project.environments.flatMap((e) => e.services);
+  return {
+    count: services.length,
+    failing: services.filter(isFailing).length,
+    warning: services.flatMap((s) => s.domains).filter(domainNeedsAttention)
+      .length,
+  };
+}
+
 function ProjectTree() {
-  const projects = useProjects();
-  const current = useCurrentProjectId();
+  const projects = useProjectTree();
+  const current = useCurrentContext().project;
   // Keep the last visited project open on org pages.
   const [lastOpen, setLastOpen] = useState(current);
   if (current && current !== lastOpen) setLastOpen(current);
-  const open = current ?? lastOpen ?? projects[0]?.id;
+  const open = current ?? lastOpen ?? projects[0]?.project.name;
 
   return (
     <nav>
-      {projects.map((project) => (
-        <div key={project.id}>
-          <Link
-            to="/projects/$projectId"
-            params={{ projectId: project.id }}
-            className={`${row} mt-1 font-semibold`}
-            activeOptions={{ exact: true }}
-            activeProps={active}
-          >
-            <span>{project.name}</span>
-            <span className={note}>
-              {project.failing + project.warning > 0 ? (
-                <>
-                  {project.failing > 0 && (
-                    <span className="text-bad">{project.failing} </span>
-                  )}
-                  {project.warning > 0 && (
-                    <span className="text-warn">{project.warning}</span>
-                  )}
-                </>
-              ) : (
-                project.serviceCount
-              )}
-            </span>
-          </Link>
-          {open === project.id &&
-            project.environments.map((env) => (
-              <div key={env.id}>
-                <Link
-                  to="/projects/$projectId/variables"
-                  params={{ projectId: project.id }}
-                  search={{ env: env.name }}
-                  className={`${row} pl-[26px] text-dim`}
-                  title={`${env.name} variables`}
-                >
-                  <span>{env.name}</span>
-                  <span className={note}>{env.serverName}</span>
-                </Link>
-                {env.services.map((svc) => (
+      {projects.map((overview) => {
+        const project = overview.project.name;
+        const { count, failing, warning } = health(overview);
+        return (
+          <div key={project}>
+            <Link
+              to="/$project"
+              params={{ project }}
+              className={`${row} mt-1 font-semibold`}
+              activeOptions={{ exact: true }}
+              activeProps={active}
+            >
+              <span>{project}</span>
+              <span className={note}>
+                {failing + warning > 0 ? (
+                  <>
+                    {failing > 0 && (
+                      <span className="text-bad">{failing} </span>
+                    )}
+                    {warning > 0 && (
+                      <span className="text-warn">{warning}</span>
+                    )}
+                  </>
+                ) : (
+                  count
+                )}
+              </span>
+            </Link>
+            {open === project &&
+              overview.environments.map(({ environment, services }) => (
+                <div key={environment.id}>
                   <Link
-                    key={svc.id}
-                    to="/services/$serviceId"
-                    params={{ serviceId: svc.id }}
-                    className={`${row} pl-[38px]`}
+                    to="/$project/$environment"
+                    params={{ project, environment: environment.name }}
+                    className={`${row} pl-[26px] text-dim`}
                     activeProps={active}
+                    title={`${environment.name} shared variables`}
                   >
-                    <span className="flex items-baseline">
-                      <Glyph tone={serviceStatus(svc.state).tone} />
-                      {svc.name}
-                    </span>
-                    <span className={note}>
-                      {svc.release ? `r${svc.release}` : ""}
-                    </span>
+                    <span>{environment.name}</span>
+                    <span className={note}>{environment.server}</span>
                   </Link>
-                ))}
-              </div>
-            ))}
-        </div>
-      ))}
+                  {services.map((svc) => (
+                    <Link
+                      key={svc.service.id}
+                      to="/$project/$environment/$service"
+                      params={{
+                        project,
+                        environment: environment.name,
+                        service: svc.service.name,
+                      }}
+                      className={`${row} pl-[38px]`}
+                      activeProps={active}
+                    >
+                      <span className="flex items-baseline">
+                        <Glyph tone={serviceStatus(svc).tone} />
+                        {svc.service.name}
+                      </span>
+                      <span className={note}>
+                        {svc.service.active_release
+                          ? `r${svc.service.active_release}`
+                          : ""}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              ))}
+          </div>
+        );
+      })}
     </nav>
   );
 }
@@ -153,7 +181,7 @@ function ServerList() {
           <Link
             key={server.id}
             to="/servers"
-            hash={server.id}
+            hash={server.name}
             className={`${row} py-[3px]`}
           >
             <span className="flex items-baseline">
@@ -170,16 +198,12 @@ function ServerList() {
 
 function LogoutButton() {
   const logout = useLogout();
-  const navigate = useNavigate();
   return (
     <button
       type="button"
       className={`${row} w-full text-dim`}
-      onClick={() =>
-        logout.mutate(undefined, {
-          onSuccess: () => navigate({ to: "/login" }),
-        })
-      }
+      disabled={logout.isPending}
+      onClick={() => logout.mutate()}
     >
       Log out
     </button>
