@@ -14,6 +14,9 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
+// logBuffer is how many parsed log lines may wait for the consumer.
+const logBuffer = 256
+
 // Logs streams a managed container's stdout and stderr as lines.
 func (r *Runtime) Logs(ctx context.Context, id string, opts node.LogOptions) (<-chan node.LogLine, error) {
 	if _, err := r.inspect(ctx, id); err != nil {
@@ -36,7 +39,9 @@ func (r *Runtime) Logs(ctx context.Context, id string, opts node.LogOptions) (<-
 		return nil, fmt.Errorf("logs for container %s: %w", id, err)
 	}
 
-	ch := make(chan node.LogLine)
+	// Buffered so the reader keeps parsing while the consumer writes a
+	// batch to its client (core.ServiceLogs drains what is queued).
+	ch := make(chan node.LogLine, logBuffer)
 	go func() {
 		defer close(ch)
 		defer func() { _ = rc.Close() }()

@@ -353,11 +353,32 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 			return err
 		}
 		ready()
+		// Lines queued behind the first go out in the same write.
+		batch := make([]apitypes.LogLine, 0, logSendBatch)
 		for l := range lines {
-			if err := send(apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text}); err != nil {
+			batch = append(batch[:0], apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text})
+			open := true
+		drain:
+			for open && len(batch) < logSendBatch {
+				select {
+				case l, ok := <-lines:
+					if open = ok; ok {
+						batch = append(batch, apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text})
+					}
+				default:
+					break drain
+				}
+			}
+			if err := send(batch...); err != nil {
 				return err
+			}
+			if !open {
+				return nil
 			}
 		}
 		return nil
 	}, nil
 }
+
+// logSendBatch is the most service log lines sent in one write.
+const logSendBatch = 256
