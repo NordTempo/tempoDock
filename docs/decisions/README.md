@@ -21,7 +21,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0011](0011-stateful-services-and-databases.md) | Stateful services and databases | accepted |
 | [0012](0012-name-tempo-dock.md) | Name: Tempo Dock, CLI `dock` | accepted |
 | [0013](0013-homelab-ingress-cloudflare-tunnel.md) | Homelab ingress through Cloudflare Tunnel | accepted |
-| [0014](0014-node-protocol.md) | Node protocol: reverse HTTP/2 over pinned TLS | proposed |
+| [0014](0014-node-protocol.md) | Node protocol: reverse HTTP/2 over pinned TLS | accepted |
 
 ## Template
 
