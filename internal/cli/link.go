@@ -35,6 +35,14 @@ optional and links the whole environment when left out.`,
 			if err != nil {
 				return err
 			}
+			// Re-linking keeps what's already linked: `dock link -s api` in a
+			// linked directory only adds the service.
+			if s.link != nil && s.link.Context == s.server.Name && f.project == "" {
+				f.project = s.link.Project.Name
+				if f.environment == "" {
+					f.environment = s.link.Environment.Name
+				}
+			}
 			l, err := g.pickLink(cmd.Context(), s, f)
 			if err != nil {
 				return err
