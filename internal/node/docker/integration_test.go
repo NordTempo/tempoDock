@@ -368,38 +368,12 @@ func TestUnmanagedIsInvisible(t *testing.T) {
 	e := newEnv(t)
 	ctx := ctxTimeout(t, time.Minute)
 
-	created, err := e.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name:   e.name("foreign"),
-		Config: &container.Config{Image: shellImage, Cmd: []string{"sleep", "300"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		t.Fatal(err)
-	}
-
-	list, err := e.List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if containsID(list, created.ID) {
-		t.Error("List includes an unmanaged container")
-	}
-	if _, err := e.Inspect(ctx, created.ID); !cerrdefs.IsNotFound(err) {
-		t.Errorf("Inspect err = %v", err)
-	}
-	if err := e.Stop(ctx, created.ID, 0); !cerrdefs.IsNotFound(err) {
-		t.Errorf("Stop err = %v", err)
-	}
-	if err := e.Remove(ctx, created.ID); !cerrdefs.IsNotFound(err) {
-		t.Errorf("Remove err = %v", err)
-	}
-	if _, err := e.Logs(ctx, created.ID, node.LogOptions{}); !cerrdefs.IsNotFound(err) {
-		t.Errorf("Logs err = %v", err)
-	}
-	if st, _ := e.cli.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{}); !st.Container.State.Running {
-		t.Error("unmanaged container was stopped")
+	// Unmanaged containers and platform infrastructure (role label) alike.
+	for name, labels := range map[string]map[string]string{
+		"foreign": nil,
+		"infra":   {node.LabelManaged: "true", node.LabelRole: "test"},
+	} {
+		assertInvisibleContainer(t, e, ctx, name, labels)
 	}
 
 	foreignVol := e.name("foreign-vol")
@@ -409,7 +383,7 @@ func TestUnmanagedIsInvisible(t *testing.T) {
 	if err := e.EnsureVolume(ctx, foreignVol, node.Labels{}); err == nil {
 		t.Error("EnsureVolume accepted an unmanaged volume")
 	}
-	_, err = e.Start(ctx, node.ContainerSpec{
+	_, err := e.Start(ctx, node.ContainerSpec{
 		Name: e.name("mounts-foreign"), Image: shellImage, Cmd: "sleep 300",
 		Mounts: []node.Mount{{Volume: foreignVol, Path: "/data"}},
 	})
@@ -442,4 +416,41 @@ func countLines(ch <-chan node.LogLine) int {
 		n++
 	}
 	return n
+}
+
+func assertInvisibleContainer(t *testing.T, e *testEnv, ctx context.Context, name string, labels map[string]string) {
+	t.Helper()
+	created, err := e.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Name:   e.name(name),
+		Config: &container.Config{Image: shellImage, Cmd: []string{"sleep", "300"}, Labels: labels},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := e.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsID(list, created.ID) {
+		t.Errorf("List includes %s container", name)
+	}
+	if _, err := e.Inspect(ctx, created.ID); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Inspect err = %v", err)
+	}
+	if err := e.Stop(ctx, created.ID, 0); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Stop err = %v", err)
+	}
+	if err := e.Remove(ctx, created.ID); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Remove err = %v", err)
+	}
+	if _, err := e.Logs(ctx, created.ID, node.LogOptions{}); !cerrdefs.IsNotFound(err) {
+		t.Errorf("Logs err = %v", err)
+	}
+	if st, _ := e.cli.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{}); !st.Container.State.Running {
+		t.Error("unmanaged container was stopped")
+	}
 }

@@ -54,6 +54,12 @@ func managedFilter() client.Filters {
 
 func isManaged(labels map[string]string) bool { return labels[node.LabelManaged] == "true" }
 
+// isApp reports whether a container is a managed app container rather than
+// platform infrastructure such as BuildKit.
+func isApp(labels map[string]string) bool {
+	return isManaged(labels) && labels[node.LabelRole] == ""
+}
+
 // notFound is returned for missing and for unmanaged resources alike, so
 // callers can't tell (or care) that something unmanaged exists.
 // The error matches both node.ErrNotFound and containerd's not-found class.
@@ -339,7 +345,7 @@ func (r *Runtime) inspect(ctx context.Context, id string) (container.InspectResp
 	if err != nil {
 		return container.InspectResponse{}, fmt.Errorf("inspect container %s: %w", id, err)
 	}
-	if res.Container.Config == nil || !isManaged(res.Container.Config.Labels) {
+	if res.Container.Config == nil || !isApp(res.Container.Config.Labels) {
 		return container.InspectResponse{}, notFound("container", id)
 	}
 	return res.Container, nil

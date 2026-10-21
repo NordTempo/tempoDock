@@ -87,6 +87,10 @@ const (
 	LabelEnvironment = "platform.env"
 	LabelService     = "platform.service"
 	LabelRelease     = "platform.release"
+	// LabelRole marks platform infrastructure (e.g. the BuildKit container).
+	// Containers carrying it are not apps: Containers never lists, returns
+	// or streams events for them.
+	LabelRole = "platform.role"
 )
 
 // Labels identify what a container or volume belongs to. Values are IDs from

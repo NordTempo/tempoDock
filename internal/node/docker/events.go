@@ -50,6 +50,9 @@ func (r *Runtime) Events(ctx context.Context) (<-chan node.ContainerEvent, error
 				case msg := <-res.Messages:
 					ev := toEvent(msg)
 					since, backoff = ev.Time, minBackoff
+					if !isApp(msg.Actor.Attributes) {
+						continue
+					}
 					select {
 					case ch <- ev:
 					case <-ctx.Done():

@@ -25,9 +25,6 @@ const (
 	// CacheVolume holds BuildKit's state and build cache across restarts.
 	CacheVolume = "platform-buildkit-cache"
 
-	// LabelRole marks platform infrastructure containers (as opposed to app
-	// containers, which carry project/env/service labels instead).
-	LabelRole = "platform.role"
 	// labelConfig records the settings the container was created with, so a
 	// config change recreates it.
 	labelConfig = "platform.buildkit.config"
@@ -82,7 +79,7 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 
 	labels := map[string]string{
 		node.LabelManaged: "true",
-		LabelRole:         "buildkit",
+		node.LabelRole:    "buildkit",
 	}
 	if _, err := b.docker.VolumeCreate(ctx, client.VolumeCreateOptions{Name: CacheVolume, Labels: labels}); err != nil {
 		return fmt.Errorf("create volume %s: %w", CacheVolume, err)
