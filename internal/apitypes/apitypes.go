@@ -566,15 +566,12 @@ type Token struct {
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
 	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
-<<<<<<< HEAD
 	// Origin is "cli_login" for tokens created by approving `dock login`
 	// in the browser, else "manual".
 	Origin string `json:"origin" enum:"manual,cli_login"`
-=======
 	// Data is the token's own database access; without it the token
 	// follows the data policy's tokens rule (ADR 0016).
 	Data *DataTokenAccess `json:"data,omitempty"`
->>>>>>> worktree-agent-a6e1b226c1314216b
 }
 
 // CreateTokenRequest creates a token, optionally limited to one project or
