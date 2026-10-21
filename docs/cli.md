@@ -121,6 +121,7 @@ keeps the linked service, so it means "this service, in staging".
 | `project list\|create`, `environment list\|create` | Projects and environments (`env` is variables) |
 | `token list\|create NAME --scope\|revoke ID`, `user list\|create`, `server list` | Administration |
 | `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
+| `serve`, `admin bootstrap\|caddy-config\|firewall apply\|remove` | Server side, run on the server with `--config`: the daemon, the first admin token, Caddy's initial config, and the app firewall (root; installed as `dock-firewall.service`) |
 
 Commands that start releases (`deploy`, `rollback`, `restart`, `apply`,
 `--deploy`) follow them until they are live or failed; `--detach` returns
