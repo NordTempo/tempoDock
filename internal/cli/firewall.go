@@ -140,20 +140,6 @@ func firewallSpec(ctx context.Context, cfg config.Config) (firewall.Spec, error)
 		add(bridge, subnets(n.IPAM.Config)...)
 	}
 
-	// BuildKit runs on Docker's default bridge (docker0), so builds are
-	// covered by covering that bridge. This also covers any other container
-	// on it. TODO: drop once BuildKit runs on a dock network.
-	if cfg.BuildKit.Enabled {
-		res, err := cli.NetworkInspect(ctx, "bridge", client.NetworkInspectOptions{})
-		if err != nil {
-			return spec, fmt.Errorf("inspect Docker's default bridge: %w", err)
-		}
-		bridge := res.Network.Options[docker.BridgeNameOption]
-		if bridge == "" {
-			bridge = "docker0"
-		}
-		add(bridge, subnets(res.Network.IPAM.Config)...)
-	}
 	return spec, nil
 }
 

@@ -38,10 +38,20 @@ func newRuntime(cfg config.Config) (node.Runtime, error) {
 		if err != nil {
 			return nil, fmt.Errorf("docker client: %w", err)
 		}
-		builder = build.New(cli, cfg.BuildKit, filepath.Join(cfg.DataDir, "builds", "work"))
+		// BuildKit gets its own network from the pool, so the app firewall
+		// covers build steps like any app.
+		if err := containers.EnsureNetwork(context.Background(), buildkitNetwork, node.Labels{}); err != nil {
+			return nil, err
+		}
+		b := build.New(cli, cfg.BuildKit, filepath.Join(cfg.DataDir, "builds", "work"))
+		b.Network = buildkitNetwork
+		builder = b
 	}
 	return node.Local{Containers: containers, Builder: builder, Proxy: proxy}, nil
 }
+
+// buildkitNetwork is the dock network the BuildKit container runs on.
+const buildkitNetwork = "dock_buildkit"
 
 // caddyOptions maps the daemon config onto the Caddy proxy's options.
 func caddyOptions(cfg config.Config) caddy.Options {
