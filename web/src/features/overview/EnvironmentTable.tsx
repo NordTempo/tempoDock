@@ -4,10 +4,11 @@ import { memo } from "react";
 import { domainNeedsAttention } from "../../data/problems";
 import { queries, serviceRef } from "../../data/queries";
 import type { EnvironmentView, ServiceView } from "../../data/types";
-import { mb, plural } from "../../ui/format";
+import { plural } from "../../ui/format";
 import { Scroll, StateText } from "../../ui/kit";
-import { serviceState } from "../../ui/status";
+import { kindLabel, serviceState } from "../../ui/status";
 import { imageLabel } from "../service/releases";
+import { CpuUsage, MemoryUsage } from "../service/Usage";
 
 /** One environment on the project overview: a row per service. */
 export function EnvironmentTable({ env }: { env: EnvironmentView }) {
@@ -17,8 +18,9 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
     <section aria-labelledby={`env-${environment.id}`}>
       <h2 id={`env-${environment.id}`} className="text-md font-semibold">
         {environment.name}{" "}
-        <span className="font-mono text-xs font-normal text-mut">
-          {environment.server}
+        <span className="text-xs font-normal text-mut">
+          <span className="font-mono">{environment.server}</span> ·{" "}
+          {kindLabel[environment.kind]}
         </span>{" "}
         {staged > 0 && (
           <Link
@@ -149,14 +151,10 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
         )}
       </td>
       <td className="font-mono">
-        {service.cpus || <span className="font-sans text-mut">no limit</span>}
+        <CpuUsage service={service} />
       </td>
       <td className="font-mono">
-        {service.memory_mb ? (
-          mb(service.memory_mb)
-        ) : (
-          <span className="font-sans text-mut">no limit</span>
-        )}
+        <MemoryUsage service={service} />
       </td>
       <td className="font-mono">
         {volumes.length > 0 ? (

@@ -36,7 +36,7 @@ const refOf = (e: LiveEvent): ServiceRef | null =>
     : null;
 
 /** Replaces one service in a cached overview. */
-function patchService(
+export function patchService(
   queryClient: QueryClient,
   ref: ServiceRef,
   patch: (s: ServiceView) => ServiceView,
@@ -153,6 +153,8 @@ function invalidateForAudit(
   if (kind === "project") invalidate(keys.projects);
   if (kind === "token") invalidate(keys.tokens);
   if (kind === "user") invalidate(keys.users);
+  // Servers count what is placed on them.
+  if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;
   // Release progress has its own events; everything else in a project
   // (variables, settings, changes, services, environments) refetches.

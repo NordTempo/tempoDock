@@ -80,3 +80,29 @@ export function limits(s: { cpus: number; memory_mb: number }) {
     s.memory_mb ? mb(s.memory_mb) : "any memory",
   ].join(" · ");
 }
+
+const MiB = 1024 * 1024;
+
+/** Drops a trailing ".0": 1.0 → "1", 1.5 → "1.5". */
+const oneDecimal = (n: number) => n.toFixed(1).replace(/\.0$/, "");
+
+/** Bytes as a compact size for dense columns: "12K", "231M", "1.5G". */
+export function size(bytes: number) {
+  if (bytes < 1024) return `${Math.round(bytes)}B`;
+  if (bytes < MiB) return `${Math.round(bytes / 1024)}K`;
+  const m = bytes / MiB;
+  if (m < 1024) return `${m < 10 ? oneDecimal(m) : Math.round(m)}M`;
+  const g = m / 1024;
+  if (g < 1024) return `${g < 100 ? oneDecimal(g) : Math.round(g)}G`;
+  return `${oneDecimal(g / 1024)}T`;
+}
+
+/** Bytes as "231 MB", "9.8 GB". */
+export const bytes = (n: number) => mb(n / MiB);
+
+/** A percentage: "0.4%", "12%". */
+export const pct = (n: number) =>
+  `${n > 0 && n < 10 ? oneDecimal(n) : Math.round(n)}%`;
+
+/** A number of CPUs: "0.5 CPU", "1 CPU", "2 CPUs". */
+export const cpus = (n: number) => `${n} ${n > 1 ? "CPUs" : "CPU"}`;

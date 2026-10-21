@@ -1,5 +1,6 @@
 import type {
   Domain,
+  EnvironmentKind,
   Release,
   ReleaseSummary,
   ServiceView,
@@ -171,6 +172,12 @@ export function failurePhrase(r: { error_code?: string }) {
       return "failed";
   }
 }
+
+/** An environment kind in words, as the CLI writes it. */
+export const kindLabel: Record<EnvironmentKind, string> = {
+  production: "production",
+  non_production: "non-production",
+};
 
 /** Which environment kinds a server accepts, as shown in tables. */
 export function serverKinds(s: {

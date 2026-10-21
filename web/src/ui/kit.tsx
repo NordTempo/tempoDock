@@ -109,6 +109,87 @@ export function CopyButton({
   );
 }
 
+/** A labeled checkbox for an on/off setting. */
+export function Check({
+  label,
+  checked,
+  onChange,
+  disabled,
+  title,
+}: {
+  label: ReactNode;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <label
+      className={`inline-flex items-center gap-1.5 ${disabled ? "text-faint" : "cursor-pointer"}`}
+      title={title}
+    >
+      <input
+        type="checkbox"
+        className="accent-white"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      {label}
+    </label>
+  );
+}
+
+/**
+ * Asks before a change that is hard to take back: what happens, the
+ * button that does it (with its CLI equivalent) and Cancel.
+ */
+export function Confirm({
+  children,
+  action,
+  cli,
+  danger,
+  pending,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  children: ReactNode;
+  action: string;
+  cli?: string;
+  danger?: boolean;
+  pending?: boolean;
+  error?: Error | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      role="alertdialog"
+      aria-label={action}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-2 border p-3 whitespace-normal ${danger ? "border-fail-edge" : "border-edge"}`}
+    >
+      <span className="min-w-0 flex-[1_1_320px]">{children}</span>
+      <span className="flex items-center gap-2">
+        <Button
+          small
+          danger={danger}
+          primary={!danger}
+          disabled={pending}
+          onClick={onConfirm}
+        >
+          {action}
+        </Button>
+        <Button small onClick={onCancel}>
+          Cancel
+        </Button>
+      </span>
+      {cli && <code className="font-mono text-2xs text-mut">{cli}</code>}
+      <ErrorText error={error} />
+    </div>
+  );
+}
+
 export function ErrorText({ error }: { error: Error | null | undefined }) {
   if (!error) return null;
   return <span className="text-fail">{error.message}</span>;

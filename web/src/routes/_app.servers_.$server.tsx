@@ -1,0 +1,407 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { memo, useMemo } from "react";
+import { ApiError } from "../api/client";
+import {
+  queries,
+  serviceRef,
+  useIsAdmin,
+  useProjectTree,
+  useServer,
+} from "../data/queries";
+import type {
+  Server,
+  ServerDetail,
+  ServerUsage,
+  ServiceView,
+  StatsRange,
+} from "../data/types";
+import { useServerSwitches } from "../features/servers/switches";
+import { CpuUsage, MemoryUsage } from "../features/service/Usage";
+import { LineChart } from "../features/stats/LineChart";
+import { useLiveServer } from "../features/stats/live";
+import { LiveNote, RangeSwitch, Stat } from "../features/stats/parts";
+import {
+  type Point,
+  rangeLabel,
+  rangeMs,
+  validateRange,
+} from "../features/stats/series";
+import { ago, bytes, pct, plural, size } from "../ui/format";
+import {
+  ErrorText,
+  Page,
+  Scroll,
+  SectionHead,
+  StateText,
+  TitleRow,
+} from "../ui/kit";
+import { kindLabel, serviceState } from "../ui/status";
+
+// One server for admins: live usage, history, what is placed on it and the
+// services there by memory. /servers/homelab?range=24h
+export const Route = createFileRoute("/_app/servers_/$server")({
+  validateSearch: validateRange,
+  loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),
+  loader: async ({ context: { queryClient }, params, deps }) => {
+    const session = await queryClient.ensureQueryData(queries.session());
+    if (session?.scope !== "admin") return;
+    try {
+      await Promise.all([
+        queryClient.ensureQueryData(queries.server(params.server)),
+        queryClient.ensureQueryData(
+          queries.serverStats(params.server, deps.range),
+        ),
+      ]);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) throw notFound();
+      throw error;
+    }
+  },
+  component: ServerPage,
+});
+
+function ServerPage() {
+  const admin = useIsAdmin();
+  if (!admin) {
+    return (
+      <Page>
+        <TitleRow title={Route.useParams().server} />
+        <p className="text-mut">
+          Server statistics and placement are for admins.{" "}
+          <Link to="/servers">All servers</Link>
+        </p>
+      </Page>
+    );
+  }
+  return <AdminServer />;
+}
+
+function AdminServer() {
+  const { server: name } = Route.useParams();
+  const range = Route.useSearch().range ?? "1h";
+  const navigate = Route.useNavigate();
+  const detail = useServer(name);
+  const { server } = detail;
+  const live = useLiveServer(name);
+  const { accepts, placement, confirm, error } = useServerSwitches(server);
+
+  return (
+    <Page>
+      <TitleRow
+        title={<span className="font-mono">{name}</span>}
+        context={[
+          `dock ${server.version}`,
+          server.local && "control plane",
+          server.builder && "builds images",
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        actions={
+          <Link to="/servers" className="self-center text-mut">
+            All servers
+          </Link>
+        }
+      />
+      <StatusSentence detail={detail} />
+
+      <section aria-label="Now" className="flex flex-col gap-2">
+        <Now usage={detail.usage} server={server} />
+        <LiveNote state={server.status === "online" ? live : "lost"} />
+      </section>
+
+      <section aria-labelledby="history">
+        <SectionHead
+          id="history"
+          aside={rangeLabel[range]}
+          right={
+            <RangeSwitch
+              value={range}
+              onChange={(r) =>
+                navigate({
+                  search: r === "1h" ? {} : { range: r },
+                  replace: true,
+                })
+              }
+            />
+          }
+        >
+          History
+        </SectionHead>
+        <History
+          name={name}
+          range={range}
+          usage={detail.usage}
+          server={server}
+        />
+      </section>
+
+      <section aria-labelledby="placement" className="flex flex-col gap-2">
+        <SectionHead id="placement">Placement</SectionHead>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <span>
+            <span className="text-mut">Accepts</span> {accepts}
+          </span>
+          {placement}
+        </div>
+        {confirm}
+        <ErrorText error={error} />
+        <p className="font-mono text-2xs text-mut">
+          dock server update {name} --production | --no-production |
+          --non-production | --no-non-production | --disable-placement |
+          --enable-placement
+        </p>
+        <Placements detail={detail} />
+      </section>
+
+      <Services name={name} />
+    </Page>
+  );
+}
+
+/** What the server is doing, in a sentence. */
+function StatusSentence({ detail }: { detail: ServerDetail }) {
+  const { server: s } = detail;
+  const reserved = s.memory_bytes
+    ? `${bytes(s.reserved_memory_bytes)} of ${bytes(s.memory_bytes)} memory reserved (${pct((100 * s.reserved_memory_bytes) / s.memory_bytes)}).`
+    : "";
+  const what = s.environments
+    ? `${plural(s.environments, "environment")} of ${plural(s.projects, "project")}`
+    : "nothing yet";
+  if (s.status === "offline") {
+    return (
+      <p className="text-lg leading-normal">
+        <span className="text-fail">✕</span> Offline
+        {s.last_seen_at && `, last seen ${ago(s.last_seen_at)}`}.{" "}
+        <span className="text-mut">
+          {s.environments
+            ? `Its ${what} can't be reached or deployed until it is back.`
+            : "Nothing is placed here; it is safe to remove."}
+        </span>
+      </p>
+    );
+  }
+  return (
+    <p className="text-lg leading-normal">
+      <span className="text-ok">●</span> Online, running {what}.{" "}
+      <span className="text-mut">
+        {reserved} {s.disabled_for_placement && "Takes no new projects."}
+        {!s.accepts_production &&
+          !s.accepts_non_production &&
+          "Accepts no environment kinds."}
+      </span>
+    </p>
+  );
+}
+
+function diskTotals(usage: ServerUsage | undefined) {
+  let used = 0;
+  let total = 0;
+  for (const d of usage?.disks ?? []) {
+    used += d.used_bytes;
+    total += d.total_bytes;
+  }
+  return { used, total };
+}
+
+/** The latest sample, live while the page is open. */
+function Now({ usage, server }: { usage?: ServerUsage; server: Server }) {
+  if (!usage) {
+    return (
+      <p className="text-mut">No sample yet. One is taken every minute.</p>
+    );
+  }
+  const disk = diskTotals(usage);
+  return (
+    <div className="flex flex-wrap gap-x-10 gap-y-3">
+      <Stat
+        label="CPU"
+        value={pct(usage.cpu_percent)}
+        of={`of ${usage.cpus} CPUs`}
+      />
+      <Stat
+        label="Memory"
+        value={size(usage.memory_used_bytes)}
+        of={`/ ${size(usage.memory_total_bytes || server.memory_bytes)}`}
+      />
+      <Stat
+        label="Disk"
+        value={size(disk.used)}
+        of={disk.total ? `/ ${size(disk.total)}` : undefined}
+      />
+      <Stat label="Load" value={usage.load1.toFixed(2)} of="1 min avg" />
+    </div>
+  );
+}
+
+/** CPU, memory and disk over the range, one small chart each. */
+function History({
+  name,
+  range,
+  usage,
+  server,
+}: {
+  name: string;
+  range: StatsRange;
+  usage?: ServerUsage;
+  server: Server;
+}) {
+  const { data: stats, dataUpdatedAt } = useSuspenseQuery({
+    ...queries.serverStats(name, range),
+    // A new point lands every minute; the query pauses with the tab.
+    refetchInterval: 60_000,
+  });
+  const series = useMemo(() => {
+    const of = (pick: (p: (typeof stats.points)[number]) => number): Point[] =>
+      stats.points.map((p) => ({ t: Date.parse(p.time), v: pick(p) }));
+    return {
+      cpu: of((p) => p.cpu_percent),
+      memory: of((p) => p.memory_used_bytes),
+      disk: of((p) => p.disk_used_bytes),
+    };
+  }, [stats]);
+  const to = dataUpdatedAt;
+  const from = to - rangeMs[range];
+  const memoryTotal = usage?.memory_total_bytes || server.memory_bytes;
+  const diskTotal = diskTotals(usage).total;
+  const common = { from, to, resolution: stats.resolution_seconds };
+  return (
+    <div className="mt-2 grid gap-x-8 gap-y-5 lg:grid-cols-3">
+      <LineChart
+        {...common}
+        title="CPU"
+        points={series.cpu}
+        max={100}
+        format={pct}
+      />
+      <LineChart
+        {...common}
+        title="Memory"
+        points={series.memory}
+        max={memoryTotal || peak(series.memory)}
+        format={size}
+      />
+      <LineChart
+        {...common}
+        title="Disk"
+        points={series.disk}
+        max={diskTotal || peak(series.disk)}
+        format={size}
+      />
+    </div>
+  );
+}
+
+/** Highest value, with headroom, for charts without a natural top. */
+const peak = (points: Point[]) => Math.max(1, ...points.map((p) => p.v)) * 1.2;
+
+/** Projects and environments placed here, per kind. */
+function Placements({ detail }: { detail: ServerDetail }) {
+  if (detail.placements.length === 0) {
+    return <p className="text-mut">No projects are placed here yet.</p>;
+  }
+  return (
+    <Scroll>
+      <table>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Kind</th>
+            <th>Environments</th>
+            <th>Placed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {detail.placements.map((p) => (
+            <tr key={`${p.project}:${p.kind}`}>
+              <td>
+                <Link to="/$project" params={{ project: p.project }}>
+                  {p.project}
+                </Link>
+              </td>
+              <td>{kindLabel[p.kind]}</td>
+              <td className="font-mono">
+                {(p.environments ?? []).join(", ") || (
+                  <span className="font-sans text-mut">none yet</span>
+                )}
+              </td>
+              <td className="w-full text-mut">
+                {p.pinned ? "pinned by an admin" : "automatically"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Scroll>
+  );
+}
+
+const memoryOf = (s: ServiceView) => s.service.usage?.memory_bytes ?? -1;
+
+/** Every service on the server, the biggest memory users first. */
+function Services({ name }: { name: string }) {
+  const tree = useProjectTree();
+  const services = useMemo(
+    () =>
+      tree
+        .flatMap((p) => p.environments)
+        .filter((e) => e.environment.server === name)
+        .flatMap((e) => e.services)
+        .sort((a, b) => memoryOf(b) - memoryOf(a)),
+    [tree, name],
+  );
+  return (
+    <section aria-labelledby="services">
+      <SectionHead id="services" aside="by memory, latest minute sample">
+        Services on {name}
+      </SectionHead>
+      {services.length === 0 ? (
+        <p className="text-mut">No services run here.</p>
+      ) : (
+        <Scroll>
+          <table>
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Environment</th>
+                <th>State</th>
+                <th>Memory</th>
+                <th>CPU</th>
+              </tr>
+            </thead>
+            <tbody>
+              {services.map((s) => (
+                <ServiceRow key={s.service.id} view={s} />
+              ))}
+            </tbody>
+          </table>
+        </Scroll>
+      )}
+    </section>
+  );
+}
+
+const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
+  const ref = serviceRef(view.service);
+  return (
+    <tr>
+      <td>
+        <Link to="/$project/$environment/$service/metrics" params={ref}>
+          {ref.service}
+        </Link>
+      </td>
+      <td className="font-mono">
+        {ref.project}/{ref.environment}
+      </td>
+      <td>
+        <StateText state={serviceState(view)} />
+      </td>
+      <td className="font-mono">
+        <MemoryUsage service={view.service} />
+      </td>
+      <td className="w-full font-mono">
+        <CpuUsage service={view.service} />
+      </td>
+    </tr>
+  );
+});

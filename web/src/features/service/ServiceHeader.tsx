@@ -10,7 +10,7 @@ import {
 } from "../../data/queries";
 import type { ServiceRef, ServiceView } from "../../data/types";
 import { type Shortcut, useShortcuts } from "../../shell/keys";
-import { ago, limits, since } from "../../ui/format";
+import { ago, since } from "../../ui/format";
 import { Act, Button, ErrorText, Glyph, StateText } from "../../ui/kit";
 import {
   failurePhrase,
@@ -20,10 +20,16 @@ import {
   stepPhrase,
 } from "../../ui/status";
 import { copiedConfig, errorSummary, rollbackTarget } from "./releases";
+import { CpuUsage, MemoryUsage } from "./Usage";
 
 const tabs = [
   { label: "Overview", to: "/$project/$environment/$service", key: "g o" },
   { label: "Logs", to: "/$project/$environment/$service/logs", key: "g l" },
+  {
+    label: "Metrics",
+    to: "/$project/$environment/$service/metrics",
+    key: "g m",
+  },
   {
     label: "Releases",
     to: "/$project/$environment/$service/releases",
@@ -91,7 +97,15 @@ export function ServiceHeader({
             <>
               {" "}
               · <span className="font-mono">:{service.port || 8080}</span> ·{" "}
-              {limits(service)}
+              <Link
+                to="/$project/$environment/$service/metrics"
+                params={ref}
+                className="font-mono text-white no-underline"
+                title="Memory and CPU, latest sample against the limit"
+              >
+                <MemoryUsage service={service} /> ·{" "}
+                <CpuUsage service={service} />
+              </Link>
             </>
           )}
         </span>
