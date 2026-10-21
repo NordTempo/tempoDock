@@ -1,33 +1,61 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans:
-    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
-  --font-mono:
-    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-    monospace;
+/*
+ * Self-hosted fonts (public/fonts, OFL licensed, license texts next to them):
+ * Inter and JetBrains Mono variable fonts, subset to Latin plus the arrows,
+ * shapes and dingbats the status glyphs use. Each family fills the other's
+ * gaps (Inter has no ✕ or ▾, JetBrains Mono no ↻ or ↵), so both stacks list
+ * the other font before the system fallbacks.
+ */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+}
 
-  /* Dense type scale: 13px body, 12px mono and table heads, 11px labels. */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
+}
+
+@theme {
+  --font-sans: "Inter", "JetBrains Mono", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Inter", ui-monospace, monospace;
+
   --text-2xs: 11px;
   --text-xs: 12px;
   --text-sm: 13px;
   --text-base: 13px;
-  --text-lg: 15px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 22px;
 
-  --color-dim: #8a8a8a;
-  --color-faint: #555;
-  --color-line: #1c1c1c;
-  --color-line2: #2a2a2a;
-  --color-hover: #0d0d0d;
-  --color-sel: #141414;
-  --color-staged: #0a0a00;
+  --color-mut: #8c8c8c;
+  --color-faint: #6e6e6e;
+  --color-line: #262626;
+  --color-soft: #161616;
+  --color-edge: #3a3a3a;
+  --color-field: #333;
+  --color-hover: #0a0a0a;
+  --color-sel: #1a1a1a;
+  --color-kbd: #bdbdbd;
 
-  --color-ok: #3fd07a;
-  --color-bad: #ff5a5a;
-  --color-warn: #f2b636;
-  --color-run: #5aa9ff;
-  --color-off: #6b6b6b;
+  --color-ok: #4ade80;
+  --color-warn: #fbbf24;
+  --color-fail: #f87171;
+  --color-prog: #60a5fa;
+
+  /* Row and panel tints behind in-progress, failed and staged things. */
+  --color-prog-bg: #06101c;
+  --color-fail-bg: #1a0a0a;
+  --color-stage-bg: #161000;
+  --color-fail-edge: #3a1a1a;
+  --color-warn-edge: #3a2f10;
 }
 
 @layer base {
@@ -35,12 +63,28 @@
     color-scheme: dark;
     background: #000;
     color: #fff;
-    font: 13px / 1.45 var(--font-sans);
+    font: 13px / 1.55 var(--font-sans);
   }
 
   :focus-visible {
-    outline: 1px solid #fff;
-    outline-offset: 1px;
+    outline: 2px solid var(--color-prog);
+    outline-offset: 2px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
+  }
+
+  a {
+    text-decoration: underline;
+    text-decoration-color: #4a4a4a;
+    text-underline-offset: 3px;
+  }
+
+  a:hover {
+    text-decoration-color: #fff;
   }
 
   button {
@@ -48,50 +92,213 @@
   }
 
   button:disabled {
-    cursor: default;
+    cursor: not-allowed;
   }
 
   input,
   textarea,
   select {
     background: #000;
+    color: #fff;
+  }
+
+  ::placeholder {
+    color: var(--color-mut);
+  }
+
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #000;
+    background: var(--color-kbd);
+    border-radius: 2px;
+    padding: 0 4px;
+  }
+
+  /* Dense data tables: quiet heads, hairline rows, a hint of hover. */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  th {
+    font-weight: 400;
+    font-size: 12px;
+    text-align: left;
+    color: var(--color-mut);
+    padding: 6px 16px 6px 0;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  td {
+    padding: 7px 16px 7px 0;
+    white-space: nowrap;
+    vertical-align: top;
+    border-bottom: 1px solid var(--color-soft);
+  }
+
+  tr:hover > td {
+    background: var(--color-hover);
   }
 }
 
 @layer components {
-  /* Dense data tables, as in docs/design/ui-direction.html. */
-  .tbl {
-    width: 100%;
-    border-collapse: collapse;
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    color: #fff;
+    background: #000;
+    border: 1px solid var(--color-edge);
+    border-radius: 4px;
+    padding: 7px 12px;
+    line-height: 1.55;
+    text-decoration: none;
   }
 
-  .tbl th {
-    font-weight: 400;
-    color: var(--color-dim);
-    text-align: left;
-    padding: 5px 10px 5px 0;
-    border-bottom: 1px solid var(--color-line2);
-    white-space: nowrap;
+  .btn:hover {
+    border-color: #6a6a6a;
+  }
+
+  .btn:disabled {
+    color: var(--color-faint);
+    border-color: var(--color-line);
+  }
+
+  .btn.pri {
+    background: #fff;
+    color: #000;
+    border-color: #fff;
+  }
+
+  .btn.pri kbd {
+    background: #000;
+    color: #fff;
+  }
+
+  .btn.pri:disabled {
+    background: #8c8c8c;
+    border-color: #8c8c8c;
+  }
+
+  .btn.sm {
+    padding: 3px 9px;
     font-size: 12px;
   }
 
-  .tbl td {
-    padding: 5px 10px 5px 0;
-    border-bottom: 1px solid var(--color-line);
+  .btn.danger {
+    color: var(--color-fail);
+    border-color: var(--color-fail-edge);
+  }
+
+  /* A text button that reads like a quiet link. */
+  .lnk {
+    color: var(--color-mut);
+    font-size: 12px;
+  }
+
+  .lnk:hover {
+    color: #fff;
+  }
+
+  .field {
+    border: 1px solid var(--color-edge);
+    border-radius: 4px;
+    padding: 6px 10px;
+  }
+
+  .field:focus {
+    outline: none;
+    border-color: var(--color-prog);
+  }
+
+  /* Static in-progress glyph: a half-filled circle. Never animated. */
+  .pi {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+    vertical-align: -1px;
+  }
+
+  /* Segmented control: links or buttons in one bordered row. */
+  .seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    border: 1px solid var(--color-field);
+    border-radius: 4px;
+  }
+
+  .seg > * {
+    padding: 4px 12px;
+    color: var(--color-mut);
+    text-decoration: none;
+  }
+
+  .seg > * + * {
+    border-left: 1px solid var(--color-field);
+  }
+
+  .seg > [aria-pressed="true"],
+  .seg > [aria-selected="true"] {
+    background: var(--color-sel);
+    color: #fff;
+  }
+
+  /* Service tabs. */
+  .tabs > a {
+    text-decoration: none;
+    color: var(--color-mut);
+    padding-bottom: 8px;
+    margin-bottom: -1px;
+  }
+
+  .tabs > a:hover {
+    color: #fff;
+  }
+
+  .tabs > a[aria-current="page"] {
+    color: #fff;
+    font-weight: 600;
+    border-bottom: 2px solid #fff;
+  }
+
+  /* A deploy step: glyph, name, duration, detail. */
+  .step {
+    display: grid;
+    grid-template-columns: 24px 120px 70px minmax(0, 1fr);
+    gap: 0 14px;
+    padding: 7px 0;
+    border-bottom: 1px solid #141414;
+    align-items: baseline;
+  }
+
+  /* Hover-revealed CLI equivalent under an action button. */
+  .act {
+    position: relative;
+    display: inline-flex;
+    padding-bottom: 19px;
+  }
+
+  .act > .cli {
+    position: absolute;
+    left: 0;
+    bottom: 0;
     white-space: nowrap;
-    vertical-align: baseline;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-mut);
+    visibility: hidden;
   }
 
-  .tbl .num {
-    text-align: right;
-  }
-
-  .tbl tr.staged td {
-    background: var(--color-staged);
-  }
-
-  .tbl tr.row:hover td {
-    background: var(--color-hover);
-    cursor: pointer;
+  .act:hover > .cli,
+  .act:focus-within > .cli {
+    visibility: visible;
   }
 }
