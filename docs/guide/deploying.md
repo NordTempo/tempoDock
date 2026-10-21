@@ -98,6 +98,11 @@ For each setting, first match wins:
 Image deploys have no `dock.toml`; config releases and rollbacks keep the
 `dock.toml` settings of the release they're based on.
 
+Memory is a hard limit with no swap: an app that needs more is killed by
+the kernel and restarted by Docker. A health check reports this as "ran out
+of memory (limit N MB)", and so does `dock status` for a running service.
+Raise `memory_mb` if that happens.
+
 ## Health checks
 
 Checked every second until it passes or the timeout ends.

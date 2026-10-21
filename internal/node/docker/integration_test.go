@@ -233,6 +233,9 @@ func TestHealthCheckCrashFailsFast(t *testing.T) {
 		{"grace", node.ContainerSpec{Image: shellImage, Cmd: "exit 1"}, node.HealthCheck{Grace: 20 * time.Second}},
 		{"tcp", node.ContainerSpec{Image: shellImage, Cmd: "sleep 1; exit 1", Port: 8080}, node.HealthCheck{}},
 		{"http", node.ContainerSpec{Image: shellImage, Cmd: "sleep 1; exit 1", Port: 8080}, node.HealthCheck{Path: "/"}},
+		// Exited before Start inspected it, so it publishes no port: still
+		// reported as the exit, not as a missing port.
+		{"http-exits-at-once", node.ContainerSpec{Image: shellImage, Cmd: "exit 1", Port: 8080}, node.HealthCheck{Path: "/"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -248,6 +251,29 @@ func TestHealthCheckCrashFailsFast(t *testing.T) {
 				t.Errorf("took %s to notice the crash", d)
 			}
 		})
+	}
+}
+
+// An app over its memory limit is killed (no swap to fall back on) and the
+// health check says so, with the limit, rather than reporting exit 137.
+func TestHealthCheckOOM(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	c := e.start(node.ContainerSpec{
+		Name: e.name("oom"), Image: shellImage, Port: 8080,
+		Cmd:       "sleep 1; tail /dev/zero", // buffers forever, looking for a newline
+		Resources: node.Resources{MemoryBytes: 16 << 20},
+	})
+	raw, err := e.cli.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := raw.Container.HostConfig; h.MemorySwap != h.Memory {
+		t.Errorf("MemorySwap = %d, want %d (no swap)", h.MemorySwap, h.Memory)
+	}
+	err = e.HealthCheck(ctx, c, node.HealthCheck{Timeout: 30 * time.Second, Interval: 200 * time.Millisecond})
+	if err == nil || !strings.Contains(err.Error(), "ran out of memory (limit 16 MB)") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
