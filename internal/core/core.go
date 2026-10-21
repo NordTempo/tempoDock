@@ -70,6 +70,10 @@ type Core struct {
 	statusMu sync.Mutex
 	status   map[int64]apitypes.ServiceStatus // by service ID
 
+	// uploads holds the services with a source upload streaming to disk.
+	uploadsMu sync.Mutex
+	uploads   map[int64]bool
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -96,6 +100,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		buildSem:   make(chan struct{}, 1),
 		domainKick: make(chan struct{}, 1),
 		status:     map[int64]apitypes.ServiceStatus{},
+		uploads:    map[int64]bool{},
 		drain:      DefaultCutoverDrain,
 	}
 	if o.CutoverDrain > 0 {

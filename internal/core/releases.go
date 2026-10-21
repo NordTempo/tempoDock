@@ -436,6 +436,12 @@ func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body i
 	if ss.svc.ArchivedAt != nil {
 		return apitypes.Release{}, invalid("service %s is archived", ss)
 	}
+	done, err := c.beginUpload(ss)
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	// Held until the release exists, which then blocks further deploys.
+	defer done()
 	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
 		return apitypes.Release{}, deployInProgress(ss, r)
 	}
@@ -455,6 +461,31 @@ func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body i
 	}
 	c.audit(ctx, a, "release.deploy", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d from source upload", rel.Number))
 	return c.toRelease(ctx, ss, rel, false)
+}
+
+// maxConcurrentUploads caps source uploads streaming to disk at once on
+// this server, whatever the service.
+const maxConcurrentUploads = 2
+
+// beginUpload claims the right to stream a source upload for a service:
+// one per service, and at most maxConcurrentUploads per server, so parallel
+// uploads can't fill the disk before the in-flight check sees them. Call
+// done when the upload is saved and its release created (or it failed).
+func (c *Core) beginUpload(ss svcScope) (done func(), err error) {
+	c.uploadsMu.Lock()
+	defer c.uploadsMu.Unlock()
+	switch {
+	case c.uploads[ss.svc.ID]:
+		return nil, errf(apitypes.CodeDeployInProgress, "a source upload for %s is already in progress; wait for it to finish", ss)
+	case len(c.uploads) >= maxConcurrentUploads:
+		return nil, errf(apitypes.CodeConflict, "%d source uploads are already in progress on this server; try again in a moment", len(c.uploads))
+	}
+	c.uploads[ss.svc.ID] = true
+	return func() {
+		c.uploadsMu.Lock()
+		delete(c.uploads, ss.svc.ID)
+		c.uploadsMu.Unlock()
+	}, nil
 }
 
 func (c *Core) saveUpload(body io.Reader, maxBytes int64) (string, error) {

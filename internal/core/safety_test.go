@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -62,6 +63,51 @@ func TestDeployRacingArchiveIsRefused(t *testing.T) {
 	}
 	if rels, _ := h.c.ListReleases(h.ctx, System, web, 10); len(rels) != 0 {
 		t.Fatalf("releases = %d, want none", len(rels))
+	}
+}
+
+// Uploads are claimed before they stream to disk: one per service, and a
+// small cap per server, so parallel uploads can't fill the disk.
+func TestConcurrentUploadsAreLimited(t *testing.T) {
+	h := newHarness(t)
+	refs := []ServiceRef{h.service("a", apitypes.CreateServiceRequest{}), h.service("b", apitypes.CreateServiceRequest{}), h.service("c", apitypes.CreateServiceRequest{})}
+	uploading := func() int {
+		h.c.uploadsMu.Lock()
+		defer h.c.uploadsMu.Unlock()
+		return len(h.c.uploads)
+	}
+	errs := make(chan error, maxConcurrentUploads)
+	var clients []*io.PipeWriter
+	for _, ref := range refs[:maxConcurrentUploads] {
+		pr, pw := io.Pipe()
+		clients = append(clients, pw)
+		go func() {
+			_, err := h.c.DeploySource(h.ctx, System, ref, pr, 1<<20)
+			errs <- err
+		}()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for uploading() < maxConcurrentUploads {
+		if time.Now().After(deadline) {
+			t.Fatal("uploads never started")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	if _, err := h.c.DeploySource(h.ctx, System, refs[0], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeDeployInProgress {
+		t.Fatalf("second upload to one service: %v", err)
+	}
+	if _, err := h.c.DeploySource(h.ctx, System, refs[2], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("upload over the server cap: %v", err)
+	}
+	for _, pw := range clients {
+		_ = pw.CloseWithError(errors.New("client went away"))
+	}
+	for range clients {
+		<-errs
+	}
+	if n := uploading(); n != 0 {
+		t.Fatalf("%d uploads still claimed after they ended", n)
 	}
 }
 
