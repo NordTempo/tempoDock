@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,9 +16,17 @@ import (
 
 var labelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// normalizeHostname lowercases and validates a hostname.
+var numericRe = regexp.MustCompile(`^[0-9]+$`)
+
+// normalizeHostname lowercases and validates a hostname. IP addresses,
+// localhost and single-label names are refused: they aren't public names,
+// and an IP "domain" would route the server's own address (making a page
+// on it same-site with the dashboard).
 func normalizeHostname(h string) (string, error) {
 	h = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(h)), ".")
+	if _, err := netip.ParseAddr(strings.Trim(h, "[]")); err == nil {
+		return "", invalid("%q is an IP address; domains must be hostnames like app.example.com", h)
+	}
 	labels := strings.Split(h, ".")
 	if len(h) > 253 || len(labels) < 2 {
 		return "", invalid("%q is not a valid hostname; use a full name like app.example.com", h)
@@ -26,6 +35,12 @@ func normalizeHostname(h string) (string, error) {
 		if !labelRe.MatchString(l) {
 			return "", invalid("%q is not a valid hostname (label %q)", h, l)
 		}
+	}
+	switch tld := labels[len(labels)-1]; {
+	case tld == "localhost":
+		return "", invalid("%q is a localhost name; domains must be public hostnames", h)
+	case numericRe.MatchString(tld):
+		return "", invalid("%q is not a valid hostname (all-numeric top-level label %q)", h, tld)
 	}
 	return h, nil
 }
