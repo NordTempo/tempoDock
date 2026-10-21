@@ -37,6 +37,7 @@ daemon. Install on a server with [`deploy/install.sh`](deploy/install.sh).
 
 | Doc | What it covers |
 |---|---|
+| [Guide](docs/guide/README.md) | Install, deploy, variables, domains, agents, API: how to use it |
 | [Vision](docs/vision.md) | Who it's for, goals, non-goals, principles |
 | [Experience](docs/experience.md) | How the CLI and UI should feel, performance targets |
 | [CLI](docs/cli.md) | CLI conventions, `--json`, exit codes |
