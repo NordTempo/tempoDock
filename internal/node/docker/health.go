@@ -71,6 +71,11 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 			}
 		} else {
 			if err := crashed(st, c.RestartCount, oom); err != nil {
+				// Restarted between two checks: the restart's events may
+				// not be read yet, and an oom one says why it died.
+				if errors.Is(err, errRestarted) && evs != nil && awaitOOM(ctx, evs) {
+					return errExited(oomExitCode, true, memoryLimit(st))
+				}
 				return err
 			}
 			cur := toContainer(st)

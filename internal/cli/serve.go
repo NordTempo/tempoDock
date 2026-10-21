@@ -66,7 +66,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	defer func() { _ = st.Close() }()
-	rt, err := newRuntime(cfg)
+	rt, err := newRuntime(ctx, cfg, log)
 	if err != nil {
 		return err
 	}

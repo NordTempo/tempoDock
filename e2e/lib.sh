@@ -101,11 +101,3 @@ wait_http() {
 	done
 	return 1
 }
-
-# archive_project PROJECT archives every service (projects can't be archived).
-archive_project() {
-	local s
-	for s in $(api GET "/projects/$1/environments/$ENV_NAME/services" | jq -r '.[] | select(.archived_at == null) | .name'); do
-		api POST "$(svc_path "$1" "$s")/archive" >/dev/null || true
-	done
-}

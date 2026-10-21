@@ -12,20 +12,18 @@
 #                 the BuildKit cap, missing image, bad and oversized uploads
 #   perms         a project-scoped deploy token can't escape its project
 #   daemon        stop / SIGKILL the daemon mid-deploy (needs DOCK_SSH=host with sudo)
-#   cleanup       archive every service in the e2e-* projects
+#   cleanup       archive every e2e-* project
 #
 # Apps are reached through the proxy on port 80 at their generated hostnames,
 # so the machine running this must resolve the server's base domain.
-# Every project is named e2e-*; reruns reuse them.
+# Projects are named e2e-<run>-*, <run> being E2E_RUN (default: a timestamp,
+# printed at the start). Set E2E_RUN to reuse an earlier run's projects, e.g.
+# to run daemon after apps. Archived projects keep their names, so a run's
+# projects can't be reused after cleanup.
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 APPS="$E2E_DIR/apps"
 HAMMER="${HAMMER:-$(mktemp -d)/hammer}"
-# The previous container keeps its host port while it drains after a cutover
-# (12s) and stops (up to 30s; Railpack static images ignore SIGTERM), but the
-# server already hands that port to new releases. Wait that out between
-# deploys on the same server; zerodowntime checks the race explicitly.
-DRAIN_WAIT=${DRAIN_WAIT:-45}
 
 build_hammer() { [[ -x $HAMMER ]] || (cd "$E2E_DIR/.." && go build -o "$HAMMER" ./e2e/hammer); }
 
@@ -58,19 +56,18 @@ source_app() {
 	expect_release "$p" "$s" "$n" active
 	log "$p/$s release $n took $((SECONDS - t0))s"
 	if wait_http "$h" / "$want" 20; then pass "$h serves '$want'"; else fail "$h does not serve '$want'"; fi
-	sleep "$DRAIN_WAIT"
 }
 
 scenario_apps() {
-	source_app e2e-node web "$APPS/node-express" "node-express" '{"health_check_path":"/healthz"}'
-	source_app e2e-go api "$APPS/go-lab" "go-lab" '{"health_check_path":"/healthz"}'
-	source_app e2e-py api "$APPS/python-fastapi" "python-fastapi" '{"health_check_path":"/healthz"}'
-	source_app e2e-static site "$APPS/static-site" "static-site v1"
-	source_app e2e-next web "$APPS/nextjs" "nextjs v1"
+	source_app $E2E-node web "$APPS/node-express" "node-express" '{"health_check_path":"/healthz"}'
+	source_app $E2E-go api "$APPS/go-lab" "go-lab" '{"health_check_path":"/healthz"}'
+	source_app $E2E-py api "$APPS/python-fastapi" "python-fastapi" '{"health_check_path":"/healthz"}'
+	source_app $E2E-static site "$APPS/static-site" "static-site v1"
+	source_app $E2E-next web "$APPS/nextjs" "nextjs v1"
 }
 
 scenario_pg() {
-	local p=e2e-pg h n body
+	local p=$E2E-pg h n body
 	ensure_project $p
 	ensure_service $p postgres '{"image":"postgres:17-alpine","port":5432}'
 	set_vars $p postgres '{"POSTGRES_USER":"app","POSTGRES_PASSWORD":"e2e-not-a-secret","POSTGRES_DB":"app",
@@ -102,10 +99,9 @@ scenario_pg() {
 	body=$(http_get "$h" /)
 	if [[ $(jq .n <<<"$body") == "$before" ]]; then pass "postgres data survived the redeploy ($before rows)"; else fail "rows before=$before after: $body"; fi
 	if [[ -n ${DOCK_SSH:-} ]]; then
-		local running; running=$(ssh "$DOCK_SSH" "docker ps -q --filter name=$p-production-postgres | wc -l")
+		local running; running=$(ssh "$DOCK_SSH" "docker ps -q --filter label=dock.service=$(api GET "$(svc_path $p postgres)" | jq .id) | wc -l")
 		[[ $running == 1 ]] && pass "exactly one postgres container" || fail "$running postgres containers running"
 	fi
-	sleep "$DRAIN_WAIT"
 
 	# Changing a referenced variable must reach the services referencing it.
 	local applied
@@ -114,30 +110,29 @@ scenario_pg() {
 		jq -c '[.applied.releases[].service]')
 	[[ $applied == *'"api"'* ]] && pass "referencing service redeployed: $applied" ||
 		fail "changed postgres.DATABASE_URL; only $applied redeployed, api keeps the stale value"
-	sleep "$DRAIN_WAIT"
 }
 
 scenario_zerodowntime() {
-	local p=e2e-zd s=web h n first
+	local p=$E2E-zd s=web h n first
 	ensure_project $p; ensure_service $p $s '{"health_check_path":"/healthz"}'
 	h=$(generate_domain $p $s)
 	first=$(deploy_source $p $s "$APPS/go-lab" 2>/dev/null)
 	expect_release $p $s "$first" active
-	wait_http "$h" / go-lab 20; sleep "$DRAIN_WAIT"
+	wait_http "$h" / go-lab 20
 
 	hammer_start "http://$h/"
 	n=$(deploy_source $p $s "$APPS/go-lab" 2>/dev/null); expect_release $p $s "$n" active
-	sleep 2; hammer_stop "redeploy"; sleep "$DRAIN_WAIT"
+	sleep 2; hammer_stop "redeploy"
 
 	hammer_start "http://$h/"
 	n=$(api POST "$(svc_path $p $s)/restart" | jq -r .number); expect_release $p $s "$n" active
-	sleep 2; hammer_stop "restart"; sleep "$DRAIN_WAIT"
+	sleep 2; hammer_stop "restart"
 
 	hammer_start "http://$h/"
 	n=$(api PATCH "/projects/$p/environments/$ENV_NAME/variables" '{"service":"web","set":{"VERSION":"v2"},"apply":true}' | jq -r '.applied.releases[0].number')
 	expect_release $p $s "$n" active
 	wait_http "$h" / "go-lab v2" 10 || fail "config apply did not reach traffic"
-	sleep 2; hammer_stop "config apply"; sleep "$DRAIN_WAIT"
+	sleep 2; hammer_stop "config apply"
 
 	# Rollback to the first release (cached image): time to traffic switch.
 	hammer_start "http://$h/"
@@ -153,29 +148,31 @@ scenario_zerodowntime() {
 	log "deploy again while the previous container is still draining"
 	n=$(api POST "$(svc_path $p $s)/restart" | jq -r .number); expect_release $p $s "$n" active
 	api PATCH "/projects/$p/environments/$ENV_NAME/variables" '{"service":"web","unset":["VERSION"]}' >/dev/null
-	sleep "$DRAIN_WAIT"
 }
 
-# fail_config P S JSON_SET WANT_RE: apply variables, expect a failed release
-# whose "error_code: error" matches WANT_RE while the old one keeps serving,
-# then unset them.
+# fail_config P S JSON_SET WANT_RE: apply variables (and whatever else is
+# staged), expect a failed release whose "error_code: error" matches WANT_RE
+# while the old one keeps serving. A failed release stages its changes
+# again; they are discarded.
 fail_config() {
-	local p=$1 s=$2 set=$3 want=$4 n got
-	n=$(api PATCH "/projects/$p/environments/$ENV_NAME/variables" "$(jq -c --arg s "$s" '{service: $s, set: ., apply: true}' <<<"$set")" | jq -r '.applied.releases[0].number')
+	local p=$1 s=$2 set=$3 want=$4 n got env="/projects/$1/environments/$ENV_NAME"
+	n=$(api PATCH "$env/variables" "$(jq -c --arg s "$s" '{service: $s, set: ., apply: true}' <<<"$set")" | jq -r '.applied.releases[0].number')
 	expect_release "$p" "$s" "$n" failed
 	got=$(release "$p" "$s" "$n" | jq -r '"\(.error_code): \(.error)"')
 	[[ $got =~ $want ]] && pass "failed with $got" || fail "want /$want/, got $got"
-	n=$(api PATCH "/projects/$p/environments/$ENV_NAME/variables" "$(jq -c --arg s "$s" '{service: $s, unset: keys, apply: true}' <<<"$set")" | jq -r '.applied.releases[0].number')
-	expect_release "$p" "$s" "$n" active
-	sleep "$DRAIN_WAIT"
+	if api GET "$env/changes" | jq -e '.count > 0' >/dev/null && api POST "$env/changes/discard" | jq -e '.count == 0' >/dev/null; then
+		pass "the failed changes were staged again, and discarded"
+	else
+		fail "restaged changes: $(api GET "$env/changes" | jq -c .)"
+	fi
 }
 
 scenario_failures() {
-	local p=e2e-fail s=lab h n
+	local p=$E2E-fail s=lab h n
 	ensure_project $p; ensure_service $p $s '{"health_check_path":"/healthz","health_check_timeout_seconds":15}'
 	h=$(generate_domain $p $s)
 	n=$(deploy_source $p $s "$APPS/go-lab" 2>/dev/null); expect_release $p $s "$n" active
-	wait_http "$h" / go-lab 20; sleep "$DRAIN_WAIT"
+	wait_http "$h" / go-lab 20
 	hammer_start "http://$h/"
 
 	log "health check failure"; fail_config $p $s '{"FAIL_HEALTH":"1"}' health_check_failed
@@ -183,7 +180,6 @@ scenario_failures() {
 	log "OOM at start"
 	api PATCH "$(svc_path $p $s)" '{"memory_mb":32}' >/dev/null
 	fail_config $p $s '{"ALLOC_MB":"128"}' 'health_check_failed: .*out of memory'
-	api PATCH "$(svc_path $p $s)" '{"memory_mb":0,"apply":true}' >/dev/null; sleep "$DRAIN_WAIT"
 
 	log "build error"
 	n=$(deploy_source $p $s "$APPS/build-broken" 2>/dev/null); expect_release $p $s "$n" failed
@@ -211,30 +207,29 @@ scenario_failures() {
 
 scenario_perms() {
 	local ct secret
-	ensure_project e2e-node; ensure_service e2e-node web '{"health_check_path":"/healthz"}'
-	ensure_project e2e-go; ensure_service e2e-go api
-	ct=$(api POST /tokens '{"name":"e2e-scoped-agent","scope":"deploy","project":"e2e-node","expires_in_days":1}')
+	ensure_project $E2E-node; ensure_service $E2E-node web '{"health_check_path":"/healthz"}'
+	ensure_project $E2E-go; ensure_service $E2E-go api
+	ct=$(api POST /tokens "$(jq -nc --arg p "$E2E-node" '{name: "e2e-scoped-agent", scope: "deploy", project: $p, expires_in_days: 1}')")
 	secret=$(jq -r .secret <<<"$ct")
 	expect_code() {
 		local want=$1 desc=$2 got; shift 2
 		got=$(TOKEN_OVERRIDE=$secret api_status "$@")
 		[[ $got == "$want" ]] && pass "$got $desc" || fail "$desc: got $got, want $want"
 	}
-	expect_code 200 "read own project" GET /projects/e2e-node/overview
-	expect_code 403 "read another project" GET /projects/e2e-go/overview
-	expect_code 403 "deploy to another project" POST "$(svc_path e2e-go api)/releases" '{"image":"traefik/whoami"}'
-	expect_code 403 "set variables in another project" PATCH "/projects/e2e-go/environments/$ENV_NAME/variables" '{"service":"api","set":{"X":"1"}}'
-	expect_code 403 "archive own service" POST "$(svc_path e2e-node web)/archive"
-	expect_code 403 "reveal secret values" GET "/projects/e2e-node/environments/$ENV_NAME/variables?reveal=true"
+	expect_code 200 "read own project" GET /projects/$E2E-node/overview
+	expect_code 403 "read another project" GET /projects/$E2E-go/overview
+	expect_code 403 "deploy to another project" POST "$(svc_path $E2E-go api)/releases" '{"image":"traefik/whoami"}'
+	expect_code 403 "set variables in another project" PATCH "/projects/$E2E-go/environments/$ENV_NAME/variables" '{"service":"api","set":{"X":"1"}}'
+	expect_code 403 "archive own service" POST "$(svc_path $E2E-node web)/archive"
+	expect_code 403 "reveal secret values" GET "/projects/$E2E-node/environments/$ENV_NAME/variables?reveal=true"
 	expect_code 403 "create a token" POST /tokens '{"name":"escalate","scope":"admin"}'
 	expect_code 403 "list tokens" GET /tokens
 	expect_code 403 "create a user" POST /users '{"email":"x@example.com","name":"x","password":"aaaaaaaaaaaaaaaa","role":"admin"}'
 	expect_code 403 "create a project" POST /projects '{"name":"e2e-escape"}'
-	local n; n=$(TOKEN_OVERRIDE=$secret deploy_source e2e-node web "$APPS/node-express" 2>/dev/null)
-	expect_release e2e-node web "$n" active
+	local n; n=$(TOKEN_OVERRIDE=$secret deploy_source $E2E-node web "$APPS/node-express" 2>/dev/null)
+	expect_release $E2E-node web "$n" active
 	api DELETE "/tokens/$(jq -r .token.id <<<"$ct")" >/dev/null
 	expect_code 401 "revoked token" GET /me
-	sleep "$DRAIN_WAIT"
 }
 
 # daemon_ssh CMD runs CMD on the server.
@@ -243,10 +238,10 @@ wait_api() { for _ in $(seq 1 30); do curl -sf --max-time 2 "$API/health" >/dev/
 
 scenario_daemon() {
 	: "${DOCK_SSH:?the daemon scenario needs DOCK_SSH=<ssh host with passwordless sudo>}"
-	local p=e2e-node s=web h n tmp
+	local p=$E2E-node s=web h n tmp
 	ensure_project $p; ensure_service $p $s '{"health_check_path":"/healthz"}'
 	h=$(generate_domain $p $s)
-	wait_http "$h" / node-express 5 || { n=$(deploy_source $p $s "$APPS/node-express" 2>/dev/null); expect_release $p $s "$n" active; sleep "$DRAIN_WAIT"; }
+	wait_http "$h" / node-express 5 || { n=$(deploy_source $p $s "$APPS/node-express" 2>/dev/null); expect_release $p $s "$n" active; }
 
 	log "daemon stopped: apps keep serving"
 	hammer_start "http://$h/"
@@ -272,22 +267,25 @@ scenario_daemon() {
 	until [[ $(release $p $s "$n" | jq -r .status) == health_checking ]]; do sleep 0.2; done
 	daemon_ssh 'sudo systemctl kill -s KILL dock'; sleep 3; wait_api
 	expect_release $p $s "$n" failed
-	[[ $(daemon_ssh "docker ps -aq --filter name=$p-production-$s-$n | wc -l") == 0 ]] &&
+	[[ $(daemon_ssh "docker ps -aq --filter label=dock.release=$(release $p $s "$n" | jq .id) | wc -l") == 0 ]] &&
 		pass "recovery removed the half-deployed container" || fail "container of release $n left behind"
-	n=$(api PATCH "$(svc_path $p $s)" '{"health_check_path":"/healthz","apply":true}' | jq -r '.applied.releases[0].number')
-	expect_release $p $s "$n" active
+	api GET "/projects/$p/environments/$ENV_NAME/changes" | jq -e 'any(.settings[]; .field == "health_check_path")' >/dev/null &&
+		pass "the interrupted change was staged again" || fail "interrupted change not restaged"
+	api POST "/projects/$p/environments/$ENV_NAME/changes/discard" >/dev/null
 	sleep 2; hammer_stop "serving through a crash during health check"
-	sleep "$DRAIN_WAIT"
 }
 
 scenario_cleanup() {
 	local p
 	for p in $(api GET /projects | jq -r '.[].name | select(startswith("e2e-"))'); do
-		log "archiving services in $p"
-		archive_project "$p"
+		log "archiving $p"
+		api POST "/projects/$p/archive" >/dev/null || fail "archive $p"
 	done
 }
 
+E2E_RUN=${E2E_RUN:-$(date +%d%H%M)}
+E2E="e2e-$E2E_RUN"
+log "run $E2E_RUN (projects $E2E-*)"
 TMPDIR_E2E=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_E2E"' EXIT
 build_hammer
