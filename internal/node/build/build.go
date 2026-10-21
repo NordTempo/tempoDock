@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
@@ -92,7 +93,7 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, err
 	if err := os.Mkdir(src, 0o700); err != nil {
 		return "", err
 	}
-	if err := extract(req.Source, src); err != nil {
+	if err := extract(req.Source, src, defaultLimits); err != nil {
 		return "", fmt.Errorf("unpack source: %w", err)
 	}
 
@@ -167,7 +168,16 @@ func dockerfileOpt(src, dockerfile string, args map[string]string) (bkclient.Sol
 	if !filepath.IsLocal(dockerfile) {
 		return bkclient.SolveOpt{}, fmt.Errorf("dockerfile path %q must be inside the source", dockerfile)
 	}
-	if _, err := os.Stat(filepath.Join(src, dockerfile)); err != nil {
+	// extract keeps every symlink inside src, but resolve through os.Root
+	// anyway: BuildKit mounts the Dockerfile's directory, so a link out of
+	// the tree there would expose host files.
+	root, err := os.OpenRoot(src)
+	if err != nil {
+		return bkclient.SolveOpt{}, err
+	}
+	_, err = root.Stat(dockerfile)
+	_ = root.Close()
+	if err != nil {
 		return bkclient.SolveOpt{}, fmt.Errorf("dockerfile %q not found in source", dockerfile)
 	}
 	attrs := map[string]string{"filename": filepath.Base(dockerfile)}
@@ -184,6 +194,12 @@ const planFile = "railpack-plan.json"
 // configure the plan (RAILPACK_* settings) and are exposed to build steps as
 // secrets, the way Railway does it.
 func railpackOpt(dir, src string, req node.BuildRequest, logs io.Writer) (bkclient.SolveOpt, error) {
+	// Railpack joins these onto src and reads them on the host.
+	for _, k := range []string{"RAILPACK_CONFIG_FILE", "RAILPACK_SHELL_SCRIPT"} {
+		if v := strings.TrimSpace(req.BuildArgs[k]); v != "" && !filepath.IsLocal(v) {
+			return bkclient.SolveOpt{}, fmt.Errorf("%s must be a path inside the source", k)
+		}
+	}
 	a, err := app.NewApp(src)
 	if err != nil {
 		return bkclient.SolveOpt{}, fmt.Errorf("railpack: %w", err)
