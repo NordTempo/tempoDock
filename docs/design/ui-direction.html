@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>platform / A / sidebar + tables</title>
+<style>
+:root{
+  --bg:#000;--fg:#fff;--dim:#8a8a8a;--faint:#555;--line:#1c1c1c;--line2:#2a2a2a;--hover:#0d0d0d;--sel:#141414;
+  --ok:#3fd07a;--bad:#ff5a5a;--warn:#f2b636;--run:#5aa9ff;--off:#6b6b6b;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--fg);font:13px/1.45 var(--sans);height:100%}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--mono);font-size:12px}
+.dim{color:var(--dim)}.faint{color:var(--faint)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.run{color:var(--run)}.off{color:var(--off)}
+.g{display:inline-block;width:8px;height:8px;margin-right:7px;vertical-align:0}
+.g.ok{background:var(--ok)}.g.bad{background:var(--bad)}.g.warn{background:var(--warn)}.g.run{background:var(--run)}.g.off{background:var(--off)}
+.g.hollow{background:none;border:1px solid var(--off)}
+kbd{font:11px var(--mono);color:var(--dim);border:1px solid var(--line2);padding:0 4px}
+
+/* shell */
+.app{display:grid;grid-template-columns:232px 1fr;height:100vh}
+.side{border-right:1px solid var(--line);overflow:auto;padding:10px 0 60px}
+.main{overflow:auto;padding-bottom:80px}
+.org{display:flex;justify-content:space-between;align-items:center;padding:4px 14px 10px;border-bottom:1px solid var(--line)}
+.org b{font-weight:600}
+.search{margin:10px 14px 6px;display:flex;justify-content:space-between;color:var(--dim);border-bottom:1px solid var(--line2);padding:4px 0;cursor:pointer}
+.sec{padding:12px 14px 4px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.tree a{display:flex;align-items:center;justify-content:space-between;padding:2px 14px;white-space:nowrap}
+.tree a:hover{background:var(--hover)}
+.tree a.on{background:var(--sel)}
+.tree .p{font-weight:600;margin-top:4px}
+.tree .e{padding-left:26px;color:var(--dim)}
+.tree .s{padding-left:38px}
+.tree .r{color:var(--dim);font:11px var(--mono)}
+.srv{padding:3px 14px;display:grid;grid-template-columns:1fr auto;gap:0 8px;align-items:baseline}
+.srv .r{color:var(--dim);font:11px var(--mono)}
+
+.top{display:flex;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
+.crumb{font-weight:600}
+.crumb .dim{font-weight:400}
+.top .sp{flex:1}
+.top .act{color:var(--dim)}
+.top .act:hover{color:var(--fg)}
+.btn{border:1px solid var(--line2);padding:3px 10px;color:var(--fg);cursor:pointer;background:none;font:inherit}
+.btn:hover{border-color:#444}
+.btn.pri{border-color:var(--fg)}
+.wrap{padding:0 20px}
+
+h2{font-size:13px;font-weight:600;padding:18px 0 6px;display:flex;gap:12px;align-items:baseline}
+h2 .dim{font-weight:400}
+
+/* problems */
+.probs{border-bottom:1px solid var(--line)}
+.prob{display:grid;grid-template-columns:18px 220px 1fr auto;gap:10px;padding:7px 20px;border-top:1px solid var(--line);align-items:baseline}
+.prob:first-child{border-top:none}
+.prob .act a{color:var(--dim);margin-left:14px}
+.prob .act a:hover{color:var(--fg)}
+
+/* tables */
+table{width:100%;border-collapse:collapse}
+th{font-weight:400;color:var(--dim);text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid var(--line2);white-space:nowrap;font-size:12px}
+td{padding:5px 10px 5px 0;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:baseline}
+tr.row:hover td{background:var(--hover);cursor:pointer}
+td.num,th.num{text-align:right}
+.bar{display:inline-block;width:46px;height:3px;background:#222;vertical-align:middle;margin-left:6px;position:relative}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:#bbb}
+.bar.hi i{background:var(--warn)}
+
+/* service */
+.tabs{display:flex;gap:20px;padding:0 20px;border-bottom:1px solid var(--line);position:sticky;top:41px;background:var(--bg);z-index:2}
+.tabs a{padding:7px 0;color:var(--dim);border-bottom:1px solid transparent;margin-bottom:-1px}
+.tabs a.on,.tabs a:hover{color:var(--fg);border-color:var(--fg)}
+.meta{display:flex;gap:28px;padding:12px 20px;border-bottom:1px solid var(--line)}
+.meta div span{display:block;color:var(--dim);font-size:11px}
+.split{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:0;border-bottom:1px solid var(--line)}
+.split>div{padding:0 20px 16px}
+.split>div+div{border-left:1px solid var(--line)}
+.split td:nth-child(3){white-space:normal}
+.split>div{min-width:0;overflow:hidden}
+.steps{display:grid;grid-template-columns:16px 110px 60px 1fr;gap:4px 10px;align-items:baseline}
+.steps .d{color:var(--dim)}
+.logs{font:12px/1.55 var(--mono);height:332px;overflow:auto;white-space:pre}
+.logs .t{color:var(--faint)}
+.logs .r89{color:var(--run)}
+.logs .r88{color:var(--dim)}
+.filters{display:flex;gap:14px;color:var(--dim);font-size:12px;padding-bottom:6px}
+.filters b{color:var(--fg);font-weight:400;border-bottom:1px solid var(--fg)}
+.reason{color:var(--bad);font-size:12px}
+.dns{font:12px var(--mono);display:grid;grid-template-columns:60px 1fr 1fr 70px;gap:0 12px;border:1px solid var(--line2);padding:8px 10px;margin:6px 0 2px;max-width:640px}
+.dns .h{color:var(--dim)}
+.varrow td:first-child{font-family:var(--mono);font-size:12px}
+.varrow td.v{font-family:var(--mono);font-size:12px;width:52%}
+.ref{color:var(--run)}
+.ovr{color:var(--warn);font-size:12px}
+.pend td{background:#0a0a00}
+.kv{display:grid;grid-template-columns:180px 1fr;gap:6px 16px;max-width:760px;padding:4px 0 8px}
+.kv span{color:var(--dim)}
+.diff{white-space:pre;font:12px/1.6 var(--mono);border:1px solid var(--line2);padding:8px 10px;max-width:760px;margin-top:6px}
+.diff .m{color:var(--bad)}.diff .p{color:var(--ok)}
+
+/* palette */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;z-index:10}
+.pal{position:fixed;top:12vh;left:50%;transform:translateX(-50%);width:640px;background:#000;border:1px solid #3a3a3a;display:none;z-index:11}
+body.palopen .scrim,body.palopen .pal{display:block}
+.pal .in{display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line2);font-size:15px}
+.pal .in .cur{border-left:1px solid var(--fg);height:18px}
+.pal .grp{padding:8px 14px 2px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.pal .it{display:grid;grid-template-columns:1fr auto;padding:5px 14px;gap:12px}
+.pal .it.on{background:var(--sel);box-shadow:inset 2px 0 0 var(--fg)}
+.pal .it em{font-style:normal;text-decoration:underline;text-underline-offset:3px}
+.pal .ft{display:flex;gap:16px;padding:8px 14px;border-top:1px solid var(--line2);color:var(--dim);font-size:12px}
+
+/* mock switcher (not part of the design) */
+.mock{position:fixed;right:12px;bottom:12px;z-index:20;font:11px var(--mono);border:1px solid #333;background:#000;display:flex}
+.mock a{padding:5px 9px;color:var(--dim);cursor:pointer}
+.mock a.on{color:#000;background:#fff}
+.view{display:none}.view.on{display:block}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="org"><b>nordtempo</b><span class="dim">saile</span></div>
+    <div class="search" data-act="pal:1"><span>Search or run</span><kbd>⌘K</kbd></div>
+
+    <div class="sec">Projects</div>
+    <nav class="tree">
+      <a class="p" href="#" data-act="go:overview"><span>shop</span><span class="r"><span class="bad">1</span> <span class="warn">1</span></span></a>
+      <a class="e"><span>production</span><span class="r">hetzner</span></a>
+      <a class="s"><span><i class="g ok"></i>web</span><span class="r">r57</span></a>
+      <a class="s" id="tree-api" href="#" data-act="go:service"><span><i class="g run"></i>api</span><span class="r">r89</span></a>
+      <a class="s"><span><i class="g ok"></i>worker</span><span class="r">r41</span></a>
+      <a class="s"><span><i class="g ok"></i>postgres</span><span class="r">r6</span></a>
+      <a class="e"><span>staging</span><span class="r">homelab</span></a>
+      <a class="s"><span><i class="g ok"></i>web</span><span class="r">r58</span></a>
+      <a class="s"><span><i class="g ok"></i>api</span><span class="r">r90</span></a>
+      <a class="s"><span><i class="g bad"></i>worker</span><span class="r">r43</span></a>
+      <a class="s"><span><i class="g ok"></i>postgres</span><span class="r">r3</span></a>
+      <a class="p"><span>ledger</span><span class="r">6</span></a>
+      <a class="p"><span>site</span><span class="r">2</span></a>
+    </nav>
+
+    <div class="sec">Servers</div>
+    <div class="srv"><span><i class="g ok"></i>hetzner</span><span class="r">prod · 18%</span></div>
+    <div class="srv"><span><i class="g warn"></i>homelab</span><span class="r">disk 84%</span></div>
+
+    <div class="sec">Org</div>
+    <nav class="tree">
+      <a><span>Tokens</span><span class="r">4</span></a>
+      <a><span>Audit log</span></a>
+      <a><span>Users</span><span class="r">2</span></a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <!-- OVERVIEW -->
+    <section class="view on" id="v-overview">
+      <div class="top">
+        <span class="crumb">shop</span>
+        <span class="dim">8 services · 2 environments</span>
+        <span class="sp"></span>
+        <a class="act" href="#">Audit</a>
+        <a class="act" href="#">Variables</a>
+        <button class="btn">New service</button>
+      </div>
+
+      <div class="probs">
+        <div class="prob"><i class="g bad"></i><span><b>worker</b> <span class="dim">staging</span></span><span>Crash loop: 14 restarts in 10m. Exit 1: <span class="mono">missing variable STRIPE_WEBHOOK_SECRET</span></span><span class="act"><a href="#">Logs</a><a href="#">Variables</a></span></div>
+        <div class="prob"><i class="g warn"></i><span><b>api</b> <span class="dim">production</span></span><span>Waiting for DNS on <span class="mono">api.nordtempo.com</span> for 18m. Create <span class="mono">A api.nordtempo.com 203.0.113.10</span></span><span class="act"><a href="#">Domain</a></span></div>
+        <div class="prob"><i class="g run"></i><span><b>api</b> <span class="dim">production</span></span><span>Deploying r89: health check, attempt 4 of 15</span><span class="act"><a href="#" data-act="go:service">Follow</a></span></div>
+        <div class="prob"><i class="g warn"></i><span><b>homelab</b> <span class="dim">server</span></span><span>Disk 84% (412 / 490 GB). Build cache 61 GB, prunable.</span><span class="act"><a href="#">Prune</a></span></div>
+      </div>
+
+      <div class="wrap">
+        <h2>production <span class="dim">hetzner · 203.0.113.10</span></h2>
+        <table>
+          <tr><th>Service</th><th>Status</th><th>Release</th><th>Source</th><th>Domain</th><th class="num">CPU</th><th class="num">Memory</th><th>Volume</th><th>Updated</th></tr>
+          <tr class="row"><td><b>web</b></td><td><i class="g ok"></i>active</td><td class="mono">r57</td><td class="mono dim">a41c9e2 checkout: gift cards</td><td>shop.nordtempo.no <span class="dim">+1</span></td><td class="num mono">4%</td><td class="num mono">168M / 512M<span class="bar"><i style="width:33%"></i></span></td><td class="dim">-</td><td class="dim">2h</td></tr>
+          <tr class="row" data-act="go:service"><td><b>api</b></td><td><i class="g run"></i>deploying r89</td><td class="mono">r88</td><td class="mono dim">3e81d0c orders: paginate list</td><td>api.shop.nordtempo.no <span class="warn">+1</span></td><td class="num mono">11%</td><td class="num mono">231M / 1G<span class="bar"><i style="width:23%"></i></span></td><td class="dim">-</td><td class="dim">2h</td></tr>
+          <tr class="row"><td><b>worker</b></td><td><i class="g ok"></i>active</td><td class="mono">r41</td><td class="mono dim">3e81d0c orders: paginate list</td><td class="dim">private</td><td class="num mono">2%</td><td class="num mono">96M / 256M<span class="bar"><i style="width:37%"></i></span></td><td class="dim">-</td><td class="dim">2h</td></tr>
+          <tr class="row"><td><b>postgres</b></td><td><i class="g ok"></i>active</td><td class="mono">r6</td><td class="mono dim">postgres:16.4</td><td class="dim">private</td><td class="num mono">1%</td><td class="num mono">412M / 2G<span class="bar"><i style="width:20%"></i></span></td><td class="mono">pgdata 2.1G</td><td class="dim">12d</td></tr>
+        </table>
+
+        <h2>staging <span class="dim">homelab · non-production</span></h2>
+        <table>
+          <tr><th>Service</th><th>Status</th><th>Release</th><th>Source</th><th>Domain</th><th class="num">CPU</th><th class="num">Memory</th><th>Volume</th><th>Updated</th></tr>
+          <tr class="row"><td><b>web</b></td><td><i class="g ok"></i>active</td><td class="mono">r58</td><td class="mono dim">c90d1aa cart: saved carts</td><td>web-shop-staging.nordtempo.dev</td><td class="num mono">1%</td><td class="num mono">120M / 512M<span class="bar"><i style="width:23%"></i></span></td><td class="dim">-</td><td class="dim">25m</td></tr>
+          <tr class="row"><td><b>api</b></td><td><i class="g ok"></i>active</td><td class="mono">r90</td><td class="mono dim">c90d1aa cart: saved carts</td><td>api-shop-staging.nordtempo.dev</td><td class="num mono">2%</td><td class="num mono">140M / 1G<span class="bar"><i style="width:14%"></i></span></td><td class="dim">-</td><td class="dim">25m</td></tr>
+          <tr class="row"><td><b>worker</b></td><td><i class="g bad"></i><span class="bad">crash loop</span></td><td class="mono">r43</td><td class="mono dim">c90d1aa cart: saved carts</td><td class="dim">private</td><td class="num mono">0%</td><td class="num mono">0M / 256M<span class="bar"><i style="width:0"></i></span></td><td class="dim">-</td><td class="dim">25m</td></tr>
+          <tr class="row"><td><b>postgres</b></td><td><i class="g ok"></i>active</td><td class="mono">r3</td><td class="mono dim">postgres:16.4</td><td class="dim">private</td><td class="num mono">1%</td><td class="num mono">188M / 1G<span class="bar"><i style="width:18%"></i></span></td><td class="mono">pgdata 340M</td><td class="dim">12d</td></tr>
+        </table>
+
+        <h2>Recent</h2>
+        <table>
+          <tr class="row"><td class="dim mono" style="width:70px">14:02</td><td style="width:220px">agent-shop-deploy</td><td>deploy <b>api</b> production r89</td><td class="dim">token · deploy scope · shop/*</td></tr>
+          <tr class="row"><td class="dim mono">13:38</td><td>saile</td><td>add domain api.nordtempo.com to <b>api</b> production</td><td class="dim">user</td></tr>
+          <tr class="row"><td class="dim mono">13:37</td><td>agent-shop-deploy</td><td>deploy <b>worker</b> staging r43</td><td class="dim">token · deploy scope · shop/*</td></tr>
+          <tr class="row"><td class="dim mono">12:01</td><td>saile</td><td>promote <b>web</b> staging r56 to production r57</td><td class="dim">user</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- SERVICE -->
+    <section class="view" id="v-service">
+      <div class="top">
+        <span class="crumb"><a href="#" data-act="go:overview" class="dim">shop</a> <span class="dim">/</span> <span class="dim">production</span> <span class="dim">/</span> api</span>
+        <span><i class="g run"></i>deploying r89</span>
+        <span class="sp"></span>
+        <button class="btn">Restart</button>
+        <button class="btn">Rollback</button>
+        <button class="btn pri">Deploy</button>
+      </div>
+      <div class="tabs">
+        <a href="#rel" class="on">Releases</a><a href="#logs">Logs</a><a href="#dom">Domains <span class="warn">1</span></a><a href="#var">Variables</a><a href="#set">Settings</a><a href="#">Metrics</a><a href="#">Audit</a>
+      </div>
+      <div class="meta">
+        <div><span>Active</span><b class="mono">r88</b></div>
+        <div><span>Server</span>hetzner</div>
+        <div><span>Image</span><span class="mono" style="display:inline;color:var(--fg);font-size:12px">sha256:7d02…a91f</span></div>
+        <div><span>CPU</span><span class="mono" style="display:inline;color:var(--fg);font-size:12px">11% of 1.0</span></div>
+        <div><span>Memory</span><span class="mono" style="display:inline;color:var(--fg);font-size:12px">231M of 1G</span></div>
+        <div><span>Private</span><span class="mono" style="display:inline;color:var(--fg);font-size:12px">api:8080</span></div>
+      </div>
+
+      <div class="split">
+        <div>
+          <h2 id="rel">r89 in progress <span class="dim">agent-shop-deploy · 7f3b012 orders: idempotency keys · started 14:02:09</span></h2>
+          <div class="steps">
+            <i class="g ok"></i><span>build</span><span class="mono dim">47s</span><span class="mono dim">31 of 38 layers cached · sha256:4be1…c0e2</span>
+            <i class="g ok"></i><span>start</span><span class="mono dim">2.3s</span><span class="mono dim">next to r88 on shop-production</span>
+            <i class="g run"></i><span>health check</span><span class="mono">14s</span><span class="mono">GET :8080/healthz attempt 4/15 · 503 <span class="dim">(timeout 30s)</span></span>
+            <i class="g hollow"></i><span class="dim">cutover</span><span class="mono faint">-</span><span class="mono faint">route api.shop.nordtempo.no to r89, drain r88 10s</span>
+          </div>
+          <p class="dim" style="font-size:12px;padding-top:8px">r88 keeps serving until cutover. If the check fails, r89 is stopped.</p>
+
+          <h2>Releases</h2>
+          <table>
+            <tr><th></th><th>Status</th><th>Change</th><th>By</th><th>When</th><th></th></tr>
+            <tr class="row"><td class="mono">r89</td><td><i class="g run"></i>health check</td><td class="mono dim">7f3b012 orders: idempotency keys</td><td>agent-shop-deploy</td><td class="dim">1m</td><td></td></tr>
+            <tr class="row"><td class="mono">r88</td><td><i class="g ok"></i>active</td><td class="mono dim">3e81d0c orders: paginate list</td><td>saile</td><td class="dim">2h</td><td class="dim">current</td></tr>
+            <tr class="row"><td class="mono">r87</td><td><i class="g bad"></i>failed</td><td><span class="mono dim">9b2210f orders: bulk export</span><br><span class="reason">Health check failed on /healthz after 30s (503). r86 kept serving.</span></td><td>agent-shop-deploy</td><td class="dim">3h</td><td><a class="dim" href="#">logs</a></td></tr>
+            <tr class="row"><td class="mono">r86</td><td><i class="g off"></i>superseded</td><td class="mono dim">config: RATE_LIMIT_RPS 20 → 50</td><td>saile</td><td class="dim">1d</td><td><a class="dim" href="#">rollback</a></td></tr>
+            <tr class="row"><td class="mono">r85</td><td><i class="g off"></i>superseded</td><td class="mono dim">51ac7e4 auth: rotate session cookie</td><td>agent-shop-deploy</td><td class="dim">2d</td><td><a class="dim" href="#">rollback</a></td></tr>
+            <tr class="row"><td class="mono">r84</td><td><i class="g off"></i>superseded</td><td class="mono dim">e02f9a1 deps: node 22.11</td><td>saile</td><td class="dim">4d</td><td><a class="dim" href="#">rollback</a></td></tr>
+            <tr class="row"><td class="mono faint">r83</td><td class="faint"><i class="g off"></i>superseded</td><td class="mono faint">0c4d6b8 orders: tax rounding</td><td class="faint">saile</td><td class="faint">6d</td><td class="faint">image pruned</td></tr>
+          </table>
+        </div>
+        <div>
+          <h2 id="logs">Logs <span class="dim">live</span></h2>
+          <div class="filters"><b>all releases</b><span>r89</span><span>r88</span><span>build</span><span>warn+</span><span style="flex:1"></span><span>/ filter</span></div>
+<div class="logs"><span class="t">14:02:41.118</span> <span class="r89">r89</span> <span class="warn">warn</span> healthz: migrations in progress, 503
+<span class="t">14:02:40.902</span> <span class="r88">r88</span> info POST /orders 201 38ms
+<span class="t">14:02:40.477</span> <span class="r88">r88</span> info GET /orders?page=2 200 12ms
+<span class="t">14:02:39.120</span> <span class="r89">r89</span> <span class="warn">warn</span> healthz: migrations in progress, 503
+<span class="t">14:02:38.660</span> <span class="r89">r89</span> info migrate 0042_idempotency_keys: 61%
+<span class="t">14:02:37.301</span> <span class="r88">r88</span> info GET /products/918 200 4ms
+<span class="t">14:02:37.118</span> <span class="r89">r89</span> <span class="warn">warn</span> healthz: migrations in progress, 503
+<span class="t">14:02:36.044</span> <span class="r88">r88</span> info POST /cart/checkout 200 112ms
+<span class="t">14:02:35.115</span> <span class="r89">r89</span> <span class="warn">warn</span> healthz: migrations in progress, 503
+<span class="t">14:02:34.990</span> <span class="r89">r89</span> info migrate 0042_idempotency_keys: start
+<span class="t">14:02:34.812</span> <span class="r89">r89</span> info connected postgres:5432/shop
+<span class="t">14:02:34.701</span> <span class="r89">r89</span> info listening on :8080
+<span class="t">14:02:34.522</span> <span class="r89">r89</span> info api 7f3b012 node 22.11.0
+<span class="t">14:02:33.904</span> <span class="r88">r88</span> info GET /orders?page=1 200 15ms
+<span class="t">14:02:33.410</span> <span class="r88">r88</span> <span class="bad">error</span> POST /webhooks/stripe 400 signature mismatch
+<span class="t">14:02:31.002</span> <span class="r88">r88</span> info GET /healthz 200 1ms
+<span class="t">14:02:29.770</span> <span class="r88">r88</span> info GET /products?tag=sale 200 22ms
+<span class="t">14:02:28.351</span> <span class="r88">r88</span> info POST /orders 201 41ms
+<span class="t">14:02:26.114</span> <span class="r88">r88</span> info GET /orders/88213 200 6ms
+<span class="t">14:02:24.009</span> <span class="r88">r88</span> info GET /healthz 200 1ms</div>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <h2 id="dom">Domains <span class="dim">port 8080</span><span style="flex:1"></span><a class="dim" href="#">Generate</a> <a href="#">Add domain</a></h2>
+        <table>
+          <tr><th>Hostname</th><th>Status</th><th>Certificate</th><th>Target</th><th></th></tr>
+          <tr><td>api.shop.nordtempo.no</td><td><i class="g ok"></i>active</td><td class="dim">Let's Encrypt · renews Dec 1</td><td class="mono dim">:8080</td><td class="dim">remove</td></tr>
+          <tr><td>api-shop-production.nordtempo.app</td><td><i class="g ok"></i>active</td><td class="dim">wildcard · generated</td><td class="mono dim">:8080</td><td class="dim">remove</td></tr>
+          <tr><td style="border-bottom:none">api.nordtempo.com</td><td style="border-bottom:none"><i class="g warn"></i><span class="warn">waiting for DNS</span></td><td class="dim" style="border-bottom:none">not issued</td><td class="mono dim" style="border-bottom:none">:8080</td><td class="dim" style="border-bottom:none">remove</td></tr>
+        </table>
+        <div class="dns"><span class="h">Type</span><span class="h">Name</span><span class="h">Value</span><span class="h"></span><span>A</span><span>api.nordtempo.com</span><span>203.0.113.10</span><a class="dim" href="#">copy</a></div>
+        <p class="dim" style="font-size:12px">Currently resolves to nothing (NXDOMAIN). Checked 20s ago. Certificate is issued on the first request after DNS points here.</p>
+
+        <h2 id="var">Variables <span class="dim">production</span><span style="flex:1"></span><a class="dim" href="#">Paste .env</a> <a class="dim" href="#">Reveal secrets</a> <a href="#">Add</a></h2>
+        <table>
+          <tr><th>Name</th><th>Value</th><th>Scope</th><th></th></tr>
+          <tr class="varrow"><td>PORT</td><td class="v">8080</td><td>service</td><td></td></tr>
+          <tr class="varrow"><td>DATABASE_URL</td><td class="v"><span class="ref">${{postgres.DATABASE_URL}}</span> <span class="dim">→ postgres://shop:•••@postgres:5432/shop</span></td><td>service</td><td></td></tr>
+          <tr class="varrow"><td>WEB_ORIGIN</td><td class="v"><span class="ref">https://${{web.DOMAIN}}</span> <span class="dim">→ https://shop.nordtempo.no</span></td><td>service</td><td></td></tr>
+          <tr class="varrow"><td>STRIPE_SECRET_KEY</td><td class="v dim">•••••••••••• secret</td><td>service</td><td></td></tr>
+          <tr class="varrow"><td>JWT_SECRET</td><td class="v dim">•••••••••••• secret</td><td>service</td><td></td></tr>
+          <tr class="varrow"><td>LOG_LEVEL</td><td class="v">debug</td><td>service <span class="ovr">overrides environment</span></td><td></td></tr>
+          <tr class="varrow pend"><td>RATE_LIMIT_RPS</td><td class="v"><span class="bad" style="text-decoration:line-through">50</span> <span class="ok">80</span></td><td>service</td><td class="warn">edited</td></tr>
+          <tr class="varrow"><td class="dim">NODE_ENV</td><td class="v dim">production</td><td class="dim">environment</td><td></td></tr>
+          <tr class="varrow"><td class="dim">LOG_LEVEL</td><td class="v dim" style="text-decoration:line-through">info</td><td class="dim">environment</td><td></td></tr>
+          <tr class="varrow"><td class="dim">SENTRY_DSN</td><td class="v dim">•••••••••••• secret</td><td class="dim">environment</td><td></td></tr>
+        </table>
+        <div style="display:flex;gap:12px;align-items:center;padding:10px 0"><button class="btn pri">Apply 1 change</button><button class="btn">Discard</button><span class="dim">Creates release r90 after r89 finishes. Health-checked before traffic.</span></div>
+
+        <h2 id="set">Settings</h2>
+        <div class="kv">
+          <span>Source</span><span>upload · Dockerfile <span class="mono dim">apps/api/Dockerfile</span>, context <span class="mono dim">apps/api</span></span>
+          <span>Port</span><span class="mono">8080</span>
+          <span>Health check</span><span class="mono">HTTP GET /healthz · every 2s · timeout 30s</span>
+          <span>Strategy</span><span>start new next to old, then cut over</span>
+          <span>Limits</span><span class="mono">cpu 1.0 · memory <span class="warn">1G → 768M</span></span>
+          <span>Volumes</span><span class="dim">none</span>
+          <span>Server</span><span>hetzner <span class="dim">from environment production</span></span>
+          <span>Restart policy</span><span class="mono">unless-stopped</span>
+        </div>
+        <div class="diff"><span class="dim">Pending change preview</span>
+<span class="m">- memory limit  1G</span>
+<span class="p">+ memory limit  768M</span>
+<span class="dim">  peak in last 24h 612M · creates release r90 · rolling restart, no downtime</span></div>
+        <div style="display:flex;gap:12px;align-items:center;padding:10px 0"><button class="btn pri">Apply</button><button class="btn">Discard</button></div>
+        <div class="kv" style="border-top:1px solid var(--line);padding-top:12px;margin-top:8px">
+          <span>Archive service</span><span><a class="bad" href="#">Archive api</a> <span class="dim">requires admin. Stops and keeps it 7 days.</span></span>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" data-act="pal:0"></div>
+<div class="pal">
+  <div class="in"><span class="dim">›</span><span>dep</span><span class="cur"></span><span style="flex:1"></span><span class="dim" style="font-size:12px">shop / production</span></div>
+  <div class="grp">Actions</div>
+  <div class="it on"><span><em>Dep</em>loy api to production</span><kbd>↵</kbd></div>
+  <div class="it"><span><em>Dep</em>loy web to production</span><span></span></div>
+  <div class="it"><span><em>Dep</em>loy worker to staging</span><span class="dim">last failed</span></div>
+  <div class="it"><span>Promote staging to production <span class="dim">(deploys api r90, web r58)</span></span><span></span></div>
+  <div class="grp">Go to</div>
+  <div class="it"><span>shop / production / api / <em>dep</em>loy r89</span><span class="dim">in progress</span></div>
+  <div class="it"><span>ledger / production / api / <em>dep</em>loys</span><span></span></div>
+  <div class="it"><span>Audit log: <em>dep</em>loy events</span><span></span></div>
+  <div class="grp">Docs</div>
+  <div class="it"><span><em>Dep</em>loy flow and health checks</span><span></span></div>
+  <div class="ft"><span><kbd>↑↓</kbd> move</span><span><kbd>↵</kbd> run</span><span><kbd>⇥</kbd> fill args</span><span><kbd>esc</kbd> close</span><span style="flex:1"></span><span>equivalent: platform deploy -s api -e production</span></div>
+</div>
+
+<div class="mock"><a data-v="overview" class="on">overview</a><a data-v="service">service</a><a data-v="palette">⌘K palette</a></div>
+
+<script>
+let cur='overview';
+function go(v){cur=v;document.querySelectorAll('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));pal(false)}
+function pal(o){document.body.classList.toggle('palopen',o);sync(o?'palette':cur)}
+function sync(v){document.querySelectorAll('.mock a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));document.getElementById('tree-api').classList.toggle('on',cur==='service')}
+function open(v){if(v==='palette'){go('overview');pal(true)}else go(v||'overview')}
+document.querySelectorAll('.mock a').forEach(a=>a.onclick=()=>open(a.dataset.v));
+addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();pal(!document.body.classList.contains('palopen'))}if(e.key==='Escape')pal(false)});
+open(location.hash.slice(1));
+document.querySelectorAll('[data-act]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const [f,a]=el.dataset.act.split(':');({go:()=>go(a),pal:()=>pal(a==='1'),so:()=>so(a==='1')})[f]()}));
+</script>
+</body>
+</html>
