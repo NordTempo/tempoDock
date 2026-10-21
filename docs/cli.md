@@ -64,9 +64,22 @@ The server and token come from, in order:
 3. The context of the linked directory (see below).
 4. The current context.
 
-`DOCK_TOKEN` also overrides the token of a context picked by 2-4.
+A token only ever goes to the server it was given for: `DOCK_TOKEN` is
+used only together with `DOCK_URL`. Setting `DOCK_TOKEN` alone is a usage
+error (exit 2) rather than sending it to a context's server. The client
+never follows redirects either; a 3xx is an error naming its target.
 `dock context current` shows what the current directory resolves to and
 why.
+
+Log in with `dock login <server-url>`: on a terminal it prompts for the
+token without echo. Scripts pipe it in, so it stays out of shell history and
+the process list:
+
+```sh
+dock login https://dock.example.com --token-stdin < token-file
+```
+
+`--token <token>` still works but is not recommended.
 
 ## Config file and links
 
@@ -89,7 +102,7 @@ keeps the linked service, so it means "this service, in staging".
 
 | Command | What it does |
 |---|---|
-| `login <url> [--token]` | Verify a token (`/version`, `/me`), store it as a context and use it. Warns when the server runs another version |
+| `login <url> [--token-stdin]` | Verify a token against `/version` and `/me` (prompted for on a terminal, or read from stdin), store it as a context and use it. Warns when the server runs another version |
 | `whoami` | Who the token belongs to and its scope |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. Exit 6 when the release fails |

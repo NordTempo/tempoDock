@@ -22,13 +22,17 @@ import (
 const (
 	EnvContext = "DOCK_CONTEXT" // selects a context by name
 	EnvURL     = "DOCK_URL"     // server URL; ignores contexts entirely
-	EnvToken   = "DOCK_TOKEN"   // API token for the selected server
+	EnvToken   = "DOCK_TOKEN"   // API token for DOCK_URL; only valid with it
 )
 
 // Errors returned by Resolve.
 var (
 	ErrNoContext       = errors.New("no context configured")
 	ErrContextNotFound = errors.New("context not found")
+	// ErrTokenWithoutURL means DOCK_TOKEN is set without DOCK_URL. The
+	// token is never paired with a context's server, which it may not
+	// belong to.
+	ErrTokenWithoutURL = errors.New(EnvToken + " is set without " + EnvURL)
 )
 
 // Config is the whole file.
@@ -163,17 +167,22 @@ type Resolved struct {
 
 // Resolve picks the server and token to use, in order:
 //
-//  1. DOCK_URL (with DOCK_TOKEN): contexts are ignored, so a token
-//     from the config file is never sent to a server it wasn't made for.
+//  1. DOCK_URL with DOCK_TOKEN: contexts are ignored, so a token from
+//     the config file is never sent to a server it wasn't made for.
 //  2. The context named by DOCK_CONTEXT.
 //  3. The context of link, when the directory is linked (link may be nil).
 //  4. The current context.
 //
-// DOCK_TOKEN overrides the token of whichever context is picked. Errors
-// wrap ErrNoContext or ErrContextNotFound.
+// A token always travels with the server it was given for: DOCK_TOKEN
+// without DOCK_URL is ErrTokenWithoutURL rather than being sent to
+// whichever context's server is picked. Other errors wrap ErrNoContext or
+// ErrContextNotFound.
 func (c *Config) Resolve(link *Link) (Resolved, error) {
 	if u := os.Getenv(EnvURL); u != "" {
 		return Resolved{Server: u, Token: os.Getenv(EnvToken), Source: SourceEnvURL}, nil
+	}
+	if os.Getenv(EnvToken) != "" {
+		return Resolved{}, ErrTokenWithoutURL
 	}
 	name, src := os.Getenv(EnvContext), SourceEnvContext
 	if name == "" && link != nil {
@@ -189,11 +198,7 @@ func (c *Config) Resolve(link *Link) (Resolved, error) {
 	if !ok {
 		return Resolved{}, fmt.Errorf("%w: %q (from %s)", ErrContextNotFound, name, src)
 	}
-	r := Resolved{Name: name, Server: ctx.Server, Token: ctx.Token, Source: src}
-	if t := os.Getenv(EnvToken); t != "" {
-		r.Token = t
-	}
-	return r, nil
+	return Resolved{Name: name, Server: ctx.Server, Token: ctx.Token, Source: src}, nil
 }
 
 // SetLink links dir (and everything below it) to l.

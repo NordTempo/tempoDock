@@ -41,7 +41,11 @@ func New(server, token string) (*Client, error) {
 	// Fail fast when the server is down; streams may run for a long time,
 	// so there is deliberately no overall request timeout.
 	tr.DialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext
-	return &Client{base: u, token: token, http: &http.Client{Transport: tr}}, nil
+	// Redirects are never followed: the token must only ever go to the
+	// server the user named, and an API that moved should be logged in to
+	// again at its new URL. Do turns a 3xx into an error naming the target.
+	noRedirects := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &Client{base: u, token: token, http: &http.Client{Transport: tr, CheckRedirect: noRedirects}}, nil
 }
 
 // ParseServerURL validates a server URL as typed by a user and normalises
@@ -100,7 +104,26 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		return resp, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, redirectError(req, resp)
+	}
 	return nil, problemError(resp)
+}
+
+// redirectError reports a redirect, which the client never follows.
+func redirectError(req *http.Request, resp *http.Response) error {
+	target := resp.Header.Get("Location")
+	if loc, err := resp.Location(); err == nil {
+		target = loc.Redacted()
+	}
+	if target == "" {
+		target = "(no Location header)"
+	}
+	return &output.Error{
+		Exit:    output.ExitError,
+		Message: fmt.Sprintf("%s redirected to %s; API requests don't follow redirects", req.URL.Redacted(), target),
+		Hint:    "If the server moved (say, to https), log in at its new URL: `dock login <server-url>`.",
+	}
 }
 
 // JSON sends in (if non-nil) as a JSON body and decodes the response into

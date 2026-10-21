@@ -43,7 +43,7 @@ func (g *globals) connect() (*session, error) {
 		return nil, &output.Error{
 			Exit:    output.ExitAuth,
 			Message: "no API token for " + r.Server,
-			Hint:    fmt.Sprintf("Run `dock login %s`, or set %s.", r.Server, clientconfig.EnvToken),
+			Hint:    fmt.Sprintf("Run `dock login %s`, or set %s and %s.", r.Server, clientconfig.EnvURL, clientconfig.EnvToken),
 		}
 	}
 	api, err := apiclient.New(r.Server, r.Token)

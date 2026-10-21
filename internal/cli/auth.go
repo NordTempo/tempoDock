@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"regexp"
@@ -27,6 +28,7 @@ type loginView struct {
 
 func newLoginCmd(g *globals) *cobra.Command {
 	var token, name string
+	var tokenStdin bool
 	cmd := &cobra.Command{
 		Use:   "login <server-url>",
 		Short: "Log in to a server with an API token",
@@ -34,8 +36,12 @@ func newLoginCmd(g *globals) *cobra.Command {
 context the current one. Logging in again to the same server replaces its
 token. The context is named after the server's host unless --name is given.
 
-Without --token, the token is prompted for when stdin is a terminal. Create
-the first one on the server with ` + "`dock admin bootstrap`" + `.`,
+On a terminal the token is prompted for without echo. Scripts should pipe it
+in with --token-stdin. --token works too, but leaves the token in shell
+history and the process list. Create the first token on the server with
+` + "`dock admin bootstrap`" + `.`,
+		Example: `  dock login https://dock.example.com
+  dock admin bootstrap | dock login http://127.0.0.1:7070 --token-stdin`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			u, err := apiclient.ParseServerURL(args[0])
@@ -54,10 +60,8 @@ the first one on the server with ` + "`dock admin bootstrap`" + `.`,
 			} else if !contextName.MatchString(name) {
 				return &output.Error{Exit: output.ExitUsage, Message: fmt.Sprintf("invalid context name %q", name), Hint: "Use letters, digits, '.', '_' and '-'."}
 			}
-			if token == "" {
-				if token, err = g.io.PromptSecret("API token", "token"); err != nil {
-					return err
-				}
+			if token, err = g.loginToken(token, tokenStdin); err != nil {
+				return err
 			}
 
 			api, err := apiclient.New(server, token)
@@ -103,9 +107,38 @@ the first one on the server with ` + "`dock admin bootstrap`" + `.`,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&token, "token", "", "API token (prompted for on a terminal)")
+	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the API token from stdin (preferred for scripts)")
+	cmd.Flags().StringVar(&token, "token", "", "API token; prefer --token-stdin, this ends up in shell history")
 	cmd.Flags().StringVar(&name, "name", "", "context name (default: the server's host)")
 	return cmd
+}
+
+// maxTokenInput bounds what --token-stdin reads.
+const maxTokenInput = 4 << 10
+
+// loginToken returns the token from --token, stdin (--token-stdin) or a
+// hidden prompt on a terminal, in that order of the flags given.
+func (g *globals) loginToken(flag string, fromStdin bool) (string, error) {
+	switch {
+	case flag != "" && fromStdin:
+		return "", usageError("pass --token or --token-stdin, not both", "Prefer --token-stdin: `dock login <url> --token-stdin < token-file`.")
+	case flag != "":
+		return flag, nil
+	case fromStdin:
+		b, err := io.ReadAll(io.LimitReader(g.io.In, maxTokenInput+1))
+		if err != nil {
+			return "", err
+		}
+		token := strings.TrimSpace(string(b))
+		if token == "" || len(b) > maxTokenInput || strings.ContainsAny(token, " \t\r\n") {
+			return "", usageError("--token-stdin expects exactly one token on stdin", "Pipe just the token: `printf %s \"$TOKEN\" | dock login <url> --token-stdin`.")
+		}
+		return token, nil
+	}
+	if !g.io.Interactive {
+		return "", usageError("no API token given", "Pipe it in with --token-stdin, e.g. `dock login <url> --token-stdin < token-file`. The CLI only prompts on a terminal.")
+	}
+	return g.io.PromptSecret("API token", "token-stdin")
 }
 
 // contextNameFor picks the context for a login to u: the context that
@@ -215,9 +248,6 @@ from the config file. The context itself is kept. Logging out again is not an er
 					g.io.Successf("Logged out of %s", r.Name)
 				} else {
 					g.io.Successf("Already logged out of %s", r.Name)
-				}
-				if os.Getenv(clientconfig.EnvToken) != "" {
-					g.io.Warnf("%s is still set and will be used.", clientconfig.EnvToken)
 				}
 				return nil
 			})

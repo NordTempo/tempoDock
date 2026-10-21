@@ -78,6 +78,24 @@ func TestErrorMapping(t *testing.T) {
 	}
 }
 
+// Redirects are not followed, so the token never reaches another host.
+func TestRedirectsAreNotFollowed(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		t.Errorf("redirect was followed (Authorization %q)", r.Header.Get("Authorization"))
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, "secret")
+	err := c.JSON(context.Background(), http.MethodGet, "/x", nil, nil)
+	if output.ExitCodeOf(err) != output.ExitError || !strings.Contains(err.Error(), other.URL+"/steal") {
+		t.Errorf("got %v", err)
+	}
+}
+
 func TestUnreachable(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	srv.Close() // nothing listens on this address any more

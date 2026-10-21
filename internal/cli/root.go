@@ -157,6 +157,13 @@ func (c userConfig) resolveFor(link *clientconfig.Link) (clientconfig.Resolved, 
 		}
 	case errors.Is(err, clientconfig.ErrContextNotFound):
 		return r, &output.Error{Exit: output.ExitNotFound, Err: err, Hint: "Run `dock context list` to see contexts."}
+	case errors.Is(err, clientconfig.ErrTokenWithoutURL):
+		return r, &output.Error{
+			Exit:    output.ExitUsage,
+			Err:     err,
+			Message: fmt.Sprintf("%s is set but %s is not; the token is only sent to the server %s names", clientconfig.EnvToken, clientconfig.EnvURL, clientconfig.EnvURL),
+			Hint:    fmt.Sprintf("Set %s to the token's server, or unset %s to use the context's own token.", clientconfig.EnvURL, clientconfig.EnvToken),
+		}
 	}
 	return r, err
 }

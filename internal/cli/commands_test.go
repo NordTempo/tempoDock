@@ -107,9 +107,11 @@ func TestDeployFlow(t *testing.T) {
 	srv := newTestServer(t)
 	appDir(t)
 
-	login := ok[loginView](t, "login", srv.url, "--token", srv.tokens[apitypes.ScopeAdmin])
-	if login.Me.Scope != apitypes.ScopeAdmin || login.Context != "127.0.0.1" {
-		t.Fatalf("login = %+v", login)
+	code, stdout, stderr := execStdin(t, srv.tokens[apitypes.ScopeAdmin]+"\n", "login", srv.url, "--token-stdin", "--json")
+	var login loginView
+	_ = json.Unmarshal([]byte(stdout), &login)
+	if code != 0 || login.Me.Scope != apitypes.ScopeAdmin || login.Context != "127.0.0.1" {
+		t.Fatalf("login = %d %+v\n%s", code, login, stderr)
 	}
 	ok[apitypes.Project](t, "project", "create", "shop")
 
@@ -153,9 +155,52 @@ func TestDeployFlow(t *testing.T) {
 	}
 
 	// Adding a domain prints the record to create and waits until it's live.
-	code, stdout, stderr := exec(t, "domain", "add", "shop.example.com")
+	code, stdout, stderr = exec(t, "domain", "add", "shop.example.com")
 	if code != 0 || !strings.Contains(stdout, "Point DNS:  A  shop.example.com  →  203.0.113.10") || !strings.Contains(stdout, "https://shop.example.com is live.") {
 		t.Fatalf("domain add = %d\n%s\n%s", code, stdout, stderr)
+	}
+}
+
+// execStdin is exec with stdin (still not a terminal).
+func execStdin(t *testing.T, stdin string, args ...string) (int, string, string) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	code := run(context.Background(), args, &output.IO{In: strings.NewReader(stdin), Out: &out, Err: &errOut})
+	return code, out.String(), errOut.String()
+}
+
+// Tokens stay out of argv when possible and never reach another server.
+func TestLoginTokenHandling(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	admin := srv.tokens[apitypes.ScopeAdmin]
+	tests := []struct {
+		name, stdin string
+		args        []string
+		exit        output.ExitCode
+		stderr      string
+	}{
+		{"no token and no terminal", "", []string{"login", srv.url}, output.ExitUsage, "--token-stdin"},
+		{"both token flags", admin, []string{"login", srv.url, "--token", admin, "--token-stdin"}, output.ExitUsage, "not both"},
+		{"empty stdin", "\n", []string{"login", srv.url, "--token-stdin"}, output.ExitUsage, "exactly one token"},
+		{"wrong token", "dock_wrong", []string{"login", srv.url, "--token-stdin"}, output.ExitAuth, "Check the token"},
+		{"token on the command line still works", "", []string{"login", srv.url, "--token", admin}, output.ExitOK, ""},
+	}
+	for _, tt := range tests {
+		code, _, stderr := execStdin(t, tt.stdin, tt.args...)
+		if code != int(tt.exit) || !strings.Contains(stderr, tt.stderr) {
+			t.Errorf("%s: exit %d, stderr %q; want exit %d mentioning %q", tt.name, code, stderr, tt.exit, tt.stderr)
+		}
+	}
+
+	// DOCK_TOKEN is only ever sent to DOCK_URL, never to a context's server.
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeRead])
+	if code, _, stderr := exec(t, "whoami"); code != int(output.ExitUsage) || !strings.Contains(stderr, clientconfig.EnvURL) {
+		t.Errorf("DOCK_TOKEN without DOCK_URL: %d %q", code, stderr)
+	}
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	if me := ok[apitypes.Me](t, "whoami"); me.Scope != apitypes.ScopeRead {
+		t.Errorf("DOCK_URL with DOCK_TOKEN: %+v", me)
 	}
 }
 
