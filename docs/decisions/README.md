@@ -20,6 +20,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0010](0010-environments-on-servers.md) | Environments are placed on servers (production vs homelab) | accepted |
 | [0011](0011-stateful-services-and-databases.md) | Stateful services and databases | accepted |
 | [0012](0012-name-tempo-dock.md) | Name: Tempo Dock, CLI `dock` | accepted |
+| [0013](0013-homelab-ingress-cloudflare-tunnel.md) | Homelab ingress through Cloudflare Tunnel | accepted |
 
 ## Template
 

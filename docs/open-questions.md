@@ -3,30 +3,20 @@
 Each question has a current leaning. When answered, record it as a decision in
 [decisions](decisions/README.md) and remove it here.
 
-## Homelab ingress
-
-How does public traffic reach staging and dev domains on the homelab?
-
-- **Port forward 80/443** to the homelab's Caddy. Simple, exposes the home IP,
-  needs dynamic DNS if the IP changes.
-- **Cloudflare Tunnel.** No open ports, hides the home IP, adds a Cloudflare
-  dependency and complicates automatic TLS.
-- **Through production's Caddy** over Tailscale. One public entry point, but
-  staging traffic and availability then depend on production.
-- **Private only** (Tailscale). Safest; staging isn't publicly reachable.
-
-Depends on how the homelab is exposed today.
-
 ## Base domain for generated subdomains
 
-Which domain do we use for generated hostnames (like Railway's
-`*.up.railway.app`)? Needs a wildcard DNS record pointing at the server. See
-[ADR 0009](decisions/0009-dynamic-domains-and-tls.md).
+Which zones do we buy for generated hostnames (like Railway's
+`*.up.railway.app`)? Each server gets its own base domain; the homelab's is a
+Cloudflare zone with a wildcard to the tunnel
+([ADR 0013](decisions/0013-homelab-ingress-cloudflare-tunnel.md)). Until then
+a test server uses `<ip>.sslip.io`.
 
 ## Homelab VM for M0-M2
 
-M0 to M2 run on the homelab. A small VM (2 vCPU, 2-4 GB RAM) with Docker makes
-footprint problems show up early. Which host, and is Tailscale already there?
+Leaning: a fresh, disposable Hetzner VPS (2 vCPU, 4 GB) for M1 and M2 instead
+of the homelab. It has a public IP, so real domains and certificates can be
+tested before the tunnel setup ([ADR 0013](decisions/0013-homelab-ingress-cloudflare-tunnel.md))
+exists, and it can become the production server in M3.
 
 ## UI access
 

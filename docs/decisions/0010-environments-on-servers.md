@@ -89,7 +89,7 @@ instead.
 - Multi-server becomes core: the node protocol, version compatibility between
   control plane and nodes, and per-server health all land in M3.
 - Each server needs its own way to receive public traffic for its domains
-  (see open questions: homelab ingress).
+  (Cloudflare Tunnel on the homelab, see [0013](0013-homelab-ingress-cloudflare-tunnel.md)).
 - The registry needs pruning, like images on the servers.
 - Images built on the homelab and promoted to production make the homelab part
   of production's supply chain. If that's not acceptable for an app, its
