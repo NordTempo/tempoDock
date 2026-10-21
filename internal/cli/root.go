@@ -52,14 +52,15 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 	root.SetIn(io.In)
 	root.SetOut(io.Out)
 	root.SetErr(io.Err)
-	root.AddCommand(
-		newServeCmd(),
-		newAdminCmd(),
-		newOpenAPICmd(),
-		newContextCmd(g),
-		newLogoutCmd(g),
-		newUnlinkCmd(g),
-	)
+	addGroup(root, "start", "Getting started:",
+		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newContextCmd(g), newLogoutCmd(g))
+	addGroup(root, "ship", "Deploy and operate:",
+		newDeployCmd(g), newStatusCmd(g), newLogsCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g),
+		newRollbackCmd(g), newRestartCmd(g))
+	addGroup(root, "config", "Configure (changes are staged until applied):",
+		newEnvironmentCmd(g), newProjectCmd(g))
+	addGroup(root, "server", "Run a server:",
+		newServeCmd(), newAdminCmd(), newOpenAPICmd())
 
 	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
@@ -71,6 +72,15 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 	}
 	io.PrintError(err)
 	return int(output.ExitCodeOf(err))
+}
+
+// addGroup adds cmds to root under a help heading.
+func addGroup(root *cobra.Command, id, title string, cmds ...*cobra.Command) {
+	root.AddGroup(&cobra.Group{ID: id, Title: title})
+	for _, c := range cmds {
+		c.GroupID = id
+		root.AddCommand(c)
+	}
 }
 
 // group makes cmd a parent of subcommands that shows help when run alone
@@ -113,19 +123,33 @@ func (c userConfig) save() error { return c.Save(c.path) }
 // resolve picks the context for the current directory (see
 // clientconfig.Config.Resolve) and turns failures into exit-coded errors.
 func (c userConfig) resolve() (clientconfig.Resolved, error) {
-	var link *clientconfig.Link
-	if wd, err := os.Getwd(); err == nil {
-		if _, l, ok := c.FindLink(wd); ok {
-			link = &l
-		}
+	_, link := c.currentLink()
+	return c.resolveFor(link)
+}
+
+// currentLink returns the link that applies to the working directory and
+// the directory it is stored under, or nil.
+func (c userConfig) currentLink() (string, *clientconfig.Link) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", nil
 	}
+	dir, l, ok := c.FindLink(wd)
+	if !ok {
+		return "", nil
+	}
+	return dir, &l
+}
+
+// resolveFor is resolve with a given link (which may be nil).
+func (c userConfig) resolveFor(link *clientconfig.Link) (clientconfig.Resolved, error) {
 	r, err := c.Resolve(link)
 	switch {
 	case errors.Is(err, clientconfig.ErrNoContext):
 		return r, &output.Error{
 			Exit:    output.ExitAuth,
 			Message: "no server configured",
-			Hint: fmt.Sprintf("Add one with `dock context add <name> --server <url> --token <token>`, or set %s and %s.",
+			Hint: fmt.Sprintf("Log in with `dock login <server-url>`, or set %s and %s.",
 				clientconfig.EnvURL, clientconfig.EnvToken),
 		}
 	case errors.Is(err, clientconfig.ErrContextNotFound):

@@ -57,7 +57,7 @@ func newContextListCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(views, func() error {
 				if len(views) == 0 {
-					_, err := fmt.Fprintln(g.io.Out, "No contexts. Add one with `dock context add <name> --server <url> --token <token>`.")
+					_, err := fmt.Fprintln(g.io.Out, "No contexts. Log in with `dock login <server-url>`.")
 					return err
 				}
 				t := g.io.Table("", "name", "server", "token")
