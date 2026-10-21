@@ -108,10 +108,14 @@ func TestResolve(t *testing.T) {
 	t.Setenv(EnvContext, "prod")
 	check("env context beats link", link, Resolved{Name: "prod", Server: "https://prod", Token: "prod-token", Source: SourceEnvContext})
 
+	// A token without its URL is never sent to a context's server.
 	t.Setenv(EnvToken, "env-token")
-	check("env token overrides", nil, Resolved{Name: "prod", Server: "https://prod", Token: "env-token", Source: SourceEnvContext})
+	if _, err := c.Resolve(link); !errors.Is(err, ErrTokenWithoutURL) {
+		t.Errorf("token without URL: got %v", err)
+	}
 
 	t.Setenv(EnvURL, "https://ci")
+	check("env URL and token go together", link, Resolved{Server: "https://ci", Token: "env-token", Source: SourceEnvURL})
 	t.Setenv(EnvToken, "")
 	check("env URL ignores contexts and their tokens", link, Resolved{Server: "https://ci", Source: SourceEnvURL})
 

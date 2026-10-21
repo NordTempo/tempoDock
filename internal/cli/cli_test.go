@@ -68,7 +68,7 @@ func TestContextLifecycle(t *testing.T) {
 	}
 
 	exec(t, "context", "remove", "home")
-	if code, _, stderr := exec(t, "context", "current"); code != int(output.ExitAuth) || !strings.Contains(stderr, "dock context add") {
+	if code, _, stderr := exec(t, "context", "current"); code != int(output.ExitAuth) || !strings.Contains(stderr, "dock login") {
 		t.Errorf("no current context: %d %q", code, stderr)
 	}
 }
