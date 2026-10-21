@@ -17,6 +17,7 @@ package pack
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -64,7 +65,10 @@ func Write(w io.Writer, dir string, opts Options) (Stats, error) {
 		return Stats{}, fmt.Errorf("read .dockerignore: %w", err)
 	}
 
-	zw := gzip.NewWriter(w)
+	// gzip writes a few hundred bytes at a time; through an io.Pipe into an
+	// HTTP request each of those is a goroutine hand-off and a chunk.
+	bw := bufio.NewWriterSize(w, 64<<10)
+	zw := gzip.NewWriter(bw)
 	tw := tar.NewWriter(zw)
 	var st Stats
 	if err := f.enter(dir, ""); err != nil {
@@ -112,7 +116,10 @@ func Write(w io.Writer, dir string, opts Options) (Stats, error) {
 	if err := tw.Close(); err != nil {
 		return st, err
 	}
-	return st, zw.Close()
+	if err := zw.Close(); err != nil {
+		return st, err
+	}
+	return st, bw.Flush()
 }
 
 // add writes one entry. Directories and regular files keep their permission

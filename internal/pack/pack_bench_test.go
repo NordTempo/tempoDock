@@ -14,6 +14,41 @@ import (
 // node_modules of 2,000 files and a .git directory that must be skipped
 // without being read.
 func BenchmarkWrite(b *testing.B) {
+	dir := benchApp(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		st, err := Write(io.Discard, dir, Options{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if st.Files != 403 {
+			b.Fatalf("packed %d files, want 403", st.Files)
+		}
+	}
+}
+
+// BenchmarkWritePipe packs the same app into an io.Pipe read by another
+// goroutine, as `dock deploy` streams it to the server: every write the
+// packer makes is a hand-off between goroutines.
+func BenchmarkWritePipe(b *testing.B) {
+	dir := benchApp(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		pr, pw := io.Pipe()
+		go func() {
+			_, err := Write(pw, dir, Options{})
+			_ = pw.CloseWithError(err)
+		}()
+		if _, err := io.Copy(io.Discard, pr); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// benchApp writes the benchmark app into a temp dir and sets the
+// benchmark's bytes per op to its source size.
+func benchApp(b *testing.B) string {
+	b.Helper()
 	dir := b.TempDir()
 	write := func(name, body string) {
 		p := filepath.Join(dir, filepath.FromSlash(name))
@@ -43,14 +78,5 @@ func BenchmarkWrite(b *testing.B) {
 		write(fmt.Sprintf(".git/objects/%02x/%038d", i%256, i), "blob")
 	}
 	b.SetBytes(size)
-	b.ReportAllocs()
-	for b.Loop() {
-		st, err := Write(io.Discard, dir, Options{})
-		if err != nil {
-			b.Fatal(err)
-		}
-		if st.Files != 403 {
-			b.Fatalf("packed %d files, want 403", st.Files)
-		}
-	}
+	return dir
 }
