@@ -26,3 +26,7 @@ lint:
 generate:
 	go generate ./...
 	cd web && pnpm gen:api
+
+## dev: run the daemon locally on a fake runtime (no Docker), config in dev/
+dev:
+	PLATFORM_FAKE_RUNTIME=1 go run ./cmd/platform serve --config dev/config.toml
