@@ -13,7 +13,7 @@ import (
 const addAuditEvent = `-- name: AddAuditEvent :one
 INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, project_id, environment_id, target, summary, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at
+RETURNING id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id
 `
 
 type AddAuditEventParams struct {
@@ -55,12 +55,13 @@ func (q *Queries) AddAuditEvent(ctx context.Context, arg AddAuditEventParams) (A
 		&i.Target,
 		&i.Summary,
 		&i.CreatedAt,
+		&i.DetailID,
 	)
 	return i, err
 }
 
 const listAuditEvents = `-- name: ListAuditEvents :many
-SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at,
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id,
        coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
@@ -116,6 +117,7 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 			&i.AuditEvent.Target,
 			&i.AuditEvent.Summary,
 			&i.AuditEvent.CreatedAt,
+			&i.AuditEvent.DetailID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {
@@ -133,7 +135,7 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 }
 
 const listProjectAuditEvents = `-- name: ListProjectAuditEvents :many
-SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at,
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id,
        coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
@@ -188,6 +190,7 @@ func (q *Queries) ListProjectAuditEvents(ctx context.Context, arg ListProjectAud
 			&i.AuditEvent.Target,
 			&i.AuditEvent.Summary,
 			&i.AuditEvent.CreatedAt,
+			&i.AuditEvent.DetailID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {
