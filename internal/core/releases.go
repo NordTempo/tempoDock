@@ -648,7 +648,7 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 		}
 		out.Events = make([]apitypes.ReleaseEvent, 0, len(evs))
 		for _, e := range evs {
-			out.Events = append(out.Events, apitypes.ReleaseEvent{ReleaseNumber: r.Number, Message: e.Message, CreatedAt: e.CreatedAt})
+			out.Events = append(out.Events, apitypes.ReleaseEvent{Seq: e.ID, ReleaseNumber: r.Number, Message: e.Message, CreatedAt: e.CreatedAt})
 		}
 	}
 	return out, nil
@@ -671,7 +671,7 @@ func (c *Core) releaseEvent(ctx context.Context, ss svcScope, r store.Release, m
 	c.log.Info(msg, "service", ss.String())
 	c.publish(ss, apitypes.Event{
 		Type:         apitypes.EventReleaseEvent,
-		ReleaseEvent: &apitypes.ReleaseEvent{ReleaseNumber: r.Number, Message: msg, CreatedAt: row.CreatedAt},
+		ReleaseEvent: &apitypes.ReleaseEvent{Seq: row.ID, ReleaseNumber: r.Number, Message: msg, CreatedAt: row.CreatedAt},
 	})
 }
 

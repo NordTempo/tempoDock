@@ -247,6 +247,10 @@ type VolumeMount struct {
 
 // ReleaseEvent is one progress line of a deploy.
 type ReleaseEvent struct {
+	// Seq increases with every release event (across all releases), so a
+	// client can fetch history and then follow live events without
+	// duplicates. Live events also carry it as the SSE `id:`.
+	Seq           int64     `json:"seq"`
 	ReleaseNumber int64     `json:"release"`
 	Message       string    `json:"message"`
 	CreatedAt     time.Time `json:"created_at"`

@@ -16,8 +16,11 @@ import (
 
 // Stream delivers live items until it ends, ctx is done or send fails.
 // Operations returning a Stream check permissions and load what they need
-// first, so errors surface before a client starts reading.
-type Stream[T any] func(ctx context.Context, send func(T) error) error
+// first, so errors surface before a client starts reading. A stream calls
+// ready once it is live (subscribed to the event bus, or attached to the
+// runtime) and before its first send, so nothing published after a client
+// sees "ready" is missed. An error before ready means nothing was sent.
+type Stream[T any] func(ctx context.Context, ready func(), send func(T) error) error
 
 // EventFilter narrows the event stream. Environment needs Project, and
 // Service needs Environment.
@@ -54,9 +57,10 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[apity
 			(f.Environment == "" || e.ev.Environment == f.Environment) &&
 			(f.Service == "" || e.ev.Service == f.Service)
 	}
-	return func(ctx context.Context, send func(apitypes.Event) error) error {
+	return func(ctx context.Context, ready func(), send func(apitypes.Event) error) error {
 		sub := c.bus.subscribe(match)
 		defer sub.close()
+		ready()
 		for {
 			select {
 			case <-ctx.Done():
@@ -108,7 +112,7 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 	building := func(status string) bool {
 		return status == string(apitypes.ReleaseQueued) || status == string(apitypes.ReleaseBuilding)
 	}
-	return func(ctx context.Context, send func(apitypes.BuildLogLine) error) error {
+	return func(ctx context.Context, ready func(), send func(apitypes.BuildLogLine) error) error {
 		// Subscribe before reading the file so no line falls in between;
 		// line numbers (Seq) drop the duplicates.
 		sub := c.bus.subscribe(func(e busEvent) bool {
@@ -117,6 +121,7 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 					(e.ev.Release != nil && e.ev.Release.Number == number))
 		})
 		defer sub.close()
+		ready()
 		sent := 0
 		catchUp := func() error {
 			lines, err := readLines(c.buildLogPath(rel.ID))
@@ -214,7 +219,7 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 	if rel.ContainerID == "" {
 		return nil, notFound("release %d of %s never started a container; see its build log", rel.Number, ss)
 	}
-	return func(ctx context.Context, send func(apitypes.LogLine) error) error {
+	return func(ctx context.Context, ready func(), send func(apitypes.LogLine) error) error {
 		lines, err := c.runtime(ss.env.ServerID).Logs(ctx, rel.ContainerID, node.LogOptions{Follow: q.Follow, Tail: q.Tail, Since: q.Since})
 		if errors.Is(err, node.ErrNotFound) {
 			return notFound("the container of release %d of %s is gone", rel.Number, ss)
@@ -222,6 +227,7 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 		if err != nil {
 			return err
 		}
+		ready()
 		for l := range lines {
 			if err := send(apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text}); err != nil {
 				return err
