@@ -54,6 +54,10 @@ instead.
 
 ### Placement
 
+Refined by [0015](0015-server-pools-and-placement.md): servers accept
+production and/or non-production environments, there can be several of each,
+and a project stays on one server per kind.
+
 - **An environment lives entirely on one server.** All its services, volumes
   and its private network are on that server. No cross-server networking needed.
 - Each server has a role: `production` or `non-production`.

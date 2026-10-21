@@ -22,6 +22,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0012](0012-name-tempo-dock.md) | Name: Tempo Dock, CLI `dock` | accepted |
 | [0013](0013-homelab-ingress-cloudflare-tunnel.md) | Homelab ingress through Cloudflare Tunnel | accepted |
 | [0014](0014-node-protocol.md) | Node protocol: reverse HTTP/2 over pinned TLS | accepted |
+| [0015](0015-server-pools-and-placement.md) | Server pools, placement and the admin dashboard | accepted |
 
 ## Template
 
