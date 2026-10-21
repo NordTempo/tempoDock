@@ -122,7 +122,8 @@ counts mapped binaries.
 | Requests during 50 route swaps | 0.01% of new connections dropped, 0 wrong responses | Upstream Go limitation, see `internal/node/caddy` |
 | CLI start-up | 2 ms | `dock context list` |
 | UI initial JS | 109 KB gzipped | Tooling scaffold only |
-| Daemon idle | not yet measured | Needs the wired daemon |
+| Daemon idle | 14.5 MB private, 0 CPU ticks in 60 s | 15.5 MB per systemd; 40 MB RSS incl. binary |
+| Whole server idle | ~490 MB used | Docker, Caddy, daemon, one app, BuildKit idle |
 
 Known limits found in the spike:
 

@@ -13,6 +13,8 @@
 #   PUBLIC_IP         address users point DNS at (default: auto-detect)
 #   LISTEN            API/UI address (default: Tailscale IP:7070 if present, else 127.0.0.1:7070)
 #   BASE_DOMAIN       base for generated hostnames, needs wildcard DNS (optional)
+#   DISABLE_TLS       "true" serves plain HTTP only: private LAN/Tailscale setups,
+#                     or behind a Cloudflare Tunnel (ADR 0013)
 set -euo pipefail
 
 CADDY_VERSION="${CADDY_VERSION:-2.11.7}"
@@ -75,6 +77,7 @@ base_domain = "${BASE_DOMAIN:-}"
 admin_socket = "/run/dock-caddy/admin.sock"
 http_port = 80
 https_port = 443
+disable_tls = ${DISABLE_TLS:-false}
 
 [buildkit]
 enabled = true
