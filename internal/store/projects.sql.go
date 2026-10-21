@@ -20,7 +20,7 @@ type CountEnvironmentsByServerRow struct {
 }
 
 func (q *Queries) CountEnvironmentsByServer(ctx context.Context) ([]CountEnvironmentsByServerRow, error) {
-	rows, err := q.db.QueryContext(ctx, countEnvironmentsByServer)
+	rows, err := q.query(ctx, q.countEnvironmentsByServerStmt, countEnvironmentsByServer)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ type CreateEnvironmentParams struct {
 }
 
 func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentParams) (Environment, error) {
-	row := q.db.QueryRowContext(ctx, createEnvironment, arg.ProjectID, arg.Name, arg.ServerID)
+	row := q.queryRow(ctx, q.createEnvironmentStmt, createEnvironment, arg.ProjectID, arg.Name, arg.ServerID)
 	var i Environment
 	err := row.Scan(
 		&i.ID,
@@ -71,7 +71,7 @@ INSERT INTO projects (name) VALUES (?) RETURNING id, name, created_at
 `
 
 func (q *Queries) CreateProject(ctx context.Context, name string) (Project, error) {
-	row := q.db.QueryRowContext(ctx, createProject, name)
+	row := q.queryRow(ctx, q.createProjectStmt, createProject, name)
 	var i Project
 	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
 	return i, err
@@ -92,7 +92,7 @@ type CreateServerParams struct {
 }
 
 func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Server, error) {
-	row := q.db.QueryRowContext(ctx, createServer,
+	row := q.queryRow(ctx, q.createServerStmt, createServer,
 		arg.Name,
 		arg.Role,
 		arg.Builder,
@@ -118,7 +118,7 @@ SELECT id, project_id, name, server_id, created_at, network FROM environments WH
 `
 
 func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, error) {
-	row := q.db.QueryRowContext(ctx, getEnvironment, id)
+	row := q.queryRow(ctx, q.getEnvironmentStmt, getEnvironment, id)
 	var i Environment
 	err := row.Scan(
 		&i.ID,
@@ -141,7 +141,7 @@ type GetEnvironmentByNameParams struct {
 }
 
 func (q *Queries) GetEnvironmentByName(ctx context.Context, arg GetEnvironmentByNameParams) (Environment, error) {
-	row := q.db.QueryRowContext(ctx, getEnvironmentByName, arg.ProjectID, arg.Name)
+	row := q.queryRow(ctx, q.getEnvironmentByNameStmt, getEnvironmentByName, arg.ProjectID, arg.Name)
 	var i Environment
 	err := row.Scan(
 		&i.ID,
@@ -159,7 +159,7 @@ SELECT id, name, role, builder, local, status, last_seen_at, created_at FROM ser
 `
 
 func (q *Queries) GetLocalServer(ctx context.Context) (Server, error) {
-	row := q.db.QueryRowContext(ctx, getLocalServer)
+	row := q.queryRow(ctx, q.getLocalServerStmt, getLocalServer)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -179,7 +179,7 @@ SELECT id, name, created_at FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
-	row := q.db.QueryRowContext(ctx, getProject, id)
+	row := q.queryRow(ctx, q.getProjectStmt, getProject, id)
 	var i Project
 	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
 	return i, err
@@ -190,7 +190,7 @@ SELECT id, name, created_at FROM projects WHERE name = ?
 `
 
 func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, error) {
-	row := q.db.QueryRowContext(ctx, getProjectByName, name)
+	row := q.queryRow(ctx, q.getProjectByNameStmt, getProjectByName, name)
 	var i Project
 	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
 	return i, err
@@ -201,7 +201,7 @@ SELECT id, name, role, builder, local, status, last_seen_at, created_at FROM ser
 `
 
 func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
-	row := q.db.QueryRowContext(ctx, getServer, id)
+	row := q.queryRow(ctx, q.getServerStmt, getServer, id)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -221,7 +221,7 @@ SELECT id, project_id, name, server_id, created_at, network FROM environments WH
 `
 
 func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Environment, error) {
-	rows, err := q.db.QueryContext(ctx, listEnvironments, projectID)
+	rows, err := q.query(ctx, q.listEnvironmentsStmt, listEnvironments, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ SELECT id, name, created_at FROM projects ORDER BY name
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := q.db.QueryContext(ctx, listProjects)
+	rows, err := q.query(ctx, q.listProjectsStmt, listProjects)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ SELECT id, name, role, builder, local, status, last_seen_at, created_at FROM ser
 `
 
 func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
-	rows, err := q.db.QueryContext(ctx, listServers)
+	rows, err := q.query(ctx, q.listServersStmt, listServers)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +325,7 @@ type TouchLocalServerParams struct {
 }
 
 func (q *Queries) TouchLocalServer(ctx context.Context, arg TouchLocalServerParams) (Server, error) {
-	row := q.db.QueryRowContext(ctx, touchLocalServer, arg.Builder, arg.LastSeenAt, arg.ID)
+	row := q.queryRow(ctx, q.touchLocalServerStmt, touchLocalServer, arg.Builder, arg.LastSeenAt, arg.ID)
 	var i Server
 	err := row.Scan(
 		&i.ID,

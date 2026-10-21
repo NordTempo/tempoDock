@@ -15,7 +15,7 @@ UPDATE variables SET value = pending_value, pending = '', pending_value = NULL W
 `
 
 func (q *Queries) ApplyVariable(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, applyVariable, id)
+	_, err := q.exec(ctx, q.applyVariableStmt, applyVariable, id)
 	return err
 }
 
@@ -24,7 +24,7 @@ UPDATE volumes SET pending = 0 WHERE id = ?
 `
 
 func (q *Queries) ApplyVolume(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, applyVolume, id)
+	_, err := q.exec(ctx, q.applyVolumeStmt, applyVolume, id)
 	return err
 }
 
@@ -38,7 +38,7 @@ type ArchiveServiceParams struct {
 }
 
 func (q *Queries) ArchiveService(ctx context.Context, arg ArchiveServiceParams) error {
-	_, err := q.db.ExecContext(ctx, archiveService, arg.ArchivedAt, arg.ID)
+	_, err := q.exec(ctx, q.archiveServiceStmt, archiveService, arg.ArchivedAt, arg.ID)
 	return err
 }
 
@@ -64,7 +64,7 @@ type CreateServiceParams struct {
 }
 
 func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) (Service, error) {
-	row := q.db.QueryRowContext(ctx, createService,
+	row := q.queryRow(ctx, q.createServiceStmt, createService,
 		arg.EnvironmentID,
 		arg.Name,
 		arg.Image,
@@ -111,7 +111,7 @@ type CreateVolumeParams struct {
 }
 
 func (q *Queries) CreateVolume(ctx context.Context, arg CreateVolumeParams) (Volume, error) {
-	row := q.db.QueryRowContext(ctx, createVolume,
+	row := q.queryRow(ctx, q.createVolumeStmt, createVolume,
 		arg.ServiceID,
 		arg.Name,
 		arg.DockerName,
@@ -136,7 +136,7 @@ DELETE FROM variables WHERE id = ?
 `
 
 func (q *Queries) DeleteVariable(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteVariable, id)
+	_, err := q.exec(ctx, q.deleteVariableStmt, deleteVariable, id)
 	return err
 }
 
@@ -146,7 +146,7 @@ DELETE FROM volumes WHERE id = ? AND pending = 1
 
 // Only for discarding staged (never created) volumes.
 func (q *Queries) DeleteVolume(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteVolume, id)
+	_, err := q.exec(ctx, q.deleteVolumeStmt, deleteVolume, id)
 	return err
 }
 
@@ -155,7 +155,7 @@ SELECT id, environment_id, name, image, port, health_check_path, health_check_ti
 `
 
 func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
-	row := q.db.QueryRowContext(ctx, getService, id)
+	row := q.queryRow(ctx, q.getServiceStmt, getService, id)
 	var i Service
 	err := row.Scan(
 		&i.ID,
@@ -187,7 +187,7 @@ type GetServiceByNameParams struct {
 }
 
 func (q *Queries) GetServiceByName(ctx context.Context, arg GetServiceByNameParams) (Service, error) {
-	row := q.db.QueryRowContext(ctx, getServiceByName, arg.EnvironmentID, arg.Name)
+	row := q.queryRow(ctx, q.getServiceByNameStmt, getServiceByName, arg.EnvironmentID, arg.Name)
 	var i Service
 	err := row.Scan(
 		&i.ID,
@@ -223,7 +223,7 @@ type GetVariableParams struct {
 }
 
 func (q *Queries) GetVariable(ctx context.Context, arg GetVariableParams) (Variable, error) {
-	row := q.db.QueryRowContext(ctx, getVariable, arg.EnvironmentID, arg.ServiceID, arg.Key)
+	row := q.queryRow(ctx, q.getVariableStmt, getVariable, arg.EnvironmentID, arg.ServiceID, arg.Key)
 	var i Variable
 	err := row.Scan(
 		&i.ID,
@@ -252,7 +252,7 @@ type InsertVariableParams struct {
 }
 
 func (q *Queries) InsertVariable(ctx context.Context, arg InsertVariableParams) error {
-	_, err := q.db.ExecContext(ctx, insertVariable,
+	_, err := q.exec(ctx, q.insertVariableStmt, insertVariable,
 		arg.EnvironmentID,
 		arg.ServiceID,
 		arg.Key,
@@ -262,12 +262,138 @@ func (q *Queries) InsertVariable(ctx context.Context, arg InsertVariableParams) 
 	return err
 }
 
+const listEnvironmentVolumes = `-- name: ListEnvironmentVolumes :many
+SELECT volumes.id, volumes.service_id, volumes.name, volumes.docker_name, volumes.mount_path, volumes.pending, volumes.created_at FROM volumes
+JOIN services ON services.id = volumes.service_id
+WHERE services.environment_id = ?
+ORDER BY volumes.service_id, volumes.name
+`
+
+// Every volume of every service in an environment, including staged ones.
+func (q *Queries) ListEnvironmentVolumes(ctx context.Context, environmentID int64) ([]Volume, error) {
+	rows, err := q.query(ctx, q.listEnvironmentVolumesStmt, listEnvironmentVolumes, environmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Volume
+	for rows.Next() {
+		var i Volume
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.Name,
+			&i.DockerName,
+			&i.MountPath,
+			&i.Pending,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectServices = `-- name: ListProjectServices :many
+SELECT services.id, services.environment_id, services.name, services.image, services.port, services.health_check_path, services.health_check_timeout_seconds, services.start_command, services.dockerfile_path, services.build_command, services.memory_mb, services.cpus, services.pending_settings, services.created_at, services.archived_at FROM services
+JOIN environments ON environments.id = services.environment_id
+WHERE environments.project_id = ?
+ORDER BY services.environment_id, services.name
+`
+
+// Every service in a project, by environment, then name.
+func (q *Queries) ListProjectServices(ctx context.Context, projectID int64) ([]Service, error) {
+	rows, err := q.query(ctx, q.listProjectServicesStmt, listProjectServices, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Service
+	for rows.Next() {
+		var i Service
+		if err := rows.Scan(
+			&i.ID,
+			&i.EnvironmentID,
+			&i.Name,
+			&i.Image,
+			&i.Port,
+			&i.HealthCheckPath,
+			&i.HealthCheckTimeoutSeconds,
+			&i.StartCommand,
+			&i.DockerfilePath,
+			&i.BuildCommand,
+			&i.MemoryMb,
+			&i.Cpus,
+			&i.PendingSettings,
+			&i.CreatedAt,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectVolumes = `-- name: ListProjectVolumes :many
+SELECT volumes.id, volumes.service_id, volumes.name, volumes.docker_name, volumes.mount_path, volumes.pending, volumes.created_at FROM volumes
+JOIN services ON services.id = volumes.service_id
+JOIN environments ON environments.id = services.environment_id
+WHERE environments.project_id = ?
+ORDER BY volumes.service_id, volumes.name
+`
+
+// Every volume of every service in a project, including staged ones.
+func (q *Queries) ListProjectVolumes(ctx context.Context, projectID int64) ([]Volume, error) {
+	rows, err := q.query(ctx, q.listProjectVolumesStmt, listProjectVolumes, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Volume
+	for rows.Next() {
+		var i Volume
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.Name,
+			&i.DockerName,
+			&i.MountPath,
+			&i.Pending,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServices = `-- name: ListServices :many
 SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at FROM services WHERE environment_id = ? ORDER BY name
 `
 
 func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Service, error) {
-	rows, err := q.db.QueryContext(ctx, listServices, environmentID)
+	rows, err := q.query(ctx, q.listServicesStmt, listServices, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +438,7 @@ SELECT id, environment_id, service_id, "key", value, pending, pending_value, upd
 // All variables of an environment: shared ones (service_id NULL) and every
 // service's own, live and staged.
 func (q *Queries) ListVariables(ctx context.Context, environmentID int64) ([]Variable, error) {
-	rows, err := q.db.QueryContext(ctx, listVariables, environmentID)
+	rows, err := q.query(ctx, q.listVariablesStmt, listVariables, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +474,7 @@ SELECT id, service_id, name, docker_name, mount_path, pending, created_at FROM v
 `
 
 func (q *Queries) ListVolumes(ctx context.Context, serviceID int64) ([]Volume, error) {
-	rows, err := q.db.QueryContext(ctx, listVolumes, serviceID)
+	rows, err := q.query(ctx, q.listVolumesStmt, listVolumes, serviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +514,7 @@ type SetPendingSettingsParams struct {
 }
 
 func (q *Queries) SetPendingSettings(ctx context.Context, arg SetPendingSettingsParams) error {
-	_, err := q.db.ExecContext(ctx, setPendingSettings, arg.PendingSettings, arg.ID)
+	_, err := q.exec(ctx, q.setPendingSettingsStmt, setPendingSettings, arg.PendingSettings, arg.ID)
 	return err
 }
 
@@ -404,7 +530,7 @@ type SetVariablePendingParams struct {
 }
 
 func (q *Queries) SetVariablePending(ctx context.Context, arg SetVariablePendingParams) error {
-	_, err := q.db.ExecContext(ctx, setVariablePending,
+	_, err := q.exec(ctx, q.setVariablePendingStmt, setVariablePending,
 		arg.Pending,
 		arg.PendingValue,
 		arg.UpdatedAt,
@@ -435,7 +561,7 @@ type UpdateServiceParams struct {
 }
 
 func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) (Service, error) {
-	row := q.db.QueryRowContext(ctx, updateService,
+	row := q.queryRow(ctx, q.updateServiceStmt, updateService,
 		arg.Image,
 		arg.Port,
 		arg.HealthCheckPath,

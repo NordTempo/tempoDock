@@ -7,6 +7,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 )
 
 type DBTX interface {
@@ -20,12 +21,928 @@ func New(db DBTX) *Queries {
 	return &Queries{db: db}
 }
 
+func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
+	q := Queries{db: db}
+	var err error
+	if q.activateReleaseStmt, err = db.PrepareContext(ctx, activateRelease); err != nil {
+		return nil, fmt.Errorf("error preparing query ActivateRelease: %w", err)
+	}
+	if q.addAuditEventStmt, err = db.PrepareContext(ctx, addAuditEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query AddAuditEvent: %w", err)
+	}
+	if q.addReleaseEventStmt, err = db.PrepareContext(ctx, addReleaseEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query AddReleaseEvent: %w", err)
+	}
+	if q.applyVariableStmt, err = db.PrepareContext(ctx, applyVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query ApplyVariable: %w", err)
+	}
+	if q.applyVolumeStmt, err = db.PrepareContext(ctx, applyVolume); err != nil {
+		return nil, fmt.Errorf("error preparing query ApplyVolume: %w", err)
+	}
+	if q.archiveServiceStmt, err = db.PrepareContext(ctx, archiveService); err != nil {
+		return nil, fmt.Errorf("error preparing query ArchiveService: %w", err)
+	}
+	if q.clearReleaseHostPortStmt, err = db.PrepareContext(ctx, clearReleaseHostPort); err != nil {
+		return nil, fmt.Errorf("error preparing query ClearReleaseHostPort: %w", err)
+	}
+	if q.countEnvironmentsByServerStmt, err = db.PrepareContext(ctx, countEnvironmentsByServer); err != nil {
+		return nil, fmt.Errorf("error preparing query CountEnvironmentsByServer: %w", err)
+	}
+	if q.countUsersStmt, err = db.PrepareContext(ctx, countUsers); err != nil {
+		return nil, fmt.Errorf("error preparing query CountUsers: %w", err)
+	}
+	if q.createDomainStmt, err = db.PrepareContext(ctx, createDomain); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateDomain: %w", err)
+	}
+	if q.createEnvironmentStmt, err = db.PrepareContext(ctx, createEnvironment); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateEnvironment: %w", err)
+	}
+	if q.createProjectStmt, err = db.PrepareContext(ctx, createProject); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateProject: %w", err)
+	}
+	if q.createReleaseStmt, err = db.PrepareContext(ctx, createRelease); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateRelease: %w", err)
+	}
+	if q.createServerStmt, err = db.PrepareContext(ctx, createServer); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateServer: %w", err)
+	}
+	if q.createServiceStmt, err = db.PrepareContext(ctx, createService); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateService: %w", err)
+	}
+	if q.createSessionStmt, err = db.PrepareContext(ctx, createSession); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateSession: %w", err)
+	}
+	if q.createTokenStmt, err = db.PrepareContext(ctx, createToken); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateToken: %w", err)
+	}
+	if q.createUserStmt, err = db.PrepareContext(ctx, createUser); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateUser: %w", err)
+	}
+	if q.createVolumeStmt, err = db.PrepareContext(ctx, createVolume); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateVolume: %w", err)
+	}
+	if q.deleteDomainStmt, err = db.PrepareContext(ctx, deleteDomain); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteDomain: %w", err)
+	}
+	if q.deleteExpiredSessionsStmt, err = db.PrepareContext(ctx, deleteExpiredSessions); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteExpiredSessions: %w", err)
+	}
+	if q.deleteSessionStmt, err = db.PrepareContext(ctx, deleteSession); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteSession: %w", err)
+	}
+	if q.deleteUserStmt, err = db.PrepareContext(ctx, deleteUser); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteUser: %w", err)
+	}
+	if q.deleteUserSessionsStmt, err = db.PrepareContext(ctx, deleteUserSessions); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteUserSessions: %w", err)
+	}
+	if q.deleteVariableStmt, err = db.PrepareContext(ctx, deleteVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteVariable: %w", err)
+	}
+	if q.deleteVolumeStmt, err = db.PrepareContext(ctx, deleteVolume); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteVolume: %w", err)
+	}
+	if q.failReleaseStmt, err = db.PrepareContext(ctx, failRelease); err != nil {
+		return nil, fmt.Errorf("error preparing query FailRelease: %w", err)
+	}
+	if q.getActiveReleaseStmt, err = db.PrepareContext(ctx, getActiveRelease); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActiveRelease: %w", err)
+	}
+	if q.getDomainByHostnameStmt, err = db.PrepareContext(ctx, getDomainByHostname); err != nil {
+		return nil, fmt.Errorf("error preparing query GetDomainByHostname: %w", err)
+	}
+	if q.getEnvironmentStmt, err = db.PrepareContext(ctx, getEnvironment); err != nil {
+		return nil, fmt.Errorf("error preparing query GetEnvironment: %w", err)
+	}
+	if q.getEnvironmentByNameStmt, err = db.PrepareContext(ctx, getEnvironmentByName); err != nil {
+		return nil, fmt.Errorf("error preparing query GetEnvironmentByName: %w", err)
+	}
+	if q.getInFlightReleaseStmt, err = db.PrepareContext(ctx, getInFlightRelease); err != nil {
+		return nil, fmt.Errorf("error preparing query GetInFlightRelease: %w", err)
+	}
+	if q.getLocalServerStmt, err = db.PrepareContext(ctx, getLocalServer); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLocalServer: %w", err)
+	}
+	if q.getProjectStmt, err = db.PrepareContext(ctx, getProject); err != nil {
+		return nil, fmt.Errorf("error preparing query GetProject: %w", err)
+	}
+	if q.getProjectByNameStmt, err = db.PrepareContext(ctx, getProjectByName); err != nil {
+		return nil, fmt.Errorf("error preparing query GetProjectByName: %w", err)
+	}
+	if q.getReleaseStmt, err = db.PrepareContext(ctx, getRelease); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRelease: %w", err)
+	}
+	if q.getReleaseByNumberStmt, err = db.PrepareContext(ctx, getReleaseByNumber); err != nil {
+		return nil, fmt.Errorf("error preparing query GetReleaseByNumber: %w", err)
+	}
+	if q.getServerStmt, err = db.PrepareContext(ctx, getServer); err != nil {
+		return nil, fmt.Errorf("error preparing query GetServer: %w", err)
+	}
+	if q.getServiceStmt, err = db.PrepareContext(ctx, getService); err != nil {
+		return nil, fmt.Errorf("error preparing query GetService: %w", err)
+	}
+	if q.getServiceByNameStmt, err = db.PrepareContext(ctx, getServiceByName); err != nil {
+		return nil, fmt.Errorf("error preparing query GetServiceByName: %w", err)
+	}
+	if q.getSessionUserStmt, err = db.PrepareContext(ctx, getSessionUser); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSessionUser: %w", err)
+	}
+	if q.getTokenStmt, err = db.PrepareContext(ctx, getToken); err != nil {
+		return nil, fmt.Errorf("error preparing query GetToken: %w", err)
+	}
+	if q.getTokenByHashStmt, err = db.PrepareContext(ctx, getTokenByHash); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTokenByHash: %w", err)
+	}
+	if q.getUserStmt, err = db.PrepareContext(ctx, getUser); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUser: %w", err)
+	}
+	if q.getUserByEmailStmt, err = db.PrepareContext(ctx, getUserByEmail); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUserByEmail: %w", err)
+	}
+	if q.getVariableStmt, err = db.PrepareContext(ctx, getVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query GetVariable: %w", err)
+	}
+	if q.hostnameExistsStmt, err = db.PrepareContext(ctx, hostnameExists); err != nil {
+		return nil, fmt.Errorf("error preparing query HostnameExists: %w", err)
+	}
+	if q.insertVariableStmt, err = db.PrepareContext(ctx, insertVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertVariable: %w", err)
+	}
+	if q.listActiveReleasesStmt, err = db.PrepareContext(ctx, listActiveReleases); err != nil {
+		return nil, fmt.Errorf("error preparing query ListActiveReleases: %w", err)
+	}
+	if q.listAuditEventsStmt, err = db.PrepareContext(ctx, listAuditEvents); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAuditEvents: %w", err)
+	}
+	if q.listAuditEventsByTargetStmt, err = db.PrepareContext(ctx, listAuditEventsByTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAuditEventsByTarget: %w", err)
+	}
+	if q.listDomainsByServiceStmt, err = db.PrepareContext(ctx, listDomainsByService); err != nil {
+		return nil, fmt.Errorf("error preparing query ListDomainsByService: %w", err)
+	}
+	if q.listEnvironmentVolumesStmt, err = db.PrepareContext(ctx, listEnvironmentVolumes); err != nil {
+		return nil, fmt.Errorf("error preparing query ListEnvironmentVolumes: %w", err)
+	}
+	if q.listEnvironmentsStmt, err = db.PrepareContext(ctx, listEnvironments); err != nil {
+		return nil, fmt.Errorf("error preparing query ListEnvironments: %w", err)
+	}
+	if q.listInFlightReleasesStmt, err = db.PrepareContext(ctx, listInFlightReleases); err != nil {
+		return nil, fmt.Errorf("error preparing query ListInFlightReleases: %w", err)
+	}
+	if q.listPendingDomainsStmt, err = db.PrepareContext(ctx, listPendingDomains); err != nil {
+		return nil, fmt.Errorf("error preparing query ListPendingDomains: %w", err)
+	}
+	if q.listProjectAuditEventsStmt, err = db.PrepareContext(ctx, listProjectAuditEvents); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectAuditEvents: %w", err)
+	}
+	if q.listProjectDomainsStmt, err = db.PrepareContext(ctx, listProjectDomains); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectDomains: %w", err)
+	}
+	if q.listProjectReleaseHeadsStmt, err = db.PrepareContext(ctx, listProjectReleaseHeads); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectReleaseHeads: %w", err)
+	}
+	if q.listProjectServicesStmt, err = db.PrepareContext(ctx, listProjectServices); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectServices: %w", err)
+	}
+	if q.listProjectVolumesStmt, err = db.PrepareContext(ctx, listProjectVolumes); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectVolumes: %w", err)
+	}
+	if q.listProjectsStmt, err = db.PrepareContext(ctx, listProjects); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjects: %w", err)
+	}
+	if q.listReleaseEventsStmt, err = db.PrepareContext(ctx, listReleaseEvents); err != nil {
+		return nil, fmt.Errorf("error preparing query ListReleaseEvents: %w", err)
+	}
+	if q.listReleasesStmt, err = db.PrepareContext(ctx, listReleases); err != nil {
+		return nil, fmt.Errorf("error preparing query ListReleases: %w", err)
+	}
+	if q.listRetiredPortHoldersStmt, err = db.PrepareContext(ctx, listRetiredPortHolders); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRetiredPortHolders: %w", err)
+	}
+	if q.listRoutableDomainsStmt, err = db.PrepareContext(ctx, listRoutableDomains); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRoutableDomains: %w", err)
+	}
+	if q.listServersStmt, err = db.PrepareContext(ctx, listServers); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServers: %w", err)
+	}
+	if q.listServicesStmt, err = db.PrepareContext(ctx, listServices); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServices: %w", err)
+	}
+	if q.listTokensStmt, err = db.PrepareContext(ctx, listTokens); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTokens: %w", err)
+	}
+	if q.listUsedHostPortsStmt, err = db.PrepareContext(ctx, listUsedHostPorts); err != nil {
+		return nil, fmt.Errorf("error preparing query ListUsedHostPorts: %w", err)
+	}
+	if q.listUsersStmt, err = db.PrepareContext(ctx, listUsers); err != nil {
+		return nil, fmt.Errorf("error preparing query ListUsers: %w", err)
+	}
+	if q.listVariablesStmt, err = db.PrepareContext(ctx, listVariables); err != nil {
+		return nil, fmt.Errorf("error preparing query ListVariables: %w", err)
+	}
+	if q.listVolumesStmt, err = db.PrepareContext(ctx, listVolumes); err != nil {
+		return nil, fmt.Errorf("error preparing query ListVolumes: %w", err)
+	}
+	if q.nextReleaseNumberStmt, err = db.PrepareContext(ctx, nextReleaseNumber); err != nil {
+		return nil, fmt.Errorf("error preparing query NextReleaseNumber: %w", err)
+	}
+	if q.revokeTokenStmt, err = db.PrepareContext(ctx, revokeToken); err != nil {
+		return nil, fmt.Errorf("error preparing query RevokeToken: %w", err)
+	}
+	if q.setPendingSettingsStmt, err = db.PrepareContext(ctx, setPendingSettings); err != nil {
+		return nil, fmt.Errorf("error preparing query SetPendingSettings: %w", err)
+	}
+	if q.setReleaseContainerStmt, err = db.PrepareContext(ctx, setReleaseContainer); err != nil {
+		return nil, fmt.Errorf("error preparing query SetReleaseContainer: %w", err)
+	}
+	if q.setReleaseImageStmt, err = db.PrepareContext(ctx, setReleaseImage); err != nil {
+		return nil, fmt.Errorf("error preparing query SetReleaseImage: %w", err)
+	}
+	if q.setReleaseStatusStmt, err = db.PrepareContext(ctx, setReleaseStatus); err != nil {
+		return nil, fmt.Errorf("error preparing query SetReleaseStatus: %w", err)
+	}
+	if q.setUserDisabledStmt, err = db.PrepareContext(ctx, setUserDisabled); err != nil {
+		return nil, fmt.Errorf("error preparing query SetUserDisabled: %w", err)
+	}
+	if q.setUserPasswordStmt, err = db.PrepareContext(ctx, setUserPassword); err != nil {
+		return nil, fmt.Errorf("error preparing query SetUserPassword: %w", err)
+	}
+	if q.setVariablePendingStmt, err = db.PrepareContext(ctx, setVariablePending); err != nil {
+		return nil, fmt.Errorf("error preparing query SetVariablePending: %w", err)
+	}
+	if q.supersedeReleaseStmt, err = db.PrepareContext(ctx, supersedeRelease); err != nil {
+		return nil, fmt.Errorf("error preparing query SupersedeRelease: %w", err)
+	}
+	if q.touchLocalServerStmt, err = db.PrepareContext(ctx, touchLocalServer); err != nil {
+		return nil, fmt.Errorf("error preparing query TouchLocalServer: %w", err)
+	}
+	if q.touchTokenStmt, err = db.PrepareContext(ctx, touchToken); err != nil {
+		return nil, fmt.Errorf("error preparing query TouchToken: %w", err)
+	}
+	if q.updateDomainStatusStmt, err = db.PrepareContext(ctx, updateDomainStatus); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateDomainStatus: %w", err)
+	}
+	if q.updateServiceStmt, err = db.PrepareContext(ctx, updateService); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateService: %w", err)
+	}
+	return &q, nil
+}
+
+func (q *Queries) Close() error {
+	var err error
+	if q.activateReleaseStmt != nil {
+		if cerr := q.activateReleaseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing activateReleaseStmt: %w", cerr)
+		}
+	}
+	if q.addAuditEventStmt != nil {
+		if cerr := q.addAuditEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addAuditEventStmt: %w", cerr)
+		}
+	}
+	if q.addReleaseEventStmt != nil {
+		if cerr := q.addReleaseEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addReleaseEventStmt: %w", cerr)
+		}
+	}
+	if q.applyVariableStmt != nil {
+		if cerr := q.applyVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing applyVariableStmt: %w", cerr)
+		}
+	}
+	if q.applyVolumeStmt != nil {
+		if cerr := q.applyVolumeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing applyVolumeStmt: %w", cerr)
+		}
+	}
+	if q.archiveServiceStmt != nil {
+		if cerr := q.archiveServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing archiveServiceStmt: %w", cerr)
+		}
+	}
+	if q.clearReleaseHostPortStmt != nil {
+		if cerr := q.clearReleaseHostPortStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing clearReleaseHostPortStmt: %w", cerr)
+		}
+	}
+	if q.countEnvironmentsByServerStmt != nil {
+		if cerr := q.countEnvironmentsByServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countEnvironmentsByServerStmt: %w", cerr)
+		}
+	}
+	if q.countUsersStmt != nil {
+		if cerr := q.countUsersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countUsersStmt: %w", cerr)
+		}
+	}
+	if q.createDomainStmt != nil {
+		if cerr := q.createDomainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createDomainStmt: %w", cerr)
+		}
+	}
+	if q.createEnvironmentStmt != nil {
+		if cerr := q.createEnvironmentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createEnvironmentStmt: %w", cerr)
+		}
+	}
+	if q.createProjectStmt != nil {
+		if cerr := q.createProjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createProjectStmt: %w", cerr)
+		}
+	}
+	if q.createReleaseStmt != nil {
+		if cerr := q.createReleaseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createReleaseStmt: %w", cerr)
+		}
+	}
+	if q.createServerStmt != nil {
+		if cerr := q.createServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createServerStmt: %w", cerr)
+		}
+	}
+	if q.createServiceStmt != nil {
+		if cerr := q.createServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createServiceStmt: %w", cerr)
+		}
+	}
+	if q.createSessionStmt != nil {
+		if cerr := q.createSessionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createSessionStmt: %w", cerr)
+		}
+	}
+	if q.createTokenStmt != nil {
+		if cerr := q.createTokenStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createTokenStmt: %w", cerr)
+		}
+	}
+	if q.createUserStmt != nil {
+		if cerr := q.createUserStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createUserStmt: %w", cerr)
+		}
+	}
+	if q.createVolumeStmt != nil {
+		if cerr := q.createVolumeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createVolumeStmt: %w", cerr)
+		}
+	}
+	if q.deleteDomainStmt != nil {
+		if cerr := q.deleteDomainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteDomainStmt: %w", cerr)
+		}
+	}
+	if q.deleteExpiredSessionsStmt != nil {
+		if cerr := q.deleteExpiredSessionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteExpiredSessionsStmt: %w", cerr)
+		}
+	}
+	if q.deleteSessionStmt != nil {
+		if cerr := q.deleteSessionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteSessionStmt: %w", cerr)
+		}
+	}
+	if q.deleteUserStmt != nil {
+		if cerr := q.deleteUserStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteUserStmt: %w", cerr)
+		}
+	}
+	if q.deleteUserSessionsStmt != nil {
+		if cerr := q.deleteUserSessionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteUserSessionsStmt: %w", cerr)
+		}
+	}
+	if q.deleteVariableStmt != nil {
+		if cerr := q.deleteVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteVariableStmt: %w", cerr)
+		}
+	}
+	if q.deleteVolumeStmt != nil {
+		if cerr := q.deleteVolumeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteVolumeStmt: %w", cerr)
+		}
+	}
+	if q.failReleaseStmt != nil {
+		if cerr := q.failReleaseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing failReleaseStmt: %w", cerr)
+		}
+	}
+	if q.getActiveReleaseStmt != nil {
+		if cerr := q.getActiveReleaseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActiveReleaseStmt: %w", cerr)
+		}
+	}
+	if q.getDomainByHostnameStmt != nil {
+		if cerr := q.getDomainByHostnameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getDomainByHostnameStmt: %w", cerr)
+		}
+	}
+	if q.getEnvironmentStmt != nil {
+		if cerr := q.getEnvironmentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getEnvironmentStmt: %w", cerr)
+		}
+	}
+	if q.getEnvironmentByNameStmt != nil {
+		if cerr := q.getEnvironmentByNameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getEnvironmentByNameStmt: %w", cerr)
+		}
+	}
+	if q.getInFlightReleaseStmt != nil {
+		if cerr := q.getInFlightReleaseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getInFlightReleaseStmt: %w", cerr)
+		}
+	}
+	if q.getLocalServerStmt != nil {
+		if cerr := q.getLocalServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLocalServerStmt: %w", cerr)
+		}
+	}
+	if q.getProjectStmt != nil {
+		if cerr := q.getProjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getProjectStmt: %w", cerr)
+		}
+	}
+	if q.getProjectByNameStmt != nil {
+		if cerr := q.getProjectByNameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getProjectByNameStmt: %w", cerr)
+		}
+	}
+	if q.getReleaseStmt != nil {
+		if cerr := q.getReleaseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getReleaseStmt: %w", cerr)
+		}
+	}
+	if q.getReleaseByNumberStmt != nil {
+		if cerr := q.getReleaseByNumberStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getReleaseByNumberStmt: %w", cerr)
+		}
+	}
+	if q.getServerStmt != nil {
+		if cerr := q.getServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getServerStmt: %w", cerr)
+		}
+	}
+	if q.getServiceStmt != nil {
+		if cerr := q.getServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getServiceStmt: %w", cerr)
+		}
+	}
+	if q.getServiceByNameStmt != nil {
+		if cerr := q.getServiceByNameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getServiceByNameStmt: %w", cerr)
+		}
+	}
+	if q.getSessionUserStmt != nil {
+		if cerr := q.getSessionUserStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSessionUserStmt: %w", cerr)
+		}
+	}
+	if q.getTokenStmt != nil {
+		if cerr := q.getTokenStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTokenStmt: %w", cerr)
+		}
+	}
+	if q.getTokenByHashStmt != nil {
+		if cerr := q.getTokenByHashStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTokenByHashStmt: %w", cerr)
+		}
+	}
+	if q.getUserStmt != nil {
+		if cerr := q.getUserStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUserStmt: %w", cerr)
+		}
+	}
+	if q.getUserByEmailStmt != nil {
+		if cerr := q.getUserByEmailStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUserByEmailStmt: %w", cerr)
+		}
+	}
+	if q.getVariableStmt != nil {
+		if cerr := q.getVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getVariableStmt: %w", cerr)
+		}
+	}
+	if q.hostnameExistsStmt != nil {
+		if cerr := q.hostnameExistsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing hostnameExistsStmt: %w", cerr)
+		}
+	}
+	if q.insertVariableStmt != nil {
+		if cerr := q.insertVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertVariableStmt: %w", cerr)
+		}
+	}
+	if q.listActiveReleasesStmt != nil {
+		if cerr := q.listActiveReleasesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listActiveReleasesStmt: %w", cerr)
+		}
+	}
+	if q.listAuditEventsStmt != nil {
+		if cerr := q.listAuditEventsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAuditEventsStmt: %w", cerr)
+		}
+	}
+	if q.listAuditEventsByTargetStmt != nil {
+		if cerr := q.listAuditEventsByTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAuditEventsByTargetStmt: %w", cerr)
+		}
+	}
+	if q.listDomainsByServiceStmt != nil {
+		if cerr := q.listDomainsByServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listDomainsByServiceStmt: %w", cerr)
+		}
+	}
+	if q.listEnvironmentVolumesStmt != nil {
+		if cerr := q.listEnvironmentVolumesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listEnvironmentVolumesStmt: %w", cerr)
+		}
+	}
+	if q.listEnvironmentsStmt != nil {
+		if cerr := q.listEnvironmentsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listEnvironmentsStmt: %w", cerr)
+		}
+	}
+	if q.listInFlightReleasesStmt != nil {
+		if cerr := q.listInFlightReleasesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listInFlightReleasesStmt: %w", cerr)
+		}
+	}
+	if q.listPendingDomainsStmt != nil {
+		if cerr := q.listPendingDomainsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listPendingDomainsStmt: %w", cerr)
+		}
+	}
+	if q.listProjectAuditEventsStmt != nil {
+		if cerr := q.listProjectAuditEventsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectAuditEventsStmt: %w", cerr)
+		}
+	}
+	if q.listProjectDomainsStmt != nil {
+		if cerr := q.listProjectDomainsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectDomainsStmt: %w", cerr)
+		}
+	}
+	if q.listProjectReleaseHeadsStmt != nil {
+		if cerr := q.listProjectReleaseHeadsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectReleaseHeadsStmt: %w", cerr)
+		}
+	}
+	if q.listProjectServicesStmt != nil {
+		if cerr := q.listProjectServicesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectServicesStmt: %w", cerr)
+		}
+	}
+	if q.listProjectVolumesStmt != nil {
+		if cerr := q.listProjectVolumesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectVolumesStmt: %w", cerr)
+		}
+	}
+	if q.listProjectsStmt != nil {
+		if cerr := q.listProjectsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectsStmt: %w", cerr)
+		}
+	}
+	if q.listReleaseEventsStmt != nil {
+		if cerr := q.listReleaseEventsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listReleaseEventsStmt: %w", cerr)
+		}
+	}
+	if q.listReleasesStmt != nil {
+		if cerr := q.listReleasesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listReleasesStmt: %w", cerr)
+		}
+	}
+	if q.listRetiredPortHoldersStmt != nil {
+		if cerr := q.listRetiredPortHoldersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRetiredPortHoldersStmt: %w", cerr)
+		}
+	}
+	if q.listRoutableDomainsStmt != nil {
+		if cerr := q.listRoutableDomainsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRoutableDomainsStmt: %w", cerr)
+		}
+	}
+	if q.listServersStmt != nil {
+		if cerr := q.listServersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServersStmt: %w", cerr)
+		}
+	}
+	if q.listServicesStmt != nil {
+		if cerr := q.listServicesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServicesStmt: %w", cerr)
+		}
+	}
+	if q.listTokensStmt != nil {
+		if cerr := q.listTokensStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTokensStmt: %w", cerr)
+		}
+	}
+	if q.listUsedHostPortsStmt != nil {
+		if cerr := q.listUsedHostPortsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listUsedHostPortsStmt: %w", cerr)
+		}
+	}
+	if q.listUsersStmt != nil {
+		if cerr := q.listUsersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listUsersStmt: %w", cerr)
+		}
+	}
+	if q.listVariablesStmt != nil {
+		if cerr := q.listVariablesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listVariablesStmt: %w", cerr)
+		}
+	}
+	if q.listVolumesStmt != nil {
+		if cerr := q.listVolumesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listVolumesStmt: %w", cerr)
+		}
+	}
+	if q.nextReleaseNumberStmt != nil {
+		if cerr := q.nextReleaseNumberStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing nextReleaseNumberStmt: %w", cerr)
+		}
+	}
+	if q.revokeTokenStmt != nil {
+		if cerr := q.revokeTokenStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing revokeTokenStmt: %w", cerr)
+		}
+	}
+	if q.setPendingSettingsStmt != nil {
+		if cerr := q.setPendingSettingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setPendingSettingsStmt: %w", cerr)
+		}
+	}
+	if q.setReleaseContainerStmt != nil {
+		if cerr := q.setReleaseContainerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setReleaseContainerStmt: %w", cerr)
+		}
+	}
+	if q.setReleaseImageStmt != nil {
+		if cerr := q.setReleaseImageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setReleaseImageStmt: %w", cerr)
+		}
+	}
+	if q.setReleaseStatusStmt != nil {
+		if cerr := q.setReleaseStatusStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setReleaseStatusStmt: %w", cerr)
+		}
+	}
+	if q.setUserDisabledStmt != nil {
+		if cerr := q.setUserDisabledStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setUserDisabledStmt: %w", cerr)
+		}
+	}
+	if q.setUserPasswordStmt != nil {
+		if cerr := q.setUserPasswordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setUserPasswordStmt: %w", cerr)
+		}
+	}
+	if q.setVariablePendingStmt != nil {
+		if cerr := q.setVariablePendingStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setVariablePendingStmt: %w", cerr)
+		}
+	}
+	if q.supersedeReleaseStmt != nil {
+		if cerr := q.supersedeReleaseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing supersedeReleaseStmt: %w", cerr)
+		}
+	}
+	if q.touchLocalServerStmt != nil {
+		if cerr := q.touchLocalServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing touchLocalServerStmt: %w", cerr)
+		}
+	}
+	if q.touchTokenStmt != nil {
+		if cerr := q.touchTokenStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing touchTokenStmt: %w", cerr)
+		}
+	}
+	if q.updateDomainStatusStmt != nil {
+		if cerr := q.updateDomainStatusStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateDomainStatusStmt: %w", cerr)
+		}
+	}
+	if q.updateServiceStmt != nil {
+		if cerr := q.updateServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateServiceStmt: %w", cerr)
+		}
+	}
+	return err
+}
+
+func (q *Queries) exec(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (sql.Result, error) {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).ExecContext(ctx, args...)
+	case stmt != nil:
+		return stmt.ExecContext(ctx, args...)
+	default:
+		return q.db.ExecContext(ctx, query, args...)
+	}
+}
+
+func (q *Queries) query(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (*sql.Rows, error) {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).QueryContext(ctx, args...)
+	case stmt != nil:
+		return stmt.QueryContext(ctx, args...)
+	default:
+		return q.db.QueryContext(ctx, query, args...)
+	}
+}
+
+func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) *sql.Row {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).QueryRowContext(ctx, args...)
+	case stmt != nil:
+		return stmt.QueryRowContext(ctx, args...)
+	default:
+		return q.db.QueryRowContext(ctx, query, args...)
+	}
+}
+
 type Queries struct {
-	db DBTX
+	db                            DBTX
+	tx                            *sql.Tx
+	activateReleaseStmt           *sql.Stmt
+	addAuditEventStmt             *sql.Stmt
+	addReleaseEventStmt           *sql.Stmt
+	applyVariableStmt             *sql.Stmt
+	applyVolumeStmt               *sql.Stmt
+	archiveServiceStmt            *sql.Stmt
+	clearReleaseHostPortStmt      *sql.Stmt
+	countEnvironmentsByServerStmt *sql.Stmt
+	countUsersStmt                *sql.Stmt
+	createDomainStmt              *sql.Stmt
+	createEnvironmentStmt         *sql.Stmt
+	createProjectStmt             *sql.Stmt
+	createReleaseStmt             *sql.Stmt
+	createServerStmt              *sql.Stmt
+	createServiceStmt             *sql.Stmt
+	createSessionStmt             *sql.Stmt
+	createTokenStmt               *sql.Stmt
+	createUserStmt                *sql.Stmt
+	createVolumeStmt              *sql.Stmt
+	deleteDomainStmt              *sql.Stmt
+	deleteExpiredSessionsStmt     *sql.Stmt
+	deleteSessionStmt             *sql.Stmt
+	deleteUserStmt                *sql.Stmt
+	deleteUserSessionsStmt        *sql.Stmt
+	deleteVariableStmt            *sql.Stmt
+	deleteVolumeStmt              *sql.Stmt
+	failReleaseStmt               *sql.Stmt
+	getActiveReleaseStmt          *sql.Stmt
+	getDomainByHostnameStmt       *sql.Stmt
+	getEnvironmentStmt            *sql.Stmt
+	getEnvironmentByNameStmt      *sql.Stmt
+	getInFlightReleaseStmt        *sql.Stmt
+	getLocalServerStmt            *sql.Stmt
+	getProjectStmt                *sql.Stmt
+	getProjectByNameStmt          *sql.Stmt
+	getReleaseStmt                *sql.Stmt
+	getReleaseByNumberStmt        *sql.Stmt
+	getServerStmt                 *sql.Stmt
+	getServiceStmt                *sql.Stmt
+	getServiceByNameStmt          *sql.Stmt
+	getSessionUserStmt            *sql.Stmt
+	getTokenStmt                  *sql.Stmt
+	getTokenByHashStmt            *sql.Stmt
+	getUserStmt                   *sql.Stmt
+	getUserByEmailStmt            *sql.Stmt
+	getVariableStmt               *sql.Stmt
+	hostnameExistsStmt            *sql.Stmt
+	insertVariableStmt            *sql.Stmt
+	listActiveReleasesStmt        *sql.Stmt
+	listAuditEventsStmt           *sql.Stmt
+	listAuditEventsByTargetStmt   *sql.Stmt
+	listDomainsByServiceStmt      *sql.Stmt
+	listEnvironmentVolumesStmt    *sql.Stmt
+	listEnvironmentsStmt          *sql.Stmt
+	listInFlightReleasesStmt      *sql.Stmt
+	listPendingDomainsStmt        *sql.Stmt
+	listProjectAuditEventsStmt    *sql.Stmt
+	listProjectDomainsStmt        *sql.Stmt
+	listProjectReleaseHeadsStmt   *sql.Stmt
+	listProjectServicesStmt       *sql.Stmt
+	listProjectVolumesStmt        *sql.Stmt
+	listProjectsStmt              *sql.Stmt
+	listReleaseEventsStmt         *sql.Stmt
+	listReleasesStmt              *sql.Stmt
+	listRetiredPortHoldersStmt    *sql.Stmt
+	listRoutableDomainsStmt       *sql.Stmt
+	listServersStmt               *sql.Stmt
+	listServicesStmt              *sql.Stmt
+	listTokensStmt                *sql.Stmt
+	listUsedHostPortsStmt         *sql.Stmt
+	listUsersStmt                 *sql.Stmt
+	listVariablesStmt             *sql.Stmt
+	listVolumesStmt               *sql.Stmt
+	nextReleaseNumberStmt         *sql.Stmt
+	revokeTokenStmt               *sql.Stmt
+	setPendingSettingsStmt        *sql.Stmt
+	setReleaseContainerStmt       *sql.Stmt
+	setReleaseImageStmt           *sql.Stmt
+	setReleaseStatusStmt          *sql.Stmt
+	setUserDisabledStmt           *sql.Stmt
+	setUserPasswordStmt           *sql.Stmt
+	setVariablePendingStmt        *sql.Stmt
+	supersedeReleaseStmt          *sql.Stmt
+	touchLocalServerStmt          *sql.Stmt
+	touchTokenStmt                *sql.Stmt
+	updateDomainStatusStmt        *sql.Stmt
+	updateServiceStmt             *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db: tx,
+		db:                            tx,
+		tx:                            tx,
+		activateReleaseStmt:           q.activateReleaseStmt,
+		addAuditEventStmt:             q.addAuditEventStmt,
+		addReleaseEventStmt:           q.addReleaseEventStmt,
+		applyVariableStmt:             q.applyVariableStmt,
+		applyVolumeStmt:               q.applyVolumeStmt,
+		archiveServiceStmt:            q.archiveServiceStmt,
+		clearReleaseHostPortStmt:      q.clearReleaseHostPortStmt,
+		countEnvironmentsByServerStmt: q.countEnvironmentsByServerStmt,
+		countUsersStmt:                q.countUsersStmt,
+		createDomainStmt:              q.createDomainStmt,
+		createEnvironmentStmt:         q.createEnvironmentStmt,
+		createProjectStmt:             q.createProjectStmt,
+		createReleaseStmt:             q.createReleaseStmt,
+		createServerStmt:              q.createServerStmt,
+		createServiceStmt:             q.createServiceStmt,
+		createSessionStmt:             q.createSessionStmt,
+		createTokenStmt:               q.createTokenStmt,
+		createUserStmt:                q.createUserStmt,
+		createVolumeStmt:              q.createVolumeStmt,
+		deleteDomainStmt:              q.deleteDomainStmt,
+		deleteExpiredSessionsStmt:     q.deleteExpiredSessionsStmt,
+		deleteSessionStmt:             q.deleteSessionStmt,
+		deleteUserStmt:                q.deleteUserStmt,
+		deleteUserSessionsStmt:        q.deleteUserSessionsStmt,
+		deleteVariableStmt:            q.deleteVariableStmt,
+		deleteVolumeStmt:              q.deleteVolumeStmt,
+		failReleaseStmt:               q.failReleaseStmt,
+		getActiveReleaseStmt:          q.getActiveReleaseStmt,
+		getDomainByHostnameStmt:       q.getDomainByHostnameStmt,
+		getEnvironmentStmt:            q.getEnvironmentStmt,
+		getEnvironmentByNameStmt:      q.getEnvironmentByNameStmt,
+		getInFlightReleaseStmt:        q.getInFlightReleaseStmt,
+		getLocalServerStmt:            q.getLocalServerStmt,
+		getProjectStmt:                q.getProjectStmt,
+		getProjectByNameStmt:          q.getProjectByNameStmt,
+		getReleaseStmt:                q.getReleaseStmt,
+		getReleaseByNumberStmt:        q.getReleaseByNumberStmt,
+		getServerStmt:                 q.getServerStmt,
+		getServiceStmt:                q.getServiceStmt,
+		getServiceByNameStmt:          q.getServiceByNameStmt,
+		getSessionUserStmt:            q.getSessionUserStmt,
+		getTokenStmt:                  q.getTokenStmt,
+		getTokenByHashStmt:            q.getTokenByHashStmt,
+		getUserStmt:                   q.getUserStmt,
+		getUserByEmailStmt:            q.getUserByEmailStmt,
+		getVariableStmt:               q.getVariableStmt,
+		hostnameExistsStmt:            q.hostnameExistsStmt,
+		insertVariableStmt:            q.insertVariableStmt,
+		listActiveReleasesStmt:        q.listActiveReleasesStmt,
+		listAuditEventsStmt:           q.listAuditEventsStmt,
+		listAuditEventsByTargetStmt:   q.listAuditEventsByTargetStmt,
+		listDomainsByServiceStmt:      q.listDomainsByServiceStmt,
+		listEnvironmentVolumesStmt:    q.listEnvironmentVolumesStmt,
+		listEnvironmentsStmt:          q.listEnvironmentsStmt,
+		listInFlightReleasesStmt:      q.listInFlightReleasesStmt,
+		listPendingDomainsStmt:        q.listPendingDomainsStmt,
+		listProjectAuditEventsStmt:    q.listProjectAuditEventsStmt,
+		listProjectDomainsStmt:        q.listProjectDomainsStmt,
+		listProjectReleaseHeadsStmt:   q.listProjectReleaseHeadsStmt,
+		listProjectServicesStmt:       q.listProjectServicesStmt,
+		listProjectVolumesStmt:        q.listProjectVolumesStmt,
+		listProjectsStmt:              q.listProjectsStmt,
+		listReleaseEventsStmt:         q.listReleaseEventsStmt,
+		listReleasesStmt:              q.listReleasesStmt,
+		listRetiredPortHoldersStmt:    q.listRetiredPortHoldersStmt,
+		listRoutableDomainsStmt:       q.listRoutableDomainsStmt,
+		listServersStmt:               q.listServersStmt,
+		listServicesStmt:              q.listServicesStmt,
+		listTokensStmt:                q.listTokensStmt,
+		listUsedHostPortsStmt:         q.listUsedHostPortsStmt,
+		listUsersStmt:                 q.listUsersStmt,
+		listVariablesStmt:             q.listVariablesStmt,
+		listVolumesStmt:               q.listVolumesStmt,
+		nextReleaseNumberStmt:         q.nextReleaseNumberStmt,
+		revokeTokenStmt:               q.revokeTokenStmt,
+		setPendingSettingsStmt:        q.setPendingSettingsStmt,
+		setReleaseContainerStmt:       q.setReleaseContainerStmt,
+		setReleaseImageStmt:           q.setReleaseImageStmt,
+		setReleaseStatusStmt:          q.setReleaseStatusStmt,
+		setUserDisabledStmt:           q.setUserDisabledStmt,
+		setUserPasswordStmt:           q.setUserPasswordStmt,
+		setVariablePendingStmt:        q.setVariablePendingStmt,
+		supersedeReleaseStmt:          q.supersedeReleaseStmt,
+		touchLocalServerStmt:          q.touchLocalServerStmt,
+		touchTokenStmt:                q.touchTokenStmt,
+		updateDomainStatusStmt:        q.updateDomainStatusStmt,
+		updateServiceStmt:             q.updateServiceStmt,
 	}
 }

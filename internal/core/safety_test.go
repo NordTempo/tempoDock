@@ -192,7 +192,12 @@ func TestFailedReleaseKeepsContainerLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []string
-	err = stream(h.ctx, func() {}, func(l apitypes.LogLine) error { got = append(got, l.Text); return nil })
+	err = stream(h.ctx, func() {}, func(ls ...apitypes.LogLine) error {
+		for _, l := range ls {
+			got = append(got, l.Text)
+		}
+		return nil
+	})
 	if err != nil || !slices.Equal(got, []string{"panic: no DATABASE_URL"}) {
 		t.Fatalf("logs = %v, %v", got, err)
 	}
@@ -273,9 +278,25 @@ func TestStatefulRecreateFreesOldPort(t *testing.T) {
 	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, image := range []string{"postgres:17", "postgres:17.1", "postgres:17.2"} {
-		h.deploy(db, image)
+	h.deploy(db, "postgres:17")
+	h.deploy(db, "postgres:17.1")
+	// Release 1's port is freed once its container is removed, just after
+	// release 2 goes live.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		used, err := h.store.ListUsedHostPorts(h.ctx, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(used, 20000) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("release 1's port is still in use: %v", used)
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
+	h.deploy(db, "postgres:17.2")
 	if spec, _ := h.rt.Spec(h.ctr(db, 3)); spec.HostPort != 20000 {
 		t.Fatalf("release 3 got port %d, want release 1's freed 20000", spec.HostPort)
 	}

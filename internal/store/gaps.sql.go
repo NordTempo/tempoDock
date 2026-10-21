@@ -33,7 +33,7 @@ type ListAuditEventsByTargetParams struct {
 // (releases, settings, variables, volumes, domains) target
 // "project/environment/service".
 func (q *Queries) ListAuditEventsByTarget(ctx context.Context, arg ListAuditEventsByTargetParams) ([]AuditEvent, error) {
-	rows, err := q.db.QueryContext(ctx, listAuditEventsByTarget,
+	rows, err := q.query(ctx, q.listAuditEventsByTargetStmt, listAuditEventsByTarget,
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.Target,

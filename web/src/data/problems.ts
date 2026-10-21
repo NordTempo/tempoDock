@@ -1,5 +1,4 @@
-import { useSuspenseQueries } from "@tanstack/react-query";
-import { queries, serviceRef, useProjectOverview, useServers } from "./queries";
+import { useProjectOverview, useServers } from "./queries";
 import type { Problem, ServiceView } from "./types";
 
 /** A domain needs a human until it is active. */
@@ -27,15 +26,10 @@ export function useProblems(project: string): Problem[] {
   const { environments } = useProjectOverview(project);
   const servers = useServers();
   const services = environments.flatMap((e) => e.services);
-  // The overview has no failed releases, so each service's history is read.
-  const latest = useSuspenseQueries({
-    queries: services.map((s) => queries.releases(serviceRef(s.service))),
-    combine: (results) => results.map((r) => r.data[0]),
-  });
 
   const problems: Problem[] = [];
-  services.forEach((service, i) => {
-    const release = latest[i];
+  services.forEach((service) => {
+    const release = service.latest_release;
     if (isFailing(service)) problems.push({ kind: "crashed", service });
     if (service.deploying) {
       problems.push({ kind: "deploying", service, release: service.deploying });

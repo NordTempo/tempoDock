@@ -68,10 +68,17 @@ func TestStreamErrorBeforeReadyIsProblem(t *testing.T) {
 	if resp, _ := f.do("deploy", "POST", shopProd+"/services/web/releases", apitypes.DeployImageRequest{}); resp.StatusCode != 202 {
 		t.Fatal("deploy failed")
 	}
+	// Active, not just started: before that there is no active release.
 	deadline := time.Now().Add(5 * time.Second)
-	for len(f.rt.Running()) == 0 {
+	for {
+		var rel apitypes.Release
+		_, body := f.do("read", "GET", shopProd+"/services/web/releases/1", nil)
+		_ = json.Unmarshal(body, &rel)
+		if rel.Status == apitypes.ReleaseActive {
+			break
+		}
 		if time.Now().After(deadline) {
-			t.Fatal("never started")
+			t.Fatalf("never became active: %s", body)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

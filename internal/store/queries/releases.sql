@@ -72,3 +72,21 @@ JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.server_id = ? AND releases.host_port > 0
   AND releases.status IN ('failed', 'superseded');
+
+-- name: ListProjectReleaseHeads :many
+-- For every service in a project: its active, in-flight and latest
+-- releases. A release in several of these roles appears once per role.
+WITH svc AS (
+    SELECT services.id FROM services
+    JOIN environments ON environments.id = services.environment_id
+    WHERE environments.project_id = ?
+)
+SELECT releases.* FROM releases
+WHERE releases.status = 'active' AND releases.service_id IN (SELECT id FROM svc)
+UNION ALL
+SELECT releases.* FROM releases
+WHERE releases.status IN ('queued', 'building', 'starting', 'health_checking')
+  AND releases.service_id IN (SELECT id FROM svc)
+UNION ALL
+SELECT releases.* FROM svc JOIN releases ON releases.service_id = svc.id
+WHERE releases.number = (SELECT max(latest.number) FROM releases latest WHERE latest.service_id = svc.id);

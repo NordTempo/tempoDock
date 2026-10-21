@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -271,25 +272,29 @@ func (c *Core) AddVolume(ctx context.Context, a Actor, ref ServiceRef, req apity
 }
 
 func (c *Core) toService(ctx context.Context, ss svcScope, pending apitypes.PendingChanges) (apitypes.Service, error) {
-	out := apitypes.Service{
-		ID: ss.svc.ID, Project: ss.project.Name, Environment: ss.env.Name, Name: ss.svc.Name,
-		ServiceSettings: settingsOf(ss.svc), Status: c.getStatus(ss.svc.ID),
-		CreatedAt: ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt,
-		PendingChanges: pending.CountFor(ss.svc.Name),
-	}
-	if active, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
-		out.ActiveRelease = &active.Number
+	var active *int64
+	if r, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
+		active = &r.Number
 	} else if !store.IsNotFound(err) {
-		return out, err
+		return apitypes.Service{}, err
 	}
 	vols, err := c.store.ListVolumes(ctx, ss.svc.ID)
 	if err != nil {
-		return out, err
+		return apitypes.Service{}, err
 	}
-	for _, v := range vols {
-		if !v.Pending {
-			out.Stateful = true
-		}
+	stateful := slices.ContainsFunc(vols, func(v store.Volume) bool { return !v.Pending })
+	return c.serviceOf(ss, pending, active, stateful), nil
+}
+
+// serviceOf builds a service from loaded state: its active release number
+// (nil if none) and whether it has an applied volume. toService loads that
+// for one service; Overview loads it for a whole project at once.
+func (c *Core) serviceOf(ss svcScope, pending apitypes.PendingChanges, active *int64, stateful bool) apitypes.Service {
+	return apitypes.Service{
+		ID: ss.svc.ID, Project: ss.project.Name, Environment: ss.env.Name, Name: ss.svc.Name,
+		ServiceSettings: settingsOf(ss.svc), Status: c.getStatus(ss.svc.ID),
+		ActiveRelease: active, Stateful: stateful,
+		CreatedAt: ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt,
+		PendingChanges: pending.CountFor(ss.svc.Name),
 	}
-	return out, nil
 }

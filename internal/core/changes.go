@@ -424,6 +424,16 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 	if err != nil {
 		return out, err
 	}
+	vols, err := q.ListEnvironmentVolumes(ctx, es.env.ID)
+	if err != nil {
+		return out, err
+	}
+	staged := map[int64][]store.Volume{}
+	for _, v := range vols {
+		if v.Pending {
+			staged[v.ServiceID] = append(staged[v.ServiceID], v)
+		}
+	}
 	svcNames := map[int64]string{}
 	for _, s := range svcs {
 		svcNames[s.ID] = s.Name
@@ -434,14 +444,8 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 		if next != nil {
 			out.Settings = append(out.Settings, settingChanges(s.Name, settingsOf(s), *next)...)
 		}
-		vols, err := q.ListVolumes(ctx, s.ID)
-		if err != nil {
-			return out, err
-		}
-		for _, v := range vols {
-			if v.Pending {
-				out.Volumes = append(out.Volumes, apitypes.VolumeAddition{Service: s.Name, Name: v.Name, MountPath: v.MountPath})
-			}
+		for _, v := range staged[s.ID] {
+			out.Volumes = append(out.Volumes, apitypes.VolumeAddition{Service: s.Name, Name: v.Name, MountPath: v.MountPath})
 		}
 	}
 	vars, err := q.ListVariables(ctx, es.env.ID)

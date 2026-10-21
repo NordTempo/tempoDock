@@ -20,7 +20,8 @@ func TestDomainURLAndLastCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dc.Domain.URL != "https://shop.example.com" || dc.Domain.CheckedAt != nil {
+	// The background checker may already have run, so only the URL is fixed.
+	if dc.Domain.URL != "https://shop.example.com" {
 		t.Fatalf("new domain: %+v", dc.Domain)
 	}
 

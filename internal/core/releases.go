@@ -678,7 +678,8 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 func summarize(r store.Release) *apitypes.ReleaseSummary {
 	return &apitypes.ReleaseSummary{
 		Number: r.Number, Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source),
-		ImageRef: r.ImageRef, ImageID: r.ImageID, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt,
+		ImageRef: r.ImageRef, ImageID: r.ImageID, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
+		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt,
 	}
 }
 
