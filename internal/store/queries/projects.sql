@@ -4,28 +4,28 @@ VALUES (?, ?, ?, ?, ?, 'online', ?, ?)
 RETURNING *;
 
 -- name: TouchLocalServer :one
-UPDATE servers SET builder = ?, status = 'online', last_seen_at = ?, version = ? WHERE id = ?
+UPDATE servers SET builder = ?, status = 'online', last_seen_at = ?, version = ? WHERE id = +?
 RETURNING *;
 
 -- name: GetLocalServer :one
 SELECT * FROM servers WHERE local = 1 ORDER BY id LIMIT 1;
 
 -- name: GetServer :one
-SELECT * FROM servers WHERE id = ?;
+SELECT * FROM servers WHERE id = +?;
 
 -- name: GetServerByName :one
-SELECT * FROM servers WHERE name = ?;
+SELECT * FROM servers WHERE name = +?;
 
 -- name: ListServers :many
 SELECT * FROM servers ORDER BY id;
 
 -- name: UpdateServerPlacement :one
 UPDATE servers SET accepts_production = ?, accepts_non_production = ?, disabled_for_placement = ?
-WHERE id = ?
+WHERE id = +?
 RETURNING *;
 
 -- name: SetServerMemory :exec
-UPDATE servers SET memory_bytes = ? WHERE id = ? AND memory_bytes != ?;
+UPDATE servers SET memory_bytes = ? WHERE id = +? AND memory_bytes != +?;
 
 -- ListServerLoads is everything placement weighs, for every server in one
 -- query: memory reserved by its live services (their limit, or
@@ -43,15 +43,15 @@ SELECT
 FROM servers ORDER BY servers.id;
 
 -- name: GetPlacement :one
-SELECT * FROM project_placements WHERE project_id = ? AND kind = ?;
+SELECT * FROM project_placements WHERE project_id = +? AND kind = +?;
 
 -- name: ListPlacements :many
-SELECT * FROM project_placements WHERE project_id = ? ORDER BY kind;
+SELECT * FROM project_placements WHERE project_id = +? ORDER BY kind;
 
 -- name: ListServerPlacements :many
 SELECT sqlc.embed(project_placements), projects.name AS project_name
 FROM project_placements JOIN projects ON projects.id = project_placements.project_id
-WHERE project_placements.server_id = ? AND projects.archived_at IS NULL
+WHERE project_placements.server_id = +? AND projects.archived_at IS NULL
 ORDER BY projects.name, project_placements.kind;
 
 -- name: UpsertPlacement :exec
@@ -59,22 +59,22 @@ INSERT INTO project_placements (project_id, kind, server_id, pinned) VALUES (?, 
 ON CONFLICT (project_id, kind) DO UPDATE SET server_id = excluded.server_id, pinned = excluded.pinned;
 
 -- name: CountKindEnvironments :one
-SELECT count(*) FROM environments WHERE project_id = ? AND kind = ?;
+SELECT count(*) FROM environments WHERE project_id = +? AND kind = +?;
 
 -- name: ListServerEnvironments :many
 SELECT environments.project_id, environments.name, environments.kind
 FROM environments JOIN projects ON projects.id = environments.project_id
-WHERE environments.server_id = ? AND projects.archived_at IS NULL
+WHERE environments.server_id = +? AND projects.archived_at IS NULL
 ORDER BY environments.project_id, environments.name;
 
 -- name: CreateProject :one
 INSERT INTO projects (name) VALUES (?) RETURNING *;
 
 -- name: GetProjectByName :one
-SELECT * FROM projects WHERE name = ?;
+SELECT * FROM projects WHERE name = +?;
 
 -- name: GetProject :one
-SELECT * FROM projects WHERE id = ?;
+SELECT * FROM projects WHERE id = +?;
 
 -- name: ListProjects :many
 SELECT * FROM projects ORDER BY name;
@@ -83,13 +83,13 @@ SELECT * FROM projects ORDER BY name;
 INSERT INTO environments (project_id, name, kind, server_id) VALUES (?, ?, ?, ?) RETURNING *;
 
 -- name: GetEnvironmentByName :one
-SELECT * FROM environments WHERE project_id = ? AND name = ?;
+SELECT * FROM environments WHERE project_id = +? AND name = +?;
 
 -- name: GetEnvironment :one
-SELECT * FROM environments WHERE id = ?;
+SELECT * FROM environments WHERE id = +?;
 
 -- name: ListEnvironments :many
-SELECT * FROM environments WHERE project_id = ? ORDER BY name;
+SELECT * FROM environments WHERE project_id = +? ORDER BY name;
 
 -- name: ArchiveProject :exec
-UPDATE projects SET archived_at = ? WHERE id = ? AND archived_at IS NULL;
+UPDATE projects SET archived_at = ? WHERE id = +? AND archived_at IS NULL;

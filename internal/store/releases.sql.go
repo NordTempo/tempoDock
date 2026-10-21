@@ -11,7 +11,7 @@ import (
 )
 
 const activateRelease = `-- name: ActivateRelease :exec
-UPDATE releases SET status = 'active', finished_at = ? WHERE id = ?
+UPDATE releases SET status = 'active', finished_at = ? WHERE id = +?
 `
 
 type ActivateReleaseParams struct {
@@ -47,7 +47,7 @@ func (q *Queries) AddReleaseEvent(ctx context.Context, arg AddReleaseEventParams
 }
 
 const clearReleaseHostPort = `-- name: ClearReleaseHostPort :exec
-UPDATE releases SET host_port = 0 WHERE id = ? AND status IN ('failed', 'superseded')
+UPDATE releases SET host_port = 0 WHERE id = +? AND status IN ('failed', 'superseded')
 `
 
 // Frees a retired release's port once its containers are gone.
@@ -112,7 +112,7 @@ func (q *Queries) CreateRelease(ctx context.Context, arg CreateReleaseParams) (R
 }
 
 const failRelease = `-- name: FailRelease :exec
-UPDATE releases SET status = 'failed', error = ?, error_code = ?, finished_at = ? WHERE id = ?
+UPDATE releases SET status = 'failed', error = ?, error_code = ?, finished_at = ? WHERE id = +?
 `
 
 type FailReleaseParams struct {
@@ -133,7 +133,7 @@ func (q *Queries) FailRelease(ctx context.Context, arg FailReleaseParams) error 
 }
 
 const getActiveRelease = `-- name: GetActiveRelease :one
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = ? AND status = 'active'
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = +? AND status = 'active'
 `
 
 func (q *Queries) GetActiveRelease(ctx context.Context, serviceID int64) (Release, error) {
@@ -163,7 +163,7 @@ func (q *Queries) GetActiveRelease(ctx context.Context, serviceID int64) (Releas
 
 const getInFlightRelease = `-- name: GetInFlightRelease :one
 SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases
-WHERE service_id = ? AND status IN ('queued', 'building', 'starting', 'health_checking')
+WHERE service_id = +? AND status IN ('queued', 'building', 'starting', 'health_checking')
 `
 
 func (q *Queries) GetInFlightRelease(ctx context.Context, serviceID int64) (Release, error) {
@@ -192,7 +192,7 @@ func (q *Queries) GetInFlightRelease(ctx context.Context, serviceID int64) (Rele
 }
 
 const getRelease = `-- name: GetRelease :one
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE id = ?
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE id = +?
 `
 
 func (q *Queries) GetRelease(ctx context.Context, id int64) (Release, error) {
@@ -221,7 +221,7 @@ func (q *Queries) GetRelease(ctx context.Context, id int64) (Release, error) {
 }
 
 const getReleaseByNumber = `-- name: GetReleaseByNumber :one
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = ? AND number = ?
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = +? AND number = +?
 `
 
 type GetReleaseByNumberParams struct {
@@ -348,7 +348,7 @@ const listProjectReleaseHeads = `-- name: ListProjectReleaseHeads :many
 WITH svc AS (
     SELECT services.id FROM services
     JOIN environments ON environments.id = services.environment_id
-    WHERE environments.project_id = ?
+    WHERE environments.project_id = +?
 )
 SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried FROM releases
 WHERE releases.status = 'active' AND releases.service_id IN (SELECT id FROM svc)
@@ -405,7 +405,7 @@ func (q *Queries) ListProjectReleaseHeads(ctx context.Context, projectID int64) 
 }
 
 const listReleaseEvents = `-- name: ListReleaseEvents :many
-SELECT id, release_id, message, created_at FROM release_events WHERE release_id = ? ORDER BY id
+SELECT id, release_id, message, created_at FROM release_events WHERE release_id = +? ORDER BY id
 `
 
 func (q *Queries) ListReleaseEvents(ctx context.Context, releaseID int64) ([]ReleaseEvent, error) {
@@ -437,7 +437,7 @@ func (q *Queries) ListReleaseEvents(ctx context.Context, releaseID int64) ([]Rel
 }
 
 const listReleases = `-- name: ListReleases :many
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = ? ORDER BY number DESC LIMIT ?
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = +? ORDER BY number DESC LIMIT +?
 `
 
 type ListReleasesParams struct {
@@ -490,7 +490,7 @@ const listRetiredPortHolders = `-- name: ListRetiredPortHolders :many
 SELECT releases.id FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
-WHERE environments.server_id = ? AND releases.host_port > 0
+WHERE environments.server_id = +? AND releases.host_port > 0
   AND releases.status IN ('failed', 'superseded')
 `
 
@@ -522,7 +522,7 @@ const listUsedHostPorts = `-- name: ListUsedHostPorts :many
 SELECT releases.host_port FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
-WHERE environments.server_id = ? AND releases.host_port > 0
+WHERE environments.server_id = +? AND releases.host_port > 0
 `
 
 // Host ports held on one server. A release keeps its port until its
@@ -552,7 +552,7 @@ func (q *Queries) ListUsedHostPorts(ctx context.Context, serverID int64) ([]int6
 }
 
 const nextReleaseNumber = `-- name: NextReleaseNumber :one
-SELECT CAST(coalesce(max(number), 0) + 1 AS INTEGER) AS next FROM releases WHERE service_id = ?
+SELECT CAST(coalesce(max(number), 0) + 1 AS INTEGER) AS next FROM releases WHERE service_id = +?
 `
 
 func (q *Queries) NextReleaseNumber(ctx context.Context, serviceID int64) (int64, error) {
@@ -563,7 +563,7 @@ func (q *Queries) NextReleaseNumber(ctx context.Context, serviceID int64) (int64
 }
 
 const setReleaseContainer = `-- name: SetReleaseContainer :exec
-UPDATE releases SET container_id = ? WHERE id = ?
+UPDATE releases SET container_id = ? WHERE id = +?
 `
 
 type SetReleaseContainerParams struct {
@@ -577,7 +577,7 @@ func (q *Queries) SetReleaseContainer(ctx context.Context, arg SetReleaseContain
 }
 
 const setReleaseImage = `-- name: SetReleaseImage :exec
-UPDATE releases SET image_ref = ?, image_id = ? WHERE id = ?
+UPDATE releases SET image_ref = ?, image_id = ? WHERE id = +?
 `
 
 type SetReleaseImageParams struct {
@@ -592,7 +592,7 @@ func (q *Queries) SetReleaseImage(ctx context.Context, arg SetReleaseImageParams
 }
 
 const setReleaseStatus = `-- name: SetReleaseStatus :exec
-UPDATE releases SET status = ? WHERE id = ?
+UPDATE releases SET status = ? WHERE id = +?
 `
 
 type SetReleaseStatusParams struct {
@@ -606,7 +606,7 @@ func (q *Queries) SetReleaseStatus(ctx context.Context, arg SetReleaseStatusPara
 }
 
 const supersedeRelease = `-- name: SupersedeRelease :exec
-UPDATE releases SET status = 'superseded' WHERE id = ? AND status = 'active'
+UPDATE releases SET status = 'superseded' WHERE id = +? AND status = 'active'
 `
 
 func (q *Queries) SupersedeRelease(ctx context.Context, id int64) error {

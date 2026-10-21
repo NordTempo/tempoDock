@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -24,8 +25,7 @@ func (c *Core) listServiceAudit(ctx context.Context, a Actor, f AuditFilter) ([]
 		params.MaxRows = 100
 	}
 	if f.Action != "" {
-		prefix := f.Action + "%"
-		params.ActionPrefix = &prefix
+		params.ActionFrom, params.ActionTo = prefixRange(f.Action)
 	}
 	if f.Before > 0 {
 		params.BeforeID = &f.Before
@@ -42,4 +42,16 @@ func (c *Core) listServiceAudit(ctx context.Context, a Actor, f AuditFilter) ([]
 		})
 	}
 	return out, nil
+}
+
+// prefixRange is the range [from, to) of the actions that start with
+// prefix, which queries match instead of `LIKE prefix%` (that makes SQLite
+// re-prepare the statement on every call). Actions are lower case, as LIKE
+// matched case-insensitively.
+func prefixRange(prefix string) (from, to *string) {
+	f := strings.ToLower(prefix)
+	b := []byte(f)
+	b[len(b)-1]++ // never 0xff in UTF-8
+	t := string(b)
+	return &f, &t
 }

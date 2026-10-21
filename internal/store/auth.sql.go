@@ -117,7 +117,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
-DELETE FROM sessions WHERE expires_at < ?
+DELETE FROM sessions WHERE expires_at < +?
 `
 
 func (q *Queries) DeleteExpiredSessions(ctx context.Context, expiresAt time.Time) error {
@@ -126,7 +126,7 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context, expiresAt time.Time
 }
 
 const deleteSession = `-- name: DeleteSession :exec
-DELETE FROM sessions WHERE hash = ?
+DELETE FROM sessions WHERE hash = +?
 `
 
 func (q *Queries) DeleteSession(ctx context.Context, hash string) error {
@@ -135,7 +135,7 @@ func (q *Queries) DeleteSession(ctx context.Context, hash string) error {
 }
 
 const deleteUser = `-- name: DeleteUser :exec
-DELETE FROM users WHERE id = ?
+DELETE FROM users WHERE id = +?
 `
 
 func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
@@ -144,7 +144,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const deleteUserSessions = `-- name: DeleteUserSessions :exec
-DELETE FROM sessions WHERE user_id = ?
+DELETE FROM sessions WHERE user_id = +?
 `
 
 func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
@@ -155,7 +155,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 const getSessionUser = `-- name: GetSessionUser :one
 SELECT users.id, users.email, users.name, users.password_hash, users.role, users.created_at, users.disabled_at, sessions.expires_at AS session_expires_at
 FROM sessions JOIN users ON users.id = sessions.user_id
-WHERE sessions.hash = ?
+WHERE sessions.hash = +?
 `
 
 type GetSessionUserRow struct {
@@ -180,7 +180,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 }
 
 const getToken = `-- name: GetToken :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive FROM tokens WHERE id = ?
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive FROM tokens WHERE id = +?
 `
 
 func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
@@ -207,7 +207,7 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
 }
 
 const getTokenByHash = `-- name: GetTokenByHash :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive FROM tokens WHERE hash = ?
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive FROM tokens WHERE hash = +?
 `
 
 func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (Token, error) {
@@ -234,7 +234,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (Token, error
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users WHERE id = ?
+SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users WHERE id = +?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -253,7 +253,7 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users WHERE email = ?
+SELECT id, email, name, password_hash, role, created_at, disabled_at FROM users WHERE email = +?
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -316,9 +316,9 @@ func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
 
 const listUsersWithCounts = `-- name: ListUsersWithCounts :many
 SELECT users.id, users.email, users.name, users.password_hash, users.role, users.created_at, users.disabled_at,
-    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > ?1) AS INTEGER) AS sessions,
+    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.created_by = users.email AND tokens.revoked_at IS NULL
-        AND (tokens.expires_at IS NULL OR tokens.expires_at > ?1)) AS INTEGER) AS tokens
+        AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens
 FROM users ORDER BY users.id
 `
 
@@ -364,7 +364,7 @@ func (q *Queries) ListUsersWithCounts(ctx context.Context, now time.Time) ([]Lis
 }
 
 const revokeToken = `-- name: RevokeToken :exec
-UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL
+UPDATE tokens SET revoked_at = ? WHERE id = +? AND revoked_at IS NULL
 `
 
 type RevokeTokenParams struct {
@@ -378,7 +378,7 @@ func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) error 
 }
 
 const setUserDisabled = `-- name: SetUserDisabled :exec
-UPDATE users SET disabled_at = ? WHERE id = ?
+UPDATE users SET disabled_at = ? WHERE id = +?
 `
 
 type SetUserDisabledParams struct {
@@ -392,7 +392,7 @@ func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams
 }
 
 const setUserPassword = `-- name: SetUserPassword :exec
-UPDATE users SET password_hash = ? WHERE id = ?
+UPDATE users SET password_hash = ? WHERE id = +?
 `
 
 type SetUserPasswordParams struct {
@@ -406,7 +406,7 @@ func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams
 }
 
 const touchToken = `-- name: TouchToken :exec
-UPDATE tokens SET last_used_at = ? WHERE id = ?
+UPDATE tokens SET last_used_at = ? WHERE id = +?
 `
 
 type TouchTokenParams struct {

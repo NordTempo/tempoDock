@@ -66,17 +66,18 @@ SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_event
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
 LEFT JOIN environments ON environments.id = audit_events.environment_id
-WHERE audit_events.id < ?1
-  AND (audit_events.environment_id = ?2 OR ?2 IS NULL)
-  AND (audit_events.action LIKE ?3 OR ?3 IS NULL)
+WHERE audit_events.id < +?1
+  AND (audit_events.environment_id = +?2 OR ?2 IS NULL)
+  AND ((audit_events.action >= +?3 AND audit_events.action < +?4) OR ?3 IS NULL)
 ORDER BY audit_events.id DESC
-LIMIT ?4
+LIMIT +?5
 `
 
 type ListAuditEventsParams struct {
 	BeforeID      int64
 	EnvironmentID *int64
-	ActionPrefix  *string
+	ActionFrom    *string
+	ActionTo      *string
 	MaxRows       int64
 }
 
@@ -88,14 +89,17 @@ type ListAuditEventsRow struct {
 
 // Newest first, with project and environment names. Nil filters match
 // everything; only events with IDs below before_id are returned (pass
-// math.MaxInt64 for the newest). Use ListProjectAuditEvents to filter by
+// math.MaxInt64 for the newest). An action prefix is the range
+// [action_from, action_to) (see core.prefixRange): LIKE would make SQLite
+// re-prepare the statement on every call. Use ListProjectAuditEvents to filter by
 // project: an optional project filter here would keep SQLite from using
 // the audit_events_project index.
 func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]ListAuditEventsRow, error) {
 	rows, err := q.query(ctx, q.listAuditEventsStmt, listAuditEvents,
 		arg.BeforeID,
 		arg.EnvironmentID,
-		arg.ActionPrefix,
+		arg.ActionFrom,
+		arg.ActionTo,
 		arg.MaxRows,
 	)
 	if err != nil {
@@ -140,19 +144,20 @@ SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_event
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
 LEFT JOIN environments ON environments.id = audit_events.environment_id
-WHERE audit_events.project_id = ?1
-  AND audit_events.id < ?2
-  AND (audit_events.environment_id = ?3 OR ?3 IS NULL)
-  AND (audit_events.action LIKE ?4 OR ?4 IS NULL)
+WHERE audit_events.project_id = +?1
+  AND audit_events.id < +?2
+  AND (audit_events.environment_id = +?3 OR ?3 IS NULL)
+  AND ((audit_events.action >= +?4 AND audit_events.action < +?5) OR ?4 IS NULL)
 ORDER BY audit_events.id DESC
-LIMIT ?5
+LIMIT +?6
 `
 
 type ListProjectAuditEventsParams struct {
 	ProjectID     *int64
 	BeforeID      int64
 	EnvironmentID *int64
-	ActionPrefix  *string
+	ActionFrom    *string
+	ActionTo      *string
 	MaxRows       int64
 }
 
@@ -168,7 +173,8 @@ func (q *Queries) ListProjectAuditEvents(ctx context.Context, arg ListProjectAud
 		arg.ProjectID,
 		arg.BeforeID,
 		arg.EnvironmentID,
-		arg.ActionPrefix,
+		arg.ActionFrom,
+		arg.ActionTo,
 		arg.MaxRows,
 	)
 	if err != nil {

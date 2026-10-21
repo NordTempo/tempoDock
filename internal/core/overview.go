@@ -169,8 +169,7 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 		params.EnvironmentID = &a.EnvironmentID
 	}
 	if f.Action != "" {
-		prefix := f.Action + "%"
-		params.ActionPrefix = &prefix
+		params.ActionFrom, params.ActionTo = prefixRange(f.Action)
 	}
 	var rows []store.ListAuditEventsRow
 	if projectID != nil {
@@ -178,7 +177,7 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 		// audit_events_project instead of scanning the whole log.
 		prows, err := c.store.ListProjectAuditEvents(ctx, store.ListProjectAuditEventsParams{
 			ProjectID: projectID, BeforeID: params.BeforeID, EnvironmentID: params.EnvironmentID,
-			ActionPrefix: params.ActionPrefix, MaxRows: params.MaxRows,
+			ActionFrom: params.ActionFrom, ActionTo: params.ActionTo, MaxRows: params.MaxRows,
 		})
 		if err != nil {
 			return nil, err

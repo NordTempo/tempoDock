@@ -37,4 +37,30 @@ func TestAuditFilterByService(t *testing.T) {
 	if _, err := h.c.ListAudit(h.ctx, System, AuditFilter{Project: "shop", Service: "web"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("service without environment: %v", err)
 	}
+
+	// An action filter is a prefix, in every query shape.
+	for _, tc := range []struct {
+		f    AuditFilter
+		want int
+	}{
+		{AuditFilter{Action: "Release."}, 2},
+		{AuditFilter{Project: "shop", Action: "release."}, 2},
+		{AuditFilter{Project: "shop", Environment: "production", Service: "web", Action: "release."}, 1},
+	} {
+		f := tc.f
+		events, err := h.c.ListAudit(h.ctx, System, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var services []string
+		for _, e := range events {
+			if e.Action != "release.deploy" {
+				t.Errorf("%+v: action %s", f, e.Action)
+			}
+			services = append(services, e.Target)
+		}
+		if len(events) != tc.want {
+			t.Errorf("%+v: events for %v, want %d", f, services, tc.want)
+		}
+	}
 }

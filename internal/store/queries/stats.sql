@@ -32,25 +32,25 @@ INSERT OR REPLACE INTO service_stats (res, at, service_id, cpu, memory, io_read,
 -- name: DownsampleServerStats :exec
 INSERT OR REPLACE INTO server_stats (res, at, server_id, cpu, memory, disk, load1)
 SELECT 600, sqlc.arg(from_at), m.server_id, CAST(avg(m.cpu) AS INTEGER), CAST(avg(m.memory) AS INTEGER), max(m.disk), CAST(avg(m.load1) AS INTEGER)
-FROM server_stats AS m WHERE m.res = 60 AND m.at >= sqlc.arg(from_at) AND m.at < sqlc.arg(to_at)
+FROM server_stats AS m WHERE m.res = 60 AND m.at >= +sqlc.arg(from_at) AND m.at < +sqlc.arg(to_at)
 GROUP BY m.server_id;
 
 -- name: DownsampleServiceStats :exec
 INSERT OR REPLACE INTO service_stats (res, at, service_id, cpu, memory, io_read, io_write)
 SELECT 600, sqlc.arg(from_at), m.service_id, CAST(avg(m.cpu) AS INTEGER), CAST(avg(m.memory) AS INTEGER), CAST(avg(m.io_read) AS INTEGER), CAST(avg(m.io_write) AS INTEGER)
-FROM service_stats AS m WHERE m.res = 60 AND m.at >= sqlc.arg(from_at) AND m.at < sqlc.arg(to_at)
+FROM service_stats AS m WHERE m.res = 60 AND m.at >= +sqlc.arg(from_at) AND m.at < +sqlc.arg(to_at)
 GROUP BY m.service_id;
 
 -- name: PruneServerStats :exec
-DELETE FROM server_stats WHERE res = ? AND at < ?;
+DELETE FROM server_stats WHERE res = +? AND at < +?;
 
 -- name: PruneServiceStats :exec
-DELETE FROM service_stats WHERE res = ? AND at < ?;
+DELETE FROM service_stats WHERE res = +? AND at < +?;
 
 -- name: ListServerStats :many
 SELECT at, cpu, memory, disk, load1 FROM server_stats
-WHERE res = ? AND at >= ? AND server_id = ? ORDER BY at;
+WHERE res = +? AND at >= +? AND server_id = +? ORDER BY at;
 
 -- name: ListServiceStats :many
 SELECT at, cpu, memory, io_read, io_write FROM service_stats
-WHERE res = ? AND at >= ? AND service_id = ? ORDER BY at;
+WHERE res = +? AND at >= +? AND service_id = +? ORDER BY at;

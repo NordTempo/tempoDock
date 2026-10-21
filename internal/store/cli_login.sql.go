@@ -11,7 +11,7 @@ import (
 )
 
 const countPendingCLILogins = `-- name: CountPendingCLILogins :one
-SELECT count(*) FROM cli_logins WHERE status = 'pending' AND expires_at > ?
+SELECT count(*) FROM cli_logins WHERE status = 'pending' AND expires_at > +?
 `
 
 func (q *Queries) CountPendingCLILogins(ctx context.Context, expiresAt time.Time) (int64, error) {
@@ -111,7 +111,7 @@ func (q *Queries) CreateCLILoginToken(ctx context.Context, arg CreateCLILoginTok
 
 const decideCLILogin = `-- name: DecideCLILogin :execrows
 UPDATE cli_logins SET status = ?, user_id = ?
-WHERE id = ? AND status = 'pending' AND expires_at > ?
+WHERE id = +? AND status = 'pending' AND expires_at > +?
 `
 
 type DecideCLILoginParams struct {
@@ -135,7 +135,7 @@ func (q *Queries) DecideCLILogin(ctx context.Context, arg DecideCLILoginParams) 
 }
 
 const deleteCLILogin = `-- name: DeleteCLILogin :execrows
-DELETE FROM cli_logins WHERE id = ? AND status = ?
+DELETE FROM cli_logins WHERE id = +? AND status = +?
 `
 
 type DeleteCLILoginParams struct {
@@ -152,7 +152,7 @@ func (q *Queries) DeleteCLILogin(ctx context.Context, arg DeleteCLILoginParams) 
 }
 
 const deleteExpiredCLILogins = `-- name: DeleteExpiredCLILogins :exec
-DELETE FROM cli_logins WHERE expires_at < ?
+DELETE FROM cli_logins WHERE expires_at < +?
 `
 
 func (q *Queries) DeleteExpiredCLILogins(ctx context.Context, expiresAt time.Time) error {
@@ -161,7 +161,7 @@ func (q *Queries) DeleteExpiredCLILogins(ctx context.Context, expiresAt time.Tim
 }
 
 const getCLILoginByDeviceHash = `-- name: GetCLILoginByDeviceHash :one
-SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id FROM cli_logins WHERE device_hash = ?
+SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id FROM cli_logins WHERE device_hash = +?
 `
 
 func (q *Queries) GetCLILoginByDeviceHash(ctx context.Context, deviceHash string) (CliLogin, error) {
@@ -184,7 +184,7 @@ func (q *Queries) GetCLILoginByDeviceHash(ctx context.Context, deviceHash string
 }
 
 const getCLILoginByUserCode = `-- name: GetCLILoginByUserCode :one
-SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id FROM cli_logins WHERE user_code = ?
+SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id FROM cli_logins WHERE user_code = +?
 `
 
 func (q *Queries) GetCLILoginByUserCode(ctx context.Context, userCode string) (CliLogin, error) {
