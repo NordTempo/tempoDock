@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build web test test-integration lint generate dev
+.PHONY: build web test test-integration lint generate dev perf perf-baseline
 
 ## build: the single static binary (UI embedded if web/dist is built)
 build:
@@ -30,3 +30,11 @@ generate:
 ## dev: run the daemon locally on a fake runtime (no Docker), config in dev/
 dev:
 	DOCK_FAKE_RUNTIME=1 go run ./cmd/dock serve --config dev/config.toml
+
+## perf: check performance budgets (docs/performance.md); builds the UI and binary first
+perf: web build
+	go run ./scripts/perf $(PERF_FLAGS)
+
+## perf-baseline: re-record binary size and benchmarks in scripts/perf/baseline.json
+perf-baseline: web build
+	go run ./scripts/perf -update-baseline $(PERF_FLAGS)
