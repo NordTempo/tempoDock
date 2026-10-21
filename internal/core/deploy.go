@@ -258,7 +258,9 @@ func (d *deployment) cutover(ctx context.Context) error {
 		if old, err := c.store.GetRelease(ctx, d.old.ID); err == nil {
 			c.publishRelease(ctx, d.ss, old)
 		}
-		if !d.oldRemoved {
+		if d.oldRemoved {
+			c.freePort(ctx, d.old.ID) // stateful: removed before the new one started
+		} else {
 			// Let connections still on the old upstream finish. On shutdown,
 			// leave it: it gets no traffic, keeps its port, and recovery
 			// stops it on the next start.

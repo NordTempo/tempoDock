@@ -265,6 +265,22 @@ func TestHostPortHeldUntilContainerRemoved(t *testing.T) {
 	}
 }
 
+// A stateful recreate removes the old container first, so its port is free
+// as soon as the new release is live.
+func TestStatefulRecreateFreesOldPort(t *testing.T) {
+	h := newHarness(t)
+	db := h.service("db", apitypes.CreateServiceRequest{Port: 5432})
+	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, image := range []string{"postgres:17", "postgres:17.1", "postgres:17.2"} {
+		h.deploy(db, image)
+	}
+	if spec, _ := h.rt.Spec(h.ctr(db, 3)); spec.HostPort != 20000 {
+		t.Fatalf("release 3 got port %d, want release 1's freed 20000", spec.HostPort)
+	}
+}
+
 // Stopping the daemon never stops app containers or waits on them: an
 // in-flight deploy is abandoned and failed by recovery on the next start.
 func TestShutdownLeavesContainersAlone(t *testing.T) {
