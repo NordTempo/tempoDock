@@ -1,0 +1,5 @@
+# openapi-typescript declares typescript ^5.x but works with 6.x, the last
+# release with the JS compiler API it needs (TypeScript 7 is native-only).
+peerDependencyRules:
+  allowedVersions:
+    openapi-typescript>typescript: '6'
