@@ -32,6 +32,9 @@ func pendingSettings(s store.Service) (*apitypes.ServiceSettings, error) {
 }
 
 func validateSettings(s apitypes.ServiceSettings) error {
+	if err := validateImageRef(s.Image); err != nil {
+		return err
+	}
 	switch {
 	case s.Port < 0 || s.Port > 65535:
 		return invalid("port must be between 0 and 65535")

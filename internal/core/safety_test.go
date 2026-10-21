@@ -139,6 +139,32 @@ func TestStartClearsTempFiles(t *testing.T) {
 	}
 }
 
+func TestHostnameValidation(t *testing.T) {
+	for host, ok := range map[string]bool{
+		"app.example.com": true, "Shop.Example.COM.": true, "x.co": true, "1password.com": true,
+		"203.0.113.10": false, "[::1]": false, "::1": false, "10.0.0.1": false, "1.2.3.4.5": false,
+		"localhost": false, "app.localhost": false, "intranet": false, "foo.123": false,
+	} {
+		if _, err := normalizeHostname(host); (err == nil) != ok {
+			t.Errorf("normalizeHostname(%q) err = %v, want ok %v", host, err, ok)
+		}
+	}
+}
+
+func TestImageRefValidation(t *testing.T) {
+	for ref, ok := range map[string]bool{
+		"nginx": true, "nginx:1.27": true, "library/nginx": true, "ghcr.io/acme/app:v1": true,
+		"registry.example.com:5000/app": true, "docker.io/traefik/whoami@sha256:abc": true, "8.8.8.8/app": true,
+		"localhost/app": false, "localhost:5000/app": false, "registry.localhost/app": false,
+		"127.0.0.1:5000/app": false, "10.1.2.3/app": false, "192.168.1.5:5000/app": false, "172.16.0.1/app": false,
+		"169.254.169.254/app": false, "[::1]:5000/app": false, "[fd00::1]/app": false, "0.0.0.0/app": false,
+	} {
+		if err := validateImageRef(ref); (err == nil) != ok {
+			t.Errorf("validateImageRef(%q) err = %v, want ok %v", ref, err, ok)
+		}
+	}
+}
+
 // waitOp waits until the runtime has seen op.
 func (h *harness) waitOp(op string) {
 	h.t.Helper()

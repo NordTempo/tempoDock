@@ -351,6 +351,9 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 			if params.ImageRef == "" {
 				return invalid("no image given and service %s has no image setting", ss)
 			}
+			if err := validateImageRef(params.ImageRef); err != nil {
+				return err
+			}
 		case apitypes.SourceUpload:
 			params.ImageRef = buildTag(ss, number)
 			repo = repoDeployOf(spec.repo)
