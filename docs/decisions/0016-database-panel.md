@@ -11,8 +11,10 @@ services where people and agents browse, query and (deliberately) edit data,
 with the same permissions, audit and safety as the rest of Tempo Dock.
 
 NordTempo scoped a separate product for this, tempoBase (a Postgres viewer
-with safe editing, per-connection roles and an MCP server). The owner decided
-it becomes **part of Tempo Dock**, not a separate app integrated into it.
+with safe editing, per-connection roles and its own MCP server). The owner
+decided it becomes **part of Tempo Dock**, not a separate app integrated into
+it: no separate data API or data MCP server, just more of Dock's API, CLI
+and (later) Dock's one MCP endpoint.
 This ADR takes tempoBase's feature set as the target and builds it in Dock's
 stack. tempoBase's own stack choices (TanStack Start, better-auth, its own
 Postgres app database, its own users and tokens) are dropped.
@@ -23,7 +25,7 @@ Forces:
 |---|---|
 | Idle means idle | No pools, goroutines or timers while nobody uses the panel. Daemon idle stays ≤ 30 MB. |
 | Data access is stronger than deploy | 0011: direct data access needs more than `deploy`. |
-| Agents ship all day safely | Agent data access is explicit, tiered, audited, and never writes production directly. |
+| Agents ship all day safely | Agent data access is explicitly granted by policy, audited, and never writes production directly. |
 | Private networking | The DB has no public port. The daemon must reach it over the environment's network only. |
 | Remote servers | Environments can live on a node ([0014](0014-node-protocol.md)); the control plane must reach their DBs through the link. |
 
@@ -36,8 +38,9 @@ Forces:
 | Detection | Template marker, else image name, else explicit override in service settings. |
 | Network path | The node runtime dials the DB container's IP on the environment network from the host. Remote: the same dial, streamed over the node link. New `node.Runtime.Dial`. |
 | DB credentials | Dock creates two least-privilege Postgres roles (`dock_reader`, `dock_writer`). The owner credentials from variables are only used to create them. Nothing reaches the browser. |
-| Permissions | `read`: none. `deploy`: browse and read-only SQL on non-production. `admin`: everything, including production and all editing. Tokens additionally need an explicit data tier. |
-| Writes | Read-only by default. Explicit edit mode, staged changes, review diff with the generated SQL, one transaction. Production asks for the environment name. Agents never write production directly. |
+| Permissions | A configurable data access policy: an admin sets, per subject (`read` users, `deploy` users, tokens) and environment kind, a level (`none`, `schema`, `read`, `propose`, `write`) and sensitive-column visibility, as a default with project and environment overrides. Tokens can carry their own override, capped by their scope and creator. Admins can always do everything. Defaults match the original proposal. |
+| Writes | Read-only by default. Explicit edit mode, staged changes, review diff with the generated SQL, one transaction. Production asks for the environment name. Tokens never write production directly. |
+| Agents | No separate agent API: the same API and `dock db` CLI, and later Dock's one MCP endpoint (the whole platform, data tools included). |
 | Audit | Every query and every write in Dock's audit log, with the SQL in a detail row. Query history is read from it. |
 | Performance | Connections opened on first use, closed after 60 s idle; results streamed in bounded batches with hard caps; heavy UI in a lazy route chunk. |
 
@@ -122,39 +125,53 @@ when pgx lands.
 ## 4. Permissions
 
 Data access is checked in core, on the same `Actor` path as everything else
-(0008). Humans get it from their role; tokens also need an explicit tier.
+(0008), against a **data access policy** that admins configure (owner's
+decision: policy, not hard-coded rules).
 
-### By scope (owner's decision)
+### The policy
 
-| Capability | `read` | `deploy`, non-production | `deploy`, production | `admin` |
-|---|---|---|---|---|
-| See the Data tab, schema | no | yes | no | yes |
-| Browse rows, read-only SQL | no | yes | no | yes |
-| Edit mode, commit changes | no | no | no | yes |
-| Approve or reject agent proposals | no | no | no | yes |
-| Set up roles, mark sensitive columns, overrides | no | no | no | yes |
-| Reveal masked values | no | no | no | yes |
-| `dock connect`, `dock db shell` (raw access) | no | no | no | yes |
+| Part | Values |
+|---|---|
+| Subject | `role:read` (users with role read), `role:deploy`, `tokens` (every token without its own override) |
+| Environment kind | `production`, `non_production` |
+| Level | `none` < `schema` (tables, columns, relations; no rows) < `read` (browse, read-only SQL) < `propose` (draft changesets an admin approves) < `write` (commit one's own changesets) |
+| Sensitive columns | `masked` (never shown), `visible` (shown after an explicit, audited reveal) |
 
-Token project/environment limits apply as usual.
+A rule is (subject, kind, level, sensitive). Rules are set at three scopes:
+the **default**, a **project** and an **environment**. The most specific
+rule wins per subject and kind: environment, project, default, then the
+built-in defaults. An environment's rules can only name its own kind.
 
-### Token data tiers
+Built-in defaults (the original proposal):
 
-Tokens get a new field `data_tier`, default `none`. Effective access is the
-lower of the tier and what the scope allows above.
+| Subject | Non-production | Production | Sensitive |
+|---|---|---|---|
+| `role:read` | `none` | `none` | masked |
+| `role:deploy` | `read` | `none` | masked |
+| `tokens` | `none` | `none` | masked |
 
-| Tier | Allows | Needs scope |
-|---|---|---|
-| `none` | Nothing | |
-| `schema` | Tables, columns, relations. No rows. | `deploy` (non-production) or `admin` |
-| `read` | Browse and read-only SQL, sensitive columns masked | `deploy` (non-production) or `admin` |
-| `propose` | `read`, plus drafting changesets that a human admin approves in the UI | `admin` |
-| `write` | `propose`, plus committing its own changesets directly on non-production | `admin` |
+**Admins** are not a subject: they can always do everything (`write`,
+sensitive `visible`), and only they approve or reject proposals, run setup,
+mark sensitive columns, change the policy and use raw access (`dock
+connect`, `dock db shell`). Token project/environment limits apply as usual.
 
-On production, `write` acts as `propose`: agents never write production data
-without a human approving the exact SQL.
+### Tokens
 
-`dock token create --data-tier read` sets it; the token list shows it.
+A token follows the `tokens` rule unless it has its own override
+(`production`, `non_production`, `sensitive`), set on create or edit. Either
+way its effective access is capped by what the policy gives users with the
+token's scope and by its creator's current role: a token never gets more
+than a person in its place would. On production, `write` acts as `propose`
+for every token: agents never write production data without a human
+approving the exact SQL.
+
+### Explaining access
+
+Every data response carries the caller's effective permission (level,
+sensitive, approve, manage, whether commits need confirmation) and the
+steps that decided it ("project shop: role:deploy may read non-production",
+"capped by the token's scope"), so the UI, CLI and agents can say why
+something is allowed or not.
 
 ## 5. Safety
 
@@ -197,12 +214,13 @@ API responses, logs or events. The CLI's raw paths (`dock connect`,
 | Staging | Cell updates, inserted rows and deleted rows are buffered in the browser and highlighted in the grid. Nothing hits the server. |
 | Review | The server renders the changeset: per-row diff plus the exact SQL it will run. |
 | Commit | One transaction. Each `UPDATE`/`DELETE` matches the primary key **and** the original values of the edited columns, so a row changed by someone else fails the whole commit with a conflict listing the rows. At most 500 rows per changeset. |
-| Production | Admin only, and the commit asks for the environment name (`--confirm production` in the CLI). |
+| Production | Only for subjects the policy gives `write` there (by default admins only; never tokens), and the commit asks for the environment name (`--confirm production` in the CLI). |
 | Not editable | Tables without a primary key, views, generated columns. |
 
-### Agent proposals
+### Proposals
 
-`propose`-tier tokens submit changesets through the same pipeline. They show
+Callers with level `propose` (typically agent tokens) submit changesets
+through the same pipeline. They show
 up under the Data tab as pending, with diff and SQL. An admin approves (the
 changeset is revalidated against current data and committed) or rejects.
 Pending changesets expire after 7 days.
@@ -210,8 +228,9 @@ Pending changesets expire after 7 days.
 ### Sensitive columns
 
 Admins mark columns sensitive; names like `password`, `*_hash`, `token`,
-`secret` are suggested on setup. Masked for all tokens and for `deploy`
-users; admins see them masked too until they reveal (audited). Enforced by
+`secret` are suggested on setup. Whether a subject sees them is the policy's
+`sensitive` setting (default: masked for everyone but admins). `visible`
+still shows them masked until an explicit reveal, which is audited. Enforced by
 `dock_reader_masked` in Postgres, so SQL can't route around it (phase 4;
 until then, masked actors get structured browsing only, no free SQL).
 
@@ -229,6 +248,7 @@ into a detail row, so the main log stays scannable.
 | `data.reveal` | Masked values revealed | Table, columns |
 | `data.setup` | Roles created or rotated | |
 | `data.connect` | Raw tunnel opened and closed | Duration, bytes |
+| `data.policy` | A data policy or a token's data override changed | |
 
 `AuditEvent` gains an optional `detail_id`. **Query history** is the
 caller's own `data.query` events; there's no separate history store.
@@ -244,13 +264,16 @@ tempoBase's v1 list, mapped:
 | SQL editor: autocomplete from the schema, history, saved queries | 3 |
 | Schema view: columns, indexes, constraints | 3 |
 | Read-only by default, edit mode, staged edits, review, commit | 4 |
-| Agent tiers, proposals and approval | 4 (schema/read tiers in 3) |
+| Data access policy and token overrides (schema/read levels) | 3 |
+| Proposals and approval (propose/write levels) | 4 |
 | Sensitive-column masking | 4 |
 | ER diagram | 5 |
-| MCP endpoint (`/api/v1/mcp`: tools mirror the `dock db` commands, plus built-in docs) | 5 |
+| Dock MCP endpoint (the whole platform, data tools included) | 5 |
 | MySQL/MariaDB, Redis | later |
 
-Until the MCP endpoint lands, agents use `dock db ... --json`.
+There is no separate data API or data MCP server. Agents use Dock's API and
+`dock db ... --json`; once Dock has its MCP endpoint, data tools are part of
+it like deploys are.
 
 ## 8. Surface
 
@@ -285,17 +308,19 @@ public          public.orders  ~12 431 rows  filter: status = paid  ×
 
 | Command | What it does | Needs |
 |---|---|---|
-| `dock db status` | Engine, version, setup state, your access | `deploy` (non-prod) |
+| `dock db status` | Engine, version, setup state, your access and why | level `schema` |
 | `dock db setup` | Create or rotate the Dock roles | `admin` |
-| `dock db tables`, `dock db describe TABLE` | Schema | `deploy` (non-prod), tier `schema` |
-| `dock db rows TABLE [--where col=val] [--order col] [--after CURSOR] [--limit N]` | One keyset page; prints the next cursor | tier `read` |
-| `dock db query SQL\|-f FILE\|- [--limit] [--timeout] [--csv]` | Read-only SQL, streamed | tier `read` |
+| `dock db tables`, `dock db describe TABLE` | Schema | level `schema` |
+| `dock db rows TABLE [--where col=val] [--order col] [--after CURSOR] [--limit N]` | One keyset page; prints the next cursor | level `read` |
+| `dock db query SQL\|-f FILE\|- [--limit] [--timeout] [--csv]` | Read-only SQL, streamed | level `read` |
 | `dock db changes list\|show\|approve\|reject ID` | Changesets | `admin` to approve |
-| `dock db propose -f changes.json` | Submit a changeset (`--commit` with tier `write` on non-production) | tier `propose` |
+| `dock db propose -f changes.json` | Submit a changeset (`--commit` with level `write`) | level `propose` |
+| `dock db policy [show\|set] [--project P] [--env E]` | Read or change the data access policy at one scope | `admin` to set |
+| `dock token create --data-non-production read [--data-production none] [--data-sensitive masked]`, `dock token data ID ...\|--clear` | A token's own data access | `admin` |
 | `dock connect [--port N]`, `dock db shell` | Raw tunnel (0011); `shell` runs a local `psql` through it | `admin` |
 
 All take `--json` and the linked service. Permission errors name the missing
-scope or tier.
+level and the rule that decided it.
 
 ### API
 
@@ -313,13 +338,24 @@ Under `/api/v1/projects/{p}/environments/{e}/services/{s}/data`:
 | `POST /data/changesets/{id}/commit`, `/reject` | `{confirm}` on production |
 | `GET`, `PUT`, `DELETE /data/saved-queries[/{id}]` | Per user, per service |
 | `PUT /data/sensitive-columns` | Admin |
-| `PUT /services/{s}` | `database`, `database_url_variable` settings |
+| `PUT /services/{s}/database-settings` | `database`, `database_url_variable`; immediate, never staged |
+
+Elsewhere:
+
+| Endpoint | |
+|---|---|
+| `GET`, `PUT /api/v1/data-policy` | The default policy (`PUT` admin) |
+| `GET`, `PUT /api/v1/projects/{p}/data-policy` | A project's overrides |
+| `GET`, `PUT /api/v1/projects/{p}/environments/{e}/data-policy` | An environment's overrides |
+| `PATCH /api/v1/tokens/{id}` | `{data}`: a token's data override, `null` to follow the policy |
 
 ## 9. Data model
 
 ```sql
-tokens:          + data_tier TEXT NOT NULL DEFAULT 'none'
-                     CHECK (data_tier IN ('none','schema','read','propose','write'))
+tokens:          + data_production, data_non_production, data_sensitive TEXT NULL
+                     -- all NULL: follow the policy's tokens rule
+data_policy_rules: project_id NULL, environment_id NULL (both NULL: the default),
+                 subject, kind, level, sensitive; unique per scope, subject, kind
 services:        + database TEXT NOT NULL DEFAULT ''        -- '', 'postgres', 'none'
                  + database_url_variable TEXT NOT NULL DEFAULT ''
 data_access:     service_id PK, engine, server_version, reader_secret, writer_secret,
@@ -340,16 +376,16 @@ Phase 1 is one agent and short.
 
 | Phase | Track | Owns | Delivers |
 |---|---|---|---|
-| 1 | Contracts | `internal/apitypes/**`, `internal/node/runtime.go`, `internal/node/fake/**`, `internal/data/data.go` | Data API types (status, schema, page, query frames, changeset, tiers); `Runtime.Dial` signature, fake dialing a test address; engine interface; core signatures stubbed |
+| 1 | Contracts | `internal/apitypes/**`, `internal/node/runtime.go`, `internal/node/fake/**`, `internal/data/data.go` | Data API types (status, schema, page, query frames, changeset, policy and permission); `Runtime.Dial` signature, fake dialing a test address; engine interface; core signatures stubbed |
 | 2 | Dial | `internal/node/docker/**`, `internal/node/local.go`, `internal/node/remote/**` | Local dial on the environment network with label checks; full-duplex dial over the node link |
 | 2 | Engine | `internal/data/pg/**` (new) | Conn cache with idle close, introspection, keyset pages, filters, streamed queries, value encoding, setup SQL, changeset SQL and apply with conflict checks; tests against a real Postgres in CI |
 | 2 | Store | `internal/store/**` | Migration and sqlc queries for section 9 |
 | 2 | Web groundwork | `web/src/features/data/**` (new) | Lazy chunk with Glide grid, CodeMirror editor, tables list, against fixtures typed from the OpenAPI schema |
-| 3 | Core | `internal/core/data*.go` (new files), `internal/core/actor.go` | Detection, connection derivation, permission matrix and tiers, audit and details, setup, read paths |
-| 3 | Surface | `internal/api/data.go` (new), `internal/cli/db.go` (new), `docs/cli.md`, `docs/guide/**` | Endpoints, NDJSON streaming, `dock db *`, `--data-tier` on tokens, docs |
-| 3 | Web | `web/src/routes/*data*`, `web/src/features/data/**`, `web/src/features/service/ServiceHeader.tsx` | Data tab wired to the API: tables, FK navigation, SQL with history and saved queries, schema view |
+| 3 | Core | `internal/core/data*.go` (new files), `internal/core/actor.go` | Detection, connection derivation, policy resolution with token overrides and caps, audit and details, setup, read paths |
+| 3 | Surface | `internal/api/data.go` (new), `internal/cli/db.go` (new), `docs/cli.md`, `docs/guide/**` | Endpoints, NDJSON streaming, `dock db *` including `policy`, token data flags, docs |
+| 3 | Web | `web/src/routes/*data*`, `web/src/features/data/**`, `web/src/features/service/ServiceHeader.tsx` | Data tab wired to the API: tables, FK navigation, SQL with history and saved queries, schema view; policy settings (default, project, environment) and token data access |
 | 4 | Editing | `internal/core/data*.go`, `internal/data/pg/**`, `web/src/features/data/**` | Edit mode, staged edits, review, commit, production confirm, proposals and approval, masking role and reveal |
-| 5 | Later | per feature | ER diagram, MCP endpoint, `dock connect`/`db shell`, more engines |
+| 5 | Later | per feature | ER diagram, Dock MCP endpoint (whole platform, data tools included), `dock connect`/`db shell`, more engines |
 
 Surface and Web start from the phase 1 types and the OpenAPI spec, so they
 can run against stubs early. Roadmap: phases 1 to 3 fit M5 (Data) next to the
@@ -365,9 +401,12 @@ templates; 4 and 5 follow.
   column grants), so a bug in Dock's checks doesn't become a superuser query.
 - Dock creates roles inside user databases. That's visible (`\du`) and
   documented; setup is one admin action for non-template databases.
-- `deploy` users and agents can read non-production data. As
+- By default `deploy` users can read non-production data. As
   [safety-model](../safety-model.md) notes, `deploy` already implies the
   environment's secrets, so this adds convenience and audit, not new trust.
+  Agents get nothing until an admin grants it in the policy or on the token.
+- Access is policy, so admins can tighten or loosen it per project and
+  environment without a release of Dock.
 - External databases (a `DATABASE_URL` pointing at Neon and the like) aren't
   covered.
 - The UI bundle grows only in the lazy chunk.
@@ -386,10 +425,12 @@ The brief in the tempoBase repository (`docs/brief.md`, 2026-10-21) is
 superseded by this ADR. Its feature list and design constraints carry over;
 its standalone product shape, stack and permission model do not.
 
-## Open questions
+## Resolved questions
 
-| Question | Proposed default |
+| Question | Owner's decision |
 |---|---|
-| May `deploy` tokens hold tier `propose` on non-production (an admin still approves)? | No: `propose` needs `admin`, as decided. Revisit if agents need it. |
-| Should `dock_reader` setup run automatically for detected (non-template) databases on first open by an admin, instead of a separate action? | Explicit action: it writes to a user database. |
-| Mask sensitive columns for `deploy` users too, or only for tokens (tempoBase's default)? | Both, as above. |
+| Hard-coded permissions by scope, or configurable? | Configurable: the data access policy (section 4), with the original matrix as its built-in defaults. |
+| May tokens below `admin` propose changes? | Policy decides; a token is capped by what users of its scope get. |
+| Mask sensitive columns for `deploy` users too, or only for tokens? | Per subject in the policy; masked for everyone but admins by default. |
+| A data MCP server, or a separate agent API? | Neither: agents use Dock's API and CLI, and later Dock's one MCP endpoint, data tools included. |
+| Set up the Dock roles automatically on first open? | No: an explicit "Set up data access" admin action (`dock db setup`), since it writes to a user database. Template databases are set up when created. |

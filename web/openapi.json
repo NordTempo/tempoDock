@@ -93,6 +93,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "detail_id": {
+            "format": "int64",
+            "type": "integer"
+          },
           "environment": {
             "type": "string"
           },
@@ -265,6 +269,9 @@
       "CreateTokenRequest": {
         "additionalProperties": false,
         "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DataTokenAccess"
+          },
           "environment": {
             "description": "Requires project",
             "type": "string"
@@ -370,6 +377,44 @@
           "type",
           "name",
           "value"
+        ],
+        "type": "object"
+      },
+      "DataTokenAccess": {
+        "additionalProperties": false,
+        "properties": {
+          "non_production": {
+            "enum": [
+              "none",
+              "schema",
+              "read",
+              "propose",
+              "write"
+            ],
+            "type": "string"
+          },
+          "production": {
+            "enum": [
+              "none",
+              "schema",
+              "read",
+              "propose",
+              "write"
+            ],
+            "type": "string"
+          },
+          "sensitive": {
+            "enum": [
+              "masked",
+              "visible"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "production",
+          "non_production",
+          "sensitive"
         ],
         "type": "object"
       },
@@ -1544,6 +1589,23 @@
             "format": "date-time",
             "type": "string"
           },
+          "data_engine": {
+            "enum": [
+              "postgres"
+            ],
+            "type": "string"
+          },
+          "database": {
+            "enum": [
+              "",
+              "postgres",
+              "none"
+            ],
+            "type": "string"
+          },
+          "database_url_variable": {
+            "type": "string"
+          },
           "dockerfile_path": {
             "type": "string"
           },
@@ -1614,6 +1676,8 @@
           "environment",
           "name",
           "stateful",
+          "database",
+          "database_url_variable",
           "status",
           "effective_memory_mb",
           "effective_cpus",
@@ -1908,6 +1972,9 @@
           },
           "created_by": {
             "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DataTokenAccess"
           },
           "environment": {
             "type": "string"
