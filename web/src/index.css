@@ -2,11 +2,32 @@
 
 @theme {
   --font-sans:
-    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
+    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
   --font-mono:
-    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono",
     monospace;
+
+  /* Dense type scale: 13px body, 12px mono and table heads, 11px labels. */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 13px;
+  --text-lg: 15px;
+
+  --color-dim: #8a8a8a;
+  --color-faint: #555;
+  --color-line: #1c1c1c;
+  --color-line2: #2a2a2a;
+  --color-hover: #0d0d0d;
+  --color-sel: #141414;
+  --color-staged: #0a0a00;
+
+  --color-ok: #3fd07a;
+  --color-bad: #ff5a5a;
+  --color-warn: #f2b636;
+  --color-run: #5aa9ff;
+  --color-off: #6b6b6b;
 }
 
 @layer base {
@@ -14,5 +35,63 @@
     color-scheme: dark;
     background: #000;
     color: #fff;
+    font: 13px / 1.45 var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 1px solid #fff;
+    outline-offset: 1px;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  input,
+  textarea,
+  select {
+    background: #000;
+  }
+}
+
+@layer components {
+  /* Dense data tables, as in docs/design/ui-direction.html. */
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .tbl th {
+    font-weight: 400;
+    color: var(--color-dim);
+    text-align: left;
+    padding: 5px 10px 5px 0;
+    border-bottom: 1px solid var(--color-line2);
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .tbl td {
+    padding: 5px 10px 5px 0;
+    border-bottom: 1px solid var(--color-line);
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
+
+  .tbl .num {
+    text-align: right;
+  }
+
+  .tbl tr.staged td {
+    background: var(--color-staged);
+  }
+
+  .tbl tr.row:hover td {
+    background: var(--color-hover);
+    cursor: pointer;
   }
 }
