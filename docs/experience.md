@@ -103,3 +103,31 @@ Verified in M0 and tracked as we go.
 | API read latency on the server | p95 ≤ 20 ms |
 | UI initial JS (gzipped) | ≤ 200 KB |
 | Rollback to a cached image | ≤ 10 s to traffic switch, after health check |
+
+## Measured (M0)
+
+On `dock-lab`, a homelab VM (Debian 13, 4 vCPU, 4 GB RAM, Docker 29), unless
+noted. "Private" is anonymous memory (what the process really costs); RSS also
+counts mapped binaries.
+
+| What | Measured | Notes |
+|---|---|---|
+| Caddy idle | 12.8 MB private, 0% CPU | 53 MB RSS with 50 routes loaded |
+| BuildKit idle | 13-15 MB, 0% CPU | Capped container, `CPUShares=256` |
+| Registry idle | 15 MB, 0% CPU | `registry:3` |
+| BuildKit peak, Next.js build | ~410 MB | Cold cache, 42 s, 1 CPU cap (dev VM) |
+| Build over its memory cap | Fails in 3 s, clear error | BuildKit keeps running |
+| App latency during a build | p99 1.2 ms idle, 1.3 ms during | 0 failed requests (dev VM) |
+| Caddy config reload | p50 2-3 ms, p95 3-18 ms | Full config, ~50 routes |
+| Requests during 50 route swaps | 0.01% of new connections dropped, 0 wrong responses | Upstream Go limitation, see `internal/node/caddy` |
+| CLI start-up | 2 ms | `platform context list` |
+| UI initial JS | 109 KB gzipped | Tooling scaffold only |
+| Daemon idle | not yet measured | Needs the wired daemon |
+
+Known limits found in the spike:
+
+- Caddy reloads drop a handful of brand-new connections and can leave HTTP/2
+  connections on the old route until its 10 s grace period ends. Cutovers
+  therefore drain the old container for longer than that before stopping it.
+- Railpack downloads a 150 MB version-resolver binary to `/tmp/railpack` on
+  the first zero-config build.
