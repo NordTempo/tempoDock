@@ -9,9 +9,11 @@ import { api, body, done } from "../api/client";
 import { envPath, keys, servicePath } from "./queries";
 import type {
   DiscardSelection,
+  EnvironmentKind,
   EnvRef,
   NewToken,
   NewUser,
+  ServerPatch,
   ServiceRef,
   SettingsPatch,
 } from "./types";
@@ -254,6 +256,56 @@ export const useDeleteUser = () =>
     (id: number) =>
       done(api.DELETE("/api/v1/users/{id}", { params: { path: { id } } })),
     () => [keys.users, ["audit"]],
+  );
+
+/**
+ * Generates a new password (resolved once, never shown again) and ends the
+ * user's sessions. Not for your own account.
+ */
+export const useResetPassword = () =>
+  useAction(
+    (id: number) =>
+      body(
+        api.POST("/api/v1/users/{id}/reset-password", {
+          params: { path: { id } },
+          body: {},
+        }),
+      ),
+    () => [keys.users, ["audit"]],
+  );
+
+/** Which kinds a server accepts and whether it takes new placements. */
+export const useUpdateServer = () =>
+  useAction(
+    ({ name, patch }: { name: string; patch: ServerPatch }) =>
+      body(
+        api.PATCH("/api/v1/servers/{server}", {
+          params: { path: { server: name } },
+          body: patch,
+        }),
+      ),
+    () => [keys.servers, ["audit"]],
+  );
+
+/** Pins a project's environments of a kind to a server before any exist. */
+export const usePinPlacement = () =>
+  useAction(
+    ({
+      project,
+      kind,
+      server,
+    }: {
+      project: string;
+      kind: EnvironmentKind;
+      server: string;
+    }) =>
+      body(
+        api.PUT("/api/v1/projects/{project}/placements/{kind}", {
+          params: { path: { project, kind } },
+          body: { server },
+        }),
+      ),
+    ({ project }) => [keys.placements(project), keys.servers, ["audit"]],
   );
 
 export function useLogin() {

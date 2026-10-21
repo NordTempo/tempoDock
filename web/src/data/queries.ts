@@ -12,8 +12,12 @@ import type {
   EnvRef,
   PendingChanges,
   ProjectOverview,
+  ServerDetail,
+  ServerStats,
   Service,
   ServiceRef,
+  ServiceStats,
+  StatsRange,
 } from "./types";
 
 // Query keys are hierarchical so one invalidation covers a subtree:
@@ -43,7 +47,27 @@ export const keys = {
     number,
   ],
   volumes: (s: ServiceRef) => [...serviceKey(s), "volumes"],
+  /** Covers every server's detail too. */
   servers: ["servers"],
+  server: (name: string) => ["servers", name],
+  /** Under the project, so audit events about it refetch them. */
+  placements: (project: string) => ["project", project, "placements"],
+  // Statistics stay outside the project and server trees: events there
+  // shouldn't refetch history.
+  serverStats: (name: string, range: StatsRange) => [
+    "stats",
+    "server",
+    name,
+    range,
+  ],
+  serviceStats: (s: ServiceRef, range: StatsRange) => [
+    "stats",
+    "service",
+    s.project,
+    s.environment,
+    s.service,
+    range,
+  ],
   tokens: ["tokens"],
   users: ["users"],
   audit: (filter: AuditFilter) => ["audit", filter],
@@ -191,6 +215,58 @@ export const queries = {
       queryKey: keys.servers,
       queryFn: () => list(api.GET("/api/v1/servers")),
     }),
+  /** One server, what is placed on it and its latest sample. Admin only. */
+  server: (name: string) =>
+    queryOptions({
+      queryKey: keys.server(name),
+      queryFn: async (): Promise<ServerDetail> => {
+        const d = await body(
+          api.GET("/api/v1/servers/{server}", {
+            params: { path: { server: name } },
+          }),
+        );
+        return { ...d, placements: d.placements ?? [] };
+      },
+    }),
+  /** Where the project's environments of each kind live, once placed. */
+  placements: (project: string) =>
+    queryOptions({
+      queryKey: keys.placements(project),
+      queryFn: () =>
+        list(
+          api.GET("/api/v1/projects/{project}/placements", {
+            params: { path: { project } },
+          }),
+        ),
+    }),
+  // History has a point a minute at most, so it stays fresh for a minute.
+  serverStats: (name: string, range: StatsRange) =>
+    queryOptions({
+      queryKey: keys.serverStats(name, range),
+      queryFn: async (): Promise<ServerStats> => {
+        const s = await body(
+          api.GET("/api/v1/servers/{server}/stats", {
+            params: { path: { server: name }, query: { range } },
+          }),
+        );
+        return { ...s, points: s.points ?? [] };
+      },
+      staleTime: 60_000,
+    }),
+  serviceStats: (ref: ServiceRef, range: StatsRange) =>
+    queryOptions({
+      queryKey: keys.serviceStats(ref, range),
+      queryFn: async (): Promise<ServiceStats> => {
+        const s = await body(
+          api.GET(
+            "/api/v1/projects/{project}/environments/{environment}/services/{service}/stats",
+            { params: { path: servicePath(ref), query: { range } } },
+          ),
+        );
+        return { ...s, points: s.points ?? [] };
+      },
+      staleTime: 60_000,
+    }),
   tokens: () =>
     queryOptions({
       queryKey: keys.tokens,
@@ -268,6 +344,10 @@ export const useChanges = (env: EnvRef) =>
 export const useVariables = (env: EnvRef, service: string | null) =>
   useSuspenseQuery(queries.variables(env, service)).data;
 export const useServers = () => useSuspenseQuery(queries.servers()).data;
+export const useServer = (name: string) =>
+  useSuspenseQuery(queries.server(name)).data;
+export const usePlacements = (project: string) =>
+  useSuspenseQuery(queries.placements(project)).data;
 export const useTokens = () => useSuspenseQuery(queries.tokens()).data;
 export const useUsers = () => useSuspenseQuery(queries.users()).data;
 export const useAuditLog = (filter: AuditFilter = {}) =>

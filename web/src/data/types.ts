@@ -10,6 +10,13 @@ export type Scope = Schemas["Me"]["scope"];
 export type Session = Schemas["Me"];
 export type Project = Schemas["Project"];
 export type Server = Schemas["Server"];
+export type ServerPatch = Schemas["UpdateServerRequest"];
+export type ServerUsage = Schemas["ServerUsage"];
+export type ServiceUsage = Schemas["ServiceUsage"];
+export type Placement = Schemas["Placement"];
+export type EnvironmentKind = Schemas["Environment"]["kind"];
+/** How far back statistics go: a point a minute, 10 minutes for 7d. */
+export type StatsRange = Schemas["ServerStats"]["range"];
 export type Service = Schemas["Service"];
 export type ServiceStatus = Schemas["ServiceStatus"];
 export type Release = Schemas["Release"];
@@ -49,6 +56,19 @@ export type EnvironmentView = Omit<
 export type ProjectOverview = {
   project: Project;
   environments: EnvironmentView[];
+};
+
+/** A server with what is placed on it and its latest sample. */
+export type ServerDetail = Omit<Schemas["ServerDetail"], "placements"> & {
+  placements: Schemas["ServerPlacement"][];
+};
+
+export type ServerStats = Omit<Schemas["ServerStats"], "points"> & {
+  points: Schemas["ServerStatsPoint"][];
+};
+
+export type ServiceStats = Omit<Schemas["ServiceStats"], "points"> & {
+  points: Schemas["ServiceStatsPoint"][];
 };
 
 export type PendingChanges = Omit<
