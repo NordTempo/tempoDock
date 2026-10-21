@@ -19,4 +19,36 @@ jobs:
       - run: make test
       - name: Integration tests (Docker)
         run: make test-integration
+      # Build the UI first so the binary embeds it.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+          cache: true
+          cache_dependency_path: web/pnpm-lock.yaml
+      - run: make web
       - run: make build
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+          cache: true
+          cache_dependency_path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # Typecheck, Biome, and a stale-client check against web/openapi.json.
+      - run: pnpm check
+      - run: pnpm build
+      - name: Generated files are committed
+        run: git diff --exit-code -- .

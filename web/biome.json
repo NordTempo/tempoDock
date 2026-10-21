@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": {
+    "includes": ["**", "!dist", "!src/routeTree.gen.ts", "!src/api/schema.d.ts"]
+  },
+  "formatter": { "indentStyle": "space" },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "linter": { "rules": { "suspicious": { "noExplicitAny": "error" } } },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } }
+}

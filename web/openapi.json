@@ -1,0 +1,39 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "platform",
+    "version": "dev"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Daemon health and version",
+        "tags": ["system"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthOutputBody" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthOutputBody": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "version"],
+        "properties": {
+          "status": { "type": "string", "examples": ["ok"] },
+          "version": { "type": "string", "examples": ["v0.1.0"] }
+        }
+      }
+    }
+  }
+}

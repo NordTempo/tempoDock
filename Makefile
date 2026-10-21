@@ -25,3 +25,4 @@ lint:
 ## generate: sqlc queries and the UI's API client
 generate:
 	go generate ./...
+	cd web && pnpm gen:api
