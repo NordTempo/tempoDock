@@ -192,6 +192,7 @@ The `source` field of a release says what created it.
 
 ## Archiving a service
 
-`dock service archive web` stops the container and removes its routes.
-Volumes, releases and history are kept. Needs the `admin` scope, and
-`--yes` when not on a terminal.
+`dock service archive web` removes the service's routes, then stops its
+container in the background (up to 30 s; progress shows as events on the
+last release). Volumes, releases and history are kept. Needs the `admin`
+scope, and `--yes` when not on a terminal.

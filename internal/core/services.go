@@ -170,59 +170,116 @@ func patch[T any](dst *T, v *T) {
 	}
 }
 
-// ArchiveService stops a service and removes its routes. Volumes and the
-// database rows are kept; real deletion is a separate, later operation.
+// ArchiveService archives a service: its routes are removed and its
+// container is stopped in the background. Volumes and the database rows
+// are kept; real deletion is a separate, later operation.
 func (c *Core) ArchiveService(ctx context.Context, a Actor, ref ServiceRef) (apitypes.Service, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeAdmin, "archiving a service")
 	if err != nil {
 		return apitypes.Service{}, err
 	}
+	var done []archivedService
 	// One transaction, so no deploy can start between the check and the
 	// archive (startRelease re-checks archived_at in its own).
-	already := false
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		svc, err := q.GetService(ctx, ss.svc.ID)
-		if err != nil {
-			return err
+		as, ok, err := archiveTx(ctx, q, ss)
+		if ok {
+			done = append(done, as)
 		}
-		if ss.svc = svc; svc.ArchivedAt != nil {
-			already = true
-			return nil
-		}
-		if inflight, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
-			return errf(apitypes.CodeDeployInProgress, "release %d of %s is deploying; wait for it to finish before archiving", inflight.Number, ss)
-		} else if !store.IsNotFound(err) {
-			return err
-		}
-		n := now()
-		ss.svc.ArchivedAt = &n
-		return q.ArchiveService(ctx, store.ArchiveServiceParams{ArchivedAt: &n, ID: ss.svc.ID})
+		ss = as.svcScope
+		return err
 	})
 	if err != nil {
 		return apitypes.Service{}, err
 	}
-	if already {
-		return c.toService(ctx, ss, apitypes.PendingChanges{})
+	if len(done) > 0 {
+		c.finishArchive(ctx, done)
+		c.audit(ctx, a, "service.archive", &ss.project, &ss.env, ss.String(), "archived service; volumes kept")
 	}
-	// Routes first, so no traffic goes to a container that is stopping.
-	if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
-		c.log.Error("apply routes after archive", "service", ss.String(), "err", err)
-	}
-	if active, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
-		removeErr := c.removeReleaseContainers(ctx, ss.env.ServerID, active.ID)
-		if removeErr != nil {
-			c.log.Error("stop archived service", "service", ss.String(), "err", removeErr)
-		}
-		if err := c.store.SupersedeRelease(ctx, active.ID); err != nil {
-			return apitypes.Service{}, err
-		}
-		if removeErr == nil {
-			c.freePort(ctx, active.ID)
-		}
-	}
-	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceNone})
-	c.audit(ctx, a, "service.archive", &ss.project, &ss.env, ss.String(), "archived service; volumes kept")
 	return c.toService(ctx, ss, apitypes.PendingChanges{})
+}
+
+// archivedService is a service archiveTx archived, with the release that
+// was active (nil if none).
+type archivedService struct {
+	svcScope
+	active *store.Release
+}
+
+// archiveTx archives a service within a transaction and supersedes its
+// active release, so from then on no event of that release's container
+// counts as the service's status or as drift. ok is false if the service
+// was already archived. A service that is deploying is refused.
+func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedService, bool, error) {
+	svc, err := q.GetService(ctx, ss.svc.ID)
+	if err != nil {
+		return archivedService{svcScope: ss}, false, err
+	}
+	ss.svc = svc
+	as := archivedService{svcScope: ss}
+	if svc.ArchivedAt != nil {
+		return as, false, nil
+	}
+	if inflight, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+		return as, false, errf(apitypes.CodeDeployInProgress, "release %d of %s is deploying; wait for it to finish before archiving", inflight.Number, ss)
+	} else if !store.IsNotFound(err) {
+		return as, false, err
+	}
+	n := now()
+	as.svc.ArchivedAt = &n
+	if err := q.ArchiveService(ctx, store.ArchiveServiceParams{ArchivedAt: &n, ID: ss.svc.ID}); err != nil {
+		return as, false, err
+	}
+	active, err := q.GetActiveRelease(ctx, ss.svc.ID)
+	switch {
+	case store.IsNotFound(err):
+		return as, true, nil
+	case err != nil:
+		return as, false, err
+	}
+	if err := q.SupersedeRelease(ctx, active.ID); err != nil {
+		return as, false, err
+	}
+	active.Status = string(apitypes.ReleaseSuperseded)
+	as.active = &active
+	return as, true, nil
+}
+
+// finishArchive runs after archiveTx committed: routes are removed first,
+// so no traffic goes to a container that is stopping, then the containers
+// are stopped and removed in the background (up to stopTimeout each),
+// reported as release events. A release keeps its host port until its
+// container is gone; if the daemon stops first, recovery removes it.
+func (c *Core) finishArchive(ctx context.Context, done []archivedService) {
+	servers := map[int64]bool{}
+	for _, as := range done {
+		servers[as.env.ServerID] = true
+	}
+	for id := range servers {
+		if err := c.applyRoutes(ctx, id); err != nil {
+			c.log.Error("apply routes after archive", "server", id, "err", err)
+		}
+	}
+	for _, as := range done {
+		c.setStatus(as.svcScope, apitypes.ServiceStatus{State: apitypes.ServiceNone})
+		if as.active == nil {
+			continue
+		}
+		c.publishRelease(ctx, as.svcScope, *as.active)
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			ctx, ss, rel := c.ctx, as.svcScope, *as.active
+			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopping release %d: %s was archived", rel.Number, ss.svc.Name))
+			if err := c.retire(ctx, ss.env.ServerID, rel.ID); err != nil {
+				if ctx.Err() == nil {
+					c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Could not stop release %d (it keeps its port until it is removed): %v", rel.Number, err))
+				}
+				return
+			}
+			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopped release %d; volumes are kept", rel.Number))
+		}()
+	}
 }
 
 // ListVolumes returns a service's volumes, including staged ones.

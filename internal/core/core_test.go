@@ -341,6 +341,113 @@ func TestStatefulServiceIsRecreated(t *testing.T) {
 	}
 }
 
+// settleEvents waits until the runtime events of every container the daemon
+// removed (up to their destroy event) have been handled.
+func (h *harness) settleEvents() {
+	h.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		h.c.statusMu.Lock()
+		n := len(h.c.removing)
+		h.c.statusMu.Unlock()
+		if n == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			h.t.Fatalf("%d removed containers still have unhandled events", n)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+func (h *harness) drift() []apitypes.AuditEvent {
+	h.t.Helper()
+	evs, err := h.c.ListAudit(h.ctx, System, AuditFilter{Action: "reconcile.drift"})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return evs
+}
+
+// The die and destroy events of containers the daemon stops itself (the
+// active one in a stateful recreate, an archived service's) are neither a
+// crash nor drift.
+func TestOwnRemovalsAreNotDrift(t *testing.T) {
+	h := newHarness(t)
+	db := h.service("db", apitypes.CreateServiceRequest{Port: 5432})
+	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(db, "postgres:17")
+	h.deploy(db, "postgres:17.1")
+	h.settleEvents()
+	if svc, _ := h.c.GetService(h.ctx, System, db); svc.Status.State != apitypes.ServiceRunning {
+		t.Fatalf("status after recreate = %+v", svc.Status)
+	}
+	if _, err := h.c.ArchiveService(h.ctx, System, db); err != nil {
+		t.Fatal(err)
+	}
+	h.waitRunning()
+	h.settleEvents()
+	if svc, _ := h.c.GetService(h.ctx, System, db); svc.Status.State != apitypes.ServiceNone {
+		t.Fatalf("status after archive = %+v", svc.Status)
+	}
+	if d := h.drift(); len(d) > 0 {
+		t.Fatalf("drift reported: %+v", d)
+	}
+}
+
+// Archiving answers without waiting for the container to stop: routes go
+// first, the container is stopped in the background, and its port is only
+// freed once it is gone.
+func TestArchiveStopsInBackground(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "web.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(web, "app:1")
+	release := h.rt.HoldStops()
+	defer release()
+
+	svc, err := h.c.ArchiveService(h.ctx, System, web)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if svc.ArchivedAt == nil || svc.Status.State != apitypes.ServiceNone || svc.ActiveRelease != nil {
+		t.Fatalf("archived service = %+v", svc)
+	}
+	if routes := h.rt.Routes(); len(routes) != 0 {
+		t.Fatalf("routes = %+v", routes)
+	}
+	if got := h.rt.Running(); !slices.Equal(got, []string{h.ctr(web, 1)}) {
+		t.Fatalf("running = %v; the stop should still be in progress", got)
+	}
+	ss, _ := h.c.loadService(h.ctx, web)
+	if ports, _ := h.c.store.ListUsedHostPorts(h.ctx, ss.env.ServerID); len(ports) != 1 {
+		t.Fatalf("port freed while the container still runs: %v", ports)
+	}
+
+	release()
+	h.waitRunning()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if ports, _ := h.c.store.ListUsedHostPorts(h.ctx, ss.env.ServerID); len(ports) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("port never freed")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	r1, _ := h.c.GetRelease(h.ctx, System, web, 1)
+	if r1.Status != apitypes.ReleaseSuperseded || !slices.ContainsFunc(r1.Events, func(e apitypes.ReleaseEvent) bool {
+		return strings.HasPrefix(e.Message, "Stopped release 1")
+	}) {
+		t.Fatalf("release 1 = %s, events %+v", r1.Status, r1.Events)
+	}
+}
+
 func TestVariableReferences(t *testing.T) {
 	h := newHarness(t)
 	api := h.service("api", apitypes.CreateServiceRequest{})

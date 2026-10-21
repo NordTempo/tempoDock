@@ -289,7 +289,7 @@ func newServiceArchiveCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(svc, func() error {
-				g.io.Successf("Archived %s. Volumes and release history are kept.", t)
+				g.io.Successf("Archived %s. Its container is stopping; volumes and release history are kept.", t)
 				return nil
 			})
 		},

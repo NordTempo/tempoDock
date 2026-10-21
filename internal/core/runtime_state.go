@@ -81,6 +81,9 @@ func (c *Core) watchRuntime(events <-chan node.ContainerEvent) {
 }
 
 func (c *Core) onContainerEvent(ctx context.Context, ev node.ContainerEvent) {
+	if c.ownRemoval(ev) {
+		return // the daemon is stopping it: not a crash, not drift
+	}
 	id, err := strconv.ParseInt(ev.Labels.Release, 10, 64)
 	if err != nil {
 		return
