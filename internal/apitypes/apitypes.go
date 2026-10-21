@@ -29,6 +29,9 @@ const (
 type Version struct {
 	Version    string `json:"version" example:"v0.1.0"`
 	APIVersion string `json:"api_version" example:"v1"`
+	// MaxUploadBytes caps source uploads (deploy-source); clients can warn
+	// before sending a bigger build context.
+	MaxUploadBytes int64 `json:"max_upload_bytes"`
 }
 
 // Health reports that the daemon is up.
