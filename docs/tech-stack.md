@@ -1,106 +1,49 @@
 # Tech stack
 
-Status: **proposed**, to be confirmed by the M0 spike (see [roadmap](roadmap.md)).
+The chosen technologies at a glance. The reasoning lives in the linked
+decision records.
 
-## Constraints
+| Area | Choice | Decision |
+|---|---|---|
+| Daemon + CLI language | **Go**, one static binary for both | [0001](decisions/0001-go-for-daemon-and-cli.md) |
+| Packaging | **Single binary** with the web UI embedded (`go:embed`) | [0002](decisions/0002-single-binary-embedded-ui.md) |
+| Platform state | **SQLite** (WAL), `modernc.org/sqlite`, **sqlc**, embedded SQL migrations | [0003](decisions/0003-sqlite-for-platform-state.md) |
+| Reverse proxy | **Caddy** as a separate process, configured only by the daemon | [0004](decisions/0004-caddy-as-separate-proxy.md) |
+| Domains + TLS | Rendered from the DB, on-demand TLS gated by the daemon | [0009](decisions/0009-dynamic-domains-and-tls.md) |
+| API | **Huma** (OpenAPI 3.1 from Go types), SSE for live data | [0005](decisions/0005-openapi-api-with-generated-clients.md) |
+| Builds | Source, git push, CI image or promotion; capped **BuildKit** on builder servers | [0006](decisions/0006-every-way-to-build.md) |
+| Servers | One control plane, nodes dial out; each environment lives on one server | [0010](decisions/0010-environments-on-servers.md) |
+| Databases | Services from templates; stateful services recreate, one replica, tool-native backups | [0011](decisions/0011-stateful-services-and-databases.md) |
+| Service config | Platform DB, plus optional `platform.toml` in the repo | [0007](decisions/0007-config-db-plus-repo-file.md) |
+| Future options | Single-tenant core with users and roles, internal node boundary | [0008](decisions/0008-keep-doors-open.md) |
 
-1. **Low idle footprint.** RAM and CPU on the VPS belong to the apps.
-2. **Fast and simple install.** Ideally one binary plus a systemd unit.
-3. **First-class Docker integration.**
-4. **Type safety end to end**, including the API boundary to the UI.
-5. **Development speed**, mostly with agents writing code.
+## Supporting choices
 
-## Language for the daemon and CLI
+These follow from the above and don't need their own records.
 
-Memory numbers are rough estimates for a small idle HTTP service and must be
-verified in the M0 spike.
-
-| | Go | Rust | TypeScript (Bun) | TypeScript (Node) |
-|---|---|---|---|---|
-| Idle RAM (est.) | ~10-25 MB | ~5-15 MB | ~30-60 MB | ~40-80 MB |
-| Distribution | Static binary, trivial cross-compile | Static binary, cross-compile is more work | `bun build --compile`, large binary | Needs a runtime |
-| Docker client | Official SDK (Docker is written in Go) | `bollard`, community | `dockerode`, community, loosely typed | Same |
-| Compile speed | Fast | Slow | n/a | n/a |
-| Agent productivity | High | Medium | High | High |
-| Ecosystem fit | Docker, Caddy, containerd, BuildKit are all Go | Good | Good | Good |
-
-### Recommendation: Go
-
-- One static binary for both roles: `platform serve` on the VPS and
-  `platform deploy` etc. on your machine or in an agent's sandbox.
-- The official Docker SDK uses the same types the Docker daemon uses.
-- Small and predictable memory use, fast startup, no runtime to install.
-- Go is simple enough that agent-written code stays readable.
-
-Rust would save a few more MB but costs a lot of iteration speed. TypeScript
-would let us share types with the UI natively, but costs RAM on the server and
-needs either a runtime or a large compiled binary. The UI type-sharing problem
-is solvable from Go (see below), so the server-side cost isn't worth it.
-
-## Web UI
-
-- **React + Vite + Tailwind**, TypeScript.
-- Built to static files and **embedded in the Go binary** with `go:embed`. No
-  Node process on the server. The UI costs nothing at idle.
-- React Query for server state. Add Zustand only if real client state appears.
-
-## API and type safety
-
-- **Huma** (Go): define handlers with Go structs and get an OpenAPI 3.1 spec
-  generated from them.
-- **openapi-typescript + openapi-fetch** generate a typed client for the UI.
-- The CLI calls the API with the same Go types.
-- Side benefits: agents get a machine-readable spec and plain JSON over HTTP
-  they can `curl`.
-- **Live logs and deploy progress:** Server-Sent Events.
-
-Alternative: ConnectRPC (protobuf schema, generated Go and TS clients, built-in
-streaming). It gives a stricter contract but adds a schema language and codegen
-step. See [open questions](open-questions.md).
-
-## Storage
-
-- **SQLite** in WAL mode, one file, backed up like any other file.
-- `modernc.org/sqlite` (pure Go, no CGO) keeps the build a static binary.
-- **sqlc** for typed queries, plain SQL migrations embedded in the binary.
-- Secrets encrypted at rest (AES-GCM) with a key file on disk (`0600`), kept out
-  of the database file.
-
-## Reverse proxy and TLS
-
-- **Caddy**, as a **separate process** (systemd), configured through its admin
-  API on localhost. Runs with `--resume`, so it reloads the last config on its
-  own. This means daemon restarts never touch routing.
-- Automatic HTTPS via Let's Encrypt.
-- Why not embed Caddy in our binary: then upgrading the daemon would restart the
-  proxy and drop traffic.
-- Worth a spike: **kamal-proxy**, a small Go proxy built specifically for
-  zero-downtime container cutover with health checks and automatic TLS.
-
-## Builds
-
-- Docker Engine with **BuildKit** builds from a `Dockerfile`.
-- **Railpack** (Railway's open-source builder) when there is no Dockerfile.
-- Builds are the biggest resource risk on a small VPS. Allow one concurrent build
-  and cap its resources. Building in CI and pushing an image is an option later.
+| Area | Choice |
+|---|---|
+| CLI framework | Cobra |
+| Docker | Official Go SDK (`github.com/docker/docker/client`) |
+| Zero-config builds | Railpack (Railway's open-source builder) when there is no Dockerfile |
+| UI | React, Vite, Tailwind, TanStack Router, TanStack Query |
+| UI API client | `openapi-typescript` + `openapi-fetch`, generated from the spec |
+| Secrets at rest | AES-GCM, key file on disk (`0600`), outside the database |
+| Host networking for the API | Tailscale (recommended), or public with login |
+| Image registry | CNCF Distribution (`registry`) next to the control plane, or any external registry |
+| Backups (M5) | restic to S3-compatible storage |
+| Go tooling | `gofmt`, `go vet`, `golangci-lint` |
+| UI tooling | pnpm, TypeScript strict, Biome |
+| CI | GitHub Actions (unit tests, Docker integration tests, build) |
 
 ## Rejected
 
-- **Kubernetes / k3s:** hundreds of MB of overhead and a lot of moving parts for
-  one server.
-- **Docker Swarm / Nomad:** an extra layer on top of what the Docker API already
-  does on a single host.
+- **TypeScript / Bun on the server:** shares types with the UI natively, but
+  costs RAM and needs a runtime or a large compiled binary. See 0001.
+- **Rust:** smallest footprint, but much slower iteration. See 0001.
+- **Kubernetes / k3s, Swarm, Nomad:** an orchestration layer we don't need on
+  one server, with real overhead.
 - **Postgres for platform state:** another service to run and back up, for data
   that fits easily in SQLite.
-
-## Resource budget (target)
-
-| Component | Target idle RAM |
-|---|---|
-| Docker Engine | Already needed by the apps |
-| Caddy | ≤ 40 MB |
-| platform daemon | ≤ 30 MB |
-| **Platform overhead total** | **≤ 70 MB, ~0% idle CPU** |
-
-The daemon should do no polling at idle. It reacts to API calls and Docker
-events.
+- **Convex or any hosted backend:** conflicts with owning our data and running
+  fully self-hosted.

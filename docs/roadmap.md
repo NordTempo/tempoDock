@@ -1,57 +1,96 @@
 # Roadmap
 
-Each milestone ends with something usable on a real VPS.
+Each milestone ends with something usable on a real server. Later milestones
+are deliberately vaguer; we refine them as we learn.
 
-## M0: Spike (validate the stack)
+## Where we start
 
-- Minimal Go binary: an HTTP endpoint, a SQLite file, and listing containers
-  via the Docker SDK.
-- Measure idle RAM and CPU of the daemon and Caddy on a small VPS.
-- Try Caddy admin API route switching vs kamal-proxy for zero-downtime cutover.
+**M0 → M1 on the homelab.** Prove the stack's footprint, then build the
+smallest loop that is genuinely useful: deploy an app from the CLI with zero
+downtime and safe rollback. Everything before M3 runs on the homelab, so
+production is never at risk while the platform is young. The UI comes in M2,
+once the API it sits on is real. Production joins in M3.
 
-**Done when:** we have measured numbers and confirmed or changed the
-[tech stack](tech-stack.md).
+## M0: Spike and skeleton
 
-## M1: Deploy loop (CLI only)
+- Go module, `cmd/platform`, CI (lint, test, build), README for local dev.
+- `platform serve`: one API endpoint, SQLite file, list containers via the
+  Docker SDK, embedded "hello" web page.
+- Measure idle RAM/CPU of the daemon, Caddy, an idle BuildKit and the registry
+  on a small VM in the homelab.
+- Spike Caddy: render config from a small DB, atomic reload during traffic,
+  on-demand TLS with the `ask` endpoint.
+- Spike capped BuildKit: build a Node app with a memory limit, confirm running
+  apps stay healthy during the build.
 
-- `platform serve` with systemd unit and install script.
-- `platform deploy`: upload source, build, start, health check, cut over.
-- `platform rollback`, `platform releases`, `platform logs`, `platform status`.
-- One domain per service with automatic HTTPS.
-- Basic variables (`platform env set`).
-- Single admin token.
+**Done when:** measured numbers are in [experience](experience.md).
 
-**Done when:** a real app deploys from a laptop with zero downtime, and a broken
-deploy leaves the previous version serving.
+## M1: Deploy loop (CLI)
+
+- Install script: checks Docker, installs Caddy, BuildKit, binary, systemd unit,
+  creates the first admin token.
+- `platform login`, `platform link`, `platform deploy` (source or `--image`).
+- Deploy state machine with health-gated cutover and crash recovery.
+- `rollback`, `releases`, `logs`, `status`, all with `--json`.
+- Domains: add any hostname from the CLI, generated subdomains, automatic
+  HTTPS, live DNS and certificate status.
+- Service variables (`platform env set/list/unset`).
+- Optional `platform.toml` for build and health check settings.
+
+**Done when:** a real NordTempo app deploys to the homelab from a laptop and
+from an agent with zero downtime, and a broken deploy leaves the previous version
+serving.
 
 ## M2: Railway model + web UI
 
-- Projects, environments, services, environment and service variables,
+- Projects, environments, services; environment and service variables;
   variable references.
 - Per-environment Docker networks (private networking by service name).
-- Web UI with full parity: overview, services, variables editor, releases,
-  live logs, deploy and rollback.
-- Scoped tokens and audit log.
+- Users, scoped tokens, audit log.
+- Web UI with full parity: project overview, services, variables editor,
+  releases, live logs and deploy progress, deploy and rollback, command palette.
 
 **Done when:** everything is doable from either the UI or the CLI, and an agent
 with a `deploy` token cannot delete anything.
 
-## M3: Day-to-day comfort
+## M3: Production + homelab
 
-- GitHub push-to-deploy (webhook per service/branch).
-- Resource limits UI, basic metrics (CPU, RAM, disk per service).
-- Disk pruning, log rotation, alerts.
-- Clone an environment.
+- `platform node` mode, node join tokens, the outbound node connection,
+  version compatibility checks.
+- Environment placement (production vs non-production servers).
+- Registry next to the control plane; builds only on builder servers.
+- `platform promote staging production`.
+- Per-server status in the UI and CLI.
+- Move the control plane to the Hetzner server; homelab joins as a node.
 
-## M4: Data
+**Done when:** a NordTempo app runs staging on the homelab and production on
+Hetzner, production is deployed by promotion, and taking the homelab offline
+doesn't affect production.
+
+## M4: Day-to-day comfort
+
+- GitHub push-to-deploy (webhook per service and branch).
+- Resource limits in the UI; stored, downsampled metrics per service.
+- Disk pruning, alerts (disk, failed deploys, crash loops).
+- Clone an environment. Export a project's config.
+
+## M5: Data
 
 - Volumes in the UI.
 - Scheduled off-box backups and tested restore.
-- Database templates (Postgres, Redis) as regular services with volumes and
-  backup presets.
+- Database templates (Postgres, Redis): regular services with volumes and
+  backup presets ([ADR 0011](decisions/0011-stateful-services-and-databases.md)).
+- Non-destructive restore into a new service; `platform connect` tunnels.
+
+## M6: Ready for others (if we go open source)
+
+- Polished install and upgrade path, public docs, license.
+- Multiple users with roles in the UI.
+- Telemetry-free by default.
 
 ## Later (only when needed)
 
-- Preview environments per pull request
+- Preview environments per pull request (on the homelab)
+- Moving an environment between servers
 - Human approval flow for selected actions
-- Multiple servers
+- Hosted control plane managing customer-owned servers (paid offering)
