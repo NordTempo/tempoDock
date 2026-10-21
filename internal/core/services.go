@@ -92,6 +92,9 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 	if err != nil {
 		return apitypes.Service{}, err
 	}
+	if err := notArchived(es.project); err != nil {
+		return apitypes.Service{}, err
+	}
 	if err := validName("service", req.Name); err != nil {
 		return apitypes.Service{}, err
 	}

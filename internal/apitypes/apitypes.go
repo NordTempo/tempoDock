@@ -62,6 +62,9 @@ type Project struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+	// ArchivedAt is set for archived projects, which are hidden from lists
+	// unless asked for.
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 }
 
 // CreateProjectRequest creates a project.

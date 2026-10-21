@@ -39,6 +39,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.applyVolumeStmt, err = db.PrepareContext(ctx, applyVolume); err != nil {
 		return nil, fmt.Errorf("error preparing query ApplyVolume: %w", err)
 	}
+	if q.archiveProjectStmt, err = db.PrepareContext(ctx, archiveProject); err != nil {
+		return nil, fmt.Errorf("error preparing query ArchiveProject: %w", err)
+	}
 	if q.archiveServiceStmt, err = db.PrepareContext(ctx, archiveService); err != nil {
 		return nil, fmt.Errorf("error preparing query ArchiveService: %w", err)
 	}
@@ -325,6 +328,11 @@ func (q *Queries) Close() error {
 	if q.applyVolumeStmt != nil {
 		if cerr := q.applyVolumeStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing applyVolumeStmt: %w", cerr)
+		}
+	}
+	if q.archiveProjectStmt != nil {
+		if cerr := q.archiveProjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing archiveProjectStmt: %w", cerr)
 		}
 	}
 	if q.archiveServiceStmt != nil {
@@ -801,6 +809,7 @@ type Queries struct {
 	addReleaseEventStmt           *sql.Stmt
 	applyVariableStmt             *sql.Stmt
 	applyVolumeStmt               *sql.Stmt
+	archiveProjectStmt            *sql.Stmt
 	archiveServiceStmt            *sql.Stmt
 	clearReleaseHostPortStmt      *sql.Stmt
 	countEnvironmentsByServerStmt *sql.Stmt
@@ -898,6 +907,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addReleaseEventStmt:           q.addReleaseEventStmt,
 		applyVariableStmt:             q.applyVariableStmt,
 		applyVolumeStmt:               q.applyVolumeStmt,
+		archiveProjectStmt:            q.archiveProjectStmt,
 		archiveServiceStmt:            q.archiveServiceStmt,
 		clearReleaseHostPortStmt:      q.clearReleaseHostPortStmt,
 		countEnvironmentsByServerStmt: q.countEnvironmentsByServerStmt,

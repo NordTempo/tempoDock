@@ -252,6 +252,7 @@ func TestCommandErrors(t *testing.T) {
 	}{
 		{"read token can't deploy", apitypes.ScopeRead, []string{"deploy", "-p", "shop", "-e", "production", "-s", "web"}, output.ExitAuth, "requires deploy"},
 		{"deploy token can't archive", apitypes.ScopeDeploy, []string{"service", "archive", "web", "-p", "shop", "-e", "production", "--yes"}, output.ExitAuth, "requires admin"},
+		{"deploy token can't archive a project", apitypes.ScopeDeploy, []string{"project", "archive", "shop", "--yes"}, output.ExitAuth, "requires admin"},
 		{"unknown service", apitypes.ScopeAdmin, []string{"status", "-p", "shop", "-e", "production", "-s", "nope"}, output.ExitNotFound, `service "nope" not found`},
 		{"unknown project", apitypes.ScopeAdmin, []string{"service", "list", "-p", "nope", "-e", "production"}, output.ExitNotFound, "not found"},
 		{"nothing linked", apitypes.ScopeAdmin, []string{"deploy"}, output.ExitUsage, "--project"},

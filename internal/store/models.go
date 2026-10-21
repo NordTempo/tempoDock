@@ -44,9 +44,10 @@ type Environment struct {
 }
 
 type Project struct {
-	ID        int64
-	Name      string
-	CreatedAt time.Time
+	ID         int64
+	Name       string
+	CreatedAt  time.Time
+	ArchivedAt *time.Time
 }
 
 type Release struct {

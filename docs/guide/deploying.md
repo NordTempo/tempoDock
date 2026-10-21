@@ -196,3 +196,8 @@ The `source` field of a release says what created it.
 container in the background (up to 30 s; progress shows as events on the
 last release). Volumes, releases and history are kept. Needs the `admin`
 scope, and `--yes` when not on a terminal.
+
+`dock project archive shop` does the same for every service in every
+environment of the project, then hides it from `dock project list`
+(`--all` shows it). An archived project takes no new environments or
+services. It is refused while one of its services is deploying.

@@ -55,9 +55,11 @@ func registerProjects(s *Server, a huma.API) {
 	tags := []string{"projects"}
 	authed(s, a, huma.Operation{
 		OperationID: "list-projects", Method: http.MethodGet, Path: projectsPath,
-		Summary: "List projects", Tags: tags,
-	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Project], error) {
-		return reply(s.core.ListProjects(ctx, actor))
+		Summary: "List projects", Description: "Archived projects only with `archived=true`.", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Archived bool `query:"archived" doc:"Include archived projects"`
+	}) (*out[[]apitypes.Project], error) {
+		return reply(s.core.ListProjects(ctx, actor, in.Archived))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "create-project", Method: http.MethodPost, Path: projectsPath,
@@ -71,6 +73,13 @@ func registerProjects(s *Server, a huma.API) {
 		Summary: "Get a project", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[apitypes.Project], error) {
 		return reply(s.core.GetProject(ctx, actor, in.Project))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "archive-project", Method: http.MethodPost, Path: projectPathT + "/archive",
+		Summary: "Archive a project", Tags: tags,
+		Description: "Archives every service in the project (routes removed, containers stopped in the background; volumes and history kept) and hides the project from lists. Refused while a service is deploying. Scope: admin.",
+	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[apitypes.Project], error) {
+		return reply(s.core.ArchiveProject(ctx, actor, in.Project))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "project-overview", Method: http.MethodGet, Path: projectPathT + "/overview",

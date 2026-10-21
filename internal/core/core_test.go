@@ -448,6 +448,57 @@ func TestArchiveStopsInBackground(t *testing.T) {
 	}
 }
 
+// Archiving a project archives every service in every environment the same
+// way (volumes kept), hides the project from lists and takes nothing new.
+func TestArchiveProject(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	db := h.service("db", apitypes.CreateServiceRequest{})
+	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.CreateEnvironment(h.ctx, System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+		t.Fatal(err)
+	}
+	staging := ServiceRef{"shop", "staging", "web"}
+	if _, err := h.c.CreateService(h.ctx, System, staging.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(web, "app:1")
+	h.deploy(db, "postgres:17")
+	h.deploy(staging, "app:1")
+
+	deployer := Actor{Name: "ci", Kind: "token", Scope: apitypes.ScopeDeploy}
+	if _, err := h.c.ArchiveProject(h.ctx, deployer, "shop"); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("deploy scope archived a project: %v", err)
+	}
+	p, err := h.c.ArchiveProject(h.ctx, System, "shop")
+	if err != nil || p.ArchivedAt == nil {
+		t.Fatalf("archive = %+v, %v", p, err)
+	}
+	h.waitRunning()
+	for _, ref := range []ServiceRef{web, db, staging} {
+		if svc, _ := h.c.GetService(h.ctx, System, ref); svc.ArchivedAt == nil || svc.ActiveRelease != nil {
+			t.Errorf("%s = %+v", ref, svc)
+		}
+	}
+	if vols, _ := h.c.ListVolumes(h.ctx, System, db); len(vols) != 1 {
+		t.Errorf("volumes = %+v", vols)
+	}
+	if ps, _ := h.c.ListProjects(h.ctx, System, false); len(ps) != 0 {
+		t.Errorf("listed by default: %+v", ps)
+	}
+	if ps, _ := h.c.ListProjects(h.ctx, System, true); len(ps) != 1 || ps[0].ArchivedAt == nil {
+		t.Errorf("listed with archived: %+v", ps)
+	}
+	if _, err := h.c.CreateService(h.ctx, System, web.Env(), apitypes.CreateServiceRequest{Name: "new"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Errorf("service created in archived project: %v", err)
+	}
+	if _, err := h.c.ArchiveProject(h.ctx, System, "shop"); err != nil {
+		t.Errorf("archiving again: %v", err)
+	}
+}
+
 // An OOM kill of the running container shows in the service's status with
 // the limit it hit.
 func TestOOMKillStatusHasLimit(t *testing.T) {
