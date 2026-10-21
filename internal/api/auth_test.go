@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/core"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/core"
 )
 
 // as sends a request authenticated by a session cookie, like the UI.

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/NordTempo/platform/internal/core"
+	"github.com/NordTempo/tempoDock/internal/core"
 )
 
 // Internal returns the handler for loopback-only endpoints, served on

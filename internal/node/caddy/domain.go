@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // certCheckTimeout bounds the TLS handshake in CheckDomain. The first

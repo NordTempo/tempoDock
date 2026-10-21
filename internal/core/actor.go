@@ -3,8 +3,8 @@ package core
 import (
 	"fmt"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Actor is who performs an operation: a logged-in user, an API token or the

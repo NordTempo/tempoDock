@@ -50,8 +50,8 @@ import (
 	"github.com/tonistiigi/fsutil"
 	"google.golang.org/grpc/codes"
 
-	"github.com/NordTempo/platform/internal/config"
-	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // Builder builds images in the capped BuildKit container, one at a time.

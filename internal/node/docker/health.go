@@ -16,7 +16,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 const (

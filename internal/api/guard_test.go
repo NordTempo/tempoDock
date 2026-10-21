@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/core"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/core"
 )
 
 // login creates an admin user and returns its session cookie.

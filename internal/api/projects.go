@@ -6,8 +6,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/core"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/core"
 )
 
 // Path parameters. Resources are addressed by name; names are unique in

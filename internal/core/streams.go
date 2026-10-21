@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/node"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Stream delivers live items until it ends, ctx is done or send fails.

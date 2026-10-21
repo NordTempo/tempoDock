@@ -26,7 +26,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/NordTempo/platform/internal/repoconfig"
+	"github.com/NordTempo/tempoDock/internal/repoconfig"
 )
 
 // Options tune Write.

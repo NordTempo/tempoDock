@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NordTempo/platform/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
 func TestRequestHeadersAndJSON(t *testing.T) {

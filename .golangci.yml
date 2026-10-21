@@ -13,4 +13,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/NordTempo/platform
+        - github.com/NordTempo/tempoDock

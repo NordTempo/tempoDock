@@ -17,12 +17,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/config"
-	"github.com/NordTempo/platform/internal/core"
-	"github.com/NordTempo/platform/internal/node/fake"
-	"github.com/NordTempo/platform/internal/secrets"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/node/fake"
+	"github.com/NordTempo/tempoDock/internal/secrets"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 type fixture struct {

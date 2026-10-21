@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // These tests run a real `caddy run` (from PATH) with a temp config, socket

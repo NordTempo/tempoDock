@@ -27,7 +27,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // Options configure the rendered Caddy config and how to reach Caddy.

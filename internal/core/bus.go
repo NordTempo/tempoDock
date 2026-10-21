@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 // busEvent is an event plus the IDs used for permission filtering.

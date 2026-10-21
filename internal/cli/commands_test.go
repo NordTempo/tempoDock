@@ -13,16 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NordTempo/platform/internal/api"
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/cli/output"
-	"github.com/NordTempo/platform/internal/clientconfig"
-	"github.com/NordTempo/platform/internal/config"
-	"github.com/NordTempo/platform/internal/core"
-	"github.com/NordTempo/platform/internal/node"
-	"github.com/NordTempo/platform/internal/node/fake"
-	"github.com/NordTempo/platform/internal/secrets"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/api"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/fake"
+	"github.com/NordTempo/tempoDock/internal/secrets"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // testServer is the real API and core on the fake runtime.

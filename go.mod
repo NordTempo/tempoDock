@@ -1,4 +1,4 @@
-module github.com/NordTempo/platform
+module github.com/NordTempo/tempoDock
 
 go 1.27.3
 

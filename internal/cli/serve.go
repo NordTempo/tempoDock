@@ -12,12 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NordTempo/platform/internal/api"
-	"github.com/NordTempo/platform/internal/config"
-	"github.com/NordTempo/platform/internal/core"
-	"github.com/NordTempo/platform/internal/secrets"
-	"github.com/NordTempo/platform/internal/store"
-	"github.com/NordTempo/platform/internal/version"
+	"github.com/NordTempo/tempoDock/internal/api"
+	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/secrets"
+	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/version"
 )
 
 func newServeCmd() *cobra.Command {

@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/NordTempo/platform/internal/cli"
+	"github.com/NordTempo/tempoDock/internal/cli"
 )
 
 func main() {

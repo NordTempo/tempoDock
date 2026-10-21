@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 // uiCSP is the web UI's Content-Security-Policy. The Vite build has no

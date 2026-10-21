@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 var keyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

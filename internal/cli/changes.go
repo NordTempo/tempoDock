@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 // Staged changes, Railway style: variables, settings and volumes are staged

@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/cli/apiclient"
-	"github.com/NordTempo/platform/internal/cli/output"
-	"github.com/NordTempo/platform/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/apiclient"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/clientconfig"
 )
 
 // apiPrefix is the base path of every API operation.

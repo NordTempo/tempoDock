@@ -9,12 +9,12 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/NordTempo/platform/internal/config"
-	"github.com/NordTempo/platform/internal/node"
-	"github.com/NordTempo/platform/internal/node/build"
-	"github.com/NordTempo/platform/internal/node/caddy"
-	"github.com/NordTempo/platform/internal/node/docker"
-	"github.com/NordTempo/platform/internal/node/fake"
+	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/build"
+	"github.com/NordTempo/tempoDock/internal/node/caddy"
+	"github.com/NordTempo/tempoDock/internal/node/docker"
+	"github.com/NordTempo/tempoDock/internal/node/fake"
 )
 
 // newRuntime builds the local server's node runtime from Docker, BuildKit

@@ -7,8 +7,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 func settingsOf(s store.Service) apitypes.ServiceSettings {

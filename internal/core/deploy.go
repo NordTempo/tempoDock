@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/node"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // cleanupTimeout bounds cleanup after a failed or interrupted deploy, which

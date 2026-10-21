@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NordTempo/platform/internal/cli/output"
-	"github.com/NordTempo/platform/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/clientconfig"
 )
 
 // setup isolates the user config and the DOCK_* environment.

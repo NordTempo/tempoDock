@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 // A stream announces `ready` once it is subscribed, so an action taken

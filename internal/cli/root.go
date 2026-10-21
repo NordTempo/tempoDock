@@ -11,9 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NordTempo/platform/internal/cli/output"
-	"github.com/NordTempo/platform/internal/clientconfig"
-	"github.com/NordTempo/platform/internal/version"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/version"
 )
 
 // Execute runs the CLI and returns the process exit code (see

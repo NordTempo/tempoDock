@@ -1,5 +1,5 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/NordTempo/platform/internal/version.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
 .PHONY: build web test test-integration lint generate dev
 

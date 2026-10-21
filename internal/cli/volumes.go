@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 func newVolumeCmd(g *globals) *cobra.Command {

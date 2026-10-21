@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // The structs below are the small subset of Caddy's JSON config we use.

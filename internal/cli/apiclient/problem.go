@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NordTempo/platform/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
 // Problem is an RFC 7807 error body (application/problem+json), as the API

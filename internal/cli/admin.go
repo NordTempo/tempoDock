@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NordTempo/platform/internal/api"
-	"github.com/NordTempo/platform/internal/config"
-	"github.com/NordTempo/platform/internal/core"
-	"github.com/NordTempo/platform/internal/node/caddy"
+	"github.com/NordTempo/tempoDock/internal/api"
+	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/node/caddy"
 )
 
 // newAdminCmd groups server-side commands that run on the server itself

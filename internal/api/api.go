@@ -19,10 +19,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/core"
-	"github.com/NordTempo/platform/internal/version"
-	"github.com/NordTempo/platform/web"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/version"
+	"github.com/NordTempo/tempoDock/web"
 )
 
 // Prefix is the base path of every API operation.

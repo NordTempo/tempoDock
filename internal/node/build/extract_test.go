@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 type entry struct {

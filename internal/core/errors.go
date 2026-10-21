@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/NordTempo/platform/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 // Error is a domain error with a machine-readable code. The API maps codes

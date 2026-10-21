@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NordTempo/platform/internal/cli/apiclient"
-	"github.com/NordTempo/platform/internal/cli/output"
-	"github.com/NordTempo/platform/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/cli/apiclient"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/clientconfig"
 )
 
 // contextView is the JSON shape of a context. Tokens are never printed.

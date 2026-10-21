@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NordTempo/platform/internal/cli/output"
-	"github.com/NordTempo/platform/internal/version"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/version"
 )
 
 // UserAgent identifies the CLI and its version to the server.

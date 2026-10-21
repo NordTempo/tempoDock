@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Staged changes (Railway-style): setting variables, changing service

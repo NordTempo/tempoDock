@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NordTempo/platform/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // applyRoutes renders the server's complete routing table from the DB and

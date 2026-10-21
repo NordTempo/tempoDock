@@ -13,8 +13,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Secret prefixes make leaked credentials easy to recognise and scan for.

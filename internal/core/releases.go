@@ -15,9 +15,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/NordTempo/platform/internal/apitypes"
-	"github.com/NordTempo/platform/internal/repoconfig"
-	"github.com/NordTempo/platform/internal/store"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/repoconfig"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // defaultPort is the container port (and PORT) for services without one.
