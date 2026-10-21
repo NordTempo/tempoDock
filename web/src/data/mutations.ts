@@ -11,6 +11,7 @@ import type {
   DiscardSelection,
   EnvRef,
   NewToken,
+  NewUser,
   ServiceRef,
   SettingsPatch,
 } from "./types";
@@ -201,6 +202,21 @@ export const useArchiveService = () =>
     (ref) => [keys.overview(ref.project), ["audit"]],
   );
 
+/**
+ * Archives a project: stops every service, removes routes, hides it from
+ * lists. Admin only; volumes and history are kept.
+ */
+export const useArchiveProject = () =>
+  useAction(
+    (project: string) =>
+      body(
+        api.POST("/api/v1/projects/{project}/archive", {
+          params: { path: { project } },
+        }),
+      ),
+    (project) => [keys.projects, keys.project(project), ["audit"]],
+  );
+
 /** Resolves with the token and its secret, which is shown exactly once. */
 export const useCreateToken = () =>
   useAction(
@@ -213,6 +229,31 @@ export const useRevokeToken = () =>
     (id: number) =>
       done(api.DELETE("/api/v1/tokens/{id}", { params: { path: { id } } })),
     () => [keys.tokens, ["audit"]],
+  );
+
+export const useCreateUser = () =>
+  useAction(
+    (input: NewUser) => body(api.POST("/api/v1/users", { body: input })),
+    () => [keys.users, ["audit"]],
+  );
+
+/** Disabled users can't log in; tokens they created keep working. */
+export const useSetUserDisabled = () =>
+  useAction(
+    ({ id, disabled }: { id: number; disabled: boolean }) =>
+      body(
+        disabled
+          ? api.POST("/api/v1/users/{id}/disable", { params: { path: { id } } })
+          : api.POST("/api/v1/users/{id}/enable", { params: { path: { id } } }),
+      ),
+    () => [keys.users, ["audit"]],
+  );
+
+export const useDeleteUser = () =>
+  useAction(
+    (id: number) =>
+      done(api.DELETE("/api/v1/users/{id}", { params: { path: { id } } })),
+    () => [keys.users, ["audit"]],
   );
 
 export function useLogin() {

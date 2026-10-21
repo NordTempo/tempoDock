@@ -23,6 +23,7 @@ export type VariableChange = Schemas["VariableChange"];
 export type SettingChange = Schemas["SettingChange"];
 export type Token = Schemas["Token"];
 export type NewToken = Schemas["CreateTokenRequest"];
+export type NewUser = Schemas["CreateUserRequest"];
 export type User = Schemas["User"];
 export type AuditEvent = Schemas["AuditEvent"];
 export type LiveEvent = Schemas["Event"];
@@ -52,17 +53,21 @@ export type ProjectOverview = {
 
 export type PendingChanges = Omit<
   Schemas["PendingChanges"],
-  "variables" | "settings" | "volumes"
+  "variables" | "settings" | "volumes" | "affected"
 > & {
   variables: VariableChange[];
   settings: SettingChange[];
   volumes: Schemas["VolumeAddition"][];
+  /** Services that get a release on apply, including dependents. */
+  affected: string[];
 };
 
 export type AuditFilter = {
   project?: string;
   environment?: string;
   service?: string;
+  /** Action prefix, like "release." or "domain.add". */
+  action?: string;
 };
 
 /** One line in a log view: container output or build output. */
@@ -77,7 +82,6 @@ export type LogLine = {
 /** Something on the project overview that needs a human, derived from state. */
 export type Problem =
   | { kind: "crashed"; service: ServiceView }
-  | { kind: "deploying"; service: ServiceView; release: ReleaseSummary }
   | { kind: "deploy_failed"; service: ServiceView; release: ReleaseSummary }
   | { kind: "domain"; service: ServiceView; domain: Domain }
   | { kind: "staged"; environment: EnvironmentView }
