@@ -1,107 +1,175 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { memo } from "react";
 import { domainNeedsAttention } from "../../data/problems";
-import { serviceRef } from "../../data/queries";
-import type { ServiceView } from "../../data/types";
-import { since } from "../../ui/format";
-import { Status } from "../../ui/kit";
-import { changeText, serviceStatus } from "../../ui/status";
-import { formatSetting } from "../settings/settings";
+import { queries, serviceRef } from "../../data/queries";
+import type { EnvironmentView, ServiceView } from "../../data/types";
+import { mb, plural } from "../../ui/format";
+import { Scroll, StateText } from "../../ui/kit";
+import { serviceState } from "../../ui/status";
+import { imageLabel } from "../service/releases";
 
-/** One environment's services, one dense row each. Rows open the service. */
-export function EnvironmentTable({ services }: { services: ServiceView[] }) {
-  const navigate = useNavigate();
+/** One environment on the project overview: a row per service. */
+export function EnvironmentTable({ env }: { env: EnvironmentView }) {
+  const { environment, services, pending_changes: staged } = env;
+  const ref = { project: environment.project, environment: environment.name };
   return (
-    <table className="tbl">
-      <thead>
-        <tr>
-          <th>Service</th>
-          <th>Status</th>
-          <th>Release</th>
-          <th>Source</th>
-          <th>Domain</th>
-          <th className="num">CPU limit</th>
-          <th className="num">Memory limit</th>
-          <th>Volume</th>
-          <th>Staged</th>
-          <th>Deployed</th>
-        </tr>
-      </thead>
-      <tbody>
-        {services.map((svc) => {
-          const { service, active_release: release, domains } = svc;
-          const params = serviceRef(service);
-          const attention = domains.filter(domainNeedsAttention).length;
-          return (
-            <tr
-              key={service.id}
-              className="row"
-              onClick={() =>
-                navigate({ to: "/$project/$environment/$service", params })
-              }
-            >
-              <td>
-                <Link
-                  to="/$project/$environment/$service"
-                  params={params}
-                  className="font-semibold"
-                >
-                  {service.name}
-                </Link>
-              </td>
-              <td>
-                <Status {...serviceStatus(svc)} />
-              </td>
-              <td className="font-mono text-xs">
-                {release ? `r${release.number}` : "-"}
-              </td>
-              <td className="max-w-[280px] truncate font-mono text-xs text-dim">
-                {release ? changeText(release) : service.image || "-"}
-              </td>
-              <td>
-                {domains[0] ? (
-                  <>
-                    <a
-                      href={domains[0].url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="hover:underline"
-                      // The row opens the service; the link opens the site.
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {domains[0].hostname}
-                    </a>
-                    {domains.length > 1 && (
-                      <span className={attention ? "text-warn" : "text-dim"}>
-                        {" "}
-                        +{domains.length - 1}
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-dim">private</span>
-                )}
-              </td>
-              <td className="num font-mono text-xs text-dim">
-                {formatSetting("cpus", service.cpus)}
-              </td>
-              <td className="num font-mono text-xs text-dim">
-                {formatSetting("memory_mb", service.memory_mb)}
-              </td>
-              <td className={service.stateful ? undefined : "text-dim"}>
-                {service.stateful ? "yes" : "-"}
-              </td>
-              <td
-                className={service.pending_changes ? "text-warn" : "text-dim"}
-              >
-                {service.pending_changes || "-"}
-              </td>
-              <td className="text-dim">
-                {release ? since(release.created_at) : "never"}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <section aria-labelledby={`env-${environment.id}`}>
+      <h2 id={`env-${environment.id}`} className="text-md font-semibold">
+        {environment.name}{" "}
+        <span className="font-mono text-xs font-normal text-mut">
+          {environment.server}
+        </span>{" "}
+        {staged > 0 && (
+          <Link
+            to="/$project/$environment"
+            params={ref}
+            className="text-xs font-normal text-warn decoration-[#7a5c10]"
+          >
+            ▲ {plural(staged, "staged change")}
+          </Link>
+        )}
+        <Link
+          to="/$project/$environment"
+          params={ref}
+          className="ml-3 text-xs font-normal text-mut"
+        >
+          variables
+        </Link>
+      </h2>
+      {services.length === 0 ? (
+        <p className="py-2 text-mut">
+          No services. Deploy one with{" "}
+          <code className="font-mono text-white">
+            dock deploy -e {environment.name}
+          </code>
+          .
+        </p>
+      ) : (
+        <div className="mt-1">
+          <Scroll>
+            <table>
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>State</th>
+                  <th>Release</th>
+                  <th>Image</th>
+                  <th>Domain</th>
+                  <th>CPU</th>
+                  <th>Memory</th>
+                  <th>Volume</th>
+                </tr>
+              </thead>
+              <tbody>
+                {services.map((s) => (
+                  <ServiceRow key={s.service.id} view={s} />
+                ))}
+              </tbody>
+            </table>
+          </Scroll>
+        </div>
+      )}
+    </section>
   );
 }
+
+const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
+  const {
+    service,
+    deploying,
+    active_release: active,
+    latest_release: latest,
+  } = view;
+  const ref = serviceRef(service);
+  const volumes = useQuery(queries.volumes(ref)).data ?? [];
+  const failed = !deploying && latest?.status === "failed" ? latest : undefined;
+  const [primary, ...rest] = [...view.domains].sort(
+    (a, b) => Number(a.generated) - Number(b.generated),
+  );
+  const attention = rest.filter(domainNeedsAttention).length;
+  const oldImage = active ? imageLabel(active) : "";
+  const newImage = deploying ? imageLabel(deploying) : "";
+
+  return (
+    <tr className={deploying ? "bg-prog-bg" : undefined}>
+      <td>
+        <Link to="/$project/$environment/$service" params={ref}>
+          {service.name}
+        </Link>
+      </td>
+      <td>
+        {failed ? (
+          <>
+            <Link
+              to="/$project/$environment/$service/releases/$number"
+              params={{ ...ref, number: String(failed.number) }}
+              className="text-fail decoration-[#7a2e2e]"
+            >
+              ✕ r{failed.number} failed
+            </Link>{" "}
+            {active && (
+              <span className="text-mut">r{active.number} serving</span>
+            )}
+          </>
+        ) : (
+          <StateText state={serviceState(view)} />
+        )}
+      </td>
+      <td className="font-mono">
+        {active ? `r${active.number}` : <span className="text-mut">none</span>}
+        {deploying && <span className="text-prog"> → r{deploying.number}</span>}
+      </td>
+      <td className="font-mono text-mut">
+        {oldImage || (!deploying && service.image) || ""}
+        {deploying && newImage !== oldImage && (
+          <span className="text-prog">
+            {oldImage && " → "}
+            {newImage}
+          </span>
+        )}
+      </td>
+      <td className="font-mono">
+        {primary ? (
+          <>
+            {primary.hostname}
+            {primary.status !== "active" && (
+              <span className="text-warn"> ▲</span>
+            )}
+            {rest.length > 0 && (
+              <span className={attention ? "text-warn" : "text-mut"}>
+                {" "}
+                +{rest.length}
+                {attention > 0 && " ▲"}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="font-sans text-mut">none</span>
+        )}
+      </td>
+      <td className="font-mono">
+        {service.cpus || <span className="font-sans text-mut">no limit</span>}
+      </td>
+      <td className="font-mono">
+        {service.memory_mb ? (
+          mb(service.memory_mb)
+        ) : (
+          <span className="font-sans text-mut">no limit</span>
+        )}
+      </td>
+      <td className="font-mono">
+        {volumes.length > 0 ? (
+          volumes.map((v) => (
+            <span key={v.name} title={v.mount_path} className="mr-2">
+              {v.name}
+              {v.pending && <span className="text-warn"> staged</span>}
+            </span>
+          ))
+        ) : (
+          <span className="font-sans text-mut">none</span>
+        )}
+      </td>
+    </tr>
+  );
+});

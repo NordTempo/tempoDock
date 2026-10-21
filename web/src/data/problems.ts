@@ -1,3 +1,4 @@
+import { isCrashLooping } from "../ui/status";
 import { useProjectOverview, useServers } from "./queries";
 import type { Problem, ServiceView } from "./types";
 
@@ -12,15 +13,32 @@ export const domainNeedsAttention = (d: { status: string }) =>
  */
 export function isFailing(s: ServiceView) {
   const { state } = s.service.status;
-  if (state === "crashed" || state === "restarting") return true;
+  if (state === "crashed" || isCrashLooping(s.service.status)) return true;
   const expected = !!s.service.active_release && !s.deploying;
   return expected && (state === "stopped" || state === "none");
 }
 
+/** Worst first: broken things, then things waiting on a human. */
+const severity = (p: Problem) => {
+  switch (p.kind) {
+    case "crashed":
+      return 0;
+    case "deploy_failed":
+      return 1;
+    case "server_offline":
+      return 2;
+    case "domain":
+      return p.domain.status === "error" ? 3 : 4;
+    case "staged":
+      return 5;
+  }
+};
+
 /**
- * What needs a human on a project, derived from live state: crashed
- * services, deploys in flight, failed latest releases, domains waiting for
- * DNS or failing, staged changes not applied yet, and offline servers.
+ * What needs a human on a project, derived from live state, worst first:
+ * crashed services, failed latest releases, offline servers, domains
+ * failing or waiting for DNS, and staged changes not applied yet. Deploys
+ * in flight are not problems; the overview shows them on their own.
  */
 export function useProblems(project: string): Problem[] {
   const { environments } = useProjectOverview(project);
@@ -28,12 +46,10 @@ export function useProblems(project: string): Problem[] {
   const services = environments.flatMap((e) => e.services);
 
   const problems: Problem[] = [];
-  services.forEach((service) => {
+  for (const service of services) {
     const release = service.latest_release;
     if (isFailing(service)) problems.push({ kind: "crashed", service });
-    if (service.deploying) {
-      problems.push({ kind: "deploying", service, release: service.deploying });
-    } else if (release?.status === "failed") {
+    if (!service.deploying && release?.status === "failed") {
       problems.push({ kind: "deploy_failed", service, release });
     }
     for (const domain of service.domains) {
@@ -41,7 +57,7 @@ export function useProblems(project: string): Problem[] {
         problems.push({ kind: "domain", service, domain });
       }
     }
-  });
+  }
   for (const environment of environments) {
     if (environment.pending_changes > 0) {
       problems.push({ kind: "staged", environment });
@@ -53,5 +69,5 @@ export function useProblems(project: string): Problem[] {
       problems.push({ kind: "server_offline", server });
     }
   }
-  return problems;
+  return problems.sort((a, b) => severity(a) - severity(b));
 }

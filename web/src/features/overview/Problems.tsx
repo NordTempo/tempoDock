@@ -1,22 +1,64 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useApplyChanges } from "../../data/mutations";
 import { useProblems } from "../../data/problems";
-import { serviceRef } from "../../data/queries";
-import type { Problem, ServiceView } from "../../data/types";
-import { since } from "../../ui/format";
-import { Glyph } from "../../ui/kit";
-import { releaseStatus, type Tone } from "../../ui/status";
+import { serviceRef, useChanges } from "../../data/queries";
+import type { EnvironmentView, Problem } from "../../data/types";
+import { useShortcuts } from "../../shell/keys";
+import { plural, since } from "../../ui/format";
+import { Button, ErrorText, Glyph } from "../../ui/kit";
+import {
+  failurePhrase,
+  type GlyphChar,
+  isCrashLooping,
+  oomPhrase,
+  type Tone,
+  toneText,
+} from "../../ui/status";
+import { errorSummary } from "../service/releases";
+import { affectedServices, nextRelease } from "../variables/apply";
 
-/** The overview's "needs a human" list. Renders nothing when all is well. */
+const actionClass = "btn sm no-underline";
+
+/**
+ * The overview's numbered "needs a human" list, worst first. Keys 1 to 9
+ * open (or focus) a problem's action.
+ */
 export function Problems({ project }: { project: string }) {
   const problems = useProblems(project);
+  useShortcuts(
+    problems.slice(0, 9).map((_, i) => ({
+      key: String(i + 1),
+      run: () => {
+        const action = document.querySelector<HTMLElement>(
+          `[data-problem="${i + 1}"]`,
+        );
+        if (action instanceof HTMLAnchorElement) action.click();
+        else action?.focus();
+      },
+    })),
+  );
   if (problems.length === 0) return null;
+  const n = problems.length;
   return (
-    <div className="border-b border-line">
-      {problems.map((problem) => (
-        <ProblemRow key={problemKey(problem)} problem={problem} />
-      ))}
-    </div>
+    <section aria-labelledby="problems">
+      <h2 id="problems" className="text-md font-semibold">
+        {plural(n, "problem")}{" "}
+        <span className="font-normal text-mut">
+          worst first · press {n === 1 ? "1" : `1 to ${Math.min(n, 9)}`}
+        </span>
+      </h2>
+      <ol className="mt-1.5 border-t border-line">
+        {problems.map((problem, i) => (
+          <ProblemRow
+            key={problemKey(problem)}
+            n={i + 1}
+            problem={problem}
+            project={project}
+          />
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -33,232 +75,286 @@ function problemKey(p: Problem) {
   }
 }
 
-const tab = "text-dim hover:text-white";
-const mono = "font-mono text-xs";
+type RowProps = { n: number; problem: Problem; project: string };
 
-function ProblemRow({ problem: p }: { problem: Problem }) {
+function ProblemRow({ n, problem: p, project }: RowProps) {
+  const key = n <= 9 ? String(n) : undefined;
   switch (p.kind) {
     case "crashed": {
       const { status, active_release } = p.service.service;
-      const when = status.updated_at ? ` (${since(status.updated_at)})` : "";
-      if (status.state !== "restarting" && status.state !== "crashed") {
+      const ref = serviceRef(p.service.service);
+      const where = `${ref.environment}/${ref.service}`;
+      const time = status.updated_at && since(status.updated_at);
+      const staged = p.service.service.pending_changes > 0;
+      const looping = isCrashLooping(status);
+      if (looping || status.state === "crashed") {
         return (
-          <ServiceRow
-            tone="bad"
-            service={p.service}
-            actions={
-              <Link
-                to="/$project/$environment/$service"
-                params={serviceRef(p.service.service)}
-                className={tab}
-              >
-                Releases
-              </Link>
+          <Row
+            n={key}
+            tone="fail"
+            glyph={looping ? "↻" : "✕"}
+            title={looping ? "Crash loop" : "Crashed"}
+            where={where}
+            time={time}
+            action={
+              staged ? (
+                <ApplyStaged
+                  n={n}
+                  project={project}
+                  environment={ref.environment}
+                />
+              ) : (
+                <Link
+                  to="/$project/$environment/$service/logs"
+                  params={ref}
+                  className={actionClass}
+                  data-problem={n}
+                >
+                  Logs
+                </Link>
+              )
             }
           >
-            No running container for r{active_release}
-            {when}. Redeploy or roll back.
-          </ServiceRow>
+            <span className="font-mono">r{active_release}</span>{" "}
+            {looping
+              ? `restarted ${status.restart_count} times, exit ${status.exit_code}`
+              : `exited with ${status.exit_code}`}
+            {status.oom_killed && `, ${oomPhrase(status)}`}.{" "}
+            {staged && (
+              <span className="text-mut">Changes for it are staged.</span>
+            )}
+          </Row>
         );
       }
       return (
-        <ServiceRow
-          tone="bad"
-          service={p.service}
-          actions={
-            <>
-              <ServiceLink service={p.service} tab="logs" label="Logs" />
-              <ServiceLink
-                service={p.service}
-                tab="variables"
-                label="Variables"
-              />
-            </>
-          }
-        >
-          {status.state === "restarting"
-            ? `Restarting: ${status.restart_count} restarts`
-            : "Crashed"}
-          , exit code <span className={mono}>{status.exit_code}</span>
-          {status.oom_killed && ", out of memory"}
-          {when}.
-        </ServiceRow>
-      );
-    }
-    case "deploy_failed":
-      return (
-        <ServiceRow
-          tone="bad"
-          service={p.service}
-          actions={
-            <Link
-              to="/$project/$environment/$service/logs"
-              params={serviceRef(p.service.service)}
-              search={{ release: p.release.number, build: true }}
-              className={tab}
-            >
-              Build log
-            </Link>
-          }
-        >
-          r{p.release.number} failed: {p.release.error ?? "unknown error"}
-        </ServiceRow>
-      );
-    case "domain": {
-      const record = p.domain.dns_records?.[0];
-      return (
-        <ServiceRow
-          tone={p.domain.status === "error" ? "bad" : "warn"}
-          service={p.service}
-          actions={
-            <ServiceLink service={p.service} tab="domains" label="Domain" />
-          }
-        >
-          {p.domain.status === "error"
-            ? "Domain error on "
-            : "Waiting for DNS on "}
-          <span className={mono}>{p.domain.hostname}</span>
-          {p.domain.status_reason && `: ${p.domain.status_reason}`}
-          {p.domain.status === "waiting_for_dns" && record && (
-            <>
-              . Create{" "}
-              <span className={mono}>
-                {record.type} {record.name} {record.value}
-              </span>
-            </>
-          )}
-        </ServiceRow>
-      );
-    }
-    case "deploying":
-      return (
-        <ServiceRow
-          tone="run"
-          service={p.service}
-          actions={
-            <Link
-              to="/$project/$environment/$service"
-              params={serviceRef(p.service.service)}
-              className={tab}
-            >
-              Follow
-            </Link>
-          }
-        >
-          Deploying r{p.release.number}: {releaseStatus(p.release.status).label}
-        </ServiceRow>
-      );
-    case "staged": {
-      const { environment, pending_changes: n } = p.environment;
-      return (
         <Row
-          tone="warn"
-          subject={environment.name}
-          where="environment"
-          actions={
+          n={key}
+          tone="fail"
+          glyph="✕"
+          title="Not running"
+          where={where}
+          time={time}
+          action={
             <Link
-              to="/$project/$environment"
-              params={{
-                project: environment.project,
-                environment: environment.name,
-              }}
-              className={tab}
+              to="/$project/$environment/$service/releases"
+              params={ref}
+              className={actionClass}
+              data-problem={n}
             >
-              Review
+              Releases
             </Link>
           }
         >
-          {n} staged {n === 1 ? "change" : "changes"} not applied yet.
+          <span className="font-mono">r{active_release}</span> has no running
+          container. Redeploy or roll back.
         </Row>
       );
     }
+    case "deploy_failed": {
+      const ref = serviceRef(p.service.service);
+      const serving = p.service.service.active_release;
+      return (
+        <Row
+          n={key}
+          tone="fail"
+          glyph="✕"
+          title="Deploy failed"
+          where={`${ref.environment}/${ref.service}`}
+          time={since(p.release.created_at)}
+          action={
+            <Link
+              to="/$project/$environment/$service/releases/$number"
+              params={{ ...ref, number: String(p.release.number) }}
+              className={actionClass}
+              data-problem={n}
+            >
+              See why
+            </Link>
+          }
+        >
+          <span className="font-mono">r{p.release.number}</span>{" "}
+          {failurePhrase(p.release)}:{" "}
+          <span className="font-mono">{errorSummary(p.release)}</span>.{" "}
+          {serving && (
+            <span className="text-ok">r{serving} still serving.</span>
+          )}
+        </Row>
+      );
+    }
+    case "domain": {
+      const ref = serviceRef(p.service.service);
+      const record = p.domain.dns_records?.[0];
+      const error = p.domain.status === "error";
+      return (
+        <Row
+          n={key}
+          tone={error ? "fail" : "warn"}
+          glyph={error ? "✕" : "▲"}
+          title={error ? "Domain error" : "Waiting for DNS"}
+          where={`${ref.environment}/${ref.service}`}
+          time={since(p.domain.created_at)}
+          action={
+            <Link
+              to="/$project/$environment/$service/domains"
+              params={ref}
+              className={actionClass}
+              data-problem={n}
+            >
+              {error ? "Domains" : "Show record"}
+            </Link>
+          }
+        >
+          <span className="font-mono">{p.domain.hostname}</span>{" "}
+          {!error && record ? (
+            <>
+              needs {record.type === "A" ? "an A record" : "a CNAME"} to{" "}
+              <span className="font-mono">{record.value}</span>
+            </>
+          ) : (
+            (p.domain.status_reason ?? "")
+          )}
+        </Row>
+      );
+    }
+    case "staged":
+      return <StagedRow n={n} environment={p.environment} project={project} />;
     case "server_offline":
       return (
         <Row
-          tone="bad"
-          subject={p.server.name}
-          where="server"
-          actions={
-            <Link to="/servers" hash={p.server.name} className={tab}>
+          n={key}
+          tone="fail"
+          glyph="✕"
+          title="Server offline"
+          where={p.server.name}
+          time={p.server.last_seen_at && since(p.server.last_seen_at)}
+          action={
+            <Link to="/servers" className={actionClass} data-problem={n}>
               Servers
             </Link>
           }
         >
-          Offline
+          Not reachable
           {p.server.last_seen_at &&
             `, last seen ${since(p.server.last_seen_at)} ago`}
-          .
+          . Its services keep running but can't be deployed.
         </Row>
       );
   }
 }
 
-function ServiceRow({
-  service,
-  ...props
+function StagedRow({
+  n,
+  environment: env,
+  project,
 }: {
-  tone: Tone;
-  service: ServiceView;
-  actions: ReactNode;
-  children: ReactNode;
+  n: number;
+  environment: EnvironmentView;
+  project: string;
 }) {
+  const ref = { project, environment: env.environment.name };
+  const changes = useChanges(ref);
+  const releases = affectedServices(changes, env.services).map(nextRelease);
   return (
     <Row
-      subject={service.service.name}
-      where={service.service.environment}
-      {...props}
-    />
+      n={n <= 9 ? String(n) : undefined}
+      tone="warn"
+      glyph="▲"
+      title="Not applied"
+      where={env.environment.name}
+      action={
+        <Link
+          to="/$project/$environment"
+          params={ref}
+          className={actionClass}
+          data-problem={n}
+        >
+          Review
+        </Link>
+      }
+    >
+      {plural(changes.count, "staged change")}.{" "}
+      {releases.length > 0 ? (
+        <>
+          Applying creates{" "}
+          {releases.map((r, i) => (
+            <span key={r}>
+              {i > 0 && ", "}
+              <span className="font-mono">{r}</span>
+            </span>
+          ))}
+          .
+        </>
+      ) : (
+        "Nothing running is redeployed."
+      )}
+      {changes.last_failure && (
+        <span className="text-fail">
+          {" "}
+          The last apply failed and was re-staged: {changes.last_failure}
+        </span>
+      )}
+    </Row>
+  );
+}
+
+/** Applies an environment's staged changes from a problem row. */
+function ApplyStaged({
+  n,
+  project,
+  environment,
+}: {
+  n: number;
+  project: string;
+  environment: string;
+}) {
+  const apply = useApplyChanges();
+  return (
+    <span className="flex items-center gap-2">
+      <ErrorText error={apply.error} />
+      <Button
+        primary
+        small
+        data-problem={n}
+        disabled={apply.isPending}
+        onClick={() => apply.mutate({ project, environment })}
+      >
+        Apply staged changes
+      </Button>
+    </span>
   );
 }
 
 function Row({
+  n,
   tone,
-  subject,
+  glyph,
+  title,
   where,
-  actions,
+  time,
+  action,
   children,
 }: {
+  n: string | undefined;
   tone: Tone;
-  subject: string;
+  glyph: GlyphChar;
+  title: string;
   where: string;
-  actions: ReactNode;
+  time?: string | false;
+  action: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[18px_220px_1fr_auto] items-baseline gap-2.5 border-t border-line px-5 py-[7px] first:border-t-0">
-      <Glyph tone={tone} />
-      <span>
-        <b className="font-semibold">{subject}</b>{" "}
-        <span className="text-dim">{where}</span>
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-soft py-[9px]">
+      <span className="flex w-[172px] items-baseline gap-2.5 whitespace-nowrap">
+        {n ? <kbd>{n}</kbd> : <span className="w-[15px]" />}
+        <span className={toneText[tone]}>
+          <Glyph char={glyph} /> {title}
+        </span>
       </span>
-      <span className="min-w-0">{children}</span>
-      <span className="flex gap-3.5">{actions}</span>
-    </div>
-  );
-}
-
-const serviceTabs = {
-  logs: "/$project/$environment/$service/logs",
-  variables: "/$project/$environment/$service/variables",
-  domains: "/$project/$environment/$service/domains",
-} as const;
-
-function ServiceLink({
-  service,
-  tab: name,
-  label,
-}: {
-  service: ServiceView;
-  tab: keyof typeof serviceTabs;
-  label: string;
-}) {
-  return (
-    <Link
-      to={serviceTabs[name]}
-      params={serviceRef(service.service)}
-      className={tab}
-    >
-      {label}
-    </Link>
+      <span className="w-[150px] font-mono">{where}</span>
+      <span className="min-w-0 flex-[1_1_360px]">{children}</span>
+      {time && <span className="text-mut">{time}</span>}
+      {action}
+    </li>
   );
 }

@@ -1,10 +1,18 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { envPath, queries, useProjectOverview } from "../data/queries";
+import { createFileRoute, notFound } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { envPath, queries } from "../data/queries";
 import { VariablesEditor } from "../features/variables/VariablesEditor";
-import { Crumbs, TopBar } from "../shell/TopBar";
+import { rememberProject } from "../shell/location";
+import { Page } from "../ui/kit";
 
-// An environment's page: its shared variables, which every service gets.
+// An environment's variables: its shared lines, or (?service=web) what one
+// service sees at runtime.
 export const Route = createFileRoute("/_app/$project/$environment/")({
+  validateSearch: (search: Record<string, unknown>): { service?: string } =>
+    typeof search.service === "string" && search.service
+      ? { service: search.service }
+      : {},
+  staticData: { crumb: "Variables" },
   loader: async ({ context: { queryClient }, params }) => {
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),
@@ -21,56 +29,20 @@ export const Route = createFileRoute("/_app/$project/$environment/")({
       queryClient.ensureQueryData(queries.changes(params)),
     ]);
   },
-  component: EnvironmentPage,
+  component: EnvironmentVariables,
 });
 
-function EnvironmentPage() {
+function EnvironmentVariables() {
   const params = Route.useParams();
-  const { project, environment } = params;
-  const { environments } = useProjectOverview(project);
-  const services = environments.find(
-    (e) => e.environment.name === environment,
-  )?.services;
-
+  const { service } = Route.useSearch();
+  useEffect(() => rememberProject(params.project), [params.project]);
   return (
-    <>
-      <TopBar>
-        <Crumbs>
-          {[
-            <Link
-              key="p"
-              to="/$project"
-              params={{ project }}
-              className="hover:text-white"
-            >
-              {project}
-            </Link>,
-            "shared variables",
-          ]}
-        </Crumbs>
-        <span className="flex gap-3.5">
-          {environments.map(({ environment: e }) => (
-            <Link
-              key={e.id}
-              to="/$project/$environment"
-              params={{ project, environment: e.name }}
-              className={
-                e.name === environment
-                  ? "border-b border-white"
-                  : "text-dim hover:text-white"
-              }
-            >
-              {e.name}
-            </Link>
-          ))}
-        </span>
-      </TopBar>
+    <Page gap="gap-4">
       <VariablesEditor
-        key={environment}
+        key={params.environment}
         env={envPath(params)}
-        service={null}
-        note={`Shared by the ${services?.length ?? 0} services in ${environment}.`}
+        service={service ?? null}
       />
-    </>
+    </Page>
   );
 }

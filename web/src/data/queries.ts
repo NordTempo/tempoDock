@@ -87,6 +87,7 @@ function toChanges(c: components["schemas"]["PendingChanges"]): PendingChanges {
     variables: c.variables ?? [],
     settings: c.settings ?? [],
     volumes: c.volumes ?? [],
+    affected: c.affected ?? [],
   };
 }
 
@@ -282,14 +283,3 @@ export const useRevealedVariables = (
 /** Staged changes with old and new values, only while revealed. */
 export const useRevealedChanges = (env: EnvRef, enabled: boolean) =>
   useQuery({ ...queries.changes(env, true), enabled });
-
-/** Token and user counts for the sidebar; only admins may list them. */
-export function useOrgCounts() {
-  const admin = useIsAdmin();
-  const tokens = useQuery({ ...queries.tokens(), enabled: admin }).data;
-  const users = useQuery({ ...queries.users(), enabled: admin }).data;
-  return {
-    tokens: tokens?.filter((t) => !t.revoked_at).length,
-    users: users?.length,
-  };
-}

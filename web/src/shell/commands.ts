@@ -1,15 +1,26 @@
+import { useQueries } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useDeploy, useLogout, useRestart } from "../data/mutations";
-import { serviceRef, useProjectTree } from "../data/queries";
-import { serviceStatus } from "../ui/status";
+import {
+  useDeploy,
+  useLogout,
+  useRestart,
+  useRollback,
+} from "../data/mutations";
+import { queries, serviceRef, useProjectTree } from "../data/queries";
+import { rollbackTarget } from "../features/service/releases";
+import { serviceState, type Tone } from "../ui/status";
 import { useCurrentContext } from "./location";
 
 export type Command = {
   id: string;
   group: "Actions" | "Go to";
+  /** Plain text, matched against the query. */
   label: string;
-  hint?: string;
-  /** The equivalent `dock` CLI invocation, shown in the palette footer. */
+  /** A part of the label shown bold, usually the service name. */
+  strong?: string;
+  /** A short note after the label, like "↻ crash looping now". */
+  note?: { text: string; tone: Tone };
+  /** The equivalent `dock` CLI invocation, or the page's key sequence. */
   cli: string;
   /** Context relevance: the current service beats the current project. */
   weight: number;
@@ -17,10 +28,11 @@ export type Command = {
 };
 
 const serviceTabs = [
-  ["logs", "dock logs"],
-  ["domains", "dock domain list"],
-  ["variables", "dock env list"],
-  ["settings", "dock service show"],
+  ["logs", "Logs", "g l"],
+  ["releases", "Releases", "g r"],
+  ["domains", "Domains", "g d"],
+  ["settings", "Settings", "g s"],
+  ["audit", "Audit", "g a"],
 ] as const;
 
 /** Every palette command, built from the project tree and current location. */
@@ -30,7 +42,29 @@ export function useCommands(): Command[] {
   const navigate = useNavigate();
   const deploy = useDeploy();
   const restart = useRestart();
+  const rollback = useRollback();
   const logout = useLogout();
+
+  // Rollback targets need release history, cached for the current project.
+  const local = projects
+    .filter((p) => p.project.name === here.project)
+    .flatMap((p) => p.environments.flatMap((e) => e.services))
+    .map((s) => serviceRef(s.service));
+  const histories = useQueries({
+    queries: local.map((ref) => ({
+      ...queries.releases(ref),
+      staleTime: 60_000,
+    })),
+  });
+  const historyOf = (project: string, environment: string, service: string) =>
+    histories[
+      local.findIndex(
+        (r) =>
+          r.project === project &&
+          r.environment === environment &&
+          r.service === service,
+      )
+    ]?.data;
 
   const commands: Command[] = [];
   const add = (c: Command) => commands.push(c);
@@ -42,11 +76,23 @@ export function useCommands(): Command[] {
     add({
       id: `go:${project}`,
       group: "Go to",
-      label: project,
+      label: `${project} overview`,
+      strong: project,
       cli: `dock status${pFlag}`,
-      weight: inProject ? 2 : 0,
+      weight: inProject ? 1 : 0,
       run: () => navigate({ to: "/$project", params: { project } }),
     });
+    if (environments.length > 1) {
+      add({
+        id: `compare:${project}`,
+        group: "Go to",
+        label: `Compare ${project} environments`,
+        strong: project,
+        cli: inProject ? "C" : "",
+        weight: inProject ? 1 : 0,
+        run: () => navigate({ to: "/$project/compare", params: { project } }),
+      });
+    }
 
     for (const { environment: env, services } of environments) {
       const environment = env.name;
@@ -54,9 +100,10 @@ export function useCommands(): Command[] {
       add({
         id: `vars:${project}/${environment}`,
         group: "Go to",
-        label: `${project} / ${environment} / shared variables`,
+        label: `Variables · ${project} ${environment}`,
+        strong: environment,
         cli: `dock env list -e ${environment}${pFlag}`,
-        weight: inProject ? 1 : 0,
+        weight: (inProject ? 1 : 0) + (inEnv ? 1 : 0),
         run: () =>
           navigate({
             to: "/$project/$environment",
@@ -69,25 +116,35 @@ export function useCommands(): Command[] {
         const { service } = params;
         const id = `${project}/${environment}/${service}`;
         const flags = ` -s ${service} -e ${environment}${pFlag}`;
-        const weight =
-          inEnv && service === here.service
-            ? 4
-            : (inProject ? 2 : 0) + (inEnv ? 1 : 0);
-        const path = `${project} / ${environment} / ${service}`;
-        // Outside the current project, actions name the project too.
-        const name = inProject ? service : `${project} / ${service}`;
-        const status = serviceStatus(svc);
-        const hint = status.tone === "ok" ? undefined : status.label;
+        const isHere = inEnv && service === here.service;
+        const weight = isHere ? 4 : (inProject ? 2 : 0) + (inEnv ? 1 : 0);
+        // Outside the current project, labels name the project too.
+        const where = inProject ? environment : `${project} ${environment}`;
+        const state = serviceState(svc);
+        const note =
+          state.tone === "fail" || state.tone === "prog"
+            ? {
+                text: `${state.glyph ?? ""} ${state.label} now`.trim(),
+                tone: state.tone,
+              }
+            : undefined;
         const open = () =>
           navigate({ to: "/$project/$environment/$service", params });
+        const busy = svc.deploying
+          ? {
+              text: `r${svc.deploying.number} is deploying`,
+              tone: "prog" as const,
+            }
+          : undefined;
 
         // Image deploys only; source deploys upload from the CLI.
         if (svc.service.image) {
           add({
             id: `deploy:${id}`,
             group: "Actions",
-            label: `Deploy ${name} to ${environment}`,
-            hint,
+            label: `Deploy ${service} ${where}`,
+            strong: service,
+            note: busy ?? note,
             cli: `dock deploy${flags}`,
             weight,
             run: async () => {
@@ -100,39 +157,49 @@ export function useCommands(): Command[] {
           add({
             id: `restart:${id}`,
             group: "Actions",
-            label: `Restart ${name} in ${environment}`,
+            label: `Restart ${service} ${where}`,
+            strong: service,
+            note: busy ?? note,
             cli: `dock restart${flags}`,
             weight: weight - 0.5,
             run: () => restart.mutateAsync(params),
           });
         }
+        const target = rollbackTarget(
+          historyOf(project, environment, service) ?? [],
+        );
+        if (target) {
+          add({
+            id: `rollback:${id}`,
+            group: "Actions",
+            label: `Roll back ${service} ${where} to r${target.number}`,
+            strong: service,
+            note: busy ?? note,
+            cli: `dock rollback ${target.number}${flags}`,
+            weight: weight - 0.5,
+            run: async () => {
+              await rollback.mutateAsync({ ref: params, to: target.number });
+              await open();
+            },
+          });
+        }
         add({
           id: `go:${id}`,
           group: "Go to",
-          label: path,
-          hint,
+          label: `${service} ${where}`,
+          strong: service,
+          note,
           cli: `dock status${flags}`,
           weight,
           run: open,
         });
-        if (svc.deploying) {
-          const r = svc.deploying.number;
-          add({
-            id: `go:${id}:deploy`,
-            group: "Go to",
-            label: `${path} / deploy r${r}`,
-            hint: "in progress",
-            cli: `dock release show r${r}${flags}`,
-            weight: weight + 1,
-            run: open,
-          });
-        }
-        for (const [tab, cli] of serviceTabs) {
+        for (const [tab, title, keys] of serviceTabs) {
           add({
             id: `go:${id}:${tab}`,
             group: "Go to",
-            label: `${path} / ${tab}`,
-            cli: `${cli}${flags}`,
+            label: `${title} · ${service} ${where}`,
+            strong: service,
+            cli: isHere ? keys.toUpperCase() : "",
             weight: weight - 1,
             run: () =>
               navigate({
@@ -173,33 +240,40 @@ export function useCommands(): Command[] {
   return commands;
 }
 
-export type Match = { command: Command; ranges: Array<[number, number]> };
+export type Match = { command: Command; score: number };
 
 /**
- * Every query word must appear in the label. Matches at word starts and
- * context weight rank higher. An empty query lists the most relevant items.
+ * Every query word must appear in the label or the CLI text. Matches at
+ * word starts and context weight rank higher. An empty query lists the
+ * most relevant items.
  */
 export function matchCommands(commands: Command[], query: string): Match[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const scored: Array<Match & { score: number }> = [];
+  const words = query
+    .toLowerCase()
+    .replace(/^dock\s+/, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  const scored: Match[] = [];
   for (const command of commands) {
-    const label = command.label.toLowerCase();
-    const ranges: Array<[number, number]> = [];
+    const text = `${command.label} ${command.cli}`.toLowerCase();
     let score = command.weight;
+    let all = true;
     for (const word of words) {
-      const at = label.indexOf(word);
-      if (at < 0) break;
-      ranges.push([at, at + word.length]);
-      if (at === 0 || label[at - 1] === " ") score += 3;
+      const at = text.indexOf(word);
+      if (at < 0) {
+        all = false;
+        break;
+      }
+      if (at === 0 || /[\s/·-]/.test(text[at - 1] ?? "")) score += 3;
       score -= at / 100;
     }
-    if (ranges.length === words.length) scored.push({ command, ranges, score });
+    if (all) scored.push({ command, score });
   }
   scored.sort(
     (a, b) =>
       groupOrder(a.command) - groupOrder(b.command) || b.score - a.score,
   );
-  const limit = words.length ? 8 : 5;
+  const limit = words.length ? 6 : 4;
   return [
     ...scored.filter((m) => m.command.group === "Actions").slice(0, limit),
     ...scored.filter((m) => m.command.group === "Go to").slice(0, limit),
@@ -207,3 +281,22 @@ export function matchCommands(commands: Command[], query: string): Match[] {
 }
 
 const groupOrder = (c: Command) => (c.group === "Actions" ? 0 : 1);
+
+const RECENT = "dock.recent";
+
+/** Ids of the last few commands run from the palette or command line. */
+export function recentIds(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(RECENT) ?? "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberCommand(id: string) {
+  const ids = [id, ...recentIds().filter((x) => x !== id)].slice(0, 3);
+  localStorage.setItem(RECENT, JSON.stringify(ids));
+}

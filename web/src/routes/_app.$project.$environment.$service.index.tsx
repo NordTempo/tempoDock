@@ -1,17 +1,25 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { servicePath, useReleases, useService } from "../data/queries";
-import { DeployProgress } from "../features/service/DeployProgress";
+import {
+  servicePath,
+  useRelease,
+  useReleases,
+  useService,
+} from "../data/queries";
+import type { ServiceRef } from "../data/types";
 import { LogsPane, noFilter } from "../features/service/LogsPane";
 import { ReleasesTable } from "../features/service/ReleasesTable";
-import { Heading } from "../ui/kit";
+import { imageLabel } from "../features/service/releases";
+import { deploySteps, StepTable } from "../features/service/Steps";
+import { elapsed } from "../ui/format";
+import { Actor, actorKind, SectionHead } from "../ui/kit";
 
-// Releases tab: deploy progress and history next to a live log tail.
+// A service at a glance: the deploy in flight, logs, recent releases.
 export const Route = createFileRoute("/_app/$project/$environment/$service/")({
-  component: ReleasesTab,
+  component: ServiceOverview,
 });
 
-function ReleasesTab() {
+function ServiceOverview() {
   const ref = servicePath(Route.useParams());
   const service = useService(ref);
   const releases = useReleases(ref);
@@ -19,32 +27,95 @@ function ReleasesTab() {
   const current = service.deploying;
 
   return (
-    <div className="grid grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] border-b border-line">
-      <div className="min-w-0 px-5 pb-4">
-        {current && (
-          <DeployProgress
-            key={current.number}
-            serviceRef={ref}
-            number={current.number}
-            serving={service.service.active_release ?? null}
-          />
-        )}
-        <Heading>Releases</Heading>
-        <ReleasesTable
+    <>
+      {current && (
+        <DeployProgress
+          key={current.number}
           serviceRef={ref}
-          releases={releases}
-          deploying={!!current}
+          number={current.number}
         />
-      </div>
-      <div className="min-w-0 border-l border-line px-5 pb-4">
-        <Heading>Logs</Heading>
+      )}
+      <section aria-labelledby="logs">
+        <SectionHead id="logs">Logs</SectionHead>
         <LogsPane
+          // A fresh stream per deploy step: the container may not exist yet.
+          key={`${current?.number}:${current?.status}`}
           serviceRef={ref}
           filter={filter}
           onFilter={setFilter}
-          className="h-[332px]"
+          height="h-[300px]"
         />
-      </div>
-    </div>
+      </section>
+      <section aria-labelledby="releases">
+        <SectionHead
+          id="releases"
+          right={
+            releases.length > 5 && (
+              <Link
+                to="/$project/$environment/$service/releases"
+                params={ref}
+                className="text-mut"
+              >
+                All {releases[0]?.number}
+              </Link>
+            )
+          }
+        >
+          Releases
+        </SectionHead>
+        <ReleasesTable
+          serviceRef={ref}
+          releases={releases.slice(0, 5)}
+          deploying={!!current}
+        />
+      </section>
+    </>
+  );
+}
+
+/** The release in flight, step by step, live. */
+function DeployProgress({
+  serviceRef: ref,
+  number,
+}: {
+  serviceRef: ServiceRef;
+  number: number;
+}) {
+  const { service } = useService(ref);
+  const release = useRelease(ref, number);
+  const steps = deploySteps(
+    release,
+    service.active_release ?? null,
+    service.stateful,
+  );
+  return (
+    <section aria-labelledby="progress">
+      <SectionHead
+        id="progress"
+        aside={
+          <>
+            by{" "}
+            <Actor
+              name={release.created_by}
+              kind={actorKind(release.created_by)}
+            />{" "}
+            · <span className="font-mono">{imageLabel(release)}</span> ·{" "}
+            {elapsed(Date.now() - Date.parse(release.created_at))}
+          </>
+        }
+        right={
+          <Link
+            to="/$project/$environment/$service/logs"
+            params={ref}
+            search={{ release: number, build: true }}
+          >
+            Build log
+          </Link>
+        }
+      >
+        r{release.number} progress
+      </SectionHead>
+      <StepTable steps={steps} />
+    </section>
   );
 }

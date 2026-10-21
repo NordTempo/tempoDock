@@ -3,6 +3,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
+import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
 import { keys, queries } from "./queries";
 import type {
@@ -171,7 +172,10 @@ export function useLiveUpdates() {
   useEventStream<LiveEvent>(
     "/api/v1/events",
     busEvents,
-    (_, event) => applyLiveEvent(queryClient, event),
+    (_, event) => {
+      applyLiveEvent(queryClient, event);
+      recordLiveEvent(event);
+    },
     {
       // Events may have been missed while disconnected.
       onReconnect: () => queryClient.invalidateQueries(),

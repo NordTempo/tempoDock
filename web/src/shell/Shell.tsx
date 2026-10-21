@@ -1,17 +1,20 @@
 import { Outlet } from "@tanstack/react-router";
 import { useLiveUpdates } from "../data/live";
+import { CommandLine } from "./CommandLine";
 import { PaletteProvider } from "./palette";
-import { Sidebar } from "./Sidebar";
+import { TopBar } from "./TopBar";
 
+/** Everything behind login: top bar, the page, the command line. */
 export function Shell() {
   useLiveUpdates();
   return (
     <PaletteProvider>
-      <div className="grid h-screen grid-cols-[232px_minmax(0,1fr)]">
-        <Sidebar />
-        <main className="overflow-auto pb-20">
+      <div className="flex min-h-screen flex-col">
+        <TopBar />
+        <div className="flex flex-1 flex-col">
           <Outlet />
-        </main>
+        </div>
+        <CommandLine />
       </div>
     </PaletteProvider>
   );
