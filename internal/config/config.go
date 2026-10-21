@@ -79,7 +79,7 @@ func Default() Config {
 		Listen:         "127.0.0.1:7070",
 		InternalListen: "127.0.0.1:7071",
 		Caddy: Caddy{
-			AdminSocket: "/run/platform/caddy-admin.sock",
+			AdminSocket: "/run/platform-caddy/admin.sock",
 			HTTPPort:    80,
 			HTTPSPort:   443,
 		},

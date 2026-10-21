@@ -1,0 +1,28 @@
+[Unit]
+Description=platform proxy (Caddy, configured only by the platform daemon)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=platform
+Group=platform
+# --resume restores the last config the daemon loaded, so routing survives
+# reboots even if the daemon isn't running.
+ExecStart=/usr/local/bin/caddy run --resume --config /etc/platform/caddy.json
+Restart=always
+RestartSec=2
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+RuntimeDirectory=platform-caddy
+RuntimeDirectoryMode=0750
+StateDirectory=platform-caddy
+Environment=XDG_DATA_HOME=/var/lib/platform-caddy XDG_CONFIG_HOME=/var/lib/platform-caddy
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/platform-caddy
+PrivateTmp=true
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+[Unit]
+Description=platform daemon (API, UI, deploys)
+After=network-online.target docker.service platform-caddy.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+User=platform
+Group=platform
+SupplementaryGroups=docker
+ExecStart=/usr/local/bin/platform serve --config /etc/platform/config.toml
+Restart=always
+RestartSec=2
+# Apps never depend on the daemon, so stopping it is always safe.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+StateDirectory=platform
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/platform
+PrivateTmp=true
+MemoryHigh=96M
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
