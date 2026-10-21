@@ -1,0 +1,240 @@
+// Package node is the boundary between the control plane and a server.
+//
+// The control plane (internal/core) only ever talks to a server through the
+// Runtime interface. On the control plane's own server that is Local, a plain
+// in-process implementation. Remote servers (M3) get a client that sends the
+// same calls over the node connection. Nothing outside this package tree
+// imports Docker, BuildKit or Caddy.
+package node
+
+import (
+	"context"
+	"io"
+	"time"
+)
+
+// Runtime is everything the control plane needs from one server.
+type Runtime interface {
+	Containers
+	Builder
+	Proxy
+}
+
+// Containers manages platform-owned containers, networks and volumes.
+// Implementations must only ever see or touch resources carrying the
+// LabelManaged label.
+type Containers interface {
+	// Pull makes an image available locally, writing progress to logs.
+	// It returns the image's content-addressed ID (sha256:...).
+	Pull(ctx context.Context, ref string, logs io.Writer) (string, error)
+	// HasImage reports whether ref is present locally.
+	HasImage(ctx context.Context, ref string) (bool, error)
+
+	// EnsureNetwork creates the bridge network if it doesn't exist.
+	EnsureNetwork(ctx context.Context, name string) error
+	// EnsureVolume creates the named volume if it doesn't exist. Volumes are
+	// never removed by the runtime.
+	EnsureVolume(ctx context.Context, name string, labels Labels) error
+
+	// Start creates and starts a container. Restart policy is always
+	// unless-stopped, logs use the local driver with rotation.
+	Start(ctx context.Context, spec ContainerSpec) (Container, error)
+	// Stop stops a container, waiting up to timeout for a graceful exit.
+	Stop(ctx context.Context, id string, timeout time.Duration) error
+	// Remove removes a stopped container. Never removes volumes.
+	Remove(ctx context.Context, id string) error
+	// Inspect returns the current state of one container.
+	Inspect(ctx context.Context, id string) (Container, error)
+	// List returns all platform-managed containers, running or not.
+	List(ctx context.Context) ([]Container, error)
+
+	// HealthCheck blocks until the container passes hc or hc.Timeout expires.
+	// It runs on the server that hosts the container, since published ports
+	// are bound to that server's loopback interface.
+	HealthCheck(ctx context.Context, c Container, hc HealthCheck) error
+
+	// Logs streams a container's logs. The channel closes when the stream ends
+	// (immediately after the backlog when opts.Follow is false) or ctx ends.
+	Logs(ctx context.Context, id string, opts LogOptions) (<-chan LogLine, error)
+	// Events streams lifecycle events for platform-managed containers until
+	// ctx ends. Implementations reconnect on their own; the channel only
+	// closes when ctx is done.
+	Events(ctx context.Context) (<-chan ContainerEvent, error)
+}
+
+// Builder turns source code into an image available to this server.
+type Builder interface {
+	// Build builds req.Source and tags the result as req.Tag. Build output
+	// is written to req.Logs. Returns the image ID (sha256:...).
+	Build(ctx context.Context, req BuildRequest) (string, error)
+}
+
+// Proxy owns the server's public HTTP(S) routing.
+type Proxy interface {
+	// ApplyRoutes replaces the full routing table atomically. If the new
+	// config is rejected, the previous one stays in effect.
+	ApplyRoutes(ctx context.Context, routes []Route) error
+}
+
+// Docker label keys put on every platform-managed resource.
+const (
+	LabelManaged     = "platform.managed"
+	LabelProject     = "platform.project"
+	LabelEnvironment = "platform.env"
+	LabelService     = "platform.service"
+	LabelRelease     = "platform.release"
+)
+
+// Labels identify what a container or volume belongs to. Values are IDs from
+// the platform DB, so renames never orphan resources.
+type Labels struct {
+	Project     string
+	Environment string
+	Service     string
+	Release     string
+}
+
+// Map renders the labels as Docker labels, including LabelManaged.
+func (l Labels) Map() map[string]string {
+	m := map[string]string{LabelManaged: "true"}
+	for k, v := range map[string]string{
+		LabelProject:     l.Project,
+		LabelEnvironment: l.Environment,
+		LabelService:     l.Service,
+		LabelRelease:     l.Release,
+	} {
+		if v != "" {
+			m[k] = v
+		}
+	}
+	return m
+}
+
+// LabelsFrom reads platform labels back from a Docker label map.
+func LabelsFrom(m map[string]string) Labels {
+	return Labels{
+		Project:     m[LabelProject],
+		Environment: m[LabelEnvironment],
+		Service:     m[LabelService],
+		Release:     m[LabelRelease],
+	}
+}
+
+// ContainerSpec describes a container to start.
+type ContainerSpec struct {
+	Name   string
+	Image  string
+	Labels Labels
+	Env    map[string]string
+	// Cmd overrides the image's command when non-empty (run via `sh -c`).
+	Cmd string
+	// Network is joined with Aliases, so services reach each other by name.
+	Network string
+	Aliases []string
+	// Port is the container port to publish on 127.0.0.1 with an ephemeral
+	// host port. Zero means nothing is published.
+	Port      int
+	Mounts    []Mount
+	Resources Resources
+}
+
+// Mount attaches a named volume at Path.
+type Mount struct {
+	Volume string
+	Path   string
+}
+
+// Resources are hard limits for a container. Zero means unlimited.
+type Resources struct {
+	MemoryBytes int64
+	NanoCPUs    int64
+}
+
+// ContainerState mirrors Docker's container states.
+type ContainerState string
+
+const (
+	StateCreated    ContainerState = "created"
+	StateRunning    ContainerState = "running"
+	StateRestarting ContainerState = "restarting"
+	StateExited     ContainerState = "exited"
+	StatePaused     ContainerState = "paused"
+	StateDead       ContainerState = "dead"
+)
+
+// Container is the observed state of a platform-managed container.
+type Container struct {
+	ID     string
+	Name   string
+	Image  string
+	Labels Labels
+	State  ContainerState
+	// HostPort is the 127.0.0.1 port Port is published on, or zero.
+	HostPort     int
+	StartedAt    time.Time
+	ExitCode     int
+	RestartCount int
+	OOMKilled    bool
+}
+
+// HealthCheck describes when a new container counts as healthy.
+//   - Path set: HTTP GET http://127.0.0.1:HostPort{Path} returns 2xx/3xx.
+//   - No Path, container publishes a port: TCP connect succeeds.
+//   - Neither: the container stays running for Grace.
+type HealthCheck struct {
+	Path     string
+	Timeout  time.Duration
+	Interval time.Duration
+	// Grace is how long a portless container must stay up to count as healthy.
+	Grace time.Duration
+}
+
+// LogOptions select which log lines to stream.
+type LogOptions struct {
+	Follow bool
+	// Tail limits the backlog to the last N lines. Zero means all.
+	Tail  int
+	Since time.Time
+}
+
+// LogLine is one line of container output.
+type LogLine struct {
+	Time   time.Time
+	Stream string // "stdout" or "stderr"
+	Text   string
+}
+
+// ContainerEvent is a lifecycle change of a platform-managed container.
+type ContainerEvent struct {
+	ContainerID string
+	Labels      Labels
+	// Action is Docker's action: start, die, stop, oom, restart, destroy, ...
+	Action   string
+	ExitCode int
+	Time     time.Time
+}
+
+// BuildRequest describes one image build.
+type BuildRequest struct {
+	// Source is a tar stream of the build context (uncompressed or gzip).
+	Source io.Reader
+	// Dockerfile is the Dockerfile path within the context. Empty means
+	// "Dockerfile" if it exists, otherwise a Railpack zero-config build.
+	Dockerfile string
+	// BuildCommand and StartCommand are passed to Railpack builds.
+	BuildCommand string
+	StartCommand string
+	// BuildArgs are passed to Dockerfile builds and Railpack as variables.
+	BuildArgs map[string]string
+	Tag       string
+	Logs      io.Writer
+}
+
+// Route sends traffic for Hostnames to Upstream (host:port).
+type Route struct {
+	Hostnames []string
+	Upstream  string
+	// RedirectTo, when set, permanently redirects to this hostname instead
+	// of proxying.
+	RedirectTo string
+}

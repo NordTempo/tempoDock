@@ -1,0 +1,8 @@
+/bin/
+/dist/
+/web/dist/*
+!/web/dist/.gitkeep
+/web/node_modules/
+/.data/
+*.test
+coverage.out
