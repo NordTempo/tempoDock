@@ -13,12 +13,17 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/node/build"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
 
 // Execute runs the CLI and returns the process exit code (see
 // output.ExitCode).
 func Execute() int {
+	// The daemon re-runs itself to plan Railpack builds in a capped process.
+	if len(os.Args) > 1 && os.Args[1] == build.PlanCommand {
+		return build.PlanMain()
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return run(ctx, os.Args[1:], output.Std())

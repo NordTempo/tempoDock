@@ -168,6 +168,8 @@ func (d *deployment) image(ctx context.Context) (string, error) {
 		req := node.BuildRequest{
 			Source: f, Dockerfile: d.ss.svc.DockerfilePath, BuildCommand: d.ss.svc.BuildCommand,
 			StartCommand: d.cfg.Cmd, BuildArgs: d.cfg.Env, Tag: ref, Logs: d.log,
+			// Build caches are per environment, so one can't poison another's.
+			CacheScope: fmt.Sprintf("p%d_e%d", d.ss.project.ID, d.ss.env.ID),
 		}
 		if rc := d.spec.repo; rc != nil {
 			d.event(ctx, "Using settings from dock.toml")
