@@ -99,8 +99,11 @@ e2e/                   scenarios against a live server
 - File-based routes in `web/src/routes` (TanStack Router, auto code
   splitting); data access in `web/src/data` (queries, mutations, live
   events); features in `web/src/features`.
-- UI: dark, true black background, white text, information dense, no
-  decorative chrome, no em dashes in copy.
+- UI: follow `docs/design/README.md`, the T3 style: style A for the app,
+  style G for the data panel and tempoBase, with the mockups in
+  `docs/design/t3-style/`. Dark near-black backgrounds, information
+  dense, no decorative chrome, no em dashes in copy. Screens not yet
+  migrated still use the old look; migrate a screen as a whole.
 
 ## Commits and PRs
 

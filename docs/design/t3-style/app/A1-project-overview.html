@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en"><head><style data-dc-design-system-vars="">@layer{:root{--bg:#fafaf7;--surface:#f1f1ec;--surface-2:#edede8;--ink:#111110;--muted:#6b6b65;--subtle:#8a8a82;--faint:#b4b4ac;--line:#e4e4de;--line-strong:#d6d6cf;--blue:#2f6bff;--blue-ink:#2459e0;--on-blue:#ffffff;--blue-soft:#eaf0ff;--cyan:#22c3e6;--good:#1a7f37;--danger:#c4321f;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-8:32px;--space-12:48px;--space-16:64px;--radius-xs:2px;--radius-sm:12px;--radius-md:24px;--radius-full:9999px;--size-touch:44px;--size-row:52px;--size-button:60px;--size-content:390px;--font-sans:"Inter Tight", system-ui, -apple-system, sans-serif;--text-numeral:400 88px/1 var(--font-sans);--text-display:500 48px/1 var(--font-sans);--text-title:500 40px/1.05 var(--font-sans);--text-stat:400 44px/1 var(--font-sans);--text-body-lg:400 17px/24px var(--font-sans);--text-button:500 17px/24px var(--font-sans);--text-body:400 15px/22px var(--font-sans);--text-label:400 14px/20px var(--font-sans);--text-caption:400 12px/16px var(--font-sans);}}</style>
+
+
+<meta charset="utf-8">
+<title>Dock · blog project overview</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("67056617-f071-481d-8eac-1c4ea65499bd") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("67056617-f071-481d-8eac-1c4ea65499bd") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("67056617-f071-481d-8eac-1c4ea65499bd") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("ad9fcdb6-0eea-4b46-a4c8-33f8f0a27fb9") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("83d55b35-ef2a-48ef-8f7c-0731d361020c") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("ad1d93a4-b9ef-416c-9432-847a2dad0557") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("8135d5c9-3c5b-4f39-a1de-bca6d217d718") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("f21c83ea-0b8a-48ed-87b0-6f143cf0fd45") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("13cc2f72-2810-444d-a1a2-dc754988ff1e") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("ad9fcdb6-0eea-4b46-a4c8-33f8f0a27fb9") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("83d55b35-ef2a-48ef-8f7c-0731d361020c") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("ad1d93a4-b9ef-416c-9432-847a2dad0557") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("8135d5c9-3c5b-4f39-a1de-bca6d217d718") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("f21c83ea-0b8a-48ed-87b0-6f143cf0fd45") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("13cc2f72-2810-444d-a1a2-dc754988ff1e") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+body{margin:0;background:#0e0e10}
+a{color:#ededef;text-decoration:none}a:hover{color:#ffffff}
+button{font:inherit;color:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #0e0e10; color: #ededef; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-wrap: wrap">
+
+<nav aria-label="Workspace" style="flex: 1 1 248px; background: #0a0a0b; border-right: 1px solid #232326; display: flex; flex-direction: column; padding: 10px 8px; gap: 2px; box-sizing: border-box; min-height: 900px">
+  <div style="display: flex; align-items: center; gap: 6px; padding: 2px 4px 8px">
+    <button style="flex: 1; display: flex; align-items: center; gap: 8px; background: transparent; border: 0; padding: 6px; border-radius: 6px; text-align: left">
+      <span style="width: 20px; height: 20px; border-radius: 5px; background: #ededef; color: #0a0a0b; font-weight: 600; font-size: 11px; display: grid; place-items: center">N</span>
+      <span style="font-weight: 600">NordTempo</span>
+      <svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round"><path d="m7 10 5 5 5-5"></path></svg>
+    </button>
+    <button aria-label="New project" style="width: 28px; height: 28px; border-radius: 6px; border: 1px solid #2e2e33; background: #151517; display: grid; place-items: center"><svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="#ededef" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></button>
+  </div>
+  <button style="display: flex; align-items: center; gap: 8px; margin: 0 4px 10px; padding: 7px 9px; background: #151517; border: 1px solid #232326; border-radius: 7px; color: #a1a1aa; text-align: left">
+    <svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    <span style="flex: 1">Jump to…</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; border: 1px solid #2e2e33; border-radius: 4px; padding: 0 4px">⌘K</span>
+  </button>
+
+  <div style="padding: 6px 10px 4px; color: #8b8b94; font-size: 11px; font-weight: 500">Projects</div>
+
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; background: #1c1c1f; font-weight: 500">
+    <svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round"><path d="m7 10 5 5 5-5"></path></svg>
+    <span style="flex: 1">blog</span><span style="color: #8b8b94; font-size: 11px">1</span>
+  </a>
+  <a href="T3Service.dc.html" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf">
+    <span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span><span style="flex: 1">site</span><span style="color: #8b8b94; font-size: 11px">39m</span>
+  </a>
+
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; margin-top: 4px">
+    <svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round"><path d="m7 10 5 5 5-5"></path></svg>
+    <span style="flex: 1">tempolift</span><span style="color: #8b8b94; font-size: 11px">4</span>
+  </a>
+  <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span><span style="flex: 1">web</span><span style="color: #8b8b94; font-size: 11px">2h</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #fbbf24; box-sizing: border-box; border-right-color: transparent"></span><span style="flex: 1">api</span><span style="color: #fbbf24; font-size: 11px">deploying</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span><span style="flex: 1">worker</span><span style="color: #8b8b94; font-size: 11px">1d</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf">
+    <svg aria-hidden="true" width="11" height="11" sc-camel-view-box="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path></svg>
+    <span style="flex: 1">postgres</span><span style="color: #8b8b94; font-size: 11px">db</span></a>
+
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; margin-top: 4px">
+    <svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round"><path d="m10 7 5 5-5 5"></path></svg>
+    <span style="flex: 1">tempobase</span><span style="color: #8b8b94; font-size: 11px">2</span>
+  </a>
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px">
+    <svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round"><path d="m10 7 5 5-5 5"></path></svg>
+    <span style="flex: 1">nordtempo.no</span><span style="color: #f87171; font-size: 11px">1 failed</span>
+  </a>
+
+  <div style="flex: 1; min-height: 24px"></div>
+
+  <a href="#" style="display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 6px; color: #c8c8cf">
+    <svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"></path></svg>Activity</a>
+  <a href="T3Access.dc.html" style="display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 6px; color: #c8c8cf">
+    <svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2 .7 3.2 2.5 3.5 5.2"></path></svg>Members &amp; tokens</a>
+  <a href="#" style="display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 6px; color: #c8c8cf">
+    <svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg>Workspace settings</a>
+  <div style="border-top: 1px solid #232326; margin: 8px 4px 6px"></div>
+  <div style="display: flex; align-items: center; gap: 9px; padding: 4px 8px">
+    <span style="width: 24px; height: 24px; border-radius: 50%; background: #2e2e33; display: grid; place-items: center; font-size: 11px; font-weight: 600">S</span>
+    <span style="flex: 1; min-width: 0"><span style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">saile@nordtempo.no</span><span style="display: block; color: #8b8b94; font-size: 11px">Owner</span></span>
+  </div>
+  <a href="AdminServers.dc.html" style="display: flex; align-items: center; gap: 8px; margin: 6px 4px 0; padding: 6px 8px; border: 1px dashed #3a3a40; border-radius: 6px; color: #fbbf24; font-size: 12px">
+    <svg aria-hidden="true" width="13" height="13" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="7" rx="1.5"></rect><rect x="3" y="13" width="18" height="7" rx="1.5"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg>
+    <span style="flex: 1">Platform console</span><span style="color: #8b8b94; font-size: 11px">operators</span></a>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid #232326; min-height: 52px; box-sizing: border-box">
+    <h1 style="margin: 0; font-size: 14px; font-weight: 600">blog</h1>
+    <button style="display: flex; align-items: center; gap: 7px; padding: 4px 9px; border-radius: 999px; border: 1px solid #2e2e33; background: #151517; font-size: 12px">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span>production
+      <svg aria-hidden="true" width="11" height="11" sc-camel-view-box="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round"><path d="m7 10 5 5 5-5"></path></svg>
+    </button>
+    <span style="color: #8b8b94; font-size: 12px">1 service · EU North</span>
+    <div style="flex: 1"></div>
+    <a href="T3Variables.dc.html" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; font-size: 12px; color: #ededef">Variables</a>
+    <button style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Add service</button>
+    <button style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; border: 0; background: #ededef; color: #0a0a0b; font-size: 12px; font-weight: 600">Deploy <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; background: #0a0a0b; color: #ededef; border-radius: 3px; padding: 0 4px">D</span></button>
+  </header>
+
+  <div style="flex: 1; padding: 24px 28px; display: flex; flex-direction: column; gap: 28px; max-width: 1100px; width: 100%; box-sizing: border-box">
+    <section aria-labelledby="svc-h" style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: baseline; gap: 10px">
+        <h2 id="svc-h" style="margin: 0; font-size: 13px; font-weight: 600">Services</h2>
+        <span style="color: #8b8b94; font-size: 12px">in production</span>
+      </div>
+      <div style="border: 1px solid #232326; border-radius: 10px; overflow-x: auto">
+        <div style="min-width: 760px">
+          <div style="display: grid; grid-template-columns: 2fr 1.1fr 2.4fr 1.4fr 1.3fr 0.6fr; gap: 12px; padding: 8px 14px; color: #8b8b94; font-size: 11px; border-bottom: 1px solid #232326">
+            <span>Service</span><span>Status</span><span>Latest deploy</span><span>Domain</span><span>CPU · memory</span><span style="text-align: right">Updated</span>
+          </div>
+          <a href="T3Service.dc.html" style="display: grid; grid-template-columns: 2fr 1.1fr 2.4fr 1.4fr 1.3fr 0.6fr; gap: 12px; padding: 12px 14px; align-items: center">
+            <span style="display: flex; flex-direction: column"><span style="font-weight: 500">site</span><span style="color: #8b8b94; font-family: 'JetBrains Mono', monospace; font-size: 11px">nginx:1.27 · :80</span></span>
+            <span style="display: flex; align-items: center; gap: 7px; color: #4ade80"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span>Running</span>
+            <span style="display: flex; flex-direction: column"><span><span style="font-family: 'JetBrains Mono', monospace">r1</span> · Deployed nginx:1.27</span><span style="color: #8b8b94; font-size: 12px">by bootstrap token</span></span>
+            <span style="color: #93c5fd">+ Add domain</span>
+            <span style="display: flex; align-items: center; gap: 8px">
+              <svg aria-hidden="true" width="48" height="16" sc-camel-view-box="0 0 48 16" fill="none" stroke="#a1a1aa" stroke-width="1.5"><path d="M0 12 8 11 16 12 24 9 32 10 40 9 48 9"></path></svg>
+              <span style="font-size: 12px; color: #c8c8cf">25% · 64M</span>
+            </span>
+            <span style="text-align: right; color: #8b8b94">39m</span>
+          </a>
+        </div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <button style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px dashed #3a3a40; background: transparent; color: #c8c8cf">
+          <svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11 5.5"></path></svg>From a GitHub repo</button>
+        <button style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px dashed #3a3a40; background: transparent; color: #c8c8cf">
+          <svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"></path><path d="m4 7.5 8 4.5 8-4.5M12 12v9"></path></svg>From a Docker image</button>
+        <button style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px dashed #3a3a40; background: transparent; color: #c8c8cf">
+          <svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path></svg>Postgres database</button>
+      </div>
+    </section>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px">
+      <section aria-labelledby="att-h" style="display: flex; flex-direction: column; gap: 10px">
+        <h2 id="att-h" style="margin: 0; font-size: 13px; font-weight: 600">Worth a look</h2>
+        <div style="border: 1px solid #232326; border-radius: 10px; padding: 14px; display: flex; gap: 12px; align-items: flex-start">
+          <span style="width: 22px; height: 22px; border-radius: 6px; background: #1e293b; color: #93c5fd; display: grid; place-items: center; flex: none">
+            <svg aria-hidden="true" width="13" height="13" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"></path></svg></span>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-weight: 500">site isn't reachable from the internet yet</span>
+            <span style="color: #a1a1aa">Give it a generated address or connect your own domain.</span>
+            <div style="display: flex; gap: 8px; margin-top: 4px">
+              <button style="padding: 5px 9px; border-radius: 6px; border: 0; background: #ededef; color: #0a0a0b; font-size: 12px; font-weight: 600">Generate address</button>
+              <button style="padding: 5px 9px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Use my domain</button>
+            </div>
+          </div>
+        </div>
+        <div style="border: 1px solid #232326; border-radius: 10px; padding: 14px; display: flex; gap: 12px; align-items: flex-start">
+          <span style="width: 22px; height: 22px; border-radius: 6px; background: #1f1f23; color: #a1a1aa; display: grid; place-items: center; flex: none">
+            <svg aria-hidden="true" width="13" height="13" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3v12M18 9v12M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg></span>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-weight: 500">No preview environment</span>
+            <span style="color: #a1a1aa">Clone production to try changes without touching live traffic.</span>
+            <div style="display: flex; gap: 8px; margin-top: 4px"><button style="padding: 5px 9px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Create preview</button></div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="act-h" style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; align-items: baseline; gap: 10px"><h2 id="act-h" style="margin: 0; font-size: 13px; font-weight: 600">Activity</h2><span style="color: #8b8b94; font-size: 12px">people and agents</span><span style="flex: 1"></span><a href="#" style="color: #a1a1aa; font-size: 12px">All activity</a></div>
+        <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
+          <li style="display: flex; gap: 10px; padding: 9px 2px; border-bottom: 1px solid #1c1c1f">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b8b94; width: 40px; flex: none; padding-top: 1px">20:10</span>
+            <span style="flex: 1"><span style="color: #93c5fd">◇ bootstrap</span> deployed <span style="font-weight: 500">site</span> <span style="font-family: 'JetBrains Mono', monospace; color: #a1a1aa">r1</span></span>
+            <svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#8b8b94" stroke-width="2" stroke-linecap="round"><path d="m10 7 5 5-5 5"></path></svg>
+          </li>
+          <li style="display: flex; gap: 10px; padding: 9px 2px; border-bottom: 1px solid #1c1c1f">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b8b94; width: 40px; flex: none; padding-top: 1px">20:10</span>
+            <span style="flex: 1"><span style="color: #93c5fd">◇ bootstrap</span> created service <span style="font-weight: 500">site</span></span>
+            <svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#8b8b94" stroke-width="2" stroke-linecap="round"><path d="m10 7 5 5-5 5"></path></svg>
+          </li>
+          <li style="display: flex; gap: 10px; padding: 9px 2px; border-bottom: 1px solid #1c1c1f">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b8b94; width: 40px; flex: none; padding-top: 1px">20:10</span>
+            <span style="flex: 1"><span style="color: #93c5fd">◇ bootstrap</span> created project <span style="font-weight: 500">blog</span></span>
+            <svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#8b8b94" stroke-width="2" stroke-linecap="round"><path d="m10 7 5 5-5 5"></path></svg>
+          </li>
+        </ol>
+        <span style="color: #8b8b94; font-size: 12px">◇ token · ○ person</span>
+      </section>
+    </div>
+  </div>
+
+  <div style="padding: 12px 20px 16px">
+    <div style="max-width: 860px; margin: 0 auto; border: 1px solid #2e2e33; background: #151517; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px">
+      <label for="cmd" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Command</label>
+      <input id="cmd" placeholder="Run a dock command, or describe it: “deploy site from main”" style="background: transparent; border: 0; outline: none; color: #ededef; font: inherit; font-size: 14px; padding: 4px 2px">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+        <span style="display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px; background: #1f1f23; color: #c8c8cf; font-size: 12px">blog / production</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b8b94">same commands as the CLI</span>
+        <span style="flex: 1"></span>
+        <span style="color: #8b8b94; font-size: 12px">? for keys</span>
+        <button aria-label="Run" style="width: 28px; height: 28px; border-radius: 50%; border: 0; background: #ededef; display: grid; place-items: center"><svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="#0a0a0b" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button>
+      </div>
+    </div>
+  </div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+
+
+</body></html>

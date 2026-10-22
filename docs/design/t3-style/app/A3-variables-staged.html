@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en"><head><style data-dc-design-system-vars="">@layer{:root{--bg:#fafaf7;--surface:#f1f1ec;--surface-2:#edede8;--ink:#111110;--muted:#6b6b65;--subtle:#8a8a82;--faint:#b4b4ac;--line:#e4e4de;--line-strong:#d6d6cf;--blue:#2f6bff;--blue-ink:#2459e0;--on-blue:#ffffff;--blue-soft:#eaf0ff;--cyan:#22c3e6;--good:#1a7f37;--danger:#c4321f;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-8:32px;--space-12:48px;--space-16:64px;--radius-xs:2px;--radius-sm:12px;--radius-md:24px;--radius-full:9999px;--size-touch:44px;--size-row:52px;--size-button:60px;--size-content:390px;--font-sans:"Inter Tight", system-ui, -apple-system, sans-serif;--text-numeral:400 88px/1 var(--font-sans);--text-display:500 48px/1 var(--font-sans);--text-title:500 40px/1.05 var(--font-sans);--text-stat:400 44px/1 var(--font-sans);--text-body-lg:400 17px/24px var(--font-sans);--text-button:500 17px/24px var(--font-sans);--text-body:400 15px/22px var(--font-sans);--text-label:400 14px/20px var(--font-sans);--text-caption:400 12px/16px var(--font-sans);}}</style>
+
+
+<meta charset="utf-8">
+<title>Dock · blog variables</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("7e84d355-fe6a-42da-8ca8-a70bcb607029") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("7e84d355-fe6a-42da-8ca8-a70bcb607029") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("7e84d355-fe6a-42da-8ca8-a70bcb607029") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("39130392-2853-45fa-b200-2fe34e39b035") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("79055da0-3e37-4c9d-92ee-d862d1fba60c") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("0d2fa811-eefc-48dc-87c5-c4655160d732") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("bfa6d240-da57-4814-9a5e-980922a828fb") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("633bd136-d2bf-4712-97c6-b41dfca3ad42") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("3c5da381-eb30-49a7-b581-0890290b8d13") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("39130392-2853-45fa-b200-2fe34e39b035") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("79055da0-3e37-4c9d-92ee-d862d1fba60c") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("0d2fa811-eefc-48dc-87c5-c4655160d732") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("bfa6d240-da57-4814-9a5e-980922a828fb") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("633bd136-d2bf-4712-97c6-b41dfca3ad42") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("3c5da381-eb30-49a7-b581-0890290b8d13") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+body{margin:0;background:#0e0e10}
+a{color:#ededef;text-decoration:none}a:hover{color:#ffffff}
+button{font:inherit;color:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #0e0e10; color: #ededef; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-wrap: wrap">
+
+<nav aria-label="Workspace" style="flex: 1 1 248px; background: #0a0a0b; border-right: 1px solid #232326; display: flex; flex-direction: column; padding: 10px 8px; gap: 2px; box-sizing: border-box; min-height: 900px">
+  <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px 12px">
+    <span style="width: 20px; height: 20px; border-radius: 5px; background: #ededef; color: #0a0a0b; font-weight: 600; font-size: 11px; display: grid; place-items: center">N</span>
+    <span style="font-weight: 600; flex: 1">NordTempo</span>
+  </div>
+  <button style="display: flex; align-items: center; gap: 8px; margin: 0 4px 10px; padding: 7px 9px; background: #151517; border: 1px solid #232326; border-radius: 7px; color: #a1a1aa; text-align: left"><span style="flex: 1">Jump to…</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; border: 1px solid #2e2e33; border-radius: 4px; padding: 0 4px">⌘K</span></button>
+  <div style="padding: 6px 10px 4px; color: #8b8b94; font-size: 11px; font-weight: 500">Projects</div>
+  <a href="Main.dc.html" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; font-weight: 500; background: #1c1c1f"><span style="color: #8b8b94">▾</span><span style="flex: 1">blog</span></a>
+  <a href="T3Service.dc.html" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span><span style="flex: 1">site</span><span style="color: #8b8b94; font-size: 11px">39m</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; margin-top: 4px"><span style="color: #8b8b94">▸</span><span style="flex: 1">tempolift</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px"><span style="color: #8b8b94">▸</span><span style="flex: 1">tempobase</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px"><span style="color: #8b8b94">▸</span><span style="flex: 1">nordtempo.no</span></a>
+  <div style="flex: 1; min-height: 24px"></div>
+  <a href="#" style="padding: 6px 10px; border-radius: 6px; color: #c8c8cf">Activity</a>
+  <a href="T3Access.dc.html" style="padding: 6px 10px; border-radius: 6px; color: #c8c8cf">Members &amp; tokens</a>
+  <a href="#" style="padding: 6px 10px; border-radius: 6px; color: #c8c8cf">Workspace settings</a>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid #232326; min-height: 52px; box-sizing: border-box">
+    <nav aria-label="Breadcrumb" style="display: flex; align-items: center; gap: 6px; color: #a1a1aa"><a href="Main.dc.html" style="color: #a1a1aa">blog</a><span>/</span><h1 style="margin: 0; font-size: 14px; font-weight: 600; color: #ededef">Variables</h1></nav>
+    <button style="display: flex; align-items: center; gap: 7px; padding: 4px 9px; border-radius: 999px; border: 1px solid #2e2e33; background: #151517; font-size: 12px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span>production ▾</button>
+    <div style="flex: 1"></div>
+    <button style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Reveal values</button>
+    <button style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Paste .env</button>
+    <button style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Copy from preview…</button>
+  </header>
+
+  <div style="flex: 1; display: flex; flex-wrap: wrap; gap: 0">
+    <div style="flex: 1 1 220px; max-width: 280px; border-right: 1px solid #232326; padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; box-sizing: border-box">
+      <div style="padding: 0 8px 6px; color: #8b8b94; font-size: 11px; font-weight: 500">Applies to</div>
+      <a href="#" style="display: flex; justify-content: space-between; padding: 7px 10px; border-radius: 6px; color: #c8c8cf"><span>Shared · every service</span><span style="color: #8b8b94">2</span></a>
+      <a href="#" aria-current="true" style="display: flex; justify-content: space-between; padding: 7px 10px; border-radius: 6px; background: #1c1c1f; font-weight: 500"><span>site</span><span style="color: #8b8b94">3 + 2 shared</span></a>
+      <p style="margin: 14px 8px 0; color: #8b8b94; font-size: 12px; line-height: 1.5">Grey lines come from Shared. A line in a service with the same name wins.</p>
+    </div>
+
+    <div style="flex: 999 1 480px; min-width: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box">
+      <div style="display: flex; align-items: baseline; gap: 10px"><h2 style="margin: 0; font-size: 13px; font-weight: 600">site sees at runtime</h2><span style="color: #8b8b94; font-size: 12px">values hidden</span></div>
+      <div style="border: 1px solid #232326; border-radius: 10px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 12.5px">
+        <div style="min-width: 560px">
+          <div style="display: grid; grid-template-columns: 34px 22px 220px 1fr 90px; align-items: center; padding: 8px 10px; color: #8b8b94; border-bottom: 1px solid #1c1c1f">
+            <span>1</span><span></span><span>NODE_ENV</span><span>production</span><span style="font-family: Inter, sans-serif; font-size: 11px; text-align: right">shared</span></div>
+          <div style="display: grid; grid-template-columns: 34px 22px 220px 1fr 90px; align-items: center; padding: 8px 10px; color: #8b8b94; border-bottom: 1px solid #1c1c1f">
+            <span>2</span><span></span><span>LOG_LEVEL</span><span>info</span><span style="font-family: Inter, sans-serif; font-size: 11px; text-align: right">shared</span></div>
+          <div style="display: grid; grid-template-columns: 34px 22px 220px 1fr 90px; align-items: center; padding: 8px 10px; background: #0f1f15; border-bottom: 1px solid #1c1c1f">
+            <span style="color: #8b8b94">3</span><span style="color: #4ade80">+</span><span>SITE_URL</span><span>https://[your domain]</span><span></span></div>
+          <div style="display: grid; grid-template-columns: 34px 22px 220px 1fr 90px; align-items: center; padding: 8px 10px; background: #221d0e; border-bottom: 1px solid #1c1c1f">
+            <span style="color: #8b8b94">4</span><span style="color: #fbbf24">~</span><span>MAIL_API_KEY</span><span>••••••••••••</span><span style="font-family: Inter, sans-serif; font-size: 11px; text-align: right; color: #fbbf24">secret</span></div>
+          <div style="display: grid; grid-template-columns: 34px 22px 220px 1fr 90px; align-items: center; padding: 8px 10px; border-bottom: 1px solid #1c1c1f">
+            <span style="color: #8b8b94">5</span><span></span><span>DATABASE_URL</span><span><span style="color: #93c5fd">$<span>{</span><span>{</span> postgres.DATABASE_URL }<span>}</span></span> <span style="color: #8b8b94">→ resolves</span></span><span style="font-family: Inter, sans-serif; font-size: 11px; text-align: right; color: #8b8b94">reference</span></div>
+          <div style="display: grid; grid-template-columns: 34px 22px 220px 1fr 90px; align-items: center; padding: 8px 10px; background: #26120f; border-bottom: 1px solid #1c1c1f; color: #a1a1aa">
+            <span style="color: #8b8b94">6</span><span style="color: #f87171">−</span><span style="text-decoration: line-through">OLD_FLAG</span><span style="text-decoration: line-through">true</span><span></span></div>
+          <div style="display: grid; grid-template-columns: 34px 22px 1fr; align-items: center; padding: 8px 10px; color: #8b8b94">
+            <span>7</span><span></span><label for="newvar" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">New variable</label><input id="newvar" placeholder="NAME=value  ·  ↵ add" style="background: transparent; border: 0; color: #ededef; font: inherit; outline: none"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 14px; color: #8b8b94; font-size: 12px"><span><span style="color: #4ade80">+</span> added</span><span><span style="color: #fbbf24">~</span> changed</span><span><span style="color: #f87171">−</span> removed</span><span><span style="color: #93c5fd">$<span>{</span><span>{</span> }<span>}</span></span> points at another service</span></div>
+
+      <div style="margin-top: auto; border: 1px solid #2e2e33; background: #151517; border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #fbbf24"></span>
+        <span style="flex: 1; min-width: 220px"><span style="font-weight: 500">3 changes staged</span> <span style="color: #a1a1aa">· nothing changes for site until you deploy</span></span>
+        <button style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Discard</button>
+        <button style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Save only</button>
+        <button style="padding: 6px 12px; border-radius: 6px; border: 0; background: #ededef; color: #0a0a0b; font-size: 12px; font-weight: 600">Save and deploy site</button>
+      </div>
+    </div>
+  </div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+
+
+</body></html>

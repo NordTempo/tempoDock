@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<title>Compact dark · all tables</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0a0a0a}
+a{color:#7DA2FF}a:hover{color:#A8C0FF}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #0a0a0a; color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 14px; font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap">
+
+  <nav aria-label="Connections and tables" style="flex: 1 1 240px; max-width: 264px; box-sizing: border-box; background: #0f0f0f; border-right: 1px solid rgba(255,255,255,.06); padding: 12px 8px; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 6px">
+      <span style="font-weight: 600; letter-spacing: -0.01em">tempoBase</span>
+      <button aria-label="New query" style="all: unset; cursor: pointer; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: #a3a3a3"><svg width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"></path></svg></button>
+    </div>
+    <button style="all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 8px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); color: #a3a3a3; font-size: 13px">
+      <svg width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="M20 20l-4.5-4.5"></path></svg>
+      <span style="flex: 1">Search</span><span style="font-size: 11px; border: 1px solid rgba(255,255,255,.08); border-radius: 4px; padding: 0 4px">⌘K</span>
+    </button>
+    <div style="display: flex; flex-direction: column; gap: 1px; margin-top: 6px">
+      <div style="padding: 6px 10px 4px; font-size: 11px; color: #8a8a8a">Connections</div>
+      <sc-for list="{{conns}}" as="c" hint-placeholder-count="3">
+        <div style="display: flex; flex-direction: column; gap: 1px">
+          <button style="all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 8px; color: #f5f5f5; background: {{c.bg}}">
+            <svg width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#8a8a8a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform: {{c.rot}}"><path d="M9 6l6 6-6 6"></path></svg>
+            <span style="flex: 1; font-weight: 500">{{c.name}}</span><span style="font-size: 11px; color: #8a8a8a">{{c.tag}}</span>
+          </button>
+          <sc-for list="{{c.tables}}" as="t" hint-placeholder-count="0">
+            <a href="#" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px 0 30px; border-radius: 8px; text-decoration: none; color: {{t.color}}; background: {{t.bg}}"><span style="flex: 1">{{t.name}}</span><span style="font-size: 11px; color: #8a8a8a">{{t.count}}</span></a>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top: auto; display: flex; flex-direction: column; gap: 1px; border-top: 1px solid rgba(255,255,255,.06); padding-top: 8px">
+      <sc-for list="{{tools}}" as="l" hint-placeholder-count="5">
+        <a href="#" style="display: flex; align-items: center; height: 30px; padding: 0 10px; border-radius: 8px; text-decoration: none; color: {{l.color}}; background: {{l.bg}}">{{l.name}}</a>
+      </sc-for>
+      <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; margin-top: 4px"><span style="width: 20px; height: 20px; border-radius: 9999px; background: #191a1d; font-size: 10px; display: flex; align-items: center; justify-content: center">E</span><span style="flex: 1; color: #a3a3a3">Elias</span><span style="font-size: 11px; color: #8a8a8a">Admin</span></div>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; position: relative">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 52px; padding: 0 20px; border-bottom: 1px solid rgba(255,255,255,.06)">
+      <span style="color: #8a8a8a">demo-replica /</span>
+      <h1 style="margin: 0; font-size: 14px; font-weight: 600">All tables</h1>
+      <span style="font-size: 12px; color: #8a8a8a">13 tables · 2 schemas · Postgres 17.11</span>
+      <div style="margin-left: auto; display: flex; gap: 6px">
+        <button style="all: unset; cursor: pointer; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.03); font-size: 13px; display: flex; align-items: center">Schema map</button>
+      </div>
+    </header>
+
+    <div style="padding: 8px 12px 160px; overflow-x: auto">
+      <div style="min-width: 720px">
+        <div style="display: grid; grid-template-columns: 200px 150px 100px 80px minmax(0, 1fr); align-items: center; height: 32px; color: #8a8a8a; font-size: 12px; font-weight: 500">
+          <span style="padding: 0 8px">name</span><span style="padding: 0 8px">kind</span><span style="padding: 0 8px; text-align: right">rows</span><span style="padding: 0 8px; text-align: right">columns</span><span style="padding: 0 8px">connected to</span>
+        </div>
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="15">
+          <sc-if value="{{r.isGroup}}" hint-placeholder-val="{{false}}">
+            <div style="padding: 18px 8px 6px; font-size: 11px; color: #8a8a8a; border-bottom: 1px solid rgba(255,255,255,.06)">{{r.name}} · {{r.meta}}</div>
+          </sc-if>
+          <sc-if value="{{r.isRow}}" hint-placeholder-val="{{true}}">
+            <a href="#" style="display: grid; grid-template-columns: 200px 150px 100px 80px minmax(0, 1fr); align-items: center; height: 34px; border-bottom: 1px solid rgba(255,255,255,.04); text-decoration: none; color: #f5f5f5">
+              <span style="padding: 0 8px; font-weight: 500">{{r.name}}</span>
+              <span style="padding: 0 8px; color: #8a8a8a; font-size: 12px">{{r.kind}}</span>
+              <span style="padding: 0 8px; text-align: right; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; color: #a3a3a3">{{r.rows}}</span>
+              <span style="padding: 0 8px; text-align: right; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; color: #a3a3a3">{{r.cols}}</span>
+              <span style="padding: 0 8px; color: #a3a3a3; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.links}}</span>
+            </a>
+          </sc-if>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="position: absolute; left: 0; right: 0; bottom: 20px; display: flex; justify-content: center; padding: 0 20px">
+      <div style="width: 100%; max-width: 736px; box-sizing: border-box; background: #121212; border: 1px solid rgba(255,255,255,.08); border-radius: 16px; box-shadow: 0 14px 32px -18px rgba(0,0,0,.75); padding: 12px 12px 10px 16px">
+        <label for="ask" style="position: absolute; left: -9999px">Ask about this database or write SQL</label>
+        <input id="ask" placeholder="Ask about demo-replica, or write SQL…" style="width: 100%; box-sizing: border-box; background: transparent; border: 0; outline: none; color: #f5f5f5; font: inherit; font-size: 15px; height: 28px">
+        <div style="display: flex; align-items: center; gap: 6px; margin-top: 8px">
+          <span style="height: 22px; padding: 0 8px; border-radius: 6px; background: rgba(255,255,255,.04); color: #a3a3a3; font-size: 12px; display: inline-flex; align-items: center">@demo-replica</span>
+          <span style="font-size: 12px; color: #8a8a8a">read only</span>
+          <button aria-label="Send" style="all: unset; cursor: pointer; margin-left: auto; width: 30px; height: 30px; border-radius: 9999px; background: #346bf1; color: #ffffff; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  renderVals() {
+    var pub = [['customers','20.0k'],['order_items','600k'],['orders','300k'],['payments','214k'],['products','2.3k'],['refunds','42.9k'],['shipments','114k']];
+    var conns = [
+      { name: 'demo-replica', tag: 'replica', rot: 'rotate(90deg)', bg: 'rgba(255,255,255,.07)', tables: pub.map(function (d) { return { name: d[0], count: d[1], bg: 'transparent', color: '#a3a3a3' }; }) },
+      { name: 'demo', tag: 'primary', rot: 'none', bg: 'transparent', tables: [] },
+      { name: 'tempolift', tag: '', rot: 'none', bg: 'transparent', tables: [] }
+    ];
+    var tools = ['SQL editor','Schema map','Agents & MCP','Access','Activity'].map(function (n) { return { name: n, bg: 'transparent', color: '#a3a3a3' }; });
+    function g(n, m) { return { isGroup: true, isRow: false, name: n, meta: m }; }
+    function r(n, k, rows, cols, links) { return { isGroup: false, isRow: true, name: n, kind: k, rows: rows, cols: cols, links: links }; }
+    var rows = [
+      g('public', '9 tables'),
+      r('coupons','table','3',3,'orders'),
+      r('customers','table','20 014',9,'orders'),
+      r('order_items','table','600 212',5,'orders, products'),
+      r('orders','table','300 412',9,'customers, coupons, order_items, payments, refunds, shipments'),
+      r('payments','table','214 308',5,'orders'),
+      r('products','table','2 314',7,'warehouses, order_items'),
+      r('refunds','table','42 917',5,'orders'),
+      r('shipments','table','114 330',5,'orders, warehouses'),
+      r('warehouses','table','6',3,'products, shipments'),
+      g('analytics', '1 table · 3 views'),
+      r('page_views','table','5 000',3,'—'),
+      r('product_sales','materialized view','2 314',4,'—'),
+      r('revenue_by_day','view','—',3,'—'),
+      r('top_customers','view','—',4,'—')
+    ];
+    return { conns: conns, tools: tools, rows: rows };
+  }
+}
+</script>
+
+
+</body></html>

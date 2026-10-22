@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en"><head><style data-dc-design-system-vars="">@layer{:root{--bg:#fafaf7;--surface:#f1f1ec;--surface-2:#edede8;--ink:#111110;--muted:#6b6b65;--subtle:#8a8a82;--faint:#b4b4ac;--line:#e4e4de;--line-strong:#d6d6cf;--blue:#2f6bff;--blue-ink:#2459e0;--on-blue:#ffffff;--blue-soft:#eaf0ff;--cyan:#22c3e6;--good:#1a7f37;--danger:#c4321f;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-8:32px;--space-12:48px;--space-16:64px;--radius-xs:2px;--radius-sm:12px;--radius-md:24px;--radius-full:9999px;--size-touch:44px;--size-row:52px;--size-button:60px;--size-content:390px;--font-sans:"Inter Tight", system-ui, -apple-system, sans-serif;--text-numeral:400 88px/1 var(--font-sans);--text-display:500 48px/1 var(--font-sans);--text-title:500 40px/1.05 var(--font-sans);--text-stat:400 44px/1 var(--font-sans);--text-body-lg:400 17px/24px var(--font-sans);--text-button:500 17px/24px var(--font-sans);--text-body:400 15px/22px var(--font-sans);--text-label:400 14px/20px var(--font-sans);--text-caption:400 12px/16px var(--font-sans);}}</style>
+
+
+<meta charset="utf-8">
+<title>Dock · tempolift graph view</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("233e2f91-3254-46dc-bfab-effc580611df") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("233e2f91-3254-46dc-bfab-effc580611df") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7W0Q5n-wU.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("233e2f91-3254-46dc-bfab-effc580611df") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("cdd90f9c-b5f6-41bc-bcff-e4b109ae7c5e") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("53708521-d0ee-4011-b0f3-4092d99ab686") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("f8d14c53-c627-461d-91be-6212bb20e9f3") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("1aee06b7-ecd7-4c5a-ae60-d134379e02d0") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("8334fc5b-21db-4753-aa7e-df4b17451878") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("f89f00fc-7773-46ad-bc24-c0ab3b4df0a8") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("cdd90f9c-b5f6-41bc-bcff-e4b109ae7c5e") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("53708521-d0ee-4011-b0f3-4092d99ab686") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("f8d14c53-c627-461d-91be-6212bb20e9f3") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("1aee06b7-ecd7-4c5a-ae60-d134379e02d0") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("8334fc5b-21db-4753-aa7e-df4b17451878") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("f89f00fc-7773-46ad-bc24-c0ab3b4df0a8") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+body{margin:0;background:#0e0e10}
+a{color:#ededef;text-decoration:none}a:hover{color:#ffffff}
+button{font:inherit;color:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #0e0e10; color: #ededef; font-family: Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-wrap: wrap">
+
+<nav aria-label="Workspace" style="flex: 1 1 248px; background: #0a0a0b; border-right: 1px solid #232326; display: flex; flex-direction: column; padding: 10px 8px; gap: 2px; box-sizing: border-box; min-height: 900px">
+  <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px 12px">
+    <span style="width: 20px; height: 20px; border-radius: 5px; background: #ededef; color: #0a0a0b; font-weight: 600; font-size: 11px; display: grid; place-items: center">N</span>
+    <span style="font-weight: 600; flex: 1">NordTempo</span>
+  </div>
+  <button style="display: flex; align-items: center; gap: 8px; margin: 0 4px 10px; padding: 7px 9px; background: #151517; border: 1px solid #232326; border-radius: 7px; color: #a1a1aa; text-align: left"><span style="flex: 1">Jump to…</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; border: 1px solid #2e2e33; border-radius: 4px; padding: 0 4px">⌘K</span></button>
+  <div style="padding: 6px 10px 4px; color: #8b8b94; font-size: 11px; font-weight: 500">Projects</div>
+  <a href="Main.dc.html" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px"><span style="color: #8b8b94">▸</span><span style="flex: 1">blog</span><span style="color: #8b8b94; font-size: 11px">1</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; background: #1c1c1f; font-weight: 500; margin-top: 4px"><span style="color: #8b8b94">▾</span><span style="flex: 1">tempolift</span><span style="color: #8b8b94; font-size: 11px">4</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span><span style="flex: 1">web</span><span style="color: #8b8b94; font-size: 11px">2h</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #ededef; box-shadow: inset 2px 0 0 #ededef"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #fbbf24; box-sizing: border-box; border-right-color: transparent"></span><span style="flex: 1">api</span><span style="color: #fbbf24; font-size: 11px">deploying</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span><span style="flex: 1">worker</span><span style="color: #8b8b94; font-size: 11px">1d</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 6px; color: #c8c8cf"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span><span style="flex: 1">postgres</span><span style="color: #8b8b94; font-size: 11px">db</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; margin-top: 4px"><span style="color: #8b8b94">▸</span><span style="flex: 1">tempobase</span><span style="color: #8b8b94; font-size: 11px">2</span></a>
+  <a href="#" style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px"><span style="color: #8b8b94">▸</span><span style="flex: 1">nordtempo.no</span><span style="color: #f87171; font-size: 11px">1 failed</span></a>
+  <div style="flex: 1; min-height: 24px"></div>
+  <a href="#" style="padding: 6px 10px; border-radius: 6px; color: #c8c8cf">Activity</a>
+  <a href="T3Access.dc.html" style="padding: 6px 10px; border-radius: 6px; color: #c8c8cf">Members &amp; tokens</a>
+  <a href="#" style="padding: 6px 10px; border-radius: 6px; color: #c8c8cf">Workspace settings</a>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid #232326; min-height: 52px; box-sizing: border-box">
+    <h1 style="margin: 0; font-size: 14px; font-weight: 600">tempolift</h1>
+    <button style="display: flex; align-items: center; gap: 7px; padding: 4px 9px; border-radius: 999px; border: 1px solid #2e2e33; background: #151517; font-size: 12px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span>production ▾</button>
+    <span style="color: #8b8b94; font-size: 12px">4 services · EU North</span>
+    <div style="flex: 1"></div>
+    <div role="group" aria-label="View" style="display: flex; border: 1px solid #2e2e33; border-radius: 7px; overflow: hidden; font-size: 12px">
+      <a href="Main.dc.html" style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; color: #a1a1aa">
+        <svg aria-hidden="true" width="13" height="13" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>List</a>
+      <button aria-pressed="true" style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: 0; background: #1f1f23; font-weight: 500">
+        <svg aria-hidden="true" width="13" height="13" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="6" rx="1.5"></rect><rect x="14" y="15" width="7" height="6" rx="1.5"></rect><path d="M6.5 9v3.5a2 2 0 0 0 2 2h9V15"></path></svg>Graph <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #8b8b94">G</span></button>
+    </div>
+    <a href="T3Variables.dc.html" style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; font-size: 12px">Variables</a>
+    <button style="padding: 6px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Add service</button>
+    <button style="padding: 6px 10px; border-radius: 6px; border: 0; background: #ededef; color: #0a0a0b; font-size: 12px; font-weight: 600">Deploy</button>
+  </header>
+
+  <div style="flex: 1; display: flex; flex-wrap: wrap; min-height: 0">
+    <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+      <div style="flex: 1; position: relative; overflow: auto; background-color: #0e0e10; background-image: radial-gradient(#232326 1px, transparent 1px); background-size: 20px 20px; min-height: 560px">
+        <div style="position: relative; width: 860px; height: 560px">
+          <div style="position: absolute; left: 260px; top: 148px; width: 70px; height: 1px; background: #3a3a40"></div>
+          <div style="position: absolute; left: 530px; top: 148px; width: 36px; height: 1px; background: #3a3a40"></div>
+          <div style="position: absolute; left: 566px; top: 148px; width: 1px; height: 181px; background: #3a3a40"></div>
+          <div style="position: absolute; left: 530px; top: 328px; width: 36px; height: 1px; background: #3a3a40"></div>
+          <div style="position: absolute; left: 566px; top: 238px; width: 34px; height: 1px; background: #3a3a40"></div>
+          <span style="position: absolute; left: 268px; top: 128px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #8b8b94">API_URL</span>
+          <span style="position: absolute; left: 574px; top: 218px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #8b8b94">DATABASE_URL</span>
+
+          <a href="#" style="position: absolute; left: 60px; top: 104px; width: 200px; box-sizing: border-box; padding: 11px 13px; border-radius: 10px; border: 1px solid #2e2e33; background: #151517; display: flex; flex-direction: column; gap: 5px">
+            <span style="display: flex; align-items: center; gap: 8px; font-weight: 600"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span>web<span style="flex: 1"></span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b8b94; font-weight: 400">r31</span></span>
+            <span style="color: #93c5fd; font-size: 12px">[web domain]</span>
+            <span style="color: #8b8b94; font-size: 11px">repo · main · 2h</span>
+          </a>
+
+          <a href="T3Service.dc.html" aria-current="true" style="position: absolute; left: 330px; top: 104px; width: 200px; box-sizing: border-box; padding: 11px 13px; border-radius: 10px; border: 1px solid #ededef; background: #1a1a1d; display: flex; flex-direction: column; gap: 5px">
+            <span style="display: flex; align-items: center; gap: 8px; font-weight: 600"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #fbbf24; box-sizing: border-box; border-right-color: transparent"></span>api<span style="flex: 1"></span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #fbbf24; font-weight: 400">r14</span></span>
+            <span style="color: #a1a1aa; font-size: 12px">internal only</span>
+            <span style="display: flex; gap: 3px"><span style="flex: 1; height: 3px; border-radius: 2px; background: #4ade80"></span><span style="flex: 1; height: 3px; border-radius: 2px; background: #4ade80"></span><span style="flex: 1; height: 3px; border-radius: 2px; background: #fbbf24"></span><span style="flex: 1; height: 3px; border-radius: 2px; background: #2e2e33"></span></span>
+          </a>
+
+          <a href="#" style="position: absolute; left: 330px; top: 284px; width: 200px; box-sizing: border-box; padding: 11px 13px; border-radius: 10px; border: 1px solid #2e2e33; background: #151517; display: flex; flex-direction: column; gap: 5px">
+            <span style="display: flex; align-items: center; gap: 8px; font-weight: 600"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span>worker<span style="flex: 1"></span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b8b94; font-weight: 400">r9</span></span>
+            <span style="color: #a1a1aa; font-size: 12px">no port · cron 02:00</span>
+            <span style="color: #8b8b94; font-size: 11px">repo · main · 1d</span>
+          </a>
+
+          <a href="#" style="position: absolute; left: 600px; top: 194px; width: 200px; box-sizing: border-box; padding: 11px 13px; border-radius: 10px; border: 1px solid #2e2e33; background: #151517; display: flex; flex-direction: column; gap: 5px">
+            <span style="display: flex; align-items: center; gap: 8px; font-weight: 600"><svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path></svg>postgres</span>
+            <span style="color: #a1a1aa; font-size: 12px">postgres:17 · volume 2G</span>
+            <span style="color: #8b8b94; font-size: 11px">backup 03:00 · healthy</span>
+          </a>
+
+          <button style="position: absolute; left: 60px; top: 284px; width: 200px; height: 82px; box-sizing: border-box; border-radius: 10px; border: 1px dashed #3a3a40; background: transparent; color: #8b8b94">+ Add service</button>
+        </div>
+
+        <div style="position: absolute; left: 14px; bottom: 14px; display: flex; gap: 2px; padding: 3px; border-radius: 8px; border: 1px solid #2e2e33; background: #151517; font-size: 12px">
+          <button aria-label="Zoom out" style="width: 28px; height: 28px; border: 0; background: transparent; border-radius: 5px">−</button>
+          <button style="height: 28px; padding: 0 8px; border: 0; background: transparent; border-radius: 5px; color: #a1a1aa">Fit</button>
+          <button aria-label="Zoom in" style="width: 28px; height: 28px; border: 0; background: transparent; border-radius: 5px">+</button>
+        </div>
+        <div style="position: absolute; right: 14px; bottom: 14px; display: flex; gap: 12px; padding: 6px 10px; border-radius: 8px; border: 1px solid #232326; background: #0a0a0b; color: #8b8b94; font-size: 11px">
+          <span>lines = variable references</span><span>drag to arrange</span>
+        </div>
+      </div>
+
+      <div style="padding: 12px 20px 16px; border-top: 1px solid #232326">
+        <div style="max-width: 760px; margin: 0 auto; border: 1px solid #2e2e33; background: #151517; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px">
+          <label for="gcmd" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Command</label>
+          <input id="gcmd" placeholder="Run a dock command, or describe it: “roll back api”" style="background: transparent; border: 0; outline: none; color: #ededef; font: inherit; font-size: 14px; padding: 4px 2px">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+            <span style="padding: 3px 8px; border-radius: 999px; background: #1f1f23; color: #c8c8cf; font-size: 12px">tempolift / production / api</span>
+            <span style="flex: 1"></span>
+            <button aria-label="Run" style="width: 28px; height: 28px; border-radius: 50%; border: 0; background: #ededef; display: grid; place-items: center"><svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="#0a0a0b" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside aria-label="api details" style="flex: 1 1 360px; max-width: 420px; border-left: 1px solid #232326; background: #0a0a0b; display: flex; flex-direction: column">
+      <div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid #232326">
+        <div style="display: flex; align-items: center; gap: 10px"><h2 style="margin: 0; font-size: 15px; font-weight: 600">api</h2><span style="color: #fbbf24; font-size: 12px">Deploying r14</span><span style="flex: 1"></span><a href="T3Service.dc.html" style="color: #a1a1aa; font-size: 12px">Open ↗</a><button aria-label="Close panel" style="border: 0; background: transparent; color: #a1a1aa; font-size: 15px">×</button></div>
+        <div style="display: flex; gap: 6px"><button style="padding: 5px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Restart</button><button style="padding: 5px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Roll back</button><button style="padding: 5px 10px; border-radius: 6px; border: 1px solid #2e2e33; background: transparent; font-size: 12px">Cancel deploy</button></div>
+      </div>
+      <div role="tablist" aria-label="api sections" style="display: flex; gap: 2px; padding: 8px 12px; border-bottom: 1px solid #232326">
+        <button role="tab" aria-selected="true" style="padding: 4px 9px; border-radius: 6px; border: 0; background: #1f1f23; font-weight: 500; font-size: 12px">Deploys</button>
+        <button role="tab" aria-selected="false" style="padding: 4px 9px; border-radius: 6px; border: 0; background: transparent; color: #a1a1aa; font-size: 12px">Logs</button>
+        <button role="tab" aria-selected="false" style="padding: 4px 9px; border-radius: 6px; border: 0; background: transparent; color: #a1a1aa; font-size: 12px">Metrics</button>
+        <button role="tab" aria-selected="false" style="padding: 4px 9px; border-radius: 6px; border: 0; background: transparent; color: #a1a1aa; font-size: 12px">Variables</button>
+      </div>
+      <ol style="list-style: none; margin: 0; padding: 4px 16px; display: flex; flex-direction: column">
+        <li style="padding: 12px 0; border-bottom: 1px solid #1c1c1f; display: flex; flex-direction: column; gap: 7px">
+          <span><span style="font-family: 'JetBrains Mono', monospace">r14</span> · fix rest timer rounding</span>
+          <span style="color: #8b8b94; font-size: 12px">○ saile · main a1f3c9e · just now</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 5px; font-size: 11px">
+            <span style="padding: 2px 7px; border-radius: 999px; background: #14261b; color: #4ade80">✓ Build</span>
+            <span style="padding: 2px 7px; border-radius: 999px; background: #14261b; color: #4ade80">✓ Push</span>
+            <span style="padding: 2px 7px; border-radius: 999px; background: #2a2210; color: #fbbf24">Health check</span>
+            <span style="padding: 2px 7px; border-radius: 999px; background: #1a1a1d; color: #8b8b94">Switch traffic</span>
+          </div>
+        </li>
+        <li style="padding: 11px 0; border-bottom: 1px solid #1c1c1f; display: flex; gap: 8px; align-items: center"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ade80"></span><span style="font-family: 'JetBrains Mono', monospace">r13</span><span style="flex: 1">add weekly summary</span><span style="color: #8b8b94; font-size: 11px">serving</span></li>
+        <li style="padding: 11px 0; display: flex; gap: 8px; align-items: center; color: #a1a1aa"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1px solid #55555c; box-sizing: border-box"></span><span style="font-family: 'JetBrains Mono', monospace">r12</span><span style="flex: 1">bump deps</span><span style="font-size: 11px">yesterday</span></li>
+      </ol>
+      <div style="margin: 8px 16px; padding: 10px 12px; border: 1px solid #232326; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.7; color: #c8c8cf; white-space: pre; overflow-x: auto"><span style="color: #8b8b94">r14 ·</span> listening on :8080
+<span style="color: #8b8b94">r14 ·</span> GET /health 200 3ms
+<span style="color: #8b8b94">r14 ·</span> waiting for 2 more passing checks</div>
+    </aside>
+  </div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+
+
+</body></html>
