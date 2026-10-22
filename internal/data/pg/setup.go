@@ -9,9 +9,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
 )
 
@@ -43,40 +45,29 @@ type roleSpec struct {
 //   - dock_reader: LOGIN, member of pg_read_all_data only,
 //     default_transaction_read_only on, statement_timeout capped at the
 //     longest read.
+//
 //   - dock_writer: LOGIN, member of pg_read_all_data and pg_write_all_data
 //     only (DML, no DDL), statement and idle-in-transaction timeouts of a
 //     commit.
 //
-// Both are stripped of superuser, createdb, createrole, replication and
+//   - dock_reader_masked (with t.ReaderMasked set): LOGIN, member of no
+//     role, read-only like dock_reader; SyncMasked grants its columns.
+//
+// All are stripped of superuser, createdb, createrole, replication and
 // bypassrls, so row-level security applies to them. Passwords are sent as
 // SCRAM-SHA-256 verifiers, so the plain text never reaches the server or
 // its logs. Everything runs in one transaction; re-running it is safe.
 // Setup then drops the service's cached connections and schema.
-//
-// The masked reader of ADR 0016 phase 4 needs the sensitive columns and
-// its own credentials, which Setup doesn't take yet; it isn't created.
 func (e *Engine) Setup(ctx context.Context, t data.Target, owner, reader, writer data.Credentials) (data.ServerInfo, error) {
-	if owner.User == "" || t.Dial == nil {
-		return data.ServerInfo{}, fmt.Errorf("%w: no owner credentials", data.ErrLoginFailed)
-	}
-	specs, err := dockRoles(reader, writer)
+	specs, err := dockRoles(reader, writer, t.ReaderMasked)
 	if err != nil {
 		return data.ServerInfo{}, err
 	}
-	pg, err := connect(ctx, t, owner)
+	pg, info, err := ownerConn(ctx, t, owner)
 	if err != nil {
-		return data.ServerInfo{}, loginError(ctx, err, data.ErrLoginFailed)
+		return info, err
 	}
 	defer func() { _ = pg.Close(context.Background()) }()
-
-	var num int
-	if err := pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int").Scan(&num); err != nil {
-		return data.ServerInfo{}, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
-	}
-	info := serverInfo(pg, num)
-	if num < data.MinPostgresVersion {
-		return info, unsupported(info)
-	}
 
 	existing, err := existingRoles(ctx, pg)
 	if err != nil {
@@ -98,9 +89,90 @@ func (e *Engine) Setup(ctx context.Context, t data.Target, owner, reader, writer
 	return info, nil
 }
 
+// ownerConn logs in as the owner (setup only, never cached) and checks the
+// server version.
+func ownerConn(ctx context.Context, t data.Target, owner data.Credentials) (*pgx.Conn, data.ServerInfo, error) {
+	if owner.User == "" || t.Dial == nil {
+		return nil, data.ServerInfo{}, fmt.Errorf("%w: no owner credentials", data.ErrLoginFailed)
+	}
+	pg, err := connect(ctx, t, owner)
+	if err != nil {
+		return nil, data.ServerInfo{}, loginError(ctx, err, data.ErrLoginFailed)
+	}
+	var num int
+	if err := pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int").Scan(&num); err != nil {
+		_ = pg.Close(context.Background())
+		return nil, data.ServerInfo{}, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
+	}
+	info := serverInfo(pg, num)
+	if num < data.MinPostgresVersion {
+		_ = pg.Close(context.Background())
+		return nil, info, unsupported(info)
+	}
+	return pg, info, nil
+}
+
+// SyncMasked brings dock_reader_masked's grants in line with the schema
+// and the sensitive columns, as the owner, in one transaction: in every
+// user schema it revokes all table privileges (which also drops column
+// grants), grants USAGE, then grants SELECT on each relation's columns
+// that aren't sensitive. Relations created later stay invisible to it
+// until the next sync. The owner's fresh catalog replaces the cached one,
+// so the returned hash matches what Schema reports.
+func (e *Engine) SyncMasked(ctx context.Context, t data.Target, owner data.Credentials, sensitive []apitypes.DataColumnRef) (string, error) {
+	pg, _, err := ownerConn(ctx, t, owner)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = pg.Close(context.Background()) }()
+	var doc string
+	if err := pg.QueryRow(ctx, catalogSQL).Scan(&doc); err != nil {
+		return "", fmt.Errorf("read schema: %w", err)
+	}
+	cat, err := parseCatalog([]byte(doc), time.Now())
+	if err != nil {
+		return "", err
+	}
+	schema := markSensitive(cat, markSet(sensitive))
+	if err := simpleExec(ctx, pg, "BEGIN;\n"+strings.Join(maskedGrantsSQL(schema.Tables), ";\n")+";\nCOMMIT"); err != nil {
+		return "", fmt.Errorf("grant %s its columns as %s: %w", data.RoleReaderMasked, owner.User, err)
+	}
+	e.mu.Lock()
+	if !e.closed {
+		e.schemas[t.ServiceID] = cat
+	}
+	e.mu.Unlock()
+	return data.MaskedHash(schema.Tables), nil
+}
+
+// maskedGrantsSQL renders SyncMasked's statements for tables with their
+// sensitive columns marked.
+func maskedGrantsSQL(tables []apitypes.DataTable) []string {
+	role := pgx.Identifier{string(data.RoleReaderMasked)}.Sanitize()
+	var out []string
+	var schema string
+	for _, t := range tables {
+		if t.Schema != schema {
+			schema = t.Schema
+			s := pgx.Identifier{schema}.Sanitize()
+			out = append(out, "REVOKE ALL ON ALL TABLES IN SCHEMA "+s+" FROM "+role, "GRANT USAGE ON SCHEMA "+s+" TO "+role)
+		}
+		var cols []string
+		for _, c := range t.Columns {
+			if !c.Sensitive {
+				cols = append(cols, c.Name)
+			}
+		}
+		if len(cols) > 0 {
+			out = append(out, "GRANT SELECT ("+quoteAll(cols)+") ON "+pgx.Identifier{t.Schema, t.Name}.Sanitize()+" TO "+role)
+		}
+	}
+	return out
+}
+
 // dockRoles describes the roles setup creates, with SCRAM verifiers of the
-// new passwords.
-func dockRoles(reader, writer data.Credentials) ([]roleSpec, error) {
+// new passwords; the masked reader only when masked has a user.
+func dockRoles(reader, writer, masked data.Credentials) ([]roleSpec, error) {
 	rv, err := scramVerifier(reader.Password)
 	if err != nil {
 		return nil, fmt.Errorf("reader password: %w", err)
@@ -109,15 +181,16 @@ func dockRoles(reader, writer data.Credentials) ([]roleSpec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("writer password: %w", err)
 	}
-	return []roleSpec{
+	readSettings := [][2]string{
+		{"default_transaction_read_only", "on"},
+		{"statement_timeout", fmt.Sprint(maxReadTimeout.Milliseconds())},
+	}
+	specs := []roleSpec{
 		{
 			name:     data.RoleReader,
 			verifier: rv,
 			grants:   []string{"pg_read_all_data"},
-			settings: [][2]string{
-				{"default_transaction_read_only", "on"},
-				{"statement_timeout", fmt.Sprint(maxReadTimeout.Milliseconds())},
-			},
+			settings: readSettings,
 		},
 		{
 			name:     data.RoleWriter,
@@ -128,7 +201,15 @@ func dockRoles(reader, writer data.Credentials) ([]roleSpec, error) {
 				{"idle_in_transaction_session_timeout", fmt.Sprint(data.WriteIdleTimeout.Milliseconds())},
 			},
 		},
-	}, nil
+	}
+	if masked.User != "" {
+		mv, err := scramVerifier(masked.Password)
+		if err != nil {
+			return nil, fmt.Errorf("masked reader password: %w", err)
+		}
+		specs = append(specs, roleSpec{name: data.RoleReaderMasked, verifier: mv, settings: readSettings})
+	}
+	return specs, nil
 }
 
 // existingRoles reads the Dock roles that already exist.
@@ -141,7 +222,7 @@ FROM pg_roles r
 LEFT JOIN pg_auth_members m ON m.member = r.oid
 LEFT JOIN pg_roles g ON g.oid = m.roleid
 WHERE r.rolname = ANY($1)
-GROUP BY 1, 2`, []string{string(data.RoleReader), string(data.RoleWriter)})
+GROUP BY 1, 2`, []string{string(data.RoleReader), string(data.RoleWriter), string(data.RoleReaderMasked)})
 	if err != nil {
 		return nil, err
 	}

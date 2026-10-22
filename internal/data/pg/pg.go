@@ -43,9 +43,6 @@ type Engine struct {
 	// schemas caches introspection per service for schemaTTL; a service's
 	// entry is dropped with its last connection or by Forget.
 	schemas map[int64]*catalog
-	// marks are the sensitive columns per service, as last passed to
-	// Schema. Masked reads mask them; see Engine.Page.
-	marks map[int64]map[colRef]bool
 
 	idleTimeout time.Duration
 	schemaTTL   time.Duration
@@ -62,7 +59,6 @@ func New() *Engine {
 		conns:       map[connKey][]*conn{},
 		wake:        make(chan struct{}),
 		schemas:     map[int64]*catalog{},
-		marks:       map[int64]map[colRef]bool{},
 		idleTimeout: data.IdleTimeout,
 		schemaTTL:   data.SchemaTTL,
 		maxPerKey:   data.MaxConnsPerKey,
@@ -73,8 +69,9 @@ func New() *Engine {
 // Kind is Postgres.
 func (e *Engine) Kind() apitypes.DataEngine { return apitypes.EnginePostgres }
 
-// Status logs in as the reader, checks the server version and that the
-// role still has pg_read_all_data.
+// Status logs in as the reader, checks the server version, that the role
+// still has pg_read_all_data and, with t.ReaderMasked set, that the masked
+// reader exists (databases set up before it need setup again).
 func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, error) {
 	cn, err := e.acquire(ctx, t, data.RoleReader)
 	if err != nil {
@@ -82,8 +79,9 @@ func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, er
 	}
 	defer e.release(cn)
 	var num int
-	var reads bool
-	err = cn.pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int, pg_has_role(current_user, 'pg_read_all_data', 'USAGE')").Scan(&num, &reads)
+	var reads, masked bool
+	err = cn.pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int, pg_has_role(current_user, 'pg_read_all_data', 'USAGE'), to_regrole($1) IS NOT NULL",
+		string(data.RoleReaderMasked)).Scan(&num, &reads, &masked)
 	if err != nil {
 		cn.broken = true
 		return data.ServerInfo{}, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
@@ -94,6 +92,9 @@ func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, er
 	}
 	if !reads {
 		return info, fmt.Errorf("%w: %s can't read all data; run setup again", data.ErrNotSetUp, data.RoleReader)
+	}
+	if t.ReaderMasked.User != "" && !masked {
+		return info, fmt.Errorf("%w: %s is missing; run setup again", data.ErrNotSetUp, data.RoleReaderMasked)
 	}
 	return info, nil
 }
@@ -113,8 +114,7 @@ func unsupported(info data.ServerInfo) error {
 }
 
 // Forget closes the service's idle connections (busy ones close when
-// released) and drops its cached schema. Sensitive marks are kept: they
-// belong to the service, not to a container or a password.
+// released) and drops its cached schema.
 func (e *Engine) Forget(serviceID int64) {
 	e.mu.Lock()
 	idle := e.dropLocked(func(k connKey) bool { return k.service == serviceID })
@@ -132,7 +132,6 @@ func (e *Engine) Close() {
 	e.closed = true
 	idle := e.dropLocked(func(connKey) bool { return true })
 	clear(e.schemas)
-	clear(e.marks)
 	e.broadcastLocked()
 	e.mu.Unlock()
 	for _, c := range idle {

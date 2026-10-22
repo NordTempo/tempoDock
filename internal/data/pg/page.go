@@ -63,9 +63,8 @@ type cursor struct {
 
 // Page reads one keyset page as the reader. Relations without any key
 // (views, foreign tables) page by offset, in the requested order or none.
-// Masked calls see the
-// service's sensitive columns (as last passed to Schema) as masked cells
-// and can't filter or sort by them.
+// Masked calls see their sensitive columns as masked cells and can't
+// filter or sort by them.
 func (e *Engine) Page(ctx context.Context, t data.Target, c data.Call, req apitypes.DataPageRequest) (apitypes.DataPage, error) {
 	var page apitypes.DataPage
 	err := e.read(ctx, t, c, apitypes.DataQueryTimeout, func(cn *conn) error {
@@ -77,10 +76,7 @@ func (e *Engine) Page(ctx context.Context, t data.Target, c data.Call, req apity
 		if err != nil {
 			return err
 		}
-		masked, err := e.masks(t, c, tm)
-		if err != nil {
-			return err
-		}
+		masked := masks(c, tm)
 		if err := checkMaskedUse(req, masked); err != nil {
 			return err
 		}
@@ -506,12 +502,8 @@ func (e *Engine) References(ctx context.Context, t data.Target, c data.Call, req
 				}
 				filters[i] = apitypes.DataFilter{Column: col, Op: apitypes.FilterEq, Value: *v}
 			}
-			masked, err := e.masks(t, c, in.from)
-			if err != nil {
-				return err
-			}
 			preq := apitypes.DataPageRequest{Table: in.from.Schema + "." + in.from.Name, Filters: filters, Limit: limit}
-			plan, err := planPage(in.from, preq, masked)
+			plan, err := planPage(in.from, preq, masks(c, in.from))
 			if err != nil {
 				return err
 			}
