@@ -72,6 +72,9 @@ service, on top of the re-prepare pitfall below.
 An idle daemon does nothing: 0 CPU and almost no wake-ups. Live data is
 event driven: Docker's event stream, the in-process event bus and SSE.
 
+- The statistics tick (below) is the one always-on periodic job. `make
+  perf` measures idle windows between two ticks and budgets the tick with
+  `BenchmarkStatsTick50`.
 - No polling, tickers or timers without a written justification in a doc
   comment, and an entry in the table below with its interval and cost.
 - Periodic work runs only while it has a reason to (a deploy in progress, a
