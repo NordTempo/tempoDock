@@ -136,9 +136,7 @@ func (c *Core) hooksHint() string {
 	if c.cfg.Hooks.PublicHost != "" {
 		return ""
 	}
-	return "GitHub needs a public address to deliver pushes to: set [hooks] public_host in the server's config.toml " +
-		"to a hostname whose DNS points at the server (like an app domain, e.g. hooks.example.com) and restart dock. " +
-		"Only " + gitHookPath + " is served there."
+	return "No public webhook address: set [hooks] public_host in config.toml to a hostname pointing at this server, then restart dock."
 }
 
 func (c *Core) toGitConnection(conn store.GitConnection) apitypes.GitConnection {
@@ -361,11 +359,13 @@ func (c *Core) gitToken(conn store.GitConnection) (string, error) {
 	return string(b), nil
 }
 
-// gitEvent records what happened to a connection's latest push. Failures
+// gitEvent records what happened to a connection's latest push, without
+// control characters: a failed push's reason can quote the repository
+// (a dock.toml parse error), and the line is shown in terminals. Failures
 // are logged: the event is informational.
 func (c *Core) gitEvent(connID int64, msg string) {
 	t := now()
-	if err := c.store.SetGitLastEvent(c.ctx, store.SetGitLastEventParams{LastEvent: msg, LastEventAt: &t, ID: connID}); err != nil {
+	if err := c.store.SetGitLastEvent(c.ctx, store.SetGitLastEventParams{LastEvent: cleanLine(msg, 500), LastEventAt: &t, ID: connID}); err != nil {
 		c.log.Error("record git event", "err", err)
 	}
 }

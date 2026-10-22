@@ -181,11 +181,10 @@ func TestBackupRecordsSnapshotsAndRetention(t *testing.T) {
 	jobs := h.rt.Jobs()
 	job := jobs[len(jobs)-1]
 	ss, _ := h.c.serviceFor(h.ctx, System, db, apitypes.ScopeRead, "testing")
-	rel, _ := h.store.GetActiveRelease(h.ctx, ss.svc.ID)
 	want, _ := backup.BackupScript(apitypes.BackupPostgres)
 	switch {
-	case job.Image != rel.ImageID:
-		t.Errorf("job image %q, want the running image %q", job.Image, rel.ImageID)
+	case job.Image != templates[apitypes.TemplatePostgres].image:
+		t.Errorf("job image %q, want the template's", job.Image)
 	case job.Script != want:
 		t.Errorf("script = %q", job.Script)
 	case job.Network != networkName(ss.envScope):
@@ -223,6 +222,33 @@ func TestBackupRecordsSnapshotsAndRetention(t *testing.T) {
 	}
 	if _, err := h.c.RunBackup(h.ctx, h.user("viewer@x", apitypes.ScopeRead), db); CodeOf(err) != apitypes.CodeForbidden {
 		t.Errorf("read user ran a backup: %v", err)
+	}
+}
+
+// Backup jobs carry the install's repository password, so they never run
+// the image someone with deploy on the environment put on the service.
+func TestBackupJobIgnoresTheServiceImage(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
+		return node.JobResult{Output: resticOutput("dddd4444dddd", 1, "dddd4444dddd")}, nil
+	})
+	agent := h.token(System, apitypes.CreateTokenRequest{Name: "agent", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "production"})
+	if _, err := h.c.DeployImage(h.ctx, agent, db, apitypes.DeployImageRequest{Image: "evil/postgres:17"}); err != nil {
+		t.Fatal(err)
+	}
+	if rel := h.wait(db, 2); rel.Status != apitypes.ReleaseActive {
+		t.Fatalf("release 2: %s", rel.Status)
+	}
+	if run, err := h.c.RunBackup(h.ctx, agent, db); err != nil {
+		t.Fatal(err)
+	} else if h.waitRun(db, run.ID).Status != apitypes.BackupSucceeded {
+		t.Fatal("backup failed")
+	}
+	jobs := h.rt.Jobs()
+	job := jobs[len(jobs)-1]
+	if job.Image != templates[apitypes.TemplatePostgres].image || job.Env["RESTIC_PASSWORD"] == "" {
+		t.Fatalf("backup job ran %q", job.Image)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 func TestAlertChannelCommands(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)
+	srv.core.AllowLoopbackAlertChannels(true) // hook listens on 127.0.0.1
 	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/down") {
 			w.WriteHeader(http.StatusBadGateway)

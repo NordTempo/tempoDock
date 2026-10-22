@@ -124,6 +124,37 @@ func TestHooksHandler(t *testing.T) {
 			t.Errorf("%s: %d %q, want %d %q", name, status, says, tc.status, tc.says)
 		}
 	}
+	// Slow bodies to the real webhook hold every read slot; a stranger
+	// without the URL is still answered at once, before any slot.
+	var slow []*io.PipeWriter
+	for range maxHookReads {
+		pr, pw := io.Pipe()
+		slow = append(slow, pw)
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+hookPath, pr)
+		go func() {
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		_, _ = pw.Write([]byte("{"))
+	}
+	done := make(chan int, 1)
+	go func() {
+		status, _ := post("/hooks/github/"+strings.Repeat("0", 32), "push", good, body)
+		done <- status
+	}()
+	select {
+	case status := <-done:
+		if status != http.StatusNotFound {
+			t.Errorf("unknown hook with the slots taken: %d", status)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("an unknown hook waited for a read slot")
+	}
+	for _, pw := range slow {
+		_ = pw.Close()
+	}
+
 	// Nothing but webhook deliveries is served.
 	for _, p := range []string{"/api/v1/health", "/debug/pprof/", "/internal/caddy/ask?domain=x"} {
 		resp, err := http.Get(srv.URL + p)

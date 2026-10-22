@@ -50,7 +50,10 @@ type receiver struct {
 	fail int
 }
 
-func newReceiver(t *testing.T) *receiver {
+// It is on 127.0.0.1, so h's channels may deliver there.
+func newReceiver(h *harness) *receiver {
+	t := h.t
+	h.c.AllowLoopbackAlertChannels(true)
 	k := &receiver{}
 	k.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -178,7 +181,7 @@ func TestAlertsReconcileOnStart(t *testing.T) {
 // opening, the escalation and the resolution, each signed.
 func TestDiskAlertEscalatesAndResolves(t *testing.T) {
 	h := newHarness(t)
-	k := newReceiver(t)
+	k := newReceiver(h)
 	created := h.channel(apitypes.CreateAlertChannelRequest{Name: "ops", Kind: apitypes.ChannelWebhook, URL: k.srv.URL + "/hook?token=abc"})
 	if len(created.Secret) != 64 || created.Channel.Target != k.srv.URL {
 		t.Fatalf("created = %+v (the secret is generated, the target has no path)", created)
@@ -235,6 +238,83 @@ func TestSignWebhook(t *testing.T) {
 	}()
 	if got != want {
 		t.Fatalf("signature = %s, want %s", got, want)
+	}
+}
+
+// A delivery is signed when it is attempted, so a retry long after the
+// alert still passes a receiver's timestamp check.
+func TestWebhookSignedAtAttempt(t *testing.T) {
+	h := newHarness(t)
+	k := newReceiver(h)
+	created := h.channel(apitypes.CreateAlertChannelRequest{Name: "hook", Kind: apitypes.ChannelWebhook, URL: k.srv.URL})
+	ch, err := h.store.GetAlertChannel(h.ctx, "hook")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := h.c.send(h.ctx, ch, apitypes.AlertNotification{Event: "opened", SentAt: old, Alert: apitypes.Alert{Title: "x"}}); err != nil {
+		t.Fatal(err)
+	}
+	k.mu.Lock()
+	header, body, _ := strings.Cut(k.sigs[0], "|")
+	k.mu.Unlock()
+	ts, _, _ := strings.Cut(strings.TrimPrefix(header, "t="), ",")
+	sec, _ := strconv.ParseInt(ts, 10, 64)
+	if time.Since(time.Unix(sec, 0)) > time.Minute || header != signWebhook(created.Secret, time.Unix(sec, 0), []byte(body)) {
+		t.Fatalf("signature %q for a retry of an alert sent at %s", header, old)
+	}
+}
+
+// A backup that failed with nothing more to say still reads as a sentence.
+func TestBackupFailedMessage(t *testing.T) {
+	for _, reason := range []string{"restic reported no snapshot", "exit code 1: Fatal: no key found.", "restic reported no snapshot: "} {
+		m := backupFailed("p", "e", "s", 1, reason).Message
+		if strings.HasSuffix(m, ":.") || strings.HasSuffix(m, "..") || !strings.HasSuffix(m, ".") {
+			t.Errorf("message for %q = %q", reason, m)
+		}
+	}
+	if got := withOutput("\n{\"message_type\":\"status\"}\n"); got != "" {
+		t.Errorf("output with nothing to show = %q", got)
+	}
+}
+
+// Alert text can quote build output; Slack must show it, not act on it.
+func TestSlackTextIsEscaped(t *testing.T) {
+	got := slackText(apitypes.AlertNotification{Event: "opened", Alert: apitypes.Alert{
+		Severity: apitypes.SeverityWarning, Title: "Deploy of a/b/c failed", Message: "<!channel> <https://evil.example|log in> & retry",
+	}})
+	if want := "[warning] Deploy of a/b/c failed\n&lt;!channel&gt; &lt;https://evil.example|log in&gt; &amp; retry"; got != want {
+		t.Fatalf("slack text = %q", got)
+	}
+}
+
+// Channels never reach the server itself (its loopback-only internal
+// listener and registry) or cloud metadata: literal addresses are refused
+// when added, names when they resolve.
+func TestChannelsNeverReachTheServer(t *testing.T) {
+	h := newHarness(t)
+	for _, u := range []string{
+		"http://127.0.0.1:7071/internal/caddy/ask", "http://localhost:5000/v2/", "http://[::1]/", "http://0.0.0.0/",
+		"http://169.254.169.254/latest/meta-data", "http://[fd00:ec2::254]/", "http://[::ffff:127.0.0.1]/",
+	} {
+		if _, err := h.c.CreateAlertChannel(h.ctx, System, apitypes.CreateAlertChannelRequest{Name: "x", Kind: apitypes.ChannelWebhook, URL: u}); CodeOf(err) != apitypes.CodeValidation {
+			t.Errorf("channel to %s: %v", u, err)
+		}
+	}
+	h.channel(apitypes.CreateAlertChannelRequest{Name: "lan", Kind: apitypes.ChannelSlack, URL: "http://192.168.1.20/hooks/dock"})
+
+	// A name that resolves to loopback is refused when dialing.
+	k := newReceiver(h)
+	h.channel(apitypes.CreateAlertChannelRequest{Name: "self", Kind: apitypes.ChannelSlack, URL: k.srv.URL})
+	h.c.AllowLoopbackAlertChannels(false)
+	res, err := h.c.TestAlertChannel(h.ctx, System, "self")
+	if err != nil || res.OK || !strings.Contains(res.Error, "this server itself") {
+		t.Fatalf("test of a loopback channel = %+v, %v", res, err)
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if len(k.got) != 0 {
+		t.Fatalf("the loopback receiver got %d deliveries", len(k.got))
 	}
 }
 
@@ -315,7 +395,7 @@ func TestDeliveryRetriesAndRecordsFailures(t *testing.T) {
 	deliveryBackoff = []time.Duration{0, time.Millisecond, time.Millisecond}
 	t.Cleanup(func() { deliveryBackoff = saved })
 	h := newHarness(t)
-	k := newReceiver(t)
+	k := newReceiver(h)
 	k.fail = 2
 	h.channel(apitypes.CreateAlertChannelRequest{Name: "flaky", Kind: apitypes.ChannelSlack, URL: k.srv.URL})
 	h.c.signalAlert(h.ctx, alertSignal{Key: "x", Kind: "test", Severity: apitypes.SeverityWarning, Title: "Something broke"})
@@ -364,7 +444,7 @@ func TestDeliveryRetriesAndRecordsFailures(t *testing.T) {
 // is sent again after the channel's renotify interval.
 func TestSeverityFilterAndReminders(t *testing.T) {
 	h := newHarness(t)
-	k := newReceiver(t)
+	k := newReceiver(h)
 	one := 1
 	h.channel(apitypes.CreateAlertChannelRequest{Name: "pager", Kind: apitypes.ChannelWebhook, URL: k.srv.URL, Secret: "x", MinSeverity: apitypes.SeverityCritical, RenotifyMinutes: &one})
 	t0 := time.Now()
