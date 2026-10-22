@@ -12,7 +12,7 @@ served traffic can be started again exactly as it was.
 | Source | `dock deploy` | On the server, by BuildKit | Available |
 | Image | `dock deploy --image ghcr.io/acme/web:1.4.2` | Elsewhere (CI); the server only pulls | Available |
 | Git push | GitHub webhook per service and branch | On a builder server | M4 |
-| Promote | `dock promote staging production` | Nowhere: reuses the exact image that ran in staging | M3 |
+| Promote | `dock promote staging production` | Nowhere: reuses the exact image that ran in staging ([below](#promote)) | Available |
 
 ### Image services and source services
 
@@ -177,6 +177,32 @@ Creates a new release identical to the active one: same image, same resolved
 config. It does not pick up staged changes; use `dock apply` for
 that.
 
+## Promote
+
+```sh
+dock promote staging production              # every service running in staging
+dock promote staging production -s web,api   # only these
+```
+
+Deploys what is serving in one environment to another of the same project
+([ADR 0014](../decisions/0014-node-protocol.md#4-registry-and-promotion)).
+For each service, production gets a new release with the exact image of
+staging's active release, pulled by digest from the registry, and
+production's own variables and settings. Nothing is rebuilt, and a later
+push to the same tag changes nothing.
+
+- Services deploy one at a time through the normal health-checked path,
+  and the CLI follows them like `dock deploy` (`--detach` returns once
+  they are queued).
+- The first failure stops it: the services after it fail without starting,
+  the ones already promoted stay live, and the CLI exits 6.
+- Services are matched by name. One missing in production, with nothing
+  running in staging, or still deploying in production is skipped and
+  listed. Promote never creates services.
+- It needs `deploy` on the target environment. The source's server is not
+  involved, so promoting from the homelab works while it is off, as long
+  as the image went through the [registry](install.md#registry).
+
 ## Release sources
 
 The `source` field of a release says what created it.
@@ -188,7 +214,7 @@ The `source` field of a release says what created it.
 | `config` | Applying staged changes, or adding a domain to a service whose port wasn't published yet |
 | `rollback` | `dock rollback` (`from_release` is the copied release) |
 | `restart` | `dock restart` |
-| `promote` | `dock promote` (M3) |
+| `promote` | `dock promote`: the image of the source environment's active release, by digest |
 
 ## Archiving a service
 

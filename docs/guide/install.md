@@ -61,7 +61,7 @@ the others also change an existing config, touching only their own keys.
 | `CLOUDFLARED_VERSION`, `CLOUDFLARED_SHA256` | `2026.10.3`, pinned | Another `cloudflared` release and the SHA-256 of `cloudflared-linux-<arch>` from its release notes |
 | `NODE_LISTEN` | empty | Accept nodes on this address, e.g. `100.64.0.10:7443` → `[node] listen`. Control plane only |
 | `REGISTRY` | empty | `1` runs the [image registry](#registry) → `[registry] enabled`. Control plane only |
-| `REGISTRY_NAME` | empty | The registry's `host[:port]` as nodes reach it → `[registry] public_name` |
+| `REGISTRY_NAME` | empty | The registry's name in its tokens, e.g. `dock-registry` → `[registry] public_name` |
 | `REGISTRY_LISTEN` | `127.0.0.1:5000` | Host address the registry container is published on → `[registry] listen` |
 | `NODE_JOIN_TOKEN` | empty | From `dock server add`; implies `--node`. Needed on the first run, and to re-join |
 
@@ -123,12 +123,12 @@ running).
 | `[defaults] keep_releases` | `5` | Release images kept for rollback. Not enforced yet: nothing prunes old images |
 | `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
 | `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
-| `[node] listen` | empty | Control plane: where nodes connect, e.g. `100.64.0.10:7443` on Tailscale. Empty: no nodes |
+| `[node] listen` | empty | Control plane: where nodes connect, e.g. `100.64.0.10:7443` on Tailscale. Join tokens carry it, so it must be an address nodes can dial, not `0.0.0.0`. Empty: no nodes |
 | `[node] control_plane` | empty | Node: overrides the control plane address from the join token (`host:port`), for when the control plane moves. Its key stays pinned |
 | `[registry] enabled` | `false` | Control plane: run the image registry |
-| `[registry] listen` | `127.0.0.1:5000` | Host address the `dock-registry` container is published on |
+| `[registry] listen` | `127.0.0.1:5000` | Control plane: host address the `dock-registry` container is published on. Node: where `dock node` serves the registry over the link. Image references use it on every server |
 | `[registry] storage_dir` | `/var/lib/dock-registry` | Registry blobs and manifests |
-| `[registry] public_name` | empty | The registry's `host[:port]` as nodes reach it; prefix of every image name. Required when enabled |
+| `[registry] public_name` | empty | The registry's name: the audience of its tokens. Required when enabled |
 
 Changing `[buildkit]` settings recreates the `dock-buildkit` container
 before the next build. So does finding its memory cap loosened: before each
@@ -298,28 +298,35 @@ the most recently created.
 A node runs apps and builds for the control plane: Docker, Caddy, BuildKit
 and `dock node`, but no API, UI or database. It dials out to the control
 plane over TLS with pinned keys ([ADR 0014](../decisions/0014-node-protocol.md)),
-so it works behind NAT and needs no inbound ports for the link. Put every
-server on the same Tailscale tailnet: the control plane's node port and
-registry are only meant to be reachable there.
+so it works behind NAT and needs no inbound ports. Put every server on the
+same Tailscale tailnet: the control plane's node port is only meant to be
+reachable there. Images travel over the same link, so nodes need nothing
+else.
 
-1. **Control plane, once:** open the node port on its Tailscale address.
+1. **Control plane, once:** open the node port on its Tailscale address,
+   and run the [registry](#registry) so images can move between servers.
+   `NODE_LISTEN` must be an address nodes can dial, not `0.0.0.0`: join
+   tokens carry it.
 
    ```sh
-   sudo NODE_LISTEN="$(tailscale ip -4):7443" DOCK_BINARY=./dock ./deploy/install.sh
+   sudo NODE_LISTEN="$(tailscale ip -4):7443" REGISTRY=1 REGISTRY_NAME=dock-registry \
+     DOCK_BINARY=./dock ./deploy/install.sh
    ```
 
-   Images built on one server and deployed on another go through the
-   [registry](#registry); set it up in the same run if you haven't.
-
-2. **Anywhere you're logged in as an admin:** create a join token. It is
-   valid for an hour and works once.
+2. **Anywhere you're logged in as an admin:** add the server. Choose the
+   environment kinds it takes (`--production`, `--non-production` or both)
+   and `--builder` if it builds images. It prints a join token, valid for an
+   hour and usable once, inside the exact command for step 3. The token is
+   not shown again; `dock server list` shows the server as `joining` until
+   it connects.
 
    ```sh
    dock server add homelab --non-production --builder
    ```
 
-3. **The new server:** install Docker, join the tailnet, then install as a
-   node with the token. Add `CLOUDFLARE_TUNNEL_TOKEN` for a
+3. **The new server:** install Docker, join the tailnet, copy the `dock`
+   binary and `deploy/` over, then run the printed command. Add
+   `CLOUDFLARE_TUNNEL_TOKEN` (and `BASE_DOMAIN`) for a
    [tunnel](#cloudflare-tunnel) server.
 
    ```sh
@@ -328,31 +335,48 @@ registry are only meant to be reachable there.
 
    The script installs the same binaries, Caddy and app firewall as on the
    control plane, runs `dock node join` once (it creates the node's key in
-   `/var/lib/dock` and pins the control plane's), then starts
-   `dock-node.service`.
+   `/var/lib/dock/node.key`, pins the control plane's in
+   `/var/lib/dock/node.toml` and prints the server's name), then starts
+   `dock-node.service`. The node reports its ingress mode, public IP or
+   tunnel hostname, Docker version and memory every time it connects.
 
-4. **Check** that it's online and choose what it takes:
+4. **Check** that it's online, and set its base domain for generated
+   hostnames:
 
    ```sh
    dock server list
-   dock server update homelab --non-production --no-production
+   dock server update homelab --base-domain example-apps.dev
    ```
+
+The node daemon serves the control plane's registry on its own
+`127.0.0.1:5000` (over the link) and answers Caddy's certificate checks
+from the routes it last applied, so certificates keep issuing while the
+control plane is unreachable. Stopping or upgrading it never stops apps.
+
+| Command | What it does |
+|---|---|
+| `dock server revoke homelab` | Forgets its key and drops the link. It stays out until it joins again; its apps keep running, but nothing deploys there |
+| `dock server rotate-key homelab` | The online node switches to a new key |
+| `dock server remove homelab` | Only once nothing is placed on it |
 
 Upgrade a node like the control plane: re-run `install.sh` with the new
 binary; no token needed. Upgrade the control plane first. To re-join (after
-`dock server revoke`, or once the control plane's key changed), re-run with a
-new `NODE_JOIN_TOKEN`. Node logs: `journalctl -u dock-node`.
+`dock server revoke`, or once the control plane's key changed), get a new
+token with `dock server add` and re-run with it as `NODE_JOIN_TOKEN`. Node
+logs: `journalctl -u dock-node`.
 
 ### Registry
 
 When images move between servers (built on one, deployed on another, or
 promoted), they go through a registry on the control plane: CNCF
-Distribution in the `dock-registry` container. Nodes hold no registry
-credentials; the control plane hands them a short-lived token per pull or
-push.
+Distribution in the `dock-registry` container. It is never on a network:
+the control plane reaches it on `127.0.0.1:5000`, and every node serves it
+on its own `127.0.0.1:5000` through the node link, so image references are
+the same on every server. Nodes hold no registry credentials; the control
+plane hands them a short-lived token per pull or push.
 
 ```sh
-sudo REGISTRY=1 REGISTRY_NAME=registry.example.dev DOCK_BINARY=./dock ./deploy/install.sh
+sudo REGISTRY=1 REGISTRY_NAME=dock-registry DOCK_BINARY=./dock ./deploy/install.sh
 ```
 
 | What | Where |
@@ -364,9 +388,10 @@ sudo REGISTRY=1 REGISTRY_NAME=registry.example.dev DOCK_BINARY=./dock ./deploy/i
 | Storage | `[registry] storage_dir`, `/var/lib/dock-registry`. Back it up only if you want to keep images; releases can be rebuilt |
 
 Re-runs recreate the container only when its image, config or mounts
-changed. `REGISTRY_NAME` is the name nodes push to and pull from, reachable
-from them over Tailscale. To turn the registry off, set `[registry] enabled
-= false` and `docker rm -f dock-registry`.
+changed. `REGISTRY_NAME` only names the registry in its tokens. The daemon
+serves the registry's token endpoint on the internal listener
+(`/internal/registry/token`). To turn the registry off, set `[registry]
+enabled = false` and `docker rm -f dock-registry`.
 
 ### Statistics
 
