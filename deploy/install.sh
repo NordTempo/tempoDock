@@ -32,7 +32,7 @@
 #   REGISTRY_NAME     the registry's host[:port] as nodes reach it → [registry] public_name
 #   REGISTRY_LISTEN   host address the registry is published on (default 127.0.0.1:5000)
 # Node only:
-#   NODE_JOIN_TOKEN   from `dock server join-token` on the control plane; implies --node.
+#   NODE_JOIN_TOKEN   from `dock server add` on the control plane; implies --node.
 #                     Needed for the first run only (and to re-join)
 set -euo pipefail
 
@@ -128,7 +128,7 @@ if [[ "$node_mode" == true && -f /etc/systemd/system/dock.service ]]; then
 fi
 if [[ "$node_mode" == true ]]; then
   [[ -n "${NODE_JOIN_TOKEN:-}" || -f "$NODE_STATE" ]] \
-    || die "set NODE_JOIN_TOKEN to a join token: run \`dock server join-token <name>\` against the control plane"
+    || die "set NODE_JOIN_TOKEN to a join token: run \`dock server add <name>\` against the control plane"
   for v in LISTEN NODE_LISTEN REGISTRY REGISTRY_NAME REGISTRY_LISTEN; do
     [[ -z "${!v:-}" ]] || die "$v is for the control plane; this is a node install"
   done
@@ -408,12 +408,17 @@ setup_registry() {
     || useradd --system --no-create-home --home-dir "$storage" --shell /usr/sbin/nologin dock-registry
   install -d -m 0700 -o dock-registry -g dock-registry "$storage"
   install -d -m 0750 -o root -g dock-registry "$cfg_dir"
-  # Runs as dock: it reads the control plane's token signing key.
-  runuser -u dock -- /usr/local/bin/dock admin registry-config --config "$CONF" > "$cfg_dir/config.yml.new" \
-    || die "dock admin registry-config failed; the registry was not changed"
-  chgrp dock-registry "$cfg_dir/config.yml.new"
-  chmod 0640 "$cfg_dir/config.yml.new"
-  mv "$cfg_dir/config.yml.new" "$cfg_dir/config.yml"
+  # Runs as dock: it reads the control plane's token signing key. It writes
+  # config.yml and jwks.json (both deterministic for a given key).
+  local out
+  out="$(mktemp -d)"
+  chown dock "$out"
+  runuser -u dock -- /usr/local/bin/dock admin registry-config --config "$CONF" --out "$out" \
+    || { rm -rf "$out"; die "dock admin registry-config failed; the registry was not changed"; }
+  for f in config.yml jwks.json; do
+    install -m 0640 -o root -g dock-registry "$out/$f" "$cfg_dir/$f"
+  done
+  rm -rf "$out"
 
   hash="$( { printf '%s\n' "$REGISTRY_IMAGE" "$listen" "$storage"; cat "$cfg_dir"/*; } | sha256sum | cut -c1-16)"
   current="$(docker inspect -f '{{index .Config.Labels "dock.install-hash"}}' dock-registry 2>/dev/null || true)"
@@ -429,6 +434,7 @@ setup_registry() {
     --read-only --tmpfs /tmp \
     --cap-drop ALL --security-opt no-new-privileges \
     --memory 256m --pids-limit 256 \
+    --env OTEL_TRACES_EXPORTER=none \
     --publish "$listen:5000" \
     --volume "$storage:/var/lib/registry" \
     --volume "$cfg_dir:/etc/distribution:ro" \
@@ -443,7 +449,7 @@ if [[ "$node_mode" == true ]]; then
     systemctl stop dock-node.service 2>/dev/null || true
     install -d -m 0700 -o dock -g dock /var/lib/dock
     /usr/local/bin/dock node join --config "$CONF" "$NODE_JOIN_TOKEN" \
-      || die "joining failed; get a new token with \`dock server join-token <name>\` if this one expired"
+      || die "joining failed; get a new token with \`dock server add <name>\` if this one expired"
     # join ran as root; the node daemon runs as dock.
     chown -R dock:dock /var/lib/dock
     [[ -f "$NODE_STATE" ]] || die "dock node join did not write $NODE_STATE"
@@ -481,7 +487,7 @@ else
   fi
   node_listen="$(toml_get "$CONF" node listen)"
   if [[ -n "$node_listen" ]]; then
-    say "  Nodes connect to $node_listen. Add a server: dock server join-token <name>"
+    say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
   fi
   if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
     say "  Registry: $(toml_get "$CONF" registry public_name) (container dock-registry on $(toml_get "$CONF" registry listen))"

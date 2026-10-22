@@ -63,7 +63,7 @@ the others also change an existing config, touching only their own keys.
 | `REGISTRY` | empty | `1` runs the [image registry](#registry) → `[registry] enabled`. Control plane only |
 | `REGISTRY_NAME` | empty | The registry's `host[:port]` as nodes reach it → `[registry] public_name` |
 | `REGISTRY_LISTEN` | `127.0.0.1:5000` | Host address the registry container is published on → `[registry] listen` |
-| `NODE_JOIN_TOKEN` | empty | From `dock server join-token`; implies `--node`. Needed on the first run, and to re-join |
+| `NODE_JOIN_TOKEN` | empty | From `dock server add`; implies `--node`. Needed on the first run, and to re-join |
 
 ### What it installs
 
@@ -315,7 +315,7 @@ registry are only meant to be reachable there.
    valid for an hour and works once.
 
    ```sh
-   dock server join-token homelab
+   dock server add homelab --non-production --builder
    ```
 
 3. **The new server:** install Docker, join the tailnet, then install as a
