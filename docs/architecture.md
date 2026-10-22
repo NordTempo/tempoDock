@@ -262,7 +262,8 @@ people who only want to browse, query and safely change Postgres data.
   `mcp` or `cli`, no Docker, BuildKit or gRPC. `make tempobase-deps`
   checks it in CI.
 - One web project with two entries (`web/` and `web/tempobase/`) sharing
-  `features/data`. One version and one release for both binaries; the
+  `features/data`. Dock's UI is style A and tempoBase's style G, on
+  system fonts ([design](design/README.md)). One version and one release for both binaries; the
   image is `ghcr.io/nordtempo/tempobase`.
 
 ## Code layout

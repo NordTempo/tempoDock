@@ -6,7 +6,7 @@ not by the agent behaving.
 
 ## Tokens
 
-In Settings, Tokens, anyone signed in creates tokens for themselves:
+In Agents & MCP, anyone signed in creates tokens for themselves:
 
 - **Name**, and an optional **expiry**.
 - **Connections**: the ones it may use. None means every connection the
@@ -50,7 +50,7 @@ That writes `.mcp.json`, which other clients read too:
 }
 ```
 
-The tokens page shows this snippet with your address filled in.
+Agents & MCP shows this snippet with your address filled in.
 
 ## Tools
 

@@ -49,10 +49,12 @@ manage one database. Row-level security still applies.
 
 ## Browse, query and change
 
-Open a connection to get the Data panel, the same one as in Dock:
+The sidebar lists your connections and their tables, then SQL editor,
+Schema map, Agents & MCP, Access and Activity. Open a connection to get
+the Data panel, the same one as in Dock:
 
 - **Tables**: keyset pages of 100 rows, filters, ordering, related rows.
-- **SQL**: one statement in a read-only transaction, 1 000 rows by default
+- **SQL editor**: one statement in a read-only transaction, 1 000 rows by default
   (at most 100 000), a 10 s timeout (at most 60 s). Your past queries are
   in History; save the ones you reuse.
 - **Changes**: edits become a changeset, row inserts, updates and deletes

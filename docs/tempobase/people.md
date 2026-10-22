@@ -12,7 +12,7 @@ Every person has one role:
 
 ## Invites and resets
 
-There is no email. In Settings, People, an admin invites an email address
+There is no email. In Access, an admin invites an email address
 with a role and copies the link to the person; opening it sets their name
 and password and signs them in. Invites last 7 days, resets 24 hours, and
 both work once. The link's code sits after `#`, so it stays out of proxy
@@ -44,7 +44,7 @@ Built-in defaults:
 | Editors | `write` | `write` (commits confirm the connection's name) | masked |
 | Tokens | `none` | `none` | masked |
 
-Admins change the default in Settings, Policy, and override it per
+Admins change the default in Access, and override it per
 connection in the connection's settings; the connection's rule wins. The
 connection page shows your effective access and which rule decided it.
 
@@ -54,7 +54,7 @@ Over the API the subjects are `role:read` (viewers), `role:deploy`
 
 ## Sensitive columns
 
-Admins mark columns sensitive in the connection's settings; the Schema tab
+Admins mark columns sensitive in the connection's settings; Schema map
 suggests some from their names (email, password, token, phone, ...). Table
 pages show them as `(masked)`. Callers whose policy says `masked` never see
 them: their SQL runs as `tempobase_reader_masked`, which Postgres doesn't
@@ -65,7 +65,7 @@ table, and each reveal is audited.
 
 Every query, page of rows, reveal, changeset, setup, policy change,
 sign-in (and failed sign-in), invite, token and connection change is an
-audit event with who, when and what. Admins read the log in Settings,
-Audit, with the SQL of each query. Everyone sees their own queries in the
-SQL tab's history. Events older than `audit_retention_days` (90) are
+audit event with who, when and what. Admins read the log in Activity,
+with the SQL of each query. Everyone sees their own queries in the SQL
+editor's history. Events older than `audit_retention_days` (90) are
 deleted.

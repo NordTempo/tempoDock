@@ -29,8 +29,8 @@ shell history.
 ## Signing in
 
 Sign in at `/login` with email and password. Sessions are cookies that last
-30 days. Changing your password (Settings, Account) signs out your other
-sessions. Repeated failures are rate limited per address and per email,
+30 days. Changing your password (Account, under your name at the foot of the
+sidebar) signs out your other sessions. Repeated failures are rate limited per address and per email,
 and each one is in the audit log.
 
 ## Next
@@ -42,7 +42,7 @@ and each one is in the audit log.
 
 ## A lost admin
 
-Any admin can create a reset link for another user in Settings, People.
+Any admin can create a reset link for another user in Access.
 If no admin can sign in, on the server:
 
 ```sh
