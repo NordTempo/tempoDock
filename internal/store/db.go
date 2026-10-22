@@ -174,6 +174,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getAuditDetailStmt, err = db.PrepareContext(ctx, getAuditDetail); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuditDetail: %w", err)
 	}
+	if q.getAuditEventByDetailStmt, err = db.PrepareContext(ctx, getAuditEventByDetail); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAuditEventByDetail: %w", err)
+	}
 	if q.getCLILoginByDeviceHashStmt, err = db.PrepareContext(ctx, getCLILoginByDeviceHash); err != nil {
 		return nil, fmt.Errorf("error preparing query GetCLILoginByDeviceHash: %w", err)
 	}
@@ -715,6 +718,11 @@ func (q *Queries) Close() error {
 	if q.getAuditDetailStmt != nil {
 		if cerr := q.getAuditDetailStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAuditDetailStmt: %w", cerr)
+		}
+	}
+	if q.getAuditEventByDetailStmt != nil {
+		if cerr := q.getAuditEventByDetailStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAuditEventByDetailStmt: %w", cerr)
 		}
 	}
 	if q.getCLILoginByDeviceHashStmt != nil {
@@ -1286,6 +1294,7 @@ type Queries struct {
 	failReleaseStmt                  *sql.Stmt
 	getActiveReleaseStmt             *sql.Stmt
 	getAuditDetailStmt               *sql.Stmt
+	getAuditEventByDetailStmt        *sql.Stmt
 	getCLILoginByDeviceHashStmt      *sql.Stmt
 	getCLILoginByUserCodeStmt        *sql.Stmt
 	getChangesetStmt                 *sql.Stmt
@@ -1438,6 +1447,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		failReleaseStmt:                  q.failReleaseStmt,
 		getActiveReleaseStmt:             q.getActiveReleaseStmt,
 		getAuditDetailStmt:               q.getAuditDetailStmt,
+		getAuditEventByDetailStmt:        q.getAuditEventByDetailStmt,
 		getCLILoginByDeviceHashStmt:      q.getCLILoginByDeviceHashStmt,
 		getCLILoginByUserCodeStmt:        q.getCLILoginByUserCodeStmt,
 		getChangesetStmt:                 q.getChangesetStmt,

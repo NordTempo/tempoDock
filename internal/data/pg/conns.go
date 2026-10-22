@@ -262,6 +262,8 @@ func credentials(t data.Target, role data.Role) (data.Credentials, error) {
 		cred = t.Reader
 	case data.RoleWriter:
 		cred = t.Writer
+	case data.RoleReaderMasked:
+		cred = t.ReaderMasked
 	}
 	if cred.User == "" || t.Dial == nil {
 		return cred, fmt.Errorf("%w: no credentials for %s", data.ErrNotSetUp, role)

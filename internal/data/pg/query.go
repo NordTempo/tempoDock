@@ -37,13 +37,18 @@ var textFormats = []int16{pgx.TextFormatCode}
 // apitypes.DataFrameRows rows (and about frameMaxBytes). Hitting the row or
 // byte cap ends the result with Truncated: the connection is then cut
 // rather than drained, which also stops the server, and is not reused.
-// The transaction is rolled back afterwards. Masked callers can't run SQL
-// until masking is enforced by a database role (ADR 0016 phase 4).
+// The transaction is rolled back afterwards. Masked calls run as the masked
+// reader, which can't select sensitive columns; without its credentials
+// they can't run SQL.
 func (e *Engine) Query(ctx context.Context, t data.Target, c data.Call, req apitypes.DataQueryRequest, send func(apitypes.DataQueryFrame) error) (data.QueryStats, error) {
 	start := time.Now()
 	stats := data.QueryStats{Outcome: apitypes.OutcomeOK}
+	role := data.RoleReader
 	if c.Masked {
-		return stats, fmt.Errorf("%w: SQL isn't available while sensitive columns are masked for you", data.ErrInvalid)
+		if t.ReaderMasked.User == "" {
+			return stats, fmt.Errorf("%w: SQL isn't available while sensitive columns are masked for you", data.ErrInvalid)
+		}
+		role = data.RoleReaderMasked
 	}
 	if len(req.SQL) > apitypes.DataSQLMaxBytes {
 		return stats, fmt.Errorf("%w: SQL is longer than %d bytes", data.ErrInvalid, apitypes.DataSQLMaxBytes)
@@ -64,7 +69,7 @@ func (e *Engine) Query(ctx context.Context, t data.Target, c data.Call, req apit
 
 	qctx, cancel := context.WithTimeout(ctx, timeout+queryGrace)
 	defer cancel()
-	cn, err := e.acquire(qctx, t, data.RoleReader)
+	cn, err := e.acquire(qctx, t, role)
 	if err != nil {
 		return stats, err
 	}

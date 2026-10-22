@@ -1,7 +1,7 @@
 {
   "about": "Recorded by `make perf-baseline` (scripts/perf). Commit it with the change that moved the numbers; see docs/performance.md.",
   "go": "go1.27.3",
-  "binary_bytes": 33636512,
+  "binary_bytes": 39293088,
   "calibration_ns": 292914.4642010431,
   "benchmarks": {
     "api.BenchmarkSSEWrite/batch=1": {

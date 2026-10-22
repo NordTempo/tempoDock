@@ -143,17 +143,9 @@ func (cat *catalog) table(name string) (*tableMeta, error) {
 }
 
 // Schema returns the cached introspection (reading it again after
-// SchemaTTL) with sensitive columns marked. sensitive also becomes the
-// service's marks for masked reads (Page, References).
+// SchemaTTL) with sensitive columns marked.
 func (e *Engine) Schema(ctx context.Context, t data.Target, c data.Call, sensitive []apitypes.DataColumnRef) (apitypes.DataSchema, error) {
-	marks := make(map[colRef]bool, len(sensitive))
-	for _, s := range sensitive {
-		marks[colRef{s.Schema, s.Table, s.Column}] = true
-	}
-	e.mu.Lock()
-	e.marks[t.ServiceID] = marks
-	e.mu.Unlock()
-
+	marks := markSet(sensitive)
 	var cat *catalog
 	err := e.read(ctx, t, c, apitypes.DataQueryTimeout, func(cn *conn) error {
 		var err error
@@ -299,29 +291,31 @@ func nonNil[T any](s []T) []T {
 	return s
 }
 
-// masks returns which of tm's columns a call must not see: the service's
-// sensitive marks for masked calls, none otherwise.
-func (e *Engine) masks(t data.Target, c data.Call, tm *tableMeta) (map[string]bool, error) {
-	if !c.Masked {
-		return nil, nil
+// markSet indexes sensitive columns.
+func markSet(sensitive []apitypes.DataColumnRef) map[colRef]bool {
+	marks := make(map[colRef]bool, len(sensitive))
+	for _, s := range sensitive {
+		marks[colRef{s.Schema, s.Table, s.Column}] = true
 	}
-	e.mu.Lock()
-	marks, ok := e.marks[t.ServiceID]
-	e.mu.Unlock()
-	if !ok {
-		// Fail closed: without marks every column could be sensitive.
-		return nil, fmt.Errorf("%w: sensitive columns unknown; read the schema first", data.ErrInvalid)
+	return marks
+}
+
+// masks returns which of tm's columns a call must not see: its sensitive
+// columns for masked calls, none otherwise.
+func masks(c data.Call, tm *tableMeta) map[string]bool {
+	if !c.Masked {
+		return nil
 	}
 	var out map[string]bool
-	for _, col := range tm.Columns {
-		if marks[colRef{tm.Schema, tm.Name, col.Name}] {
+	for _, s := range c.Sensitive {
+		if s.Schema == tm.Schema && s.Table == tm.Name {
 			if out == nil {
 				out = map[string]bool{}
 			}
-			out[col.Name] = true
+			out[s.Column] = true
 		}
 	}
-	return out, nil
+	return out
 }
 
 // noEquality reports whether a type has no = operator, so comparisons go

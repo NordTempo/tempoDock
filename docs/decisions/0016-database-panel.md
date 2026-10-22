@@ -165,6 +165,11 @@ than a person in its place would. On production, `write` acts as `propose`
 for every token: agents never write production data without a human
 approving the exact SQL.
 
+A `dock login` token acts for the user who approved it, so it is judged as
+that user (subject `role:<scope>`, capped by the user's current role) and,
+like them, may write production. This keeps `dock db changes approve
+--confirm production` working for admins; agents use their own tokens.
+
 ### Explaining access
 
 Every data response carries the caller's effective permission (level,
@@ -185,7 +190,7 @@ runs reads or edits as the owner.
 |---|---|---|
 | `dock_reader` | `pg_read_all_data`, `default_transaction_read_only = on`, not superuser | All browsing and SQL |
 | `dock_writer` | `pg_read_all_data`, `pg_write_all_data` (DML only, no DDL) | Committing changesets |
-| `dock_reader_masked` (phase 4) | `SELECT` per column, excluding sensitive columns; re-synced when marks or the schema change | Masked actors |
+| `dock_reader_masked` | `SELECT` per column, excluding sensitive columns; re-synced (as the owner) when marks or the schema change | Masked actors' SQL |
 
 - **Setup** creates them with the owner credentials: automatically for
   template databases, otherwise one admin action ("Set up data access",
@@ -230,9 +235,12 @@ Pending changesets expire after 7 days.
 Admins mark columns sensitive; names like `password`, `*_hash`, `token`,
 `secret` are suggested on setup. Whether a subject sees them is the policy's
 `sensitive` setting (default: masked for everyone but admins). `visible`
-still shows them masked until an explicit reveal, which is audited. Enforced by
-`dock_reader_masked` in Postgres, so SQL can't route around it (phase 4;
-until then, masked actors get structured browsing only, no free SQL).
+still shows them masked until an explicit reveal, which is audited (phase 4;
+until then `visible` shows them). Pages mask them in the engine; SQL runs as
+`dock_reader_masked`, so it can't route around the marks. Its password is
+derived from `dock_reader`'s (HMAC), so it rotates with it. If its grants
+can't be synced, masked actors' SQL is refused rather than run on stale
+grants. Views over sensitive columns need their own marks.
 
 ## 6. Audit
 

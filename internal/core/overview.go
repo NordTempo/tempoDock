@@ -199,7 +199,7 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 		out = append(out, apitypes.AuditEvent{
 			ID: e.ID, Actor: e.Actor, ActorKind: e.ActorKind, Action: e.Action,
 			Project: r.ProjectName, Environment: r.EnvironmentName,
-			Target: e.Target, Summary: e.Summary, CreatedAt: e.CreatedAt,
+			Target: e.Target, Summary: e.Summary, DetailID: e.DetailID, CreatedAt: e.CreatedAt,
 		})
 	}
 	return out, nil

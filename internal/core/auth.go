@@ -323,8 +323,9 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	if !validScope(req.Scope) {
 		return apitypes.CreatedToken{}, invalid("scope must be read, deploy or admin")
 	}
-	if req.Data != nil { // TODO(ADR 0016 phase 3, Core track)
-		return apitypes.CreatedToken{}, ErrDataNotImplemented
+	dataAccess, err := tokenDataParams(0, req.Data)
+	if err != nil {
+		return apitypes.CreatedToken{}, err
 	}
 	params := store.CreateTokenParams{Name: req.Name, Scope: string(req.Scope), CreatedBy: a.Name}
 	var p *store.Project
@@ -353,12 +354,26 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	}
 	secret, hash := newSecret(tokenPrefix)
 	params.Hash = hash
-	t, err := c.store.CreateToken(ctx, params)
+	var t store.Token
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		var err error
+		if t, err = q.CreateToken(ctx, params); err != nil || req.Data == nil {
+			return err
+		}
+		dataAccess.ID = t.ID
+		t.DataProduction, t.DataNonProduction, t.DataSensitive = dataAccess.DataProduction, dataAccess.DataNonProduction, dataAccess.DataSensitive
+		_, err = q.SetTokenDataAccess(ctx, dataAccess)
+		return err
+	})
 	if err != nil {
 		return apitypes.CreatedToken{}, err
 	}
 	out := toToken(ctx, newNames(c.store), t)
-	c.audit(ctx, a, "token.create", p, e, "token "+t.Name, fmt.Sprintf("created %s token %q (id %d)", t.Scope, t.Name, t.ID))
+	summary := fmt.Sprintf("created %s token %q (id %d)", t.Scope, t.Name, t.ID)
+	if req.Data != nil {
+		summary += "; " + describeTokenData(req.Data)
+	}
+	c.audit(ctx, a, "token.create", p, e, "token "+t.Name, summary)
 	return apitypes.CreatedToken{Token: out, Secret: secret}, nil
 }
 
@@ -512,6 +527,7 @@ func toToken(ctx context.Context, names *names, t store.Token) apitypes.Token {
 	out := apitypes.Token{
 		ID: t.ID, Name: t.Name, Scope: apitypes.Scope(t.Scope), CreatedBy: t.CreatedBy, CreatedAt: t.CreatedAt,
 		ExpiresAt: t.ExpiresAt, LastUsedAt: t.LastUsedAt, RevokedAt: t.RevokedAt, Origin: t.Origin,
+		Data: tokenData(t),
 	}
 	if t.ProjectID != nil {
 		out.Project = names.project(ctx, *t.ProjectID)

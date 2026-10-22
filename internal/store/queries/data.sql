@@ -165,6 +165,10 @@ RETURNING *;
 -- name: GetAuditDetail :one
 SELECT * FROM audit_details WHERE id = ?;
 
+-- name: GetAuditEventByDetail :one
+-- The event a detail belongs to, to check who may read the detail.
+SELECT * FROM audit_events WHERE detail_id = +CAST(sqlc.arg(detail_id) AS INTEGER);
+
 -- name: ListDataQueryHistory :many
 -- One actor's queries on one database (target "project/environment/service"),
 -- newest first, from their data.query audit events: user_id for a user,

@@ -572,14 +572,9 @@ func TestQueryTimeoutAndCancel(t *testing.T) {
 func TestMasked(t *testing.T) {
 	ctx := ctxT(t)
 	e := newEngine(t)
-	masked := data.Call{Masked: true}
+	sensitive := []apitypes.DataColumnRef{{Schema: "public", Table: "customers", Column: "password_hash"}}
+	masked := data.Call{Masked: true, Sensitive: sensitive}
 	req := apitypes.DataPageRequest{Table: "public.customers", Limit: 1}
-	if _, err := e.Page(ctx, target(1), masked, req); !errors.Is(err, data.ErrInvalid) {
-		t.Fatalf("masked page before schema: %v", err)
-	}
-	if _, err := e.Schema(ctx, target(1), masked, []apitypes.DataColumnRef{{Schema: "public", Table: "customers", Column: "password_hash"}}); err != nil {
-		t.Fatal(err)
-	}
 	page, err := e.Page(ctx, target(1), masked, req)
 	if err != nil {
 		t.Fatal(err)
@@ -594,6 +589,55 @@ func TestMasked(t *testing.T) {
 	req.Filters = []apitypes.DataFilter{{Column: "password_hash", Op: apitypes.FilterLike, Value: "hash1%"}}
 	if _, err := e.Page(ctx, target(1), masked, req); !errors.Is(err, data.ErrInvalid) {
 		t.Fatalf("filter on masked column: %v", err)
+	}
+
+	// SQL runs as the masked reader, whose column grants leave out the
+	// sensitive columns.
+	tg := target(1)
+	tg.ReaderMasked = data.Credentials{User: string(data.RoleReaderMasked), Password: "masked-pw"}
+	if _, err := e.Status(ctx, tg); !errors.Is(err, data.ErrNotSetUp) {
+		t.Fatalf("status before the masked reader exists: %v", err)
+	}
+	if _, err := e.Setup(ctx, tg, owner, tg.Reader, tg.Writer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Status(ctx, tg); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := e.SyncMasked(ctx, tg, owner, sensitive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := e.Schema(ctx, tg, masked, sensitive)
+	if err != nil || data.MaskedHash(schema.Tables) != hash {
+		t.Fatalf("hash after sync: %s, schema's %s, %v", hash, data.MaskedHash(schema.Tables), err)
+	}
+	query := func(sql string) []apitypes.DataQueryFrame {
+		t.Helper()
+		var frames []apitypes.DataQueryFrame
+		_, err := e.Query(ctx, tg, masked, apitypes.DataQueryRequest{SQL: sql}, func(f apitypes.DataQueryFrame) error {
+			frames = append(frames, f)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return frames
+	}
+	if f := query("SELECT id, email FROM customers ORDER BY id LIMIT 1"); f[len(f)-1].Type != apitypes.FrameEnd {
+		t.Fatalf("masked select of visible columns: %+v", f[len(f)-1])
+	}
+	for _, sql := range []string{"SELECT password_hash FROM customers", "SELECT * FROM customers"} {
+		if f := query(sql); f[len(f)-1].Type != apitypes.FrameError || f[len(f)-1].Error.SQLState != "42501" {
+			t.Fatalf("%s: %+v", sql, f[len(f)-1])
+		}
+	}
+	// Unmarking the column and syncing again grants it.
+	if _, err := e.SyncMasked(ctx, tg, owner, nil); err != nil {
+		t.Fatal(err)
+	}
+	if f := query("SELECT password_hash FROM customers"); f[len(f)-1].Type != apitypes.FrameEnd {
+		t.Fatalf("after unmarking: %+v", f[len(f)-1])
 	}
 }
 
