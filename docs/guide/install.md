@@ -329,7 +329,7 @@ needs no setup. More servers [join as nodes](#add-a-server); then an admin
 decides which kinds go where:
 
 ```sh
-dock server list                                       # status, version, accepted kinds, memory reserved
+dock server list                                       # status, version, accepted kinds, builds, memory reserved
 dock server update vps --no-non-production              # production only from now on
 dock server update homelab --non-production --no-production
 dock server update vps-2 --disable-placement            # nothing new lands here
