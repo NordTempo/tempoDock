@@ -37,7 +37,9 @@ The daemon's API listens on Tailscale or loopback and must stay there
   bucket, burst 30, one per 2 s; 429), signature `X-Hub-Signature-256`
   with `hmac.Equal` (401), event (`ping` answers `pong`, other events are
   ignored), delivery ID dedupe, then the push rules below. Bodies are
-  capped at 4 MB and at most 2 are read at once.
+  capped at 4 MB and at most 2 are read at once. The hook is checked (and
+  a declared length over 4 MB refused) before a body is read, so nobody
+  without a webhook URL can hold those two slots with slow uploads.
 - **Replay protection**: `X-GitHub-Delivery` IDs are kept 7 days
   (`git_deliveries`, pruned on insert). A seen ID is answered with no
   effect. GitHub's own "Redeliver" reuses the ID, so it is refused too;

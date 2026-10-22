@@ -68,13 +68,32 @@ const maxHookReads = 2
 //
 //	POST /hooks/github/{id}  a GitHub webhook delivery (core.GitWebhook)
 //
-// Answers are plain text, which GitHub shows in the delivery log.
+// Answers are plain text, which GitHub shows in the delivery log. The
+// webhook must exist, and the body fit, before a read slot is taken: the
+// listener is public, and slots held by strangers would stall deliveries.
 func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 	sem := make(chan struct{}, maxHookReads)
 	mux := http.NewServeMux()
+	fail := func(w http.ResponseWriter, err error) {
+		var ce *core.Error
+		if !errors.As(err, &ce) {
+			log.Error("github webhook", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, ce.Msg, statusForCode(ce.Code))
+	}
 	mux.HandleFunc("POST /hooks/github/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
+		if err := c.GitHookExists(r.Context(), r.PathValue("id")); err != nil {
+			fail(w, err)
+			return
+		}
+		if r.ContentLength > maxHookBody {
+			http.Error(w, "payload larger than 4 MB", http.StatusRequestEntityTooLarge)
+			return
+		}
 		select {
 		case sem <- struct{}{}:
 			defer func() { <-sem }()
@@ -95,13 +114,7 @@ func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 			Signature: r.Header.Get("X-Hub-Signature-256"), Body: body,
 		})
 		if err != nil {
-			var ce *core.Error
-			if !errors.As(err, &ce) {
-				log.Error("github webhook", "err", err)
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, ce.Msg, statusForCode(ce.Code))
+			fail(w, err)
 			return
 		}
 		_, _ = io.WriteString(w, msg+"\n")

@@ -60,6 +60,23 @@ type pushCommit struct {
 	Modified []string `json:"modified"`
 }
 
+// hookIDRe matches the hook IDs GitConnect makes (randomHex(16)).
+var hookIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// GitHookExists reports not_found unless hookID is a connection's
+// webhook. The hooks listener asks before it reads a body, so nobody
+// without a webhook URL can hold its few read slots.
+func (c *Core) GitHookExists(ctx context.Context, hookID string) error {
+	if !hookIDRe.MatchString(hookID) {
+		return notFound("no such webhook")
+	}
+	_, err := c.store.GetGitConnectionByHook(ctx, hookID)
+	if store.IsNotFound(err) {
+		return notFound("no such webhook")
+	}
+	return err
+}
+
 // GitWebhook handles a delivery: it checks the signature, ignores what
 // the connection doesn't deploy and queues the rest. It returns a short
 // message for GitHub's delivery log. Errors: not_found (no such webhook),
