@@ -623,7 +623,7 @@ export interface paths {
         put?: never;
         /**
          * Clone an environment
-         * @description Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. Values are copied only for callers that may read them (admin); otherwise reference-only values are copied, template credentials are made anew and the rest are listed in `skipped`. Domains, git connections, releases, backups and staged changes are never copied. Nothing is deployed unless `deploy: true`, which promotes the source's images. Scope: read on this environment, deploy on the project.
+         * @description Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. Reference-only values are always copied. Literal values are copied only for admins, and between production and non-production only with `copy_values` (admin; listed in `copied_across_kinds`); otherwise template credentials are made anew and the rest are listed in `skipped`. Domains, git connections, releases, backups and staged changes are never copied. Nothing is deployed unless `deploy: true`, which promotes the source's images. Scope: read on this environment, deploy on the project.
          */
         post: operations["clone-environment"];
         delete?: never;
@@ -2137,6 +2137,8 @@ export interface components {
             pending: components["schemas"]["PendingChanges"];
         };
         CloneEnvironmentRequest: {
+            /** @description Admin only: also copy literal values when the clone's kind differs from the source's (e.g. production secrets into non-production) */
+            copy_values?: boolean;
             /** @description Also deploy the images serving in the source, by digest, like promote */
             deploy?: boolean;
             /**
@@ -2148,17 +2150,21 @@ export interface components {
             name: string;
         };
         CloneResult: {
+            /** @description Literal values copied from an environment of the other kind (copy_values) */
+            copied_across_kinds: components["schemas"]["VariableRef"][] | null;
             deploy?: components["schemas"]["PromoteResult"];
             deploy_error?: string;
             environment: components["schemas"]["Environment"];
             from: string;
-            /** @description Template variables set anew (new password, template defaults) because copying needs admin */
+            /** @description Template variables set anew (new password, template defaults) because their values weren't copied */
             generated: components["schemas"]["VariableRef"][] | null;
             not_copied: string[] | null;
             /** @description Cloned services, by name */
             services: string[] | null;
-            /** @description Variables not created because copying their value needs admin; set them in the new environment */
+            /** @description Variables not created because their values weren't copied (needs admin, and copy_values across kinds); set them in the new environment */
             skipped: components["schemas"]["VariableRef"][] | null;
+            /** @enum {string} */
+            source_kind: "production" | "non_production";
             /**
              * Format: int64
              * @description Variables created with the source's value

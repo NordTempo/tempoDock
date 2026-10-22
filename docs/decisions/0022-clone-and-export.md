@@ -24,14 +24,14 @@ Forces:
 
 | Topic | Decision |
 |---|---|
-| Commands | `dock environment clone <from> <to> [--kind] [--deploy] [-d]` (also `dock env clone`); `dock project export [<name>] [--format toml\|json]` |
+| Commands | `dock environment clone <from> <to> [--kind] [--deploy] [--copy-values] [-d]` (also `dock env clone`); `dock project export [<name>] [--format toml\|json]` |
 | API | `POST /projects/{p}/environments/{from}/clone` (201, `CloneResult`); `GET /projects/{p}/export` (`ProjectExport`) |
 | MCP | `clone_environment` (mutating, waits for releases with deploy) and `export_project` (read-only) |
-| UI | A "clone" action in each environment's header on the project overview: name, kind, "deploy the same images" |
+| UI | A "clone" action in each environment's header on the project overview: name, kind, "deploy the same images", and for admins cloning into the other kind "copy values from <kind>" |
 | Permissions | Clone: read on `from`, deploy on the project (creating an environment; environment-limited tokens can't). Export: read; environment-limited readers get their environment only |
 | Placement | Like `dock environment create`: kind from `--kind`, else from the name (`production` is production, everything else non-production); the project's server for that kind, or the eligible server with most room for a new kind. No eligible server: the error of 0015, nothing created |
 | What a clone copies | Live state only: every service that isn't archived (all settings, template, data panel settings), its applied volumes as **new, empty** volumes, and live variables |
-| Variable values | Copied when the caller may read them (admin, the `--reveal` rule). Otherwise: a value made only of references (`${{postgres.DATABASE_URL}}`) is copied; a template service's own variables get the template's values anew (a new password, the defaults); everything else is not created and is listed (`skipped`) |
+| Variable values | A value made only of references (`${{postgres.DATABASE_URL}}`) is always copied. Literal values are copied when the caller may read them (admin, the `--reveal` rule) **and** the clone has the source's kind. Across kinds (production to non-production or the reverse) they are copied for nobody, admins included, unless an admin passes `--copy-values`, and then the result lists them. Not copied: a template service's own variables get the template's values anew (a new password, the defaults); everything else is not created and is listed (`skipped`) |
 | Never copied | Domains, git connections, releases, backups, backup schedule overrides, data access setup and policy rules, staged changes. The result counts what it left behind |
 | State of the clone | Settings and variables live at once (nothing runs yet, like `service create`); volumes staged until each service's first deploy |
 | Deploy | Off by default. `--deploy` runs promote from `from` into the clone; each release takes its service's staged volume live with it |
@@ -44,14 +44,28 @@ Forces:
 
 ### Values and who may copy them
 
-An admin's clone is exact: the sealed values are copied as they are (the
-secrets box binds no row, so the ciphertext is reused, never decrypted).
+Literal values are copied in one case by default: an admin cloning into
+an environment of the **same kind**. That clone is exact; the sealed
+values are copied as they are (the secrets box binds no row, so the
+ciphertext is reused).
 
-A `deploy` caller, typically an agent's token, can replace a value but
-never read one. Copying values it can't read into an environment it then
-controls would make "write-only" a matter of one extra step, and copying
-production's secrets to the homelab would quietly widen where they live
-([0010](0010-environments-on-servers.md)). So for such a caller:
+Everyone else gets the rules below, and so does an admin whose clone
+**crosses kinds** (production to non-production, or the reverse) without
+`--copy-values`:
+
+- A `deploy` caller, typically an agent's token, can replace a value but
+  never read one. Copying values it can't read into an environment it then
+  controls would make "write-only" a matter of one extra step.
+- Across kinds, copying is the dangerous default. Cloning production into
+  staging would copy production's literal values, including an external
+  `DATABASE_URL`, so staging would point at production's database (against
+  [0011](0011-stateful-services-and-databases.md)'s "staging never touches
+  production data"), and production's secrets would quietly move to the
+  homelab ([0010](0010-environments-on-servers.md)). The reverse puts
+  staging's credentials into production. Neither should happen because
+  someone forgot a flag.
+
+The rules:
 
 1. A value that is nothing but references is copied. It wires services
    together and holds no secret of its own. Strict: any literal text
@@ -66,13 +80,17 @@ production's secrets to the homelab would quietly widen where they live
    (`web.STRIPE_KEY`, `shared.SENTRY_DSN`) for someone who may to set.
    An empty variable would be worse: an app would start with it blank.
 
-An admin's clone keeps the template password as it was: "clone" means a
-copy, and an app that spells the password out literally keeps working.
+An admin who wants the values across kinds anyway passes `--copy-values`
+(API `copy_values`, the UI's "copy values from production" checkbox,
+shown to admins only when the kinds differ). It is refused for anyone
+else, ignored for same-kind clones, and the result names every literal
+value that came from the other kind (`copied_across_kinds`, "Values
+copied from the production environment production: ..."), as does the
+audit entry.
 
-An admin cloning production into a non-production environment copies
-production's literal values, including an external `DATABASE_URL`. That
-is the admin's call; nothing is deployed unless asked, and the output says
-what was copied.
+When literal values are copied (same kind, or `--copy-values`), the
+template password is copied too: "clone" means a copy, and an app that
+spells the password out literally keeps working.
 
 ### Live state, new volumes, nothing deployed
 
@@ -122,6 +140,11 @@ a GitOps workflow that needs it.
 - Agents can make their own preview environments with a `deploy` token and
   get a working app plus database, with a list of the secrets a person
   still has to set.
+- Making staging from production is safe by default: it gets references,
+  new database credentials and a list of values to set, never
+  production's secrets or database URL. An admin who wants an exact copy
+  across kinds says so with `--copy-values`, and the output names what
+  came over.
 - A project's config can live in git as a readable, diffable file.
 - `promote` gained an internal option to apply staged changes; its public
   behaviour is unchanged.

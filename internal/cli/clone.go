@@ -17,20 +17,22 @@ import (
 func newEnvironmentCloneCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var kind string
-	var deploy, detach bool
+	var deploy, detach, copyValues bool
 	cmd := &cobra.Command{
-		Use:   "clone <from> <to> [--kind production|non-production] [--deploy]",
+		Use:   "clone <from> <to> [--kind production|non-production] [--deploy] [--copy-values]",
 		Short: "Create an environment as a copy of another one",
 		Long: `Create environment <to> with <from>'s services, settings, variables and
 volumes (new and empty), as they are live in <from>. It is placed like
 ` + "`dock environment create`" + `: its kind comes from --kind or the name, and it goes to
 the server the project's environments of that kind are on.
 
-Variable values are copied only if you may read them (admin). Otherwise
-values that are only references (${{postgres.DATABASE_URL}}) are copied,
-database templates get new credentials, and the rest are listed so you can
-set them. Domains, git connections, releases, backups and staged changes
-are never copied.
+Values that are only references (${{postgres.DATABASE_URL}}) are always
+copied. Other values are copied only if you may read them (admin), and
+never between production and non-production unless an admin passes
+--copy-values, so a staging clone of production can't point at
+production's database by accident. Values not copied are listed, and
+database templates get new credentials. Domains, git connections,
+releases, backups and staged changes are never copied.
 
 Nothing is deployed unless --deploy, which deploys the images serving in
 <from> like ` + "`dock promote`" + ` and follows them unless --detach. Needs read on
@@ -50,7 +52,7 @@ Nothing is deployed unless --deploy, which deploys the images serving in
 			ctx := cmd.Context()
 			from := target{Project: t.Project, Environment: args[0]}
 			res, err := send[apitypes.CloneResult](ctx, s, http.MethodPost, from.envPath()+"/clone", apitypes.CloneEnvironmentRequest{
-				Name: args[1], Kind: k, Deploy: deploy,
+				Name: args[1], Kind: k, Deploy: deploy, CopyValues: copyValues,
 			})
 			if err != nil {
 				return err
@@ -91,6 +93,7 @@ Nothing is deployed unless --deploy, which deploys the images serving in
 	f.add(cmd, needProject)
 	cmd.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
 	cmd.Flags().BoolVar(&deploy, "deploy", false, "also deploy the images serving in <from>, by digest, like promote")
+	cmd.Flags().BoolVar(&copyValues, "copy-values", false, "admin: also copy literal values between production and non-production")
 	addDetachFlag(cmd, &detach)
 	return cmd
 }
@@ -102,11 +105,19 @@ func (g *globals) printClone(res apitypes.CloneResult) {
 	g.io.Successf("Cloned %s into %s environment %s/%s on %s: %s, %s, %s",
 		res.From, kindWords(e.Kind), e.Project, e.Name, e.Server,
 		plural(len(res.Services), "service"), plural(res.Variables, "variable"), plural(res.Volumes, "new volume"))
+	cross := res.SourceKind != e.Kind
+	if len(res.CopiedAcrossKinds) > 0 {
+		g.io.Warnf("Values copied from the %s environment %s: %s", kindWords(res.SourceKind), res.From, variableNames(res.CopiedAcrossKinds))
+	}
 	if len(res.Generated) > 0 {
-		g.io.Progressf("Set anew (copying needs admin): %s", variableNames(res.Generated))
+		g.io.Progressf("Set anew: %s", variableNames(res.Generated))
 	}
 	if len(res.Skipped) > 0 {
-		g.io.Warnf("Not copied, copying their values needs admin: %s", variableNames(res.Skipped))
+		why := "copying them needs admin"
+		if cross {
+			why = fmt.Sprintf("%s values aren't copied into a %s environment without --copy-values (admin)", kindWords(res.SourceKind), kindWords(e.Kind))
+		}
+		g.io.Warnf("Values not copied (%s): %s", why, variableNames(res.Skipped))
 		g.io.Progressf("Set them with `dock env set KEY=value -e %s -s <service>` (--shared for shared ones).", e.Name)
 	}
 	g.io.Progressf("Not copied: %s.", strings.Join(res.NotCopied, ", "))

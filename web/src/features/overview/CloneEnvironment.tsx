@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useCloneEnvironment } from "../../data/mutations";
+import { useIsAdmin } from "../../data/queries";
 import type { Clone, EnvironmentKind, EnvRef } from "../../data/types";
 import { plural } from "../../ui/format";
 import { Button, Check, ErrorText } from "../../ui/kit";
@@ -15,21 +16,28 @@ const names = (vs: Clone["skipped"]) =>
 
 /**
  * "Clone" on an environment (ADR 0022): a name, a kind, optionally deploy
- * the same images, Clone. The answer says where it went, which values
- * still need setting and what a clone leaves behind.
+ * the same images, Clone. Into the other kind, literal values stay behind
+ * unless an admin ticks "copy values". The answer says where it went,
+ * which values still need setting and what a clone leaves behind.
  */
 export function CloneEnvironment({
   env,
+  kind: sourceKind,
   onClose,
 }: {
   env: EnvRef;
+  /** The kind of the environment being cloned. */
+  kind: EnvironmentKind;
   onClose: () => void;
 }) {
   const clone = useCloneEnvironment();
+  const isAdmin = useIsAdmin();
   const [name, setName] = useState(`${env.environment}-copy`);
   const [kind, setKind] = useState<EnvironmentKind | null>(null);
   const [deploy, setDeploy] = useState(false);
+  const [copyValues, setCopyValues] = useState(false);
   const effective = kind ?? kindOf(name.trim());
+  const cross = effective !== sourceKind;
 
   if (clone.data) {
     return <Cloned env={env} result={clone.data} onClose={onClose} />;
@@ -41,7 +49,13 @@ export function CloneEnvironment({
       className="flex flex-wrap items-center gap-2.5 py-2"
       onSubmit={(e) => {
         e.preventDefault();
-        clone.mutate({ env, name: name.trim(), kind: effective, deploy });
+        clone.mutate({
+          env,
+          name: name.trim(),
+          kind: effective,
+          deploy,
+          copy_values: isAdmin && cross && copyValues,
+        });
       }}
       onKeyDown={(e) => e.key === "Escape" && onClose()}
     >
@@ -69,6 +83,14 @@ export function CloneEnvironment({
         checked={deploy}
         onChange={setDeploy}
       />
+      {isAdmin && cross && (
+        <Check
+          label={`copy values from ${kindLabel[sourceKind]}`}
+          title="Literal values, such as secrets and external database URLs, stay behind when a clone changes kind unless this is ticked"
+          checked={copyValues}
+          onChange={setCopyValues}
+        />
+      )}
       <button
         type="submit"
         className="btn pri sm"
@@ -101,6 +123,7 @@ function Cloned({
   const e = result.environment;
   const to = { project: env.project, environment: e.name };
   const skipped = names(result.skipped);
+  const copied = names(result.copied_across_kinds);
   const promoted = result.deploy?.promoted?.length ?? 0;
   return (
     <div className="flex flex-col gap-1 py-2">
@@ -123,10 +146,16 @@ function Cloned({
           Done
         </Button>
       </p>
+      {copied && (
+        <p className="text-warn">
+          Values copied from {kindLabel[result.source_kind]} {result.from}:{" "}
+          <span className="font-mono">{copied}</span>
+        </p>
+      )}
       {skipped && (
         <p className="text-warn">
-          Not copied, needs admin: <span className="font-mono">{skipped}</span>.
-          Set them before deploying.
+          Values not copied: <span className="font-mono">{skipped}</span>. Set
+          them before deploying.
         </p>
       )}
       {(result.generated?.length ?? 0) > 0 && (

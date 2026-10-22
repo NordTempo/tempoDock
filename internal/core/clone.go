@@ -17,10 +17,13 @@ import (
 // (settings, template and data panel settings), its volumes (as new, empty
 // volumes staged until the service's first deploy) and the variables.
 // Variables are live in the clone at once, so a first deploy or promote
-// sees them all. A value is copied only if the actor may read it (admin,
-// as for --reveal); otherwise a value that is nothing but references is
-// copied (it holds no secret), a template service's own variables are set
-// anew (a new password, the template's defaults), and the rest are
+// sees them all. A value that is nothing but references is always copied
+// (it holds no secret). A literal value is copied only if the actor may
+// read it (admin, as for --reveal) and, when the clone's kind differs from
+// from's, only with req.CopyValues (admin only), so production's secrets
+// and external database URLs never reach a non-production environment, or
+// the reverse, by default. Otherwise a template service's own variables
+// are set anew (a new password, the template's defaults) and the rest are
 // skipped and listed. Never copied: domains, git connections, releases,
 // backups and staged changes; the result counts them.
 //
@@ -28,7 +31,10 @@ import (
 // promote's path, each release taking its service's staged volumes with
 // it. Needs read on from and deploy on the project.
 func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req apitypes.CloneEnvironmentRequest) (apitypes.CloneResult, error) {
-	out := apitypes.CloneResult{From: from.Environment, Services: []string{}, Generated: []apitypes.VariableRef{}, Skipped: []apitypes.VariableRef{}, NotCopied: []string{}}
+	out := apitypes.CloneResult{
+		From: from.Environment, Services: []string{}, Generated: []apitypes.VariableRef{}, Skipped: []apitypes.VariableRef{},
+		CopiedAcrossKinds: []apitypes.VariableRef{}, NotCopied: []string{},
+	}
 	src, err := c.envFor(ctx, a, from, apitypes.ScopeRead, "cloning an environment")
 	if err != nil {
 		return out, err
@@ -50,7 +56,14 @@ func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req a
 	if !validKind(kind) {
 		return out, invalid("kind must be production or non_production")
 	}
-	reveal := rank(a.Scope) >= rank(apitypes.ScopeAdmin)
+	if req.CopyValues {
+		if err := a.require(apitypes.ScopeAdmin, "copying values into a clone"); err != nil {
+			return out, err
+		}
+	}
+	out.SourceKind = apitypes.EnvironmentKind(src.env.Kind)
+	cross := out.SourceKind != kind
+	copyLiterals := rank(a.Scope) >= rank(apitypes.ScopeAdmin) && (!cross || req.CopyValues)
 
 	var dst envScope
 	var left clonedLeft
@@ -60,7 +73,7 @@ func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req a
 			return err
 		}
 		dst = envScope{p, e}
-		left, err = c.cloneInto(ctx, q, src, dst, reveal, &out)
+		left, err = c.cloneInto(ctx, q, src, dst, copyLiterals, cross, &out)
 		return err
 	})
 	if store.IsUnique(err) {
@@ -111,7 +124,9 @@ func (l clonedLeft) describe() []string {
 
 // cloneInto copies src's live services, volumes and variables into the
 // new environment dst, within the clone's transaction, filling in out.
-func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScope, reveal bool, out *apitypes.CloneResult) (clonedLeft, error) {
+// copyLiterals copies literal values too; cross says dst is of the other
+// kind, so those are listed in out.CopiedAcrossKinds.
+func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScope, copyLiterals, cross bool, out *apitypes.CloneResult) (clonedLeft, error) {
 	var left clonedLeft
 	svcs, err := q.ListServices(ctx, src.env.ID)
 	if err != nil {
@@ -138,8 +153,8 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 	// aren't cloned, and neither is anything of theirs.
 	type clone struct {
 		svc store.Service
-		// gen are the template's variables made anew, for values the
-		// actor can't read; nil for a service without a template.
+		// gen are the template's variables made anew, for literal values
+		// that aren't copied; nil for a service without a template.
 		gen map[string]string
 	}
 	clones := map[int64]clone{}
@@ -166,7 +181,7 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			ns.Template, ns.Database, ns.DatabaseUrlVariable = s.Template, s.Database, s.DatabaseUrlVariable
 		}
 		cl := clone{svc: ns}
-		if t, ok := templateOf(ns); ok && !reveal {
+		if t, ok := templateOf(ns); ok && !copyLiterals {
 			cl.gen = t.vars(ns.Name, newPassword())
 		}
 		clones[s.ID] = cl
@@ -203,7 +218,7 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			continue // never live: only staged
 		}
 		name := apitypes.VariableRef{Service: cl.svc.Name, Key: v.Key}
-		value, how, err := c.clonedValue(v.Value, cl.gen, v.Key, reveal)
+		value, how, err := c.clonedValue(v.Value, cl.gen, v.Key, copyLiterals)
 		if err != nil {
 			return left, err
 		}
@@ -213,6 +228,11 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			continue
 		case cloneGenerated:
 			out.Generated = append(out.Generated, name)
+		case cloneLiteral:
+			out.Variables++
+			if cross {
+				out.CopiedAcrossKinds = append(out.CopiedAcrossKinds, name)
+			}
 		default:
 			out.Variables++
 		}
@@ -239,24 +259,26 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 type cloneHow int
 
 const (
-	cloneCopied    cloneHow = iota // the source's value
+	cloneCopied    cloneHow = iota // the source's references
+	cloneLiteral                   // the source's literal value
 	cloneGenerated                 // the template's, made anew
 	cloneSkip                      // not created
 )
 
 // clonedValue is the sealed value a variable gets in a clone: the
-// source's, when the actor may read it or it is nothing but references;
-// otherwise the template's new value for key (gen), if it has one.
-func (c *Core) clonedValue(sealed []byte, gen map[string]string, key string, reveal bool) ([]byte, cloneHow, error) {
-	if reveal {
-		return sealed, cloneCopied, nil // the same ciphertext: the box binds no row
-	}
+// source's, when it is nothing but references or copyLiterals is set;
+// otherwise the template's new value for key (gen), if it has one. A
+// copied value keeps its ciphertext: the box binds no row.
+func (c *Core) clonedValue(sealed []byte, gen map[string]string, key string, copyLiterals bool) ([]byte, cloneHow, error) {
 	plain, err := c.openValue(sealed)
 	if err != nil {
 		return nil, cloneSkip, err
 	}
-	if onlyReferences(*plain) {
+	switch {
+	case onlyReferences(*plain):
 		return sealed, cloneCopied, nil
+	case copyLiterals:
+		return sealed, cloneLiteral, nil
 	}
 	if v, ok := gen[key]; ok {
 		b, err := c.box.Seal([]byte(v))
@@ -288,7 +310,10 @@ func cloneSummary(src envScope, r apitypes.CloneResult, server string) string {
 		fmt.Fprintf(&b, "; set anew: %s", joinNames(r.Generated))
 	}
 	if len(r.Skipped) > 0 {
-		fmt.Fprintf(&b, "; not copied (needs admin): %s", joinNames(r.Skipped))
+		fmt.Fprintf(&b, "; values not copied: %s", joinNames(r.Skipped))
+	}
+	if len(r.CopiedAcrossKinds) > 0 {
+		fmt.Fprintf(&b, "; values copied from %s: %s", kindWords(r.SourceKind), joinNames(r.CopiedAcrossKinds))
 	}
 	return b.String()
 }

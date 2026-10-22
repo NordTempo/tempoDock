@@ -782,6 +782,10 @@
       "CloneEnvironmentRequest": {
         "additionalProperties": false,
         "properties": {
+          "copy_values": {
+            "description": "Admin only: also copy literal values when the clone's kind differs from the source's (e.g. production secrets into non-production)",
+            "type": "boolean"
+          },
           "deploy": {
             "description": "Also deploy the images serving in the source, by digest, like promote",
             "type": "boolean"
@@ -808,6 +812,16 @@
       "CloneResult": {
         "additionalProperties": false,
         "properties": {
+          "copied_across_kinds": {
+            "description": "Literal values copied from an environment of the other kind (copy_values)",
+            "items": {
+              "$ref": "#/components/schemas/VariableRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "deploy": {
             "$ref": "#/components/schemas/PromoteResult"
           },
@@ -821,7 +835,7 @@
             "type": "string"
           },
           "generated": {
-            "description": "Template variables set anew (new password, template defaults) because copying needs admin",
+            "description": "Template variables set anew (new password, template defaults) because their values weren't copied",
             "items": {
               "$ref": "#/components/schemas/VariableRef"
             },
@@ -850,7 +864,7 @@
             ]
           },
           "skipped": {
-            "description": "Variables not created because copying their value needs admin; set them in the new environment",
+            "description": "Variables not created because their values weren't copied (needs admin, and copy_values across kinds); set them in the new environment",
             "items": {
               "$ref": "#/components/schemas/VariableRef"
             },
@@ -858,6 +872,13 @@
               "array",
               "null"
             ]
+          },
+          "source_kind": {
+            "enum": [
+              "production",
+              "non_production"
+            ],
+            "type": "string"
           },
           "variables": {
             "description": "Variables created with the source's value",
@@ -877,6 +898,8 @@
           "variables",
           "generated",
           "skipped",
+          "copied_across_kinds",
+          "source_kind",
           "volumes",
           "not_copied"
         ],
@@ -9240,7 +9263,7 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/clone": {
       "post": {
-        "description": "Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. Values are copied only for callers that may read them (admin); otherwise reference-only values are copied, template credentials are made anew and the rest are listed in `skipped`. Domains, git connections, releases, backups and staged changes are never copied. Nothing is deployed unless `deploy: true`, which promotes the source's images. Scope: read on this environment, deploy on the project.",
+        "description": "Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. Reference-only values are always copied. Literal values are copied only for admins, and between production and non-production only with `copy_values` (admin; listed in `copied_across_kinds`); otherwise template credentials are made anew and the rest are listed in `skipped`. Domains, git connections, releases, backups and staged changes are never copied. Nothing is deployed unless `deploy: true`, which promotes the source's images. Scope: read on this environment, deploy on the project.",
         "operationId": "clone-environment",
         "parameters": [
           {

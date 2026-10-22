@@ -74,7 +74,11 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
         <AddDatabase env={ref} onClose={() => setOpen(null)} />
       )}
       {open === "clone" && (
-        <CloneEnvironment env={ref} onClose={() => setOpen(null)} />
+        <CloneEnvironment
+          env={ref}
+          kind={environment.kind}
+          onClose={() => setOpen(null)}
+        />
       )}
       {services.length === 0 ? (
         <p className="py-2 text-mut">

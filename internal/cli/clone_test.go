@@ -31,7 +31,7 @@ func TestCloneAndExport(t *testing.T) {
 
 	code, stdout, stderr := exec(t, "env", "clone", "production", "staging", "-p", "shop", "--deploy")
 	if code != 0 || !strings.Contains(stdout, "Cloned production into non-production environment shop/staging") ||
-		!strings.Contains(stderr, "needs admin: web.API_KEY") || !strings.Contains(stderr, "Not copied: 1 domain, releases, backups.") ||
+		!strings.Contains(stderr, "without --copy-values (admin)): web.API_KEY") || !strings.Contains(stderr, "Not copied: 1 domain, releases, backups.") ||
 		!strings.Contains(stdout, "web: release 1 (from production release ") {
 		t.Fatalf("clone: exit %d\n%s%s", code, stdout, stderr)
 	}
@@ -56,5 +56,16 @@ func TestCloneAndExport(t *testing.T) {
 	}
 	if code, _, stderr := exec(t, "project", "export", "shop", "--format", "yaml"); code != 2 || !strings.Contains(stderr, "toml or json") {
 		t.Fatalf("--format yaml: exit %d %s", code, stderr)
+	}
+
+	// Copying production's values into non-production is an admin's
+	// explicit choice, and the output names them.
+	if code, _, stderr := exec(t, "env", "clone", "production", "qa", "-p", "shop", "--copy-values"); code != 3 || !strings.Contains(stderr, "requires admin") {
+		t.Fatalf("deploy token with --copy-values: exit %d %s", code, stderr)
+	}
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	code, stdout, stderr = exec(t, "env", "clone", "production", "qa", "-p", "shop", "--copy-values")
+	if code != 0 || !strings.Contains(stderr, "Values copied from the production environment production: web.API_KEY") || strings.Contains(stdout+stderr, "k-7f3a") {
+		t.Fatalf("admin --copy-values: exit %d\n%s%s", code, stdout, stderr)
 	}
 }

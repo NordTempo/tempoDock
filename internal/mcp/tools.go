@@ -433,14 +433,15 @@ func (h *handler) addReleaseTools() {
 
 	addTool(h, "clone_environment", "Clone an environment",
 		"Create a new environment as a copy of another in the same project: services, settings, variables and new, empty volumes, placed like any new environment of its kind. "+
-			"Values are copied only if you may read them (admin); otherwise reference-only values are copied, database templates get new credentials and the rest are listed as skipped for you to set. "+
+			"Reference-only values are always copied. Literal values are copied only for admins, and between production and non-production only with copy_values (admin); otherwise database templates get new credentials and the rest are listed as skipped for you to set. "+
 			"Domains, git connections, releases and backups are never copied. With deploy, the images serving in from are deployed like promote, and the tool waits for them. Needs deploy on the project.",
 		mutating, func(ctx context.Context, c *call, in struct {
 			ProjectInput
-			From   string `json:"from" doc:"Environment to copy, e.g. staging."`
-			To     string `json:"to" doc:"Name of the new environment."`
-			Kind   string `json:"kind,omitempty" doc:"production or non_production. Default: production for an environment named production, otherwise non_production."`
-			Deploy bool   `json:"deploy,omitempty" doc:"Also deploy the images serving in from, by digest."`
+			From       string `json:"from" doc:"Environment to copy, e.g. staging."`
+			To         string `json:"to" doc:"Name of the new environment."`
+			Kind       string `json:"kind,omitempty" doc:"production or non_production. Default: production for an environment named production, otherwise non_production."`
+			Deploy     bool   `json:"deploy,omitempty" doc:"Also deploy the images serving in from, by digest."`
+			CopyValues bool   `json:"copy_values,omitempty" doc:"Admin only: also copy literal values between production and non-production."`
 			WaitInput
 		}) (reply, error) {
 			p, err := c.project(in.ProjectInput)
@@ -452,7 +453,7 @@ func (h *handler) addReleaseTools() {
 				return reply{}, err
 			}
 			res, err := h.core.CloneEnvironment(ctx, c.actor, core.EnvRef{Project: p, Environment: in.From}, apitypes.CloneEnvironmentRequest{
-				Name: in.To, Kind: apitypes.EnvironmentKind(in.Kind), Deploy: in.Deploy,
+				Name: in.To, Kind: apitypes.EnvironmentKind(in.Kind), Deploy: in.Deploy, CopyValues: in.CopyValues,
 			})
 			if err != nil {
 				return reply{}, err
@@ -464,7 +465,14 @@ func (h *handler) addReleaseTools() {
 				for i, v := range res.Skipped {
 					names[i] = v.String()
 				}
-				summary += " Not copied (needs admin), set them before deploying: " + strings.Join(names, ", ") + "."
+				summary += " Values not copied, set them before deploying: " + strings.Join(names, ", ") + "."
+			}
+			if len(res.CopiedAcrossKinds) > 0 {
+				names := make([]string, len(res.CopiedAcrossKinds))
+				for i, v := range res.CopiedAcrossKinds {
+					names[i] = v.String()
+				}
+				summary += fmt.Sprintf(" Values copied from %s environment %s: %s.", res.SourceKind, res.From, strings.Join(names, ", "))
 			}
 			summary += " Not copied: " + strings.Join(res.NotCopied, ", ") + "."
 			var vs []releaseView

@@ -219,7 +219,7 @@ or the name, and it goes to the project's server for that kind.
 |---|---|
 | Services and settings | Copied, archived services left out |
 | Volumes | New and empty, created on each service's first deploy |
-| Variables | Live at once. Values copied if you may read them (admin); otherwise values that are only references are copied, database templates get new credentials, and the rest are listed for you to set |
+| Variables | Live at once. Values that are only references are always copied. Other values are copied if you may read them (admin), but never between production and non-production unless an admin passes `--copy-values` (the output then lists them). Otherwise database templates get new credentials and the rest are listed for you to set |
 | Domains, git connections, releases, backups, staged changes | Not copied; the output counts them |
 
 Nothing runs until you deploy. `--deploy` deploys the images serving in

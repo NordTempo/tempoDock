@@ -35,21 +35,21 @@ func cloneSource(h *harness) {
 	}
 }
 
-// An admin's clone copies services, settings, template settings and every
-// live value; volumes are new and staged; nothing is deployed; domains,
-// staged changes, releases and backups stay behind.
+// An admin's clone of the same kind copies services, settings, template
+// settings and every live value; volumes are new and staged; nothing is
+// deployed; domains, staged changes, releases and backups stay behind.
 func TestCloneEnvironment(t *testing.T) {
 	h := newHarness(t)
 	cloneSource(h)
 
-	res, err := h.c.CloneEnvironment(h.ctx, System, EnvRef{"shop", "production"}, apitypes.CloneEnvironmentRequest{Name: "staging"})
+	res, err := h.c.CloneEnvironment(h.ctx, System, EnvRef{"shop", "production"}, apitypes.CloneEnvironmentRequest{Name: "prod-2", Kind: apitypes.KindProduction})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Environment.Kind != apitypes.KindNonProduction || !slices.Equal(res.Services, []string{"postgres", "web"}) {
+	if res.Environment.Kind != apitypes.KindProduction || !slices.Equal(res.Services, []string{"postgres", "web"}) {
 		t.Fatalf("clone = %+v", res)
 	}
-	if res.Variables != 7 || len(res.Generated) != 0 || len(res.Skipped) != 0 || res.Volumes != 1 || res.Deploy != nil {
+	if res.Variables != 7 || len(res.Generated) != 0 || len(res.Skipped) != 0 || res.Volumes != 1 || res.Deploy != nil || len(res.CopiedAcrossKinds) != 0 {
 		t.Fatalf("variables %d, generated %v, skipped %v, volumes %d", res.Variables, res.Generated, res.Skipped, res.Volumes)
 	}
 	if !slices.Equal(res.NotCopied, []string{"1 domain", "1 staged change", "releases", "backups"}) {
@@ -57,25 +57,25 @@ func TestCloneEnvironment(t *testing.T) {
 	}
 
 	src, _ := h.c.GetService(h.ctx, System, ServiceRef{"shop", "production", "web"})
-	web, err := h.c.GetService(h.ctx, System, ServiceRef{"shop", "staging", "web"})
+	web, err := h.c.GetService(h.ctx, System, ServiceRef{"shop", "prod-2", "web"})
 	if err != nil || web.ServiceSettings != src.ServiceSettings || web.ActiveRelease != nil {
 		t.Fatalf("cloned web = %+v, %v; source settings %+v", web, err, src.ServiceSettings)
 	}
-	db, _ := h.c.GetService(h.ctx, System, ServiceRef{"shop", "staging", "postgres"})
+	db, _ := h.c.GetService(h.ctx, System, ServiceRef{"shop", "prod-2", "postgres"})
 	if db.Template != apitypes.TemplatePostgres || db.Database != apitypes.DatabasePostgres || db.ActiveRelease != nil || db.Stateful {
 		t.Fatalf("cloned postgres = %+v", db)
 	}
-	if _, err := h.c.GetService(h.ctx, System, ServiceRef{"shop", "staging", "old"}); CodeOf(err) != apitypes.CodeNotFound {
+	if _, err := h.c.GetService(h.ctx, System, ServiceRef{"shop", "prod-2", "old"}); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("archived service cloned: %v", err)
 	}
 
 	// Values are live at once, and the admin's copy is exact.
-	staging := EnvRef{"shop", "staging"}
+	clone := EnvRef{"shop", "prod-2"}
 	want := h.revealed(ServiceRef{"shop", "production", "postgres"})
-	if got := h.revealed(ServiceRef{"shop", "staging", "postgres"}); !maps.Equal(got, want) {
+	if got := h.revealed(ServiceRef{"shop", "prod-2", "postgres"}); !maps.Equal(got, want) {
 		t.Fatalf("postgres variables %v, want %v", got, want)
 	}
-	vars, _ := h.c.ListVariables(h.ctx, System, staging, "web", true)
+	vars, _ := h.c.ListVariables(h.ctx, System, clone, "web", true)
 	got := map[string]string{}
 	for _, v := range vars {
 		if v.Pending != "" || v.Value == nil {
@@ -89,7 +89,7 @@ func TestCloneEnvironment(t *testing.T) {
 
 	// The volume is new and staged, so the backup scheduler leaves the
 	// undeployed clone alone; nothing else came along.
-	vols, _ := h.c.ListVolumes(h.ctx, System, ServiceRef{"shop", "staging", "postgres"})
+	vols, _ := h.c.ListVolumes(h.ctx, System, ServiceRef{"shop", "prod-2", "postgres"})
 	srcVols, _ := h.c.ListVolumes(h.ctx, System, ServiceRef{"shop", "production", "postgres"})
 	if len(vols) != 1 || !vols[0].Pending || vols[0].DockerName == srcVols[0].DockerName || vols[0].MountPath != srcVols[0].MountPath {
 		t.Fatalf("volumes %+v, source %+v", vols, srcVols)
@@ -98,29 +98,31 @@ func TestCloneEnvironment(t *testing.T) {
 	if len(cands) != 1 {
 		t.Fatalf("backup candidates = %+v", cands)
 	}
-	if ds, _ := h.c.ListDomains(h.ctx, System, ServiceRef{"shop", "staging", "web"}); len(ds) != 0 {
+	if ds, _ := h.c.ListDomains(h.ctx, System, ServiceRef{"shop", "prod-2", "web"}); len(ds) != 0 {
 		t.Fatalf("domains cloned: %+v", ds)
 	}
-	if rels, _ := h.c.ListReleases(h.ctx, System, ServiceRef{"shop", "staging", "postgres"}, 10); len(rels) != 0 {
+	if rels, _ := h.c.ListReleases(h.ctx, System, ServiceRef{"shop", "prod-2", "postgres"}, 10); len(rels) != 0 {
 		t.Fatalf("releases cloned: %+v", rels)
 	}
 
 	// The clone deploys like any environment: the volume goes live with
 	// the first deploy, and the reference resolves inside the clone.
-	rel := h.deploy(ServiceRef{"shop", "staging", "postgres"}, "postgres:17")
+	rel := h.deploy(ServiceRef{"shop", "prod-2", "postgres"}, "postgres:17")
 	if rel.Status != apitypes.ReleaseActive || len(rel.Config.Mounts) != 1 {
 		t.Fatalf("first deploy: %s %+v", rel.Status, rel.Config)
 	}
 
-	if _, err := h.c.CloneEnvironment(h.ctx, System, EnvRef{"shop", "production"}, apitypes.CloneEnvironmentRequest{Name: "staging"}); CodeOf(err) != apitypes.CodeConflict {
+	if _, err := h.c.CloneEnvironment(h.ctx, System, EnvRef{"shop", "production"}, apitypes.CloneEnvironmentRequest{Name: "prod-2"}); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("clone onto an existing name: %v", err)
 	}
 }
 
-// Who may clone, and which values come along: an admin's clone copies
-// them; a deploy token's copies references, makes template credentials
-// anew and lists the rest; read and environment-limited tokens can't
-// clone. No value ever reaches the result.
+// Who may clone, and which values come along. A deploy token's clone, and
+// by default anyone's clone into the other kind (production to
+// non-production here), copies references, makes template credentials
+// anew and lists the rest; only an admin with copy_values copies literal
+// values across kinds, and the result names them. Read and
+// environment-limited tokens can't clone. No value reaches the result.
 func TestCloneFollowsPermissions(t *testing.T) {
 	h := newHarness(t)
 	cloneSource(h)
@@ -138,11 +140,6 @@ func TestCloneFollowsPermissions(t *testing.T) {
 		}
 	}
 
-	agent := Actor{Kind: "token", Name: "agent", Scope: apitypes.ScopeDeploy, ProjectID: p.ID, ProjectName: "shop"}
-	res, err := h.c.CloneEnvironment(h.ctx, agent, prod, apitypes.CloneEnvironmentRequest{Name: "preview"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	names := func(vs []apitypes.VariableRef) []string {
 		s := make([]string, len(vs))
 		for i, v := range vs {
@@ -151,29 +148,64 @@ func TestCloneFollowsPermissions(t *testing.T) {
 		slices.Sort(s)
 		return s
 	}
-	if got := names(res.Skipped); !slices.Equal(got, []string{"shared.LOG_LEVEL", "web.STRIPE_KEY"}) {
-		t.Fatalf("skipped = %v", got)
-	}
-	if got := names(res.Generated); !slices.Equal(got, []string{"postgres.DATABASE_URL", "postgres.POSTGRES_DB", "postgres.POSTGRES_PASSWORD", "postgres.POSTGRES_USER"}) {
-		t.Fatalf("generated = %v", got)
-	}
-	if res.Variables != 1 {
-		t.Fatalf("copied %d variables, want the reference only", res.Variables)
-	}
 	src := h.revealed(ServiceRef{"shop", "production", "postgres"})
-	db := h.revealed(ServiceRef{"shop", "preview", "postgres"})
-	if db["POSTGRES_PASSWORD"] == "" || db["POSTGRES_PASSWORD"] == src["POSTGRES_PASSWORD"] || db["POSTGRES_USER"] != "postgres" || db["DATABASE_URL"] != src["DATABASE_URL"] {
-		t.Fatalf("template variables %v (source %v)", db, src)
-	}
-	if web := h.revealed(ServiceRef{"shop", "preview", "web"}); len(web) != 1 || web["DATABASE_URL"] != "${{postgres.DATABASE_URL}}" {
-		t.Fatalf("web variables = %v", web)
-	}
-	b, _ := json.Marshal(res)
-	for _, secret := range []string{"sk_live_secret", "lvl-7f3a", src["POSTGRES_PASSWORD"], db["POSTGRES_PASSWORD"]} {
-		if strings.Contains(string(b), secret) {
-			t.Fatalf("clone result contains a value: %s", b)
+	noValues := func(res apitypes.CloneResult, more ...string) {
+		t.Helper()
+		b, _ := json.Marshal(res)
+		for _, secret := range append([]string{"sk_live_secret", "lvl-7f3a", src["POSTGRES_PASSWORD"]}, more...) {
+			if strings.Contains(string(b), secret) {
+				t.Fatalf("clone result contains a value: %s", b)
+			}
 		}
 	}
+
+	agent := Actor{Kind: "token", Name: "agent", Scope: apitypes.ScopeDeploy, ProjectID: p.ID, ProjectName: "shop"}
+	for _, a := range []Actor{agent, System} {
+		env := "preview-" + a.Name
+		res, err := h.c.CloneEnvironment(h.ctx, a, prod, apitypes.CloneEnvironmentRequest{Name: env})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := names(res.Skipped); !slices.Equal(got, []string{"shared.LOG_LEVEL", "web.STRIPE_KEY"}) {
+			t.Fatalf("%s: skipped = %v", a.Name, got)
+		}
+		if got := names(res.Generated); !slices.Equal(got, []string{"postgres.DATABASE_URL", "postgres.POSTGRES_DB", "postgres.POSTGRES_PASSWORD", "postgres.POSTGRES_USER"}) {
+			t.Fatalf("%s: generated = %v", a.Name, got)
+		}
+		if res.Variables != 1 || len(res.CopiedAcrossKinds) != 0 || res.SourceKind != apitypes.KindProduction {
+			t.Fatalf("%s: copied %d variables (%v), want the reference only", a.Name, res.Variables, res.CopiedAcrossKinds)
+		}
+		db := h.revealed(ServiceRef{"shop", env, "postgres"})
+		if db["POSTGRES_PASSWORD"] == "" || db["POSTGRES_PASSWORD"] == src["POSTGRES_PASSWORD"] || db["POSTGRES_USER"] != "postgres" || db["DATABASE_URL"] != src["DATABASE_URL"] {
+			t.Fatalf("%s: template variables %v (source %v)", a.Name, db, src)
+		}
+		if web := h.revealed(ServiceRef{"shop", env, "web"}); len(web) != 1 || web["DATABASE_URL"] != "${{postgres.DATABASE_URL}}" {
+			t.Fatalf("%s: web variables = %v", a.Name, web)
+		}
+		noValues(res, db["POSTGRES_PASSWORD"])
+	}
+
+	// copy_values is for admins only, and then copies across kinds and
+	// says what came from production.
+	if _, err := h.c.CloneEnvironment(h.ctx, agent, prod, apitypes.CloneEnvironmentRequest{Name: "agent-copy", CopyValues: true}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("agent with copy_values: %v", err)
+	}
+	res, err := h.c.CloneEnvironment(h.ctx, System, prod, apitypes.CloneEnvironmentRequest{Name: "staging", CopyValues: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(res.CopiedAcrossKinds); !slices.Equal(got, []string{
+		"postgres.DATABASE_URL", "postgres.POSTGRES_DB", "postgres.POSTGRES_PASSWORD", "postgres.POSTGRES_USER", "shared.LOG_LEVEL", "web.STRIPE_KEY",
+	}) || res.Variables != 7 || len(res.Skipped) != 0 || len(res.Generated) != 0 {
+		t.Fatalf("copy_values: copied %d, across kinds %v, skipped %v, generated %v", res.Variables, got, res.Skipped, res.Generated)
+	}
+	if got := h.revealed(ServiceRef{"shop", "staging", "postgres"}); !maps.Equal(got, src) {
+		t.Fatalf("copied postgres variables %v, want %v", got, src)
+	}
+	if web := h.revealed(ServiceRef{"shop", "staging", "web"}); web["STRIPE_KEY"] != "sk_live_secret" {
+		t.Fatalf("copied web variables = %v", web)
+	}
+	noValues(res)
 }
 
 func TestOnlyReferences(t *testing.T) {

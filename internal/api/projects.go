@@ -116,7 +116,7 @@ func registerProjects(s *Server, a huma.API) {
 		OperationID: "clone-environment", Method: http.MethodPost, Path: envPathT + "/clone",
 		Summary: "Clone an environment", Tags: tags, DefaultStatus: http.StatusCreated, Errors: withOffline,
 		Description: "Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. " +
-			"Values are copied only for callers that may read them (admin); otherwise reference-only values are copied, template credentials are made anew and the rest are listed in `skipped`. " +
+			"Reference-only values are always copied. Literal values are copied only for admins, and between production and non-production only with `copy_values` (admin; listed in `copied_across_kinds`); otherwise template credentials are made anew and the rest are listed in `skipped`. " +
 			"Domains, git connections, releases, backups and staged changes are never copied. Nothing is deployed unless `deploy: true`, which promotes the source's images. Scope: read on this environment, deploy on the project.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		EnvPath
