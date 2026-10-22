@@ -12,7 +12,7 @@ import {
   Button,
   CopyButton,
   ErrorText,
-  Scroll,
+  Panel,
   SectionHead,
   StateText,
 } from "../../ui/kit";
@@ -38,13 +38,13 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         {domains.length === 0 ? (
           <p className="py-2 text-mut">
             No domains. The service is reachable on the private network at{" "}
-            <span className="font-mono text-white">
+            <span className="font-mono text-fg">
               {service.name}:{port}
             </span>
             .
           </p>
         ) : (
-          <Scroll>
+          <Panel>
             <table>
               <thead>
                 <tr>
@@ -66,7 +66,7 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 ))}
               </tbody>
             </table>
-          </Scroll>
+          </Panel>
         )}
       </section>
     </>
@@ -170,7 +170,7 @@ function DnsCard({ domain }: { domain: Domain }) {
         </p>
       )}
       {records.length > 0 && (
-        <Scroll>
+        <Panel>
           <table className="font-mono">
             <thead>
               <tr>
@@ -193,7 +193,7 @@ function DnsCard({ domain }: { domain: Domain }) {
               ))}
             </tbody>
           </table>
-        </Scroll>
+        </Panel>
       )}
       {domain.checked_at && (
         <div className="flex flex-wrap gap-x-6 gap-y-1">

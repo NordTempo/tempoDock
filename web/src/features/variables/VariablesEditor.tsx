@@ -9,9 +9,17 @@ import {
   useVariables,
 } from "../../data/queries";
 import type { EnvRef, Variable } from "../../data/types";
+import { EnvSwitch } from "../../shell/context";
 import { useShortcuts } from "../../shell/keys";
 import { plural } from "../../ui/format";
-import { Act, Button, ErrorText, Glyph, TitleRow } from "../../ui/kit";
+import {
+  Act,
+  Button,
+  ErrorText,
+  Glyph,
+  PageBar,
+  SectionHead,
+} from "../../ui/kit";
 import { serviceState } from "../../ui/status";
 import { ApplyBox } from "./ApplyBox";
 import { parseDotenv } from "./dotenv";
@@ -73,11 +81,23 @@ export function VariablesEditor({
   }
   const shown = (v: Variable) => revealAll || revealedIds.has(idOf(v));
 
+  const sharedCount = shared.length;
   return (
     <>
-      <TitleRow
+      <PageBar
+        parent={
+          <Link
+            to="/$project"
+            params={{ project: env.project }}
+            className="hover:text-fg"
+          >
+            {env.project}
+          </Link>
+        }
         title="Variables"
-        context={env.environment}
+        after={
+          <EnvSwitch project={env.project} environment={env.environment} />
+        }
         actions={
           <>
             {isAdmin && (
@@ -94,97 +114,119 @@ export function VariablesEditor({
           </>
         }
       />
-
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
-        <span className="text-mut">What</span>
-        <div role="tablist" aria-label="Scope" className="seg">
+      <div className="flex flex-1 flex-col md:flex-row">
+        <nav
+          aria-label="Applies to"
+          className="flex flex-col gap-0.5 border-b border-line px-2.5 pt-4 pb-3 md:w-[220px] md:flex-none md:border-r md:border-b-0"
+        >
+          <div className="px-2 pb-1.5 text-2xs text-faint">Applies to</div>
           <Link
-            role="tab"
             to="/$project/$environment"
             params={env}
             search={{}}
-            aria-selected={service === null}
+            activeOptions={{ exact: true }}
+            className="nav-row"
           >
-            environment
+            <span className="flex-1">Shared · every service</span>
+            <span className="text-2xs text-faint">{sharedCount}</span>
           </Link>
           {services.map((s) => {
             const state = serviceState(s);
+            const name = s.service.name;
+            const ownCount = all.filter(
+              (v) => v.scope === "service" && v.service === name,
+            ).length;
             return (
               <Link
                 key={s.service.id}
-                role="tab"
                 to="/$project/$environment"
                 params={env}
-                search={{ service: s.service.name }}
-                aria-selected={service === s.service.name}
+                search={{ service: name }}
+                activeOptions={{ exact: true }}
+                className="nav-row"
               >
                 {state.tone === "fail" && state.glyph && (
                   <span className="text-fail">
-                    <Glyph char={state.glyph} />{" "}
+                    <Glyph char={state.glyph} />
                   </span>
                 )}
-                {s.service.name}
+                <span className="flex-1 truncate">{name}</span>
+                <span className="text-2xs text-faint">
+                  {ownCount} + {sharedCount} shared
+                </span>
               </Link>
             );
           })}
-        </div>
-        <span className="text-mut">
-          {service
-            ? "sees at runtime. Grey lines come from the environment."
-            : `is shared with every service in ${env.environment}.`}
-        </span>
-      </div>
+          <p className="px-2 pt-3 text-2xs leading-relaxed text-faint">
+            Grey lines come from Shared. A line in a service with the same name
+            wins.
+          </p>
+        </nav>
 
-      {pasting && (
-        <PasteEnv
-          env={env}
-          service={service}
-          onDone={() => setPasting(false)}
-        />
-      )}
-      <ErrorText error={revealed.error ?? revealedChanges.error} />
+        <div className="flex w-full max-w-[1100px] min-w-0 flex-1 flex-col gap-4 px-6 pt-5 pb-10">
+          <SectionHead
+            id="vars"
+            aside={revealAll ? "values shown" : "values hidden"}
+          >
+            {service
+              ? `${service} sees at runtime`
+              : `Shared with every service in ${env.environment}`}
+          </SectionHead>
 
-      <section
-        aria-label={`${service ?? env.environment} variables`}
-        className="overflow-x-auto border border-line py-2 font-mono text-[12.5px]"
-      >
-        <div className="min-w-[720px]">
-          {rows.map((v, i) => (
-            <Line
-              key={idOf(v)}
-              n={i + 1}
+          {pasting && (
+            <PasteEnv
               env={env}
-              variable={v}
-              inherited={!!service && v.scope === "environment"}
-              overridden={
-                !!service && v.scope === "environment" && ownKeys.has(v.key)
-              }
-              values={shown(v) ? values.get(idOf(v)) : undefined}
-              all={revealed.data ?? []}
-              canReveal={isAdmin && !shown(v)}
-              onReveal={() =>
-                setRevealedIds(new Set([...revealedIds, idOf(v)]))
-              }
+              service={service}
+              onDone={() => setPasting(false)}
             />
-          ))}
-          <NewLine
-            n={rows.length + 1}
-            env={env}
-            service={service}
-            inputRef={newLine}
-          />
-        </div>
-      </section>
-      <p className="-mt-1 text-xs text-mut">
-        <span className="text-warn">+</span> added ·{" "}
-        <span className="text-warn">~</span> changed ·{" "}
-        <span className="text-warn">−</span> removed
-        {service &&
-          ` · a ${service} line with the same name as an env line overrides it`}{" "}
-        · → resolved reference
-      </p>
+          )}
+          <ErrorText error={revealed.error ?? revealedChanges.error} />
 
-      <ApplyBox env={env} reveal={revealAll} variables={all} />
+          <section
+            aria-labelledby="vars"
+            className="-mt-2.5 overflow-x-auto rounded-panel border border-line font-mono text-xs"
+          >
+            <div className="min-w-[640px]">
+              {rows.map((v, i) => (
+                <Line
+                  key={idOf(v)}
+                  n={i + 1}
+                  env={env}
+                  variable={v}
+                  inherited={!!service && v.scope === "environment"}
+                  overridden={
+                    !!service && v.scope === "environment" && ownKeys.has(v.key)
+                  }
+                  values={shown(v) ? values.get(idOf(v)) : undefined}
+                  all={revealed.data ?? []}
+                  canReveal={isAdmin && !shown(v)}
+                  onReveal={() =>
+                    setRevealedIds(new Set([...revealedIds, idOf(v)]))
+                  }
+                />
+              ))}
+              <NewLine
+                n={rows.length + 1}
+                env={env}
+                service={service}
+                inputRef={newLine}
+              />
+            </div>
+          </section>
+          <p className="-mt-1 text-2xs text-faint">
+            <span className="text-ok">+</span> added ·{" "}
+            <span className="text-warn">~</span> changed ·{" "}
+            <span className="text-fail">−</span> removed ·{" "}
+            <span className="font-mono text-info">
+              {"$"}
+              {"{{ }}"}
+            </span>{" "}
+            points at another service, → resolved
+          </p>
+
+          <ApplyBox env={env} reveal={revealAll} variables={all} />
+        </div>
+      </div>
     </>
   );
 }
@@ -195,7 +237,19 @@ const pendingMark = { add: "+", update: "~", remove: "−" } satisfies Record<
 >;
 
 const grid =
-  "grid grid-cols-[34px_16px_70px_minmax(0,1fr)_auto] items-baseline gap-x-2.5 py-1 pr-3.5";
+  "grid grid-cols-[34px_14px_minmax(120px,200px)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 border-b border-soft py-[7px] pr-3.5";
+
+const pendingRow = {
+  add: "bg-add-bg",
+  update: "bg-change-bg",
+  remove: "bg-remove-bg",
+} satisfies Record<NonNullable<Variable["pending"]>, string>;
+
+const pendingText = {
+  add: "text-ok",
+  update: "text-warn",
+  remove: "text-fail",
+} satisfies Record<NonNullable<Variable["pending"]>, string>;
 
 function Line({
   n,
@@ -238,36 +292,40 @@ function Line({
 
   return (
     <div
-      className={`${grid} group ${v.pending ? "bg-stage-bg" : "hover:bg-hover"}`}
+      className={`${grid} group ${v.pending ? pendingRow[v.pending] : "hover:bg-hover"}`}
     >
       <span className="text-right text-faint">{n}</span>
-      <span className="text-warn">{v.pending && pendingMark[v.pending]}</span>
-      <span className={inherited ? "text-mut" : ""}>{service ?? "env"}</span>
+      <span className={v.pending && pendingText[v.pending]}>
+        {v.pending && pendingMark[v.pending]}
+      </span>
+      <span
+        className={`truncate ${inherited ? "text-mut" : ""} ${overridden || v.pending === "remove" ? "line-through" : ""}`}
+        title={v.key}
+      >
+        {v.key}
+      </span>
       {editing ? (
-        <span className="flex items-baseline">
-          {v.key}=
-          <input
-            // biome-ignore lint/a11y/noAutofocus: opened by clicking Edit
-            autoFocus
-            defaultValue={current ?? ""}
-            placeholder={current === undefined ? "new value" : undefined}
-            aria-label={`${v.key} value`}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") save(e.currentTarget.value);
-              if (e.key === "Escape") setEditing(false);
-            }}
-            className="min-w-0 flex-1 bg-transparent outline-none"
-          />
-        </span>
+        <input
+          // biome-ignore lint/a11y/noAutofocus: opened by clicking Edit
+          autoFocus
+          defaultValue={current ?? ""}
+          placeholder={current === undefined ? "new value" : undefined}
+          aria-label={`${v.key} value`}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save(e.currentTarget.value);
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="min-w-0 rounded-[4px] bg-panel px-1 outline-none ring-1 ring-info"
+        />
       ) : (
         <span
-          className={`${inherited ? "text-mut" : ""} ${overridden ? "line-through" : ""}`}
+          className={`min-w-0 break-all ${inherited ? "text-mut" : ""} ${overridden ? "line-through" : ""} ${current !== undefined && hasReference(current) ? "text-info" : ""}`}
         >
-          {v.key}=<Value pending={v.pending} values={values} />
+          <Value pending={v.pending} values={values} />
           {canReveal && (
             <button
               type="button"
-              className="lnk ml-2 font-sans"
+              className="lnk ml-2 font-sans text-2xs"
               onClick={onReveal}
             >
               Reveal
@@ -275,9 +333,13 @@ function Line({
           )}
         </span>
       )}
-      <span className="flex gap-3 font-sans">
+      <span className="flex items-baseline gap-3 font-sans text-2xs">
         <ErrorText error={stage.error ?? discard.error} />
-        {overridden && <span className="text-xs text-mut">overridden</span>}
+        {overridden ? (
+          <span className="text-faint">overridden</span>
+        ) : (
+          inherited && !v.pending && <span className="text-faint">shared</span>
+        )}
         {v.pending ? (
           <button
             type="button"
@@ -317,7 +379,7 @@ function Line({
         )}
       </span>
       {resolved !== undefined && resolved !== current && (
-        <span className="col-start-4 col-end-6 text-xs text-mut">
+        <span className="col-start-4 col-end-6 text-2xs text-faint">
           → {resolved}
         </span>
       )}
@@ -334,12 +396,12 @@ function Value({
 }) {
   switch (pending) {
     case "add":
-      return <span className="text-white">{values?.new ?? MASK}</span>;
+      return <span className="text-fg">{values?.new ?? MASK}</span>;
     case "update":
       return (
         <>
-          <span className="text-white">{values?.new ?? MASK}</span>{" "}
-          <span className="line-through">{values?.old ?? ""}</span>
+          <span className="text-fg">{values?.new ?? MASK}</span>{" "}
+          <span className="text-faint line-through">{values?.old ?? ""}</span>
         </>
       );
     case "remove":
@@ -365,12 +427,9 @@ function NewLine({
   const [text, setText] = useState("");
   const parsed = parseDotenv(text);
   return (
-    <div
-      className={`${grid} focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-prog`}
-    >
+    <div className={`${grid} border-b-0 focus-within:bg-panel`}>
       <span className="text-right text-faint">{n}</span>
       <span />
-      <span>{service ?? "env"}</span>
       <input
         ref={inputRef}
         value={text}
@@ -387,11 +446,11 @@ function NewLine({
             { onSuccess: () => setText("") },
           );
         }}
-        placeholder="NAME=value"
+        placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
-        className="min-w-0 bg-transparent outline-none"
+        className="col-span-2 min-w-0 bg-transparent outline-none"
       />
-      <span className="font-sans text-2xs text-mut">
+      <span className="font-sans text-2xs text-faint">
         <ErrorText error={stage.error} /> ↵ add
       </span>
     </div>

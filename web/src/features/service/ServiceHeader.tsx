@@ -8,14 +8,21 @@ import {
   useChanges,
   useDeployBlock,
   useEnvironment,
-  useProjectOverview,
   useReleases,
   useService,
 } from "../../data/queries";
 import type { ServiceRef, ServiceView } from "../../data/types";
+import { EnvSwitch } from "../../shell/context";
 import { type Shortcut, useShortcuts } from "../../shell/keys";
 import { ago, since } from "../../ui/format";
-import { Act, Button, ErrorText, Glyph, StateText } from "../../ui/kit";
+import {
+  Act,
+  Button,
+  ErrorText,
+  Glyph,
+  PageBar,
+  StateText,
+} from "../../ui/kit";
 import {
   failurePhrase,
   isCrashLooping,
@@ -67,20 +74,59 @@ const tabs = [
 ] as const;
 
 /**
- * Title, plain-language status, actions (Overview tab only) and tabs of a
- * service. G then a letter switches tabs.
+ * A service's header bar: project / service, the environment switch, its
+ * state and, on the Overview tab, Deploy, Restart and Roll back.
  */
-export function ServiceHeader({
+export function ServiceBar({
   serviceRef: ref,
   full,
 }: {
   serviceRef: ServiceRef;
-  /** With the status sentence and actions, as on the Overview tab. */
+  /** With the actions, as on the Overview tab. */
   full: boolean;
 }) {
   const view = useService(ref);
+  const state = serviceState(view);
+  const serving = view.service.active_release;
+  return (
+    <PageBar
+      parent={
+        <Link
+          to="/$project"
+          params={{ project: ref.project }}
+          className="hover:text-fg"
+        >
+          {ref.project}
+        </Link>
+      }
+      title={ref.service}
+      after={
+        <>
+          <EnvSwitch
+            project={ref.project}
+            environment={ref.environment}
+            service={ref.service}
+          />
+          <span className="text-xs">
+            <StateText state={state} />
+            {serving && state.tone === "ok" && (
+              <span className="font-mono text-faint"> · r{serving}</span>
+            )}
+          </span>
+        </>
+      }
+      actions={full && <Actions serviceRef={ref} />}
+    />
+  );
+}
+
+/**
+ * The service's sections under its header bar, with ▲ where something
+ * waits. G then a letter switches tabs.
+ */
+export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const view = useService(ref);
   const changes = useChanges(ref);
-  const { server } = useEnvironment(ref).environment;
   const navigate = useNavigate();
   const { service } = view;
   const shown = tabs.filter(
@@ -105,80 +151,93 @@ export function ServiceHeader({
   };
 
   return (
-    <section aria-labelledby="service" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
-        <h1 id="service" className="text-xl font-semibold">
-          {service.name}
-        </h1>
-        <span className="text-mut">
-          {ref.environment} on <EnvServer name={server} />
-          {full && (
-            <>
-              {" "}
-              · <span className="font-mono">:{listenPort(service)}</span> ·{" "}
-              <Link
-                to="/$project/$environment/$service/metrics"
-                params={ref}
-                className="font-mono text-white no-underline"
-                title="Memory and CPU, latest sample against the limit"
-              >
-                <MemoryUsage service={service} /> ·{" "}
-                <CpuUsage service={service} />
-              </Link>
-            </>
-          )}
-        </span>
-        <span className="ml-auto flex gap-4">
-          <Siblings serviceRef={ref} />
-        </span>
-      </div>
-      {full && <StatusSentence view={view} />}
-      {full && <Actions serviceRef={ref} />}
-      <nav
-        aria-label="Service"
-        className="tabs mt-2.5 flex flex-wrap gap-x-[22px] gap-y-1 border-b border-line"
-      >
-        {shown.map((tab) => (
-          <Link
-            key={tab.to}
-            to={tab.to}
-            params={ref}
-            activeOptions={{ exact: true, includeSearch: false }}
-            title={`${tab.label} (${tab.key.toUpperCase()})`}
-          >
-            {tab.label}
-            {marks[tab.label] && <span className="text-warn"> ▲</span>}
-          </Link>
-        ))}
-      </nav>
-    </section>
+    <nav
+      aria-label="Service"
+      className="tabs flex flex-wrap gap-0.5 border-b border-line px-4 py-2"
+    >
+      {shown.map((tab) => (
+        <Link
+          key={tab.to}
+          to={tab.to}
+          params={ref}
+          activeOptions={{ exact: true, includeSearch: false }}
+          title={`${tab.label} (${tab.key.toUpperCase()})`}
+        >
+          {tab.label}
+          {marks[tab.label] && <span className="text-warn"> ▲</span>}
+        </Link>
+      ))}
+    </nav>
   );
 }
 
-/** The same service in the other environments: "staging: ● r92". */
-function Siblings({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const { environments } = useProjectOverview(ref.project);
-  return environments.flatMap(({ environment, services }) => {
-    if (environment.name === ref.environment) return [];
-    const twin = services.find((s) => s.service.name === ref.service);
-    if (!twin) return [];
-    const state = serviceState(twin);
-    return [
+/** Source, address, resources, port and server: the Overview's facts. */
+export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const view = useService(ref);
+  const { server } = useEnvironment(ref).environment;
+  const { service } = view;
+  const domain =
+    view.domains.find((d) => d.status === "active") ?? view.domains[0];
+  const facts: [string, ReactNode][] = [
+    [
+      "Source",
+      <span key="s" className="font-mono">
+        {service.image ?? "built from source"}
+      </span>,
+    ],
+    [
+      "Address",
+      domain ? (
+        <a
+          key="a"
+          href={`https://${domain.hostname}`}
+          className="font-mono text-info hover:underline"
+        >
+          {domain.hostname}
+        </a>
+      ) : (
+        <Link
+          key="a"
+          to="/$project/$environment/$service/domains"
+          params={ref}
+          className="text-info hover:underline"
+        >
+          + Add domain
+        </Link>
+      ),
+    ],
+    [
+      "Resources",
       <Link
-        key={environment.id}
-        to="/$project/$environment/$service"
-        params={{ ...ref, environment: environment.name }}
-        className="text-mut"
+        key="r"
+        to="/$project/$environment/$service/metrics"
+        params={ref}
+        title="Memory and CPU, latest sample against the limit"
+        className="hover:text-fg"
       >
-        {environment.name}: <StateText state={{ ...state, label: "" }} />
-        <span className="font-mono">
-          {twin.service.active_release
-            ? `r${twin.service.active_release}`
-            : "none"}
-        </span>
+        <CpuUsage service={service} />
+        <br />
+        <MemoryUsage service={service} />
       </Link>,
-    ];
-  });
+    ],
+    [
+      "Port · server",
+      <span key="p">
+        <span className="font-mono">:{listenPort(service)}</span> ·{" "}
+        <EnvServer name={server} />
+      </span>,
+    ],
+  ];
+  return (
+    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line @xl:grid-cols-4">
+      {facts.map(([term, value]) => (
+        <div key={term} className="flex flex-col gap-1 bg-page px-3.5 py-3">
+          <dt className="text-2xs text-faint">{term}</dt>
+          <dd className="min-w-0 break-words text-xs">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 /** One sentence on what the service is doing and what happens next. */
@@ -263,7 +322,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
       </>
     );
   }
-  return <p className="text-lg leading-normal">{sentence}</p>;
+  return <p className="text-md leading-normal">{sentence}</p>;
 }
 
 /** Deploy, restart, roll back: buttons with keys and CLI equivalents. */
@@ -309,8 +368,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
   if (confirming && target) {
     return (
-      <div className="flex flex-wrap items-center gap-2.5">
-        <span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs">
           Roll back to <b className="font-mono font-medium">r{target.number}</b>
           : <span className="font-mono text-mut">{copiedConfig(target)}</span>
         </span>
@@ -333,21 +392,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   }
 
   return (
-    <div className="flex flex-wrap items-start gap-2.5">
-      <Act
-        primary
-        cli={`dock deploy ${flags}`}
-        disabled={!canDeploy}
-        title={
-          busy ??
-          (service.image
-            ? `Deploy ${service.image}`
-            : "Built from source: deploy with dock deploy")
-        }
-        onClick={() => deploy.mutate(ref)}
-      >
-        Deploy <kbd>D</kbd>
-      </Act>
+    <div className="flex flex-wrap items-start gap-2">
       <Act
         cli={`dock restart ${flags}`}
         disabled={!canRestart}
@@ -369,7 +414,21 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       >
         {target ? `Roll back to r${target.number}` : "Roll back"} <kbd>B</kbd>
       </Act>
-      <span className="self-center">
+      <Act
+        primary
+        cli={`dock deploy ${flags}`}
+        disabled={!canDeploy}
+        title={
+          busy ??
+          (service.image
+            ? `Deploy ${service.image}`
+            : "Built from source: deploy with dock deploy")
+        }
+        onClick={() => deploy.mutate(ref)}
+      >
+        Deploy <kbd>D</kbd>
+      </Act>
+      <span className="self-center text-xs">
         {blocked && <span className="text-fail">Disabled: {blocked}.</span>}{" "}
         <ErrorText error={deploy.error ?? restart.error ?? rollback.error} />
       </span>

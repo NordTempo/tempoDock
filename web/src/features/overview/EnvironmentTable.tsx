@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { memo, useState } from "react";
 import { domainNeedsAttention } from "../../data/problems";
 import {
+  listenPort,
   queries,
   serviceRef,
   useCanDeploy,
@@ -10,7 +11,7 @@ import {
 } from "../../data/queries";
 import type { EnvironmentView, ServiceView } from "../../data/types";
 import { plural } from "../../ui/format";
-import { Scroll, StateText } from "../../ui/kit";
+import { Panel, SectionHead, StateText } from "../../ui/kit";
 import { kindLabel, serviceState } from "../../ui/status";
 import { EnvServer } from "../servers/parts";
 import { imageLabel } from "../service/releases";
@@ -27,49 +28,54 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const limitedToEnv = !!useSession()?.environment;
   const canClone = canDeploy && !limitedToEnv;
   const [open, setOpen] = useState<"database" | "clone" | null>(null);
+  const links = "text-xs text-mut hover:text-fg";
   return (
     <section aria-labelledby={`env-${environment.id}`}>
-      <h2 id={`env-${environment.id}`} className="text-md font-semibold">
-        {environment.name}{" "}
-        <span className="text-xs font-normal text-mut">
-          <EnvServer name={environment.server} /> ·{" "}
-          {kindLabel[environment.kind]}
-        </span>{" "}
-        {staged > 0 && (
-          <Link
-            to="/$project/$environment"
-            params={ref}
-            className="text-xs font-normal text-warn decoration-[#7a5c10]"
-          >
-            ▲ {plural(staged, "staged change")}
-          </Link>
-        )}
-        <Link
-          to="/$project/$environment"
-          params={ref}
-          className="ml-3 text-xs font-normal text-mut"
-        >
-          variables
-        </Link>
-        {canDeploy && !open && (
-          <button
-            type="button"
-            className="ml-3 text-xs font-normal text-mut underline"
-            onClick={() => setOpen("database")}
-          >
-            add database
-          </button>
-        )}
-        {canClone && !open && (
-          <button
-            type="button"
-            className="ml-3 text-xs font-normal text-mut underline"
-            onClick={() => setOpen("clone")}
-          >
-            clone
-          </button>
-        )}
-      </h2>
+      <SectionHead
+        id={`env-${environment.id}`}
+        aside={
+          <>
+            on <EnvServer name={environment.server} /> ·{" "}
+            {kindLabel[environment.kind]}
+          </>
+        }
+        right={
+          <>
+            {staged > 0 && (
+              <Link
+                to="/$project/$environment"
+                params={ref}
+                className="text-warn hover:text-warn-text"
+              >
+                ▲ {plural(staged, "staged change")}
+              </Link>
+            )}
+            <Link to="/$project/$environment" params={ref} className={links}>
+              Variables
+            </Link>
+            {canDeploy && !open && (
+              <button
+                type="button"
+                className={links}
+                onClick={() => setOpen("database")}
+              >
+                Add database
+              </button>
+            )}
+            {canClone && !open && (
+              <button
+                type="button"
+                className={links}
+                onClick={() => setOpen("clone")}
+              >
+                Clone
+              </button>
+            )}
+          </>
+        }
+      >
+        {environment.name}
+      </SectionHead>
       {open === "database" && (
         <AddDatabase env={ref} onClose={() => setOpen(null)} />
       )}
@@ -81,37 +87,33 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
         />
       )}
       {services.length === 0 ? (
-        <p className="py-2 text-mut">
+        <p className="rounded-panel border border-dashed border-dash px-3.5 py-3 text-mut">
           No services. Deploy one with{" "}
-          <code className="font-mono text-white">
+          <code className="font-mono text-fg">
             dock deploy -e {environment.name}
           </code>
           .
         </p>
       ) : (
-        <div className="mt-1">
-          <Scroll>
-            <table>
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>State</th>
-                  <th>Release</th>
-                  <th>Image</th>
-                  <th>Domain</th>
-                  <th>CPU</th>
-                  <th>Memory</th>
-                  <th>Volume</th>
-                </tr>
-              </thead>
-              <tbody>
-                {services.map((s) => (
-                  <ServiceRow key={s.service.id} view={s} />
-                ))}
-              </tbody>
-            </table>
-          </Scroll>
-        </div>
+        <Panel>
+          <table>
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Status</th>
+                <th>Release</th>
+                <th>Domain</th>
+                <th>CPU · memory</th>
+                <th>Volume</th>
+              </tr>
+            </thead>
+            <tbody>
+              {services.map((s) => (
+                <ServiceRow key={s.service.id} view={s} />
+              ))}
+            </tbody>
+          </table>
+        </Panel>
       )}
     </section>
   );
@@ -135,44 +137,55 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
   const newImage = deploying ? imageLabel(deploying) : "";
 
   return (
-    <tr className={deploying ? "bg-prog-bg" : undefined}>
-      <td>
-        <Link to="/$project/$environment/$service" params={ref}>
+    <tr className={deploying ? "bg-prog-bg" : "hover:bg-hover"}>
+      <td className="py-2.5">
+        <Link
+          to="/$project/$environment/$service"
+          params={ref}
+          className="font-medium hover:underline"
+        >
           {service.name}
         </Link>
+        <div
+          className="max-w-[40ch] truncate font-mono text-2xs text-faint"
+          title={newImage || oldImage || service.image || undefined}
+        >
+          {oldImage || (!deploying && service.image) || ""}
+          {deploying && newImage !== oldImage && (
+            <span className="text-prog">
+              {oldImage && " → "}
+              {newImage}
+            </span>
+          )}
+          {(oldImage || service.image || newImage) && " · "}:
+          {listenPort(service)}
+        </div>
       </td>
-      <td>
+      <td className="py-2.5">
         {failed ? (
           <>
             <Link
               to="/$project/$environment/$service/releases/$number"
               params={{ ...ref, number: String(failed.number) }}
-              className="text-fail decoration-[#7a2e2e]"
+              className="text-fail hover:underline"
             >
               ✕ r{failed.number} failed
-            </Link>{" "}
+            </Link>
             {active && (
-              <span className="text-mut">r{active.number} serving</span>
+              <div className="text-2xs text-faint">
+                r{active.number} serving
+              </div>
             )}
           </>
         ) : (
           <StateText state={serviceState(view)} />
         )}
       </td>
-      <td className="font-mono">
+      <td className="py-2.5 font-mono">
         {active ? `r${active.number}` : <span className="text-mut">none</span>}
         {deploying && <span className="text-prog"> → r{deploying.number}</span>}
       </td>
-      <td className="font-mono text-mut">
-        {oldImage || (!deploying && service.image) || ""}
-        {deploying && newImage !== oldImage && (
-          <span className="text-prog">
-            {oldImage && " → "}
-            {newImage}
-          </span>
-        )}
-      </td>
-      <td className="font-mono">
+      <td className="py-2.5 font-mono">
         {primary ? (
           <>
             {primary.hostname}
@@ -188,16 +201,18 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
             )}
           </>
         ) : (
-          <span className="font-sans text-mut">none</span>
+          <span className="font-sans text-faint">none</span>
         )}
       </td>
-      <td className="font-mono">
-        <CpuUsage service={service} />
+      <td className="py-2.5 text-xs">
+        <div>
+          <CpuUsage service={service} />
+        </div>
+        <div>
+          <MemoryUsage service={service} />
+        </div>
       </td>
-      <td className="font-mono">
-        <MemoryUsage service={service} />
-      </td>
-      <td className="font-mono">
+      <td className="py-2.5 font-mono text-xs">
         {volumes.length > 0 ? (
           volumes.map((v) => (
             <span key={v.name} title={v.mount_path} className="mr-2">
@@ -206,7 +221,7 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
             </span>
           ))
         ) : (
-          <span className="font-sans text-mut">none</span>
+          <span className="font-sans text-faint">none</span>
         )}
       </td>
     </tr>

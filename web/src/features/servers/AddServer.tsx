@@ -107,7 +107,7 @@ export function AddServer({ onClose }: { onClose: () => void }) {
 /** A secret on one line with its copy button. */
 function Secret({ label, text }: { label: string; text: string }) {
   return (
-    <div className="flex flex-wrap items-center gap-2.5 border border-line bg-[#050505] px-3 py-2">
+    <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2">
       <span className="w-28 shrink-0 text-xs whitespace-nowrap text-mut">
         {label}
       </span>
@@ -137,7 +137,7 @@ function Added({ added, onDone }: { added: AddedServer; onDone: () => void }) {
   return (
     <section
       aria-labelledby="added-server"
-      className="flex flex-col gap-2.5 border border-ok p-4"
+      className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
     >
       <h2 id="added-server" className="text-[15px] font-semibold">
         <span className="text-ok">✓</span> Added{" "}

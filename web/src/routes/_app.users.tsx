@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { memo, type ReactNode, useState } from "react";
 import {
   useCreateUser,
@@ -14,8 +14,11 @@ import {
   Confirm,
   CopyButton,
   ErrorText,
+  Glyph,
+  Menu,
+  menuItem,
   Page,
-  Scroll,
+  Panel,
   TitleRow,
 } from "../ui/kit";
 
@@ -36,8 +39,8 @@ function UsersPage() {
   if (!useIsAdmin()) {
     return (
       <Page>
-        <TitleRow title="Users" />
-        <p className="text-mut">Only admins manage users.</p>
+        <TitleRow title="Members" />
+        <p className="text-mut">Only admins manage members.</p>
       </Page>
     );
   }
@@ -54,68 +57,119 @@ function Users() {
   const active = users.filter((u) => !u.disabled_at).length;
 
   return (
-    <Page>
-      <TitleRow
-        title="Users"
-        context={`${active} active${users.length > active ? ` · ${users.length - active} disabled` : ""}. Roles match token scopes: read, deploy, admin.`}
-      />
-      <AddUser />
-      {reset && (
-        <section
-          aria-labelledby="new-password"
-          className="flex flex-col gap-2.5 border border-ok p-4"
-        >
-          <h2 id="new-password" className="text-[15px] font-semibold">
-            <span className="text-ok">✓</span> New password for{" "}
-            <span className="font-mono font-medium">{reset.email}</span>
-          </h2>
-          <p>
-            <b className="font-semibold">Copy it now.</b>{" "}
-            <span className="text-mut">
-              It is shown only this once. Their sessions ended; they sign in
-              with it next.
-            </span>
+    <Page width="max-w-[1240px]">
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-7">
+        <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-6">
+          <TitleRow
+            title="Members"
+            context={`People who sign in. ${active} active${users.length > active ? `, ${users.length - active} disabled` : ""}. Roles match token scopes.`}
+          />
+          <AddUser />
+          {reset && (
+            <section
+              aria-labelledby="new-password"
+              className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
+            >
+              <h2 id="new-password" className="font-semibold">
+                <span className="text-ok">✓</span> New password for{" "}
+                <span className="font-mono font-medium">{reset.email}</span>
+              </h2>
+              <p>
+                <b className="font-semibold">Copy it now.</b>{" "}
+                <span className="text-mut">
+                  It is shown only this once. Their sessions ended; they sign in
+                  with it next.
+                </span>
+              </p>
+              <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
+                <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
+                  {reset.password}
+                </code>
+                <CopyButton text={reset.password} primary />
+              </div>
+              <div>
+                <Button small onClick={() => setReset(undefined)}>
+                  I've passed it on
+                </Button>
+              </div>
+            </section>
+          )}
+          <Panel>
+            <table>
+              <thead>
+                <tr>
+                  <th>Person</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th title="Signed-in browser sessions">Sessions</th>
+                  <th title="Usable tokens they created">Tokens</th>
+                  <th>Added</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <UserRow
+                    key={u.id}
+                    user={u}
+                    you={me?.email === u.email}
+                    onReset={setReset}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </Panel>
+          <p className="text-2xs text-faint">
+            Your own account can't be disabled, deleted or reset here. Change
+            your password with{" "}
+            <span className="font-mono">dock me password</span>. Tokens for
+            agents, CI and scripts are on{" "}
+            <Link to="/tokens" className="text-info hover:underline">
+              Tokens
+            </Link>
+            .
           </p>
-          <div className="flex flex-wrap items-center gap-2.5 border border-line bg-[#050505] px-3 py-2.5">
-            <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
-              {reset.password}
-            </code>
-            <CopyButton text={reset.password} primary />
-          </div>
-          <div>
-            <Button small onClick={() => setReset(undefined)}>
-              I've passed it on
-            </Button>
-          </div>
-        </section>
-      )}
-      <Scroll>
-        <table>
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th title="Signed-in browser sessions">Sessions</th>
-              <th title="Usable tokens they created">Tokens</th>
-              <th>Added</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <UserRow
-                key={u.id}
-                user={u}
-                you={me?.email === u.email}
-                onReset={setReset}
-              />
-            ))}
-          </tbody>
-        </table>
-      </Scroll>
+        </div>
+        <RoleGuide />
+      </div>
     </Page>
+  );
+}
+
+const roleText: Record<Scope, string> = {
+  admin:
+    "Everything: members, tokens, alerts, data access and servers. Reveals secret values.",
+  deploy:
+    "Deploy, roll back, restart, edit variables and settings. Values stay hidden.",
+  read: "Status, deploys, logs and metrics. Read only.",
+};
+
+/** What each role may do, next to the members table (A4). */
+function RoleGuide() {
+  return (
+    <aside
+      aria-labelledby="roles"
+      className="flex min-w-0 flex-[1_1_260px] flex-col gap-3"
+    >
+      <h2 id="roles" className="text-sm font-semibold">
+        What each role can do
+      </h2>
+      <dl className="panel">
+        {(["admin", "deploy", "read"] as const).map((role) => (
+          <div
+            key={role}
+            className="border-b border-line px-3.5 py-3 last:border-0"
+          >
+            <dt className="font-mono">{role}</dt>
+            <dd className="text-xs text-mut">{roleText[role]}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-2xs leading-relaxed text-faint">
+        A token can be narrowed to one project or environment, and never exceeds
+        the person who made it.
+      </p>
+    </aside>
   );
 }
 
@@ -212,79 +266,111 @@ const UserRow = memo(function UserRow({
 
   return (
     <>
-      <tr className={disabled ? "text-faint" : undefined}>
+      <tr
+        className={`*:align-middle ${disabled ? "text-faint" : "hover:bg-hover"}`}
+      >
         <td className="py-2.5">
-          ○ <b className="font-medium">{u.name}</b>{" "}
-          {you && <span className="text-mut">you</span>}
+          <span className="flex items-center gap-2.5">
+            <span className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold text-fg">
+              {u.name.slice(0, 1).toUpperCase()}
+            </span>
+            <span>
+              <span className="font-medium">{u.name}</span>
+              {you && <span className="text-faint"> (you)</span>}
+              <span className="block text-2xs text-faint">{u.email}</span>
+            </span>
+          </span>
         </td>
-        <td className="py-2.5">{u.email}</td>
-        <td className="py-2.5">{u.role}</td>
+        <td className="py-2.5 font-mono">{u.role}</td>
         <td className="py-2.5">
           {disabled && u.disabled_at ? (
             `disabled ${day(u.disabled_at)}`
           ) : (
-            <span className="text-ok">● active</span>
+            <span className="text-ok">
+              <Glyph char="●" /> active
+            </span>
           )}
         </td>
-        <td className={`py-2.5 font-mono ${u.sessions ? "" : "text-mut"}`}>
+        <td className={`py-2.5 font-mono ${u.sessions ? "" : "text-faint"}`}>
           {u.sessions}
         </td>
-        <td className={`py-2.5 font-mono ${u.tokens ? "" : "text-mut"}`}>
+        <td className={`py-2.5 font-mono ${u.tokens ? "" : "text-faint"}`}>
           {u.tokens}
         </td>
-        <td className="py-2.5 text-mut">{day(u.created_at)}</td>
+        <td className="py-2.5 text-faint">{day(u.created_at)}</td>
         <td className="w-full py-1.5 text-right">
-          {you ? (
-            <span className="text-xs text-mut">
-              Your own account can't be disabled, deleted or reset here. Change
-              your password with{" "}
-              <span className="font-mono">dock me password</span>.
-            </span>
-          ) : (
+          {!you && (
             // CLI equivalents show as tooltips here and in each confirm.
-            <span className="inline-flex items-center gap-2">
-              {disabled ? (
-                <Button
-                  small
-                  title={`dock user enable ${u.email}`}
-                  disabled={setDisabled.isPending}
-                  onClick={() =>
-                    setDisabled.mutate({ id: u.id, disabled: false })
-                  }
-                >
-                  Enable
-                </Button>
-              ) : (
-                <Button
-                  small
-                  title={`dock user disable ${u.email}`}
-                  onClick={() => setAsking("disable")}
-                >
-                  Disable
-                </Button>
+            <Menu
+              label={`More for ${u.name}`}
+              right
+              className="inline-flex"
+              button={
+                <span className="rounded-ctl px-2 py-0.5 text-mut hover:bg-panel hover:text-fg">
+                  ···
+                </span>
+              }
+            >
+              {(close) => (
+                <>
+                  {disabled ? (
+                    <button
+                      type="button"
+                      className={menuItem}
+                      title={`dock user enable ${u.email}`}
+                      disabled={setDisabled.isPending}
+                      onClick={() => {
+                        close();
+                        setDisabled.mutate({ id: u.id, disabled: false });
+                      }}
+                    >
+                      Enable
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className={menuItem}
+                      title={`dock user disable ${u.email}`}
+                      onClick={() => {
+                        close();
+                        setAsking("disable");
+                      }}
+                    >
+                      Disable
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={menuItem}
+                    title={`dock user reset-password ${u.email}`}
+                    onClick={() => {
+                      close();
+                      setAsking("reset");
+                    }}
+                  >
+                    Reset password
+                  </button>
+                  <button
+                    type="button"
+                    className={`${menuItem} text-fail`}
+                    title={`dock user delete ${u.email}`}
+                    onClick={() => {
+                      close();
+                      setAsking("delete");
+                    }}
+                  >
+                    Delete
+                  </button>
+                </>
               )}
-              <Button
-                small
-                title={`dock user reset-password ${u.email}`}
-                onClick={() => setAsking("reset")}
-              >
-                Reset password
-              </Button>
-              <Button
-                small
-                title={`dock user delete ${u.email}`}
-                onClick={() => setAsking("delete")}
-              >
-                Delete
-              </Button>
-            </span>
+            </Menu>
           )}
           {!asking && <ErrorText error={setDisabled.error} />}
         </td>
       </tr>
       {asking && (
         <tr>
-          <td colSpan={8} className="border-0 pb-3">
+          <td colSpan={7} className="border-0 pb-3">
             {confirms[asking]}
           </td>
         </tr>
@@ -304,7 +390,7 @@ function AddUser() {
   const [role, setRole] = useState<Scope>("deploy");
   return (
     <form
-      aria-label="Add user"
+      aria-label="Add a member"
       className="flex flex-wrap items-center gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
@@ -320,7 +406,6 @@ function AddUser() {
         );
       }}
     >
-      <span className="text-mut">Add</span>
       <input
         type="email"
         aria-label="Email"
@@ -362,7 +447,7 @@ function AddUser() {
         className="btn pri"
         disabled={create.isPending || !email || !name || !password}
       >
-        Add user
+        Add member
       </button>
       <ErrorText error={create.error} />
     </form>

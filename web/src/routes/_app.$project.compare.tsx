@@ -28,7 +28,7 @@ import { EnvServer } from "../features/servers/parts";
 import { imageLabel } from "../features/service/releases";
 import { useShortcuts } from "../shell/keys";
 import { limits } from "../ui/format";
-import { Act, Glyph, Page, Scroll } from "../ui/kit";
+import { Act, Glyph, Page, PageBar, Panel } from "../ui/kit";
 import { serviceState, toneText } from "../ui/status";
 
 type CompareSearch = {
@@ -51,7 +51,6 @@ export const Route = createFileRoute("/_app/$project/compare")({
     values: s.values === true ? true : undefined,
     promote: s.promote === true ? true : undefined,
   }),
-  staticData: { crumb: "Compare" },
   loader: async ({ context: { queryClient }, params }) => {
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),
@@ -147,86 +146,98 @@ function Compare() {
   );
 
   return (
-    <Page gap="gap-[18px]">
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
-        <h1 className="text-xl font-semibold">Compare</h1>
-        <span className="flex items-center gap-1.5 text-mut">
-          From {pick("From environment", fromName, "from")}
-        </span>
-        <span className="text-mut">→</span>
-        {pick("To environment", toName, "to")}
-        <span className="ml-auto flex items-center gap-4">
-          {isAdmin && (
+    <>
+      <PageBar
+        parent={
+          <Link to="/$project" params={{ project }} className="hover:text-fg">
+            {project}
+          </Link>
+        }
+        title="Compare"
+        after={
+          <span className="flex items-center gap-1.5 text-xs text-mut">
+            {pick("From environment", fromName, "from")}
+            <span className="text-faint">→</span>
+            {pick("To environment", toName, "to")}
+          </span>
+        }
+        actions={
+          <span className="flex flex-wrap items-center gap-4 text-xs">
+            {isAdmin && (
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={!!search.values}
+                  onChange={(e) =>
+                    navigate({
+                      search: {
+                        ...search,
+                        values: e.target.checked || undefined,
+                      },
+                    })
+                  }
+                />
+                Compare values
+              </label>
+            )}
             <label className="flex items-center gap-1.5">
               <input
                 type="checkbox"
-                checked={!!search.values}
+                className="accent-fg"
+                checked={!search.all}
                 onChange={(e) =>
                   navigate({
                     search: {
                       ...search,
-                      values: e.target.checked || undefined,
+                      all: e.target.checked ? undefined : true,
                     },
                   })
                 }
               />
-              Compare values
+              Only differences
             </label>
-          )}
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={!search.all}
-              onChange={(e) =>
-                navigate({
-                  search: {
-                    ...search,
-                    all: e.target.checked ? undefined : true,
-                  },
-                })
-              }
-            />
-            Only differences
-          </label>
-          <Act
-            primary
-            cli={promoteCli(fromName ?? "<from>", toName ?? "<to>")}
-            disabled={!!notReady || search.promote}
-            title={notReady}
-            onClick={() => setPromote(true)}
-          >
-            Promote {promotable} {promotable === 1 ? "service" : "services"}{" "}
-            <kbd>P</kbd>
-          </Act>
-        </span>
-      </div>
-      <p className="text-mut">
-        <span className="text-warn">Yellow</span> marks a difference. Variables
-        compare by name{isAdmin ? " unless you compare values" : ""}.
-        {notReady && pair && <> Promote is off: {notReady}.</>}
-      </p>
-      {pair && search.promote && (
-        <PromotePanel
-          key={`${fromName}:${toName}`}
-          project={project}
-          from={pair.from}
-          to={pair.to}
-          plan={plan}
-          onClose={() => setPromote(false)}
-        />
-      )}
-      {pair ? (
-        <CompareTable
-          project={project}
-          from={pair.from}
-          to={pair.to}
-          all={!!search.all}
-          values={!!search.values}
-        />
-      ) : (
-        <p className="text-mut">Pick two different environments.</p>
-      )}
-    </Page>
+            <Act
+              primary
+              cli={promoteCli(fromName ?? "<from>", toName ?? "<to>")}
+              disabled={!!notReady || search.promote}
+              title={notReady}
+              onClick={() => setPromote(true)}
+            >
+              Promote {promotable} {promotable === 1 ? "service" : "services"}{" "}
+              <kbd>P</kbd>
+            </Act>
+          </span>
+        }
+      />
+      <Page gap="gap-[18px]">
+        <p className="text-mut">
+          <span className="text-warn">Yellow</span> marks a difference.
+          Variables compare by name{isAdmin ? " unless you compare values" : ""}
+          .{notReady && pair && <> Promote is off: {notReady}.</>}
+        </p>
+        {pair && search.promote && (
+          <PromotePanel
+            key={`${fromName}:${toName}`}
+            project={project}
+            from={pair.from}
+            to={pair.to}
+            plan={plan}
+            onClose={() => setPromote(false)}
+          />
+        )}
+        {pair ? (
+          <CompareTable
+            project={project}
+            from={pair.from}
+            to={pair.to}
+            all={!!search.all}
+            values={!!search.values}
+          />
+        ) : (
+          <p className="text-mut">Pick two different environments.</p>
+        )}
+      </Page>
+    </>
   );
 }
 
@@ -280,7 +291,7 @@ function CompareTable({
 
   return (
     <>
-      <Scroll>
+      <Panel>
         <table>
           <thead>
             <tr>
@@ -326,7 +337,7 @@ function CompareTable({
             ))}
           </tbody>
         </table>
-      </Scroll>
+      </Panel>
       {shown.length === 0 && (
         <p className="text-mut">
           <span className="text-ok">✓</span> No differences between{" "}
@@ -370,7 +381,9 @@ function Side({
         {active ? `r${active.number}` : "none"}
         {view.deploying && ` → r${view.deploying.number}`}
       </span>
-      <div className={`font-mono ${diff ? "text-warn" : "text-mut"}`}>
+      <div
+        className={`max-w-[36ch] font-mono break-all whitespace-normal ${diff ? "text-warn" : "text-mut"}`}
+      >
         {active ? imageLabel(active) : view.service.image}
       </div>
     </Link>

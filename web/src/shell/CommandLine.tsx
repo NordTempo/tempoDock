@@ -62,73 +62,75 @@ export function CommandLine() {
   const legendText = legend.map((s) => `${s.key.toUpperCase()} ${s.label}`);
 
   return (
-    <div className="sticky bottom-0 z-20 bg-black">
-      {help && <Help onClose={() => setHelp(false)} />}
-      {focused && matches.length > 0 && (
-        <ul
-          aria-label="Matching commands"
-          className="border-t border-line bg-hover py-1"
-        >
-          {matches.map(({ command }) => (
-            <li
-              key={command.id}
-              className={`flex gap-4 px-5 py-1 ${command === best ? "bg-sel" : ""}`}
-            >
-              <span className="font-mono">{command.cli}</span>
-              <span className="text-mut">{command.label}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form
-        aria-label="Command line"
-        className="flex items-center gap-2.5 border-t border-line px-5 py-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(best);
-        }}
-      >
-        <label htmlFor="cmd" className="font-mono text-mut">
-          ›
-        </label>
-        <input
-          ref={input}
-          id="cmd"
-          autoComplete="off"
-          spellCheck={false}
-          value={text}
-          onChange={(e) => {
-            setError(null);
-            if (e.target.value === "?") {
-              setHelp(true);
-              return;
-            }
-            setText(e.target.value);
-          }}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Tab" && best && text) {
-              e.preventDefault();
-              setText(best.cli);
-            } else if (e.key === "Escape") {
-              setText("");
-              e.currentTarget.blur();
-            }
-          }}
-          placeholder="dock …  type a command, or ? for keys"
-          className="min-w-0 flex-1 bg-black py-1 font-mono text-sm outline-none"
-        />
-        {error ? (
-          <ErrorText error={error} />
-        ) : (
-          <span className="text-xs text-mut">
-            {focused || text
-              ? "↵ run · tab complete"
-              : legendText.join(" · ") || "↵ run · tab complete"}
-          </span>
+    <div className="sticky bottom-0 z-20 bg-page px-5 pt-1.5 pb-3">
+      <div className="mx-auto max-w-[860px] overflow-hidden rounded-xl border border-edge bg-panel">
+        {help && <Help onClose={() => setHelp(false)} />}
+        {focused && matches.length > 0 && (
+          <ul
+            aria-label="Matching commands"
+            className="border-b border-line py-1"
+          >
+            {matches.map(({ command }) => (
+              <li
+                key={command.id}
+                className={`flex gap-4 px-3.5 py-1 ${command === best ? "bg-sel" : ""}`}
+              >
+                <span className="font-mono text-xs">{command.cli}</span>
+                <span className="text-mut">{command.label}</span>
+              </li>
+            ))}
+          </ul>
         )}
-      </form>
+        <form
+          aria-label="Command line"
+          className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            run(best);
+          }}
+        >
+          <label htmlFor="cmd" className="font-mono text-faint">
+            ›
+          </label>
+          <input
+            ref={input}
+            id="cmd"
+            autoComplete="off"
+            spellCheck={false}
+            value={text}
+            onChange={(e) => {
+              setError(null);
+              if (e.target.value === "?") {
+                setHelp(true);
+                return;
+              }
+              setText(e.target.value);
+            }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Tab" && best && text) {
+                e.preventDefault();
+                setText(best.cli);
+              } else if (e.key === "Escape") {
+                setText("");
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder="Run a dock command, or ? for keys"
+            className="min-w-0 flex-[1_1_240px] py-1 font-mono text-sm outline-none"
+          />
+          {error ? (
+            <ErrorText error={error} />
+          ) : (
+            <span className="text-xs text-faint">
+              {focused || text
+                ? "↵ run · tab complete"
+                : legendText.join(" · ") || "↵ run · tab complete"}
+            </span>
+          )}
+        </form>
+      </div>
     </div>
   );
 }
@@ -143,10 +145,10 @@ function Help({ onClose }: { onClose: () => void }) {
   return (
     <section
       aria-label="Keyboard shortcuts"
-      className="border-t border-line bg-hover px-5 py-3"
+      className="border-b border-line px-3.5 py-3"
     >
       <div className="flex items-baseline gap-3 pb-2">
-        <h2 className="text-md font-semibold">Keys</h2>
+        <h2 className="text-sm font-semibold">Keys</h2>
         <button type="button" className="lnk ml-auto" onClick={onClose}>
           Close
         </button>

@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import { envPath, queries } from "../data/queries";
 import { VariablesEditor } from "../features/variables/VariablesEditor";
 import { rememberProject } from "../shell/location";
-import { Page } from "../ui/kit";
 
 // An environment's variables: its shared lines, or (?service=web) what one
 // service sees at runtime.
@@ -12,7 +11,6 @@ export const Route = createFileRoute("/_app/$project/$environment/")({
     typeof search.service === "string" && search.service
       ? { service: search.service }
       : {},
-  staticData: { crumb: "Variables" },
   loader: async ({ context: { queryClient }, params }) => {
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),
@@ -37,12 +35,10 @@ function EnvironmentVariables() {
   const { service } = Route.useSearch();
   useEffect(() => rememberProject(params.project), [params.project]);
   return (
-    <Page gap="gap-4">
-      <VariablesEditor
-        key={params.environment}
-        env={envPath(params)}
-        service={service ?? null}
-      />
-    </Page>
+    <VariablesEditor
+      key={params.environment}
+      env={envPath(params)}
+      service={service ?? null}
+    />
   );
 }

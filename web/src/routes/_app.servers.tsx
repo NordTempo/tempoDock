@@ -6,8 +6,8 @@ import { AddServer } from "../features/servers/AddServer";
 import { Ingress, statusTitle, Version } from "../features/servers/parts";
 import { useServerSwitches } from "../features/servers/switches";
 import { useShortcuts } from "../shell/keys";
-import { pct, since, size, until } from "../ui/format";
-import { Act, ErrorText, Page, Scroll, StateText, TitleRow } from "../ui/kit";
+import { pct, plural, since, size, until } from "../ui/format";
+import { Act, ErrorText, Page, Panel, StateText, TitleRow } from "../ui/kit";
 import { serverKinds, serverState } from "../ui/status";
 
 // Every server: link status, version, ingress, what it accepts, how loaded
@@ -50,7 +50,7 @@ function Servers() {
   );
 
   return (
-    <Page gap="gap-[18px]">
+    <Page width="max-w-[1400px]" gap="gap-[18px]">
       <TitleRow
         title="Servers"
         context={context}
@@ -72,7 +72,8 @@ function Servers() {
         }
       />
       {adding && <AddServer onClose={() => setAdding(false)} />}
-      <Scroll>
+      <Kinds servers={servers} />
+      <Panel>
         <table>
           <thead>
             <tr>
@@ -102,7 +103,7 @@ function Servers() {
             )}
           </tbody>
         </table>
-      </Scroll>
+      </Panel>
       {servers.length > 0 && !admin && (
         <p className="text-xs text-mut">
           Admins see live usage and manage servers.
@@ -113,6 +114,69 @@ function Servers() {
 }
 
 const COLUMNS = 12;
+
+/**
+ * Where each kind of environment can go (B1's pools): the servers that
+ * accept it and how much of their memory is reserved, and a warning
+ * when one server carries everything.
+ */
+function Kinds({ servers }: { servers: Server[] }) {
+  const live = servers.filter((s) => s.status !== "revoked");
+  const kinds = [
+    ["Production", live.filter((s) => s.accepts_production)],
+    ["Non-production", live.filter((s) => s.accepts_non_production)],
+  ] as const;
+  return (
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3">
+      {kinds.map(([label, accepting]) => {
+        const memory = accepting.reduce((n, s) => n + s.memory_bytes, 0);
+        const reserved = accepting.reduce(
+          (n, s) => n + s.reserved_memory_bytes,
+          0,
+        );
+        const share = memory ? Math.min(1, reserved / memory) : 0;
+        return (
+          <section
+            key={label}
+            aria-label={`${label} environments`}
+            className="flex flex-col gap-2 rounded-panel border border-line px-3.5 py-3"
+          >
+            <div className="flex items-baseline gap-2">
+              <h2 className="flex-1 font-medium">{label}</h2>
+              <span className="text-xs text-faint">
+                {plural(accepting.length, "server")}
+              </span>
+            </div>
+            <div className="h-1 overflow-hidden rounded-full bg-chip">
+              <div
+                className="h-full rounded-full bg-sec"
+                style={{ width: `${share * 100}%` }}
+              />
+            </div>
+            <span className="text-xs text-mut">
+              {memory
+                ? `${pct(share * 100)} of memory reserved`
+                : "memory unknown"}{" "}
+              · {accepting.map((s) => s.name).join(", ") || "no server"}
+            </span>
+          </section>
+        );
+      })}
+      {live.length === 1 && (
+        <section
+          aria-label="Single point of failure"
+          className="flex flex-col gap-1.5 rounded-panel border border-warn-edge bg-warn-bg/60 px-3.5 py-3"
+        >
+          <h2 className="font-medium">Single point of failure</h2>
+          <span className="text-xs text-warn-text">
+            Everything, the control plane included, runs on one server. Add a
+            second to spread the load.
+          </span>
+        </section>
+      )}
+    </div>
+  );
+}
 
 /** A row with the admin's switches, and a confirm row when asked. */
 const AdminRow = memo(function AdminRow({ server }: { server: Server }) {
@@ -178,7 +242,7 @@ const Row = memo(function Row({
   const dash = <span className="text-faint">·</span>;
   const note = statusNote(s);
   return (
-    <tr id={s.name} className={offline ? "bg-[#140808]" : undefined}>
+    <tr id={s.name} className={offline ? "bg-fail-bg/50" : undefined}>
       <td className="py-2.5 font-mono font-medium">
         {admin ? (
           <Link to="/servers/$server" params={{ server: s.name }}>

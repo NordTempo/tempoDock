@@ -8,7 +8,7 @@ import type {
   Promotion,
   SkippedService,
 } from "../../data/types";
-import { Button, Check, ErrorText, Scroll, StateText } from "../../ui/kit";
+import { Button, Check, ErrorText, Panel, StateText } from "../../ui/kit";
 import { inFlight, releaseState, stepPhrase } from "../../ui/status";
 import { imageLabel } from "../service/releases";
 import { deploySteps, StepTable } from "../service/Steps";
@@ -88,7 +88,7 @@ export function PromotePanel({
         variables and settings, one service at a time with the usual health
         check. It stops at the first failure.
       </p>
-      <Scroll>
+      <Panel>
         <table>
           <thead>
             <tr>
@@ -134,7 +134,7 @@ export function PromotePanel({
             ))}
           </tbody>
         </table>
-      </Scroll>
+      </Panel>
       <form
         aria-label="Confirm promote"
         className="flex flex-wrap items-center gap-x-3 gap-y-2"
@@ -220,7 +220,7 @@ function Progress({
         {rows.length} {servicesWord(rows.length)} from {from} to {target}
       </h2>
       {rows.length > 0 && (
-        <Scroll>
+        <Panel>
           <table>
             <tbody>
               {rows.map(({ service, release }) => (
@@ -252,7 +252,7 @@ function Progress({
               ))}
             </tbody>
           </table>
-        </Scroll>
+        </Panel>
       )}
       {focus && twin && (
         <StepTable

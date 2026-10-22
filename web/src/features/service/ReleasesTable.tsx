@@ -8,7 +8,7 @@ import {
   actorKind,
   Button,
   ErrorText,
-  Scroll,
+  Panel,
   StateText,
 } from "../../ui/kit";
 import { releaseState, releaseWhat } from "../../ui/status";
@@ -29,11 +29,11 @@ export function ReleasesTable({
   // A rollback first shows the image and config it brings back.
   const [confirming, setConfirming] = useState<number | null>(null);
   if (releases.length === 0) {
-    return <p className="py-2 text-mut">Not deployed yet.</p>;
+    return <p className="text-mut">Not deployed yet.</p>;
   }
   return (
     <>
-      <Scroll>
+      <Panel>
         <table>
           <thead>
             <tr>
@@ -70,10 +70,12 @@ export function ReleasesTable({
                 <td>
                   <Actor name={r.created_by} kind={actorKind(r.created_by)} />
                 </td>
-                <td className="text-mut">{since(r.created_at)}</td>
+                <td className="text-faint">{since(r.created_at)}</td>
                 <td className="py-1">
                   {r.status === "active" && (
-                    <span className="text-mut">serving</span>
+                    <span className="pill border border-ok-edge bg-ok-bg text-ok">
+                      serving
+                    </span>
                   )}
                   {r.status === "failed" && (
                     <Link
@@ -123,7 +125,7 @@ export function ReleasesTable({
             ))}
           </tbody>
         </table>
-      </Scroll>
+      </Panel>
       <ErrorText error={rollback.error} />
     </>
   );

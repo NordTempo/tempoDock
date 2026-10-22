@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
 import { toneText } from "../ui/status";
 import {
@@ -133,7 +134,7 @@ function Palette({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click outside the dialog closes it; Escape does too
     <div
-      className="fixed inset-0 z-30 flex items-start justify-center bg-black/70 px-4 pt-24"
+      className="fixed inset-0 z-30 flex items-start justify-center bg-black/60 px-4 pt-24"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -142,11 +143,11 @@ function Palette({
         role="dialog"
         aria-modal
         aria-label="Command palette"
-        className="w-full max-w-[720px] overflow-hidden rounded-md border border-field bg-hover"
+        className="w-full max-w-[720px] overflow-hidden rounded-panel border border-edge bg-panel shadow-2xl shadow-black/50"
         onKeyDown={onKeyDown}
       >
         <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5">
-          <span className="font-mono text-mut">›</span>
+          <Icon name="search" className="text-mut" />
           <input
             // biome-ignore lint/a11y/noAutofocus: the palette exists to be typed into
             autoFocus
@@ -160,11 +161,9 @@ function Palette({
             role="combobox"
             aria-expanded
             aria-controls="palette-list"
-            className="min-w-0 flex-1 bg-transparent font-mono text-[15px] outline-none"
+            className="min-w-0 flex-1 bg-transparent text-md outline-none"
           />
-          {here.project && (
-            <span className="text-xs text-mut">in {here.project}</span>
-          )}
+          {here.project && <span className="pill">{here.project}</span>}
         </div>
 
         <div
@@ -180,7 +179,7 @@ function Palette({
           {rows.map((row, i) => (
             <div key={`${row.group}:${row.command.id}`}>
               {rows[i - 1]?.group !== row.group && (
-                <div className="px-4 pt-2.5 pb-1 text-xs text-mut">
+                <div className="px-4 pt-2.5 pb-1 text-2xs font-medium text-faint">
                   {row.group}
                 </div>
               )}
@@ -194,7 +193,7 @@ function Palette({
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-x-[18px] gap-y-1.5 border-t border-line px-4 py-2.5 text-xs text-mut">
+        <div className="flex flex-wrap gap-x-[18px] gap-y-1.5 border-t border-line px-4 py-2.5 text-xs text-faint">
           <span>
             <kbd>↑</kbd> <kbd>↓</kbd> move
           </span>
@@ -233,8 +232,8 @@ function Item({
       tabIndex={-1}
       onMouseMove={onHover}
       onClick={onRun}
-      className={`flex cursor-pointer flex-wrap items-baseline gap-x-3.5 gap-y-0.5 px-4 py-2 ${
-        selected ? "bg-sel shadow-[inset_2px_0_0_#fff]" : "hover:bg-[#141414]"
+      className={`mx-1 flex cursor-pointer flex-wrap items-baseline gap-x-3.5 gap-y-0.5 rounded-ctl px-3 py-[7px] ${
+        selected ? "bg-sel" : "hover:bg-hover"
       }`}
     >
       <span>
@@ -246,7 +245,7 @@ function Item({
         </span>
       )}
       <span
-        className={`ml-auto font-mono text-xs ${selected ? "text-white" : "text-mut"}`}
+        className={`ml-auto font-mono text-2xs ${selected ? "text-sec" : "text-faint"}`}
       >
         {command.cli}
       </span>

@@ -50,14 +50,14 @@ function NoProjects() {
   ];
   return (
     <Page width="max-w-[720px]" gap="gap-5">
-      <h1 className="pt-[52px] text-[24px] font-semibold">No projects yet</h1>
-      <p className="text-[15px] text-mut">
+      <h1 className="pt-10 text-xl font-semibold">No projects yet</h1>
+      <p className="text-md text-mut">
         Deploy your first app from its folder.
         {server && (
           <>
             {" "}
-            It runs on <span className="font-mono text-white">{server}</span>,
-            the server you connected.
+            It runs on <span className="font-mono text-fg">{server}</span>, the
+            server you connected.
           </>
         )}
       </p>
@@ -65,7 +65,7 @@ function NoProjects() {
         {steps.map(([command = "", note], i) => (
           <li
             key={command}
-            className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-baseline gap-x-3.5 gap-y-1 border-b border-sel py-3.5"
+            className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-baseline gap-x-3.5 gap-y-1 border-b border-soft py-3.5"
           >
             <span className="font-mono text-mut">{i + 1}</span>
             <code className="font-mono">{command}</code>

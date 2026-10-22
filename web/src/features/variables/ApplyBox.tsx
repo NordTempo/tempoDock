@@ -151,15 +151,17 @@ export function ApplyBox({
   return (
     <section
       aria-labelledby="staged"
-      className="flex flex-col gap-3 border border-warn px-4 py-3.5"
+      className="flex flex-col gap-3 rounded-panel border border-warn-edge bg-stage-bg px-4 py-3.5"
     >
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1.5">
-        <h2 id="staged" className="text-[15px] font-semibold">
-          <span className="text-warn">▲</span> {plural(changes.count, "change")}{" "}
-          not applied yet
+      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <h2 id="staged" className="font-semibold">
+          <span className="text-warn">
+            <span className="dot" />
+          </span>{" "}
+          {plural(changes.count, "change")} staged
         </h2>
-        <span className="text-mut">
-          Nothing changes until you apply. Each affected service gets a new
+        <span className="text-xs text-mut">
+          · nothing changes until you apply. Each affected service gets a new
           release, health checked as usual.
         </span>
       </div>
@@ -173,13 +175,15 @@ export function ApplyBox({
         {lines.map((line) => (
           <div key={line.id} className="whitespace-nowrap">
             <span className="text-warn">{line.mark}</span>{" "}
-            <span className="inline-block w-[9ch] text-mut">{line.scope}</span>
+            <span className="inline-block w-[9ch] text-faint">
+              {line.scope}
+            </span>
             {line.body}
             {line.note && <span className="text-mut"> {line.note}</span>}
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap items-start gap-2.5">
+      <div className="flex flex-wrap items-start gap-2">
         <Act
           primary
           cli={`dock apply -e ${env.environment}`}
