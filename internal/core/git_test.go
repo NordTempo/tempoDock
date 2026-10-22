@@ -329,8 +329,15 @@ func TestGitWebhookDeploys(t *testing.T) {
 		t.Fatalf("tarballs %d, auth %q", tarballs, auth)
 	}
 
-	// The token never comes back; status shows what happened.
-	src, err := h.c.GitStatus(h.ctx, System, web)
+	// The token never comes back; status shows what happened (the worker
+	// records it in the background).
+	var src apitypes.GitSource
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(2 * time.Millisecond) {
+		src, err = h.c.GitStatus(h.ctx, System, web)
+		if err != nil || (src.Connection != nil && strings.Contains(src.Connection.LastEvent, "already live")) || time.Now().After(deadline) {
+			break
+		}
+	}
 	if err != nil || src.Connection == nil || !src.Connection.TokenSet || !strings.Contains(src.Connection.LastEvent, "already live") {
 		t.Fatalf("status: %+v, %v", src, err)
 	}
