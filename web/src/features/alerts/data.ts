@@ -19,6 +19,9 @@ export type AlertChannel = Schemas["AlertChannel"];
 export type NewAlertChannel = Schemas["CreateAlertChannelRequest"];
 export type Severity = Alert["severity"];
 
+/** Alerts in the history the page loads; live events keep it at this. */
+const HISTORY_LIMIT = 100;
+
 export const alertKeys = {
   /** Open alerts, as the API orders them. */
   open: ["alerts", "open"],
@@ -37,7 +40,11 @@ export const alertQueries = {
     queryOptions({
       queryKey: alertKeys.all,
       queryFn: () =>
-        list(api.GET("/api/v1/alerts", { params: { query: { all: true } } })),
+        list(
+          api.GET("/api/v1/alerts", {
+            params: { query: { all: true, limit: HISTORY_LIMIT } },
+          }),
+        ),
     }),
   channels: () =>
     queryOptions({
@@ -78,9 +85,9 @@ export function applyAlertEvent(queryClient: QueryClient, alert: Alert) {
   });
   queryClient.setQueryData<Alert[]>(alertKeys.all, (list) =>
     list
-      ? [alert, ...list.filter((a) => a.id !== alert.id)].sort(
-          (a, b) => b.id - a.id,
-        )
+      ? [alert, ...list.filter((a) => a.id !== alert.id)]
+          .sort((a, b) => b.id - a.id)
+          .slice(0, HISTORY_LIMIT)
       : list,
   );
 }

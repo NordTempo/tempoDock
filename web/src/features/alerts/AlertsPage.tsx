@@ -160,7 +160,7 @@ function Channels() {
     <section aria-labelledby="channels" className="flex flex-col gap-2">
       <SectionHead
         id="channels"
-        aside="where alerts are sent when they open, escalate and resolve"
+        aside="where alerts are sent"
         right={
           !adding && (
             <Button small onClick={() => setAdding(true)}>
@@ -224,17 +224,28 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
       <td className="py-2 text-mut">
         {ch.last_sent_at ? `${since(ch.last_sent_at)} ago` : "never"}
       </td>
-      <td className={`py-2 ${ch.failures ? "text-fail" : "text-mut"}`}>
-        {ch.failures ? `${ch.failures}: ${ch.last_error ?? ""}` : "no"}
+      <td className="max-w-[420px] min-w-[280px] py-2 whitespace-normal">
+        {ch.failures ? (
+          <span className="text-fail">
+            {ch.failures} failed
+            {ch.last_error && (
+              <span className="block text-xs">{ch.last_error}</span>
+            )}
+          </span>
+        ) : (
+          <span className="text-mut">no</span>
+        )}
       </td>
       <td className="w-full py-1.5 text-right">
         <span className="inline-flex items-center gap-3">
-          {result &&
-            (result.ok ? (
-              <span className="text-ok">Sent</span>
-            ) : (
-              <span className="text-fail">{result.error}</span>
-            ))}
+          {result && (
+            <span
+              className={result.ok ? "text-ok" : "text-fail"}
+              title={result.error}
+            >
+              {result.ok ? "Sent" : "Not sent"}
+            </span>
+          )}
           <ErrorText error={test.error ?? remove.error} />
           <Button
             small
@@ -321,9 +332,21 @@ function AddChannel({ onClose }: { onClose: () => void }) {
   }
 
   const field = "field py-[7px]";
+  const cli = [
+    `dock alerts channel add ${name.trim() || "<name>"}`,
+    kind === "email"
+      ? "--email <to> --from <address> --smtp-host <host>"
+      : `--${kind} -`,
+    severity === "critical" && "--min-severity critical",
+    hours !== "4" && `--renotify ${Number(hours) || 0}h`,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <form
+      aria-label="Add channel"
       className="flex max-w-[760px] flex-col gap-3.5 border-t border-line pt-3.5"
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
       onSubmit={(e) => {
         e.preventDefault();
         const input: NewAlertChannel = {
@@ -359,6 +382,8 @@ function AddChannel({ onClose }: { onClose: () => void }) {
         <label className="flex flex-[1_1_180px] flex-col gap-1.5">
           <span>Name</span>
           <input
+            // biome-ignore lint/a11y/noAutofocus: the form opens on request
+            autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="ops"
@@ -381,9 +406,11 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             Remind every <span className="text-mut">hours, 0 never</span>
           </span>
           <input
+            type="number"
+            min={0}
+            step="any"
             value={hours}
             onChange={(e) => setHours(e.target.value)}
-            inputMode="decimal"
             className={`${field} font-mono`}
           />
         </label>
@@ -446,10 +473,15 @@ function AddChannel({ onClose }: { onClose: () => void }) {
         </label>
       )}
       <div className="flex flex-wrap items-center gap-2.5">
-        <Button primary type="submit" disabled={create.isPending || !name}>
+        <Button
+          primary
+          type="submit"
+          disabled={create.isPending || !name.trim()}
+        >
           Add channel
         </Button>
         <Button onClick={onClose}>Cancel</Button>
+        <span className="font-mono text-2xs text-mut">{cli}</span>
         <ErrorText error={create.error} />
       </div>
     </form>

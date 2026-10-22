@@ -109,6 +109,7 @@ function OpenAlertCount() {
   return (
     <span className={`ml-1 ${critical ? "text-fail" : "text-warn"}`}>
       {open.length}
+      <span className="sr-only"> open</span>
     </span>
   );
 }
