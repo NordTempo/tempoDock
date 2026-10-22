@@ -790,8 +790,10 @@ As built (2026-10-22):
   `golang.org/x/text` for SCRAM); tempoBase's own packages have nothing
   worth trimming. When it grows, embedding the UI pre-gzipped (1 MB raw,
   about 0.3 MB compressed) is the first lever, before raising the budget.
-- Measured idle: anonymous RSS 8.3 MB after setup, a sign-in and a
-  connection list, 0 CPU ticks and 0 context switches in 30 s.
+- `make perf`: idle anonymous RSS 12.0 MB after start, a sign-in and a
+  connection list, 0 CPU ticks and 0.03 wake-ups/s in 30 s; API p95
+  0.4 ms for `/me` and 1.8 ms for `/connections` (50 connections, 20
+  users); UI initial JS 113 KB gzipped.
 
 ### C. Web
 
