@@ -23,9 +23,15 @@
   src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
 }
 
+/*
+ * Style A (docs/design/README.md): near-black surfaces, quiet lines, four
+ * text tones and status colours. Components use these names, never literals.
+ */
 @theme {
-  --font-sans: "Inter", "JetBrains Mono", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Inter", ui-monospace, monospace;
+  --font-sans:
+    "Inter", "JetBrains Mono", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:
+    "JetBrains Mono", "Inter", ui-monospace, "SF Mono", Menlo, monospace;
 
   --text-2xs: 11px;
   --text-xs: 12px;
@@ -33,58 +39,99 @@
   --text-base: 13px;
   --text-md: 14px;
   --text-lg: 16px;
-  --text-xl: 22px;
+  --text-xl: 20px;
 
-  --color-mut: #8c8c8c;
-  --color-faint: #6e6e6e;
-  --color-line: #262626;
-  --color-soft: #161616;
-  --color-edge: #3a3a3a;
-  --color-field: #333;
-  --color-hover: #0a0a0a;
-  --color-sel: #1a1a1a;
-  --color-kbd: #bdbdbd;
+  --radius-ctl: 6px;
+  --radius-panel: 10px;
 
+  /* Surfaces. */
+  --color-side: #0a0a0b;
+  --color-page: #0e0e10;
+  --color-panel: #151517;
+  --color-sel: #1c1c1f;
+  --color-chip: #1f1f23;
+  --color-hover: #141416;
+
+  /* Lines: dividers, subtle rows, control borders. */
+  --color-line: #232326;
+  --color-soft: #1c1c1f;
+  --color-edge: #2e2e33;
+  --color-field: #2e2e33;
+  --color-dash: #3a3a40;
+
+  /* Text: primary, secondary, muted, faint. */
+  --color-fg: #ededef;
+  --color-sec: #c8c8cf;
+  --color-mut: #a1a1aa;
+  --color-faint: #8b8b94;
+  --color-kbd: #a1a1aa;
+
+  /* Status. In progress is amber in style A, like staged changes. */
   --color-ok: #4ade80;
   --color-warn: #fbbf24;
+  --color-warn-text: #fcd77a;
   --color-fail: #f87171;
-  --color-prog: #60a5fa;
+  --color-prog: #fbbf24;
+  --color-info: #93c5fd;
 
-  /* Row and panel tints behind in-progress, failed and staged things. */
-  --color-prog-bg: #06101c;
-  --color-fail-bg: #1a0a0a;
-  --color-stage-bg: #161000;
-  --color-fail-edge: #3a1a1a;
-  --color-warn-edge: #3a2f10;
+  /* Tints and borders behind status. */
+  --color-ok-bg: #14261b;
+  --color-ok-edge: #1f3b29;
+  --color-warn-bg: #2a2210;
+  --color-stage-bg: #17140b;
+  --color-warn-edge: #3a2f12;
+  --color-prog-bg: #17140b;
+  --color-fail-bg: #26120f;
+  --color-fail-edge: #4a2020;
+  --color-info-bg: #1e293b;
+
+  /* Diff rows: added, changed, removed. */
+  --color-add-bg: #0f1f15;
+  --color-change-bg: #221d0e;
+  --color-remove-bg: #26120f;
 }
 
 @layer base {
   html {
     color-scheme: dark;
-    background: #000;
-    color: #fff;
-    font: 13px / 1.55 var(--font-sans);
+    background: var(--color-page);
+    color: var(--color-fg);
+    font: 13px / 1.45 var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    scrollbar-color: var(--color-edge) transparent;
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-prog);
+    outline: 2px solid var(--color-info);
     outline-offset: 2px;
   }
 
   h1,
   h2,
   h3 {
-    letter-spacing: -0.01em;
+    letter-spacing: -0.005em;
   }
 
+  /* Links read as text; ones inside running text are blue. */
   a {
-    text-decoration: underline;
-    text-decoration-color: #4a4a4a;
-    text-underline-offset: 3px;
+    color: inherit;
+    text-decoration: none;
   }
 
   a:hover {
-    text-decoration-color: #fff;
+    color: #fff;
+  }
+
+  p a,
+  .prose a {
+    color: var(--color-info);
+  }
+
+  p a:hover,
+  .prose a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   button {
@@ -98,20 +145,25 @@
   input,
   textarea,
   select {
-    background: #000;
-    color: #fff;
+    background: transparent;
+    color: var(--color-fg);
+  }
+
+  select option {
+    background: var(--color-panel);
   }
 
   ::placeholder {
-    color: var(--color-mut);
+    color: var(--color-faint);
   }
 
   kbd {
     font-family: var(--font-mono);
-    font-size: 11px;
-    color: #000;
-    background: var(--color-kbd);
-    border-radius: 2px;
+    font-size: 10px;
+    line-height: 15px;
+    color: var(--color-mut);
+    border: 1px solid var(--color-edge);
+    border-radius: 4px;
     padding: 0 4px;
   }
 
@@ -123,16 +175,16 @@
 
   th {
     font-weight: 400;
-    font-size: 12px;
+    font-size: 11px;
     text-align: left;
-    color: var(--color-mut);
-    padding: 6px 16px 6px 0;
+    color: var(--color-faint);
+    padding: 8px 14px 8px 0;
     white-space: nowrap;
     border-bottom: 1px solid var(--color-line);
   }
 
   td {
-    padding: 7px 16px 7px 0;
+    padding: 9px 14px 9px 0;
     white-space: nowrap;
     vertical-align: top;
     border-bottom: 1px solid var(--color-soft);
@@ -149,45 +201,54 @@
     align-items: center;
     gap: 8px;
     white-space: nowrap;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
-    color: #fff;
-    background: #000;
+    color: var(--color-fg);
+    background: transparent;
     border: 1px solid var(--color-edge);
-    border-radius: 4px;
-    padding: 7px 12px;
-    line-height: 1.55;
+    border-radius: var(--radius-ctl);
+    padding: 6px 10px;
+    line-height: 17px;
     text-decoration: none;
   }
 
   .btn:hover {
-    border-color: #6a6a6a;
+    color: var(--color-fg);
+    background: var(--color-panel);
   }
 
   .btn:disabled {
     color: var(--color-faint);
     border-color: var(--color-line);
+    background: transparent;
   }
 
   .btn.pri {
+    background: var(--color-fg);
+    color: var(--color-side);
+    border-color: var(--color-fg);
+    font-weight: 600;
+  }
+
+  .btn.pri:hover {
     background: #fff;
-    color: #000;
     border-color: #fff;
   }
 
   .btn.pri kbd {
-    background: #000;
-    color: #fff;
+    background: var(--color-side);
+    color: var(--color-fg);
+    border-color: var(--color-side);
   }
 
   .btn.pri:disabled {
-    background: #8c8c8c;
-    border-color: #8c8c8c;
+    background: var(--color-sel);
+    border-color: var(--color-sel);
+    color: var(--color-faint);
   }
 
   .btn.sm {
-    padding: 3px 9px;
-    font-size: 12px;
+    padding: 4px 9px;
   }
 
   .btn.danger {
@@ -202,71 +263,156 @@
   }
 
   .lnk:hover {
-    color: #fff;
+    color: var(--color-fg);
   }
 
   .field {
-    border: 1px solid var(--color-edge);
-    border-radius: 4px;
-    padding: 6px 10px;
+    background: var(--color-panel);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-ctl);
+    padding: 6px 9px;
+  }
+
+  .field:hover {
+    border-color: var(--color-edge);
   }
 
   .field:focus {
     outline: none;
-    border-color: var(--color-prog);
+    border-color: var(--color-info);
   }
 
-  /* Static in-progress glyph: a half-filled circle. Never animated. */
+  /* A bordered panel: tables, lists and cards sit in one. */
+  .panel {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
+  }
+
+  .panel th:first-child,
+  .panel td:first-child {
+    padding-left: 14px;
+  }
+
+  .panel th:last-child,
+  .panel td:last-child {
+    padding-right: 14px;
+  }
+
+  .panel tr:last-child > td {
+    border-bottom: 0;
+  }
+
+  /* Status dots: running (filled), stopped (ring), in progress (open ring). */
+  .dot,
+  .ring,
   .pi {
     display: inline-block;
-    width: 9px;
-    height: 9px;
-    border: 1.5px solid currentColor;
+    flex: none;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
-    vertical-align: -1px;
+    vertical-align: 1px;
+  }
+
+  .dot {
+    background: currentColor;
+  }
+
+  .ring {
+    border: 1.5px solid currentColor;
+  }
+
+  /* Static in-progress glyph: a ring with a gap. Never animated. */
+  .pi {
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid currentColor;
+    border-right-color: transparent;
+    vertical-align: 0;
+  }
+
+  /* A small rounded label: deploy steps, roles, "serving". */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 16px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--color-chip);
+    color: var(--color-mut);
   }
 
   /* Segmented control: links or buttons in one bordered row. */
   .seg {
     display: inline-flex;
     flex-wrap: wrap;
-    border: 1px solid var(--color-field);
-    border-radius: 4px;
+    border: 1px solid var(--color-edge);
+    border-radius: var(--radius-ctl);
+    overflow: hidden;
+    font-size: 12px;
   }
 
   .seg > * {
-    padding: 4px 12px;
+    padding: 3px 9px;
     color: var(--color-mut);
     text-decoration: none;
   }
 
-  .seg > * + * {
-    border-left: 1px solid var(--color-field);
+  .seg > *:hover {
+    color: var(--color-fg);
   }
 
   .seg > [aria-pressed="true"],
-  .seg > [aria-selected="true"] {
-    background: var(--color-sel);
-    color: #fff;
+  .seg > [aria-selected="true"],
+  .seg > [aria-current="page"],
+  .seg > label:has(input:checked) {
+    background: var(--color-chip);
+    color: var(--color-fg);
   }
 
-  /* Service tabs. */
+  /* Section tabs: quiet links, the current one on a chip. */
   .tabs > a {
-    text-decoration: none;
+    padding: 5px 10px;
+    border-radius: var(--radius-ctl);
     color: var(--color-mut);
-    padding-bottom: 8px;
-    margin-bottom: -1px;
+    text-decoration: none;
   }
 
   .tabs > a:hover {
-    color: #fff;
+    color: var(--color-fg);
   }
 
   .tabs > a[aria-current="page"] {
-    color: #fff;
-    font-weight: 600;
-    border-bottom: 2px solid #fff;
+    color: var(--color-fg);
+    font-weight: 500;
+    background: var(--color-chip);
+  }
+
+  /* Side navigation rows (sidebar, settings, variables scopes). */
+  .nav-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-ctl);
+    color: var(--color-sec);
+    text-decoration: none;
+  }
+
+  .nav-row:hover {
+    background: var(--color-panel);
+    color: var(--color-fg);
+  }
+
+  .nav-row[aria-current="page"],
+  .nav-row[aria-current="true"] {
+    background: var(--color-sel);
+    color: var(--color-fg);
+    font-weight: 500;
   }
 
   /* A deploy step: glyph, name, duration, detail. */
@@ -274,26 +420,30 @@
     display: grid;
     grid-template-columns: 24px 120px 70px minmax(0, 1fr);
     gap: 0 14px;
-    padding: 7px 0;
-    border-bottom: 1px solid #141414;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-soft);
     align-items: baseline;
   }
 
-  /* Hover-revealed CLI equivalent under an action button. */
+  /* The CLI equivalent of an action button, shown under it on hover or focus. */
   .act {
     position: relative;
     display: inline-flex;
-    padding-bottom: 19px;
   }
 
   .act > .cli {
     position: absolute;
     left: 0;
-    bottom: 0;
+    top: calc(100% + 4px);
+    z-index: 20;
+    padding: 2px 6px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-ctl);
+    background: var(--color-side);
     white-space: nowrap;
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--color-mut);
+    color: var(--color-faint);
     visibility: hidden;
   }
 
