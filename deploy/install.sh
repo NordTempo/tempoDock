@@ -4,8 +4,9 @@
 # control plane (API, UI, SQLite; the default) or a node that joins one
 # (--node, ADR 0014).
 #
-#   sudo DOCK_BINARY=./bin/dock ./deploy/install.sh
-#   sudo DOCK_BINARY=./bin/dock NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
+#   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh
+#   sudo DOCK_BINARY=./dock-linux-amd64 NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
+#   sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh   # downloads the release's binary
 #
 # Re-running is safe: data is kept, binaries and units are replaced (that is
 # also how you upgrade; a node is upgraded as a node). config.toml is written
@@ -15,7 +16,10 @@
 #   --node        install as a node: `dock node` instead of `dock serve`
 #
 # Environment:
-#   DOCK_BINARY   path to a built dock binary (required for now)
+#   DOCK_BINARY   path to a dock binary (a release's dock-linux-<arch>, or make build)
+#   DOCK_VERSION  without DOCK_BINARY: the release to download, checked against its
+#                 SHA256SUMS (default: this release tarball's version, else the latest)
+#   GITHUB_TOKEN  for that download: a token that can read the repository's releases
 #   CADDY_VERSION     Caddy release to install (default below)
 #   PUBLIC_IP         address users point DNS at (default: auto-detect; empty on tunnel servers)
 #   BASE_DOMAIN       base for generated hostnames, needs wildcard DNS (optional)
@@ -42,6 +46,8 @@ CLOUDFLARED_VERSION="${CLOUDFLARED_VERSION:-2026.10.3}"
 BUILDKIT_IMAGE="moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c"
 REGISTRY_IMAGE="registry:3.1.2@sha256:be9a7062dd7e3316e5c0368e42740dc991a9ceb5d382317675a8738db0112af0"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Releases (.github/workflows/release.yml) are downloaded from here.
+RELEASE_REPO=NordTempo/tempoDock
 CONF=/etc/dock/config.toml
 # Written by `dock node join`; its presence means this node has joined.
 NODE_STATE=/var/lib/dock/node.toml
@@ -49,6 +55,44 @@ TUNNEL_ENV=/etc/dock/cloudflared.env
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# Temporary files, removed on exit.
+staged=""
+download_dir=""
+cleanup() { rm -rf ${staged:+"$staged"} ${download_dir:+"$download_dir"}; }
+trap cleanup EXIT
+
+# github CURL-ARGS... runs curl against the GitHub API, with GITHUB_TOKEN if set.
+github() {
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" "$@"
+  else
+    curl -fsSL "$@"
+  fi
+}
+
+# download_dock VERSION DIR downloads release VERSION's (or the latest
+# release's) dock-linux-$ARCH into DIR and checks it against SHA256SUMS.
+# Through the API, because release download links don't take a token.
+download_dock() {
+  local version=$1 dir=$2 path name url
+  path="releases/tags/$version"
+  [[ "$version" != latest ]] || path=releases/latest
+  github "https://api.github.com/repos/$RELEASE_REPO/$path" > "$dir/release.json" \
+    || die "could not read release $version of $RELEASE_REPO; set GITHUB_TOKEN to a token that can read it (sudo --preserve-env=GITHUB_TOKEN), or download it yourself and set DOCK_BINARY"
+  for name in "dock-linux-$ARCH" SHA256SUMS; do
+    # An asset's "url" comes just before its "name" in GitHub's JSON.
+    # shellcheck disable=SC2020 # one newline per character, on purpose
+    url="$(tr ',{}[]' '\n\n\n\n\n' < "$dir/release.json" | awk -v name="$name" '
+      /"url": *"[^"]*\/releases\/assets\/[0-9]+"/ { u = $0; sub(/^[^:]*: *"/, "", u); sub(/".*$/, "", u) }
+      $0 ~ "\"name\": *\"" name "\"" && u != "" { print u; exit }')"
+    [[ -n "$url" ]] || die "release $version has no $name"
+    github -H "Accept: application/octet-stream" -o "$dir/$name" "$url" || die "could not download $name"
+  done
+  (cd "$dir" && grep -E "  dock-linux-$ARCH\$" SHA256SUMS | sha256sum --check --quiet --strict) \
+    || die "dock-linux-$ARCH does not match the release's SHA256SUMS"
+  chmod 0755 "$dir/dock-linux-$ARCH"
+}
 
 # toml_get FILE SECTION KEY prints KEY's value in [SECTION] ("" is the top
 # level), quotes stripped. Enough for the flat keys this script writes.
@@ -159,7 +203,13 @@ docker info >/dev/null 2>&1 || die "Docker is installed but not running: systemc
 command -v systemctl >/dev/null || die "systemd is required"
 command -v iptables >/dev/null || die "iptables is required for the app firewall: apt install iptables"
 
-[[ -n "${DOCK_BINARY:-}" ]] || die "set DOCK_BINARY to a built dock binary (make build)"
+if [[ -z "${DOCK_BINARY:-}" ]]; then
+  dock_version="${DOCK_VERSION:-$(cat "$SRC_DIR/VERSION" 2>/dev/null || echo latest)}"
+  say "==> download dock $dock_version"
+  download_dir="$(mktemp -d)"
+  download_dock "$dock_version" "$download_dir"
+  DOCK_BINARY="$download_dir/dock-linux-$ARCH"
+fi
 [[ -x "$DOCK_BINARY" ]] || die "$DOCK_BINARY is not an executable file"
 
 docker_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
@@ -232,7 +282,6 @@ install -d -m 0751 -o root -g dock /etc/dock
 # Changes go to a staged copy first and only replace config.toml once the
 # new binary accepts it.
 staged="$(mktemp /etc/dock/.config.toml.XXXXXX)"
-trap 'rm -f "$staged"' EXIT
 if [[ -f "$CONF" ]]; then
   cat "$CONF" > "$staged"
 else
