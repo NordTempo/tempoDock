@@ -40,14 +40,42 @@ func registerServers(s *Server, a huma.API) {
 		return reply(s.core.GetServer(ctx, actor, in.Server))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "add-server", Method: http.MethodPost, Path: Prefix + "/servers",
+		Summary: "Add a server", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Scope: admin, unlimited.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.AddServerRequest }) (*out[apitypes.AddedServer], error) {
+		return reply(s.core.AddServer(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "update-server", Method: http.MethodPatch, Path: serverPathT,
 		Summary: "Update a server", Tags: tags,
-		Description: "Which environment kinds the server accepts, and whether it takes new placements. Environments already there stay. Scope: admin, unlimited.",
+		Description: "Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Scope: admin, unlimited.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServerPath
 		Body apitypes.UpdateServerRequest
 	}) (*out[apitypes.Server], error) {
 		return reply(s.core.UpdateServer(ctx, actor, in.Server, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "revoke-server", Method: http.MethodPost, Path: serverPathT + "/revoke",
+		Summary: "Revoke a server", Tags: tags,
+		Description: "Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Scope: admin, unlimited.",
+	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.Server], error) {
+		return reply(s.core.RevokeServer(ctx, actor, in.Server))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "rotate-server-key", Method: http.MethodPost, Path: serverPathT + "/rotate-key",
+		Summary: "Rotate a server's key", Tags: tags, Errors: withOffline,
+		Description: "The online server creates a new link key and reconnects with it; the old key stops working once it has. Scope: admin, unlimited.",
+	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.Server], error) {
+		return reply(s.core.RotateServerKey(ctx, actor, in.Server))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "remove-server", Method: http.MethodDelete, Path: serverPathT,
+		Summary: "Remove a server", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "Only a server with no environments placed on it, and never the control plane's own. Scope: admin, unlimited.",
+	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*struct{}, error) {
+		return nil, s.core.RemoveServer(ctx, actor, in.Server)
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "server-stats", Method: http.MethodGet, Path: serverPathT + "/stats",

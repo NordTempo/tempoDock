@@ -18,6 +18,32 @@
         ],
         "type": "object"
       },
+      "AddServerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "accepts_non_production": {
+            "type": "boolean"
+          },
+          "accepts_production": {
+            "type": "boolean"
+          },
+          "builder": {
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "accepts_production",
+          "accepts_non_production",
+          "builder"
+        ],
+        "type": "object"
+      },
       "AddVolumeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -38,6 +64,32 @@
         "required": [
           "name",
           "mount_path"
+        ],
+        "type": "object"
+      },
+      "AddedServer": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "Install command to run on the new server",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "server": {
+            "$ref": "#/components/schemas/Server"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "server",
+          "token",
+          "command",
+          "expires_at"
         ],
         "type": "object"
       },
@@ -2067,6 +2119,9 @@
           "release_event": {
             "$ref": "#/components/schemas/ReleaseEvent"
           },
+          "server": {
+            "$ref": "#/components/schemas/Server"
+          },
           "service": {
             "type": "string"
           },
@@ -2087,7 +2142,8 @@
               "audit",
               "drift",
               "lagged",
-              "usage"
+              "usage",
+              "server"
             ],
             "type": "string"
           },
@@ -2353,6 +2409,90 @@
         ],
         "type": "object"
       },
+      "PromoteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "to": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "PromoteResult": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "promoted": {
+            "items": {
+              "$ref": "#/components/schemas/PromotedService"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedService"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "promoted",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "PromotedService": {
+        "additionalProperties": false,
+        "properties": {
+          "from_release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "from_release",
+          "release"
+        ],
+        "type": "object"
+      },
       "Release": {
         "additionalProperties": false,
         "properties": {
@@ -2396,6 +2536,9 @@
           "id": {
             "format": "int64",
             "type": "integer"
+          },
+          "image_digest": {
+            "type": "string"
           },
           "image_id": {
             "type": "string"
@@ -2662,11 +2805,25 @@
           "accepts_production": {
             "type": "boolean"
           },
+          "base_domain": {
+            "type": "string"
+          },
           "builder": {
+            "description": "Source builds may run here",
             "type": "boolean"
+          },
+          "connected_at": {
+            "format": "date-time",
+            "type": "string"
           },
           "disabled_for_placement": {
             "type": "boolean"
+          },
+          "disconnect_reason": {
+            "type": "string"
+          },
+          "docker_version": {
+            "type": "string"
           },
           "environments": {
             "format": "int64",
@@ -2675,6 +2832,20 @@
           "id": {
             "format": "int64",
             "type": "integer"
+          },
+          "ingress": {
+            "enum": [
+              "direct",
+              "cloudflare_tunnel"
+            ],
+            "type": "string"
+          },
+          "join_expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "key_fingerprint": {
+            "type": "string"
           },
           "last_seen_at": {
             "format": "date-time",
@@ -2696,15 +2867,36 @@
             "format": "int64",
             "type": "integer"
           },
+          "public_ips": {
+            "description": "What DNS records point at (direct ingress)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "reserved_memory_bytes": {
             "format": "int64",
             "type": "integer"
           },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "online",
-              "offline"
+              "offline",
+              "incompatible",
+              "joining",
+              "revoked"
             ],
+            "type": "string"
+          },
+          "tunnel_hostname": {
+            "description": "CNAME target of its Cloudflare tunnel",
             "type": "string"
           },
           "usage": {
@@ -2721,6 +2913,9 @@
           "local",
           "status",
           "version",
+          "ingress",
+          "public_ips",
+          "base_domain",
           "accepts_production",
           "accepts_non_production",
           "disabled_for_placement",
@@ -3412,6 +3607,32 @@
         ],
         "type": "object"
       },
+      "SkippedService": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "missing_in_target",
+              "no_active_release",
+              "no_digest",
+              "deploy_in_progress"
+            ],
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "reason",
+          "message"
+        ],
+        "type": "object"
+      },
       "Token": {
         "additionalProperties": false,
         "properties": {
@@ -3519,6 +3740,13 @@
             "type": "boolean"
           },
           "accepts_production": {
+            "type": "boolean"
+          },
+          "base_domain": {
+            "maxLength": 253,
+            "type": "string"
+          },
+          "builder": {
             "type": "boolean"
           },
           "disabled_for_placement": {
@@ -13859,6 +14087,138 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/promote": {
+      "post": {
+        "description": "Queues a release in `to` for each of `from`'s active releases (all services, or the listed ones), with the same image by digest and `to`'s own variables and settings. They deploy one at a time and stop at the first failure. Services missing in `to` are skipped and listed. Returns immediately; follow `/events` or poll the releases. Scope: deploy on `to`.",
+        "operationId": "promote",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoteResult"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Promote between environments",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
     "/api/v1/servers": {
       "get": {
         "description": "Status, version, accepted environment kinds and load of every server. Unlimited admins also get each server's latest resource sample.",
@@ -13953,9 +14313,220 @@
         "tags": [
           "servers"
         ]
+      },
+      "post": {
+        "description": "Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Scope: admin, unlimited.",
+        "operationId": "add-server",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddServerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddedServer"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add a server",
+        "tags": [
+          "servers"
+        ]
       }
     },
     "/api/v1/servers/{server}": {
+      "delete": {
+        "description": "Only a server with no environments placed on it, and never the control plane's own. Scope: admin, unlimited.",
+        "operationId": "remove-server",
+        "parameters": [
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a server",
+        "tags": [
+          "servers"
+        ]
+      },
       "get": {
         "description": "The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Scope: admin, unlimited.",
         "operationId": "get-server",
@@ -14067,7 +14638,7 @@
         ]
       },
       "patch": {
-        "description": "Which environment kinds the server accepts, and whether it takes new placements. Environments already there stay. Scope: admin, unlimited.",
+        "description": "Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Scope: admin, unlimited.",
         "operationId": "update-server",
         "parameters": [
           {
@@ -14182,6 +14753,240 @@
           }
         ],
         "summary": "Update a server",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/revoke": {
+      "post": {
+        "description": "Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Scope: admin, unlimited.",
+        "operationId": "revoke-server",
+        "parameters": [
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Server"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Revoke a server",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/rotate-key": {
+      "post": {
+        "description": "The online server creates a new link key and reconnects with it; the old key stops working once it has. Scope: admin, unlimited.",
+        "operationId": "rotate-server-key",
+        "parameters": [
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Server"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Rotate a server's key",
         "tags": [
           "servers"
         ]

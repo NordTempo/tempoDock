@@ -1254,6 +1254,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote between environments
+         * @description Queues a release in `to` for each of `from`'s active releases (all services, or the listed ones), with the same image by digest and `to`'s own variables and settings. They deploy one at a time and stop at the first failure. Services missing in `to` are skipped and listed. Returns immediately; follow `/events` or poll the releases. Scope: deploy on `to`.
+         */
+        post: operations["promote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers": {
         parameters: {
             query?: never;
@@ -1267,7 +1287,11 @@ export interface paths {
          */
         get: operations["list-servers"];
         put?: never;
-        post?: never;
+        /**
+         * Add a server
+         * @description Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Scope: admin, unlimited.
+         */
+        post: operations["add-server"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1288,14 +1312,58 @@ export interface paths {
         get: operations["get-server"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Remove a server
+         * @description Only a server with no environments placed on it, and never the control plane's own. Scope: admin, unlimited.
+         */
+        delete: operations["remove-server"];
         options?: never;
         head?: never;
         /**
          * Update a server
-         * @description Which environment kinds the server accepts, and whether it takes new placements. Environments already there stay. Scope: admin, unlimited.
+         * @description Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Scope: admin, unlimited.
          */
         patch: operations["update-server"];
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke a server
+         * @description Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Scope: admin, unlimited.
+         */
+        post: operations["revoke-server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/rotate-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate a server's key
+         * @description The online server creates a new link key and reconnects with it; the old key stops working once it has. Scope: admin, unlimited.
+         */
+        post: operations["rotate-server-key"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/servers/{server}/stats": {
@@ -1518,12 +1586,26 @@ export interface components {
             /** @description Permanently redirect to this hostname instead of proxying */
             redirect_to?: string;
         };
+        AddServerRequest: {
+            accepts_non_production: boolean;
+            accepts_production: boolean;
+            builder: boolean;
+            name: string;
+        };
         AddVolumeRequest: {
             /** @description Also apply all staged changes in the environment */
             apply?: boolean;
             /** @description Absolute path inside the container */
             mount_path: string;
             name: string;
+        };
+        AddedServer: {
+            /** @description Install command to run on the new server */
+            command: string;
+            /** Format: date-time */
+            expires_at: string;
+            server: components["schemas"]["Server"];
+            token: string;
         };
         AppliedChanges: {
             releases: components["schemas"]["Release"][] | null;
@@ -2049,12 +2131,13 @@ export interface components {
             project?: string;
             release?: components["schemas"]["Release"];
             release_event?: components["schemas"]["ReleaseEvent"];
+            server?: components["schemas"]["Server"];
             service?: string;
             service_status?: components["schemas"]["ServiceStatus"];
             /** Format: date-time */
             time: string;
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "server";
             usage?: components["schemas"]["UsageUpdate"];
         };
         Health: {
@@ -2118,6 +2201,23 @@ export interface components {
             environments: components["schemas"]["EnvironmentOverview"][] | null;
             project: components["schemas"]["Project"];
         };
+        PromoteRequest: {
+            from: string;
+            services?: string[] | null;
+            to: string;
+        };
+        PromoteResult: {
+            from: string;
+            promoted: components["schemas"]["PromotedService"][] | null;
+            skipped: components["schemas"]["SkippedService"][] | null;
+            to: string;
+        };
+        PromotedService: {
+            /** Format: int64 */
+            from_release: number;
+            release: components["schemas"]["Release"];
+            service: string;
+        };
         Release: {
             config: components["schemas"]["ReleaseConfig"];
             /** Format: date-time */
@@ -2134,6 +2234,7 @@ export interface components {
             from_release?: number;
             /** Format: int64 */
             id: number;
+            image_digest?: string;
             image_id: string;
             image_ref: string;
             /** Format: int64 */
@@ -2199,12 +2300,23 @@ export interface components {
         Server: {
             accepts_non_production: boolean;
             accepts_production: boolean;
+            base_domain: string;
+            /** @description Source builds may run here */
             builder: boolean;
+            /** Format: date-time */
+            connected_at?: string;
             disabled_for_placement: boolean;
+            disconnect_reason?: string;
+            docker_version?: string;
             /** Format: int64 */
             environments: number;
             /** Format: int64 */
             id: number;
+            /** @enum {string} */
+            ingress: "direct" | "cloudflare_tunnel";
+            /** Format: date-time */
+            join_expires_at?: string;
+            key_fingerprint?: string;
             /** Format: date-time */
             last_seen_at?: string;
             /** @description Runs the control plane */
@@ -2217,10 +2329,16 @@ export interface components {
              * @description Projects with environments placed here
              */
             projects: number;
+            /** @description What DNS records point at (direct ingress) */
+            public_ips: string[] | null;
             /** Format: int64 */
             reserved_memory_bytes: number;
+            /** Format: date-time */
+            revoked_at?: string;
             /** @enum {string} */
-            status: "online" | "offline";
+            status: "online" | "offline" | "incompatible" | "joining" | "revoked";
+            /** @description CNAME target of its Cloudflare tunnel */
+            tunnel_hostname?: string;
             usage?: components["schemas"]["ServerUsage"];
             version: string;
         };
@@ -2435,6 +2553,12 @@ export interface components {
             field: string;
             service: string;
         };
+        SkippedService: {
+            message: string;
+            /** @enum {string} */
+            reason: "missing_in_target" | "no_active_release" | "no_digest" | "deploy_in_progress";
+            service: string;
+        };
         Token: {
             /** Format: date-time */
             created_at: string;
@@ -2470,6 +2594,8 @@ export interface components {
         UpdateServerRequest: {
             accepts_non_production?: boolean;
             accepts_production?: boolean;
+            base_domain?: string;
+            builder?: boolean;
             disabled_for_placement?: boolean;
         };
         UpdateServiceRequest: {
@@ -9392,6 +9518,105 @@ export interface operations {
             };
         };
     };
+    promote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromoteResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-servers": {
         parameters: {
             query?: never;
@@ -9466,6 +9691,93 @@ export interface operations {
             };
         };
     };
+    "add-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddServerRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddedServer"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "get-server": {
         parameters: {
             query?: never;
@@ -9486,6 +9798,90 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ServerDetail"];
                 };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "remove-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Bad Request */
             400: {
@@ -9633,6 +10029,187 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "revoke-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Server"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "rotate-server-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Server"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

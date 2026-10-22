@@ -185,3 +185,54 @@ func TestResetPasswordAndUserCounts(t *testing.T) {
 		}
 	}
 }
+
+// Adding, revoking, rotating and removing servers needs an admin token
+// that isn't limited to a project.
+func TestServerLinkEndpointsNeedUnlimitedAdmin(t *testing.T) {
+	f := newFixture(t)
+	tok, err := f.core.CreateToken(context.Background(), core.System, apitypes.CreateTokenRequest{Name: "shop-admin", Scope: apitypes.ScopeAdmin, Project: "shop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.tokens["shop-admin"] = tok.Secret
+	calls := []struct {
+		method, path string
+		body         any
+	}{
+		{"POST", "/api/v1/servers", apitypes.AddServerRequest{Name: "homelab", AcceptsNonProduction: true}},
+		{"POST", "/api/v1/servers/homelab/revoke", nil},
+		{"POST", "/api/v1/servers/homelab/rotate-key", nil},
+		{"DELETE", "/api/v1/servers/homelab", nil},
+	}
+	for _, c := range calls {
+		for token, detail := range map[string]string{"deploy": "requires admin", "shop-admin": "unlimited admin token"} {
+			resp, body := f.do(token, c.method, c.path, c.body)
+			var p apitypes.Error
+			_ = json.Unmarshal(body, &p)
+			if resp.StatusCode != 403 || !strings.Contains(p.Detail, detail) {
+				t.Errorf("%s %s as %s: %d %s", c.method, c.path, token, resp.StatusCode, body)
+			}
+		}
+	}
+}
+
+// Promoting needs deploy on the target environment; deploy on the source
+// alone isn't enough.
+func TestPromoteNeedsDeployOnTarget(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if _, err := f.core.CreateEnvironment(ctx, core.System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := f.core.CreateToken(ctx, core.System, apitypes.CreateTokenRequest{Name: "staging-deploy", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.tokens["staging-deploy"] = tok.Secret
+	req := apitypes.PromoteRequest{From: "staging", To: "production"}
+	for token, want := range map[string]int{"read": 403, "staging-deploy": 403, "shop-deploy": 202} {
+		if resp, body := f.do(token, "POST", "/api/v1/projects/shop/promote", req); resp.StatusCode != want {
+			t.Errorf("promote as %s: %d %s", token, resp.StatusCode, body)
+		}
+	}
+}
