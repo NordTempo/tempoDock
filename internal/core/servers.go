@@ -96,7 +96,7 @@ func (c *Core) GetServer(ctx context.Context, a Actor, name string) (apitypes.Se
 	if srv.ID == 0 {
 		return d, nil
 	}
-	if d.Services, err = c.serverServices(ctx, srv.ID); err != nil {
+	if d.Services, err = c.serverServices(ctx, srv.ID, serverLink{name: srv.Name, status: srv.Status}); err != nil {
 		return d, err
 	}
 	pls, err := c.store.ListServerPlacements(ctx, srv.ID)
@@ -122,9 +122,10 @@ func (c *Core) GetServer(ctx context.Context, a Actor, name string) (apitypes.Se
 	return d, nil
 }
 
-// serverServices lists a server's services with status and usage from
-// memory, in one query, the biggest memory users first.
-func (c *Core) serverServices(ctx context.Context, serverID int64) ([]apitypes.ServerService, error) {
+// serverServices lists a server's services with status (marked with its
+// link) and usage from memory, in one query, the biggest memory users
+// first.
+func (c *Core) serverServices(ctx context.Context, serverID int64, link serverLink) ([]apitypes.ServerService, error) {
 	rows, err := c.store.ListServerServices(ctx, serverID)
 	if err != nil {
 		return nil, err
@@ -133,7 +134,7 @@ func (c *Core) serverServices(ctx context.Context, serverID int64) ([]apitypes.S
 	for i, r := range rows {
 		s := apitypes.ServerService{
 			Project: r.ProjectName, Environment: r.EnvironmentName, Name: r.Name,
-			ActiveRelease: r.ActiveRelease, Status: c.getStatus(r.ID), EffectiveLimits: c.limitsOf(r.MemoryMb, r.Cpus),
+			ActiveRelease: r.ActiveRelease, Status: link.mark(c.getStatus(r.ID)), EffectiveLimits: c.limitsOf(r.MemoryMb, r.Cpus),
 		}
 		if r.ActiveRelease != nil {
 			if u, ok := c.stats.serviceUsage(r.ID); ok {

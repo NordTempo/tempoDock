@@ -170,6 +170,51 @@ func TestRemoteDeployAndOffline(t *testing.T) {
 	}
 }
 
+// While a service's server can't be reached, reads keep its last known
+// state and say which server is offline or revoked.
+func TestStatusOnOfflineServer(t *testing.T) {
+	p, _ := labPool(t)
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	p.deploy(web, "app:1")
+	status := func() apitypes.ServiceStatus {
+		t.Helper()
+		svc, err := p.c.GetService(p.ctx, System, web)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o, err := p.c.Overview(p.ctx, System, "shop")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range o.Environments {
+			for _, so := range e.Services {
+				if so.Service.ID == svc.ID && so.Service.Status != svc.Status {
+					t.Fatalf("overview status %+v, service status %+v", so.Service.Status, svc.Status)
+				}
+			}
+		}
+		s := svc.Status
+		s.UpdatedAt = nil
+		return s
+	}
+	if s := status(); s != (apitypes.ServiceStatus{State: apitypes.ServiceRunning}) {
+		t.Fatalf("online: %+v", s)
+	}
+
+	p.setOffline("homelab", true)
+	want := apitypes.ServiceStatus{State: apitypes.ServiceRunning, ServerOffline: true, Server: "homelab", ServerStatus: apitypes.ServerOffline}
+	if s := status(); s != want {
+		t.Fatalf("offline: %+v", s)
+	}
+	if _, err := p.c.RevokeServer(p.ctx, System, "homelab"); err != nil {
+		t.Fatal(err)
+	}
+	want.ServerStatus = apitypes.ServerRevoked
+	if s := status(); s != want {
+		t.Fatalf("revoked: %+v", s)
+	}
+}
+
 // When a server reconnects, its leftover containers of retired releases
 // are removed, statuses are read and routes applied again; afterwards its
 // container events reach service statuses.

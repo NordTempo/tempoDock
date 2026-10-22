@@ -76,9 +76,10 @@ func (c *Core) ListServices(ctx context.Context, a Actor, ref EnvRef) ([]apitype
 	for _, v := range vols {
 		stateful[v.ServiceID] = stateful[v.ServiceID] || !v.Pending
 	}
+	link := c.linkOf(ctx, es.env.ServerID)
 	out := make([]apitypes.Service, 0, len(rows))
 	for _, s := range rows {
-		out = append(out, c.serviceOf(svcScope{es, s}, pending, active[s.ID], stateful[s.ID]))
+		out = append(out, c.serviceOf(svcScope{es, s}, link, pending, active[s.ID], stateful[s.ID]))
 	}
 	return out, nil
 }
@@ -354,16 +355,17 @@ func (c *Core) toService(ctx context.Context, ss svcScope, pending apitypes.Pend
 		return apitypes.Service{}, err
 	}
 	stateful := slices.ContainsFunc(vols, func(v store.Volume) bool { return !v.Pending })
-	return c.serviceOf(ss, pending, active, stateful), nil
+	return c.serviceOf(ss, c.linkOf(ctx, ss.env.ServerID), pending, active, stateful), nil
 }
 
-// serviceOf builds a service from loaded state: its active release number
-// (nil if none) and whether it has an applied volume. toService loads that
-// for one service; Overview loads it for a whole project at once.
-func (c *Core) serviceOf(ss svcScope, pending apitypes.PendingChanges, active *int64, stateful bool) apitypes.Service {
+// serviceOf builds a service from loaded state: its server's link, its
+// active release number (nil if none) and whether it has an applied
+// volume. toService loads that for one service; Overview loads it for a
+// whole project at once.
+func (c *Core) serviceOf(ss svcScope, link serverLink, pending apitypes.PendingChanges, active *int64, stateful bool) apitypes.Service {
 	s := apitypes.Service{
 		ID: ss.svc.ID, Project: ss.project.Name, Environment: ss.env.Name, Name: ss.svc.Name,
-		ServiceSettings: settingsOf(ss.svc), Status: c.getStatus(ss.svc.ID),
+		ServiceSettings: settingsOf(ss.svc), Status: link.mark(c.getStatus(ss.svc.ID)),
 		ActiveRelease: active, Stateful: stateful,
 		Database: apitypes.DatabaseSetting(ss.svc.Database), DatabaseURLVariable: ss.svc.DatabaseUrlVariable,
 		CreatedAt: ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt,

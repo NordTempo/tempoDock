@@ -139,7 +139,7 @@ keeps the linked service, so it means "this service, in staging".
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails |
 | `promote FROM TO [-s service...] [-d]` | Deploy the images serving in environment FROM to TO (same project), by digest, with TO's own variables and settings; nothing is rebuilt. One service at a time, stopping at the first failure. Services missing in TO (or with nothing running in FROM) are skipped and listed. Needs deploy on TO. Exit 6 when a release fails |
-| `status [-a]` | The service's state, releases, domains and staged changes; `-a` (or no service) for the whole environment |
+| `status [-a]` | The service's state, releases, domains and staged changes; `-a` (or no service) for the whole environment. On a server that is offline or revoked the state is the last known one and says so ("server t3node is offline: last known running"; `server_offline`, `server` and `server_status` in the JSON status) |
 | `logs [-f] [-n N] [--since] [-r N] [--build]` | Service output, or a build log |
 | `releases`, `release list\|show N` | Release history and one release with its events |
 | `rollback [N]`, `release rollback [N]` | New release from an earlier one; default the one that served before the active one. Says which release it copies and that release's image and config |

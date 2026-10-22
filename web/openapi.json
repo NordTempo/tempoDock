@@ -3437,6 +3437,23 @@
             "format": "int64",
             "type": "integer"
           },
+          "server": {
+            "description": "With server_offline: the server's name",
+            "type": "string"
+          },
+          "server_offline": {
+            "description": "The service's server can't be reached: state is the last known one",
+            "type": "boolean"
+          },
+          "server_status": {
+            "description": "With server_offline: the server's status",
+            "enum": [
+              "offline",
+              "incompatible",
+              "revoked"
+            ],
+            "type": "string"
+          },
           "state": {
             "enum": [
               "running",

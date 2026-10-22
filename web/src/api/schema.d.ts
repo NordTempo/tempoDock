@@ -2503,6 +2503,15 @@ export interface components {
             oom_killed: boolean;
             /** Format: int64 */
             restart_count: number;
+            /** @description With server_offline: the server's name */
+            server?: string;
+            /** @description The service's server can't be reached: state is the last known one */
+            server_offline?: boolean;
+            /**
+             * @description With server_offline: the server's status
+             * @enum {string}
+             */
+            server_status?: "offline" | "incompatible" | "revoked";
             /** @enum {string} */
             state: "running" | "restarting" | "crashed" | "stopped" | "none";
             /** Format: date-time */

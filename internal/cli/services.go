@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -48,11 +49,7 @@ func newServiceListCmd(g *globals) *cobra.Command {
 			return g.io.Print(svcs, func() error {
 				tb := g.io.Table("name", "state", "release", "image", "pending")
 				for _, svc := range svcs {
-					state := string(svc.Status.State)
-					if svc.ArchivedAt != nil {
-						state = "archived"
-					}
-					tb.Row(svc.Name, state, releaseNumber(svc.ActiveRelease), dash(svc.Image), strconv.Itoa(svc.PendingChanges))
+					tb.Row(svc.Name, serviceState(svc), releaseNumber(svc.ActiveRelease), dash(svc.Image), strconv.Itoa(svc.PendingChanges))
 				}
 				return tb.Flush()
 			})
@@ -183,7 +180,7 @@ func newServiceShowCmd(g *globals) *cobra.Command {
 }
 
 func printService(g *globals, svc apitypes.Service) error {
-	state := string(svc.Status.State)
+	state := cmp.Or(serverNote(svc), string(svc.Status.State))
 	if svc.ArchivedAt != nil {
 		state = "archived " + ago(*svc.ArchivedAt)
 	}

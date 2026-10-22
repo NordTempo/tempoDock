@@ -123,6 +123,13 @@ type ServiceStatus struct {
 	MemoryLimitMB int        `json:"memory_limit_mb,omitempty"`
 	ExitCode      int        `json:"exit_code"`
 	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
+	// ServerOffline: the service's server can't be reached now, so State
+	// is the last known one. Server and ServerStatus say which and why.
+	// Only set in reads (services, overview, server pages), not in
+	// service.status events.
+	ServerOffline bool         `json:"server_offline,omitempty" doc:"The service's server can't be reached: state is the last known one"`
+	Server        string       `json:"server,omitempty" doc:"With server_offline: the server's name"`
+	ServerStatus  ServerStatus `json:"server_status,omitempty" enum:"offline,incompatible,revoked" doc:"With server_offline: the server's status"`
 }
 
 // ServiceSettings are a service's DB-held settings. Zero values mean "use

@@ -24,6 +24,36 @@ func (c *Core) getStatus(serviceID int64) apitypes.ServiceStatus {
 	return apitypes.ServiceStatus{State: apitypes.ServiceNone}
 }
 
+// serverLink is a server's name and link status, which reads put on the
+// statuses of services there (mark).
+type serverLink struct {
+	name   string
+	status apitypes.ServerStatus
+}
+
+// linkOf returns a server's link. A connected server costs nothing (the
+// hub's state is in memory); one that isn't costs one query, for its name
+// and whether it is revoked.
+func (c *Core) linkOf(ctx context.Context, serverID int64) serverLink {
+	if c.online(serverID) {
+		return serverLink{status: apitypes.ServerOnline}
+	}
+	s, err := c.store.GetServer(ctx, serverID)
+	if err != nil {
+		return serverLink{status: apitypes.ServerOffline}
+	}
+	return serverLink{name: s.Name, status: c.serverStatus(s)}
+}
+
+// mark flags a service status as last known when its server can't be
+// reached: what the service does now is unknown until it reconnects.
+func (l serverLink) mark(s apitypes.ServiceStatus) apitypes.ServiceStatus {
+	if l.status != apitypes.ServerOnline {
+		s.ServerOffline, s.Server, s.ServerStatus = true, l.name, l.status
+	}
+	return s
+}
+
 // setStatus stores a service's status and publishes it if it changed.
 func (c *Core) setStatus(ss svcScope, s apitypes.ServiceStatus) {
 	c.statusMu.Lock()

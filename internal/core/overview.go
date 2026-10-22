@@ -63,13 +63,15 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 			continue
 		}
 		es := envScope{p, e}
-		ing := c.ingressOf(servers[e.ServerID])
+		srv := servers[e.ServerID]
+		ing := c.ingressOf(srv)
+		link := serverLink{name: srv.Name, status: c.serverStatus(srv)}
 		pending, _, _, err := c.stagedChanges(ctx, c.store.Queries, es, false)
 		if err != nil {
 			return out, err
 		}
 		eo := apitypes.EnvironmentOverview{
-			Environment: toEnvironment(p, e, servers[e.ServerID].Name), PendingChanges: pending.Count,
+			Environment: toEnvironment(p, e, srv.Name), PendingChanges: pending.Count,
 			Services: make([]apitypes.ServiceOverview, 0, len(svcsByEnv[e.ID])),
 		}
 		for _, s := range svcsByEnv[e.ID] {
@@ -87,7 +89,7 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 			if rh.latest != nil {
 				so.LatestRelease = summarize(*rh.latest)
 			}
-			so.Service = c.serviceOf(ss, pending, active, stateful[s.ID])
+			so.Service = c.serviceOf(ss, link, pending, active, stateful[s.ID])
 			for _, d := range domainsBySvc[s.ID] {
 				so.Domains = append(so.Domains, c.toDomain(ss, d, domainsBySvc[s.ID], ing))
 			}
