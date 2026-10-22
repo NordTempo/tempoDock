@@ -16,6 +16,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
 )
@@ -287,6 +289,11 @@ func TestSchemaCountsUnanalysed(t *testing.T) {
 	}
 	tg := target(40)
 	tg.Database = "counts"
+	// Grants are per database; the owner's tables created after setup are
+	// readable through default privileges.
+	if _, err := newEngine(t).Setup(ctx, tg, owner, tg.Reader, tg.Writer); err != nil {
+		t.Fatal(err)
+	}
 	cn, err := connect(ctx, tg, owner)
 	if err != nil {
 		t.Fatal(err)
@@ -698,13 +705,13 @@ func TestMasked(t *testing.T) {
 	if _, err := e.Status(ctx, tg); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := e.SyncMasked(ctx, tg, owner, sensitive)
+	hash, err := e.SyncGrants(ctx, tg, owner, sensitive)
 	if err != nil {
 		t.Fatal(err)
 	}
 	schema, err := e.Schema(ctx, tg, masked, sensitive)
-	if err != nil || data.MaskedHash(schema.Tables) != hash {
-		t.Fatalf("hash after sync: %s, schema's %s, %v", hash, data.MaskedHash(schema.Tables), err)
+	if err != nil || data.GrantsHash(schema.Tables) != hash {
+		t.Fatalf("hash after sync: %s, schema's %s, %v", hash, data.GrantsHash(schema.Tables), err)
 	}
 	query := func(sql string) []apitypes.DataQueryFrame {
 		t.Helper()
@@ -727,7 +734,7 @@ func TestMasked(t *testing.T) {
 		}
 	}
 	// Unmarking the column and syncing again grants it.
-	if _, err := e.SyncMasked(ctx, tg, owner, nil); err != nil {
+	if _, err := e.SyncGrants(ctx, tg, owner, nil); err != nil {
 		t.Fatal(err)
 	}
 	if f := query("SELECT password_hash FROM customers"); f[len(f)-1].Type != apitypes.FrameEnd {
@@ -891,4 +898,188 @@ func TestConnMemory(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&after)
 	t.Logf("heap per open connection: %d KB (%d connections)", int64(after.HeapAlloc-before.HeapAlloc)/n/1024, n)
+}
+
+// ownerExec runs sql as the owner on the shared database.
+func ownerExec(t *testing.T, ctx context.Context, sql string) {
+	t.Helper()
+	pg, err := connect(ctx, target(0), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pg.Close(ctx) }()
+	if err := simpleExec(ctx, pg, sql); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+}
+
+// maskedTarget is target(id) with the masked reader's login.
+func maskedTarget(id int64) data.Target {
+	tg := target(id)
+	tg.ReaderMasked = data.Credentials{User: string(data.RoleReaderMasked), Password: "masked-pw"}
+	return tg
+}
+
+// TestRolesCantReadSecrets: Dock's roles read (and the writer writes) the
+// user schemas, relations created later included, but none of the catalogs
+// that hold secrets: password hashes, user mapping options, large objects.
+// The pg_read_all_data grant of older setups is detected and undone.
+func TestRolesCantReadSecrets(t *testing.T) {
+	ctx := ctxT(t)
+	e := newEngine(t)
+	tg := maskedTarget(50)
+	if _, err := e.Setup(ctx, tg, owner, tg.Reader, tg.Writer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SyncGrants(ctx, tg, owner, nil); err != nil {
+		t.Fatal(err)
+	}
+	ownerExec(t, ctx, `CREATE EXTENSION IF NOT EXISTS postgres_fdw;
+CREATE SERVER secret_remote FOREIGN DATA WRAPPER postgres_fdw;
+CREATE USER MAPPING FOR postgres SERVER secret_remote OPTIONS (user 'u', password 'fdw-secret');
+SELECT lo_from_bytea(0, 'lo-secret');
+CREATE TABLE later (id serial PRIMARY KEY, v text)`)
+	e.Forget(tg.ServiceID)
+
+	secrets := []string{
+		"SELECT passwd FROM pg_shadow",
+		"SELECT rolpassword FROM pg_authid",
+		"SELECT umoptions FROM pg_user_mapping",
+		"SELECT data FROM pg_largeobject",
+		"SELECT lo_get(oid) FROM pg_largeobject_metadata",
+	}
+	for _, cred := range []data.Credentials{tg.Reader, tg.Writer, tg.ReaderMasked} {
+		pg, err := connect(ctx, tg, cred)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, sql := range secrets {
+			_, err := pg.Exec(ctx, sql)
+			if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
+				t.Errorf("%s ran %q: %v", cred.User, sql, err)
+			}
+		}
+		var opts string
+		if err := pg.QueryRow(ctx, "SELECT coalesce(array_to_string(umoptions, ','), '') FROM pg_user_mappings WHERE srvname = 'secret_remote'").Scan(&opts); err != nil || strings.Contains(opts, "fdw-secret") {
+			t.Errorf("%s reads the user mapping's options: %q %v", cred.User, opts, err)
+		}
+		_ = pg.Close(ctx)
+	}
+
+	// The owner's table created after setup: readable and writable
+	// (sequence included) through default privileges.
+	if page, err := e.Page(ctx, tg, data.Call{}, apitypes.DataPageRequest{Table: "public.later"}); err != nil || len(page.Rows) != 0 {
+		t.Fatalf("page of a later table: %+v %v", page, err)
+	}
+	s := func(v string) *string { return &v }
+	if res, err := e.Commit(ctx, tg, data.Call{}, []apitypes.DataChange{{Op: apitypes.DataChangeInsert, Table: "public.later", New: map[string]*string{"v": s("x")}}}); err != nil || len(res.Conflicts) > 0 {
+		t.Fatalf("insert into a later table: %+v %v", res, err)
+	}
+
+	// Another role's table needs a sync.
+	ownerExec(t, ctx, `CREATE ROLE app_role; GRANT CREATE ON SCHEMA public TO app_role;
+SET ROLE app_role; CREATE TABLE app_owned (id int PRIMARY KEY); RESET ROLE`)
+	e.Forget(tg.ServiceID)
+	if _, err := e.Page(ctx, tg, data.Call{}, apitypes.DataPageRequest{Table: "public.app_owned"}); !errors.Is(err, data.ErrNoPrivilege) {
+		t.Fatalf("page of another role's table before a sync: %v", err)
+	}
+	if _, err := e.SyncGrants(ctx, tg, owner, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Page(ctx, tg, data.Call{}, apitypes.DataPageRequest{Table: "public.app_owned"}); err != nil {
+		t.Fatalf("after a sync: %v", err)
+	}
+
+	// An older setup's grant: Status asks for setup, a sync revokes it.
+	ownerExec(t, ctx, "GRANT pg_read_all_data TO dock_reader")
+	if _, err := e.Status(ctx, tg); !errors.Is(err, data.ErrNotSetUp) || !strings.Contains(err.Error(), "pg_read_all_data") {
+		t.Fatalf("status with pg_read_all_data: %v", err)
+	}
+	if _, err := e.SyncGrants(ctx, tg, owner, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Status(ctx, tg); err != nil {
+		t.Fatalf("status after the sync: %v", err)
+	}
+}
+
+// TestQuerySessionEffects: reads can't leave effects behind the rolled
+// back transaction. Advisory lock and logical message functions are
+// refused however they are spelled, and a lock taken out of sight (inside
+// a function) is released before the connection is reused.
+func TestQuerySessionEffects(t *testing.T) {
+	ctx := ctxT(t)
+	e := newEngine(t)
+	for _, sql := range []string{
+		"SELECT pg_advisory_lock(1)",
+		`SELECT "pg_advisory_lock"(1)`,
+		"select PG_CATALOG.PG_TRY_ADVISORY_LOCK(1)",
+		"SELECT pg_advisory_xact_lock_shared(1)",
+		"SELECT pg_logical_emit_message(false, 'p', 'x')",
+		"SELECT query_to_xml('select pg_logical_emit_message(false, ''p'', ''x'')', false, false, '')",
+		`SELECT U&"\0070g_advisory_lock"(1)`,
+	} {
+		if _, _, err := collect(t, ctx, e, apitypes.DataQueryRequest{SQL: sql}); !errors.Is(err, data.ErrInvalid) {
+			t.Errorf("%q: %v", sql, err)
+		}
+	}
+	if frames, _, err := collect(t, ctx, e, apitypes.DataQueryRequest{SQL: "-- pg_advisory_lock\nSELECT 'pg_advisory_lock(1)'"}); err != nil || frames[len(frames)-1].Type != apitypes.FrameEnd {
+		t.Fatalf("names in comments and strings: %v", err)
+	}
+
+	ownerExec(t, ctx, "CREATE FUNCTION grab_lock() RETURNS void LANGUAGE sql AS $$SELECT pg_advisory_lock(4242)$$")
+	frames, _, err := collect(t, ctx, e, apitypes.DataQueryRequest{SQL: "SELECT grab_lock()"})
+	if err != nil || frames[len(frames)-1].Type != apitypes.FrameEnd {
+		t.Fatalf("grab_lock: %+v %v", frames, err)
+	}
+	pg, err := connect(ctx, target(0), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pg.Close(ctx) }()
+	var got bool
+	if err := pg.QueryRow(ctx, "SELECT pg_try_advisory_lock(4242)").Scan(&got); err != nil || !got {
+		t.Fatalf("the reader's lock outlived its query: %v %v", got, err)
+	}
+}
+
+// TestReferencesMasked: masked references run as the masked reader, can't
+// name a row by a sensitive key and leave out foreign keys over sensitive
+// columns.
+func TestReferencesMasked(t *testing.T) {
+	ctx := ctxT(t)
+	e := newEngine(t)
+	tg := maskedTarget(60)
+	ref := func(sensitive ...apitypes.DataColumnRef) ([]apitypes.DataReferences, error) {
+		t.Helper()
+		if _, err := e.SyncGrants(ctx, tg, owner, sensitive); err != nil {
+			t.Fatal(err)
+		}
+		return e.References(ctx, tg, data.Call{Masked: true, Sensitive: sensitive}, apitypes.DataReferencesRequest{Table: "public.customers", Key: map[string]string{"id": "1"}})
+	}
+	col := func(table, column string) apitypes.DataColumnRef {
+		return apitypes.DataColumnRef{Schema: "public", Table: table, Column: column}
+	}
+	refs, err := ref(col("customers", "password_hash"), col("items", "name"))
+	if err != nil || len(refs) != 1 || len(refs[0].Page.Rows) != apitypes.DataReferencesLimit || !strings.Contains(string(refs[0].Page.Rows[0]), `{"masked":true}`) {
+		t.Fatalf("masked refs: %+v %v", refs, err)
+	}
+	if _, err := ref(col("customers", "id")); !errors.Is(err, data.ErrInvalid) {
+		t.Fatalf("sensitive key: %v", err)
+	}
+	if refs, err := ref(col("items", "customer_id")); err != nil || len(refs) != 0 {
+		t.Fatalf("sensitive foreign key column: %+v %v", refs, err)
+	}
+	// The masked reader really runs them: a column it isn't granted fails
+	// in the database.
+	if _, err := e.SyncGrants(ctx, tg, owner, []apitypes.DataColumnRef{col("items", "id")}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.References(ctx, tg, data.Call{Masked: true}, apitypes.DataReferencesRequest{Table: "public.customers", Key: map[string]string{"id": "1"}})
+	if !errors.Is(err, data.ErrNoPrivilege) {
+		t.Fatalf("references as the masked reader without its grant: %v", err)
+	}
+	if _, err := e.SyncGrants(ctx, tg, owner, nil); err != nil {
+		t.Fatal(err)
+	}
 }

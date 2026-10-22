@@ -351,12 +351,12 @@ func beginSQL(readOnly bool, statement, lock time.Duration, idle time.Duration, 
 	return b.String()
 }
 
-// read runs fn in a READ ONLY transaction as the reader with the given
-// statement timeout, then rolls back: reads change nothing, and rolling
-// back also undoes any session setting a query changed (set_config), so
-// the next caller gets a clean connection.
-func (e *Engine) read(ctx context.Context, t data.Target, c data.Call, timeout time.Duration, fn func(cn *conn) error) error {
-	cn, err := e.acquire(ctx, t, data.RoleReader)
+// read runs fn in a READ ONLY transaction as role (the reader or the
+// masked reader) with the given statement timeout, then rolls back: reads
+// change nothing, and rolling back also undoes any session setting a
+// query changed (set_config), so the next caller gets a clean connection.
+func (e *Engine) read(ctx context.Context, t data.Target, role data.Role, c data.Call, timeout time.Duration, fn func(cn *conn) error) error {
+	cn, err := e.acquire(ctx, t, role)
 	if err != nil {
 		return err
 	}
@@ -379,14 +379,19 @@ func (e *Engine) read(ctx context.Context, t data.Target, c data.Call, timeout t
 	return ferr
 }
 
-// dbError maps a database error for structured reads: errors in the
-// request (bad value for a type, unknown operator for a type, ...) are
-// ErrInvalid with Postgres' message; anything else passes through.
+// dbError maps a database error for structured reads: a missing
+// privilege (a relation created since the last grants sync) is
+// ErrNoPrivilege, other errors in the request (bad value for a type,
+// unknown operator for a type, ...) are ErrInvalid with Postgres' message;
+// anything else passes through.
 func dbError(err error) error {
 	if err == nil {
 		return nil
 	}
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		if pgErr.Code == "42501" {
+			return fmt.Errorf("%w: %s", data.ErrNoPrivilege, pgErr.Message)
+		}
 		switch pgErr.Code[:2] {
 		case "22", "42":
 			return fmt.Errorf("%w: %s", data.ErrInvalid, pgErr.Message)

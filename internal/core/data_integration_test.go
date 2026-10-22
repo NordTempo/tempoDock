@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // The database panel against a real Postgres. Most tests run on the fake
@@ -220,9 +221,33 @@ func TestIntegrationDataReads(t *testing.T) {
 	if len(evs) != 5 || evs[0].DetailID == nil {
 		t.Fatalf("query events: %+v", evs)
 	}
-	if d, err := h.c.GetAuditDetail(h.ctx, viewer, *evs[0].DetailID); err != nil || d.SQL != "SELECT count(*) FROM notes" {
+	// The SQL needs data access: the viewer sees the event, not its detail.
+	if _, err := h.c.GetAuditDetail(h.ctx, viewer, *evs[0].DetailID); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("detail for data level none: %v", err)
+	}
+	if d, err := h.c.GetAuditDetail(h.ctx, dev, *evs[0].DetailID); err != nil || d.SQL != "SELECT count(*) FROM notes" {
 		t.Fatalf("detail: %+v %v", d, err)
 	}
+
+	// Dock's roles read no catalog secrets. A database set up before the
+	// explicit grants (dock_reader in pg_read_all_data, no recorded sync)
+	// is synced on its next use, which revokes the predefined role.
+	secret := func() {
+		t.Helper()
+		frames, err := h.query(admin, db, "SELECT passwd FROM pg_shadow")
+		if last := frames[len(frames)-1]; err != nil || last.Type != apitypes.FrameError || last.Error.SQLState != "42501" {
+			t.Fatalf("pg_shadow as dock_reader: %+v %v", frames, err)
+		}
+	}
+	secret()
+	psql("GRANT pg_read_all_data TO dock_reader")
+	if err := h.c.store.SetDataGrantsSyncedHash(h.ctx, store.SetDataGrantsSyncedHashParams{ServiceID: ss.svc.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := h.c.DataInfo(h.ctx, admin, db); err != nil || info.Status != apitypes.DataReady {
+		t.Fatalf("info after the upgrade: %+v %v", info, err)
+	}
+	secret()
 
 	// Saved queries, per user.
 	saved, err := h.c.SaveDataQuery(h.ctx, dev, db, 0, apitypes.SaveDataQueryRequest{Name: "open", SQL: "SELECT 1"})

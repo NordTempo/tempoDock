@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -55,6 +56,10 @@ type pagePlan struct {
 
 // cursor is the decoded form of DataPage.Next: a check of the request it
 // belongs to, then the last row's order values (keyset) or the offset.
+// The values are in the clear, sensitive ones included when the key is
+// sensitive, and the check is no MAC: core seals cursors (encrypts and
+// authenticates them) before they leave the daemon, so callers can
+// neither read nor forge one.
 type cursor struct {
 	C string    `json:"c"`
 	K []*string `json:"k,omitempty"`
@@ -67,7 +72,7 @@ type cursor struct {
 // filter or sort by them.
 func (e *Engine) Page(ctx context.Context, t data.Target, c data.Call, req apitypes.DataPageRequest) (apitypes.DataPage, error) {
 	var page apitypes.DataPage
-	err := e.read(ctx, t, c, apitypes.DataQueryTimeout, func(cn *conn) error {
+	err := e.read(ctx, t, data.RoleReader, c, apitypes.DataQueryTimeout, func(cn *conn) error {
 		cat, err := e.catalog(ctx, t, cn, true)
 		if err != nil {
 			return err
@@ -383,7 +388,9 @@ func keysetPredicate(cols []orderCol, vals []*string, desc bool, p *params) (str
 
 var errBadCursor = fmt.Errorf("%w: the cursor doesn't belong to this table, order and filter; start from the first page", data.ErrInvalid)
 
-// requestCheck fingerprints what a cursor is valid for.
+// requestCheck fingerprints what a cursor is valid for, so a cursor used
+// with another table, order or filter is refused with a clear error. It
+// isn't a security check (see cursor).
 func requestCheck(tm *tableMeta, req apitypes.DataPageRequest) string {
 	h := fnv.New64a()
 	h.Write([]byte(tableKey(tm.Schema, tm.Name)))
@@ -461,7 +468,13 @@ func runPage(ctx context.Context, pg *pgx.Conn, plan *pagePlan) (apitypes.DataPa
 }
 
 // References reads, per foreign key referencing the row (at most
-// maxReferenceFKs keys), the first rows that reference it.
+// maxReferenceFKs keys), the first rows that reference it. Masked calls
+// run as the masked reader (when the target has it), so the database
+// itself keeps sensitive columns out of reach; they can't name the row by
+// a sensitive key column (whether the row exists would tell its value),
+// and foreign keys that would need a sensitive column (as a referencing
+// or referenced column, or to order the referencing table) are left out,
+// since their filters would carry its value.
 func (e *Engine) References(ctx context.Context, t data.Target, c data.Call, req apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error) {
 	limit := req.Limit
 	if limit == 0 {
@@ -470,8 +483,12 @@ func (e *Engine) References(ctx context.Context, t data.Target, c data.Call, req
 	if limit < 0 || limit > apitypes.DataReferencesMaxLimit {
 		return nil, fmt.Errorf("%w: limit must be 1 to %d", data.ErrInvalid, apitypes.DataReferencesMaxLimit)
 	}
+	role := data.RoleReader
+	if c.Masked && t.ReaderMasked.User != "" {
+		role = data.RoleReaderMasked
+	}
 	var out []apitypes.DataReferences
-	err := e.read(ctx, t, c, apitypes.DataQueryTimeout, func(cn *conn) error {
+	err := e.read(ctx, t, role, c, apitypes.DataQueryTimeout, func(cn *conn) error {
 		cat, err := e.catalog(ctx, t, cn, true)
 		if err != nil {
 			return err
@@ -483,9 +500,20 @@ func (e *Engine) References(ctx context.Context, t data.Target, c data.Call, req
 		if err := checkKey(tm, req.Key); err != nil {
 			return err
 		}
-		fks := cat.incoming[tableKey(tm.Schema, tm.Name)]
-		if len(fks) > maxReferenceFKs {
-			fks = fks[:maxReferenceFKs]
+		masked := masks(c, tm)
+		for _, k := range tm.PrimaryKey {
+			if masked[k] {
+				return fmt.Errorf("%w: can't look up references by sensitive column %s", data.ErrInvalid, k)
+			}
+		}
+		var fks []incomingFK
+		for _, in := range cat.incoming[tableKey(tm.Schema, tm.Name)] {
+			if len(fks) == maxReferenceFKs {
+				break
+			}
+			if !usesMasked(in, masked, masks(c, in.from)) {
+				fks = append(fks, in)
+			}
 		}
 		values, err := referencedValues(ctx, cn.pg, tm, req.Key, fks)
 		if err != nil {
@@ -524,6 +552,28 @@ func (e *Engine) References(ctx context.Context, t data.Target, c data.Call, req
 		return nil
 	})
 	return out, err
+}
+
+// usesMasked reports whether reading the rows of foreign key in needs a
+// masked column: one it references (refMasked, the referenced table's) or
+// one of the referencing table's (fromMasked) that it filters or orders
+// by.
+func usesMasked(in incomingFK, refMasked, fromMasked map[string]bool) bool {
+	for _, col := range in.fk.RefColumns {
+		if refMasked[col] {
+			return true
+		}
+	}
+	key := in.from.key
+	if len(key) == 0 {
+		key = in.from.sysKey
+	}
+	for _, col := range append(slices.Clone(in.fk.Columns), key...) {
+		if fromMasked[col] {
+			return true
+		}
+	}
+	return false
 }
 
 // checkKey requires key to name exactly tm's primary key columns.

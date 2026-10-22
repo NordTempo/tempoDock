@@ -459,8 +459,8 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.saveQueryStmt, err = db.PrepareContext(ctx, saveQuery); err != nil {
 		return nil, fmt.Errorf("error preparing query SaveQuery: %w", err)
 	}
-	if q.setDataMaskedSyncedHashStmt, err = db.PrepareContext(ctx, setDataMaskedSyncedHash); err != nil {
-		return nil, fmt.Errorf("error preparing query SetDataMaskedSyncedHash: %w", err)
+	if q.setDataGrantsSyncedHashStmt, err = db.PrepareContext(ctx, setDataGrantsSyncedHash); err != nil {
+		return nil, fmt.Errorf("error preparing query SetDataGrantsSyncedHash: %w", err)
 	}
 	if q.setEnvironmentApplyErrorStmt, err = db.PrepareContext(ctx, setEnvironmentApplyError); err != nil {
 		return nil, fmt.Errorf("error preparing query SetEnvironmentApplyError: %w", err)
@@ -1273,9 +1273,9 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing saveQueryStmt: %w", cerr)
 		}
 	}
-	if q.setDataMaskedSyncedHashStmt != nil {
-		if cerr := q.setDataMaskedSyncedHashStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing setDataMaskedSyncedHashStmt: %w", cerr)
+	if q.setDataGrantsSyncedHashStmt != nil {
+		if cerr := q.setDataGrantsSyncedHashStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setDataGrantsSyncedHashStmt: %w", cerr)
 		}
 	}
 	if q.setEnvironmentApplyErrorStmt != nil {
@@ -1597,7 +1597,7 @@ type Queries struct {
 	revokeServerStmt                   *sql.Stmt
 	revokeTokenStmt                    *sql.Stmt
 	saveQueryStmt                      *sql.Stmt
-	setDataMaskedSyncedHashStmt        *sql.Stmt
+	setDataGrantsSyncedHashStmt        *sql.Stmt
 	setEnvironmentApplyErrorStmt       *sql.Stmt
 	setJoinTokenServerStmt             *sql.Stmt
 	setPendingSettingsStmt             *sql.Stmt
@@ -1776,7 +1776,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		revokeServerStmt:                   q.revokeServerStmt,
 		revokeTokenStmt:                    q.revokeTokenStmt,
 		saveQueryStmt:                      q.saveQueryStmt,
-		setDataMaskedSyncedHashStmt:        q.setDataMaskedSyncedHashStmt,
+		setDataGrantsSyncedHashStmt:        q.setDataGrantsSyncedHashStmt,
 		setEnvironmentApplyErrorStmt:       q.setEnvironmentApplyErrorStmt,
 		setJoinTokenServerStmt:             q.setJoinTokenServerStmt,
 		setPendingSettingsStmt:             q.setPendingSettingsStmt,

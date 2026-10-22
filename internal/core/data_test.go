@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/data/pg"
+	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -477,27 +480,39 @@ func TestCutSQL(t *testing.T) {
 	}
 }
 
-// pageEngine is a data.Engine that records how Page was called. Only Page,
-// SyncMasked, Forget and Close are implemented.
+// pageEngine is a data.Engine that records how Page was called and which
+// services were forgotten. Only Page, SyncGrants, Redact, Forget and Close
+// are implemented; Page returns next as its cursor.
 type pageEngine struct {
 	data.Engine
-	mu    sync.Mutex
-	calls []data.Call
+	mu     sync.Mutex
+	calls  []data.Call
+	afters []string
+	forgot []int64
+	next   string
 }
 
-func (e *pageEngine) Page(_ context.Context, _ data.Target, c data.Call, _ apitypes.DataPageRequest) (apitypes.DataPage, error) {
+func (e *pageEngine) Page(_ context.Context, _ data.Target, c data.Call, req apitypes.DataPageRequest) (apitypes.DataPage, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.calls = append(e.calls, c)
-	return apitypes.DataPage{}, nil
+	e.afters = append(e.afters, req.After)
+	return apitypes.DataPage{Next: e.next}, nil
 }
 
-func (e *pageEngine) SyncMasked(context.Context, data.Target, data.Credentials, []apitypes.DataColumnRef) (string, error) {
+func (e *pageEngine) SyncGrants(context.Context, data.Target, data.Credentials, []apitypes.DataColumnRef) (string, error) {
 	return "synced", nil
 }
 
-func (e *pageEngine) Forget(int64) {}
-func (e *pageEngine) Close()       {}
+func (e *pageEngine) Redact(sql string) string { return pg.New().Redact(sql) }
+
+func (e *pageEngine) Forget(id int64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.forgot = append(e.forgot, id)
+}
+
+func (e *pageEngine) Close() {}
 
 // last returns the call of the last Page and how many there were.
 func (e *pageEngine) last() (data.Call, int) {
@@ -507,6 +522,187 @@ func (e *pageEngine) last() (data.Call, int) {
 		return data.Call{}, 0
 	}
 	return e.calls[len(e.calls)-1], len(e.calls)
+}
+
+// fakeDatabase deploys a set-up Postgres service db in shop/production on
+// a pageEngine, with deploy users given read (masked) on production and
+// customers.email marked sensitive.
+func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
+	h := newHarness(t)
+	eng := &pageEngine{}
+	h.opts.Data = eng
+	h.restart()
+	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
+	h.deploy(db, "postgres:17")
+	ss, err := h.c.loadService(h.ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, _ := h.c.box.Seal([]byte("pw"))
+	if _, err := h.c.store.UpsertDataAccess(h.ctx, store.UpsertDataAccessParams{
+		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: sealed, WriterSecret: sealed, SetUpAt: now(), SetUpBy: "admin@x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetDataPolicy(h.ctx, System, EnvRef{}, apitypes.UpdateDataPolicyRequest{Rules: []apitypes.DataPolicyRule{
+		{Subject: apitypes.SubjectDeployUsers, Kind: apitypes.KindProduction, Level: apitypes.LevelRead, Sensitive: apitypes.SensitiveMasked},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetSensitiveColumns(h.ctx, System, db, apitypes.SetSensitiveColumnsRequest{Columns: []apitypes.DataColumnRef{
+		{Schema: "public", Table: "customers", Column: "email"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	return h, eng, db, ss
+}
+
+// TestDataCursorsSealed: callers never see the engine's cursor (it may
+// hold sensitive key values), and a sealed cursor only opens for the
+// caller and database it was made for.
+func TestDataCursorsSealed(t *testing.T) {
+	h, eng, db, _ := fakeDatabase(t)
+	eng.next = `{"c":"x","k":["secret@x.io"]}`
+	dev := h.user("dev@x", apitypes.ScopeDeploy)
+	other := h.user("other@x", apitypes.ScopeDeploy)
+	page, err := h.c.DataRows(h.ctx, dev, db, apitypes.DataPageRequest{Table: "public.customers"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Next == "" || strings.Contains(page.Next, "secret") || page.Next == eng.next {
+		t.Fatalf("cursor: %q", page.Next)
+	}
+	if _, err := h.c.DataRows(h.ctx, dev, db, apitypes.DataPageRequest{Table: "public.customers", After: page.Next}); err != nil {
+		t.Fatal(err)
+	}
+	if got := eng.afters[len(eng.afters)-1]; got != eng.next {
+		t.Fatalf("the engine got cursor %q", got)
+	}
+	tampered := []byte(page.Next)
+	tampered[len(tampered)/2] ^= 1
+	for name, c := range map[string]struct {
+		a     Actor
+		after string
+	}{
+		"another caller's": {other, page.Next},
+		"tampered":         {dev, string(tampered)},
+		"forged":           {dev, eng.next},
+	} {
+		_, err := h.c.DataRows(h.ctx, c.a, db, apitypes.DataPageRequest{Table: "public.customers", After: c.after})
+		if CodeOf(err) != apitypes.CodeValidation {
+			t.Errorf("%s cursor: %v", name, err)
+		}
+	}
+}
+
+// TestDataAuditPrivacy: data events' summaries carry no values, their
+// details need data access level read, and masked callers get others'
+// SQL with its values redacted.
+func TestDataAuditPrivacy(t *testing.T) {
+	h, _, db, ss := fakeDatabase(t)
+	admin := h.user("admin@x", apitypes.ScopeAdmin)
+	dev := h.user("dev@x", apitypes.ScopeDeploy)
+	viewer := h.user("viewer@x", apitypes.ScopeRead)
+	const sql = "SELECT * FROM customers WHERE email = 'a@b.c'"
+	h.c.auditQuery(h.ctx, admin, ss, sql, data.QueryStats{Outcome: apitypes.OutcomeOK}, nil)
+	h.c.auditQuery(h.ctx, dev, ss, sql, data.QueryStats{Outcome: apitypes.OutcomeOK}, nil)
+	if _, err := h.c.DataRows(h.ctx, dev, db, apitypes.DataPageRequest{Table: "public.customers", Filters: []apitypes.DataFilter{
+		{Column: "email", Op: apitypes.FilterEq, Value: "a@b.c"}, {Column: "id", Op: apitypes.FilterIn, Values: []string{"7", "8"}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := h.c.ListAudit(h.ctx, viewer, AuditFilter{Action: "data."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var queries []apitypes.AuditEvent
+	for _, ev := range evs {
+		if strings.Contains(ev.Summary, "a@b.c") || strings.Contains(ev.Summary, "7") {
+			t.Errorf("%s summary has values: %s", ev.Action, ev.Summary)
+		}
+		if ev.Action == apitypes.AuditDataBrowse && ev.Summary != "browsed public.customers filter: email eq and id in" {
+			t.Errorf("browse summary: %s", ev.Summary)
+		}
+		if ev.Action == apitypes.AuditDataQuery {
+			queries = append(queries, ev)
+		}
+	}
+	if len(queries) != 2 || !strings.HasSuffix(queries[0].Summary, "email = ?") {
+		t.Fatalf("query events: %+v", queries)
+	}
+	byDev, byAdmin := *queries[0].DetailID, *queries[1].DetailID // newest first
+
+	if _, err := h.c.GetAuditDetail(h.ctx, viewer, byAdmin); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("detail for data level none: %v", err)
+	}
+	for _, c := range []struct {
+		a    Actor
+		id   int64
+		want string
+	}{
+		{admin, byAdmin, sql},
+		{dev, byDev, sql},
+		{dev, byAdmin, "SELECT * FROM customers WHERE email = ?"},
+	} {
+		d, err := h.c.GetAuditDetail(h.ctx, c.a, c.id)
+		if err != nil || d.SQL != c.want {
+			t.Errorf("%s reads detail %d: %q %v", c.a.Name, c.id, d.SQL, err)
+		}
+	}
+}
+
+// TestChangesetMasked: a changeset touching a sensitive column shows
+// masked callers no value of it, in its changes, conflicts or SQL.
+func TestChangesetMasked(t *testing.T) {
+	h, _, _, _ := fakeDatabase(t)
+	s := func(v string) *string { return &v }
+	changes := `[{"op":"update","table":"public.customers","key":{"id":"1"},"old":{"email":"old@x.io","name":"a"},"new":{"email":"new@x.io","name":"b"}}]`
+	cs := store.Changeset{ID: 1, Status: "conflict", Changes: changes, Conflicts: `[{"change":0,"reason":"changed","current":{"email":"cur@x.io","name":"c"},"message":"m"}]`,
+		Sql: "UPDATE customers SET email = 'new@x.io', name = 'b' WHERE id = '1' AND email = 'old@x.io' AND name = 'a'"}
+	dt := &dbTarget{perm: apitypes.DataPermission{Sensitive: apitypes.SensitiveMasked}, sensitive: []apitypes.DataColumnRef{{Schema: "public", Table: "customers", Column: "email"}}}
+	out, err := h.c.changesetFor(dt, cs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := out.Changes[0]
+	if _, ok := ch.New["email"]; ok || len(ch.Old) != 1 || *ch.New["name"] != *s("b") || len(out.Conflicts[0].Current) != 1 {
+		t.Fatalf("masked changes: %+v %+v", ch, out.Conflicts)
+	}
+	if strings.Contains(out.SQL, "@") || !strings.HasPrefix(out.SQL, "UPDATE customers SET email = ?") {
+		t.Fatalf("masked SQL: %s", out.SQL)
+	}
+	dt.perm.Sensitive = apitypes.SensitiveVisible
+	if out, _ := h.c.changesetFor(dt, cs); out.SQL != cs.Sql || *out.Changes[0].New["email"] != "new@x.io" {
+		t.Fatalf("visible: %+v", out)
+	}
+}
+
+// TestContainerEventForget: only the die of the container the store has
+// for a release, on its own server, drops the panel's connections to the
+// service; events that merely carry its labels don't.
+func TestContainerEventForget(t *testing.T) {
+	h, eng, _, ss := fakeDatabase(t)
+	rel, err := h.c.store.GetActiveRelease(h.ctx, ss.svc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := node.Labels{Project: strconv.FormatInt(ss.project.ID, 10), Environment: strconv.FormatInt(ss.env.ID, 10),
+		Service: strconv.FormatInt(ss.svc.ID, 10), Release: strconv.FormatInt(rel.ID, 10)}
+	forgot := func() int {
+		eng.mu.Lock()
+		defer eng.mu.Unlock()
+		return len(eng.forgot)
+	}
+	before := forgot()
+	h.c.onContainerEvent(h.ctx, h.c.local.ID, node.ContainerEvent{ContainerID: "not-the-container", Labels: labels, Action: "die"})
+	h.c.onContainerEvent(h.ctx, h.c.local.ID+1, node.ContainerEvent{ContainerID: rel.ContainerID, Labels: labels, Action: "die"})
+	if forgot() != before {
+		t.Fatal("a die event that isn't the release's container dropped the connections")
+	}
+	h.c.onContainerEvent(h.ctx, h.c.local.ID, node.ContainerEvent{ContainerID: rel.ContainerID, Labels: labels, Action: "die"})
+	if forgot() != before+1 || eng.forgot[len(eng.forgot)-1] != ss.svc.ID {
+		t.Fatalf("the release container's die: forgot %v", eng.forgot)
+	}
 }
 
 // TestDataReveal: pages mask sensitive columns even for callers with

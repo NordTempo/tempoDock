@@ -7,8 +7,11 @@
 // data.IdleTimeout after their last use. There is no pool goroutine: an idle
 // engine holds nothing but the timers of connections still open.
 //
-// Every read runs as dock_reader in a READ ONLY transaction that is rolled
-// back afterwards; commits run as dock_writer in one transaction. Results are
+// Every read runs as dock_reader (masked references and SQL as
+// dock_reader_masked) in a READ ONLY transaction that is rolled back
+// afterwards; commits run as dock_writer in one transaction. The roles hold
+// explicit grants on the user schemas only, never the system catalogs
+// (SyncGrants). Results are
 // requested in Postgres' text format and encoded to JSON cells straight from
 // the wire bytes (apitypes.DataRow), without decoding into Go values.
 //
@@ -74,9 +77,14 @@ func New() *Engine {
 // Kind is Postgres.
 func (e *Engine) Kind() apitypes.DataEngine { return apitypes.EnginePostgres }
 
-// Status logs in as the reader, checks the server version, that the role
-// still has pg_read_all_data and, with t.ReaderMasked set, that the masked
-// reader exists (databases set up before it need setup again).
+// Redact replaces sql's literal values with ? and drops its comments.
+func (e *Engine) Redact(sql string) string { return redact(sql) }
+
+// Status logs in as the reader and checks the server version, that the
+// role isn't a member of pg_read_all_data (older setups granted it; it
+// also reads the system catalogs, password hashes included) and, with
+// t.ReaderMasked set, that the masked reader exists (databases set up
+// before it need setup again).
 func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, error) {
 	cn, err := e.acquire(ctx, t, data.RoleReader)
 	if err != nil {
@@ -84,9 +92,9 @@ func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, er
 	}
 	defer e.release(cn)
 	var num int
-	var reads, masked bool
-	err = cn.pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int, pg_has_role(current_user, 'pg_read_all_data', 'USAGE'), to_regrole($1) IS NOT NULL",
-		string(data.RoleReaderMasked)).Scan(&num, &reads, &masked)
+	var readsAll, masked bool
+	err = cn.pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int, pg_has_role(current_user, 'pg_read_all_data', 'MEMBER'), to_regrole($1) IS NOT NULL",
+		string(data.RoleReaderMasked)).Scan(&num, &readsAll, &masked)
 	if err != nil {
 		cn.broken = true
 		return data.ServerInfo{}, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
@@ -95,8 +103,8 @@ func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, er
 	if num < data.MinPostgresVersion {
 		return info, unsupported(info)
 	}
-	if !reads {
-		return info, fmt.Errorf("%w: %s can't read all data; run setup again", data.ErrNotSetUp, data.RoleReader)
+	if readsAll {
+		return info, fmt.Errorf("%w: %s still has pg_read_all_data from an older setup, which also reads password hashes; run setup again", data.ErrNotSetUp, data.RoleReader)
 	}
 	if t.ReaderMasked.User != "" && !masked {
 		return info, fmt.Errorf("%w: %s is missing; run setup again", data.ErrNotSetUp, data.RoleReaderMasked)

@@ -71,7 +71,7 @@ type DataAccess struct {
 	ServerVersion    string
 	ReaderSecret     []byte
 	WriterSecret     []byte
-	MaskedSyncedHash string
+	GrantsSyncedHash string
 	SetUpAt          time.Time
 	SetUpBy          string
 }

@@ -147,11 +147,17 @@ func (cat *catalog) table(name string) (*tableMeta, error) {
 }
 
 // Schema returns the cached introspection (reading it again after
-// SchemaTTL) with sensitive columns marked.
+// SchemaTTL) with sensitive columns marked. A fresh cached one needs no
+// connection.
 func (e *Engine) Schema(ctx context.Context, t data.Target, c data.Call, sensitive []apitypes.DataColumnRef) (apitypes.DataSchema, error) {
 	marks := markSet(sensitive)
-	var cat *catalog
-	err := e.read(ctx, t, c, apitypes.DataQueryTimeout, func(cn *conn) error {
+	e.mu.Lock()
+	cat := e.schemas[t.ServiceID]
+	e.mu.Unlock()
+	if cat != nil && time.Since(cat.readAt) < e.schemaTTL {
+		return markSensitive(cat, marks), nil
+	}
+	err := e.read(ctx, t, data.RoleReader, c, apitypes.DataQueryTimeout, func(cn *conn) error {
 		var err error
 		cat, err = e.catalog(ctx, t, cn, true)
 		return err

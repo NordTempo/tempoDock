@@ -393,7 +393,7 @@ func (q *Queries) GetChangeset(ctx context.Context, arg GetChangesetParams) (Cha
 }
 
 const getDataAccess = `-- name: GetDataAccess :one
-SELECT service_id, engine, server_version, reader_secret, writer_secret, masked_synced_hash, set_up_at, set_up_by FROM data_access WHERE service_id = ?
+SELECT service_id, engine, server_version, reader_secret, writer_secret, grants_synced_hash, set_up_at, set_up_by FROM data_access WHERE service_id = ?
 `
 
 func (q *Queries) GetDataAccess(ctx context.Context, serviceID int64) (DataAccess, error) {
@@ -405,7 +405,7 @@ func (q *Queries) GetDataAccess(ctx context.Context, serviceID int64) (DataAcces
 		&i.ServerVersion,
 		&i.ReaderSecret,
 		&i.WriterSecret,
-		&i.MaskedSyncedHash,
+		&i.GrantsSyncedHash,
 		&i.SetUpAt,
 		&i.SetUpBy,
 	)
@@ -793,17 +793,17 @@ func (q *Queries) SaveQuery(ctx context.Context, arg SaveQueryParams) (SavedQuer
 	return i, err
 }
 
-const setDataMaskedSyncedHash = `-- name: SetDataMaskedSyncedHash :exec
-UPDATE data_access SET masked_synced_hash = ? WHERE service_id = ?
+const setDataGrantsSyncedHash = `-- name: SetDataGrantsSyncedHash :exec
+UPDATE data_access SET grants_synced_hash = ? WHERE service_id = ?
 `
 
-type SetDataMaskedSyncedHashParams struct {
-	MaskedSyncedHash string
+type SetDataGrantsSyncedHashParams struct {
+	GrantsSyncedHash string
 	ServiceID        int64
 }
 
-func (q *Queries) SetDataMaskedSyncedHash(ctx context.Context, arg SetDataMaskedSyncedHashParams) error {
-	_, err := q.exec(ctx, q.setDataMaskedSyncedHashStmt, setDataMaskedSyncedHash, arg.MaskedSyncedHash, arg.ServiceID)
+func (q *Queries) SetDataGrantsSyncedHash(ctx context.Context, arg SetDataGrantsSyncedHashParams) error {
+	_, err := q.exec(ctx, q.setDataGrantsSyncedHashStmt, setDataGrantsSyncedHash, arg.GrantsSyncedHash, arg.ServiceID)
 	return err
 }
 
@@ -926,8 +926,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (service_id) DO UPDATE SET
     engine = excluded.engine, server_version = excluded.server_version,
     reader_secret = excluded.reader_secret, writer_secret = excluded.writer_secret,
-    masked_synced_hash = '', set_up_at = excluded.set_up_at, set_up_by = excluded.set_up_by
-RETURNING service_id, engine, server_version, reader_secret, writer_secret, masked_synced_hash, set_up_at, set_up_by
+    grants_synced_hash = '', set_up_at = excluded.set_up_at, set_up_by = excluded.set_up_by
+RETURNING service_id, engine, server_version, reader_secret, writer_secret, grants_synced_hash, set_up_at, set_up_by
 `
 
 type UpsertDataAccessParams struct {
@@ -941,7 +941,7 @@ type UpsertDataAccessParams struct {
 }
 
 // Records a setup or rotation: new sealed role passwords and who did it.
-// The masked role's grants are resynced afterwards, so the hash resets.
+// The roles' grants are resynced afterwards, so the hash resets.
 func (q *Queries) UpsertDataAccess(ctx context.Context, arg UpsertDataAccessParams) (DataAccess, error) {
 	row := q.queryRow(ctx, q.upsertDataAccessStmt, upsertDataAccess,
 		arg.ServiceID,
@@ -959,7 +959,7 @@ func (q *Queries) UpsertDataAccess(ctx context.Context, arg UpsertDataAccessPara
 		&i.ServerVersion,
 		&i.ReaderSecret,
 		&i.WriterSecret,
-		&i.MaskedSyncedHash,
+		&i.GrantsSyncedHash,
 		&i.SetUpAt,
 		&i.SetUpBy,
 	)

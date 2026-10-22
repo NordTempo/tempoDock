@@ -33,31 +33,33 @@ type existingRole struct {
 type roleSpec struct {
 	name     data.Role
 	verifier string
-	// grants are the predefined roles it is a member of; any other
-	// membership is revoked.
-	grants []string
 	// settings are per-role defaults (ALTER ROLE ... SET).
 	settings [][2]string
 }
 
-// Setup creates or rotates dock_reader and dock_writer as the owner:
+// Setup creates or rotates Dock's roles as the owner and grants them their
+// privileges:
 //
-//   - dock_reader: LOGIN, member of pg_read_all_data only,
-//     default_transaction_read_only on, statement_timeout capped at the
-//     longest read.
+//   - dock_reader: LOGIN, default_transaction_read_only on,
+//     statement_timeout capped at the longest read; SELECT on the
+//     relations and sequences of every user schema.
 //
-//   - dock_writer: LOGIN, member of pg_read_all_data and pg_write_all_data
-//     only (DML, no DDL), statement and idle-in-transaction timeouts of a
-//     commit.
+//   - dock_writer: LOGIN, statement and idle-in-transaction timeouts of a
+//     commit; SELECT, INSERT, UPDATE and DELETE on the relations of every
+//     user schema and USAGE on their sequences (DML, no DDL).
 //
-//   - dock_reader_masked (with t.ReaderMasked set): LOGIN, member of no
-//     role, read-only like dock_reader; SyncMasked grants its columns.
+//   - dock_reader_masked (with t.ReaderMasked set): LOGIN, read-only like
+//     dock_reader; SyncGrants grants its columns.
 //
-// All are stripped of superuser, createdb, createrole, replication and
-// bypassrls, so row-level security applies to them. Passwords are sent as
-// SCRAM-SHA-256 verifiers, so the plain text never reaches the server or
-// its logs. Everything runs in one transaction; re-running it is safe.
-// Setup then drops the service's cached connections and schema.
+// None is a member of any role: predefined roles such as
+// pg_read_all_data would also open the system catalogs (password hashes in
+// pg_authid, user mapping options, large objects), which Dock's roles must
+// never read. All are stripped of superuser, createdb, createrole,
+// replication and bypassrls, so row-level security applies to them.
+// Passwords are sent as SCRAM-SHA-256 verifiers, so the plain text never
+// reaches the server or its logs. Everything runs in one transaction;
+// re-running it is safe. Setup then drops the service's cached
+// connections and schema.
 func (e *Engine) Setup(ctx context.Context, t data.Target, owner, reader, writer data.Credentials) (data.ServerInfo, error) {
 	specs, err := dockRoles(reader, writer, t.ReaderMasked)
 	if err != nil {
@@ -73,7 +75,11 @@ func (e *Engine) Setup(ctx context.Context, t data.Target, owner, reader, writer
 	if err != nil {
 		return info, fmt.Errorf("read roles: %w", err)
 	}
-	stmts := setupSQL(specs, existing, t.Database)
+	schemas, err := userSchemas(ctx, pg)
+	if err != nil {
+		return info, fmt.Errorf("read schemas: %w", err)
+	}
+	stmts := append(setupSQL(specs, existing, t.Database), grantsSQL(schemas)...)
 	err = pgx.BeginFunc(ctx, pg, func(tx pgx.Tx) error {
 		for _, s := range stmts {
 			if _, err := tx.Exec(ctx, s); err != nil {
@@ -112,19 +118,32 @@ func ownerConn(ctx context.Context, t data.Target, owner data.Credentials) (*pgx
 	return pg, info, nil
 }
 
-// SyncMasked brings dock_reader_masked's grants in line with the schema
-// and the sensitive columns, as the owner, in one transaction: in every
-// user schema it revokes all table privileges (which also drops column
-// grants), grants USAGE, then grants SELECT on each relation's columns
-// that aren't sensitive. Relations created later stay invisible to it
-// until the next sync. The owner's fresh catalog replaces the cached one,
+// SyncGrants brings the Dock roles' privileges in line with the schema and
+// the sensitive columns, as the owner, in one transaction: it revokes any
+// role membership they hold (setups before explicit grants made them
+// members of pg_read_all_data and pg_write_all_data), grants dock_reader
+// and dock_writer their privileges on every user schema (grantsSQL), and
+// in every user schema revokes all of dock_reader_masked's table
+// privileges (which also drops column grants), grants it USAGE, then
+// SELECT on each relation's columns that aren't sensitive. Relations
+// another role creates later stay invisible to the roles until the next
+// sync (the owner's get dock_reader's and dock_writer's grants through
+// default privileges). The owner's fresh catalog replaces the cached one,
 // so the returned hash matches what Schema reports.
-func (e *Engine) SyncMasked(ctx context.Context, t data.Target, owner data.Credentials, sensitive []apitypes.DataColumnRef) (string, error) {
+func (e *Engine) SyncGrants(ctx context.Context, t data.Target, owner data.Credentials, sensitive []apitypes.DataColumnRef) (string, error) {
 	pg, _, err := ownerConn(ctx, t, owner)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = pg.Close(context.Background()) }()
+	existing, err := existingRoles(ctx, pg)
+	if err != nil {
+		return "", fmt.Errorf("read roles: %w", err)
+	}
+	schemas, err := userSchemas(ctx, pg)
+	if err != nil {
+		return "", fmt.Errorf("read schemas: %w", err)
+	}
 	var doc string
 	if err := pg.QueryRow(ctx, catalogSQL).Scan(&doc); err != nil {
 		return "", fmt.Errorf("read schema: %w", err)
@@ -134,19 +153,77 @@ func (e *Engine) SyncMasked(ctx context.Context, t data.Target, owner data.Crede
 		return "", err
 	}
 	schema := markSensitive(cat, markSet(sensitive))
-	if err := simpleExec(ctx, pg, "BEGIN;\n"+strings.Join(maskedGrantsSQL(schema.Tables), ";\n")+";\nCOMMIT"); err != nil {
-		return "", fmt.Errorf("grant %s its columns as %s: %w", data.RoleReaderMasked, owner.User, err)
+	stmts := membershipSQL(existing)
+	stmts = append(stmts, grantsSQL(schemas)...)
+	stmts = append(stmts, maskedGrantsSQL(schema.Tables)...)
+	if err := simpleExec(ctx, pg, "BEGIN;\n"+strings.Join(stmts, ";\n")+";\nCOMMIT"); err != nil {
+		return "", fmt.Errorf("grant Dock's roles their privileges as %s: %w", owner.User, err)
 	}
 	e.mu.Lock()
 	if !e.closed {
 		e.schemas[t.ServiceID] = cat
 	}
 	e.mu.Unlock()
-	return data.MaskedHash(schema.Tables), nil
+	return data.GrantsHash(schema.Tables), nil
 }
 
-// maskedGrantsSQL renders SyncMasked's statements for tables with their
-// sensitive columns marked.
+// userSchemasSQL lists the schemas Dock's roles may use: all but the
+// system catalogs, information_schema and TOAST and temporary schemas.
+const userSchemasSQL = `SELECT nspname FROM pg_namespace
+WHERE nspname NOT IN ('pg_catalog', 'information_schema') AND nspname !~ '^pg_(toast|temp_)'
+ORDER BY 1`
+
+// userSchemas reads userSchemasSQL.
+func userSchemas(ctx context.Context, pg *pgx.Conn) ([]string, error) {
+	rows, err := pg.Query(ctx, userSchemasSQL)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// grantsSQL renders dock_reader's and dock_writer's privileges on the
+// given schemas: USAGE on each, SELECT (reader) or SELECT and DML (writer)
+// on all their relations, SELECT (reader) or USAGE and SELECT (writer, for
+// nextval defaults) on their sequences. Default privileges give the same
+// on schemas, relations and sequences the owner creates later, so an app
+// migrating as the owner needs no sync. dock_reader_masked gets nothing
+// here (maskedGrantsSQL).
+func grantsSQL(schemas []string) []string {
+	r := pgx.Identifier{string(data.RoleReader)}.Sanitize()
+	w := pgx.Identifier{string(data.RoleWriter)}.Sanitize()
+	out := make([]string, 0, 5*len(schemas)+5)
+	for _, name := range schemas {
+		s := pgx.Identifier{name}.Sanitize()
+		out = append(out,
+			"GRANT USAGE ON SCHEMA "+s+" TO "+r+", "+w,
+			"GRANT SELECT ON ALL TABLES IN SCHEMA "+s+" TO "+r,
+			"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "+s+" TO "+w,
+			"GRANT SELECT ON ALL SEQUENCES IN SCHEMA "+s+" TO "+r,
+			"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "+s+" TO "+w)
+	}
+	return append(out,
+		"ALTER DEFAULT PRIVILEGES GRANT USAGE ON SCHEMAS TO "+r+", "+w,
+		"ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO "+r,
+		"ALTER DEFAULT PRIVILEGES GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "+w,
+		"ALTER DEFAULT PRIVILEGES GRANT SELECT ON SEQUENCES TO "+r,
+		"ALTER DEFAULT PRIVILEGES GRANT USAGE, SELECT ON SEQUENCES TO "+w)
+}
+
+// membershipSQL revokes every role membership the existing Dock roles
+// hold.
+func membershipSQL(existing map[string]existingRole) []string {
+	var out []string
+	for _, name := range []data.Role{data.RoleReader, data.RoleWriter, data.RoleReaderMasked} {
+		for _, m := range existing[string(name)].MemberOf {
+			out = append(out, "REVOKE "+pgx.Identifier{m}.Sanitize()+" FROM "+pgx.Identifier{string(name)}.Sanitize())
+		}
+	}
+	return out
+}
+
+// maskedGrantsSQL renders the masked reader's statements for tables with
+// their sensitive columns marked.
 func maskedGrantsSQL(tables []apitypes.DataTable) []string {
 	role := pgx.Identifier{string(data.RoleReaderMasked)}.Sanitize()
 	var out []string
@@ -189,13 +266,11 @@ func dockRoles(reader, writer, masked data.Credentials) ([]roleSpec, error) {
 		{
 			name:     data.RoleReader,
 			verifier: rv,
-			grants:   []string{"pg_read_all_data"},
 			settings: readSettings,
 		},
 		{
 			name:     data.RoleWriter,
 			verifier: wv,
-			grants:   []string{"pg_read_all_data", "pg_write_all_data"},
 			settings: [][2]string{
 				{"statement_timeout", fmt.Sprint(data.WriteStatementTimeout.Milliseconds())},
 				{"idle_in_transaction_session_timeout", fmt.Sprint(data.WriteIdleTimeout.Milliseconds())},
@@ -238,7 +313,8 @@ GROUP BY 1, 2`, []string{string(data.RoleReader), string(data.RoleWriter), strin
 	return out, rows.Err()
 }
 
-// setupSQL renders the statements that bring the roles to spec. Role and
+// setupSQL renders the statements that bring the roles to spec, members
+// of no role (any membership is revoked). Role and
 // database names are quoted identifiers; verifiers are base64 and are
 // quoted literals.
 func setupSQL(specs []roleSpec, existing map[string]existingRole, database string) []string {
@@ -256,14 +332,7 @@ func setupSQL(specs []roleSpec, existing map[string]existingRole, database strin
 			out = append(out, "ALTER ROLE "+role+" WITH LOGIN INHERIT PASSWORD "+quoteLiteral(s.verifier))
 		}
 		for _, m := range cur.MemberOf {
-			if !contains(s.grants, m) {
-				out = append(out, "REVOKE "+pgx.Identifier{m}.Sanitize()+" FROM "+role)
-			}
-		}
-		for _, g := range s.grants {
-			if !contains(cur.MemberOf, g) {
-				out = append(out, "GRANT "+pgx.Identifier{g}.Sanitize()+" TO "+role)
-			}
+			out = append(out, "REVOKE "+pgx.Identifier{m}.Sanitize()+" FROM "+role)
 		}
 		for _, kv := range s.settings {
 			out = append(out, "ALTER ROLE "+role+" SET "+kv[0]+" = "+quoteLiteral(kv[1]))

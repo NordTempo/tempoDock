@@ -196,9 +196,18 @@ runs reads or edits as the owner.
 
 | Role | Grants | Used for |
 |---|---|---|
-| `dock_reader` | `pg_read_all_data`, `default_transaction_read_only = on`, not superuser | All browsing and SQL |
-| `dock_writer` | `pg_read_all_data`, `pg_write_all_data` (DML only, no DDL) | Committing changesets |
-| `dock_reader_masked` | `SELECT` per column, excluding sensitive columns; re-synced (as the owner) when marks or the schema change | Masked actors' SQL |
+| `dock_reader` | `SELECT` on the relations and sequences of every user schema, `default_transaction_read_only = on`, not superuser | All browsing and SQL |
+| `dock_writer` | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the relations of every user schema, `USAGE` on their sequences (DML only, no DDL) | Committing changesets |
+| `dock_reader_masked` | `SELECT` per column, excluding sensitive columns | Masked actors' SQL |
+
+The roles are members of no role. Predefined roles like `pg_read_all_data`
+would also read the system catalogs (password hashes in `pg_authid`, user
+mapping options, large objects). The grants are synced as the owner after
+setup, when the marks or the schema change, and when a call fails for a
+missing privilege (a relation another role created since); default
+privileges cover what the owner creates. The sync also revokes any
+membership, so databases set up with the predefined roles are fixed on
+their next use.
 
 - **Setup** creates them with the owner credentials: automatically for
   template databases, otherwise one admin action ("Set up data access",
@@ -249,7 +258,14 @@ them in the engine; masked actors' SQL runs as
 `dock_reader_masked`, so it can't route around the marks. Its password is
 derived from `dock_reader`'s (HMAC), so it rotates with it. If its grants
 can't be synced, masked actors' SQL is refused rather than run on stale
-grants. Views over sensitive columns need their own marks.
+grants. Views over sensitive columns need their own marks. Masked callers
+can't look up a row by a sensitive key, don't get foreign keys over
+sensitive columns, and see changesets with sensitive values left out and
+the literals in their SQL replaced by `?`.
+
+Page cursors hold the last row's key values. They leave the daemon sealed
+(AES-GCM with the secrets key), bound to the database and the caller, so
+they can't be read, forged or replayed by someone else.
 
 ## 6. Audit
 
@@ -269,6 +285,12 @@ into a detail row, so the main log stays scannable.
 
 `AuditEvent` gains an optional `detail_id`. **Query history** is the
 caller's own `data.query` events; there's no separate history store.
+
+Summaries are visible to everyone who may read the audit log, so they carry
+no values: SQL is shown with its literals replaced by `?`, filters by column
+and operator only. The detail of a `data.*` event needs level `read` in its
+environment; callers who see sensitive columns masked get its literals
+redacted too, unless the event is their own.
 
 ## 7. Feature set and phasing
 
@@ -376,7 +398,7 @@ data_policy_rules: project_id NULL, environment_id NULL (both NULL: the default)
 services:        + database TEXT NOT NULL DEFAULT ''        -- '', 'postgres', 'none'
                  + database_url_variable TEXT NOT NULL DEFAULT ''
 data_access:     service_id PK, engine, server_version, reader_secret, writer_secret,
-                 masked_synced_hash, set_up_at, set_up_by
+                 grants_synced_hash, set_up_at, set_up_by
 sensitive_columns: service_id, schema_name, table_name, column_name, PK of all four
 saved_queries:   id, service_id, user_id, name, sql, created_at, updated_at
 changesets:      id, service_id, author (actor), status (pending, committed, rejected,
