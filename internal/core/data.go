@@ -12,6 +12,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -314,7 +315,7 @@ func (c *Core) DataRows(ctx context.Context, a Actor, ref ServiceRef, req apityp
 		return apitypes.DataPage{}, err
 	}
 	if req.Reveal && dt.perm.Sensitive != apitypes.SensitiveVisible {
-		return apitypes.DataPage{}, errf(apitypes.CodeForbidden, "revealing sensitive columns needs sensitive visible; yours are masked (%s)", whyWords(dt.perm))
+		return apitypes.DataPage{}, errf(apitypes.CodeForbidden, "revealing sensitive columns needs sensitive visible; yours are masked (%s)", datapanel.Why(dt.perm))
 	}
 	if req.After, err = c.openCursor(a, dt.ss.svc.ID, req.After); err != nil {
 		return apitypes.DataPage{}, err
@@ -414,7 +415,7 @@ func (c *Core) DataHistory(ctx context.Context, a Actor, ref ServiceRef, before 
 	if err != nil {
 		return nil, err
 	}
-	if err := requireLevel(dt.perm, apitypes.LevelRead, "reading query history"); err != nil {
+	if err := datapanel.RequireLevel(dt.perm, apitypes.LevelRead, "reading query history"); err != nil {
 		return nil, err
 	}
 	params := store.ListDataQueryHistoryParams{Target: dt.ss.String(), BeforeID: before, MaxRows: int64(limit)}
@@ -460,7 +461,7 @@ func (c *Core) savedQueryScope(ctx context.Context, a Actor, ref ServiceRef) (*d
 	if err != nil {
 		return nil, 0, err
 	}
-	return dt, userID, requireLevel(dt.perm, apitypes.LevelRead, "using saved queries")
+	return dt, userID, datapanel.RequireLevel(dt.perm, apitypes.LevelRead, "using saved queries")
 }
 
 func toSavedQuery(q store.SavedQuery) apitypes.DataSavedQuery {

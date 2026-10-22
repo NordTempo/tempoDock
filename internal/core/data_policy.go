@@ -3,30 +3,22 @@ package core
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// The data access policy (ADR 0016 section 4): admins set, per subject and
-// environment kind, a level and sensitive-column visibility, at the
-// default, project and environment scopes. Per subject and kind the most
-// specific rule wins, then the built-in defaults. Admins always have full
-// access; tokens follow the tokens rule or their own override, capped by
-// what users of the token's scope and its creator's current role get, and
-// only propose on production.
+// The data access policy (ADR 0016 section 4) as Dock applies it: rules at
+// the default, project and environment scopes, decided by datapanel.Decide.
+// Admins always have full access; tokens follow the tokens rule or their
+// own override, capped by what users of the token's scope and its
+// creator's current role get, and only propose on production.
 
-// dataSubjects and envKinds list every policy subject and environment kind,
-// in the order the policy shows them.
-var (
-	dataSubjects = []apitypes.DataSubject{apitypes.SubjectReadUsers, apitypes.SubjectDeployUsers, apitypes.SubjectTokens}
-	envKinds     = []apitypes.EnvironmentKind{apitypes.KindProduction, apitypes.KindNonProduction}
-)
-
-// builtInRule is the built-in default for a subject and kind: deploy users
-// read non-production, nobody else gets anything, sensitive columns masked.
-func builtInRule(subject apitypes.DataSubject, kind apitypes.EnvironmentKind) apitypes.DataPolicyRule {
+// dockBuiltIn is Dock's built-in default for a subject and kind: deploy
+// users read non-production, nobody else gets anything, sensitive columns
+// masked.
+func dockBuiltIn(subject apitypes.DataSubject, kind apitypes.EnvironmentKind) apitypes.DataPolicyRule {
 	level := apitypes.LevelNone
 	if subject == apitypes.SubjectDeployUsers && kind == apitypes.KindNonProduction {
 		level = apitypes.LevelRead
@@ -39,31 +31,21 @@ func builtInRule(subject apitypes.DataSubject, kind apitypes.EnvironmentKind) ap
 // environment's).
 type policyRules []store.DataPolicyRule
 
-// resolve returns the rule that applies to subject in environments of kind:
-// the most specific one set, else the built-in default. From says which.
-func (rs policyRules) resolve(subject apitypes.DataSubject, kind apitypes.EnvironmentKind) apitypes.DataPolicyRule {
-	best, bestRank := builtInRule(subject, kind), 0
-	for _, r := range rs {
-		if r.Subject != string(subject) || r.Kind != string(kind) {
-			continue
-		}
-		if from, rank := ruleScope(r); rank > bestRank {
-			best, bestRank = toPolicyRule(r), rank
-			best.From = from
+// scoped converts the rules, From saying where each was set.
+func (rs policyRules) scoped() []apitypes.DataPolicyRule {
+	out := make([]apitypes.DataPolicyRule, len(rs))
+	for i, r := range rs {
+		out[i] = toPolicyRule(r)
+		switch {
+		case r.EnvironmentID != nil:
+			out[i].From = apitypes.PolicyEnvironment
+		case r.ProjectID != nil:
+			out[i].From = apitypes.PolicyProject
+		default:
+			out[i].From = apitypes.PolicyDefault
 		}
 	}
-	return best
-}
-
-// ruleScope says where a stored rule was set, ranked by specificity.
-func ruleScope(r store.DataPolicyRule) (apitypes.DataPolicyScope, int) {
-	switch {
-	case r.EnvironmentID != nil:
-		return apitypes.PolicyEnvironment, 3
-	case r.ProjectID != nil:
-		return apitypes.PolicyProject, 2
-	}
-	return apitypes.PolicyDefault, 1
+	return out
 }
 
 func toPolicyRule(r store.DataPolicyRule) apitypes.DataPolicyRule {
@@ -81,14 +63,6 @@ func subjectOf(role apitypes.Scope) apitypes.DataSubject {
 	return apitypes.SubjectReadUsers
 }
 
-// lessSensitive returns the stricter of two visibilities.
-func lessSensitive(a, b apitypes.DataSensitivity) apitypes.DataSensitivity {
-	if a == apitypes.SensitiveVisible && b == apitypes.SensitiveVisible {
-		return apitypes.SensitiveVisible
-	}
-	return apitypes.SensitiveMasked
-}
-
 // permissionInput is everything that decides a caller's data permission in
 // one environment; dataPermission loads it.
 type permissionInput struct {
@@ -104,99 +78,47 @@ type permissionInput struct {
 	project, env string
 }
 
-// decidePermission works out what the caller may do and why, step by step
-// (ADR 0016 section 4). A `dock login` token acts for its user (isAgent),
-// so it is judged like that user (its subject is its role, capped by the
-// user's current role) and may write production like them; every other
-// token is a token: the tokens rule or its own override, capped, and only
-// proposing on production.
+// decidePermission works out what the caller may do and why
+// (datapanel.Decide) from Dock's view of them. A `dock login` token acts
+// for its user (isAgent), so it is judged like that user (its subject is
+// its role, capped by the user's current role) and may write production
+// like them; every other token is an agent: the tokens rule or its own
+// override, capped by its scope and creator, and only proposing on
+// production.
 func decidePermission(in permissionInput) apitypes.DataPermission {
 	a := in.actor
-	prod := in.kind == apitypes.KindProduction
 	agent := isAgent(a)
-	perm := apitypes.DataPermission{ConfirmCommit: prod, Why: []apitypes.DataPermissionStep{}}
-	step := func(s apitypes.DataPermissionStep) {
-		s.Level, s.Sensitive = perm.Level, perm.Sensitive
-		perm.Why = append(perm.Why, s)
+	pin := datapanel.PolicyInput{
+		Kind: in.kind, Admin: rank(a.Scope) >= rank(apitypes.ScopeAdmin), Agent: agent, Subject: subjectOf(a.Scope),
+		Rules: in.rules.scoped(), BuiltIn: dockBuiltIn,
+		ScopeName: func(s apitypes.DataPolicyScope) string {
+			switch s {
+			case apitypes.PolicyProject:
+				return "project " + in.project
+			case apitypes.PolicyEnvironment:
+				return "environment " + in.project + "/" + in.env
+			}
+			return ""
+		},
 	}
-	kind := kindWords(in.kind)
-
-	if rank(a.Scope) >= rank(apitypes.ScopeAdmin) {
-		perm.Level, perm.Sensitive, perm.Approve, perm.Manage = apitypes.LevelWrite, apitypes.SensitiveVisible, true, true
-		step(apitypes.DataPermissionStep{Source: apitypes.PermissionAdmin, Detail: "admins can do everything"})
-		if agent && prod {
-			perm.Level, perm.Approve = apitypes.LevelPropose, false
-			step(apitypes.DataPermissionStep{Source: apitypes.PermissionProduction, Detail: "tokens only propose changes on production; a person approves them"})
+	if a.Kind == "token" {
+		tok := &datapanel.TokenInput{Name: a.Name}
+		if in.token != nil {
+			tok.Override = tokenData(*in.token)
 		}
-		return perm
-	}
-
-	ruleStep := func(src apitypes.DataPermissionSource, r apitypes.DataPolicyRule, prefix string) {
-		step(apitypes.DataPermissionStep{
-			Source: src, Policy: r.From, Subject: r.Subject,
-			Detail: fmt.Sprintf("%s%s: %s gets %s on %s, sensitive %s", prefix, in.policyWords(r.From), r.Subject, r.Level, kind, r.Sensitive),
-		})
-	}
-	ownData := in.token != nil && agent && tokenData(*in.token) != nil
-	switch {
-	case ownData:
-		d := tokenData(*in.token)
-		perm.Level, perm.Sensitive = d.NonProduction, d.Sensitive
-		if prod {
-			perm.Level = d.Production
-		}
-		step(apitypes.DataPermissionStep{Source: apitypes.PermissionToken,
-			Detail: fmt.Sprintf("token %q's own access: %s on %s, sensitive %s", a.Name, perm.Level, kind, perm.Sensitive)})
-	default:
-		subject := subjectOf(a.Scope)
 		if agent {
-			subject = apitypes.SubjectTokens
+			tok.Caps = append(tok.Caps, datapanel.Cap{Subject: subjectOf(a.Scope), Why: fmt.Sprintf("capped by the token's scope %s: ", a.Scope)})
 		}
-		r := in.rules.resolve(subject, in.kind)
-		perm.Level, perm.Sensitive = r.Level, r.Sensitive
-		ruleStep(apitypes.PermissionPolicy, r, "")
-	}
-	if a.Kind != "token" {
-		return perm
-	}
-
-	// A token never gets more than a person in its place would.
-	capTo := func(r apitypes.DataPolicyRule, why string) {
-		level, sens := perm.Level.Min(r.Level), lessSensitive(perm.Sensitive, r.Sensitive)
-		if level == perm.Level && sens == perm.Sensitive {
-			return
+		if in.creator != nil && rank(*in.creator) < rank(apitypes.ScopeAdmin) {
+			who := "its creator " + in.token.CreatedBy
+			if !agent {
+				who = "its user " + in.token.CreatedBy
+			}
+			tok.Caps = append(tok.Caps, datapanel.Cap{Subject: subjectOf(*in.creator), Why: fmt.Sprintf("capped by %s's current role %s: ", who, *in.creator)})
 		}
-		perm.Level, perm.Sensitive = level, sens
-		ruleStep(apitypes.PermissionCap, r, why)
+		pin.Token = tok
 	}
-	if agent {
-		capTo(in.rules.resolve(subjectOf(a.Scope), in.kind), fmt.Sprintf("capped by the token's scope %s: ", a.Scope))
-	}
-	if in.creator != nil && rank(*in.creator) < rank(apitypes.ScopeAdmin) {
-		who := "its creator " + in.token.CreatedBy
-		if !agent {
-			who = "its user " + in.token.CreatedBy
-		}
-		capTo(in.rules.resolve(subjectOf(*in.creator), in.kind), fmt.Sprintf("capped by %s's current role %s: ", who, *in.creator))
-	}
-	if agent && prod && perm.Level == apitypes.LevelWrite {
-		perm.Level = apitypes.LevelPropose
-		step(apitypes.DataPermissionStep{Source: apitypes.PermissionProduction, Detail: "tokens only propose changes on production; a person approves them"})
-	}
-	return perm
-}
-
-// policyWords names a policy scope in an explanation.
-func (in permissionInput) policyWords(from apitypes.DataPolicyScope) string {
-	switch from {
-	case apitypes.PolicyDefault:
-		return "default policy"
-	case apitypes.PolicyProject:
-		return "project " + in.project
-	case apitypes.PolicyEnvironment:
-		return "environment " + in.project + "/" + in.env
-	}
-	return "built-in default"
+	return datapanel.Decide(pin)
 }
 
 // dataPermission loads what decides the actor's data permission in an
@@ -230,23 +152,6 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 // isAgent reports whether the actor is a token in its own right. A `dock
 // login` token (AuthenticateToken sets its Email) acts for its user.
 func isAgent(a Actor) bool { return a.Kind == "token" && a.Email == "" }
-
-// requireLevel checks a permission allows level, saying why not.
-func requireLevel(perm apitypes.DataPermission, need apitypes.DataLevel, action string) error {
-	if perm.Level.Includes(need) {
-		return nil
-	}
-	return errf(apitypes.CodeForbidden, "%s needs data access level %s; you have %s (%s)", action, need, perm.Level, whyWords(perm))
-}
-
-// whyWords joins a permission's explanation.
-func whyWords(perm apitypes.DataPermission) string {
-	parts := make([]string, len(perm.Why))
-	for i, s := range perm.Why {
-		parts[i] = s.Detail
-	}
-	return strings.Join(parts, "; ")
-}
 
 // policyScope resolves a policy reference (see GetDataPolicy) and checks
 // the actor's scope there. Changing the default policy needs an unlimited
@@ -314,26 +219,12 @@ func (c *Core) loadPolicy(ctx context.Context, pol apitypes.DataPolicy, p *store
 	for i, r := range own {
 		pol.Rules[i] = toPolicyRule(r)
 	}
-	kinds := envKinds
+	kinds := datapanel.Kinds
 	if e != nil {
 		kinds = []apitypes.EnvironmentKind{apitypes.EnvironmentKind(e.Kind)}
 	}
-	pol.Effective = make([]apitypes.DataPolicyRule, 0, len(dataSubjects)*len(kinds))
-	for _, s := range dataSubjects {
-		for _, k := range kinds {
-			pol.Effective = append(pol.Effective, all.resolve(s, k))
-		}
-	}
+	pol.Effective = datapanel.Effective(all.scoped(), kinds, dockBuiltIn)
 	return pol, nil
-}
-
-// validLevel reports whether l is a data access level.
-func validLevel(l apitypes.DataLevel) bool {
-	return l == apitypes.LevelNone || l.Includes(apitypes.LevelSchema)
-}
-
-func validSensitivity(s apitypes.DataSensitivity) bool {
-	return s == apitypes.SensitiveMasked || s == apitypes.SensitiveVisible
 }
 
 // SetDataPolicy replaces the rules at one scope (see GetDataPolicy).
@@ -344,25 +235,13 @@ func (c *Core) SetDataPolicy(ctx context.Context, a Actor, ref EnvRef, req apity
 	if err != nil {
 		return pol, err
 	}
-	seen := map[string]bool{}
-	for _, r := range req.Rules {
-		switch {
-		case r.Subject != apitypes.SubjectReadUsers && r.Subject != apitypes.SubjectDeployUsers && r.Subject != apitypes.SubjectTokens:
-			return pol, invalid("data policy subject %q must be role:read, role:deploy or tokens", r.Subject)
-		case !validKind(r.Kind):
-			return pol, invalid("environment kind %q must be production or non_production", r.Kind)
-		case !validLevel(r.Level):
-			return pol, invalid("data access level %q must be none, schema, read, propose or write", r.Level)
-		case !validSensitivity(r.Sensitive):
-			return pol, invalid("sensitive %q must be masked or visible", r.Sensitive)
-		case e != nil && string(r.Kind) != e.Kind:
-			return pol, invalid("environment %s/%s is %s; its data policy can only have %s rules", p.Name, e.Name, kindWords(apitypes.EnvironmentKind(e.Kind)), kindWords(apitypes.EnvironmentKind(e.Kind)))
-		}
-		key := string(r.Subject) + "/" + string(r.Kind)
-		if seen[key] {
-			return pol, invalid("two rules for %s on %s; keep one", r.Subject, kindWords(r.Kind))
-		}
-		seen[key] = true
+	var only apitypes.EnvironmentKind
+	scope := ""
+	if e != nil {
+		only, scope = apitypes.EnvironmentKind(e.Kind), "environment "+p.Name+"/"+e.Name
+	}
+	if err := datapanel.ValidateRules(req.Rules, only, scope); err != nil {
+		return pol, err
 	}
 	pid, eid := scopeIDs(p, e)
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
@@ -393,15 +272,7 @@ func (c *Core) SetDataPolicy(ctx context.Context, a Actor, ref EnvRef, req apity
 	case p != nil:
 		target = p.Name
 	}
-	summary := "cleared the data access policy of " + target + "; it inherits everything"
-	if len(req.Rules) > 0 {
-		parts := make([]string, len(req.Rules))
-		for i, r := range req.Rules {
-			parts[i] = fmt.Sprintf("%s %s on %s (sensitive %s)", r.Subject, r.Level, kindWords(r.Kind), r.Sensitive)
-		}
-		summary = "set the data access policy of " + target + ": " + strings.Join(parts, ", ")
-	}
-	c.audit(ctx, a, apitypes.AuditDataPolicy, p, e, target, summary)
+	c.audit(ctx, a, apitypes.AuditDataPolicy, p, e, target, datapanel.DescribeRules(target, req.Rules))
 	return c.loadPolicy(ctx, pol, p, e)
 }
 
@@ -431,23 +302,12 @@ func tokenDataParams(id int64, d *apitypes.DataTokenAccess) (store.SetTokenDataA
 	if d == nil {
 		return params, nil
 	}
-	if !validLevel(d.Production) || !validLevel(d.NonProduction) {
-		return params, invalid("token data levels must be none, schema, read, propose or write")
-	}
-	if !validSensitivity(d.Sensitive) {
-		return params, invalid("token data sensitive must be masked or visible")
+	if err := datapanel.ValidateTokenAccess(d); err != nil {
+		return params, err
 	}
 	prod, nonProd, sens := string(d.Production), string(d.NonProduction), string(d.Sensitive)
 	params.DataProduction, params.DataNonProduction, params.DataSensitive = &prod, &nonProd, &sens
 	return params, nil
-}
-
-// describeTokenData says what a token data override is, for the audit log.
-func describeTokenData(d *apitypes.DataTokenAccess) string {
-	if d == nil {
-		return "follows the data policy's tokens rule"
-	}
-	return fmt.Sprintf("data access %s on production, %s on non-production, sensitive %s (capped by its scope and creator)", d.Production, d.NonProduction, d.Sensitive)
 }
 
 // UpdateToken changes a token's data access override; null follows the
@@ -476,6 +336,6 @@ func (c *Core) UpdateToken(ctx context.Context, a Actor, id int64, req apitypes.
 		return apitypes.Token{}, err
 	}
 	t.DataProduction, t.DataNonProduction, t.DataSensitive = params.DataProduction, params.DataNonProduction, params.DataSensitive
-	c.audit(ctx, a, apitypes.AuditDataPolicy, nil, nil, "token "+t.Name, fmt.Sprintf("token %q (id %d) %s", t.Name, t.ID, describeTokenData(req.Data)))
+	c.audit(ctx, a, apitypes.AuditDataPolicy, nil, nil, "token "+t.Name, fmt.Sprintf("token %q (id %d) %s", t.Name, t.ID, datapanel.DescribeTokenAccess(req.Data)))
 	return toToken(ctx, newNames(c.store), t), nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -185,7 +186,7 @@ func TestPermissionWhy(t *testing.T) {
 	if len(got.Why) != len(want) || got.Why[0] != want[0] || got.Why[1] != want[1] {
 		t.Fatalf("why = %+v", got.Why)
 	}
-	err := requireLevel(got, apitypes.LevelRead, "reading rows")
+	err := datapanel.RequireLevel(got, apitypes.LevelRead, "reading rows")
 	if CodeOf(err) != apitypes.CodeForbidden || !strings.Contains(err.Error(), "needs data access level read; you have none") || !strings.Contains(err.Error(), "capped by the token's scope read") {
 		t.Fatalf("error: %v", err)
 	}

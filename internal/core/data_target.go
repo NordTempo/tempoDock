@@ -15,6 +15,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -276,7 +277,7 @@ func (c *Core) dataTarget(ctx context.Context, a Actor, ref ServiceRef, need api
 	if err != nil {
 		return nil, err
 	}
-	if err := requireLevel(dt.perm, need, action); err != nil {
+	if err := datapanel.RequireLevel(dt.perm, need, action); err != nil {
 		return nil, err
 	}
 	if dt.access == nil {

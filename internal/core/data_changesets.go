@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -249,7 +250,7 @@ func (c *Core) ListDataChangesets(ctx context.Context, a Actor, ref ServiceRef, 
 	if err != nil {
 		return nil, err
 	}
-	if err := requireLevel(dt.perm, apitypes.LevelRead, "listing changesets"); err != nil {
+	if err := datapanel.RequireLevel(dt.perm, apitypes.LevelRead, "listing changesets"); err != nil {
 		return nil, err
 	}
 	if err := c.loadSensitive(ctx, dt); err != nil {
@@ -289,7 +290,7 @@ func (c *Core) GetDataChangeset(ctx context.Context, a Actor, ref ServiceRef, id
 	if err != nil {
 		return apitypes.DataChangeset{}, err
 	}
-	if err := requireLevel(dt.perm, apitypes.LevelRead, "reading changesets"); err != nil {
+	if err := datapanel.RequireLevel(dt.perm, apitypes.LevelRead, "reading changesets"); err != nil {
 		return apitypes.DataChangeset{}, err
 	}
 	if err := c.loadSensitive(ctx, dt); err != nil {
@@ -335,11 +336,11 @@ func (c *Core) CommitDataChangeset(ctx context.Context, a Actor, ref ServiceRef,
 	}
 	own := isAuthor(a, cs)
 	if own {
-		if err := requireLevel(dt.perm, apitypes.LevelWrite, "committing your own changeset"); err != nil {
+		if err := datapanel.RequireLevel(dt.perm, apitypes.LevelWrite, "committing your own changeset"); err != nil {
 			return apitypes.DataChangeset{}, err
 		}
 	} else if !dt.perm.Approve {
-		return apitypes.DataChangeset{}, errf(apitypes.CodeForbidden, "committing someone else's changeset approves it, which only admins can do (%s)", whyWords(dt.perm))
+		return apitypes.DataChangeset{}, errf(apitypes.CodeForbidden, "committing someone else's changeset approves it, which only admins can do (%s)", datapanel.Why(dt.perm))
 	}
 	if dt.perm.ConfirmCommit && req.Confirm != dt.ss.env.Name {
 		return apitypes.DataChangeset{}, invalid("%s is production: confirm with the environment's name (%s) to commit", dt.ss.envScope, dt.ss.env.Name)

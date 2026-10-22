@@ -10,6 +10,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -258,7 +259,7 @@ func (c *Core) dataDetailAccess(ctx context.Context, a Actor, ev store.AuditEven
 	if err != nil {
 		return false, err
 	}
-	if err := requireLevel(perm, apitypes.LevelRead, "reading the SQL of "+ev.Action+" events"); err != nil {
+	if err := datapanel.RequireLevel(perm, apitypes.LevelRead, "reading the SQL of "+ev.Action+" events"); err != nil {
 		return false, err
 	}
 	if perm.Sensitive == apitypes.SensitiveVisible || ownEvent(a, ev) {

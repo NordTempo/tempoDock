@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -409,7 +410,7 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	out := toToken(ctx, newNames(c.store), t)
 	summary := fmt.Sprintf("created %s token %q (id %d)", t.Scope, t.Name, t.ID)
 	if req.Data != nil {
-		summary += "; " + describeTokenData(req.Data)
+		summary += "; " + datapanel.DescribeTokenAccess(req.Data)
 	}
 	c.audit(ctx, a, "token.create", p, e, "token "+t.Name, summary)
 	return apitypes.CreatedToken{Token: out, Secret: secret}, nil

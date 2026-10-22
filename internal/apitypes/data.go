@@ -166,8 +166,8 @@ const (
 )
 
 // DataPolicyScope is where a data policy is set. The most specific one
-// wins per subject and environment kind: environment, then project, then
-// default, then the built-in defaults.
+// wins per subject and environment kind: environment (tempoBase:
+// connection), then project, then default, then the built-in defaults.
 type DataPolicyScope string
 
 // Data policy scopes.
@@ -176,6 +176,9 @@ const (
 	PolicyDefault     DataPolicyScope = "default"
 	PolicyProject     DataPolicyScope = "project"
 	PolicyEnvironment DataPolicyScope = "environment"
+	// PolicyConnection is tempoBase's per-connection scope (ADR 0024);
+	// Dock never uses it.
+	PolicyConnection DataPolicyScope = "connection"
 )
 
 // DataPolicyRule sets one subject's access to databases in environments of
