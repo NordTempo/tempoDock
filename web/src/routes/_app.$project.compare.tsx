@@ -2,11 +2,14 @@ import { useQueries } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import {
+  deployBlock,
   queries,
   serviceRef,
+  useCanDeploy,
   useIsAdmin,
   useProjectOverview,
   useRevealedVariables,
+  useServers,
   useVariables,
 } from "../data/queries";
 import type {
@@ -15,9 +18,17 @@ import type {
   Variable,
   Volume,
 } from "../data/types";
+import { PromotePanel } from "../features/promote/PromotePanel";
+import {
+  defaultPair,
+  promoteCli,
+  promotionPlan,
+} from "../features/promote/plan";
+import { EnvServer } from "../features/servers/parts";
 import { imageLabel } from "../features/service/releases";
+import { useShortcuts } from "../shell/keys";
 import { limits } from "../ui/format";
-import { Glyph, Page, Scroll } from "../ui/kit";
+import { Act, Glyph, Page, Scroll } from "../ui/kit";
 import { serviceState, toneText } from "../ui/status";
 
 type CompareSearch = {
@@ -25,16 +36,20 @@ type CompareSearch = {
   to?: string;
   all?: boolean;
   values?: boolean;
+  /** The promote panel is open. */
+  promote?: boolean;
 };
 
 // Two environments side by side, service by service: release, image,
-// limits, variable names (values for admins who ask) and volumes.
+// limits, variable names (values for admins who ask) and volumes. P
+// promotes the source's images to the target.
 export const Route = createFileRoute("/_app/$project/compare")({
   validateSearch: (s: Record<string, unknown>): CompareSearch => ({
     from: typeof s.from === "string" ? s.from : undefined,
     to: typeof s.to === "string" ? s.to : undefined,
     all: s.all === true ? true : undefined,
     values: s.values === true ? true : undefined,
+    promote: s.promote === true ? true : undefined,
   }),
   staticData: { crumb: "Compare" },
   loader: async ({ context: { queryClient }, params }) => {
@@ -55,25 +70,43 @@ export const Route = createFileRoute("/_app/$project/compare")({
   component: Compare,
 });
 
-/** Staging-like first, production last, so "from → to" reads as a promotion. */
-function defaults(envs: EnvironmentView[]) {
-  const names = envs.map((e) => e.environment.name);
-  const to = names.find((n) => n === "production") ?? names.at(-1);
-  const from = names.find((n) => n !== to);
-  return { from, to };
-}
-
 function Compare() {
   const { project } = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const { environments } = useProjectOverview(project);
-  const fallback = defaults(environments);
+  const fallback = defaultPair(environments);
   const fromName = search.from ?? fallback.from;
   const toName = search.to ?? fallback.to;
   const from = environments.find((e) => e.environment.name === fromName);
   const to = environments.find((e) => e.environment.name === toName);
   const isAdmin = useIsAdmin();
+  const pair = from && to && from !== to ? { from, to } : undefined;
+  const plan = pair ? promotionPlan(pair.from, pair.to) : [];
+  const promotable = plan.filter((r) => !r.skip).length;
+  const allowed = useCanDeploy({ project, environment: toName ?? "" });
+  const blocked = deployBlock(
+    useServers().find((s) => s.name === to?.environment.server),
+  );
+  const notReady = !pair
+    ? "pick two different environments"
+    : !allowed
+      ? `promoting needs deploy permission on ${toName}`
+      : (blocked ?? (promotable ? undefined : "nothing to promote"));
+  const setPromote = (open: boolean) =>
+    navigate({
+      search: { ...search, promote: open || undefined },
+      replace: true,
+    });
+
+  useShortcuts([
+    {
+      key: "p",
+      label: "promote",
+      disabled: !!notReady,
+      run: () => setPromote(true),
+    },
+  ]);
 
   const pick = (
     label: string,
@@ -136,17 +169,38 @@ function Compare() {
             />
             Only differences
           </label>
+          <Act
+            primary
+            cli={promoteCli(fromName ?? "<from>", toName ?? "<to>")}
+            disabled={!!notReady || search.promote}
+            title={notReady}
+            onClick={() => setPromote(true)}
+          >
+            Promote {promotable} {promotable === 1 ? "service" : "services"}{" "}
+            <kbd>P</kbd>
+          </Act>
         </span>
       </div>
       <p className="text-mut">
         <span className="text-warn">Yellow</span> marks a difference. Variables
         compare by name{isAdmin ? " unless you compare values" : ""}.
+        {notReady && pair && <> Promote is off: {notReady}.</>}
       </p>
-      {from && to && from !== to ? (
+      {pair && search.promote && (
+        <PromotePanel
+          key={`${fromName}:${toName}`}
+          project={project}
+          from={pair.from}
+          to={pair.to}
+          plan={plan}
+          onClose={() => setPromote(false)}
+        />
+      )}
+      {pair ? (
         <CompareTable
           project={project}
-          from={from}
-          to={to}
+          from={pair.from}
+          to={pair.to}
           all={!!search.all}
           values={!!search.values}
         />
@@ -214,11 +268,10 @@ function CompareTable({
               <th>Service</th>
               <th className="border-l border-line pl-4">
                 {from.environment.name}{" "}
-                <span className="font-mono">{from.environment.server}</span>
+                <EnvServer name={from.environment.server} />
               </th>
               <th className="border-l border-line pl-4">
-                {to.environment.name}{" "}
-                <span className="font-mono">{to.environment.server}</span>
+                {to.environment.name} <EnvServer name={to.environment.server} />
               </th>
               <th className="w-full border-l border-line pl-4">Differences</th>
             </tr>

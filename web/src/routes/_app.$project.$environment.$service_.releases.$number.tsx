@@ -11,6 +11,7 @@ import {
   findService,
   queries,
   servicePath,
+  useDeployBlock,
   useRelease,
   useReleases,
   useService,
@@ -60,6 +61,7 @@ function ReleasePage() {
   const release = useRelease(ref, Number(params.number));
   const releases = useReleases(ref);
   const deploy = useDeploy();
+  const blocked = useDeployBlock(ref);
   const navigate = useNavigate();
   const { service } = view;
   const serving = service.active_release ?? null;
@@ -150,7 +152,8 @@ function ReleasePage() {
           {failed && service.image && (
             <Act
               cli={`dock deploy -s ${ref.service} -e ${ref.environment}`}
-              disabled={!!view.deploying || deploy.isPending}
+              disabled={!!view.deploying || !!blocked || deploy.isPending}
+              title={blocked}
               onClick={() =>
                 deploy.mutate(ref, {
                   onSuccess: () =>
@@ -178,6 +181,9 @@ function ReleasePage() {
             Variables of {ref.service}
           </Act>
           <span className="self-center">
+            {failed && service.image && blocked && (
+              <span className="text-fail">Disabled: {blocked}. </span>
+            )}
             <ErrorText error={deploy.error} />
           </span>
         </div>

@@ -6,13 +6,16 @@ import {
 } from "@tanstack/react-query";
 import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
 import { api, body, done } from "../api/client";
+import { placeholderApi } from "./placeholders";
 import { envPath, keys, servicePath } from "./queries";
 import type {
   DiscardSelection,
   EnvironmentKind,
   EnvRef,
+  NewServer,
   NewToken,
   NewUser,
+  Server,
   ServerPatch,
   ServiceRef,
   SettingsPatch,
@@ -274,17 +277,69 @@ export const useResetPassword = () =>
     () => [keys.users, ["audit"]],
   );
 
-/** Which kinds a server accepts and whether it takes new placements. */
+/**
+ * What a server accepts, whether it takes new placements and builds
+ * images, and its base domain.
+ */
 export const useUpdateServer = () =>
   useAction(
     ({ name, patch }: { name: string; patch: ServerPatch }) =>
-      body(
-        api.PATCH("/api/v1/servers/{server}", {
-          params: { path: { server: name } },
-          body: patch,
-        }),
-      ),
+      placeholderApi.updateServer(name, patch),
     () => [keys.servers, ["audit"]],
+  );
+
+/**
+ * Adds a server: resolves with its join token, shown exactly once, and the
+ * install command to run on it. It is `joining` until it connects.
+ */
+export const useAddServer = () =>
+  useAction(
+    (input: NewServer) => placeholderApi.addServer(input),
+    () => [keys.servers, ["audit"]],
+  );
+
+/**
+ * Forgets a server's key and drops its link. Its apps keep running, but
+ * nothing reaches it until it joins again.
+ */
+export const useRevokeServer = () =>
+  useAction(
+    (name: string) => placeholderApi.revokeServer(name),
+    () => [keys.servers, ["audit"]],
+  );
+
+/**
+ * Deletes a server with no environments placed on it. Only the list
+ * refetches: the server's own page would 404 before the caller leaves it.
+ */
+export function useRemoveServer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => placeholderApi.removeServer(name),
+    onSuccess: (_data, name) =>
+      queryClient.setQueryData<Server[]>(keys.servers, (list) =>
+        list?.filter((s) => s.name !== name),
+      ),
+  });
+}
+
+/**
+ * Deploys the source environment's active images to the target, one
+ * service at a time. Resolves once the releases exist; release events
+ * follow their progress.
+ */
+export const usePromote = () =>
+  useAction(
+    ({
+      project,
+      ...input
+    }: {
+      project: string;
+      from: string;
+      to: string;
+      services?: string[];
+    }) => placeholderApi.promote(project, input),
+    ({ project }) => [keys.overview(project), ["audit"]],
   );
 
 /** Pins a project's environments of a kind to a server before any exist. */

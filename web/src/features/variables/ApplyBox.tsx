@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useApplyChanges, useDiscardChanges } from "../../data/mutations";
 import {
   useChanges,
+  useDeployBlock,
   useEnvironment,
   useRevealedChanges,
 } from "../../data/queries";
@@ -44,9 +45,12 @@ export function ApplyBox({
   const discard = useDiscardChanges();
   const busy = apply.isPending || discard.isPending;
   const releases = affectedServices(changes, services).map(nextRelease);
+  // Releases can't start on an unreachable server.
+  const blocked = useDeployBlock(env);
+  const applyBlocked = releases.length > 0 ? blocked : undefined;
 
   useKeydown((event) => {
-    if (changes.count === 0 || busy) return;
+    if (changes.count === 0 || busy || applyBlocked) return;
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
       apply.mutate(env);
@@ -179,7 +183,8 @@ export function ApplyBox({
         <Act
           primary
           cli={`dock apply -e ${env.environment}`}
-          disabled={busy}
+          disabled={busy || !!applyBlocked}
+          title={applyBlocked}
           onClick={() => apply.mutate(env)}
         >
           {releases.length > 0
@@ -195,6 +200,9 @@ export function ApplyBox({
           Discard all
         </Act>
         <span className="self-center">
+          {applyBlocked && (
+            <span className="text-fail">Disabled: {applyBlocked}. </span>
+          )}
           <ErrorText error={apply.error ?? discard.error} />
         </span>
       </div>

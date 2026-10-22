@@ -3,6 +3,7 @@ import type {
   EnvironmentKind,
   Release,
   ReleaseSummary,
+  ServerStatus,
   ServiceView,
 } from "../data/types";
 
@@ -196,4 +197,34 @@ export function serverKinds(s: {
     s.accepts_non_production && "non-production",
   ].filter(Boolean);
   return kinds.length ? kinds.join(", ") : "nothing";
+}
+
+const serverStates: Record<ServerStatus, State> = {
+  online: { tone: "ok", glyph: "●", label: "online" },
+  offline: { tone: "fail", glyph: "✕", label: "offline" },
+  incompatible: { tone: "warn", glyph: "▲", label: "incompatible" },
+  joining: { tone: "prog", glyph: "◐", label: "joining" },
+};
+
+/** A server's link status: "● online", "◐ joining". */
+export const serverState = (s: ServerStatus) => serverStates[s];
+
+const semver = (v: string) =>
+  /^v?(\d+)\.(\d+)\.(\d+)/.exec(v)?.slice(1).map(Number);
+
+/**
+ * Whether a server runs an older dock than the control plane: compared as
+ * versions when both are, else any difference counts. Unknown is not
+ * behind.
+ */
+export function versionBehind(version: string, controlPlane: string) {
+  if (!version || !controlPlane || version === controlPlane) return false;
+  const a = semver(version);
+  const b = semver(controlPlane);
+  if (!a || !b) return true;
+  for (let i = 0; i < 3; i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d) return d < 0;
+  }
+  return false;
 }

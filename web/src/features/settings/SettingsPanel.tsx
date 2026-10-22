@@ -20,6 +20,7 @@ import {
 } from "../../data/queries";
 import type { Service, ServiceRef, SettingChange } from "../../data/types";
 import { Button, ErrorText, SectionHead } from "../../ui/kit";
+import { EnvServer } from "../servers/parts";
 import { ApplyBox } from "../variables/ApplyBox";
 import {
   editText,
@@ -118,7 +119,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           )}
         </Item>
         <Item label="Server">
-          <span className="font-mono">{environment.server}</span>{" "}
+          <EnvServer name={environment.server} />{" "}
           <span className="text-mut">from {environment.name}</span>
         </Item>
       </dl>

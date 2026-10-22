@@ -5,6 +5,7 @@ import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
 import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
+import type { ServerStatusEvent } from "./placeholders";
 import { keys, queries } from "./queries";
 import type {
   LiveEvent,
@@ -24,6 +25,9 @@ import type {
 // /api/v1/events patches or invalidates the query cache, and log views
 // follow their own streams.
 
+/** What the bus sends. TODO(m3): just LiveEvent once the API has it. */
+type BusEvent = LiveEvent | ServerStatusEvent;
+
 // Build output is followed on its own stream (useBuildLog), not the bus.
 const busEvents = [
   "release",
@@ -34,7 +38,8 @@ const busEvents = [
   "drift",
   "lagged",
   "usage",
-] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
+  "server_status",
+] as const satisfies readonly Exclude<BusEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
   e.project && e.environment && e.service
@@ -148,6 +153,24 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // A new event type in the API fails the build until handled here.
       event.type satisfies never;
   }
+}
+
+/**
+ * A server's link status changed (online, offline, joined): patch it into
+ * the server list and its page.
+ */
+function applyServerStatus(queryClient: QueryClient, server?: Server) {
+  if (!server) return;
+  // A server that just joined may not be in the list yet.
+  queryClient.setQueryData<Server[]>(keys.servers, (list) =>
+    list?.some((s) => s.id === server.id)
+      ? list.map((s) => (s.id === server.id ? { ...s, ...server } : s))
+      : list && [...list, server],
+  );
+  queryClient.setQueryData<ServerDetail>(
+    keys.server(server.name),
+    (d) => d && { ...d, server: { ...d.server, ...server } },
+  );
 }
 
 /** The ranges with a point a minute, which usage events extend. */
@@ -333,10 +356,13 @@ function invalidateForData(
 export function useLiveUpdates() {
   const queryClient = useQueryClient();
   const router = useRouter();
-  useEventStream<LiveEvent>(
+  useEventStream<BusEvent>(
     "/api/v1/events",
     busEvents,
     (_, event) => {
+      if (event.type === "server_status") {
+        return applyServerStatus(queryClient, event.server);
+      }
       applyLiveEvent(queryClient, event);
       recordLiveEvent(event);
     },

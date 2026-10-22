@@ -7,13 +7,17 @@ import {
   useRollback,
 } from "../data/mutations";
 import {
+  canDeploy,
+  deployBlock,
   isDatabase,
   queries,
   serviceRef,
   useIsAdmin,
   useProjectTree,
   useServers,
+  useSession,
 } from "../data/queries";
+import { promoteCli, promotionPairs } from "../features/promote/plan";
 import { rollbackTarget } from "../features/service/releases";
 import { serviceState, type Tone } from "../ui/status";
 import { useCurrentContext } from "./location";
@@ -55,7 +59,10 @@ export function useCommands(): Command[] {
   const rollback = useRollback();
   const logout = useLogout();
   const admin = useIsAdmin();
+  const session = useSession();
   const servers = useServers();
+  const blockOf = (server: string) =>
+    deployBlock(servers.find((s) => s.name === server));
 
   // Rollback targets need release history, cached for the current project.
   const local = projects
@@ -105,10 +112,45 @@ export function useCommands(): Command[] {
         run: () => navigate({ to: "/$project/compare", params: { project } }),
       });
     }
+    // Promote opens the compare page's promote panel, which previews it.
+    for (const { from, to } of promotionPairs(environments)) {
+      const target = { project, environment: to.environment.name };
+      if (!canDeploy(session, target)) continue;
+      const blocked = blockOf(to.environment.server);
+      add({
+        id: `promote:${project}/${from.environment.name}/${to.environment.name}`,
+        group: "Actions",
+        label: `Promote ${from.environment.name} → ${to.environment.name}${inProject ? "" : ` · ${project}`}`,
+        strong: to.environment.name,
+        note: blocked ? { text: blocked, tone: "fail" } : undefined,
+        cli: `${promoteCli(from.environment.name, to.environment.name)}${pFlag}`,
+        weight: inProject ? 1.5 : 0,
+        run: () =>
+          navigate({
+            to: "/$project/compare",
+            params: { project },
+            search: {
+              from: from.environment.name,
+              to: to.environment.name,
+              promote: true,
+            },
+          }),
+      });
+    }
 
     for (const { environment: env, services } of environments) {
       const environment = env.name;
       const inEnv = inProject && environment === here.environment;
+      // Releases can't start on an unreachable server.
+      const blocked = blockOf(env.server);
+      const refuse = blocked
+        ? () => {
+            throw new Error(`Can't deploy: ${blocked}.`);
+          }
+        : undefined;
+      const blockedNote = blocked
+        ? { text: blocked, tone: "fail" as const }
+        : undefined;
       add({
         id: `vars:${project}/${environment}`,
         group: "Go to",
@@ -142,12 +184,14 @@ export function useCommands(): Command[] {
             : undefined;
         const open = () =>
           navigate({ to: "/$project/$environment/$service", params });
-        const busy = svc.deploying
-          ? {
-              text: `r${svc.deploying.number} is deploying`,
-              tone: "prog" as const,
-            }
-          : undefined;
+        const busy =
+          blockedNote ??
+          (svc.deploying
+            ? {
+                text: `r${svc.deploying.number} is deploying`,
+                tone: "prog" as const,
+              }
+            : undefined);
 
         // Image deploys only; source deploys upload from the CLI.
         if (svc.service.image) {
@@ -159,10 +203,12 @@ export function useCommands(): Command[] {
             note: busy ?? note,
             cli: `dock deploy${flags}`,
             weight,
-            run: async () => {
-              await deploy.mutateAsync(params);
-              await open();
-            },
+            run:
+              refuse ??
+              (async () => {
+                await deploy.mutateAsync(params);
+                await open();
+              }),
           });
         }
         if (svc.service.active_release) {
@@ -174,7 +220,7 @@ export function useCommands(): Command[] {
             note: busy ?? note,
             cli: `dock restart${flags}`,
             weight: weight - 0.5,
-            run: () => restart.mutateAsync(params),
+            run: refuse ?? (() => restart.mutateAsync(params)),
           });
         }
         const target = rollbackTarget(
@@ -189,10 +235,12 @@ export function useCommands(): Command[] {
             note: busy ?? note,
             cli: `dock rollback ${target.number}${flags}`,
             weight: weight - 0.5,
-            run: async () => {
-              await rollback.mutateAsync({ ref: params, to: target.number });
-              await open();
-            },
+            run:
+              refuse ??
+              (async () => {
+                await rollback.mutateAsync({ ref: params, to: target.number });
+                await open();
+              }),
           });
         }
         add({

@@ -5,6 +5,8 @@ import { domainNeedsAttention } from "../../data/problems";
 import {
   isDatabase,
   useChanges,
+  useDeployBlock,
+  useEnvironment,
   useProjectOverview,
   useReleases,
   useService,
@@ -20,6 +22,7 @@ import {
   serviceState,
   stepPhrase,
 } from "../../ui/status";
+import { EnvServer } from "../servers/parts";
 import { copiedConfig, errorSummary, rollbackTarget } from "./releases";
 import { CpuUsage, MemoryUsage } from "./Usage";
 
@@ -70,6 +73,7 @@ export function ServiceHeader({
 }) {
   const view = useService(ref);
   const changes = useChanges(ref);
+  const { server } = useEnvironment(ref).environment;
   const navigate = useNavigate();
   const { service } = view;
   const shown = isDatabase(service)
@@ -98,7 +102,7 @@ export function ServiceHeader({
           {service.name}
         </h1>
         <span className="text-mut">
-          {ref.environment}
+          {ref.environment} on <EnvServer name={server} />
           {full && (
             <>
               {" "}
@@ -262,7 +266,10 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const rollback = useRollback();
   const target = rollbackTarget(releases);
   const [confirming, setConfirming] = useState(false);
-  const busy = deploying ? `r${deploying.number} is deploying` : undefined;
+  // An unreachable server blocks every action that starts a release.
+  const blocked = useDeployBlock(ref);
+  const busy =
+    blocked ?? (deploying ? `r${deploying.number} is deploying` : undefined);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
 
   const canDeploy = !!service.image && !busy && !deploy.isPending;
@@ -354,6 +361,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         {target ? `Roll back to r${target.number}` : "Roll back"} <kbd>B</kbd>
       </Act>
       <span className="self-center">
+        {blocked && <span className="text-fail">Disabled: {blocked}.</span>}{" "}
         <ErrorText error={deploy.error ?? restart.error ?? rollback.error} />
       </span>
     </div>

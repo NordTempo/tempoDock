@@ -7,6 +7,7 @@ import type { EnvironmentView, ServiceView } from "../../data/types";
 import { plural } from "../../ui/format";
 import { Scroll, StateText } from "../../ui/kit";
 import { kindLabel, serviceState } from "../../ui/status";
+import { EnvServer } from "../servers/parts";
 import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 
@@ -19,7 +20,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
       <h2 id={`env-${environment.id}`} className="text-md font-semibold">
         {environment.name}{" "}
         <span className="text-xs font-normal text-mut">
-          <span className="font-mono">{environment.server}</span> ·{" "}
+          <EnvServer name={environment.server} /> ·{" "}
           {kindLabel[environment.kind]}
         </span>{" "}
         {staged > 0 && (

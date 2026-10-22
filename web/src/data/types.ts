@@ -1,4 +1,5 @@
 import type { components } from "../api/schema";
+import type { Server } from "./placeholders";
 
 // The UI speaks the API's words: most types are the generated API schemas.
 // Where the API returns `null` for empty lists (Go nil slices), the hooks in
@@ -9,8 +10,14 @@ type Schemas = components["schemas"];
 export type Scope = Schemas["Me"]["scope"];
 export type Session = Schemas["Me"];
 export type Project = Schemas["Project"];
-export type Server = Schemas["Server"];
-export type ServerPatch = Schemas["UpdateServerRequest"];
+export type {
+  AddedServer,
+  NewServer,
+  Promotion,
+  Server,
+  ServerPatch,
+} from "./placeholders";
+export type ServerStatus = Server["status"];
 export type ServerUsage = Schemas["ServerUsage"];
 export type ServiceUsage = Schemas["ServiceUsage"];
 export type Placement = Schemas["Placement"];
@@ -63,8 +70,9 @@ export type ProjectOverview = {
 /** A server with its latest sample and what is placed on it. */
 export type ServerDetail = Omit<
   Schemas["ServerDetail"],
-  "placements" | "services"
+  "server" | "placements" | "services"
 > & {
+  server: Server;
   placements: Schemas["ServerPlacement"][];
   services: ServerService[];
 };

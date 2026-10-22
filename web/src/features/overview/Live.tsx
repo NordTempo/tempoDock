@@ -8,8 +8,8 @@ import {
 } from "../../data/queries";
 import type { AuditEvent } from "../../data/types";
 import { clockSec } from "../../ui/format";
-import { Actor, Glyph } from "../../ui/kit";
-import { serverKinds } from "../../ui/status";
+import { Actor, Glyph, StateText } from "../../ui/kit";
+import { serverKinds, serverState } from "../../ui/status";
 import { pastLabel } from "../audit/AuditTable";
 
 type Entry = { id: string; time: string; body: ReactNode };
@@ -127,19 +127,14 @@ function ProjectServers({ project }: { project: string }) {
         <tbody>
           {servers.map((s) => (
             <tr key={s.id}>
-              <td>
-                <span
-                  className={s.status === "online" ? "text-ok" : "text-fail"}
-                >
-                  ●
-                </span>{" "}
-                <span className="font-mono">{s.name}</span>
-              </td>
+              <td className="font-mono">{s.name}</td>
               <td className="text-mut">
                 {serverKinds(s)}
                 {s.builder && ", builder"}
               </td>
-              <td className="pr-0 text-right text-mut">{s.status}</td>
+              <td className="pr-0 text-right">
+                <StateText state={serverState(s.status)} />
+              </td>
             </tr>
           ))}
         </tbody>

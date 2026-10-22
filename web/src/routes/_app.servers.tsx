@@ -1,16 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { memo, type ReactNode } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { queries, useIsAdmin, useServers } from "../data/queries";
 import type { Server } from "../data/types";
+import { AddServer } from "../features/servers/AddServer";
+import { Ingress, statusTitle, Version } from "../features/servers/parts";
 import { useServerSwitches } from "../features/servers/switches";
+import { useShortcuts } from "../shell/keys";
 import { pct, since, size } from "../ui/format";
-import { ErrorText, Page, Scroll, TitleRow } from "../ui/kit";
-import { serverKinds } from "../ui/status";
+import { Act, ErrorText, Page, Scroll, StateText, TitleRow } from "../ui/kit";
+import { serverKinds, serverState } from "../ui/status";
 
-// Every server: status, what it accepts, how loaded it is. Admins switch
-// accepted kinds inline and open a server for statistics and placements.
-// Admins get each server's latest sample with the list; usage events keep
-// it current.
+// Every server: link status, version, ingress, what it accepts, how loaded
+// it is. Admins add servers (A), switch accepted kinds and builds inline,
+// and open a server for its link, statistics and placements. Admins get
+// each server's latest sample with the list; usage and server status
+// events keep it current.
 export const Route = createFileRoute("/_app/servers")({
   loader: ({ context: { queryClient } }) =>
     Promise.all([
@@ -23,29 +27,61 @@ export const Route = createFileRoute("/_app/servers")({
 function Servers() {
   const servers = useServers();
   const admin = useIsAdmin();
-  const online = servers.filter((s) => s.status === "online").length;
-  const offline = servers.length - online;
+  const [adding, setAdding] = useState(false);
+  const count = (status: Server["status"]) =>
+    servers.filter((s) => s.status === status).length;
+  const context = (
+    [
+      ["online", count("online")],
+      ["offline", count("offline")],
+      ["joining", count("joining")],
+      ["incompatible", count("incompatible")],
+    ] as const
+  )
+    .filter(([word, n]) => n > 0 || word === "online")
+    .map(([word, n]) => `${n} ${word}`)
+    .join(" · ");
+
+  useShortcuts(
+    admin
+      ? [{ key: "a", label: "add server", run: () => setAdding(true) }]
+      : [],
+  );
 
   return (
     <Page gap="gap-[18px]">
       <TitleRow
         title="Servers"
-        context={`${online} online${offline ? ` · ${offline} offline` : ""}`}
+        context={context}
         actions={
-          <span className="self-center font-mono text-2xs text-mut">
-            dock server add
-          </span>
+          admin ? (
+            <Act
+              primary
+              cli="dock server add"
+              disabled={adding}
+              onClick={() => setAdding(true)}
+            >
+              Add server <kbd>A</kbd>
+            </Act>
+          ) : (
+            <span className="self-center font-mono text-2xs text-mut">
+              dock server list
+            </span>
+          )
         }
       />
+      {adding && <AddServer onClose={() => setAdding(false)} />}
       <Scroll>
         <table>
           <thead>
             <tr>
               <th>Server</th>
               <th>Status</th>
+              <th>Version</th>
+              <th>Ingress</th>
+              <th>Builds</th>
               <th>Accepts</th>
               <th>Placement</th>
-              <th>Builds</th>
               <th>CPU</th>
               <th>Memory</th>
               <th title="Memory limits of the services placed here">
@@ -53,7 +89,6 @@ function Servers() {
               </th>
               <th>Disk</th>
               <th>Placed</th>
-              <th>Version</th>
             </tr>
           </thead>
           <tbody>
@@ -69,21 +104,28 @@ function Servers() {
       </Scroll>
       {servers.length > 0 && !admin && (
         <p className="text-xs text-mut">
-          Admins see live usage and manage placement.
+          Admins see live usage and manage servers.
         </p>
       )}
     </Page>
   );
 }
 
-const COLUMNS = 11;
+const COLUMNS = 12;
 
 /** A row with the admin's switches, and a confirm row when asked. */
 const AdminRow = memo(function AdminRow({ server }: { server: Server }) {
-  const { accepts, placement, confirm, error } = useServerSwitches(server);
+  const { accepts, placement, builder, confirm, error } =
+    useServerSwitches(server);
   return (
     <>
-      <Row server={server} accepts={accepts} placement={placement} admin />
+      <Row
+        server={server}
+        accepts={accepts}
+        placement={placement}
+        builder={builder}
+        admin
+      />
       {(confirm || error) && (
         <tr>
           <td colSpan={COLUMNS} className="border-0 pb-3">
@@ -95,21 +137,40 @@ const AdminRow = memo(function AdminRow({ server }: { server: Server }) {
   );
 });
 
+/** Under the status word: what the status means right now. */
+function statusNote(s: Server) {
+  switch (s.status) {
+    case "offline":
+      return s.last_seen_at
+        ? `last seen ${since(s.last_seen_at)} ago`
+        : "never connected";
+    case "joining":
+      return "waiting for dock node join";
+    case "incompatible":
+      return "upgrade dock there";
+    case "online":
+      return undefined;
+  }
+}
+
 const Row = memo(function Row({
   server: s,
   accepts,
   placement,
+  builder,
   admin,
 }: {
   server: Server;
   accepts?: ReactNode;
   placement?: ReactNode;
+  builder?: ReactNode;
   admin?: boolean;
 }) {
   const offline = s.status === "offline";
   // Only admins get the latest sample.
   const usage = s.usage;
   const dash = <span className="text-faint">·</span>;
+  const note = statusNote(s);
   return (
     <tr id={s.name} className={offline ? "bg-[#140808]" : undefined}>
       <td className="py-2.5 font-mono font-medium">
@@ -126,19 +187,18 @@ const Row = memo(function Row({
           </div>
         )}
       </td>
+      <td className="py-2.5" title={statusTitle(s)}>
+        <StateText state={serverState(s.status)} />
+        {note && <div className="text-xs text-mut">{note}</div>}
+      </td>
       <td className="py-2.5">
-        {offline ? (
-          <>
-            <span className="text-fail">✕ offline</span>
-            {s.last_seen_at && (
-              <div className="text-xs text-mut">
-                last seen {since(s.last_seen_at)} ago
-              </div>
-            )}
-          </>
-        ) : (
-          <span className="text-ok">● online</span>
-        )}
+        <Version server={s} />
+      </td>
+      <td className="py-2.5">
+        <Ingress server={s} />
+      </td>
+      <td className={`py-2.5 ${s.builder ? "" : "text-mut"}`}>
+        {builder ?? (s.builder ? "yes" : "no")}
       </td>
       <td className="py-2.5">{accepts ?? serverKinds(s)}</td>
       <td className="py-2.5">
@@ -148,9 +208,6 @@ const Row = memo(function Row({
           ) : (
             <span className="text-mut">open</span>
           ))}
-      </td>
-      <td className={`py-2.5 ${s.builder ? "" : "text-mut"}`}>
-        {s.builder ? "yes" : "no"}
       </td>
       <td className="py-2.5 font-mono">
         {usage ? pct(usage.cpu_percent) : dash}
@@ -196,7 +253,7 @@ const Row = memo(function Row({
           dash
         )}
       </td>
-      <td className="py-2.5">
+      <td className="w-full py-2.5">
         {s.environments ? (
           <>
             {s.projects} <span className="text-mut">projects ·</span>{" "}
@@ -204,11 +261,10 @@ const Row = memo(function Row({
           </>
         ) : (
           <span className="text-mut">
-            nothing{offline ? ", safe to remove" : ""}
+            nothing{offline && !s.local ? ", safe to remove" : ""}
           </span>
         )}
       </td>
-      <td className="w-full py-2.5 font-mono text-mut">{s.version}</td>
     </tr>
   );
 });

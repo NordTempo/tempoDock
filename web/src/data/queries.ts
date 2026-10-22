@@ -12,11 +12,13 @@ import type {
   EnvRef,
   PendingChanges,
   ProjectOverview,
+  Server,
   ServerDetail,
   ServerStats,
   Service,
   ServiceRef,
   ServiceStats,
+  Session,
   StatsRange,
 } from "./types";
 
@@ -226,7 +228,7 @@ export const queries = {
   servers: () =>
     queryOptions({
       queryKey: keys.servers,
-      queryFn: () => list(api.GET("/api/v1/servers")),
+      queryFn: (): Promise<Server[]> => list(api.GET("/api/v1/servers")),
     }),
   /** One server, what is placed on it and its services. Admin only. */
   server: (name: string) =>
@@ -364,6 +366,41 @@ export const useVariables = (env: EnvRef, service: string | null) =>
 export const useServers = () => useSuspenseQuery(queries.servers()).data;
 export const useServer = (name: string) =>
   useSuspenseQuery(queries.server(name)).data;
+
+/**
+ * Why nothing can be deployed to a server right now, as deploy buttons
+ * say it: "server homelab is offline". Undefined when it can.
+ */
+export function deployBlock(server: Server | undefined) {
+  switch (server?.status) {
+    case "offline":
+      return `server ${server.name} is offline`;
+    case "incompatible":
+      return `server ${server.name} runs an incompatible dock version`;
+    case "joining":
+      return `server ${server.name} hasn't connected yet`;
+    default:
+      return undefined;
+  }
+}
+
+/** deployBlock for the server an environment runs on. */
+export function useDeployBlock(env: EnvRef) {
+  const { environment } = useEnvironment(env);
+  return deployBlock(useServers().find((s) => s.name === environment.server));
+}
+
+/**
+ * Whether the caller may deploy to an environment: scope deploy or admin,
+ * and not limited to another project or environment.
+ */
+export function canDeploy(session: Session | null, env: EnvRef) {
+  if (!session || session.scope === "read") return false;
+  if (session.project && session.project !== env.project) return false;
+  return !session.environment || session.environment === env.environment;
+}
+
+export const useCanDeploy = (env: EnvRef) => canDeploy(useSession(), env);
 export const usePlacements = (project: string) =>
   useSuspenseQuery(queries.placements(project)).data;
 export const useTokens = () => useSuspenseQuery(queries.tokens()).data;

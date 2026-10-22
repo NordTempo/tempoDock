@@ -10,6 +10,7 @@ import type {
   ServerUsage,
   StatsRange,
 } from "../data/types";
+import { LinkSection } from "../features/servers/LinkSection";
 import { useServerSwitches } from "../features/servers/switches";
 import { CpuUsage, MemoryUsage } from "../features/service/Usage";
 import { LineChart } from "../features/stats/LineChart";
@@ -24,6 +25,7 @@ import {
 import { ago, bytes, pct, plural, size } from "../ui/format";
 import {
   ErrorText,
+  Glyph,
   Page,
   Scroll,
   SectionHead,
@@ -78,14 +80,15 @@ function AdminServer() {
   const detail = useServer(name);
   const { server } = detail;
   const live = useLiveServer(name);
-  const { accepts, placement, confirm, error } = useServerSwitches(server);
+  const { accepts, placement, builder, confirm, error } =
+    useServerSwitches(server);
 
   return (
     <Page>
       <TitleRow
         title={<span className="font-mono">{name}</span>}
         context={[
-          `dock ${server.version}`,
+          server.version && `dock ${server.version}`,
           server.local && "control plane",
           server.builder && "builds images",
         ]
@@ -98,6 +101,8 @@ function AdminServer() {
         }
       />
       <StatusSentence detail={detail} />
+
+      <LinkSection server={server} />
 
       <section aria-label="Now" className="flex flex-col gap-2">
         <Now usage={server.usage} server={server} />
@@ -137,13 +142,14 @@ function AdminServer() {
             <span className="text-mut">Accepts</span> {accepts}
           </span>
           {placement}
+          {builder}
         </div>
         {confirm}
         <ErrorText error={error} />
         <p className="font-mono text-2xs text-mut">
           dock server update {name} --production | --no-production |
           --non-production | --no-non-production | --disable-placement |
-          --enable-placement
+          --enable-placement | --builder | --no-builder
         </p>
         <Placements detail={detail} />
       </section>
@@ -162,18 +168,45 @@ function StatusSentence({ detail }: { detail: ServerDetail }) {
   const what = s.environments
     ? `${plural(s.environments, "environment")} of ${plural(s.projects, "project")}`
     : "nothing yet";
-  if (s.status === "offline") {
-    return (
-      <p className="text-lg leading-normal">
-        <span className="text-fail">✕</span> Offline
-        {s.last_seen_at && `, last seen ${ago(s.last_seen_at)}`}.{" "}
-        <span className="text-mut">
-          {s.environments
-            ? `Its ${what} can't be reached or deployed until it is back.`
-            : "Nothing is placed here; it is safe to remove."}
-        </span>
-      </p>
-    );
+  switch (s.status) {
+    case "offline":
+      return (
+        <p className="text-lg leading-normal">
+          <span className="text-fail">✕</span> Offline
+          {s.last_seen_at && `, last seen ${ago(s.last_seen_at)}`}.{" "}
+          <span className="text-mut">
+            {s.environments
+              ? `Its ${what} keep running there but can't be deployed until it is back.`
+              : "Nothing is placed here; it is safe to remove."}
+          </span>
+        </p>
+      );
+    case "joining":
+      return (
+        <p className="text-lg leading-normal">
+          <span className="text-prog">
+            <Glyph char="◐" />
+          </span>{" "}
+          Joining.{" "}
+          <span className="text-mut">
+            Waiting for <span className="font-mono">dock node join</span> to
+            connect with the token shown when it was added. Lost the token?
+            Remove it and add it again.
+          </span>
+        </p>
+      );
+    case "incompatible":
+      return (
+        <p className="text-lg leading-normal">
+          <span className="text-warn">▲</span> Connected, but dock{" "}
+          {s.version || "there"} is too far from this control plane's.{" "}
+          <span className="text-mut">
+            Nothing is placed or deployed here until dock is upgraded on it.
+          </span>
+        </p>
+      );
+    case "online":
+      break;
   }
   return (
     <p className="text-lg leading-normal">

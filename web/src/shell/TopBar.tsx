@@ -8,6 +8,9 @@ import {
   useServers,
   useSession,
 } from "../data/queries";
+import { statusTitle } from "../features/servers/parts";
+import { Glyph } from "../ui/kit";
+import { serverState, toneText } from "../ui/status";
 import { modKey } from "./keys";
 import { lastProject, useCrumb, useCurrentContext } from "./location";
 import { usePalette } from "./palette";
@@ -220,7 +223,8 @@ function ProjectSwitcher({ current }: { current: string | undefined }) {
 
 /**
  * ● per server in view: the environment's server, or every server the
- * project runs on. Red when offline.
+ * project runs on. Anything but online says so in words: "✕ homelab
+ * offline".
  */
 function ServerDots() {
   const here = useCurrentContext();
@@ -240,21 +244,27 @@ function ServerDots() {
   const shown = servers.filter((s) => names.has(s.name));
   return (
     <span className="flex gap-2 font-mono text-xs">
-      {shown.map((s) => (
-        <Link
-          key={s.id}
-          // Server pages are for admins; everyone else gets the list.
-          to={admin ? "/servers/$server" : "/servers"}
-          params={{ server: s.name }}
-          className="no-underline"
-          title={`${s.name} is ${s.status}`}
-        >
-          <span className={s.status === "online" ? "text-ok" : "text-fail"}>
-            ●
-          </span>{" "}
-          {s.name}
-        </Link>
-      ))}
+      {shown.map((s) => {
+        const state = serverState(s.status);
+        return (
+          <Link
+            key={s.id}
+            // Server pages are for admins; everyone else gets the list.
+            to={admin ? "/servers/$server" : "/servers"}
+            params={{ server: s.name }}
+            className="no-underline"
+            title={statusTitle(s)}
+          >
+            <span className={toneText[state.tone]}>
+              <Glyph char={state.glyph ?? "●"} />
+            </span>{" "}
+            {s.name}
+            {s.status !== "online" && (
+              <span className={toneText[state.tone]}> {state.label}</span>
+            )}
+          </Link>
+        );
+      })}
     </span>
   );
 }

@@ -13,9 +13,10 @@ const acceptsField = {
 } as const satisfies Record<EnvironmentKind, keyof Server>;
 
 /**
- * An admin's switches for one server: which kinds it accepts and whether
- * it takes new placements. Turning one on applies at once; turning one off
- * asks first (the `confirm` node, which the caller places).
+ * An admin's switches for one server: which kinds it accepts, whether it
+ * takes new placements and whether it builds images. Turning one on
+ * applies at once; turning one off asks first (the `confirm` node, which
+ * the caller places).
  */
 export function useServerSwitches(server: Server) {
   const update = useUpdateServer();
@@ -86,6 +87,34 @@ export function useServerSwitches(server: Server) {
                 <span className="text-mut">
                   What is there stays, and its projects keep adding environments
                   here. Admins can still pin projects to it.
+                </span>
+              </>
+            ),
+          });
+        }}
+      />
+    ),
+    builder: (
+      <Check
+        label="builds images"
+        checked={server.builder}
+        disabled={update.isPending}
+        onChange={(on) => {
+          if (on) return apply({ builder: true });
+          const others = servers.filter((s) => s.name !== name && s.builder);
+          setAsk({
+            patch: { builder: false },
+            action: "Stop building",
+            cli: `dock server update ${name} --no-builder`,
+            text: (
+              <>
+                Stop building images on{" "}
+                <b className="font-mono font-medium">{name}</b>?{" "}
+                <span className="text-mut">
+                  Builds in progress finish.{" "}
+                  {others.length
+                    ? `New builds go to ${others.map((s) => s.name).join(", ")}.`
+                    : "No other server builds images."}
                 </span>
               </>
             ),
