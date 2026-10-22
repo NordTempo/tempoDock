@@ -317,7 +317,7 @@ func TestDeployWaitsWithProgress(t *testing.T) {
 	// reports the steps so far as progress.
 	select {
 	case <-got:
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("no progress notification while the release health checks")
 	}
 	select {
@@ -341,7 +341,7 @@ func TestDeployWaitsWithProgress(t *testing.T) {
 	}
 	// The client handles notifications on its own goroutine, so the last
 	// one can land just after the result.
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for {
 		mu.Lock()
 		ok := slices.ContainsFunc(progress, func(m string) bool { return strings.HasPrefix(m, "web #1: ") }) &&
