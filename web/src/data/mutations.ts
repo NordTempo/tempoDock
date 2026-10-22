@@ -18,6 +18,7 @@ import type {
   ServerPatch,
   ServiceRef,
   SettingsPatch,
+  TemplateInfo,
 } from "./types";
 
 // Mutation hooks. Each one names the cache subtrees it touches; they are
@@ -191,6 +192,93 @@ export const useRemoveDomain = () =>
         ),
       ),
     ({ ref }) => serviceWide(ref),
+  );
+
+/**
+ * Creates a database from a template; it deploys right away. Resolves
+ * with the new service.
+ */
+export const useCreateDatabase = () =>
+  useAction(
+    ({
+      env,
+      name,
+      template,
+    }: {
+      env: EnvRef;
+      name: string;
+      template: TemplateInfo["name"];
+    }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services",
+          { params: { path: envPath(env) }, body: { name, template } },
+        ),
+      ),
+    ({ env }) => [keys.overview(env.project), keys.env(env), ["audit"]],
+  );
+
+const backupsOf = (ref: ServiceRef): QueryKey[] => [
+  keys.backups(ref),
+  keys.overview(ref.project),
+  ["audit"],
+];
+
+/** Starts a backup now; it finishes in the background. */
+export const useRunBackup = () =>
+  useAction(
+    (ref: ServiceRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups",
+          { params: { path: servicePath(ref) } },
+        ),
+      ),
+    backupsOf,
+  );
+
+export const useBackupSchedule = () =>
+  useAction(
+    ({
+      ref,
+      enabled,
+      hour,
+    }: {
+      ref: ServiceRef;
+      enabled?: boolean;
+      hour?: number;
+    }) =>
+      body(
+        api.PUT(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/schedule",
+          { params: { path: servicePath(ref) }, body: { enabled, hour } },
+        ),
+      ),
+    ({ ref }) => backupsOf(ref),
+  );
+
+/**
+ * Restores a snapshot into a new service. Resolves with it at once; the
+ * restore finishes in the background.
+ */
+export const useRestoreBackup = () =>
+  useAction(
+    ({
+      ref,
+      snapshot,
+      as,
+    }: {
+      ref: ServiceRef;
+      snapshot: string;
+      as: string;
+    }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/restore",
+          { params: { path: servicePath(ref) }, body: { snapshot, as } },
+        ),
+      ),
+    ({ ref }) => [...backupsOf(ref), keys.env(ref)],
   );
 
 /** Stops and archives a service. Admin only; volumes are kept. */

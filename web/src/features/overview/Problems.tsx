@@ -5,7 +5,7 @@ import { useProblems } from "../../data/problems";
 import { serviceRef, useChanges } from "../../data/queries";
 import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
-import { plural, since } from "../../ui/format";
+import { ago, plural, since } from "../../ui/format";
 import { Button, ErrorText, Glyph } from "../../ui/kit";
 import {
   failurePhrase,
@@ -178,6 +178,38 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           {serving && (
             <span className="text-ok">r{serving} still serving.</span>
           )}
+        </Row>
+      );
+    }
+    case "backup_failed": {
+      const ref = serviceRef(p.service.service);
+      const at = p.backup.finished_at ?? p.backup.started_at;
+      return (
+        <Row
+          n={key}
+          tone="fail"
+          glyph="✕"
+          title="Backup failed"
+          where={`${ref.environment}/${ref.service}`}
+          time={since(at)}
+          action={
+            <Link
+              to="/$project/$environment/$service/backups"
+              params={ref}
+              className={actionClass}
+              data-problem={n}
+            >
+              Backups
+            </Link>
+          }
+        >
+          Backup of {ref.service} failed {ago(at)}
+          {p.backup.error && (
+            <>
+              : <span className="font-mono">{p.backup.error}</span>
+            </>
+          )}
+          .
         </Row>
       );
     }

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { domainNeedsAttention } from "../../data/problems";
-import { queries, serviceRef } from "../../data/queries";
+import { queries, serviceRef, useCanDeploy } from "../../data/queries";
 import type { EnvironmentView, ServiceView } from "../../data/types";
 import { plural } from "../../ui/format";
 import { Scroll, StateText } from "../../ui/kit";
@@ -10,11 +10,14 @@ import { kindLabel, serviceState } from "../../ui/status";
 import { EnvServer } from "../servers/parts";
 import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
+import { AddDatabase } from "../templates/AddDatabase";
 
 /** One environment on the project overview: a row per service. */
 export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const { environment, services, pending_changes: staged } = env;
   const ref = { project: environment.project, environment: environment.name };
+  const canDeploy = useCanDeploy(ref);
+  const [adding, setAdding] = useState(false);
   return (
     <section aria-labelledby={`env-${environment.id}`}>
       <h2 id={`env-${environment.id}`} className="text-md font-semibold">
@@ -39,7 +42,17 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
         >
           variables
         </Link>
+        {canDeploy && !adding && (
+          <button
+            type="button"
+            className="ml-3 text-xs font-normal text-mut underline"
+            onClick={() => setAdding(true)}
+          >
+            add database
+          </button>
+        )}
       </h2>
+      {adding && <AddDatabase env={ref} onClose={() => setAdding(false)} />}
       {services.length === 0 ? (
         <p className="py-2 text-mut">
           No services. Deploy one with{" "}

@@ -41,6 +41,8 @@ export type Command = {
 const serviceTabs = [
   // Database services only (isDatabase).
   ["data", "Data", "g b"],
+  // Stateful services only.
+  ["backups", "Backups", "g k"],
   ["logs", "Logs", "g l"],
   ["metrics", "Metrics", "g m"],
   ["releases", "Releases", "g r"],
@@ -255,6 +257,7 @@ export function useCommands(): Command[] {
         });
         for (const [tab, title, keys] of serviceTabs) {
           if (tab === "data" && !isDatabase(svc.service)) continue;
+          if (tab === "backups" && !svc.service.stateful) continue;
           add({
             id: `go:${id}:${tab}`,
             group: "Go to",

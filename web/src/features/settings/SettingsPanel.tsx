@@ -11,6 +11,7 @@ import {
 import {
   envPath,
   keys,
+  listenPort,
   useChanges,
   useEnvironment,
   useIsAdmin,
@@ -67,7 +68,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           {field("port")}
           <span className="font-mono text-mut">
             {" "}
-            · private {service.name}:{service.port || 8080}
+            · private {service.name}:{listenPort(service)}
           </span>
         </Item>
         <Item label="Start command">{field("start_command")}</Item>
