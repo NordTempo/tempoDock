@@ -745,6 +745,26 @@ follow A.1 to A.4, MCP follows A.5. An integration test
 masking, propose and commit through HTTP; the contract test checks the
 shared schemas.
 
+As built (first half, before A lands):
+
+- The first migration has more indexes than section 2 lists: one for
+  every foreign key a delete cascades through (`links`, `sessions`,
+  `token_connections`, `data_policy_rules`, `saved_queries`,
+  `changesets`, `audit_events.detail_id`), `sessions (expires_at)`,
+  open invites, and `audit_events (action, id)` and `(connection_id,
+  action, id)` for the audit filters. Every query's plan is a `SEARCH`
+  but the small, whole-table lists (users, tokens, connections, rules).
+- `Connection` carries `custom_ca` (the CA itself never comes back).
+  Audit also records `user.password_failed` and `link.delete`.
+- Until A's packages land, `internal/tempobase/pending_*.go` and
+  `tbhttp/pending_httpkit.go` hold stand-ins with the ADR's signatures
+  (the policy's `Decide` and helpers, the login limiter, guard and UI
+  handler, the owner check behind "Test"); each says what replaces it.
+  Connection changes call `Panel.Forget` once the Panel exists.
+- Measured: binary 18.4 MB stripped without the UI, idle anonymous RSS
+  8.3 MB after setup, a sign-in and a connection list, 0 CPU ticks and 0
+  context switches in 30 s.
+
 ### C. Web
 
 Owns: everything under `web/` except the generated specs and
