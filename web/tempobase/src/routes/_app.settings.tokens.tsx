@@ -70,9 +70,19 @@ const tierNotes: Record<Tier, string> = {
 
 /** The tier a token's data access matches; undefined: set some other way. */
 function tierOf(data: DataTokenAccess | undefined): Tier | undefined {
-  const same = JSON.stringify(data ?? null);
-  return tierKeys.find((t) => JSON.stringify(tiers[t].data) === same);
+  return tierKeys.find((t) => {
+    const tier = tiers[t].data;
+    if (!tier || !data) return !tier && !data;
+    return (
+      tier.non_production === data.non_production &&
+      tier.production === data.production &&
+      tier.sensitive === data.sensitive
+    );
+  });
 }
+
+/** A token's connection limit; empty: every one the policy allows. */
+const limited = (t: Token) => (t.connections?.length ? t.connections : null);
 
 /** A token's own levels when they match no tier. */
 const levelsText = (d: DataTokenAccess | undefined) =>
@@ -187,6 +197,7 @@ function AgentList({
         <ul className="g-box overflow-hidden">
           {tokens.map((t) => {
             const tier = tierOf(t.data);
+            const only = limited(t);
             return (
               <li key={t.id}>
                 <button
@@ -205,7 +216,7 @@ function AgentList({
                   </span>
                   <span className="truncate text-(--g-dim)">
                     {tier ? tiers[tier].label : levelsText(t.data)}
-                    {t.connections && ` · ${t.connections.join(", ")}`}
+                    {only && ` · ${only.join(", ")}`}
                   </span>
                   <span className="text-right text-xs text-(--g-mut)">
                     {t.expires_at
@@ -306,9 +317,7 @@ function AgentPane({
       <ErrorText error={update.error} />
       <div className="mt-5 flex flex-col gap-1">
         <span className="g-label">Connections</span>
-        <span>
-          {t.connections?.join(", ") ?? "Every one the policy allows"}
-        </span>
+        <span>{limited(t)?.join(", ") ?? "Every one the policy allows"}</span>
       </div>
       <Snippet secret={null} />
       <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-(--g-line) pt-5">
