@@ -204,7 +204,7 @@ func TestNodeQueryPlans(t *testing.T) {
 		{"ListPendingJoinTokens", listPendingJoinTokens, []any{now}},
 		{"DeleteJoinToken", deleteJoinToken, []any{1}},
 		{"GetServerByFingerprint", getServerByFingerprint, []any{"sha256:a"}},
-		{"SetServerHello", setServerHello, []any{"1", "28", "direct", "[]", "", 0, now, 1}},
+		{"SetServerHello", setServerHello, []any{"1", "28", "direct", "[]", "", 0, false, now, 1}},
 		{"SetServerDisconnected", setServerDisconnected, []any{now, "", 1}},
 		{"RevokeServer", revokeServer, []any{now, 1}},
 		{"PromoteServerKey", promoteServerKey, []any{1, "sha256:a"}},

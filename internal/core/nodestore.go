@@ -193,7 +193,7 @@ func helloParams(serverID int64, h remote.Hello, t time.Time) store.SetServerHel
 	}
 	return store.SetServerHelloParams{
 		Version: h.Version, DockerVersion: h.DockerVersion, Ingress: ingress, PublicIps: string(raw),
-		TunnelHostname: h.TunnelHostname, MemoryBytes: toInt64(h.MemoryTotal), Now: &t, ID: serverID,
+		TunnelHostname: h.TunnelHostname, MemoryBytes: toInt64(h.MemoryTotal), PlainHttp: h.PlainHTTP, Now: &t, ID: serverID,
 	}
 }
 

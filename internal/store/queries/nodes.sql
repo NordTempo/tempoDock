@@ -55,7 +55,7 @@ WHERE key_fingerprint = +CAST(sqlc.arg(fingerprint) AS TEXT) OR next_key_fingerp
 UPDATE servers SET
     version = sqlc.arg(version), docker_version = sqlc.arg(docker_version),
     ingress = sqlc.arg(ingress), public_ips = sqlc.arg(public_ips), tunnel_hostname = sqlc.arg(tunnel_hostname),
-    memory_bytes = sqlc.arg(memory_bytes),
+    memory_bytes = sqlc.arg(memory_bytes), plain_http = sqlc.arg(plain_http),
     connected_at = sqlc.arg(now), last_seen_at = sqlc.arg(now), disconnect_reason = ''
 WHERE id = +sqlc.arg(id)
 RETURNING *;

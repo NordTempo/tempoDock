@@ -35,6 +35,10 @@ type Facts struct {
 	Builder bool `json:"builder"`
 	// MemoryTotal is the machine's memory in bytes, for placement.
 	MemoryTotal uint64 `json:"memory_total"`
+	// PlainHTTP is true when the node's Caddy serves apps over http://
+	// only ([caddy] disable_tls in direct mode): no certificates to wait
+	// for, and app URLs are http://.
+	PlainHTTP bool `json:"plain_http,omitempty"`
 }
 
 // Hello is what the control plane learns about a node each time it

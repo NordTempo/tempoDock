@@ -435,3 +435,17 @@ func TestDomainsFollowTheirServer(t *testing.T) {
 		t.Fatalf("tunnel domain: %+v", d)
 	}
 }
+
+// A node whose Caddy has TLS disabled says so in hello; its domains are
+// http:// even though the control plane serves TLS.
+func TestPlainHTTPNode(t *testing.T) {
+	p, _ := labPool(t)
+	lab := p.ids["homelab"]
+	p.nodes.add(lab, p.rts[lab], remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect, PublicIPs: []string{"192.0.2.7"}, PlainHTTP: true}})
+	p.c.NodeStatus(p.nodes.State(lab))
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	d, err := p.c.AddDomain(p.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
+	if err != nil || d.Domain.URL != "http://shop.example.com" {
+		t.Fatalf("domain on a plain HTTP node: %+v, %v", d.Domain, err)
+	}
+}

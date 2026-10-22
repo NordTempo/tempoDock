@@ -472,8 +472,9 @@ type serverIngress struct {
 	publicIPs  []string
 	tunnel     string // CNAME target of its Cloudflare tunnel
 	baseDomain string
-	// plainHTTP: the local server serves apps over http:// only
-	// ([caddy] disable_tls in direct mode).
+	// plainHTTP: the server serves apps over http:// only ([caddy]
+	// disable_tls in direct mode): its own config on the local server, a
+	// hello fact on a remote one.
 	plainHTTP bool
 }
 
@@ -485,6 +486,7 @@ func (c *Core) ingressOf(s store.Server) serverIngress {
 	ing := serverIngress{mode: apitypes.Ingress(s.Ingress), tunnel: s.TunnelHostname, baseDomain: s.BaseDomain, publicIPs: []string{}}
 	_ = json.Unmarshal([]byte(s.PublicIps), &ing.publicIPs)
 	if !s.Local {
+		ing.plainHTTP = ing.mode == apitypes.IngressDirect && s.PlainHttp
 		return ing
 	}
 	ing.mode = apitypes.Ingress(c.cfg.Ingress.Mode)
