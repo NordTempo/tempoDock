@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/*
+ * tempoBase's stylesheet: Tailwind and style G only. Dock's theme
+ * (src/index.css, style A, its fonts) stays out; G's tokens and parts come
+ * with the shared panel (src/features/data/g.css). The text sizes match
+ * the names the panel uses.
+ */
+@source "../../src/features/data";
+
+@theme {
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 22px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: #0a0a0a;
+  }
+}

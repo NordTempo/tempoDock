@@ -6,7 +6,11 @@
       "!dist",
       "!src/routeTree.gen.ts",
       "!src/api/schema.d.ts",
-      "!openapi.json"
+      "!openapi.json",
+      "!tempobase/dist",
+      "!tempobase/src/routeTree.gen.ts",
+      "!tempobase/src/api/schema.d.ts",
+      "!tempobase/openapi.json"
     ]
   },
   "formatter": { "indentStyle": "space" },
