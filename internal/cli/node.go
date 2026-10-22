@@ -47,7 +47,7 @@ policy and keep serving.`,
 		},
 	}
 	cmd.PersistentFlags().StringVar(&configPath, "config", configPath, "path to the node config file")
-	cmd.AddCommand(newNodeJoinCmd(&configPath))
+	cmd.AddCommand(newNodeJoinCmd(&configPath), newNodeSetControlPlaneCmd(&configPath))
 	return cmd
 }
 
@@ -86,6 +86,43 @@ the command line, where other users of this machine could see it.`,
 	}
 	cmd.Flags().StringVar(&tokenFile, "token-file", "", "read the join token from this file (- for stdin)")
 	return cmd
+}
+
+// newNodeSetControlPlaneCmd is `dock node set-control-plane host:port`:
+// point a joined node at a control plane that moved (ADR 0021).
+func newNodeSetControlPlaneCmd(configPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "set-control-plane <host:port>",
+		Short: "Point this node at the control plane's new address, after it moved",
+		Long: `Point this node at the control plane's new node address ([node] listen
+there), after the control plane moved to another server with dock admin
+restore. The pinned key stays: the node only connects if the server at the
+new address is the same control plane, so no new join is needed. The
+running node daemon picks the address up at its next connection attempt,
+within 30 seconds. Run it as root (or the dock user).`,
+		Example: "  sudo dock node set-control-plane 100.64.0.20:7443",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load(*configPath)
+			if err != nil {
+				return err
+			}
+			if err := config.CheckHostPort("the control plane address", args[0]); err != nil || args[0] == "" {
+				return usageError(fmt.Sprintf("%q is not a host:port address", args[0]), "Give the control plane's [node] listen address, e.g. 100.64.0.20:7443.")
+			}
+			if cfg.Node.ControlPlane != "" {
+				return usageError(fmt.Sprintf("%s sets [node] control_plane = %q, which overrides this", *configPath, cfg.Node.ControlPlane),
+					"Change it there instead, then: sudo systemctl restart dock-node")
+			}
+			link, err := remote.SetControlPlane(cfg.DataDir, args[0])
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Server %s now connects to the control plane at %s (key %s); dock-node picks it up within 30 seconds.\n",
+				link.Server, args[0], link.ControlPlaneKey)
+			return err
+		},
+	}
 }
 
 // joinToken is the token given as the argument or in --token-file (path

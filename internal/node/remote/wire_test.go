@@ -25,7 +25,7 @@ func TestWireRoundTrip(t *testing.T) {
 		Name: "backup-1", Image: "postgres:17", Labels: labels, Env: map[string]string{"A": "1"}, Script: "pg_dump",
 		Network: "env-2", Mounts: []node.Mount{{Volume: "bin", Path: "/bin", ReadOnly: true}},
 		Resources: node.Resources{MemoryBytes: 1 << 28, NanoCPUs: 5e8},
-	}, toJobRequest, jobRequest.node)
+	}, toJobRequest, jobRequest.node, "Stdin") // input is for the local runtime only
 	check(t, node.JobResult{ExitCode: 2, Output: "failed"},
 		func(r node.JobResult) jobResult { return jobResult{ExitCode: r.ExitCode, Output: r.Output} },
 		func(w jobResult) node.JobResult { return node.JobResult{ExitCode: w.ExitCode, Output: w.Output} })
@@ -88,9 +88,10 @@ func TestWireRoundTrip(t *testing.T) {
 }
 
 // check asserts that v has every field set and survives to, JSON and from.
-func check[T, W any](t *testing.T, v T, to func(T) W, from func(W) T) {
+// Fields named in skip aren't carried by the wire and may be zero.
+func check[T, W any](t *testing.T, v T, to func(T) W, from func(W) T, skip ...string) {
 	t.Helper()
-	allSet(t, reflect.ValueOf(v), reflect.TypeOf(v).Name())
+	allSet(t, reflect.ValueOf(v), reflect.TypeOf(v).Name(), skip...)
 	if got := from(jsonTrip(t, to(v))); !reflect.DeepEqual(got, v) {
 		t.Fatalf("%T round trip:\n got %+v\nwant %+v", v, got, v)
 	}

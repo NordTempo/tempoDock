@@ -139,6 +139,30 @@ type BackupSettings struct {
 	// generated it, and to admins who ask (reveal). Without it the backups
 	// can't be read.
 	Password string `json:"password,omitempty"`
+	// ControlPlane is the control plane's own daily backup (ADR 0021).
+	ControlPlane ControlPlaneBackup `json:"control_plane"`
+}
+
+// ControlPlaneBackup is the control plane's own backup into the
+// repository: its database, keys and config, daily at the install's hour.
+type ControlPlaneBackup struct {
+	NextAt *time.Time `json:"next_at,omitempty"`
+	// Latest is the latest run, if any.
+	Latest *ControlPlaneBackupRun `json:"latest,omitempty"`
+}
+
+// ControlPlaneBackupRun is one backup of the control plane.
+type ControlPlaneBackupRun struct {
+	Trigger    string       `json:"trigger" enum:"schedule,manual"`
+	Status     BackupStatus `json:"status" enum:"running,succeeded,failed"`
+	Snapshot   string       `json:"snapshot,omitempty"`
+	SizeBytes  int64        `json:"size_bytes"`
+	Repository string       `json:"repository"`
+	OffBox     bool         `json:"off_box"`
+	Error      string       `json:"error,omitempty"`
+	CreatedBy  string       `json:"created_by"`
+	StartedAt  time.Time    `json:"started_at"`
+	FinishedAt *time.Time   `json:"finished_at,omitempty"`
 }
 
 // ConfigureBackupRequest changes the install's backup settings. Fields

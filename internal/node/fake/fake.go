@@ -586,7 +586,9 @@ func (r *Runtime) Jobs() []node.JobSpec {
 }
 
 // RunJob implements node.Containers, recorded as "job <name>". The answer
-// comes from OnJob's function, called without the lock held.
+// comes from OnJob's function, called without the lock held. Without one,
+// a job's Stdin is read to the end, and a read error fails the job as
+// Docker's runtime does.
 func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
 	r.mu.Lock()
 	r.op("job %s", spec.Name)
@@ -596,10 +598,15 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 	if err := ctx.Err(); err != nil {
 		return node.JobResult{}, err
 	}
-	if fn == nil {
-		return node.JobResult{}, nil
+	if fn != nil {
+		return fn(spec)
 	}
-	return fn(spec)
+	if spec.Stdin != nil {
+		if _, err := io.Copy(io.Discard, spec.Stdin); err != nil {
+			return node.JobResult{ExitCode: 130}, fmt.Errorf("job input: %w", err)
+		}
+	}
+	return node.JobResult{}, nil
 }
 
 // Build implements node.Builder. It reads the whole source stream. A push

@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -119,6 +120,16 @@ func LoadOrCreateIdentity(path string) (Identity, error) {
 	return id, id.save(path)
 }
 
+// KeyFingerprint is the fingerprint of the key in the file at path. A
+// control plane backup names its link key with it (ADR 0021).
+func KeyFingerprint(path string) (string, error) {
+	id, err := loadIdentity(path)
+	if err != nil {
+		return "", err
+	}
+	return id.Fingerprint(), nil
+}
+
 // loadIdentity reads a key file. Like ssh, it refuses a key that other
 // users can read.
 func loadIdentity(path string) (Identity, error) {
@@ -158,13 +169,19 @@ func (id Identity) save(path string) error {
 }
 
 // writeFileAtomic writes data to path with mode 0600 through a temporary
-// file, so a crash never leaves a half-written key or link file.
+// file, so a crash never leaves a half-written key or link file. A file
+// it replaces keeps its owner: root changing a node's link (`dock node
+// set-control-plane`) must leave it readable by the dock user.
 func writeFileAtomic(path string, data []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*") // 0600
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.Remove(f.Name()) }()
+	if err := keepOwner(f, path); err != nil {
+		_ = f.Close()
+		return err
+	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		return err
@@ -177,6 +194,23 @@ func writeFileAtomic(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(f.Name(), path)
+}
+
+// keepOwner gives f the owner of the file at path, when that exists and
+// belongs to someone else (which only root can do anything about).
+func keepOwner(f *os.File, path string) error {
+	fi, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || int(st.Uid) == os.Geteuid() {
+		return nil
+	}
+	return f.Chown(int(st.Uid), int(st.Gid))
 }
 
 // peerFingerprint returns the fingerprint of the key the peer presented.

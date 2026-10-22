@@ -7,13 +7,22 @@
 #   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh
 #   sudo DOCK_BINARY=./dock-linux-amd64 NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
 #   sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh   # downloads the release's binary
+#   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh --restore /root/dock-backup.tar.gz
 #
 # Re-running is safe: data is kept, binaries and units are replaced (that is
 # also how you upgrade; a node is upgraded as a node). config.toml is written
 # once; later runs only change the keys the options below ask for.
 #
 # Options:
-#   --node        install as a node: `dock node` instead of `dock serve`
+#   --node        install as a node: `dock node` instead of `dock serve`. On a
+#                 control plane retired by `dock admin backup --move`, this turns
+#                 it into a node (with NODE_JOIN_TOKEN): its old data is moved aside
+#   --restore ARCHIVE  install a control plane from `dock admin backup` (ADR 0021),
+#                 on a fresh server: same identity, so nodes keep trusting it. The
+#                 old config.toml is kept except what describes the machine
+#                 (addresses, ingress, sizes), which is set as for a new install
+#   --old-server-becomes-node  with --restore: the old server keeps its apps and
+#                 joins this control plane as a node, instead of being replaced
 #
 # Environment:
 #   DOCK_BINARY   path to a dock binary (a release's dock-linux-<arch>, or make build)
@@ -52,6 +61,17 @@ CONF=/etc/dock/config.toml
 # Written by `dock node join`; its presence means this node has joined.
 NODE_STATE=/var/lib/dock/node.toml
 TUNNEL_ENV=/etc/dock/cloudflared.env
+# Written by `dock admin backup --move`: this control plane moved away.
+MOVED=/var/lib/dock/MOVED
+# Config keys that describe the machine rather than the install. A restore
+# keeps the old config.toml but takes these from a new install's
+# (SECTION:KEY, "" the top level).
+MACHINE_KEYS=(:data_dir :listen :internal_listen :public_ip
+  caddy:admin_socket caddy:http_port caddy:https_port
+  buildkit:enabled buildkit:memory_mb buildkit:cpus
+  network:pool network:allow_private
+  ingress:mode ingress:tunnel_hostname
+  registry:listen registry:storage_dir)
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -59,7 +79,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 # Temporary files, removed on exit.
 staged=""
 download_dir=""
-cleanup() { rm -rf ${staged:+"$staged"} ${download_dir:+"$download_dir"}; }
+cleanup() { rm -rf ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"}; }
 trap cleanup EXIT
 
 # github CURL-ARGS... runs curl against the GitHub API, with GITHUB_TOKEN if set.
@@ -96,9 +116,10 @@ download_dock() {
   chmod 0755 "$dir/dock-linux-$ARCH"
 }
 
-# toml_get FILE SECTION KEY prints KEY's value in [SECTION] ("" is the top
-# level), quotes stripped. Enough for the flat keys this script writes.
-toml_get() {
+# toml_get_raw FILE SECTION KEY prints KEY's value in [SECTION] ("" is the
+# top level) as a TOML literal, quotes included. Enough for the flat keys
+# this script writes.
+toml_get_raw() {
   awk -v section="$2" -v key="$3" '
     BEGIN { in_section = (section == "") }
     /^[[:space:]]*\[/ {
@@ -107,8 +128,16 @@ toml_get() {
     }
     in_section && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
       v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); sub(/[[:space:]]+#.*$/, "", v)
-      gsub(/^"|"$/, "", v); print v; exit
+      print v; exit
     }' "$1"
+}
+
+# toml_get FILE SECTION KEY is toml_get_raw with the quotes stripped.
+toml_get() {
+  local v
+  v="$(toml_get_raw "$@")"
+  v="${v#\"}"
+  printf '%s\n' "${v%\"}"
 }
 
 # toml_set FILE SECTION KEY VALUE sets KEY = VALUE (a TOML literal, quoted by
@@ -150,12 +179,19 @@ tunnel_id() {
 }
 
 node_mode=false
-for arg in "$@"; do
-  case "$arg" in
+restore=""
+old_server_node=false
+while (( $# )); do
+  case "$1" in
     --node) node_mode=true ;;
+    --restore)
+      [[ -n "${2:-}" ]] || die "--restore needs the archive from \`dock admin backup\`"
+      restore="$(realpath "$2")"; shift ;;
+    --old-server-becomes-node) old_server_node=true ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
-    *) die "unknown option $arg (see --help)" ;;
+    *) die "unknown option $1 (see --help)" ;;
   esac
+  shift
 done
 [[ -n "${NODE_JOIN_TOKEN:-}" ]] && node_mode=true
 
@@ -167,10 +203,25 @@ case "$(uname -m)" in
   *) die "unsupported architecture $(uname -m)" ;;
 esac
 
-# A server is one or the other; re-runs keep what it is.
+# A server is one or the other; re-runs keep what it is. The exception is
+# a control plane that moved away (`dock admin backup --move` left its
+# marker): it may become a node of the new one, keeping its apps.
 [[ -f /etc/systemd/system/dock-node.service ]] && node_mode=true
+convert=false
 if [[ "$node_mode" == true && -f /etc/systemd/system/dock.service ]]; then
-  die "this server runs the control plane (dock.service); a node must be a separate server"
+  [[ -f "$MOVED" ]] \
+    || die "this server runs the control plane (dock.service); a node must be a separate server, or move the control plane away first (docs/guide/install.md#moving-the-control-plane)"
+  [[ -n "${NODE_JOIN_TOKEN:-}" ]] \
+    || die "set NODE_JOIN_TOKEN to turn this retired control plane into a node: run \`dock server add <name>\` against the new control plane"
+  convert=true
+fi
+if [[ -n "$restore" ]]; then
+  [[ "$node_mode" == false ]] || die "--restore installs a control plane; leave out --node and NODE_JOIN_TOKEN"
+  [[ -r "$restore" ]] || die "can't read $restore"
+  [[ ! -f /var/lib/dock/dock.db ]] \
+    || die "this server already has a control plane database (/var/lib/dock/dock.db); --restore is for a fresh server"
+elif [[ "$old_server_node" == true ]]; then
+  die "--old-server-becomes-node goes with --restore"
 fi
 if [[ "$node_mode" == true ]]; then
   [[ -n "${NODE_JOIN_TOKEN:-}" || -f "$NODE_STATE" ]] \
@@ -284,7 +335,7 @@ install -d -m 0751 -o root -g dock /etc/dock
 # Changes go to a staged copy first and only replace config.toml once the
 # new binary accepts it.
 staged="$(mktemp /etc/dock/.config.toml.XXXXXX)"
-if [[ -f "$CONF" ]]; then
+if [[ -f "$CONF" && -z "$restore" ]]; then
   cat "$CONF" > "$staged"
 else
   public_ip=""
@@ -363,6 +414,51 @@ CONF
   fi
 fi
 
+# A restore keeps the old control plane's config, with the machine's own
+# keys from the new install written above (ADR 0021). The base domain and
+# plain HTTP go with the server's role, so they are kept only when this
+# server takes the old one's place, unless given.
+old_config=""
+if [[ -n "$restore" ]]; then
+  old_config="$(mktemp)"
+  /usr/local/bin/dock admin restore --print-config "$restore" > "$old_config" \
+    || die "$restore is not a backup this dock can restore (see above)"
+  if [[ -s "$old_config" ]]; then
+    keys=("${MACHINE_KEYS[@]}")
+    [[ "$old_server_node" == false && -z "${BASE_DOMAIN+x}" ]] || keys+=(:base_domain)
+    [[ "$old_server_node" == false && -z "${DISABLE_TLS:-}" ]] || keys+=(caddy:disable_tls)
+    merged="$(mktemp /etc/dock/.config.toml.XXXXXX)"
+    cat "$old_config" > "$merged"
+    for k in "${keys[@]}"; do
+      v="$(toml_get_raw "$staged" "${k%%:*}" "${k#*:}")"
+      [[ -z "$v" ]] || toml_set "$merged" "${k%%:*}" "${k#*:}" "$v"
+    done
+    # Nodes need an address here; the old one is on the old server.
+    old_node_listen="$(toml_get "$old_config" node listen)"
+    if [[ -z "${NODE_LISTEN:-}" ]]; then
+      if [[ -n "$old_node_listen" ]]; then
+        ts_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+        [[ -n "$ts_ip" ]] || die "the old control plane took nodes on $old_node_listen; set NODE_LISTEN to this server's address for them, e.g. 100.64.0.20:7443"
+        NODE_LISTEN="$ts_ip:${old_node_listen##*:}"
+      fi
+      toml_set "$merged" node listen "\"${NODE_LISTEN:-}\""
+    fi
+    if [[ "$(toml_get "$old_config" ingress mode)" == cloudflare_tunnel && "$tunnel" == false ]]; then
+      say "warning: the old control plane served apps through a Cloudflare Tunnel and this one serves them directly."
+      say "         Point their DNS at this server, or re-run with CLOUDFLARE_TUNNEL_TOKEN (the same tunnel keeps DNS as it is)."
+    fi
+    mv "$merged" "$staged"
+  fi
+  if [[ "$old_server_node" == true && -z "${NODE_LISTEN:-}" ]]; then
+    die "--old-server-becomes-node needs nodes to reach this server: set NODE_LISTEN, e.g. \"\$(tailscale ip -4):7443\""
+  fi
+fi
+if [[ "$convert" == true ]]; then
+  # A node serves the registry on [registry] listen itself, and takes no nodes.
+  toml_set "$staged" registry enabled false
+  toml_set "$staged" node listen '""'
+fi
+
 if [[ "$tunnel" == true ]]; then
   toml_set "$staged" ingress mode '"cloudflare_tunnel"'
   [[ -z "$tunnel_hostname" ]] || toml_set "$staged" ingress tunnel_hostname "\"$tunnel_hostname\""
@@ -403,6 +499,19 @@ sysctl -q -p /etc/sysctl.d/90-dock.conf
 
 say "==> buildkit image"
 docker pull -q "$BUILDKIT_IMAGE" >/dev/null
+
+retired=""
+if [[ "$convert" == true ]]; then
+  say "==> retire the control plane"
+  systemctl disable --now dock.service 2>/dev/null || true
+  rm -f /etc/systemd/system/dock.service
+  # The node serves the registry on [registry] listen itself.
+  docker rm -f dock-registry >/dev/null 2>&1 || true
+  # Kept until the new control plane checks out; Railpack's cache stays.
+  retired="/var/lib/dock-retired-$(date +%Y%m%d-%H%M%S)"
+  install -d -m 0700 "$retired"
+  find /var/lib/dock -mindepth 1 -maxdepth 1 ! -name railpack -exec mv -t "$retired" {} +
+fi
 
 say "==> systemd"
 if [[ "$node_mode" == true ]]; then
@@ -448,6 +557,18 @@ if [[ "$tunnel" == true ]]; then
   fi
 fi
 
+# registry_storage creates the dock-registry user and the registry's
+# storage dir, and prints the dir.
+registry_storage() {
+  local storage
+  storage="$(toml_get "$CONF" registry storage_dir)"
+  storage="${storage:-/var/lib/dock-registry}"
+  id dock-registry >/dev/null 2>&1 \
+    || useradd --system --no-create-home --home-dir "$storage" --shell /usr/sbin/nologin dock-registry
+  install -d -m 0700 -o dock-registry -g dock-registry "$storage"
+  printf '%s\n' "$storage"
+}
+
 # setup_registry runs CNCF Distribution as the dock-registry container
 # (ADR 0014). Docker's restart policy keeps it up across reboots, like the
 # apps; the control plane execs into it for garbage collection. It is
@@ -456,12 +577,7 @@ setup_registry() {
   local listen storage cfg_dir=/etc/dock/registry hash current
   listen="$(toml_get "$CONF" registry listen)"
   listen="${listen:-127.0.0.1:5000}"
-  storage="$(toml_get "$CONF" registry storage_dir)"
-  storage="${storage:-/var/lib/dock-registry}"
-
-  id dock-registry >/dev/null 2>&1 \
-    || useradd --system --no-create-home --home-dir "$storage" --shell /usr/sbin/nologin dock-registry
-  install -d -m 0700 -o dock-registry -g dock-registry "$storage"
+  storage="$(registry_storage)"
   install -d -m 0750 -o root -g dock-registry "$cfg_dir"
   # Runs as dock: it reads the control plane's token signing key. It writes
   # config.yml and jwks.json (both deterministic for a given key).
@@ -513,6 +629,18 @@ if [[ "$node_mode" == true ]]; then
   systemctl enable dock-node.service
   systemctl restart dock-node.service
 else
+  if [[ -n "$restore" ]]; then
+    say "==> restore"
+    systemctl stop dock.service 2>/dev/null || true
+    [[ "$(toml_get "$CONF" registry enabled)" != true ]] || registry_storage >/dev/null
+    restore_args=(admin restore --config "$CONF")
+    [[ "$old_server_node" == false ]] || restore_args+=(--old-server-becomes-node)
+    /usr/local/bin/dock "${restore_args[@]}" "$restore" \
+      || die "the restore failed and dock was not started; fix the cause and run the same command again"
+    if [[ -s "$old_config" ]]; then
+      install -m 0640 -o root -g dock "$old_config" /etc/dock/config.from-backup.toml
+    fi
+  fi
   systemctl enable dock.service
   systemctl restart dock.service
   if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
@@ -528,6 +656,10 @@ if [[ "$node_mode" == true ]]; then
   say "Tempo Dock node is installed and connecting to the control plane."
   say "  Check it there:  dock server list"
   say "  Logs here:       journalctl -u dock-node -f"
+  if [[ -n "$retired" ]]; then
+    say "  The old control plane's data is in $retired. It holds every secret of the"
+    say "  platform: delete it once the new control plane checks out."
+  fi
 else
   listen_addr="$(toml_get "$CONF" "" listen)"
   say "Tempo Dock is installed."
@@ -544,6 +676,12 @@ else
   node_listen="$(toml_get "$CONF" node listen)"
   if [[ -n "$node_listen" ]]; then
     say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
+  fi
+  if [[ -n "$restore" ]]; then
+    say "  Restored from $restore."
+    [[ ! -f /etc/dock/config.from-backup.toml ]] || say "  The old config.toml is in /etc/dock/config.from-backup.toml for reference."
+    [[ -z "$node_listen" ]] || say "  On each node that should follow: sudo dock node set-control-plane $node_listen"
+    say "  Next steps: docs/guide/install.md#moving-the-control-plane"
   fi
   if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
     registry_listen="$(toml_get "$CONF" registry listen)"

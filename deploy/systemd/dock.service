@@ -13,6 +13,9 @@ SupplementaryGroups=docker dock-caddy
 ExecStart=/usr/local/bin/dock serve --config /etc/dock/config.toml
 Restart=always
 RestartSec=2
+# 9: this control plane moved to another server (dock admin backup
+# --move, ADR 0021); starting it again would fight the new one.
+RestartPreventExitStatus=9
 # Apps never depend on the daemon, so stopping it is always safe.
 KillSignal=SIGTERM
 TimeoutStopSec=20

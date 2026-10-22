@@ -309,6 +309,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backup/control-plane": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Back up the control plane now
+         * @description Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Unlimited admin.
+         */
+        post: operations["run-control-plane-backup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/data-policy": {
         parameters: {
             query?: never;
@@ -2039,6 +2059,7 @@ export interface components {
             next_at?: string;
         };
         BackupSettings: {
+            control_plane: components["schemas"]["ControlPlaneBackup"];
             has_credentials: boolean;
             /** Format: int64 */
             hour: number;
@@ -2209,6 +2230,28 @@ export interface components {
             service: string;
             url?: string;
             user?: string;
+        };
+        ControlPlaneBackup: {
+            latest?: components["schemas"]["ControlPlaneBackupRun"];
+            /** Format: date-time */
+            next_at?: string;
+        };
+        ControlPlaneBackupRun: {
+            created_by: string;
+            error?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            off_box: boolean;
+            repository: string;
+            /** Format: int64 */
+            size_bytes: number;
+            snapshot?: string;
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed";
+            /** @enum {string} */
+            trigger: "schedule" | "manual";
         };
         CreateAlertChannelRequest: {
             /** @enum {string} */
@@ -4784,6 +4827,80 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "run-control-plane-backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlPlaneBackupRun"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -162,6 +162,34 @@ $R backup ` + backupFlags + ` .
 	return prelude + initRepo + run + retention, nil
 }
 
+// Restic names of the control plane's own backups (ADR 0021).
+const (
+	// ControlPlaneTag tags every control plane snapshot.
+	ControlPlaneTag = "dock-control-plane"
+	// ControlPlaneFile is the archive's file name inside a snapshot:
+	// `restic dump --tag dock-control-plane latest /dock-control-plane.tar`.
+	ControlPlaneFile = "dock-control-plane.tar"
+)
+
+// ControlPlaneScript is the job script of a control plane backup: the
+// archive (internal/cpbackup) arrives on stdin and is stored as one file,
+// then retention runs as for services. It runs in the restic image.
+func ControlPlaneScript() string {
+	return prelude + initRepo + `$R backup ` + backupFlags + ` --stdin --stdin-filename ` + ControlPlaneFile + `
+` + retention
+}
+
+// ControlPlaneEnv is the job environment for a control plane backup into
+// repo with retention ret.
+func ControlPlaneEnv(repo Repo, ret Retention) map[string]string {
+	env := repo.Env()
+	env["DOCK_TAG"] = ControlPlaneTag
+	env["DOCK_KEEP_DAILY"] = strconv.Itoa(ret.Daily)
+	env["DOCK_KEEP_WEEKLY"] = strconv.Itoa(ret.Weekly)
+	env["DOCK_KEEP_MONTHLY"] = strconv.Itoa(ret.Monthly)
+	return env
+}
+
 // BackupEnv is the job environment for backing up src into repo with
 // retention ret.
 func BackupEnv(src Source, repo Repo, ret Retention) map[string]string {

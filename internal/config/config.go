@@ -320,17 +320,17 @@ func (c *Config) validate() error {
 	if err := c.Network.validate(); err != nil {
 		return err
 	}
-	if err := checkHostPort("[node] listen", c.Node.Listen); err != nil {
+	if err := CheckHostPort("[node] listen", c.Node.Listen); err != nil {
 		return err
 	}
-	if err := checkHostPort("[node] control_plane", c.Node.ControlPlane); err != nil {
+	if err := CheckHostPort("[node] control_plane", c.Node.ControlPlane); err != nil {
 		return err
 	}
 	if c.Registry.Enabled {
 		if c.Registry.Listen == "" || c.Registry.StorageDir == "" || c.Registry.PublicName == "" {
 			return errors.New("[registry] enabled needs listen, storage_dir and public_name (the registry's name in its tokens)")
 		}
-		if err := checkHostPort("[registry] listen", c.Registry.Listen); err != nil {
+		if err := CheckHostPort("[registry] listen", c.Registry.Listen); err != nil {
 			return err
 		}
 	}
@@ -363,7 +363,7 @@ func (h *Hooks) validate() error {
 	if h.PublicHost != "" && !hostnameRe.MatchString(h.PublicHost) {
 		return fmt.Errorf("[hooks] public_host %q must be a hostname like hooks.example.com", h.PublicHost)
 	}
-	if err := checkHostPort("[hooks] listen", h.Listen); err != nil {
+	if err := CheckHostPort("[hooks] listen", h.Listen); err != nil {
 		return err
 	}
 	if h.PublicHost != "" {
@@ -386,8 +386,8 @@ func (h *Hooks) validate() error {
 // hostnameRe matches lower-case DNS names with at least two labels.
 var hostnameRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// checkHostPort accepts "" (unset) or "host:port" with a port in 1-65535.
-func checkHostPort(field, addr string) error {
+// CheckHostPort accepts "" (unset) or "host:port" with a port in 1-65535.
+func CheckHostPort(field, addr string) error {
 	if addr == "" {
 		return nil
 	}

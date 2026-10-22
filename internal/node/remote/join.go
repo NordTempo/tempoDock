@@ -51,6 +51,23 @@ func LoadLink(dataDir string) (Link, error) {
 	return l, nil
 }
 
+// SetControlPlane points a joined node at a control plane that moved
+// (ADR 0021): StateFile gets addr as its only address, the pinned key and
+// the server identity stay. A running node dials it from its next
+// connection attempt on, so no restart and no re-join are needed.
+func SetControlPlane(dataDir, addr string) (Link, error) {
+	l, err := LoadLink(dataDir)
+	if err != nil {
+		return Link{}, err
+	}
+	l.Addrs = []string{addr}
+	raw, err := toml.Marshal(l)
+	if err != nil {
+		return Link{}, err
+	}
+	return l, writeFileAtomic(filepath.Join(dataDir, StateFile), raw)
+}
+
 // joinWait bounds a whole join, dial to answer.
 const joinWait = 30 * time.Second
 

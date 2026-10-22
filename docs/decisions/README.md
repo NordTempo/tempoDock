@@ -26,6 +26,9 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0016](0016-database-panel.md) | Database panel: native data browsing, querying and editing | accepted |
 | [0017](0017-mcp-endpoint.md) | One MCP endpoint for the whole platform, data included | accepted |
 | [0018](0018-git-push-deploy.md) | GitHub push-to-deploy: a webhook per service, tarballs over the API | accepted |
+| [0019](0019-templates-and-backups.md) | Database templates and backups | accepted |
+| [0020](0020-retention-and-alerts.md) | Retention, disk pruning and alerts | accepted |
+| [0021](0021-control-plane-backup-and-move.md) | Control plane backup, restore and move | accepted |
 | [0022](0022-clone-and-export.md) | Clone an environment, export a project's config | accepted |
 | [0023](0023-connect-tunnels.md) | `dock connect`: tunnels to private services through the API | accepted |
 

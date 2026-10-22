@@ -140,7 +140,7 @@ the repository password); restoring them into a new service is a follow-up.
   server and the printed password loses the backups; `dock backup
   configure` says so.
 - The platform's own SQLite file isn't backed up by this yet (follow-up,
-  same repository).
+  same repository). Done in [0021](0021-control-plane-backup-and-move.md).
 
 ## Amendment (2026-10-22): jobs run in the template's image
 

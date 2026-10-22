@@ -97,8 +97,9 @@ func (c *Core) UpdateBackupSchedule(ctx context.Context, a Actor, ref ServiceRef
 // one timer. Each pass runs the backups that are due, one at a time, then
 // sleeps until the next one is due, or until kicked (kickBackups: a
 // schedule or the settings changed, a release went active, a server
-// reconnected, a backup finished). With no stateful services the timer
-// isn't armed. Services on offline servers are skipped; their server
+// reconnected, a backup finished). The control plane's own daily backup
+// (ADR 0021) keeps the timer armed once a day even with no stateful
+// services. Services on offline servers are skipped; their server
 // reconnecting kicks a pass that runs what is overdue.
 func (c *Core) scheduleBackups() {
 	defer c.wg.Done()
@@ -129,11 +130,26 @@ func (c *Core) scheduleBackups() {
 	}
 }
 
-// backupPass runs every scheduled backup that is due (sequentially, so a
-// small server never runs two dumps at once) and returns when the next
-// one is due (zero: none scheduled). A backup that couldn't even start is
-// tried once per pass, so the pass always ends.
+// backupPass runs every scheduled backup that is due, the services' and
+// then the control plane's own (ADR 0021), and returns when the next one
+// is due (zero: none scheduled).
 func (c *Core) backupPass(ctx context.Context) (time.Time, error) {
+	next, err := c.serviceBackupPass(ctx)
+	if err != nil {
+		return next, err
+	}
+	cp, err := c.controlPlaneBackupPass(ctx)
+	if next.IsZero() || (!cp.IsZero() && cp.Before(next)) {
+		next = cp
+	}
+	return next, err
+}
+
+// serviceBackupPass runs every scheduled service backup that is due
+// (sequentially, so a small server never runs two dumps at once) and
+// returns when the next one is due (zero: none scheduled). A backup that
+// couldn't even start is tried once per pass, so the pass always ends.
+func (c *Core) serviceBackupPass(ctx context.Context) (time.Time, error) {
 	tried := map[int64]bool{}
 	for ctx.Err() == nil {
 		due, next, err := c.dueBackups(ctx)

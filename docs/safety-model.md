@@ -135,4 +135,10 @@ action, target, summary of the change, and timestamp. Visible in the UI and CLI.
 - Restores never overwrite a live database: they create a new service.
 - Restore is tested, not assumed: the integration suite backs up and restores
   Postgres and Redis on real Docker.
-- Still to come: the platform's own SQLite file in the same repository.
+- The control plane backs itself up daily into the same repository
+  ([0021](decisions/0021-control-plane-backup-and-move.md)): a consistent
+  SQLite snapshot (`VACUUM INTO`, never the live WAL file), the keys and the
+  config. `dock admin backup` writes the same archive to a file, 0600; it
+  holds every secret, and says so.
+- A moved control plane can't come back by accident: `dock admin backup
+  --move` retires it and `dock serve` refuses to start there.

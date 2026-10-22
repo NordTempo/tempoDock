@@ -213,6 +213,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteVolumeStmt, err = db.PrepareContext(ctx, deleteVolume); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteVolume: %w", err)
 	}
+	if q.detachLocalServerStmt, err = db.PrepareContext(ctx, detachLocalServer); err != nil {
+		return nil, fmt.Errorf("error preparing query DetachLocalServer: %w", err)
+	}
 	if q.downsampleServerStatsStmt, err = db.PrepareContext(ctx, downsampleServerStats); err != nil {
 		return nil, fmt.Errorf("error preparing query DownsampleServerStats: %w", err)
 	}
@@ -228,8 +231,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.failRunningBackupsStmt, err = db.PrepareContext(ctx, failRunningBackups); err != nil {
 		return nil, fmt.Errorf("error preparing query FailRunningBackups: %w", err)
 	}
+	if q.failRunningControlPlaneBackupStmt, err = db.PrepareContext(ctx, failRunningControlPlaneBackup); err != nil {
+		return nil, fmt.Errorf("error preparing query FailRunningControlPlaneBackup: %w", err)
+	}
 	if q.finishBackupStmt, err = db.PrepareContext(ctx, finishBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query FinishBackup: %w", err)
+	}
+	if q.finishControlPlaneBackupStmt, err = db.PrepareContext(ctx, finishControlPlaneBackup); err != nil {
+		return nil, fmt.Errorf("error preparing query FinishControlPlaneBackup: %w", err)
+	}
+	if q.forgetRunningControlPlaneBackupStmt, err = db.PrepareContext(ctx, forgetRunningControlPlaneBackup); err != nil {
+		return nil, fmt.Errorf("error preparing query ForgetRunningControlPlaneBackup: %w", err)
 	}
 	if q.getActiveReleaseStmt, err = db.PrepareContext(ctx, getActiveRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActiveRelease: %w", err)
@@ -269,6 +281,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getChangesetStmt, err = db.PrepareContext(ctx, getChangeset); err != nil {
 		return nil, fmt.Errorf("error preparing query GetChangeset: %w", err)
+	}
+	if q.getControlPlaneBackupStmt, err = db.PrepareContext(ctx, getControlPlaneBackup); err != nil {
+		return nil, fmt.Errorf("error preparing query GetControlPlaneBackup: %w", err)
 	}
 	if q.getDataAccessStmt, err = db.PrepareContext(ctx, getDataAccess); err != nil {
 		return nil, fmt.Errorf("error preparing query GetDataAccess: %w", err)
@@ -678,6 +693,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setVariablePendingStmt, err = db.PrepareContext(ctx, setVariablePending); err != nil {
 		return nil, fmt.Errorf("error preparing query SetVariablePending: %w", err)
 	}
+	if q.startControlPlaneBackupStmt, err = db.PrepareContext(ctx, startControlPlaneBackup); err != nil {
+		return nil, fmt.Errorf("error preparing query StartControlPlaneBackup: %w", err)
+	}
 	if q.supersedeReleaseStmt, err = db.PrepareContext(ctx, supersedeRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query SupersedeRelease: %w", err)
 	}
@@ -1043,6 +1061,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteVolumeStmt: %w", cerr)
 		}
 	}
+	if q.detachLocalServerStmt != nil {
+		if cerr := q.detachLocalServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing detachLocalServerStmt: %w", cerr)
+		}
+	}
 	if q.downsampleServerStatsStmt != nil {
 		if cerr := q.downsampleServerStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing downsampleServerStatsStmt: %w", cerr)
@@ -1068,9 +1091,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing failRunningBackupsStmt: %w", cerr)
 		}
 	}
+	if q.failRunningControlPlaneBackupStmt != nil {
+		if cerr := q.failRunningControlPlaneBackupStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing failRunningControlPlaneBackupStmt: %w", cerr)
+		}
+	}
 	if q.finishBackupStmt != nil {
 		if cerr := q.finishBackupStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing finishBackupStmt: %w", cerr)
+		}
+	}
+	if q.finishControlPlaneBackupStmt != nil {
+		if cerr := q.finishControlPlaneBackupStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing finishControlPlaneBackupStmt: %w", cerr)
+		}
+	}
+	if q.forgetRunningControlPlaneBackupStmt != nil {
+		if cerr := q.forgetRunningControlPlaneBackupStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing forgetRunningControlPlaneBackupStmt: %w", cerr)
 		}
 	}
 	if q.getActiveReleaseStmt != nil {
@@ -1136,6 +1174,11 @@ func (q *Queries) Close() error {
 	if q.getChangesetStmt != nil {
 		if cerr := q.getChangesetStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getChangesetStmt: %w", cerr)
+		}
+	}
+	if q.getControlPlaneBackupStmt != nil {
+		if cerr := q.getControlPlaneBackupStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getControlPlaneBackupStmt: %w", cerr)
 		}
 	}
 	if q.getDataAccessStmt != nil {
@@ -1818,6 +1861,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setVariablePendingStmt: %w", cerr)
 		}
 	}
+	if q.startControlPlaneBackupStmt != nil {
+		if cerr := q.startControlPlaneBackupStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing startControlPlaneBackupStmt: %w", cerr)
+		}
+	}
 	if q.supersedeReleaseStmt != nil {
 		if cerr := q.supersedeReleaseStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing supersedeReleaseStmt: %w", cerr)
@@ -1930,479 +1978,491 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                                 DBTX
-	tx                                 *sql.Tx
-	activateReleaseStmt                *sql.Stmt
-	addAlertNoticeStmt                 *sql.Stmt
-	addAuditDetailStmt                 *sql.Stmt
-	addAuditEventStmt                  *sql.Stmt
-	addAuditEventWithDetailStmt        *sql.Stmt
-	addDataPolicyRuleStmt              *sql.Stmt
-	addGitDeliveryStmt                 *sql.Stmt
-	addReleaseEventStmt                *sql.Stmt
-	addSensitiveColumnStmt             *sql.Stmt
-	addServerStatsStmt                 *sql.Stmt
-	addServiceStatsStmt                *sql.Stmt
-	applyVariableStmt                  *sql.Stmt
-	applyVolumeStmt                    *sql.Stmt
-	archiveProjectStmt                 *sql.Stmt
-	archiveServiceStmt                 *sql.Stmt
-	clearArchivedHostPortsStmt         *sql.Stmt
-	clearGitPendingStmt                *sql.Stmt
-	clearReleaseHostPortStmt           *sql.Stmt
-	consumeJoinTokenStmt               *sql.Stmt
-	countKindEnvironmentsStmt          *sql.Stmt
-	countPendingCLILoginsStmt          *sql.Stmt
-	countUsersStmt                     *sql.Stmt
-	createAlertChannelStmt             *sql.Stmt
-	createBackupStmt                   *sql.Stmt
-	createCLILoginStmt                 *sql.Stmt
-	createCLILoginTokenStmt            *sql.Stmt
-	createChangesetStmt                *sql.Stmt
-	createDomainStmt                   *sql.Stmt
-	createEnvironmentStmt              *sql.Stmt
-	createGitConnectionStmt            *sql.Stmt
-	createJoinTokenStmt                *sql.Stmt
-	createProjectStmt                  *sql.Stmt
-	createPromotedReleaseStmt          *sql.Stmt
-	createReleaseStmt                  *sql.Stmt
-	createServerStmt                   *sql.Stmt
-	createServiceStmt                  *sql.Stmt
-	createSessionStmt                  *sql.Stmt
-	createTokenStmt                    *sql.Stmt
-	createUserStmt                     *sql.Stmt
-	createVolumeStmt                   *sql.Stmt
-	decideCLILoginStmt                 *sql.Stmt
-	decideChangesetStmt                *sql.Stmt
-	deleteAlertChannelStmt             *sql.Stmt
-	deleteAlertNoticesStmt             *sql.Stmt
-	deleteAuditDetailsThroughStmt      *sql.Stmt
-	deleteAuditEventsThroughStmt       *sql.Stmt
-	deleteCLILoginStmt                 *sql.Stmt
-	deleteDataPolicyRulesStmt          *sql.Stmt
-	deleteDomainStmt                   *sql.Stmt
-	deleteExpiredCLILoginsStmt         *sql.Stmt
-	deleteExpiredSessionsStmt          *sql.Stmt
-	deleteGitConnectionStmt            *sql.Stmt
-	deleteJoinTokenStmt                *sql.Stmt
-	deleteReleaseEventsStmt            *sql.Stmt
-	deleteSavedQueryStmt               *sql.Stmt
-	deleteSensitiveColumnsStmt         *sql.Stmt
-	deleteServerStmt                   *sql.Stmt
-	deleteServerPlacementsStmt         *sql.Stmt
-	deleteSessionStmt                  *sql.Stmt
-	deleteUserStmt                     *sql.Stmt
-	deleteUserSessionsStmt             *sql.Stmt
-	deleteVariableStmt                 *sql.Stmt
-	deleteVolumeStmt                   *sql.Stmt
-	downsampleServerStatsStmt          *sql.Stmt
-	downsampleServiceStatsStmt         *sql.Stmt
-	expireChangesetsStmt               *sql.Stmt
-	failReleaseStmt                    *sql.Stmt
-	failRunningBackupsStmt             *sql.Stmt
-	finishBackupStmt                   *sql.Stmt
-	getActiveReleaseStmt               *sql.Stmt
-	getAlertStmt                       *sql.Stmt
-	getAlertChannelStmt                *sql.Stmt
-	getAlertChannelByIDStmt            *sql.Stmt
-	getAuditDetailStmt                 *sql.Stmt
-	getAuditEventByDetailStmt          *sql.Stmt
-	getBackupStmt                      *sql.Stmt
-	getBackupBySnapshotStmt            *sql.Stmt
-	getBackupScheduleStmt              *sql.Stmt
-	getBackupSettingsStmt              *sql.Stmt
-	getCLILoginByDeviceHashStmt        *sql.Stmt
-	getCLILoginByUserCodeStmt          *sql.Stmt
-	getChangesetStmt                   *sql.Stmt
-	getDataAccessStmt                  *sql.Stmt
-	getDomainByHostnameStmt            *sql.Stmt
-	getEnvironmentStmt                 *sql.Stmt
-	getEnvironmentByNameStmt           *sql.Stmt
-	getGitConnectionByHookStmt         *sql.Stmt
-	getGitConnectionByServiceStmt      *sql.Stmt
-	getInFlightReleaseStmt             *sql.Stmt
-	getInstallIDStmt                   *sql.Stmt
-	getLocalServerStmt                 *sql.Stmt
-	getPlacementStmt                   *sql.Stmt
-	getProjectStmt                     *sql.Stmt
-	getProjectByNameStmt               *sql.Stmt
-	getReleaseStmt                     *sql.Stmt
-	getReleaseByNumberStmt             *sql.Stmt
-	getServerStmt                      *sql.Stmt
-	getServerByFingerprintStmt         *sql.Stmt
-	getServerByNameStmt                *sql.Stmt
-	getServiceStmt                     *sql.Stmt
-	getServiceByNameStmt               *sql.Stmt
-	getSessionUserStmt                 *sql.Stmt
-	getTokenStmt                       *sql.Stmt
-	getTokenByHashStmt                 *sql.Stmt
-	getUserStmt                        *sql.Stmt
-	getUserByEmailStmt                 *sql.Stmt
-	getVariableStmt                    *sql.Stmt
-	hostnameExistsStmt                 *sql.Stmt
-	insertLiveVariableStmt             *sql.Stmt
-	insertRestoredVariableStmt         *sql.Stmt
-	insertVariableStmt                 *sql.Stmt
-	listActiveReleasesStmt             *sql.Stmt
-	listAlertChannelsStmt              *sql.Stmt
-	listAlertNoticesStmt               *sql.Stmt
-	listAlertsStmt                     *sql.Stmt
-	listAuditEventsStmt                *sql.Stmt
-	listAuditEventsByActionStmt        *sql.Stmt
-	listAuditEventsByTargetStmt        *sql.Stmt
-	listBackupCandidatesStmt           *sql.Stmt
-	listChangesetsStmt                 *sql.Stmt
-	listDataPolicyRulesStmt            *sql.Stmt
-	listDataQueryHistoryStmt           *sql.Stmt
-	listDomainsByServiceStmt           *sql.Stmt
-	listDueRemindersStmt               *sql.Stmt
-	listEffectiveDataPolicyRulesStmt   *sql.Stmt
-	listEnvironmentActiveReleasesStmt  *sql.Stmt
-	listEnvironmentDomainsStmt         *sql.Stmt
-	listEnvironmentVolumesStmt         *sql.Stmt
-	listEnvironmentsStmt               *sql.Stmt
-	listExpiredReleaseHistoryStmt      *sql.Stmt
-	listFailedLatestReleasesStmt       *sql.Stmt
-	listGitPendingServicesStmt         *sql.Stmt
-	listInFlightReleasesStmt           *sql.Stmt
-	listKeptDigestsStmt                *sql.Stmt
-	listKeptImageIDsStmt               *sql.Stmt
-	listLatestScheduledBackupsStmt     *sql.Stmt
-	listOldestAuditEventsStmt          *sql.Stmt
-	listOpenAlertsStmt                 *sql.Stmt
-	listPendingChangesetsStmt          *sql.Stmt
-	listPendingDomainsStmt             *sql.Stmt
-	listPendingJoinTokensStmt          *sql.Stmt
-	listPlacementsStmt                 *sql.Stmt
-	listProjectAuditEventsStmt         *sql.Stmt
-	listProjectAuditEventsByActionStmt *sql.Stmt
-	listProjectDomainsStmt             *sql.Stmt
-	listProjectGitConnectionsStmt      *sql.Stmt
-	listProjectLatestBackupsStmt       *sql.Stmt
-	listProjectReleaseHeadsStmt        *sql.Stmt
-	listProjectServicesStmt            *sql.Stmt
-	listProjectVariableNamesStmt       *sql.Stmt
-	listProjectVolumesStmt             *sql.Stmt
-	listProjectsStmt                   *sql.Stmt
-	listPromotableReleasesStmt         *sql.Stmt
-	listReleaseEventsStmt              *sql.Stmt
-	listReleasesStmt                   *sql.Stmt
-	listRetiredPortHoldersStmt         *sql.Stmt
-	listRoutableDomainsStmt            *sql.Stmt
-	listSavedQueriesStmt               *sql.Stmt
-	listSensitiveColumnsStmt           *sql.Stmt
-	listServerEnvironmentsStmt         *sql.Stmt
-	listServerLoadsStmt                *sql.Stmt
-	listServerPlacementsStmt           *sql.Stmt
-	listServerServicesStmt             *sql.Stmt
-	listServerStatsStmt                *sql.Stmt
-	listServersStmt                    *sql.Stmt
-	listServiceBackupsStmt             *sql.Stmt
-	listServiceStatsStmt               *sql.Stmt
-	listServicesStmt                   *sql.Stmt
-	listStatsNamesStmt                 *sql.Stmt
-	listStatsTargetsStmt               *sql.Stmt
-	listTokensStmt                     *sql.Stmt
-	listUnprunedBackupsStmt            *sql.Stmt
-	listUsedHostPortsStmt              *sql.Stmt
-	listUsersWithCountsStmt            *sql.Stmt
-	listVariablesStmt                  *sql.Stmt
-	listVolumesStmt                    *sql.Stmt
-	markReleaseHistoryTrimmedStmt      *sql.Stmt
-	maxAuditEventIDStmt                *sql.Stmt
-	moveArchivedEnvironmentsStmt       *sql.Stmt
-	nextReleaseNumberStmt              *sql.Stmt
-	openAlertStmt                      *sql.Stmt
-	promoteServerKeyStmt               *sql.Stmt
-	pruneBackupStmt                    *sql.Stmt
-	pruneGitDeliveriesStmt             *sql.Stmt
-	pruneResolvedAlertsStmt            *sql.Stmt
-	pruneServerStatsStmt               *sql.Stmt
-	pruneServiceStatsStmt              *sql.Stmt
-	registerNodeServerStmt             *sql.Stmt
-	resolveAlertStmt                   *sql.Stmt
-	restoreVariableStmt                *sql.Stmt
-	revokeServerStmt                   *sql.Stmt
-	revokeTokenStmt                    *sql.Stmt
-	revokeUserLoginTokensStmt          *sql.Stmt
-	saveQueryStmt                      *sql.Stmt
-	setAlertChannelFailedStmt          *sql.Stmt
-	setAlertChannelSentStmt            *sql.Stmt
-	setDataGrantsSyncedHashStmt        *sql.Stmt
-	setEnvironmentApplyErrorStmt       *sql.Stmt
-	setGitLastEventStmt                *sql.Stmt
-	setGitPendingStmt                  *sql.Stmt
-	setJoinTokenServerStmt             *sql.Stmt
-	setPendingSettingsStmt             *sql.Stmt
-	setReleaseCommitStmt               *sql.Stmt
-	setReleaseContainerStmt            *sql.Stmt
-	setReleaseDigestStmt               *sql.Stmt
-	setReleaseImageStmt                *sql.Stmt
-	setReleaseStatusStmt               *sql.Stmt
-	setServerDisconnectedStmt          *sql.Stmt
-	setServerHelloStmt                 *sql.Stmt
-	setServerMemoryStmt                *sql.Stmt
-	setServerNextKeyStmt               *sql.Stmt
-	setServiceCopiedSettingsStmt       *sql.Stmt
-	setServiceDatabaseSettingsStmt     *sql.Stmt
-	setServiceTemplateStmt             *sql.Stmt
-	setTokenDataAccessStmt             *sql.Stmt
-	setUserDisabledStmt                *sql.Stmt
-	setUserPasswordStmt                *sql.Stmt
-	setVariablePendingStmt             *sql.Stmt
-	supersedeReleaseStmt               *sql.Stmt
-	touchLocalServerStmt               *sql.Stmt
-	touchTokenStmt                     *sql.Stmt
-	unapplyVolumeStmt                  *sql.Stmt
-	updateAlertStmt                    *sql.Stmt
-	updateDomainStatusStmt             *sql.Stmt
-	updateGitConnectionStmt            *sql.Stmt
-	updateSavedQueryStmt               *sql.Stmt
-	updateServerPlacementStmt          *sql.Stmt
-	updateServerSettingsStmt           *sql.Stmt
-	updateServiceStmt                  *sql.Stmt
-	upsertBackupScheduleStmt           *sql.Stmt
-	upsertBackupSettingsStmt           *sql.Stmt
-	upsertDataAccessStmt               *sql.Stmt
-	upsertPlacementStmt                *sql.Stmt
+	db                                  DBTX
+	tx                                  *sql.Tx
+	activateReleaseStmt                 *sql.Stmt
+	addAlertNoticeStmt                  *sql.Stmt
+	addAuditDetailStmt                  *sql.Stmt
+	addAuditEventStmt                   *sql.Stmt
+	addAuditEventWithDetailStmt         *sql.Stmt
+	addDataPolicyRuleStmt               *sql.Stmt
+	addGitDeliveryStmt                  *sql.Stmt
+	addReleaseEventStmt                 *sql.Stmt
+	addSensitiveColumnStmt              *sql.Stmt
+	addServerStatsStmt                  *sql.Stmt
+	addServiceStatsStmt                 *sql.Stmt
+	applyVariableStmt                   *sql.Stmt
+	applyVolumeStmt                     *sql.Stmt
+	archiveProjectStmt                  *sql.Stmt
+	archiveServiceStmt                  *sql.Stmt
+	clearArchivedHostPortsStmt          *sql.Stmt
+	clearGitPendingStmt                 *sql.Stmt
+	clearReleaseHostPortStmt            *sql.Stmt
+	consumeJoinTokenStmt                *sql.Stmt
+	countKindEnvironmentsStmt           *sql.Stmt
+	countPendingCLILoginsStmt           *sql.Stmt
+	countUsersStmt                      *sql.Stmt
+	createAlertChannelStmt              *sql.Stmt
+	createBackupStmt                    *sql.Stmt
+	createCLILoginStmt                  *sql.Stmt
+	createCLILoginTokenStmt             *sql.Stmt
+	createChangesetStmt                 *sql.Stmt
+	createDomainStmt                    *sql.Stmt
+	createEnvironmentStmt               *sql.Stmt
+	createGitConnectionStmt             *sql.Stmt
+	createJoinTokenStmt                 *sql.Stmt
+	createProjectStmt                   *sql.Stmt
+	createPromotedReleaseStmt           *sql.Stmt
+	createReleaseStmt                   *sql.Stmt
+	createServerStmt                    *sql.Stmt
+	createServiceStmt                   *sql.Stmt
+	createSessionStmt                   *sql.Stmt
+	createTokenStmt                     *sql.Stmt
+	createUserStmt                      *sql.Stmt
+	createVolumeStmt                    *sql.Stmt
+	decideCLILoginStmt                  *sql.Stmt
+	decideChangesetStmt                 *sql.Stmt
+	deleteAlertChannelStmt              *sql.Stmt
+	deleteAlertNoticesStmt              *sql.Stmt
+	deleteAuditDetailsThroughStmt       *sql.Stmt
+	deleteAuditEventsThroughStmt        *sql.Stmt
+	deleteCLILoginStmt                  *sql.Stmt
+	deleteDataPolicyRulesStmt           *sql.Stmt
+	deleteDomainStmt                    *sql.Stmt
+	deleteExpiredCLILoginsStmt          *sql.Stmt
+	deleteExpiredSessionsStmt           *sql.Stmt
+	deleteGitConnectionStmt             *sql.Stmt
+	deleteJoinTokenStmt                 *sql.Stmt
+	deleteReleaseEventsStmt             *sql.Stmt
+	deleteSavedQueryStmt                *sql.Stmt
+	deleteSensitiveColumnsStmt          *sql.Stmt
+	deleteServerStmt                    *sql.Stmt
+	deleteServerPlacementsStmt          *sql.Stmt
+	deleteSessionStmt                   *sql.Stmt
+	deleteUserStmt                      *sql.Stmt
+	deleteUserSessionsStmt              *sql.Stmt
+	deleteVariableStmt                  *sql.Stmt
+	deleteVolumeStmt                    *sql.Stmt
+	detachLocalServerStmt               *sql.Stmt
+	downsampleServerStatsStmt           *sql.Stmt
+	downsampleServiceStatsStmt          *sql.Stmt
+	expireChangesetsStmt                *sql.Stmt
+	failReleaseStmt                     *sql.Stmt
+	failRunningBackupsStmt              *sql.Stmt
+	failRunningControlPlaneBackupStmt   *sql.Stmt
+	finishBackupStmt                    *sql.Stmt
+	finishControlPlaneBackupStmt        *sql.Stmt
+	forgetRunningControlPlaneBackupStmt *sql.Stmt
+	getActiveReleaseStmt                *sql.Stmt
+	getAlertStmt                        *sql.Stmt
+	getAlertChannelStmt                 *sql.Stmt
+	getAlertChannelByIDStmt             *sql.Stmt
+	getAuditDetailStmt                  *sql.Stmt
+	getAuditEventByDetailStmt           *sql.Stmt
+	getBackupStmt                       *sql.Stmt
+	getBackupBySnapshotStmt             *sql.Stmt
+	getBackupScheduleStmt               *sql.Stmt
+	getBackupSettingsStmt               *sql.Stmt
+	getCLILoginByDeviceHashStmt         *sql.Stmt
+	getCLILoginByUserCodeStmt           *sql.Stmt
+	getChangesetStmt                    *sql.Stmt
+	getControlPlaneBackupStmt           *sql.Stmt
+	getDataAccessStmt                   *sql.Stmt
+	getDomainByHostnameStmt             *sql.Stmt
+	getEnvironmentStmt                  *sql.Stmt
+	getEnvironmentByNameStmt            *sql.Stmt
+	getGitConnectionByHookStmt          *sql.Stmt
+	getGitConnectionByServiceStmt       *sql.Stmt
+	getInFlightReleaseStmt              *sql.Stmt
+	getInstallIDStmt                    *sql.Stmt
+	getLocalServerStmt                  *sql.Stmt
+	getPlacementStmt                    *sql.Stmt
+	getProjectStmt                      *sql.Stmt
+	getProjectByNameStmt                *sql.Stmt
+	getReleaseStmt                      *sql.Stmt
+	getReleaseByNumberStmt              *sql.Stmt
+	getServerStmt                       *sql.Stmt
+	getServerByFingerprintStmt          *sql.Stmt
+	getServerByNameStmt                 *sql.Stmt
+	getServiceStmt                      *sql.Stmt
+	getServiceByNameStmt                *sql.Stmt
+	getSessionUserStmt                  *sql.Stmt
+	getTokenStmt                        *sql.Stmt
+	getTokenByHashStmt                  *sql.Stmt
+	getUserStmt                         *sql.Stmt
+	getUserByEmailStmt                  *sql.Stmt
+	getVariableStmt                     *sql.Stmt
+	hostnameExistsStmt                  *sql.Stmt
+	insertLiveVariableStmt              *sql.Stmt
+	insertRestoredVariableStmt          *sql.Stmt
+	insertVariableStmt                  *sql.Stmt
+	listActiveReleasesStmt              *sql.Stmt
+	listAlertChannelsStmt               *sql.Stmt
+	listAlertNoticesStmt                *sql.Stmt
+	listAlertsStmt                      *sql.Stmt
+	listAuditEventsStmt                 *sql.Stmt
+	listAuditEventsByActionStmt         *sql.Stmt
+	listAuditEventsByTargetStmt         *sql.Stmt
+	listBackupCandidatesStmt            *sql.Stmt
+	listChangesetsStmt                  *sql.Stmt
+	listDataPolicyRulesStmt             *sql.Stmt
+	listDataQueryHistoryStmt            *sql.Stmt
+	listDomainsByServiceStmt            *sql.Stmt
+	listDueRemindersStmt                *sql.Stmt
+	listEffectiveDataPolicyRulesStmt    *sql.Stmt
+	listEnvironmentActiveReleasesStmt   *sql.Stmt
+	listEnvironmentDomainsStmt          *sql.Stmt
+	listEnvironmentVolumesStmt          *sql.Stmt
+	listEnvironmentsStmt                *sql.Stmt
+	listExpiredReleaseHistoryStmt       *sql.Stmt
+	listFailedLatestReleasesStmt        *sql.Stmt
+	listGitPendingServicesStmt          *sql.Stmt
+	listInFlightReleasesStmt            *sql.Stmt
+	listKeptDigestsStmt                 *sql.Stmt
+	listKeptImageIDsStmt                *sql.Stmt
+	listLatestScheduledBackupsStmt      *sql.Stmt
+	listOldestAuditEventsStmt           *sql.Stmt
+	listOpenAlertsStmt                  *sql.Stmt
+	listPendingChangesetsStmt           *sql.Stmt
+	listPendingDomainsStmt              *sql.Stmt
+	listPendingJoinTokensStmt           *sql.Stmt
+	listPlacementsStmt                  *sql.Stmt
+	listProjectAuditEventsStmt          *sql.Stmt
+	listProjectAuditEventsByActionStmt  *sql.Stmt
+	listProjectDomainsStmt              *sql.Stmt
+	listProjectGitConnectionsStmt       *sql.Stmt
+	listProjectLatestBackupsStmt        *sql.Stmt
+	listProjectReleaseHeadsStmt         *sql.Stmt
+	listProjectServicesStmt             *sql.Stmt
+	listProjectVariableNamesStmt        *sql.Stmt
+	listProjectVolumesStmt              *sql.Stmt
+	listProjectsStmt                    *sql.Stmt
+	listPromotableReleasesStmt          *sql.Stmt
+	listReleaseEventsStmt               *sql.Stmt
+	listReleasesStmt                    *sql.Stmt
+	listRetiredPortHoldersStmt          *sql.Stmt
+	listRoutableDomainsStmt             *sql.Stmt
+	listSavedQueriesStmt                *sql.Stmt
+	listSensitiveColumnsStmt            *sql.Stmt
+	listServerEnvironmentsStmt          *sql.Stmt
+	listServerLoadsStmt                 *sql.Stmt
+	listServerPlacementsStmt            *sql.Stmt
+	listServerServicesStmt              *sql.Stmt
+	listServerStatsStmt                 *sql.Stmt
+	listServersStmt                     *sql.Stmt
+	listServiceBackupsStmt              *sql.Stmt
+	listServiceStatsStmt                *sql.Stmt
+	listServicesStmt                    *sql.Stmt
+	listStatsNamesStmt                  *sql.Stmt
+	listStatsTargetsStmt                *sql.Stmt
+	listTokensStmt                      *sql.Stmt
+	listUnprunedBackupsStmt             *sql.Stmt
+	listUsedHostPortsStmt               *sql.Stmt
+	listUsersWithCountsStmt             *sql.Stmt
+	listVariablesStmt                   *sql.Stmt
+	listVolumesStmt                     *sql.Stmt
+	markReleaseHistoryTrimmedStmt       *sql.Stmt
+	maxAuditEventIDStmt                 *sql.Stmt
+	moveArchivedEnvironmentsStmt        *sql.Stmt
+	nextReleaseNumberStmt               *sql.Stmt
+	openAlertStmt                       *sql.Stmt
+	promoteServerKeyStmt                *sql.Stmt
+	pruneBackupStmt                     *sql.Stmt
+	pruneGitDeliveriesStmt              *sql.Stmt
+	pruneResolvedAlertsStmt             *sql.Stmt
+	pruneServerStatsStmt                *sql.Stmt
+	pruneServiceStatsStmt               *sql.Stmt
+	registerNodeServerStmt              *sql.Stmt
+	resolveAlertStmt                    *sql.Stmt
+	restoreVariableStmt                 *sql.Stmt
+	revokeServerStmt                    *sql.Stmt
+	revokeTokenStmt                     *sql.Stmt
+	revokeUserLoginTokensStmt           *sql.Stmt
+	saveQueryStmt                       *sql.Stmt
+	setAlertChannelFailedStmt           *sql.Stmt
+	setAlertChannelSentStmt             *sql.Stmt
+	setDataGrantsSyncedHashStmt         *sql.Stmt
+	setEnvironmentApplyErrorStmt        *sql.Stmt
+	setGitLastEventStmt                 *sql.Stmt
+	setGitPendingStmt                   *sql.Stmt
+	setJoinTokenServerStmt              *sql.Stmt
+	setPendingSettingsStmt              *sql.Stmt
+	setReleaseCommitStmt                *sql.Stmt
+	setReleaseContainerStmt             *sql.Stmt
+	setReleaseDigestStmt                *sql.Stmt
+	setReleaseImageStmt                 *sql.Stmt
+	setReleaseStatusStmt                *sql.Stmt
+	setServerDisconnectedStmt           *sql.Stmt
+	setServerHelloStmt                  *sql.Stmt
+	setServerMemoryStmt                 *sql.Stmt
+	setServerNextKeyStmt                *sql.Stmt
+	setServiceCopiedSettingsStmt        *sql.Stmt
+	setServiceDatabaseSettingsStmt      *sql.Stmt
+	setServiceTemplateStmt              *sql.Stmt
+	setTokenDataAccessStmt              *sql.Stmt
+	setUserDisabledStmt                 *sql.Stmt
+	setUserPasswordStmt                 *sql.Stmt
+	setVariablePendingStmt              *sql.Stmt
+	startControlPlaneBackupStmt         *sql.Stmt
+	supersedeReleaseStmt                *sql.Stmt
+	touchLocalServerStmt                *sql.Stmt
+	touchTokenStmt                      *sql.Stmt
+	unapplyVolumeStmt                   *sql.Stmt
+	updateAlertStmt                     *sql.Stmt
+	updateDomainStatusStmt              *sql.Stmt
+	updateGitConnectionStmt             *sql.Stmt
+	updateSavedQueryStmt                *sql.Stmt
+	updateServerPlacementStmt           *sql.Stmt
+	updateServerSettingsStmt            *sql.Stmt
+	updateServiceStmt                   *sql.Stmt
+	upsertBackupScheduleStmt            *sql.Stmt
+	upsertBackupSettingsStmt            *sql.Stmt
+	upsertDataAccessStmt                *sql.Stmt
+	upsertPlacementStmt                 *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                                 tx,
-		tx:                                 tx,
-		activateReleaseStmt:                q.activateReleaseStmt,
-		addAlertNoticeStmt:                 q.addAlertNoticeStmt,
-		addAuditDetailStmt:                 q.addAuditDetailStmt,
-		addAuditEventStmt:                  q.addAuditEventStmt,
-		addAuditEventWithDetailStmt:        q.addAuditEventWithDetailStmt,
-		addDataPolicyRuleStmt:              q.addDataPolicyRuleStmt,
-		addGitDeliveryStmt:                 q.addGitDeliveryStmt,
-		addReleaseEventStmt:                q.addReleaseEventStmt,
-		addSensitiveColumnStmt:             q.addSensitiveColumnStmt,
-		addServerStatsStmt:                 q.addServerStatsStmt,
-		addServiceStatsStmt:                q.addServiceStatsStmt,
-		applyVariableStmt:                  q.applyVariableStmt,
-		applyVolumeStmt:                    q.applyVolumeStmt,
-		archiveProjectStmt:                 q.archiveProjectStmt,
-		archiveServiceStmt:                 q.archiveServiceStmt,
-		clearArchivedHostPortsStmt:         q.clearArchivedHostPortsStmt,
-		clearGitPendingStmt:                q.clearGitPendingStmt,
-		clearReleaseHostPortStmt:           q.clearReleaseHostPortStmt,
-		consumeJoinTokenStmt:               q.consumeJoinTokenStmt,
-		countKindEnvironmentsStmt:          q.countKindEnvironmentsStmt,
-		countPendingCLILoginsStmt:          q.countPendingCLILoginsStmt,
-		countUsersStmt:                     q.countUsersStmt,
-		createAlertChannelStmt:             q.createAlertChannelStmt,
-		createBackupStmt:                   q.createBackupStmt,
-		createCLILoginStmt:                 q.createCLILoginStmt,
-		createCLILoginTokenStmt:            q.createCLILoginTokenStmt,
-		createChangesetStmt:                q.createChangesetStmt,
-		createDomainStmt:                   q.createDomainStmt,
-		createEnvironmentStmt:              q.createEnvironmentStmt,
-		createGitConnectionStmt:            q.createGitConnectionStmt,
-		createJoinTokenStmt:                q.createJoinTokenStmt,
-		createProjectStmt:                  q.createProjectStmt,
-		createPromotedReleaseStmt:          q.createPromotedReleaseStmt,
-		createReleaseStmt:                  q.createReleaseStmt,
-		createServerStmt:                   q.createServerStmt,
-		createServiceStmt:                  q.createServiceStmt,
-		createSessionStmt:                  q.createSessionStmt,
-		createTokenStmt:                    q.createTokenStmt,
-		createUserStmt:                     q.createUserStmt,
-		createVolumeStmt:                   q.createVolumeStmt,
-		decideCLILoginStmt:                 q.decideCLILoginStmt,
-		decideChangesetStmt:                q.decideChangesetStmt,
-		deleteAlertChannelStmt:             q.deleteAlertChannelStmt,
-		deleteAlertNoticesStmt:             q.deleteAlertNoticesStmt,
-		deleteAuditDetailsThroughStmt:      q.deleteAuditDetailsThroughStmt,
-		deleteAuditEventsThroughStmt:       q.deleteAuditEventsThroughStmt,
-		deleteCLILoginStmt:                 q.deleteCLILoginStmt,
-		deleteDataPolicyRulesStmt:          q.deleteDataPolicyRulesStmt,
-		deleteDomainStmt:                   q.deleteDomainStmt,
-		deleteExpiredCLILoginsStmt:         q.deleteExpiredCLILoginsStmt,
-		deleteExpiredSessionsStmt:          q.deleteExpiredSessionsStmt,
-		deleteGitConnectionStmt:            q.deleteGitConnectionStmt,
-		deleteJoinTokenStmt:                q.deleteJoinTokenStmt,
-		deleteReleaseEventsStmt:            q.deleteReleaseEventsStmt,
-		deleteSavedQueryStmt:               q.deleteSavedQueryStmt,
-		deleteSensitiveColumnsStmt:         q.deleteSensitiveColumnsStmt,
-		deleteServerStmt:                   q.deleteServerStmt,
-		deleteServerPlacementsStmt:         q.deleteServerPlacementsStmt,
-		deleteSessionStmt:                  q.deleteSessionStmt,
-		deleteUserStmt:                     q.deleteUserStmt,
-		deleteUserSessionsStmt:             q.deleteUserSessionsStmt,
-		deleteVariableStmt:                 q.deleteVariableStmt,
-		deleteVolumeStmt:                   q.deleteVolumeStmt,
-		downsampleServerStatsStmt:          q.downsampleServerStatsStmt,
-		downsampleServiceStatsStmt:         q.downsampleServiceStatsStmt,
-		expireChangesetsStmt:               q.expireChangesetsStmt,
-		failReleaseStmt:                    q.failReleaseStmt,
-		failRunningBackupsStmt:             q.failRunningBackupsStmt,
-		finishBackupStmt:                   q.finishBackupStmt,
-		getActiveReleaseStmt:               q.getActiveReleaseStmt,
-		getAlertStmt:                       q.getAlertStmt,
-		getAlertChannelStmt:                q.getAlertChannelStmt,
-		getAlertChannelByIDStmt:            q.getAlertChannelByIDStmt,
-		getAuditDetailStmt:                 q.getAuditDetailStmt,
-		getAuditEventByDetailStmt:          q.getAuditEventByDetailStmt,
-		getBackupStmt:                      q.getBackupStmt,
-		getBackupBySnapshotStmt:            q.getBackupBySnapshotStmt,
-		getBackupScheduleStmt:              q.getBackupScheduleStmt,
-		getBackupSettingsStmt:              q.getBackupSettingsStmt,
-		getCLILoginByDeviceHashStmt:        q.getCLILoginByDeviceHashStmt,
-		getCLILoginByUserCodeStmt:          q.getCLILoginByUserCodeStmt,
-		getChangesetStmt:                   q.getChangesetStmt,
-		getDataAccessStmt:                  q.getDataAccessStmt,
-		getDomainByHostnameStmt:            q.getDomainByHostnameStmt,
-		getEnvironmentStmt:                 q.getEnvironmentStmt,
-		getEnvironmentByNameStmt:           q.getEnvironmentByNameStmt,
-		getGitConnectionByHookStmt:         q.getGitConnectionByHookStmt,
-		getGitConnectionByServiceStmt:      q.getGitConnectionByServiceStmt,
-		getInFlightReleaseStmt:             q.getInFlightReleaseStmt,
-		getInstallIDStmt:                   q.getInstallIDStmt,
-		getLocalServerStmt:                 q.getLocalServerStmt,
-		getPlacementStmt:                   q.getPlacementStmt,
-		getProjectStmt:                     q.getProjectStmt,
-		getProjectByNameStmt:               q.getProjectByNameStmt,
-		getReleaseStmt:                     q.getReleaseStmt,
-		getReleaseByNumberStmt:             q.getReleaseByNumberStmt,
-		getServerStmt:                      q.getServerStmt,
-		getServerByFingerprintStmt:         q.getServerByFingerprintStmt,
-		getServerByNameStmt:                q.getServerByNameStmt,
-		getServiceStmt:                     q.getServiceStmt,
-		getServiceByNameStmt:               q.getServiceByNameStmt,
-		getSessionUserStmt:                 q.getSessionUserStmt,
-		getTokenStmt:                       q.getTokenStmt,
-		getTokenByHashStmt:                 q.getTokenByHashStmt,
-		getUserStmt:                        q.getUserStmt,
-		getUserByEmailStmt:                 q.getUserByEmailStmt,
-		getVariableStmt:                    q.getVariableStmt,
-		hostnameExistsStmt:                 q.hostnameExistsStmt,
-		insertLiveVariableStmt:             q.insertLiveVariableStmt,
-		insertRestoredVariableStmt:         q.insertRestoredVariableStmt,
-		insertVariableStmt:                 q.insertVariableStmt,
-		listActiveReleasesStmt:             q.listActiveReleasesStmt,
-		listAlertChannelsStmt:              q.listAlertChannelsStmt,
-		listAlertNoticesStmt:               q.listAlertNoticesStmt,
-		listAlertsStmt:                     q.listAlertsStmt,
-		listAuditEventsStmt:                q.listAuditEventsStmt,
-		listAuditEventsByActionStmt:        q.listAuditEventsByActionStmt,
-		listAuditEventsByTargetStmt:        q.listAuditEventsByTargetStmt,
-		listBackupCandidatesStmt:           q.listBackupCandidatesStmt,
-		listChangesetsStmt:                 q.listChangesetsStmt,
-		listDataPolicyRulesStmt:            q.listDataPolicyRulesStmt,
-		listDataQueryHistoryStmt:           q.listDataQueryHistoryStmt,
-		listDomainsByServiceStmt:           q.listDomainsByServiceStmt,
-		listDueRemindersStmt:               q.listDueRemindersStmt,
-		listEffectiveDataPolicyRulesStmt:   q.listEffectiveDataPolicyRulesStmt,
-		listEnvironmentActiveReleasesStmt:  q.listEnvironmentActiveReleasesStmt,
-		listEnvironmentDomainsStmt:         q.listEnvironmentDomainsStmt,
-		listEnvironmentVolumesStmt:         q.listEnvironmentVolumesStmt,
-		listEnvironmentsStmt:               q.listEnvironmentsStmt,
-		listExpiredReleaseHistoryStmt:      q.listExpiredReleaseHistoryStmt,
-		listFailedLatestReleasesStmt:       q.listFailedLatestReleasesStmt,
-		listGitPendingServicesStmt:         q.listGitPendingServicesStmt,
-		listInFlightReleasesStmt:           q.listInFlightReleasesStmt,
-		listKeptDigestsStmt:                q.listKeptDigestsStmt,
-		listKeptImageIDsStmt:               q.listKeptImageIDsStmt,
-		listLatestScheduledBackupsStmt:     q.listLatestScheduledBackupsStmt,
-		listOldestAuditEventsStmt:          q.listOldestAuditEventsStmt,
-		listOpenAlertsStmt:                 q.listOpenAlertsStmt,
-		listPendingChangesetsStmt:          q.listPendingChangesetsStmt,
-		listPendingDomainsStmt:             q.listPendingDomainsStmt,
-		listPendingJoinTokensStmt:          q.listPendingJoinTokensStmt,
-		listPlacementsStmt:                 q.listPlacementsStmt,
-		listProjectAuditEventsStmt:         q.listProjectAuditEventsStmt,
-		listProjectAuditEventsByActionStmt: q.listProjectAuditEventsByActionStmt,
-		listProjectDomainsStmt:             q.listProjectDomainsStmt,
-		listProjectGitConnectionsStmt:      q.listProjectGitConnectionsStmt,
-		listProjectLatestBackupsStmt:       q.listProjectLatestBackupsStmt,
-		listProjectReleaseHeadsStmt:        q.listProjectReleaseHeadsStmt,
-		listProjectServicesStmt:            q.listProjectServicesStmt,
-		listProjectVariableNamesStmt:       q.listProjectVariableNamesStmt,
-		listProjectVolumesStmt:             q.listProjectVolumesStmt,
-		listProjectsStmt:                   q.listProjectsStmt,
-		listPromotableReleasesStmt:         q.listPromotableReleasesStmt,
-		listReleaseEventsStmt:              q.listReleaseEventsStmt,
-		listReleasesStmt:                   q.listReleasesStmt,
-		listRetiredPortHoldersStmt:         q.listRetiredPortHoldersStmt,
-		listRoutableDomainsStmt:            q.listRoutableDomainsStmt,
-		listSavedQueriesStmt:               q.listSavedQueriesStmt,
-		listSensitiveColumnsStmt:           q.listSensitiveColumnsStmt,
-		listServerEnvironmentsStmt:         q.listServerEnvironmentsStmt,
-		listServerLoadsStmt:                q.listServerLoadsStmt,
-		listServerPlacementsStmt:           q.listServerPlacementsStmt,
-		listServerServicesStmt:             q.listServerServicesStmt,
-		listServerStatsStmt:                q.listServerStatsStmt,
-		listServersStmt:                    q.listServersStmt,
-		listServiceBackupsStmt:             q.listServiceBackupsStmt,
-		listServiceStatsStmt:               q.listServiceStatsStmt,
-		listServicesStmt:                   q.listServicesStmt,
-		listStatsNamesStmt:                 q.listStatsNamesStmt,
-		listStatsTargetsStmt:               q.listStatsTargetsStmt,
-		listTokensStmt:                     q.listTokensStmt,
-		listUnprunedBackupsStmt:            q.listUnprunedBackupsStmt,
-		listUsedHostPortsStmt:              q.listUsedHostPortsStmt,
-		listUsersWithCountsStmt:            q.listUsersWithCountsStmt,
-		listVariablesStmt:                  q.listVariablesStmt,
-		listVolumesStmt:                    q.listVolumesStmt,
-		markReleaseHistoryTrimmedStmt:      q.markReleaseHistoryTrimmedStmt,
-		maxAuditEventIDStmt:                q.maxAuditEventIDStmt,
-		moveArchivedEnvironmentsStmt:       q.moveArchivedEnvironmentsStmt,
-		nextReleaseNumberStmt:              q.nextReleaseNumberStmt,
-		openAlertStmt:                      q.openAlertStmt,
-		promoteServerKeyStmt:               q.promoteServerKeyStmt,
-		pruneBackupStmt:                    q.pruneBackupStmt,
-		pruneGitDeliveriesStmt:             q.pruneGitDeliveriesStmt,
-		pruneResolvedAlertsStmt:            q.pruneResolvedAlertsStmt,
-		pruneServerStatsStmt:               q.pruneServerStatsStmt,
-		pruneServiceStatsStmt:              q.pruneServiceStatsStmt,
-		registerNodeServerStmt:             q.registerNodeServerStmt,
-		resolveAlertStmt:                   q.resolveAlertStmt,
-		restoreVariableStmt:                q.restoreVariableStmt,
-		revokeServerStmt:                   q.revokeServerStmt,
-		revokeTokenStmt:                    q.revokeTokenStmt,
-		revokeUserLoginTokensStmt:          q.revokeUserLoginTokensStmt,
-		saveQueryStmt:                      q.saveQueryStmt,
-		setAlertChannelFailedStmt:          q.setAlertChannelFailedStmt,
-		setAlertChannelSentStmt:            q.setAlertChannelSentStmt,
-		setDataGrantsSyncedHashStmt:        q.setDataGrantsSyncedHashStmt,
-		setEnvironmentApplyErrorStmt:       q.setEnvironmentApplyErrorStmt,
-		setGitLastEventStmt:                q.setGitLastEventStmt,
-		setGitPendingStmt:                  q.setGitPendingStmt,
-		setJoinTokenServerStmt:             q.setJoinTokenServerStmt,
-		setPendingSettingsStmt:             q.setPendingSettingsStmt,
-		setReleaseCommitStmt:               q.setReleaseCommitStmt,
-		setReleaseContainerStmt:            q.setReleaseContainerStmt,
-		setReleaseDigestStmt:               q.setReleaseDigestStmt,
-		setReleaseImageStmt:                q.setReleaseImageStmt,
-		setReleaseStatusStmt:               q.setReleaseStatusStmt,
-		setServerDisconnectedStmt:          q.setServerDisconnectedStmt,
-		setServerHelloStmt:                 q.setServerHelloStmt,
-		setServerMemoryStmt:                q.setServerMemoryStmt,
-		setServerNextKeyStmt:               q.setServerNextKeyStmt,
-		setServiceCopiedSettingsStmt:       q.setServiceCopiedSettingsStmt,
-		setServiceDatabaseSettingsStmt:     q.setServiceDatabaseSettingsStmt,
-		setServiceTemplateStmt:             q.setServiceTemplateStmt,
-		setTokenDataAccessStmt:             q.setTokenDataAccessStmt,
-		setUserDisabledStmt:                q.setUserDisabledStmt,
-		setUserPasswordStmt:                q.setUserPasswordStmt,
-		setVariablePendingStmt:             q.setVariablePendingStmt,
-		supersedeReleaseStmt:               q.supersedeReleaseStmt,
-		touchLocalServerStmt:               q.touchLocalServerStmt,
-		touchTokenStmt:                     q.touchTokenStmt,
-		unapplyVolumeStmt:                  q.unapplyVolumeStmt,
-		updateAlertStmt:                    q.updateAlertStmt,
-		updateDomainStatusStmt:             q.updateDomainStatusStmt,
-		updateGitConnectionStmt:            q.updateGitConnectionStmt,
-		updateSavedQueryStmt:               q.updateSavedQueryStmt,
-		updateServerPlacementStmt:          q.updateServerPlacementStmt,
-		updateServerSettingsStmt:           q.updateServerSettingsStmt,
-		updateServiceStmt:                  q.updateServiceStmt,
-		upsertBackupScheduleStmt:           q.upsertBackupScheduleStmt,
-		upsertBackupSettingsStmt:           q.upsertBackupSettingsStmt,
-		upsertDataAccessStmt:               q.upsertDataAccessStmt,
-		upsertPlacementStmt:                q.upsertPlacementStmt,
+		db:                                  tx,
+		tx:                                  tx,
+		activateReleaseStmt:                 q.activateReleaseStmt,
+		addAlertNoticeStmt:                  q.addAlertNoticeStmt,
+		addAuditDetailStmt:                  q.addAuditDetailStmt,
+		addAuditEventStmt:                   q.addAuditEventStmt,
+		addAuditEventWithDetailStmt:         q.addAuditEventWithDetailStmt,
+		addDataPolicyRuleStmt:               q.addDataPolicyRuleStmt,
+		addGitDeliveryStmt:                  q.addGitDeliveryStmt,
+		addReleaseEventStmt:                 q.addReleaseEventStmt,
+		addSensitiveColumnStmt:              q.addSensitiveColumnStmt,
+		addServerStatsStmt:                  q.addServerStatsStmt,
+		addServiceStatsStmt:                 q.addServiceStatsStmt,
+		applyVariableStmt:                   q.applyVariableStmt,
+		applyVolumeStmt:                     q.applyVolumeStmt,
+		archiveProjectStmt:                  q.archiveProjectStmt,
+		archiveServiceStmt:                  q.archiveServiceStmt,
+		clearArchivedHostPortsStmt:          q.clearArchivedHostPortsStmt,
+		clearGitPendingStmt:                 q.clearGitPendingStmt,
+		clearReleaseHostPortStmt:            q.clearReleaseHostPortStmt,
+		consumeJoinTokenStmt:                q.consumeJoinTokenStmt,
+		countKindEnvironmentsStmt:           q.countKindEnvironmentsStmt,
+		countPendingCLILoginsStmt:           q.countPendingCLILoginsStmt,
+		countUsersStmt:                      q.countUsersStmt,
+		createAlertChannelStmt:              q.createAlertChannelStmt,
+		createBackupStmt:                    q.createBackupStmt,
+		createCLILoginStmt:                  q.createCLILoginStmt,
+		createCLILoginTokenStmt:             q.createCLILoginTokenStmt,
+		createChangesetStmt:                 q.createChangesetStmt,
+		createDomainStmt:                    q.createDomainStmt,
+		createEnvironmentStmt:               q.createEnvironmentStmt,
+		createGitConnectionStmt:             q.createGitConnectionStmt,
+		createJoinTokenStmt:                 q.createJoinTokenStmt,
+		createProjectStmt:                   q.createProjectStmt,
+		createPromotedReleaseStmt:           q.createPromotedReleaseStmt,
+		createReleaseStmt:                   q.createReleaseStmt,
+		createServerStmt:                    q.createServerStmt,
+		createServiceStmt:                   q.createServiceStmt,
+		createSessionStmt:                   q.createSessionStmt,
+		createTokenStmt:                     q.createTokenStmt,
+		createUserStmt:                      q.createUserStmt,
+		createVolumeStmt:                    q.createVolumeStmt,
+		decideCLILoginStmt:                  q.decideCLILoginStmt,
+		decideChangesetStmt:                 q.decideChangesetStmt,
+		deleteAlertChannelStmt:              q.deleteAlertChannelStmt,
+		deleteAlertNoticesStmt:              q.deleteAlertNoticesStmt,
+		deleteAuditDetailsThroughStmt:       q.deleteAuditDetailsThroughStmt,
+		deleteAuditEventsThroughStmt:        q.deleteAuditEventsThroughStmt,
+		deleteCLILoginStmt:                  q.deleteCLILoginStmt,
+		deleteDataPolicyRulesStmt:           q.deleteDataPolicyRulesStmt,
+		deleteDomainStmt:                    q.deleteDomainStmt,
+		deleteExpiredCLILoginsStmt:          q.deleteExpiredCLILoginsStmt,
+		deleteExpiredSessionsStmt:           q.deleteExpiredSessionsStmt,
+		deleteGitConnectionStmt:             q.deleteGitConnectionStmt,
+		deleteJoinTokenStmt:                 q.deleteJoinTokenStmt,
+		deleteReleaseEventsStmt:             q.deleteReleaseEventsStmt,
+		deleteSavedQueryStmt:                q.deleteSavedQueryStmt,
+		deleteSensitiveColumnsStmt:          q.deleteSensitiveColumnsStmt,
+		deleteServerStmt:                    q.deleteServerStmt,
+		deleteServerPlacementsStmt:          q.deleteServerPlacementsStmt,
+		deleteSessionStmt:                   q.deleteSessionStmt,
+		deleteUserStmt:                      q.deleteUserStmt,
+		deleteUserSessionsStmt:              q.deleteUserSessionsStmt,
+		deleteVariableStmt:                  q.deleteVariableStmt,
+		deleteVolumeStmt:                    q.deleteVolumeStmt,
+		detachLocalServerStmt:               q.detachLocalServerStmt,
+		downsampleServerStatsStmt:           q.downsampleServerStatsStmt,
+		downsampleServiceStatsStmt:          q.downsampleServiceStatsStmt,
+		expireChangesetsStmt:                q.expireChangesetsStmt,
+		failReleaseStmt:                     q.failReleaseStmt,
+		failRunningBackupsStmt:              q.failRunningBackupsStmt,
+		failRunningControlPlaneBackupStmt:   q.failRunningControlPlaneBackupStmt,
+		finishBackupStmt:                    q.finishBackupStmt,
+		finishControlPlaneBackupStmt:        q.finishControlPlaneBackupStmt,
+		forgetRunningControlPlaneBackupStmt: q.forgetRunningControlPlaneBackupStmt,
+		getActiveReleaseStmt:                q.getActiveReleaseStmt,
+		getAlertStmt:                        q.getAlertStmt,
+		getAlertChannelStmt:                 q.getAlertChannelStmt,
+		getAlertChannelByIDStmt:             q.getAlertChannelByIDStmt,
+		getAuditDetailStmt:                  q.getAuditDetailStmt,
+		getAuditEventByDetailStmt:           q.getAuditEventByDetailStmt,
+		getBackupStmt:                       q.getBackupStmt,
+		getBackupBySnapshotStmt:             q.getBackupBySnapshotStmt,
+		getBackupScheduleStmt:               q.getBackupScheduleStmt,
+		getBackupSettingsStmt:               q.getBackupSettingsStmt,
+		getCLILoginByDeviceHashStmt:         q.getCLILoginByDeviceHashStmt,
+		getCLILoginByUserCodeStmt:           q.getCLILoginByUserCodeStmt,
+		getChangesetStmt:                    q.getChangesetStmt,
+		getControlPlaneBackupStmt:           q.getControlPlaneBackupStmt,
+		getDataAccessStmt:                   q.getDataAccessStmt,
+		getDomainByHostnameStmt:             q.getDomainByHostnameStmt,
+		getEnvironmentStmt:                  q.getEnvironmentStmt,
+		getEnvironmentByNameStmt:            q.getEnvironmentByNameStmt,
+		getGitConnectionByHookStmt:          q.getGitConnectionByHookStmt,
+		getGitConnectionByServiceStmt:       q.getGitConnectionByServiceStmt,
+		getInFlightReleaseStmt:              q.getInFlightReleaseStmt,
+		getInstallIDStmt:                    q.getInstallIDStmt,
+		getLocalServerStmt:                  q.getLocalServerStmt,
+		getPlacementStmt:                    q.getPlacementStmt,
+		getProjectStmt:                      q.getProjectStmt,
+		getProjectByNameStmt:                q.getProjectByNameStmt,
+		getReleaseStmt:                      q.getReleaseStmt,
+		getReleaseByNumberStmt:              q.getReleaseByNumberStmt,
+		getServerStmt:                       q.getServerStmt,
+		getServerByFingerprintStmt:          q.getServerByFingerprintStmt,
+		getServerByNameStmt:                 q.getServerByNameStmt,
+		getServiceStmt:                      q.getServiceStmt,
+		getServiceByNameStmt:                q.getServiceByNameStmt,
+		getSessionUserStmt:                  q.getSessionUserStmt,
+		getTokenStmt:                        q.getTokenStmt,
+		getTokenByHashStmt:                  q.getTokenByHashStmt,
+		getUserStmt:                         q.getUserStmt,
+		getUserByEmailStmt:                  q.getUserByEmailStmt,
+		getVariableStmt:                     q.getVariableStmt,
+		hostnameExistsStmt:                  q.hostnameExistsStmt,
+		insertLiveVariableStmt:              q.insertLiveVariableStmt,
+		insertRestoredVariableStmt:          q.insertRestoredVariableStmt,
+		insertVariableStmt:                  q.insertVariableStmt,
+		listActiveReleasesStmt:              q.listActiveReleasesStmt,
+		listAlertChannelsStmt:               q.listAlertChannelsStmt,
+		listAlertNoticesStmt:                q.listAlertNoticesStmt,
+		listAlertsStmt:                      q.listAlertsStmt,
+		listAuditEventsStmt:                 q.listAuditEventsStmt,
+		listAuditEventsByActionStmt:         q.listAuditEventsByActionStmt,
+		listAuditEventsByTargetStmt:         q.listAuditEventsByTargetStmt,
+		listBackupCandidatesStmt:            q.listBackupCandidatesStmt,
+		listChangesetsStmt:                  q.listChangesetsStmt,
+		listDataPolicyRulesStmt:             q.listDataPolicyRulesStmt,
+		listDataQueryHistoryStmt:            q.listDataQueryHistoryStmt,
+		listDomainsByServiceStmt:            q.listDomainsByServiceStmt,
+		listDueRemindersStmt:                q.listDueRemindersStmt,
+		listEffectiveDataPolicyRulesStmt:    q.listEffectiveDataPolicyRulesStmt,
+		listEnvironmentActiveReleasesStmt:   q.listEnvironmentActiveReleasesStmt,
+		listEnvironmentDomainsStmt:          q.listEnvironmentDomainsStmt,
+		listEnvironmentVolumesStmt:          q.listEnvironmentVolumesStmt,
+		listEnvironmentsStmt:                q.listEnvironmentsStmt,
+		listExpiredReleaseHistoryStmt:       q.listExpiredReleaseHistoryStmt,
+		listFailedLatestReleasesStmt:        q.listFailedLatestReleasesStmt,
+		listGitPendingServicesStmt:          q.listGitPendingServicesStmt,
+		listInFlightReleasesStmt:            q.listInFlightReleasesStmt,
+		listKeptDigestsStmt:                 q.listKeptDigestsStmt,
+		listKeptImageIDsStmt:                q.listKeptImageIDsStmt,
+		listLatestScheduledBackupsStmt:      q.listLatestScheduledBackupsStmt,
+		listOldestAuditEventsStmt:           q.listOldestAuditEventsStmt,
+		listOpenAlertsStmt:                  q.listOpenAlertsStmt,
+		listPendingChangesetsStmt:           q.listPendingChangesetsStmt,
+		listPendingDomainsStmt:              q.listPendingDomainsStmt,
+		listPendingJoinTokensStmt:           q.listPendingJoinTokensStmt,
+		listPlacementsStmt:                  q.listPlacementsStmt,
+		listProjectAuditEventsStmt:          q.listProjectAuditEventsStmt,
+		listProjectAuditEventsByActionStmt:  q.listProjectAuditEventsByActionStmt,
+		listProjectDomainsStmt:              q.listProjectDomainsStmt,
+		listProjectGitConnectionsStmt:       q.listProjectGitConnectionsStmt,
+		listProjectLatestBackupsStmt:        q.listProjectLatestBackupsStmt,
+		listProjectReleaseHeadsStmt:         q.listProjectReleaseHeadsStmt,
+		listProjectServicesStmt:             q.listProjectServicesStmt,
+		listProjectVariableNamesStmt:        q.listProjectVariableNamesStmt,
+		listProjectVolumesStmt:              q.listProjectVolumesStmt,
+		listProjectsStmt:                    q.listProjectsStmt,
+		listPromotableReleasesStmt:          q.listPromotableReleasesStmt,
+		listReleaseEventsStmt:               q.listReleaseEventsStmt,
+		listReleasesStmt:                    q.listReleasesStmt,
+		listRetiredPortHoldersStmt:          q.listRetiredPortHoldersStmt,
+		listRoutableDomainsStmt:             q.listRoutableDomainsStmt,
+		listSavedQueriesStmt:                q.listSavedQueriesStmt,
+		listSensitiveColumnsStmt:            q.listSensitiveColumnsStmt,
+		listServerEnvironmentsStmt:          q.listServerEnvironmentsStmt,
+		listServerLoadsStmt:                 q.listServerLoadsStmt,
+		listServerPlacementsStmt:            q.listServerPlacementsStmt,
+		listServerServicesStmt:              q.listServerServicesStmt,
+		listServerStatsStmt:                 q.listServerStatsStmt,
+		listServersStmt:                     q.listServersStmt,
+		listServiceBackupsStmt:              q.listServiceBackupsStmt,
+		listServiceStatsStmt:                q.listServiceStatsStmt,
+		listServicesStmt:                    q.listServicesStmt,
+		listStatsNamesStmt:                  q.listStatsNamesStmt,
+		listStatsTargetsStmt:                q.listStatsTargetsStmt,
+		listTokensStmt:                      q.listTokensStmt,
+		listUnprunedBackupsStmt:             q.listUnprunedBackupsStmt,
+		listUsedHostPortsStmt:               q.listUsedHostPortsStmt,
+		listUsersWithCountsStmt:             q.listUsersWithCountsStmt,
+		listVariablesStmt:                   q.listVariablesStmt,
+		listVolumesStmt:                     q.listVolumesStmt,
+		markReleaseHistoryTrimmedStmt:       q.markReleaseHistoryTrimmedStmt,
+		maxAuditEventIDStmt:                 q.maxAuditEventIDStmt,
+		moveArchivedEnvironmentsStmt:        q.moveArchivedEnvironmentsStmt,
+		nextReleaseNumberStmt:               q.nextReleaseNumberStmt,
+		openAlertStmt:                       q.openAlertStmt,
+		promoteServerKeyStmt:                q.promoteServerKeyStmt,
+		pruneBackupStmt:                     q.pruneBackupStmt,
+		pruneGitDeliveriesStmt:              q.pruneGitDeliveriesStmt,
+		pruneResolvedAlertsStmt:             q.pruneResolvedAlertsStmt,
+		pruneServerStatsStmt:                q.pruneServerStatsStmt,
+		pruneServiceStatsStmt:               q.pruneServiceStatsStmt,
+		registerNodeServerStmt:              q.registerNodeServerStmt,
+		resolveAlertStmt:                    q.resolveAlertStmt,
+		restoreVariableStmt:                 q.restoreVariableStmt,
+		revokeServerStmt:                    q.revokeServerStmt,
+		revokeTokenStmt:                     q.revokeTokenStmt,
+		revokeUserLoginTokensStmt:           q.revokeUserLoginTokensStmt,
+		saveQueryStmt:                       q.saveQueryStmt,
+		setAlertChannelFailedStmt:           q.setAlertChannelFailedStmt,
+		setAlertChannelSentStmt:             q.setAlertChannelSentStmt,
+		setDataGrantsSyncedHashStmt:         q.setDataGrantsSyncedHashStmt,
+		setEnvironmentApplyErrorStmt:        q.setEnvironmentApplyErrorStmt,
+		setGitLastEventStmt:                 q.setGitLastEventStmt,
+		setGitPendingStmt:                   q.setGitPendingStmt,
+		setJoinTokenServerStmt:              q.setJoinTokenServerStmt,
+		setPendingSettingsStmt:              q.setPendingSettingsStmt,
+		setReleaseCommitStmt:                q.setReleaseCommitStmt,
+		setReleaseContainerStmt:             q.setReleaseContainerStmt,
+		setReleaseDigestStmt:                q.setReleaseDigestStmt,
+		setReleaseImageStmt:                 q.setReleaseImageStmt,
+		setReleaseStatusStmt:                q.setReleaseStatusStmt,
+		setServerDisconnectedStmt:           q.setServerDisconnectedStmt,
+		setServerHelloStmt:                  q.setServerHelloStmt,
+		setServerMemoryStmt:                 q.setServerMemoryStmt,
+		setServerNextKeyStmt:                q.setServerNextKeyStmt,
+		setServiceCopiedSettingsStmt:        q.setServiceCopiedSettingsStmt,
+		setServiceDatabaseSettingsStmt:      q.setServiceDatabaseSettingsStmt,
+		setServiceTemplateStmt:              q.setServiceTemplateStmt,
+		setTokenDataAccessStmt:              q.setTokenDataAccessStmt,
+		setUserDisabledStmt:                 q.setUserDisabledStmt,
+		setUserPasswordStmt:                 q.setUserPasswordStmt,
+		setVariablePendingStmt:              q.setVariablePendingStmt,
+		startControlPlaneBackupStmt:         q.startControlPlaneBackupStmt,
+		supersedeReleaseStmt:                q.supersedeReleaseStmt,
+		touchLocalServerStmt:                q.touchLocalServerStmt,
+		touchTokenStmt:                      q.touchTokenStmt,
+		unapplyVolumeStmt:                   q.unapplyVolumeStmt,
+		updateAlertStmt:                     q.updateAlertStmt,
+		updateDomainStatusStmt:              q.updateDomainStatusStmt,
+		updateGitConnectionStmt:             q.updateGitConnectionStmt,
+		updateSavedQueryStmt:                q.updateSavedQueryStmt,
+		updateServerPlacementStmt:           q.updateServerPlacementStmt,
+		updateServerSettingsStmt:            q.updateServerSettingsStmt,
+		updateServiceStmt:                   q.updateServiceStmt,
+		upsertBackupScheduleStmt:            q.upsertBackupScheduleStmt,
+		upsertBackupSettingsStmt:            q.upsertBackupSettingsStmt,
+		upsertDataAccessStmt:                q.upsertDataAccessStmt,
+		upsertPlacementStmt:                 q.upsertPlacementStmt,
 	}
 }
