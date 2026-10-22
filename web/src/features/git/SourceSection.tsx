@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { keys, useSession } from "../../data/queries";
@@ -46,7 +46,10 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   // The secret of a new or rotated webhook: shown until dismissed.
   const [created, setCreated] = useState<ConnectResult | null>(null);
   const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  // Disconnecting or rotating the secret, each asked first.
+  const [confirming, setConfirming] = useState<"disconnect" | "rotate" | null>(
+    null,
+  );
 
   const setConnection = (connection: GitConnection | undefined) =>
     client.setQueryData<GitSource>(
@@ -59,6 +62,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     onSuccess: (res) => {
       setConnection(res.connection);
       setEditing(false);
+      setConfirming(null);
       if (res.secret) setCreated(res);
     },
   });
@@ -70,7 +74,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     mutationFn: () => done(api.DELETE(gitPath, path)),
     onSuccess: () => {
       setConnection(undefined);
-      setConfirming(false);
+      setConfirming(null);
       setCreated(null);
     },
   });
@@ -164,21 +168,10 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <Button small onClick={() => setEditing(true)}>
                 Edit
               </Button>
-              <Button
-                small
-                disabled={connect.isPending}
-                onClick={() =>
-                  connect.mutate({
-                    repo: conn.repo,
-                    branch: conn.branch,
-                    dir: conn.dir,
-                    rotate_secret: true,
-                  })
-                }
-              >
+              <Button small onClick={() => setConfirming("rotate")}>
                 New secret
               </Button>
-              <Button small danger onClick={() => setConfirming(true)}>
+              <Button small danger onClick={() => setConfirming("disconnect")}>
                 Disconnect
               </Button>
               {deploy.data && (
@@ -190,7 +183,26 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <ErrorText error={deploy.error ?? connect.error} />
             </div>
           )}
-          {confirming && (
+          {confirming === "rotate" && (
+            <Confirm
+              action="New secret"
+              cli={`dock git connect ${conn.repo} --rotate-secret ${flags}`}
+              pending={connect.isPending}
+              error={connect.error}
+              onConfirm={() =>
+                connect.mutate({
+                  repo: conn.repo,
+                  branch: conn.branch,
+                  dir: conn.dir,
+                  rotate_secret: true,
+                })
+              }
+              onCancel={() => setConfirming(null)}
+            >
+              Pushes are refused until the webhook on GitHub has the new secret.
+            </Confirm>
+          )}
+          {confirming === "disconnect" && (
             <Confirm
               danger
               action="Disconnect"
@@ -198,7 +210,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               pending={disconnect.isPending}
               error={disconnect.error}
               onConfirm={() => disconnect.mutate()}
-              onCancel={() => setConfirming(false)}
+              onCancel={() => setConfirming(null)}
             >
               Pushes stop deploying {ref.service} and the token is deleted.
               Releases are kept. Delete the webhook on GitHub too.
@@ -249,7 +261,8 @@ function ConnectForm({
   const [status, setStatus] = useState(conn?.status ?? false);
   const hasToken = (conn?.token_set && !removeToken) || token !== "";
 
-  const submit = () =>
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
     onSubmit({
       repo: repo.trim(),
       branch: branch.trim(),
@@ -257,6 +270,7 @@ function ConnectForm({
       status: status && hasToken,
       ...(token ? { token } : removeToken ? { token: "" } : {}),
     });
+  };
 
   const input = (
     label: string,
@@ -270,13 +284,17 @@ function ConnectForm({
       value={value}
       placeholder={placeholder}
       onChange={(e) => set(e.target.value)}
-      onKeyDown={(e) => e.key === "Enter" && submit()}
       className={`field ${width} py-0.5 font-mono text-xs`}
     />
   );
 
   return (
-    <div className="flex max-w-[860px] flex-col gap-2">
+    <form
+      aria-label="Connect to GitHub"
+      className="flex max-w-[860px] flex-col gap-2"
+      onSubmit={submit}
+      onKeyDown={(e) => e.key === "Escape" && onCancel?.()}
+    >
       <dl className="grid grid-cols-[180px_minmax(0,1fr)] gap-x-4 gap-y-2">
         <Item label="Repository">
           {input("Repository", repo, setRepo, "owner/repo")}
@@ -322,7 +340,7 @@ function ConnectForm({
         </Item>
       </dl>
       <div className="flex flex-wrap items-center gap-2">
-        <Button small primary disabled={pending || !repo} onClick={submit}>
+        <Button small primary type="submit" disabled={pending || !repo.trim()}>
           {conn ? "Save" : "Connect"}
         </Button>
         {onCancel && (
@@ -333,7 +351,7 @@ function ConnectForm({
         <code className="font-mono text-2xs text-mut">{cli}</code>
         <ErrorText error={error} />
       </div>
-    </div>
+    </form>
   );
 }
 
