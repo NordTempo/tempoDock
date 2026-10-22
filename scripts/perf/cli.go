@@ -35,7 +35,7 @@ func checkCLI(o options, t *table) error {
 		}
 		slices.Sort(runs)
 		median := runs[len(runs)/2]
-		t.within("CLI start-up: dock "+strings.Join(args, " "), ms(median)+" median", "≤ "+ms(cliBudget), median <= cliBudget)
+		t.withinTiming("CLI start-up: dock "+strings.Join(args, " "), ms(median)+" median", "≤ "+ms(cliBudget), median <= cliBudget)
 	}
 	return nil
 }

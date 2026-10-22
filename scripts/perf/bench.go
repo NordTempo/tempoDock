@@ -153,7 +153,7 @@ func checkBench(o options, t *table) error {
 			continue
 		}
 		measured, budget, pass := judge(name, r)
-		t.within("bench "+name, measured, budget, pass)
+		t.withinTiming("bench "+name, measured, budget, pass)
 	}
 	for name := range base.Benchmarks {
 		if _, ok := runs.byName[name]; !ok {

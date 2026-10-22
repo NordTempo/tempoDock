@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push supersedes a running one: only the latest commit is checked.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   go:
     runs-on: ubuntu-latest
@@ -53,7 +58,9 @@ jobs:
           package_json_file: web/package.json
           cache: true
           cache_dependency_path: web/pnpm-lock.yaml
-      - run: make perf
+      # Shared runners are too noisy for timing budgets: they warn here and
+      # are enforced locally (make perf). Sizes, memory and allocs still fail.
+      - run: make perf PERF_FLAGS=-soft-timing
 
   web:
     runs-on: ubuntu-latest

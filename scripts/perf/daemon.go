@@ -295,10 +295,10 @@ func (d *daemon) idle(t *table, name string, window time.Duration, clients int) 
 	}
 	ticks := after.ticks - before.ticks
 	t.within(name+": memory", mb(anon)+" anon", "≤ "+mb(idleAnonBudget), anon <= idleAnonBudget)
-	t.within(name+": CPU", fmt.Sprintf("%d ticks in %s", ticks, window), fmt.Sprintf("≤ %d ticks", idleTicksBudget), ticks <= idleTicksBudget)
+	t.withinTiming(name+": CPU", fmt.Sprintf("%d ticks in %s", ticks, window), fmt.Sprintf("≤ %d ticks", idleTicksBudget), ticks <= idleTicksBudget)
 	wakeups := float64(after.wakeups-before.wakeups) / window.Seconds()
 	wakeupsBudget := idleWakeupsBudget + float64(clients)*sseClientWakeupsBudget
-	t.within(name+": wake-ups", fmt.Sprintf("%.2f/s", wakeups), fmt.Sprintf("≤ %.1f/s", wakeupsBudget), wakeups <= wakeupsBudget)
+	t.withinTiming(name+": wake-ups", fmt.Sprintf("%.2f/s", wakeups), fmt.Sprintf("≤ %.1f/s", wakeupsBudget), wakeups <= wakeupsBudget)
 	return nil
 }
 

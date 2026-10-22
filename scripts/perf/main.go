@@ -52,6 +52,11 @@ type options struct {
 	// the baseline (1 if unknown or faster). API latency budgets scale with
 	// it, so a slow CI runner gets proportionally more time.
 	speed float64
+	// softTiming reports timing budgets (start-up, latency, idle CPU and
+	// wake-ups, benchmark ns/op) as warnings instead of failures. For shared
+	// CI runners, whose noise and speed make timing unreliable; sizes,
+	// memory and allocation budgets still fail.
+	softTiming bool
 }
 
 func main() {
@@ -67,6 +72,7 @@ func main() {
 	flag.IntVar(&o.benchCount, "count", 5, "go test -count; the fastest run's ns/op and the median allocs/op are compared")
 	flag.Float64Var(&o.nsTol, "ns-tolerance", 0.30, "allowed ns/op regression (fraction), after normalizing for machine speed")
 	flag.Float64Var(&o.allocsTol, "allocs-tolerance", 0.15, "allowed allocs/op regression (fraction, plus 2 allocs)")
+	flag.BoolVar(&o.softTiming, "soft-timing", false, "report timing budgets as warnings (shared CI runners)")
 	flag.BoolVar(&o.update, "update-baseline", false, "record binary size and benchmarks into -baseline instead of checking")
 	flag.Parse()
 	o.checks = strings.Split(checks, ",")
@@ -88,7 +94,7 @@ func main() {
 	if slices.Contains(o.checks, "daemon") && base.CalibrationNs > 0 {
 		o.speed = max(1, min(calibrate(), calibrate(), calibrate())/base.CalibrationNs)
 	}
-	t := &table{waivers: base.Waivers}
+	t := &table{waivers: base.Waivers, softTiming: o.softTiming}
 	steps := []struct {
 		name string
 		run  func(options, *table) error
@@ -136,11 +142,24 @@ type table struct {
 	rows []row
 	errs []error
 	// waivers are known over-budget checks (by name) with the reason.
-	waivers map[string]string
+	waivers    map[string]string
+	softTiming bool
 }
 
 func (t *table) add(check, measured, budget string, r result) {
 	t.rows = append(t.rows, row{check, measured, budget, r})
+}
+
+// withinTiming is within for timing budgets: with -soft-timing a miss is a
+// warning, not a failure.
+func (t *table) withinTiming(check, measured, budget string, pass bool) {
+	if !pass && t.softTiming {
+		if _, isWaived := t.waivers[check]; !isWaived {
+			t.add(check, measured, budget, warn)
+			return
+		}
+	}
+	t.within(check, measured, budget, pass)
 }
 
 // within adds a row that passes when measured ≤ budget, or is waived.

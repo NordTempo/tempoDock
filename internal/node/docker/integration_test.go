@@ -283,7 +283,9 @@ func TestHealthCheckOOM(t *testing.T) {
 		Resources: node.Resources{MemoryBytes: 16 << 20},
 	})
 	err := e.HealthCheck(ctx, c, node.HealthCheck{Timeout: 30 * time.Second, Interval: 200 * time.Millisecond})
-	if err == nil || !strings.Contains(err.Error(), "ran out of memory (limit 16 MB)") {
+	// Kernels that don't report OOM kills to Docker (some CI runners) give
+	// the exit-137 wording instead; both name the limit.
+	if err == nil || !strings.Contains(err.Error(), "out of memory") || !strings.Contains(err.Error(), "limit 16 MB") {
 		t.Fatalf("err = %v", err)
 	}
 }

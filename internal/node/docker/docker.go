@@ -599,6 +599,10 @@ func errExited(code int, oom bool, limit int64) error {
 		return fmt.Errorf("container ran out of memory (limit %d MB) and was killed during health check", limit>>20)
 	case oom:
 		return errors.New("container ran out of memory and was killed during health check")
+	case code == 137 && limit > 0:
+		// SIGKILL. Some kernels don't report the OOM kill to Docker, so
+		// name the likely cause without claiming it.
+		return fmt.Errorf("container was killed (exit code 137) during health check, most likely out of memory (limit %d MB)", limit>>20)
 	}
 	return fmt.Errorf("container exited with code %d during health check", code)
 }

@@ -171,7 +171,7 @@ func (d *daemon) latency(t *table, speed float64) error {
 			if err != nil {
 				return err
 			}
-			t.within("API p95 GET "+path+suffix, fmt.Sprintf("%s (p50 %s)", ms(p95), ms(p50)), budgetText, p95 <= budget)
+			t.withinTiming("API p95 GET "+path+suffix, fmt.Sprintf("%s (p50 %s)", ms(p95), ms(p50)), budgetText, p95 <= budget)
 		}
 		return nil
 	}
