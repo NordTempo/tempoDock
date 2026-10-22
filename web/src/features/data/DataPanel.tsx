@@ -10,6 +10,7 @@ import {
 import { ChangesView } from "./ChangesView";
 import { tableName } from "./cells";
 import { Kbd } from "./kit";
+import { levelText } from "./policy";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
 import { TableList } from "./TableList";
@@ -38,15 +39,6 @@ const ranks: Record<DataLevel, number> = {
 };
 export const atLeast = (level: DataLevel, wanted: DataLevel) =>
   ranks[level] >= ranks[wanted];
-
-/** What the caller's level allows, in the header's words. */
-const levelText: Record<DataLevel, string> = {
-  none: "no access",
-  schema: "schema only",
-  read: "read",
-  propose: "read, propose changes",
-  write: "read, write",
-};
 
 /**
  * The database panel (style G) inside a DataSourceContext: a Dock

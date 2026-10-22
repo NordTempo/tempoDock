@@ -4,13 +4,13 @@ import {
   kindNames,
   levelNotes,
   levels,
+  type PolicyRule,
   sensitivities,
   subjects,
 } from "./policy";
 import type {
   DataEnvironmentKind,
   DataLevel,
-  DataPolicyRule,
   DataSensitivity,
   DataSubject,
 } from "./types";
@@ -18,12 +18,6 @@ import type {
 // One scope's data access rules (ADR 0016 section 4), shared by Dock's
 // policy page (default, project, environment) and tempoBase's (default,
 // connection). Style G: render inside a `.g` element.
-
-/** A rule as set at a scope. */
-export type PolicyRule = Pick<
-  DataPolicyRule,
-  "subject" | "kind" | "level" | "sensitive"
->;
 
 /**
  * A policy at one scope: its rules and the effective ones, each saying

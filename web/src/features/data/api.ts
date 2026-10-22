@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { PolicyRule } from "./policy";
 import type { EditActions } from "./ReviewPanel";
 import type {
   DataChange,
@@ -26,7 +27,6 @@ import type {
   DataPage,
   DataPageRequest,
   DataPermission,
-  DataPolicyRule,
   DataQueryError,
   DataQueryFrame,
   DataQueryRequest,
@@ -132,7 +132,7 @@ export type DataSource = DataEndpoints & {
   /** The effective policy for this database (the sensitive columns note). */
   policy: {
     queryKey: readonly unknown[];
-    queryFn: () => Promise<{ effective: DataPolicyRule[] | null }>;
+    queryFn: () => Promise<{ effective: readonly PolicyRule[] | null }>;
   };
 };
 
