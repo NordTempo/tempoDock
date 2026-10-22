@@ -90,22 +90,28 @@ export function DataPanel({
       : []),
   ] as const;
 
-  useShortcuts([
-    ...tabs.map((t) => ({
-      key: t.key,
-      label: t.label.toLowerCase(),
-      run: () => onView({ ...view, tab: t.tab }),
-    })),
-    ...(canEdit && view.tab === "tables"
+  // Until the database is set up and readable the panel shows only its
+  // status, so no tab or edit keys are bound (or listed in the legend).
+  useShortcuts(
+    ready
       ? [
-          {
-            key: "e",
-            label: editing ? "stop editing" : "edit",
-            run: () => setEditing((e) => !e),
-          },
+          ...tabs.map((t) => ({
+            key: t.key,
+            label: t.label.toLowerCase(),
+            run: () => onView({ ...view, tab: t.tab }),
+          })),
+          ...(canEdit && view.tab === "tables"
+            ? [
+                {
+                  key: "e",
+                  label: editing ? "stop editing" : "edit",
+                  run: () => setEditing((e) => !e),
+                },
+              ]
+            : []),
         ]
-      : []),
-  ]);
+      : [],
+  );
 
   const shell = (children: ReactNode) => (
     <div className={`g flex flex-col ${className}`}>{children}</div>
