@@ -33,6 +33,11 @@ type Containers interface {
 	Pull(ctx context.Context, ref string, logs io.Writer, opts ...PullOptions) (string, error)
 	// HasImage reports whether ref is present locally.
 	HasImage(ctx context.Context, ref string) (bool, error)
+	// RemoveImage removes the local image reference ref (a tag or a
+	// digest reference); the image itself goes with its last reference.
+	// An image a container uses is never removed (an error). A ref that
+	// isn't there is ErrNotFound (wrapped).
+	RemoveImage(ctx context.Context, ref string) error
 
 	// EnsureNetwork creates the bridge network, labelled with labels'
 	// project and environment, if it doesn't exist. An existing network

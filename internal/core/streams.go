@@ -346,7 +346,7 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 			return notFound("the container of release %d of %s is gone", rel.Number, ss)
 		}
 		if err != nil {
-			return err
+			return c.nodeErr(ss.env.ServerID, err)
 		}
 		ready()
 		// Lines queued behind the first go out in the same write.

@@ -67,6 +67,12 @@ func (c *Client) HasImage(ctx context.Context, ref string) (bool, error) {
 	return r.Present, err
 }
 
+// RemoveImage implements node.Containers.
+func (c *Client) RemoveImage(ctx context.Context, ref string) error {
+	_, err := unaryCall[empty](ctx, c, opRemoveImage, imageRequest{Ref: ref})
+	return err
+}
+
 // EnsureNetwork implements node.Containers.
 func (c *Client) EnsureNetwork(ctx context.Context, name string, labels node.Labels) error {
 	_, err := unaryCall[empty](ctx, c, opEnsureNetwork, resourceRequest{Name: name, Labels: toWireLabels(labels)})

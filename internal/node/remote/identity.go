@@ -83,6 +83,15 @@ func identityFor(priv ed25519.PrivateKey) (Identity, error) {
 // and the servers table.
 func (id Identity) Fingerprint() string { return fingerprint(id.cert.Leaf) }
 
+// ServerMarker is the server's Dock-Server header value (caddy
+// Options.ServerMarker, ADR 0013): the first 16 hex characters of its key
+// fingerprint. A node derives it from its own key when it starts, so a
+// tunnel server's Caddy gets it on first connect, not at install time.
+func ServerMarker(fingerprint string) string {
+	hexed := strings.TrimPrefix(fingerprint, "sha256:")
+	return hexed[:min(16, len(hexed))]
+}
+
 func fingerprint(cert *x509.Certificate) string {
 	sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	return "sha256:" + hex.EncodeToString(sum[:])

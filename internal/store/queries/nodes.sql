@@ -116,10 +116,23 @@ ORDER BY services.name;
 
 -- name: CreatePromotedRelease :one
 -- Creates a target service's release from a promoted one: the same image
--- by digest, with the target's own config.
-INSERT INTO releases (service_id, number, source, image_ref, image_digest, built_on_server_id,
+-- by digest, with the target's own config. image_id is set when the
+-- image is already on the target's server (same server, no registry).
+INSERT INTO releases (service_id, number, source, image_ref, image_id, image_digest, built_on_server_id,
     promoted_from_release_id, config, host_port, created_by, carried)
-VALUES (sqlc.arg(service_id), sqlc.arg(number), 'promote', sqlc.arg(image_ref), sqlc.arg(image_digest),
+VALUES (sqlc.arg(service_id), sqlc.arg(number), 'promote', sqlc.arg(image_ref), sqlc.arg(image_id), sqlc.arg(image_digest),
     sqlc.narg(built_on_server_id), CAST(sqlc.arg(promoted_from_release_id) AS INTEGER), sqlc.arg(config), sqlc.arg(host_port),
     sqlc.arg(created_by), sqlc.arg(carried))
 RETURNING *;
+
+-- name: ListKeptDigests :many
+-- The registry digests releases still need, which registry pruning keeps
+-- (ADR 0014 section 4): every service's newest keep releases (the
+-- rollback window) and every active and in-flight release. It reads each
+-- release with a digest once, through the (service_id, number) key for
+-- the window; pruning runs at most hourly, after a deploy.
+SELECT DISTINCT releases.image_digest FROM releases
+WHERE releases.image_digest != ''
+  AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')
+       OR releases.number > (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
+                            - CAST(sqlc.arg(keep) AS INTEGER));

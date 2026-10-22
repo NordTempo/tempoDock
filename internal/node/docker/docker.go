@@ -165,6 +165,20 @@ func (r *Runtime) HasImage(ctx context.Context, ref string) (bool, error) {
 	return true, nil
 }
 
+// RemoveImage implements node.Containers. Without force, Docker refuses
+// to remove an image a container uses, and a tag shared with another
+// reference only drops that reference.
+func (r *Runtime) RemoveImage(ctx context.Context, ref string) error {
+	_, err := r.cli.ImageRemove(ctx, ref, client.ImageRemoveOptions{PruneChildren: true})
+	if cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("image %s: %w", ref, node.ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("remove image %s: %w", ref, err)
+	}
+	return nil
+}
+
 // BridgePrefix starts the host interface name of every network the runtime
 // creates, so the firewall (`dock admin firewall`) can match app traffic by
 // interface: "dk-+" in iptables.

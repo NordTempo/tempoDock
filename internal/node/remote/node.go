@@ -314,6 +314,9 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		ok, err := rt.HasImage(ctx, a.Ref)
 		return hasImageResult{Present: ok}, err
 	}))
+	h(opRemoveImage, unary(func(ctx context.Context, a imageRequest) (empty, error) {
+		return empty{}, rt.RemoveImage(ctx, a.Ref)
+	}))
 	h(opEnsureNetwork, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
 		return empty{}, rt.EnsureNetwork(ctx, a.Name, a.Labels.node())
 	}))

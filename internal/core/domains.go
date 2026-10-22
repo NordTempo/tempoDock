@@ -61,11 +61,24 @@ func (c *Core) domainsOf(ctx context.Context, ss svcScope) ([]apitypes.Domain, e
 	if err != nil {
 		return nil, err
 	}
+	ing, err := c.envIngress(ctx, ss.envScope)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]apitypes.Domain, 0, len(rows))
 	for _, d := range rows {
-		out = append(out, c.toDomain(ss, d, rows))
+		out = append(out, c.toDomain(ss, d, rows, ing))
 	}
 	return out, nil
+}
+
+// envIngress is the ingress of the server an environment runs on.
+func (c *Core) envIngress(ctx context.Context, es envScope) (serverIngress, error) {
+	srv, err := c.store.GetServer(ctx, es.env.ServerID)
+	if err != nil {
+		return serverIngress{}, err
+	}
+	return c.ingressOf(srv), nil
 }
 
 // AddDomain adds any hostname to a service. It routes as soon as the
@@ -91,15 +104,21 @@ func (c *Core) AddDomain(ctx context.Context, a Actor, ref ServiceRef, req apity
 	return c.addDomain(ctx, a, ss, host, redirect, false)
 }
 
-// GenerateDomain gives a service a hostname under the configured base
-// domain: <service>-<project>[-<env>].<base>, with -2, -3… on collisions.
+// GenerateDomain gives a service a hostname under the base domain of its
+// environment's server: <service>-<project>[-<env>].<base>, with -2, -3…
+// on collisions.
 func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (apitypes.DomainChange, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "adding a domain")
 	if err != nil {
 		return apitypes.DomainChange{}, err
 	}
-	if c.cfg.BaseDomain == "" {
-		return apitypes.DomainChange{}, invalid("this server has no base_domain configured, so it can't generate hostnames; add your own domain instead")
+	srv, err := c.store.GetServer(ctx, ss.env.ServerID)
+	if err != nil {
+		return apitypes.DomainChange{}, err
+	}
+	base := c.ingressOf(srv).baseDomain
+	if base == "" {
+		return apitypes.DomainChange{}, invalid("server %s has no base domain, so it can't generate hostnames; set one with `dock server set %s --base-domain <domain>`, or add your own domain", srv.Name, srv.Name)
 	}
 	label := ss.svc.Name + "-" + ss.project.Name
 	if ss.env.Name != "production" {
@@ -111,7 +130,7 @@ func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (api
 		if i > 1 {
 			candidate += "-" + strconv.Itoa(i)
 		}
-		host := candidate + "." + strings.TrimPrefix(c.cfg.BaseDomain, "*.")
+		host := candidate + "." + base
 		exists, err := c.store.HostnameExists(ctx, host)
 		if err != nil {
 			return apitypes.DomainChange{}, err
@@ -161,7 +180,11 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 	if err != nil {
 		return out, err
 	}
-	out.Domain = c.toDomain(ss, d, rows)
+	ing, err := c.envIngress(ctx, ss.envScope)
+	if err != nil {
+		return out, err
+	}
+	out.Domain = c.toDomain(ss, d, rows, ing)
 	c.publish(ss, apitypes.Event{Type: apitypes.EventDomain, Domain: &out.Domain})
 	return out, nil
 }
@@ -190,7 +213,7 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 		c.log.Error("apply routes after removing domain", "domain", host, "err", err)
 	}
 	c.audit(ctx, a, "domain.remove", &ss.project, &ss.env, ss.String(), "removed domain "+host)
-	dom := c.toDomain(ss, d, nil)
+	dom := c.toDomain(ss, d, nil, serverIngress{})
 	c.checksMu.Lock()
 	delete(c.checks, d.ID)
 	c.checksMu.Unlock()
@@ -198,8 +221,9 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 	return nil
 }
 
-// AllowCertificate answers Caddy's on-demand TLS `ask`: only hostnames of
-// non-archived services get certificates.
+// AllowCertificate answers the local Caddy's on-demand TLS `ask`: only
+// hostnames of non-archived services on this server get certificates.
+// Remote servers answer their own Caddy from their last routes.
 func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, error) {
 	host, err := normalizeHostname(hostname)
 	if err != nil {
@@ -212,18 +236,21 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	s, err := c.store.GetService(ctx, d.ServiceID)
+	ss, err := c.scopeOf(ctx, d.ServiceID)
 	if err != nil {
 		return false, err
 	}
-	return s.ArchivedAt == nil, nil
+	return ss.svc.ArchivedAt == nil && ss.env.ServerID == c.local.ID, nil
 }
 
-// toDomain converts a domain; siblings (the service's other domains) are
-// used to offer a CNAME to a generated domain.
-func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain) apitypes.Domain {
+// toDomain converts a domain served by a server with ingress ing;
+// siblings (the service's other domains) are used to offer a CNAME to a
+// generated domain. Domains are https:// except on a direct server with
+// TLS disabled; on a tunnel server Cloudflare's edge terminates TLS, and
+// DNS is a CNAME to the tunnel.
+func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, ing serverIngress) apitypes.Domain {
 	scheme := "https://"
-	if c.cfg.Caddy.DisableTLS {
+	if ing.plainHTTP {
 		scheme = "http://"
 	}
 	out := apitypes.Domain{
@@ -239,8 +266,18 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain) ap
 	if d.Generated {
 		return out // covered by the wildcard record for the base domain
 	}
-	if c.cfg.PublicIP != "" {
-		out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: "A", Name: d.Hostname, Value: c.cfg.PublicIP})
+	if ing.mode == apitypes.IngressCloudflareTunnel {
+		if ing.tunnel != "" {
+			out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: "CNAME", Name: d.Hostname, Value: ing.tunnel})
+		}
+	} else {
+		for _, ip := range ing.publicIPs {
+			typ := "A"
+			if strings.Contains(ip, ":") {
+				typ = "AAAA"
+			}
+			out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: typ, Name: d.Hostname, Value: ip})
+		}
 	}
 	// Subdomains can CNAME to a generated domain instead (apexes can't).
 	if strings.Count(d.Hostname, ".") >= 2 {
@@ -346,6 +383,10 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 	if err != nil || ss.svc.ArchivedAt != nil {
 		return
 	}
+	ing, err := c.envIngress(ctx, ss.envScope)
+	if err != nil {
+		return
+	}
 	check, err := c.runtime(ss.env.ServerID).CheckDomain(ctx, d.Hostname)
 	status := apitypes.DomainStatus(d.Status)
 	var reason string
@@ -353,7 +394,7 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 	case errors.Is(err, context.Canceled):
 		return
 	case err != nil:
-		reason = "could not check: " + err.Error()
+		reason = "could not check: " + c.nodeErr(ss.env.ServerID, err).Error()
 	case !check.DNSOK:
 		*dnsOK = time.Time{}
 		status = apitypes.DomainWaitingForDNS
@@ -361,7 +402,7 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 		if reason == "" {
 			reason = fmt.Sprintf("%s resolves to %v; expected %v", d.Hostname, check.ResolvedIPs, check.ExpectedIPs)
 		}
-	case c.cfg.Caddy.DisableTLS || check.CertificateOK:
+	case ing.plainHTTP || check.CertificateOK:
 		status, reason = apitypes.DomainActive, ""
 	case check.Error != "":
 		status, reason = apitypes.DomainError, check.Error
@@ -387,6 +428,6 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 	}
 	// Published after every check, so clients see when it last ran.
 	siblings, _ := c.store.ListDomainsByService(ctx, d.ServiceID)
-	dom := c.toDomain(ss, d, siblings)
+	dom := c.toDomain(ss, d, siblings, ing)
 	c.publish(ss, apitypes.Event{Type: apitypes.EventDomain, Domain: &dom})
 }

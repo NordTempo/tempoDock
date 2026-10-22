@@ -11,6 +11,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -245,16 +246,23 @@ func (c *Core) connected(serverID int64) node.Runtime {
 }
 
 // runtimeFor returns the node runtime of a server, or a server_offline
-// error. This is the seam remote nodes (M3) plug into, via Options.Remote.
+// error that says why it can't be reached. Remote servers come from the
+// node hub (SetNodes).
 func (c *Core) runtimeFor(serverID int64) (node.Runtime, error) {
 	if rt := c.connected(serverID); rt != nil {
 		return rt, nil
 	}
-	name := fmt.Sprint(serverID)
-	if s, err := c.store.GetServer(context.Background(), serverID); err == nil {
-		name = s.Name
+	s, err := c.store.GetServer(context.Background(), serverID)
+	if err != nil {
+		return nil, errf(apitypes.CodeServerOffline, "server %d is offline", serverID)
 	}
-	return nil, errf(apitypes.CodeServerOffline, "server %s is offline", name)
+	switch {
+	case s.RevokedAt != nil:
+		return nil, errf(apitypes.CodeServerOffline, "server %s is revoked; join it again with `dock server add %s`", s.Name, s.Name)
+	case c.nodes != nil && c.nodes.State(serverID).Status == remote.StatusIncompatible:
+		return nil, errf(apitypes.CodeServerOffline, "server %s runs dock %s, which this control plane can't drive; upgrade dock on it", s.Name, c.nodes.State(serverID).Hello.Version)
+	}
+	return nil, errf(apitypes.CodeServerOffline, "server %s is offline", s.Name)
 }
 
 // runtime returns a server's runtime for call sites that handle runtime
@@ -276,6 +284,7 @@ func (o offlineRuntime) Pull(context.Context, string, io.Writer, ...node.PullOpt
 	return "", o.err
 }
 func (o offlineRuntime) HasImage(context.Context, string) (bool, error)           { return false, o.err }
+func (o offlineRuntime) RemoveImage(context.Context, string) error                { return o.err }
 func (o offlineRuntime) EnsureNetwork(context.Context, string, node.Labels) error { return o.err }
 func (o offlineRuntime) EnsureVolume(context.Context, string, node.Labels) error  { return o.err }
 func (o offlineRuntime) Start(context.Context, node.ContainerSpec) (node.Container, error) {

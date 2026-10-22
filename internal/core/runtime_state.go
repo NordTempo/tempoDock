@@ -137,7 +137,8 @@ func (c *Core) onContainerEvent(ctx context.Context, ev node.ContainerEvent) {
 // removes their containers, along with any other container of a failed or
 // superseded release (a drain cut short by a restart, a stop that failed).
 // If a stateful deploy had already stopped the previous release, that
-// release is started again, after the new container is gone.
+// release is started again, after the new container is gone. On remote
+// servers, which aren't connected yet, both happen when each reconnects.
 func (c *Core) recover(ctx context.Context) error {
 	inflight, err := c.store.ListInFlightReleases(ctx)
 	if err != nil {
@@ -157,10 +158,14 @@ func (c *Core) recover(ctx context.Context) error {
 		c.restage(ctx, ss, r, msg)
 		interrupted = append(interrupted, ss)
 	}
-	if err := c.sweepRetired(ctx); err != nil {
+	if err := c.sweepRetired(ctx, c.local.ID, c.rt); err != nil {
 		return err
 	}
 	for _, ss := range interrupted {
+		if ss.env.ServerID != c.local.ID {
+			c.ensureLater(ss.env.ServerID, ss.svc.ID)
+			continue
+		}
 		if active, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
 			c.ensureRunning(ctx, ss, active)
 		}
@@ -168,12 +173,12 @@ func (c *Core) recover(ctx context.Context) error {
 	return nil
 }
 
-// sweepRetired removes this server's containers of failed and superseded
+// sweepRetired removes a server's containers of failed and superseded
 // releases, then frees the host ports of retired releases whose containers
 // are gone. A container counts as ours only if all its labels match the
 // release's project, environment and service.
-func (c *Core) sweepRetired(ctx context.Context) error {
-	ctrs, err := c.rt.List(ctx)
+func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime) error {
+	ctrs, err := rt.List(ctx)
 	if err != nil {
 		return err
 	}
@@ -200,7 +205,7 @@ func (c *Core) sweepRetired(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if ss.env.ServerID != c.local.ID || slices.ContainsFunc(cs, func(ct node.Container) bool { return ct.Labels != labels(ss, rel.ID) }) {
+		if ss.env.ServerID != serverID || slices.ContainsFunc(cs, func(ct node.Container) bool { return ct.Labels != labels(ss, rel.ID) }) {
 			continue
 		}
 		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Removing leftover container of release %d (%s)", rel.Number, rel.Status))
@@ -210,7 +215,7 @@ func (c *Core) sweepRetired(ctx context.Context) error {
 		}
 		remaining[id] = false
 	}
-	holders, err := c.store.ListRetiredPortHolders(ctx, c.local.ID)
+	holders, err := c.store.ListRetiredPortHolders(ctx, serverID)
 	if err != nil {
 		return err
 	}
@@ -255,10 +260,12 @@ func (c *Core) ensureRunning(ctx context.Context, ss svcScope, active store.Rele
 	}
 }
 
-// reconcile compares active releases with the runtime's containers, sets
-// service statuses and reports drift. It never touches containers.
-func (c *Core) reconcile(ctx context.Context) error {
-	ctrs, err := c.rt.List(ctx)
+// reconcileServer compares the active releases on a server with its
+// containers and sets service statuses. With report it also reports
+// drift (missing containers, containers of no active release). It never
+// touches containers.
+func (c *Core) reconcileServer(ctx context.Context, serverID int64, rt node.Runtime, report bool) error {
+	ctrs, err := rt.List(ctx)
 	if err != nil {
 		return err
 	}
@@ -277,13 +284,15 @@ func (c *Core) reconcile(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if ss.env.ServerID != c.local.ID {
+		if ss.env.ServerID != serverID {
 			continue
 		}
 		ct, ok := byID[r.ContainerID]
 		if !ok {
 			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
-			c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s is missing; redeploy or roll back to start it", r.Number, ss))
+			if report {
+				c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s is missing; redeploy or roll back to start it", r.Number, ss))
+			}
 			continue
 		}
 		s := statusOf(ct)
@@ -291,6 +300,16 @@ func (c *Core) reconcile(ctx context.Context) error {
 			s.MemoryLimitMB = c.memoryLimitMB(r)
 		}
 		c.setStatus(ss, s)
+	}
+	if !report {
+		return nil
+	}
+	inflight, err := c.store.ListInFlightReleases(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range inflight {
+		activeIDs[strconv.FormatInt(r.ID, 10)] = true // a deploy's new container
 	}
 	for _, ct := range ctrs {
 		if !activeIDs[ct.Labels.Release] {

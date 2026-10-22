@@ -100,6 +100,7 @@ const (
 	opHello         = "hello"
 	opPull          = "pull"
 	opHasImage      = "has-image"
+	opRemoveImage   = "remove-image"
 	opEnsureNetwork = "ensure-network"
 	opEnsureVolume  = "ensure-volume"
 	opStart         = "start"

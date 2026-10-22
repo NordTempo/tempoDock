@@ -57,22 +57,24 @@ func (q *Queries) ClearReleaseHostPort(ctx context.Context, id int64) error {
 }
 
 const createRelease = `-- name: CreateRelease :one
-INSERT INTO releases (service_id, number, source, from_release, image_ref, image_id, config, host_port, created_by, carried)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO releases (service_id, number, source, from_release, image_ref, image_id, image_digest, built_on_server_id, config, host_port, created_by, carried)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id
 `
 
 type CreateReleaseParams struct {
-	ServiceID   int64
-	Number      int64
-	Source      string
-	FromRelease int64
-	ImageRef    string
-	ImageID     string
-	Config      []byte
-	HostPort    int64
-	CreatedBy   string
-	Carried     string
+	ServiceID       int64
+	Number          int64
+	Source          string
+	FromRelease     int64
+	ImageRef        string
+	ImageID         string
+	ImageDigest     string
+	BuiltOnServerID *int64
+	Config          []byte
+	HostPort        int64
+	CreatedBy       string
+	Carried         string
 }
 
 func (q *Queries) CreateRelease(ctx context.Context, arg CreateReleaseParams) (Release, error) {
@@ -83,6 +85,8 @@ func (q *Queries) CreateRelease(ctx context.Context, arg CreateReleaseParams) (R
 		arg.FromRelease,
 		arg.ImageRef,
 		arg.ImageID,
+		arg.ImageDigest,
+		arg.BuiltOnServerID,
 		arg.Config,
 		arg.HostPort,
 		arg.CreatedBy,

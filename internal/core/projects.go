@@ -307,13 +307,26 @@ func (c *Core) CreateEnvironment(ctx context.Context, a Actor, project string, r
 }
 
 func (c *Core) serverNames(ctx context.Context) (map[int64]string, error) {
-	rows, err := c.store.ListServers(ctx)
+	rows, err := c.serverRows(ctx)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[int64]string, len(rows))
+	for id, s := range rows {
+		m[id] = s.Name
+	}
+	return m, nil
+}
+
+// serverRows loads every server by ID, in one query.
+func (c *Core) serverRows(ctx context.Context) (map[int64]store.Server, error) {
+	rows, err := c.store.ListServers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[int64]store.Server, len(rows))
 	for _, s := range rows {
-		m[s.ID] = s.Name
+		m[s.ID] = s
 	}
 	return m, nil
 }

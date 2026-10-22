@@ -321,6 +321,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listInFlightReleasesStmt, err = db.PrepareContext(ctx, listInFlightReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListInFlightReleases: %w", err)
 	}
+	if q.listKeptDigestsStmt, err = db.PrepareContext(ctx, listKeptDigests); err != nil {
+		return nil, fmt.Errorf("error preparing query ListKeptDigests: %w", err)
+	}
 	if q.listPendingChangesetsStmt, err = db.PrepareContext(ctx, listPendingChangesets); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPendingChangesets: %w", err)
 	}
@@ -1031,6 +1034,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listInFlightReleasesStmt: %w", cerr)
 		}
 	}
+	if q.listKeptDigestsStmt != nil {
+		if cerr := q.listKeptDigestsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listKeptDigestsStmt: %w", cerr)
+		}
+	}
 	if q.listPendingChangesetsStmt != nil {
 		if cerr := q.listPendingChangesetsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listPendingChangesetsStmt: %w", cerr)
@@ -1519,6 +1527,7 @@ type Queries struct {
 	listEnvironmentVolumesStmt         *sql.Stmt
 	listEnvironmentsStmt               *sql.Stmt
 	listInFlightReleasesStmt           *sql.Stmt
+	listKeptDigestsStmt                *sql.Stmt
 	listPendingChangesetsStmt          *sql.Stmt
 	listPendingDomainsStmt             *sql.Stmt
 	listPendingJoinTokensStmt          *sql.Stmt
@@ -1694,6 +1703,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listEnvironmentVolumesStmt:         q.listEnvironmentVolumesStmt,
 		listEnvironmentsStmt:               q.listEnvironmentsStmt,
 		listInFlightReleasesStmt:           q.listInFlightReleasesStmt,
+		listKeptDigestsStmt:                q.listKeptDigestsStmt,
 		listPendingChangesetsStmt:          q.listPendingChangesetsStmt,
 		listPendingDomainsStmt:             q.listPendingDomainsStmt,
 		listPendingJoinTokensStmt:          q.listPendingJoinTokensStmt,

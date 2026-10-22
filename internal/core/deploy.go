@@ -2,12 +2,14 @@ package core
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +35,8 @@ type deployment struct {
 	cfg  releaseConfig
 	log  *logWriter
 	spec releaseSpec
+	// server is the environment's server, where the release runs.
+	server store.Server
 
 	old        *store.Release // active release when the deploy started
 	stateful   bool
@@ -45,6 +49,7 @@ type stepError struct {
 }
 
 func (e *stepError) Error() string { return e.err.Error() }
+func (e *stepError) Unwrap() error { return e.err }
 
 func step(code apitypes.ErrorCode, format string, args ...any) error {
 	return &stepError{code: code, err: fmt.Errorf(format, args...)}
@@ -65,11 +70,29 @@ func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
 	if err != nil {
 		d.fail(ctx, err)
 	}
+	if p := spec.promote; p != nil {
+		p.ok = err == nil
+		close(p.done)
+	}
 }
 
 func (d *deployment) run(ctx context.Context) error {
 	c := d.c
 	var err error
+	if p := d.spec.promote; p != nil && p.prev != nil {
+		// Promoted services deploy one at a time; one failing stops the rest.
+		select {
+		case <-p.prev.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		if !p.prev.ok {
+			return step(apitypes.CodeDeployFailed, "not promoted: %s failed first", p.prev.failed())
+		}
+	}
+	if d.server, err = c.store.GetServer(ctx, d.ss.env.ServerID); err != nil {
+		return err
+	}
 	if d.cfg, err = c.openConfig(d.rel.Config); err != nil {
 		return err
 	}
@@ -149,69 +172,140 @@ func (d *deployment) image(ctx context.Context) (string, error) {
 	ref := d.rel.ImageRef
 	switch apitypes.ReleaseSource(d.rel.Source) {
 	case apitypes.SourceUpload:
-		f, err := os.Open(d.spec.upload)
-		if err != nil {
-			return "", err
-		}
-		defer func() { _ = f.Close() }()
-		sem := d.c.buildLock(d.ss.env.ServerID)
-		select {
-		case sem <- struct{}{}:
-		default:
-			d.event(ctx, "Waiting for another build on this server to finish")
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return "", ctx.Err()
-			}
-		}
-		defer func() { <-sem }()
-		req := node.BuildRequest{
-			Source: f, Dockerfile: d.ss.svc.DockerfilePath, BuildCommand: d.ss.svc.BuildCommand,
-			StartCommand: d.cfg.Cmd, BuildArgs: d.cfg.Env, Tag: ref, Logs: d.log,
-			// Build caches are per environment, so one can't poison another's.
-			CacheScope: fmt.Sprintf("p%d_e%d", d.ss.project.ID, d.ss.env.ID),
-		}
-		if rc := d.spec.repo; rc != nil {
-			d.event(ctx, "Using settings from dock.toml")
-			// The file wins over the service's build settings (ADR 0007).
-			if rc.Build.Dockerfile != "" {
-				req.Dockerfile, req.BuildCommand = rc.Build.Dockerfile, ""
-			}
-			if rc.Build.Command != "" {
-				req.Dockerfile, req.BuildCommand = "", rc.Build.Command
-			}
-		}
-		d.event(ctx, "Building "+ref)
-		id, err := d.rt.Build(ctx, req)
-		if err != nil {
-			return "", step(apitypes.CodeBuildFailed, "build failed: %w", err)
-		}
-		d.event(ctx, "Built "+ref)
-		return id, nil
+		return d.build(ctx)
 	case apitypes.SourceImage:
 		d.event(ctx, "Pulling "+ref)
-		id, err := d.rt.Pull(ctx, ref, d.log)
+		id, err := d.pull(ctx, ref)
 		if err != nil {
 			return "", step(apitypes.CodeBuildFailed, "pull %s: %w", ref, err)
 		}
 		return id, nil
-	default:
-		// Config changes, rollbacks and restarts reuse an existing image.
-		ok, err := d.rt.HasImage(ctx, ref)
-		if err != nil {
-			return "", err
+	}
+	// Config changes, rollbacks, restarts and promotions reuse an image:
+	// it is on the server already, or comes from the registry by digest.
+	ok, err := d.rt.HasImage(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	from := ref
+	if d.rel.ImageDigest != "" && d.c.reg != nil {
+		if from = d.c.registryRef(ref, d.rel.ImageDigest); !ok && from != ref {
+			if ok, err = d.rt.HasImage(ctx, from); err != nil {
+				return "", err
+			}
 		}
-		if ok {
-			return d.rel.ImageID, nil
-		}
+	}
+	if ok {
+		return d.rel.ImageID, nil
+	}
+	if d.rel.ImageID != "" {
 		d.event(ctx, fmt.Sprintf("Image %s is no longer on the server; pulling it", ref))
-		id, err := d.rt.Pull(ctx, ref, d.log)
-		if err != nil {
-			return "", step(apitypes.CodeBuildFailed, "image %s is gone and could not be pulled: %w", ref, err)
+	} else {
+		d.event(ctx, "Pulling "+from)
+	}
+	id, err := d.pull(ctx, from)
+	if err != nil {
+		return "", step(apitypes.CodeBuildFailed, "image %s is not on server %s and could not be pulled: %w", from, d.server.Name, err)
+	}
+	return id, nil
+}
+
+// pull pulls ref onto the release's server, with a pull token when it is
+// in the platform registry.
+func (d *deployment) pull(ctx context.Context, ref string) (string, error) {
+	var opts []node.PullOptions
+	if repo, ok := d.c.inRegistry(ref); ok {
+		defer d.c.useRegistry()()
+		opts = append(opts, node.PullOptions{Token: d.c.reg.Token("server "+d.server.Name, repo, false)})
+	}
+	return d.rt.Pull(ctx, ref, d.log, opts...)
+}
+
+// build builds the uploaded source on a builder (builderFor), one build at
+// a time per builder. With the registry the image is pushed, its digest
+// recorded on the release, and a release server that didn't build it
+// pulls it by digest.
+func (d *deployment) build(ctx context.Context) (string, error) {
+	c, ref := d.c, d.rel.ImageRef
+	builder, brt, err := c.builderFor(ctx, d.server)
+	if err != nil {
+		return "", step(apitypes.CodeBuildFailed, "%w", err)
+	}
+	f, err := os.Open(d.spec.upload)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	where := "this server"
+	if builder.ID != d.server.ID {
+		where = "server " + builder.Name
+	}
+	sem := c.buildLock(builder.ID)
+	select {
+	case sem <- struct{}{}:
+	default:
+		d.event(ctx, "Waiting for another build on "+where+" to finish")
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return "", ctx.Err()
 		}
+	}
+	unlock := sync.OnceFunc(func() { <-sem })
+	defer unlock()
+	req := node.BuildRequest{
+		Source: f, Dockerfile: d.ss.svc.DockerfilePath, BuildCommand: d.ss.svc.BuildCommand,
+		StartCommand: d.cfg.Cmd, BuildArgs: d.cfg.Env, Tag: ref, Logs: d.log,
+		// Build caches are per environment, so one can't poison another's.
+		CacheScope: fmt.Sprintf("p%d_e%d", d.ss.project.ID, d.ss.env.ID),
+	}
+	if rc := d.spec.repo; rc != nil {
+		d.event(ctx, "Using settings from dock.toml")
+		// The file wins over the service's build settings (ADR 0007).
+		if rc.Build.Dockerfile != "" {
+			req.Dockerfile, req.BuildCommand = rc.Build.Dockerfile, ""
+		}
+		if rc.Build.Command != "" {
+			req.Dockerfile, req.BuildCommand = "", rc.Build.Command
+		}
+	}
+	var repo string
+	if c.reg != nil {
+		repo = repoOf(ref, c.reg.Host())
+		req.Push = &node.PushTarget{Ref: c.reg.Host() + "/" + ref, Token: c.reg.Token("server "+builder.Name, repo, true)}
+		defer c.useRegistry()()
+	}
+	if builder.ID != d.server.ID {
+		d.event(ctx, fmt.Sprintf("Building %s on %s", ref, where))
+	} else {
+		d.event(ctx, "Building "+ref)
+	}
+	id, err := brt.Build(ctx, req)
+	if err != nil {
+		return "", step(apitypes.CodeBuildFailed, "build failed: %w", c.nodeErr(builder.ID, err))
+	}
+	d.event(ctx, "Built "+ref)
+	if req.Push == nil {
 		return id, nil
 	}
+	unlock() // the builder is free; pushing is done
+	digest, err := c.reg.Digest(ctx, repo, ref[strings.LastIndexByte(ref, ':')+1:])
+	if err != nil {
+		return "", step(apitypes.CodeBuildFailed, "find the pushed image in the registry: %w", err)
+	}
+	d.rel.ImageDigest, d.rel.BuiltOnServerID = digest, &builder.ID
+	if err := c.store.SetReleaseDigest(ctx, store.SetReleaseDigestParams{ImageDigest: digest, BuiltOnServerID: &builder.ID, ID: d.rel.ID}); err != nil {
+		return "", err
+	}
+	if builder.ID == d.server.ID {
+		return id, nil
+	}
+	from := c.registryRef(ref, digest)
+	d.event(ctx, "Pulling "+from)
+	if id, err = d.pull(ctx, from); err != nil {
+		return "", step(apitypes.CodeBuildFailed, "pull %s: %w", from, err)
+	}
+	return id, nil
 }
 
 // cutover switches traffic to the new release, records it as active, then
@@ -278,6 +372,9 @@ func (d *deployment) cutover(ctx context.Context) error {
 			}
 		}
 	}
+	// Retired containers are gone, so their images can go too.
+	c.removeOldImages(ctx, d.ss)
+	c.maybePruneRegistry()
 	return nil
 }
 
@@ -299,18 +396,31 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	if se, ok := errors.AsType[*stepError](err); ok {
 		code = se.code
 	}
+	serverID := d.ss.env.ServerID
+	if isOffline(err) && CodeOf(err) != apitypes.CodeServerOffline {
+		// The link dropped mid-deploy; the previous release keeps serving.
+		if code == apitypes.CodeInternal {
+			code = apitypes.CodeDeployFailed
+		}
+		msg = fmt.Sprintf("server %s went offline during %s", cmp.Or(d.server.Name, strconv.FormatInt(serverID, 10)), d.rel.Status)
+	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
-	serverID := d.ss.env.ServerID
 	c.saveContainerLogs(ctx, serverID, d.rel.ID)
 	removeErr := c.removeReleaseContainers(ctx, serverID, d.rel.ID)
 	if removeErr != nil {
-		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, removeErr))
+		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, c.nodeErr(serverID, removeErr)))
 	}
 	if d.oldRemoved && d.old != nil {
-		if removeErr == nil {
+		switch {
+		case removeErr == nil:
 			c.ensureRunning(ctx, d.ss, *d.old)
-		} else {
+		case isOffline(removeErr):
+			// Its new container goes when the server reconnects; then this
+			// one starts again.
+			c.ensureLater(serverID, d.ss.svc.ID)
+			d.event(ctx, fmt.Sprintf("Release %d starts again when the server is back", d.old.Number))
+		default:
 			// Two containers must never share a volume.
 			d.event(ctx, fmt.Sprintf("Not starting release %d again while the new container may still be running; redeploy or roll back once it is gone", d.old.Number))
 		}

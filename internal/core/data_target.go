@@ -203,7 +203,8 @@ func (c *Core) dial(conn dbConn) func(ctx context.Context) (net.Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		return rt.Dial(ctx, node.DialRequest{ContainerID: conn.containerID, Port: conn.port})
+		nc, err := rt.Dial(ctx, node.DialRequest{ContainerID: conn.containerID, Port: conn.port})
+		return nc, c.nodeErr(conn.serverID, err)
 	}
 }
 

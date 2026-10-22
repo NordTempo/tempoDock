@@ -58,9 +58,9 @@ type Options struct {
 
 // Core is the control plane.
 type Core struct {
-	cfg    config.Config
-	store  *store.Store
-	box    *secrets.Box
+	cfg   config.Config
+	store *store.Store
+	box   *secrets.Box
 	rt    node.Runtime
 	nodes Nodes // nil: no remote servers
 	reg   Registry
@@ -201,7 +201,7 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.recover(ctx); err != nil {
 		return fmt.Errorf("recover: %w", err)
 	}
-	if err := c.reconcile(ctx); err != nil {
+	if err := c.reconcileServer(ctx, c.local.ID, c.rt, true); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
 	if err := c.applyRoutes(ctx, c.local.ID); err != nil {
@@ -216,6 +216,19 @@ func (c *Core) Start(ctx context.Context) error {
 	go c.watchRuntime(events)
 	go c.checkDomains()
 	go c.collectStats()
+	// Remote servers are reconciled as they connect (NodeStatus); ones a
+	// hub that already serves has connected are reconciled now.
+	if c.nodes != nil {
+		servers, err := c.store.ListServers(ctx)
+		if err != nil {
+			return err
+		}
+		for _, s := range servers {
+			if !s.Local && c.online(s.ID) {
+				c.kickServer(s.ID)
+			}
+		}
+	}
 	return nil
 }
 
@@ -244,7 +257,10 @@ func (c *Core) clearTempFiles() {
 // connections are closed.
 func (c *Core) Close() {
 	c.closeStats()
+	// Under serversMu, so kickServer can't start a watcher after this.
+	c.serversMu.Lock()
 	c.cancel()
+	c.serversMu.Unlock()
 	c.wg.Wait()
 	c.data.Close()
 }

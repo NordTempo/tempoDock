@@ -277,6 +277,38 @@ func (r *Runtime) HasImage(_ context.Context, ref string) (bool, error) {
 	return ok, nil
 }
 
+// RemoveImage implements node.Containers, recorded as "rmi <ref>". An
+// image a container uses is refused, like Docker does.
+func (r *Runtime) RemoveImage(_ context.Context, ref string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.op("rmi %s", ref)
+	id, ok := r.images[ref]
+	if !ok {
+		return fmt.Errorf("image %s: %w", ref, node.ErrNotFound)
+	}
+	for _, c := range r.containers {
+		if c.Image == ref || c.Image == id {
+			return fmt.Errorf("image %s is used by container %s", ref, c.Name)
+		}
+	}
+	delete(r.images, ref)
+	return nil
+}
+
+// HasImageID reports whether an image with this ID is present under any
+// reference.
+func (r *Runtime) HasImageID(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, have := range r.images {
+		if have == id {
+			return true
+		}
+	}
+	return false
+}
+
 // EnsureNetwork implements node.Containers.
 func (r *Runtime) EnsureNetwork(_ context.Context, name string, labels node.Labels) error {
 	r.mu.Lock()

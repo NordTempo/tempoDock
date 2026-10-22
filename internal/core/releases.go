@@ -398,6 +398,8 @@ type releaseSpec struct {
 	// carried are staged changes applied for this release (by applyEnv);
 	// upload and image deploys add the service's own when they apply them.
 	carried carried
+	// promote is set for promotions (Promote).
+	promote *promoteStep
 }
 
 var errNoActiveRelease = errors.New("service has no active release")
@@ -411,6 +413,11 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	}
 	if c.ctx.Err() != nil {
 		return store.Release{}, errf(apitypes.CodeConflict, "the daemon is shutting down; try again in a moment")
+	}
+	// Deploys to a server that can't be reached are refused before a
+	// release exists; nothing queues for later.
+	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
+		return store.Release{}, err
 	}
 	var rel store.Release
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
@@ -487,16 +494,27 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 				return err
 			}
 			params.ImageRef, params.ImageID = active.ImageRef, active.ImageID
+			params.ImageDigest, params.BuiltOnServerID = active.ImageDigest, active.BuiltOnServerID
 			activeCfg, err := c.openConfig(active.Config)
 			if err != nil {
 				return err
 			}
 			repo = activeCfg.Repo // same code, same dock.toml
+		case apitypes.SourcePromote:
+			p := spec.promote
+			params.ImageRef, params.ImageID = p.imageRef, p.imageID
+			params.ImageDigest, params.BuiltOnServerID = p.from.ImageDigest, p.from.BuiltOnServerID
+			fromCfg, err := c.openConfig(p.from.Config)
+			if err != nil {
+				return err
+			}
+			repo = fromCfg.Repo // same code, same dock.toml
 		}
 		var cfg releaseConfig
 		if spec.from != nil {
 			params.FromRelease = spec.from.Number
 			params.ImageRef, params.ImageID = spec.from.ImageRef, spec.from.ImageID
+			params.ImageDigest, params.BuiltOnServerID = spec.from.ImageDigest, spec.from.BuiltOnServerID
 			params.Config = spec.from.Config
 			if cfg, err = c.openConfig(spec.from.Config); err != nil {
 				return err
@@ -513,6 +531,14 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 			if params.HostPort, err = c.allocateHostPort(ctx, q, ss.env.ServerID); err != nil {
 				return err
 			}
+		}
+		if spec.source == apitypes.SourcePromote {
+			rel, err = q.CreatePromotedRelease(ctx, store.CreatePromotedReleaseParams{
+				ServiceID: params.ServiceID, Number: params.Number, ImageRef: params.ImageRef, ImageID: params.ImageID,
+				ImageDigest: params.ImageDigest, BuiltOnServerID: params.BuiltOnServerID, PromotedFromReleaseID: spec.promote.from.ID,
+				Config: params.Config, HostPort: params.HostPort, CreatedBy: params.CreatedBy, Carried: params.Carried,
+			})
+			return err
 		}
 		rel, err = q.CreateRelease(ctx, params)
 		return err
@@ -571,6 +597,16 @@ func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body i
 	// Fail fast, before receiving a large upload.
 	if ss.svc.ArchivedAt != nil {
 		return apitypes.Release{}, invalid("service %s is archived", ss)
+	}
+	srv, err := c.store.GetServer(ctx, ss.env.ServerID)
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	if _, err := c.runtimeFor(srv.ID); err != nil {
+		return apitypes.Release{}, err
+	}
+	if _, _, err := c.builderFor(ctx, srv); err != nil {
+		return apitypes.Release{}, err
 	}
 	done, err := c.beginUpload(ss)
 	if err != nil {
@@ -787,7 +823,7 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 	out := apitypes.Release{
 		ID: r.ID, Number: r.Number, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source), FromRelease: r.FromRelease,
-		ImageRef: r.ImageRef, ImageID: r.ImageID, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
+		ImageRef: r.ImageRef, ImageID: r.ImageID, ImageDigest: r.ImageDigest, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
 		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt,
 	}
 	cfg, err := c.openConfig(r.Config)

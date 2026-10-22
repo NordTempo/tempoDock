@@ -97,11 +97,11 @@ func (q *Queries) CreateJoinToken(ctx context.Context, arg CreateJoinTokenParams
 }
 
 const createPromotedRelease = `-- name: CreatePromotedRelease :one
-INSERT INTO releases (service_id, number, source, image_ref, image_digest, built_on_server_id,
+INSERT INTO releases (service_id, number, source, image_ref, image_id, image_digest, built_on_server_id,
     promoted_from_release_id, config, host_port, created_by, carried)
-VALUES (?1, ?2, 'promote', ?3, ?4,
-    ?5, CAST(?6 AS INTEGER), ?7, ?8,
-    ?9, ?10)
+VALUES (?1, ?2, 'promote', ?3, ?4, ?5,
+    ?6, CAST(?7 AS INTEGER), ?8, ?9,
+    ?10, ?11)
 RETURNING id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id
 `
 
@@ -109,6 +109,7 @@ type CreatePromotedReleaseParams struct {
 	ServiceID             int64
 	Number                int64
 	ImageRef              string
+	ImageID               string
 	ImageDigest           string
 	BuiltOnServerID       *int64
 	PromotedFromReleaseID int64
@@ -119,12 +120,14 @@ type CreatePromotedReleaseParams struct {
 }
 
 // Creates a target service's release from a promoted one: the same image
-// by digest, with the target's own config.
+// by digest, with the target's own config. image_id is set when the
+// image is already on the target's server (same server, no registry).
 func (q *Queries) CreatePromotedRelease(ctx context.Context, arg CreatePromotedReleaseParams) (Release, error) {
 	row := q.queryRow(ctx, q.createPromotedReleaseStmt, createPromotedRelease,
 		arg.ServiceID,
 		arg.Number,
 		arg.ImageRef,
+		arg.ImageID,
 		arg.ImageDigest,
 		arg.BuiltOnServerID,
 		arg.PromotedFromReleaseID,
@@ -233,6 +236,42 @@ func (q *Queries) GetServerByFingerprint(ctx context.Context, fingerprint string
 		&i.DisconnectReason,
 	)
 	return i, err
+}
+
+const listKeptDigests = `-- name: ListKeptDigests :many
+SELECT DISTINCT releases.image_digest FROM releases
+WHERE releases.image_digest != ''
+  AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')
+       OR releases.number > (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
+                            - CAST(?1 AS INTEGER))
+`
+
+// The registry digests releases still need, which registry pruning keeps
+// (ADR 0014 section 4): every service's newest keep releases (the
+// rollback window) and every active and in-flight release. It reads each
+// release with a digest once, through the (service_id, number) key for
+// the window; pruning runs at most hourly, after a deploy.
+func (q *Queries) ListKeptDigests(ctx context.Context, keep int64) ([]string, error) {
+	rows, err := q.query(ctx, q.listKeptDigestsStmt, listKeptDigests, keep)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var image_digest string
+		if err := rows.Scan(&image_digest); err != nil {
+			return nil, err
+		}
+		items = append(items, image_digest)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPendingJoinTokens = `-- name: ListPendingJoinTokens :many
