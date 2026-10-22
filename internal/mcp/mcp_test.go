@@ -339,11 +339,22 @@ func TestDeployWaitsWithProgress(t *testing.T) {
 	if rel.Status != "active" || len(rel.Events) == 0 {
 		t.Errorf("deploy_image = %q %+v", out.summary, rel)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if !slices.ContainsFunc(progress, func(m string) bool { return strings.HasPrefix(m, "web #1: ") }) ||
-		!slices.Contains(progress, "release 1 of web: active") {
-		t.Errorf("progress = %q", progress)
+	// The client handles notifications on its own goroutine, so the last
+	// one can land just after the result.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		ok := slices.ContainsFunc(progress, func(m string) bool { return strings.HasPrefix(m, "web #1: ") }) &&
+			slices.Contains(progress, "release 1 of web: active")
+		seen := slices.Clone(progress)
+		mu.Unlock()
+		if ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("progress = %q", seen)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
