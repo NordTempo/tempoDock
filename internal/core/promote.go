@@ -56,6 +56,16 @@ func (c *Core) Promote(ctx context.Context, a Actor, project string, req apitype
 	if err != nil {
 		return out, err
 	}
+	return c.promote(ctx, a, src, dst, req.Services, false)
+}
+
+// promote promotes from src to dst once the actor's access is checked
+// (Promote, and CloneEnvironment with deploy). names limits it to those
+// services (empty: all). applyStaged makes each release take its
+// service's own staged changes live with it, as an image deploy does: a
+// clone's volumes stay staged until its services first deploy.
+func (c *Core) promote(ctx context.Context, a Actor, src, dst envScope, names []string, applyStaged bool) (apitypes.PromoteResult, error) {
+	out := apitypes.PromoteResult{From: src.env.Name, To: dst.env.Name, Promoted: []apitypes.PromotedService{}, Skipped: []apitypes.SkippedService{}}
 	if _, err := c.runtimeFor(dst.env.ServerID); err != nil {
 		return out, err
 	}
@@ -78,7 +88,6 @@ func (c *Core) Promote(ctx context.Context, a Actor, project string, req apitype
 		}
 		return svcs[i], true
 	}
-	names := req.Services
 	for _, name := range names {
 		if _, ok := live(srcSvcs, name); !ok {
 			return out, notFound("service %s not found in %s", name, src)
@@ -119,7 +128,7 @@ func (c *Core) Promote(ctx context.Context, a Actor, project string, req apitype
 		}
 		step := &promoteStep{service: name, from: from, imageRef: ref, imageID: id, prev: prev, done: make(chan struct{})}
 		ss := svcScope{dst, target}
-		rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourcePromote, promote: step})
+		rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourcePromote, promote: step, applyStaged: applyStaged})
 		if CodeOf(err) == apitypes.CodeDeployInProgress {
 			skip(name, apitypes.SkipDeployInProgress, "%s is deploying in %s already; promote it when that finished", name, dst.env.Name)
 			continue

@@ -348,6 +348,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.hostnameExistsStmt, err = db.PrepareContext(ctx, hostnameExists); err != nil {
 		return nil, fmt.Errorf("error preparing query HostnameExists: %w", err)
 	}
+	if q.insertLiveVariableStmt, err = db.PrepareContext(ctx, insertLiveVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLiveVariable: %w", err)
+	}
 	if q.insertRestoredVariableStmt, err = db.PrepareContext(ctx, insertRestoredVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertRestoredVariable: %w", err)
 	}
@@ -456,6 +459,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listProjectDomainsStmt, err = db.PrepareContext(ctx, listProjectDomains); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectDomains: %w", err)
 	}
+	if q.listProjectGitConnectionsStmt, err = db.PrepareContext(ctx, listProjectGitConnections); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectGitConnections: %w", err)
+	}
 	if q.listProjectLatestBackupsStmt, err = db.PrepareContext(ctx, listProjectLatestBackups); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectLatestBackups: %w", err)
 	}
@@ -464,6 +470,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listProjectServicesStmt, err = db.PrepareContext(ctx, listProjectServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectServices: %w", err)
+	}
+	if q.listProjectVariableNamesStmt, err = db.PrepareContext(ctx, listProjectVariableNames); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectVariableNames: %w", err)
 	}
 	if q.listProjectVolumesStmt, err = db.PrepareContext(ctx, listProjectVolumes); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectVolumes: %w", err)
@@ -647,6 +656,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setServerNextKeyStmt, err = db.PrepareContext(ctx, setServerNextKey); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServerNextKey: %w", err)
+	}
+	if q.setServiceCopiedSettingsStmt, err = db.PrepareContext(ctx, setServiceCopiedSettings); err != nil {
+		return nil, fmt.Errorf("error preparing query SetServiceCopiedSettings: %w", err)
 	}
 	if q.setServiceDatabaseSettingsStmt, err = db.PrepareContext(ctx, setServiceDatabaseSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServiceDatabaseSettings: %w", err)
@@ -1256,6 +1268,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing hostnameExistsStmt: %w", cerr)
 		}
 	}
+	if q.insertLiveVariableStmt != nil {
+		if cerr := q.insertLiveVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLiveVariableStmt: %w", cerr)
+		}
+	}
 	if q.insertRestoredVariableStmt != nil {
 		if cerr := q.insertRestoredVariableStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertRestoredVariableStmt: %w", cerr)
@@ -1436,6 +1453,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listProjectDomainsStmt: %w", cerr)
 		}
 	}
+	if q.listProjectGitConnectionsStmt != nil {
+		if cerr := q.listProjectGitConnectionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectGitConnectionsStmt: %w", cerr)
+		}
+	}
 	if q.listProjectLatestBackupsStmt != nil {
 		if cerr := q.listProjectLatestBackupsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listProjectLatestBackupsStmt: %w", cerr)
@@ -1449,6 +1471,11 @@ func (q *Queries) Close() error {
 	if q.listProjectServicesStmt != nil {
 		if cerr := q.listProjectServicesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listProjectServicesStmt: %w", cerr)
+		}
+	}
+	if q.listProjectVariableNamesStmt != nil {
+		if cerr := q.listProjectVariableNamesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectVariableNamesStmt: %w", cerr)
 		}
 	}
 	if q.listProjectVolumesStmt != nil {
@@ -1756,6 +1783,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setServerNextKeyStmt: %w", cerr)
 		}
 	}
+	if q.setServiceCopiedSettingsStmt != nil {
+		if cerr := q.setServiceCopiedSettingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setServiceCopiedSettingsStmt: %w", cerr)
+		}
+	}
 	if q.setServiceDatabaseSettingsStmt != nil {
 		if cerr := q.setServiceDatabaseSettingsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setServiceDatabaseSettingsStmt: %w", cerr)
@@ -2008,6 +2040,7 @@ type Queries struct {
 	getUserByEmailStmt                 *sql.Stmt
 	getVariableStmt                    *sql.Stmt
 	hostnameExistsStmt                 *sql.Stmt
+	insertLiveVariableStmt             *sql.Stmt
 	insertRestoredVariableStmt         *sql.Stmt
 	insertVariableStmt                 *sql.Stmt
 	listActiveReleasesStmt             *sql.Stmt
@@ -2044,9 +2077,11 @@ type Queries struct {
 	listProjectAuditEventsStmt         *sql.Stmt
 	listProjectAuditEventsByActionStmt *sql.Stmt
 	listProjectDomainsStmt             *sql.Stmt
+	listProjectGitConnectionsStmt      *sql.Stmt
 	listProjectLatestBackupsStmt       *sql.Stmt
 	listProjectReleaseHeadsStmt        *sql.Stmt
 	listProjectServicesStmt            *sql.Stmt
+	listProjectVariableNamesStmt       *sql.Stmt
 	listProjectVolumesStmt             *sql.Stmt
 	listProjectsStmt                   *sql.Stmt
 	listPromotableReleasesStmt         *sql.Stmt
@@ -2108,6 +2143,7 @@ type Queries struct {
 	setServerHelloStmt                 *sql.Stmt
 	setServerMemoryStmt                *sql.Stmt
 	setServerNextKeyStmt               *sql.Stmt
+	setServiceCopiedSettingsStmt       *sql.Stmt
 	setServiceDatabaseSettingsStmt     *sql.Stmt
 	setServiceTemplateStmt             *sql.Stmt
 	setTokenDataAccessStmt             *sql.Stmt
@@ -2243,6 +2279,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getUserByEmailStmt:                 q.getUserByEmailStmt,
 		getVariableStmt:                    q.getVariableStmt,
 		hostnameExistsStmt:                 q.hostnameExistsStmt,
+		insertLiveVariableStmt:             q.insertLiveVariableStmt,
 		insertRestoredVariableStmt:         q.insertRestoredVariableStmt,
 		insertVariableStmt:                 q.insertVariableStmt,
 		listActiveReleasesStmt:             q.listActiveReleasesStmt,
@@ -2279,9 +2316,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listProjectAuditEventsStmt:         q.listProjectAuditEventsStmt,
 		listProjectAuditEventsByActionStmt: q.listProjectAuditEventsByActionStmt,
 		listProjectDomainsStmt:             q.listProjectDomainsStmt,
+		listProjectGitConnectionsStmt:      q.listProjectGitConnectionsStmt,
 		listProjectLatestBackupsStmt:       q.listProjectLatestBackupsStmt,
 		listProjectReleaseHeadsStmt:        q.listProjectReleaseHeadsStmt,
 		listProjectServicesStmt:            q.listProjectServicesStmt,
+		listProjectVariableNamesStmt:       q.listProjectVariableNamesStmt,
 		listProjectVolumesStmt:             q.listProjectVolumesStmt,
 		listProjectsStmt:                   q.listProjectsStmt,
 		listPromotableReleasesStmt:         q.listPromotableReleasesStmt,
@@ -2343,6 +2382,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setServerHelloStmt:                 q.setServerHelloStmt,
 		setServerMemoryStmt:                q.setServerMemoryStmt,
 		setServerNextKeyStmt:               q.setServerNextKeyStmt,
+		setServiceCopiedSettingsStmt:       q.setServiceCopiedSettingsStmt,
 		setServiceDatabaseSettingsStmt:     q.setServiceDatabaseSettingsStmt,
 		setServiceTemplateStmt:             q.setServiceTemplateStmt,
 		setTokenDataAccessStmt:             q.setTokenDataAccessStmt,

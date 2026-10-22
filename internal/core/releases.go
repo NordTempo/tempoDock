@@ -411,6 +411,10 @@ type releaseSpec struct {
 	carried carried
 	// promote is set for promotions (Promote).
 	promote *promoteStep
+	// applyStaged takes the service's own staged changes live with a
+	// release whose source otherwise doesn't (a clone's promotion, see
+	// promote).
+	applyStaged bool
 	// commit is the pushed commit an upload was fetched from (ADR 0018).
 	// Releases that copy an image copy its commit instead.
 	commit *apitypes.Commit
@@ -451,7 +455,7 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 		}
 		ss.svc = svc
 		ch := spec.carried
-		if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage {
+		if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged {
 			// A deploy takes the service's own staged changes with it.
 			res, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID)
 			if err != nil {
