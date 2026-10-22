@@ -471,11 +471,15 @@ func ofRelease(ctrs []node.Container, releaseID int64) []node.Container {
 // They are found by label, not by the saved container ID, so a container
 // started just before a crash (ID never saved) is found too.
 func (c *Core) removeReleaseContainers(ctx context.Context, serverID, releaseID int64) error {
-	ctrs, err := c.runtime(serverID).List(ctx)
+	ids, err := c.runtime(serverID).ReleaseContainers(ctx, releaseID)
 	if err != nil {
 		return err
 	}
-	return c.removeContainers(ctx, serverID, ofRelease(ctrs, releaseID))
+	var errs []error
+	for _, id := range ids {
+		errs = append(errs, c.removeContainer(ctx, serverID, id))
+	}
+	return errors.Join(errs...)
 }
 
 // retire removes a superseded or failed release's containers and then frees

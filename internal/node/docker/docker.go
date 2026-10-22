@@ -515,6 +515,21 @@ func (r *Runtime) List(ctx context.Context) ([]node.Container, error) {
 	return out, nil
 }
 
+// ReleaseContainers returns the IDs of a release's containers: one list
+// call filtered by label.
+func (r *Runtime) ReleaseContainers(ctx context.Context, releaseID int64) ([]string, error) {
+	f := managedFilter().Add("label", node.LabelRelease+"="+strconv.FormatInt(releaseID, 10))
+	res, err := r.cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	ids := make([]string, 0, len(res.Items))
+	for _, s := range res.Items {
+		ids = append(ids, s.ID)
+	}
+	return ids, nil
+}
+
 // inspect fetches a container, treating unmanaged ones as not found.
 func (r *Runtime) inspect(ctx context.Context, id string) (container.InspectResponse, error) {
 	res, err := r.cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})

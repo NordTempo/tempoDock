@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -483,6 +484,25 @@ func TestLogs(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("follow channel did not close after cancel")
+	}
+}
+
+// ReleaseContainers finds a release's containers by label, stopped ones too.
+func TestReleaseContainers(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	rel := time.Now().UnixNano() // unique on a shared Docker host
+	start := func(name string, release int64) node.Container {
+		return e.start(node.ContainerSpec{Name: e.name(name), Image: shellImage, Cmd: "sleep 300",
+			Labels: node.Labels{Project: "p", Environment: "e", Service: "s", Release: strconv.FormatInt(release, 10)}})
+	}
+	mine, other := start("mine", rel), start("other", rel+1)
+	if err := e.Stop(ctx, mine.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := e.ReleaseContainers(ctx, rel)
+	if err != nil || len(ids) != 1 || ids[0] != mine.ID {
+		t.Fatalf("ReleaseContainers = %v, %v; want [%s] (not %s)", ids, err, mine.ID, other.ID)
 	}
 }
 

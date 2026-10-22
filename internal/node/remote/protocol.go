@@ -60,6 +60,7 @@ const (
 	opRemove        = "remove"
 	opInspect       = "inspect"
 	opList          = "list"
+	opReleaseCtrs   = "release-containers"
 	opHealthCheck   = "health-check"
 	opLogs          = "logs"
 	opEvents        = "events"
@@ -78,6 +79,7 @@ type (
 	refArgs     struct{ Ref string }
 	nameArgs    struct{ Name string }
 	idArgs      struct{ ID string }
+	releaseArgs struct{ Release int64 }
 	idsArgs     struct{ IDs []string }
 	labeledArgs struct {
 		Name   string

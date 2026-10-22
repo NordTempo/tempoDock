@@ -262,15 +262,11 @@ func (c *Core) containerLogPath(releaseID int64) string {
 // still explain why it failed. Best effort.
 func (c *Core) saveContainerLogs(ctx context.Context, serverID, releaseID int64) {
 	rt := c.runtime(serverID)
-	ctrs, err := rt.List(ctx)
-	if err != nil {
+	ids, err := rt.ReleaseContainers(ctx, releaseID)
+	if err != nil || len(ids) == 0 {
 		return
 	}
-	cs := ofRelease(ctrs, releaseID)
-	if len(cs) == 0 {
-		return
-	}
-	lines, err := rt.Logs(ctx, cs[0].ID, node.LogOptions{Tail: savedLogLines})
+	lines, err := rt.Logs(ctx, ids[0], node.LogOptions{Tail: savedLogLines})
 	if err != nil {
 		c.log.Warn("save container logs", "release", releaseID, "err", err)
 		return

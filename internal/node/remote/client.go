@@ -83,6 +83,11 @@ func (c *Client) List(ctx context.Context) ([]node.Container, error) {
 	return unaryCall[[]node.Container](ctx, c, opList, noArgs{})
 }
 
+// ReleaseContainers implements node.Containers.
+func (c *Client) ReleaseContainers(ctx context.Context, releaseID int64) ([]string, error) {
+	return unaryCall[[]string](ctx, c, opReleaseCtrs, releaseArgs{releaseID})
+}
+
 // HealthCheck implements node.Containers. It blocks on the node, where the
 // container's port is reachable.
 func (c *Client) HealthCheck(ctx context.Context, ct node.Container, hc node.HealthCheck) error {
