@@ -124,8 +124,15 @@ func userActor(u tbstore.User) Actor {
 }
 
 // Me describes the caller.
-func (a *App) Me(_ context.Context, act Actor) (tbtypes.Me, error) {
+func (a *App) Me(ctx context.Context, act Actor) (tbtypes.Me, error) {
 	me := tbtypes.Me{Kind: act.Kind, Name: act.Name, Email: act.Email, Role: act.Role, TokenConnections: []string{}}
+	// A person's actor name is their email (audit uses it); show the name
+	// they set, if any.
+	if act.Kind == "user" {
+		if u, err := a.store.GetUser(ctx, act.UserID); err == nil && u.Name != "" {
+			me.Name = u.Name
+		}
+	}
 	if act.TokenConnectionNames != nil {
 		me.TokenConnections = slices.Sorted(slices.Values(act.TokenConnectionNames))
 	}
