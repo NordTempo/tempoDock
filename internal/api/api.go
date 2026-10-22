@@ -39,6 +39,8 @@ type Options struct {
 type Server struct {
 	core *core.Core
 	opts Options
+	// data replaces core for the database panel endpoints in tests.
+	data dataCore
 }
 
 // New returns the daemon's root handler: the API and the web UI.
@@ -84,6 +86,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerAdmin(s, a)
 	registerServers(s, a)
 	registerStreams(s, a)
+	registerData(s, a)
 	return a
 }
 

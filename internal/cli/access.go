@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,9 +23,11 @@ func newTokenCmd(g *globals) *cobra.Command {
 		Use:   "token",
 		Short: "Manage API tokens (admin)",
 		Long: `API tokens for the CLI, CI and agents. A token has a scope (read < deploy <
-admin) and can be limited to one project or one environment of it.`,
+admin) and can be limited to one project or one environment of it. Its
+database access follows the data policy's tokens rule unless it has its own
+(--data-* on create or update).`,
 	})
-	cmd.AddCommand(newTokenListCmd(g), newTokenCreateCmd(g), newTokenRevokeCmd(g))
+	cmd.AddCommand(newTokenListCmd(g), newTokenCreateCmd(g), newTokenUpdateCmd(g), newTokenRevokeCmd(g))
 	return cmd
 }
 
@@ -76,6 +79,7 @@ func tokenStatus(t apitypes.Token) string {
 
 func newTokenCreateCmd(g *globals) *cobra.Command {
 	var scope, project, env, expires string
+	var data dataFlags
 	cmd := &cobra.Command{
 		Use:   "create <name> --scope read|deploy|admin",
 		Short: "Create a token; its secret is shown once",
@@ -100,6 +104,9 @@ taken from the directory's link.`,
 				return err
 			}
 			req := apitypes.CreateTokenRequest{Name: args[0], Scope: apitypes.Scope(scope), Project: project, Environment: env, ExpiresInDays: days}
+			if req.Data, err = data.access(cmd, nil); err != nil {
+				return err
+			}
 			ct, err := send[apitypes.CreatedToken](cmd.Context(), s, http.MethodPost, apiPrefix+"/tokens", req)
 			if err != nil {
 				return err
@@ -110,6 +117,9 @@ taken from the directory's link.`,
 					limit = ", limited to " + l
 				}
 				g.io.Successf("Created token %s (id %d, scope %s%s, %s)", ct.Token.Name, ct.Token.ID, ct.Token.Scope, limit, tokenStatus(ct.Token))
+				if ct.Token.Data != nil {
+					g.io.Progressf("Database access: %s", dataAccessText(ct.Token.Data))
+				}
 				_, _ = fmt.Fprintln(g.io.Out, ct.Secret)
 				g.io.Warnf("Store the token now; it is never shown again.")
 				return nil
@@ -120,6 +130,115 @@ taken from the directory's link.`,
 	cmd.Flags().StringVarP(&project, "project", "p", "", "limit the token to this project")
 	cmd.Flags().StringVarP(&env, "environment", "e", "", "limit the token to this environment of --project")
 	cmd.Flags().StringVar(&expires, "expires", "", "lifetime: days like 90d, or a duration like 720h (default: never)")
+	data.add(cmd)
+	return cmd
+}
+
+// dataFlags are a token's own database access: --data-production,
+// --data-non-production and --data-sensitive.
+type dataFlags struct {
+	production, nonProduction, sensitive string
+}
+
+func (f *dataFlags) add(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&f.production, "data-production", "", "database access on production: none, schema, read, propose (write acts as propose for tokens)")
+	cmd.Flags().StringVar(&f.nonProduction, "data-non-production", "", "database access elsewhere: none, schema, read, propose or write")
+	cmd.Flags().StringVar(&f.sensitive, "data-sensitive", "", "sensitive columns: masked or visible")
+}
+
+// access returns the token's data access with the flags given applied to
+// base (nil: none, none, masked), or nil when no flag was given.
+func (f *dataFlags) access(cmd *cobra.Command, base *apitypes.DataTokenAccess) (*apitypes.DataTokenAccess, error) {
+	if !cmd.Flags().Changed("data-production") && !cmd.Flags().Changed("data-non-production") && !cmd.Flags().Changed("data-sensitive") {
+		return nil, nil
+	}
+	a := apitypes.DataTokenAccess{Production: apitypes.LevelNone, NonProduction: apitypes.LevelNone, Sensitive: apitypes.SensitiveMasked}
+	if base != nil {
+		a = *base
+	}
+	for _, l := range []struct {
+		flag, value string
+		to          *apitypes.DataLevel
+	}{{"data-production", f.production, &a.Production}, {"data-non-production", f.nonProduction, &a.NonProduction}} {
+		if !cmd.Flags().Changed(l.flag) {
+			continue
+		}
+		if !slices.Contains(dataLevels, apitypes.DataLevel(l.value)) {
+			return nil, usageError(fmt.Sprintf("invalid --%s %q", l.flag, l.value), "Use none, schema, read, propose or write.")
+		}
+		*l.to = apitypes.DataLevel(l.value)
+	}
+	if cmd.Flags().Changed("data-sensitive") {
+		a.Sensitive = apitypes.DataSensitivity(f.sensitive)
+		if a.Sensitive != apitypes.SensitiveMasked && a.Sensitive != apitypes.SensitiveVisible {
+			return nil, usageError(fmt.Sprintf("invalid --data-sensitive %q", f.sensitive), "Use masked or visible.")
+		}
+	}
+	return &a, nil
+}
+
+// dataAccessText says what a token's data access is.
+func dataAccessText(a *apitypes.DataTokenAccess) string {
+	if a == nil {
+		return "follows the data policy"
+	}
+	return fmt.Sprintf("production %s, non-production %s, sensitive %s", a.Production, a.NonProduction, a.Sensitive)
+}
+
+func newTokenUpdateCmd(g *globals) *cobra.Command {
+	var data dataFlags
+	var clear bool
+	cmd := &cobra.Command{
+		Use:   "update <id> [--data-production L] [--data-non-production L] [--data-sensitive S] | --data-clear",
+		Short: "Change a token's own database access",
+		Long: `Set a token's own database access, overriding the data policy's tokens rule
+(flags not given keep their value), or remove it with --data-clear so the
+token follows the policy again. Either way a token never gets more than
+users with its scope, and never writes production directly.`,
+		Example: `  dock token update 7 --data-non-production read
+  dock token update 7 --data-clear`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return usageError(fmt.Sprintf("%q is not a token id", args[0]), "Token ids are shown by `dock token list`.")
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			var req apitypes.UpdateTokenRequest
+			if !clear {
+				tokens, err := get[[]apitypes.Token](cmd.Context(), s, apiPrefix+"/tokens")
+				if err != nil {
+					return err
+				}
+				i := slices.IndexFunc(tokens, func(t apitypes.Token) bool { return t.ID == id })
+				if i < 0 {
+					return &output.Error{Exit: output.ExitNotFound, Message: fmt.Sprintf("no token %d", id), Hint: "Token ids are shown by `dock token list`."}
+				}
+				if req.Data, err = data.access(cmd, tokens[i].Data); err != nil {
+					return err
+				}
+				if req.Data == nil {
+					return usageError("nothing to change", "Pass --data-production, --data-non-production, --data-sensitive or --data-clear.")
+				}
+			}
+			tk, err := send[apitypes.Token](cmd.Context(), s, http.MethodPatch, apiPrefix+"/tokens/"+itoa(id), req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(tk, func() error {
+				g.io.Successf("Token %s (id %d): database access %s", tk.Name, tk.ID, dataAccessText(tk.Data))
+				return nil
+			})
+		},
+	}
+	data.add(cmd)
+	cmd.Flags().BoolVar(&clear, "data-clear", false, "remove the token's own access; it follows the data policy")
+	cmd.MarkFlagsMutuallyExclusive("data-clear", "data-production")
+	cmd.MarkFlagsMutuallyExclusive("data-clear", "data-non-production")
+	cmd.MarkFlagsMutuallyExclusive("data-clear", "data-sensitive")
 	return cmd
 }
 

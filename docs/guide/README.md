@@ -10,6 +10,7 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Deploying](deploying.md) | Source vs image deploys, builds, health checks, cutover, rollback |
 | [Variables](variables.md) | Shared vs service variables, references, staged changes, secrets |
 | [Domains](domains.md) | Custom and generated domains, DNS, TLS, redirects |
+| [Data](data.md) | Browsing, querying and changing database data; the data access policy |
 | [Agents](agents.md) | Letting Claude Code, CI and other bots deploy safely |
 | [API](api.md) | Auth, OpenAPI spec, event stream, errors, curl examples |
 
@@ -38,5 +39,6 @@ Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit
 | Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|rollback`, `dock rollback`, `dock restart` |
 | Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock apply`, `dock discard`, `dock volume list\|add` |
 | Domains | `dock domain add\|list\|remove\|generate` |
-| Admin | `dock token list\|create\|revoke`, `dock user list\|create\|disable\|enable\|delete\|reset-password`, `dock audit`, `dock server list\|show\|update` |
+| Data | `dock db status\|setup\|tables\|schema\|rows\|query\|history\|saved\|changes\|apply\|policy\|sensitive` |
+| Admin | `dock token list\|create\|update\|revoke`, `dock user list\|create\|disable\|enable\|delete\|reset-password`, `dock audit`, `dock server list\|show\|update` |
 | On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config` |

@@ -216,6 +216,8 @@ type UpdateDataPolicyRequest struct {
 // token's scope and by its creator's current role, so a token never gets
 // more than a person in its place would.
 type DataTokenAccess struct {
+	// Nullable in the schema, so UpdateTokenRequest can send data: null.
+	_             struct{}        `nullable:"true"`
 	Production    DataLevel       `json:"production" enum:"none,schema,read,propose,write"`
 	NonProduction DataLevel       `json:"non_production" enum:"none,schema,read,propose,write"`
 	Sensitive     DataSensitivity `json:"sensitive" enum:"masked,visible"`
