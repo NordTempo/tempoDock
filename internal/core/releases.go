@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -580,13 +581,8 @@ func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body i
 	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
 		return apitypes.Release{}, deployInProgress(ss, r)
 	}
-	path, err := c.saveUpload(body, maxBytes)
+	path, repo, err := c.saveUpload(body, maxBytes)
 	if err != nil {
-		return apitypes.Release{}, err
-	}
-	repo, err := readRepoConfig(path)
-	if err != nil {
-		_ = os.Remove(path)
 		return apitypes.Release{}, err
 	}
 	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceUpload, upload: path, repo: repo})
@@ -623,50 +619,80 @@ func (c *Core) beginUpload(ss svcScope) (done func(), err error) {
 	}, nil
 }
 
-func (c *Core) saveUpload(body io.Reader, maxBytes int64) (string, error) {
+// saveUpload streams a source upload to disk and returns its path and
+// dock.toml (nil if it has none). dock.toml is read from the bytes on their
+// way to the file, so the archive is never read (and decompressed) again.
+func (c *Core) saveUpload(body io.Reader, maxBytes int64) (string, *repoconfig.Config, error) {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	path := filepath.Join(c.cfg.DataDir, "uploads", hex.EncodeToString(b)+".tar")
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	n, err := io.Copy(f, io.LimitReader(body, maxBytes+1))
+	in := &uploadReader{r: io.LimitReader(body, maxBytes+1)}
+	out := &uploadWriter{w: f}
+	rc, found, rcErr := repoconfig.FromTar(io.TeeReader(in, out))
+	if in.err == nil && out.err == nil {
+		// The rest of the archive, after dock.toml.
+		_, err = io.Copy(out, in)
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
+	if err == nil {
+		err = cmp.Or(in.err, out.err)
+	}
+	fail := func(err error) (string, *repoconfig.Config, error) {
+		_ = os.Remove(path)
+		return "", nil, err
+	}
 	switch {
 	case err != nil:
-		_ = os.Remove(path)
-		return "", fmt.Errorf("receive upload: %w", err)
-	case n > maxBytes:
-		_ = os.Remove(path)
-		return "", errf(apitypes.CodeTooLarge, "upload is larger than the server's limit of %d MB; add large files to .dockerignore or deploy a prebuilt image", maxBytes>>20)
-	case n == 0:
-		_ = os.Remove(path)
-		return "", invalid("upload is empty")
+		return fail(fmt.Errorf("receive upload: %w", err))
+	case in.n > maxBytes:
+		return fail(errf(apitypes.CodeTooLarge, "upload is larger than the server's limit of %d MB; add large files to .dockerignore or deploy a prebuilt image", maxBytes>>20))
+	case in.n == 0:
+		return fail(invalid("upload is empty"))
+	case errors.Is(rcErr, repoconfig.ErrNotArchive):
+		return fail(invalid("upload is not a tar or tar.gz archive"))
+	case rcErr != nil:
+		return fail(invalid("%s: %v", repoconfig.FileName, rcErr))
+	case !found:
+		return path, nil, nil
 	}
-	return path, nil
+	return path, &rc, nil
 }
 
-// readRepoConfig reads dock.toml from an uploaded build context.
-func readRepoConfig(path string) (*repoconfig.Config, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
+// uploadReader counts what it reads and keeps the first read error
+// (io.EOF is not one), so a broken upload isn't reported as a bad archive.
+type uploadReader struct {
+	r   io.Reader
+	n   int64
+	err error
+}
+
+func (u *uploadReader) Read(p []byte) (int, error) {
+	n, err := u.r.Read(p)
+	u.n += int64(n)
+	if err != nil && !errors.Is(err, io.EOF) && u.err == nil {
+		u.err = err
 	}
-	defer func() { _ = f.Close() }()
-	rc, found, err := repoconfig.FromTar(f)
-	if errors.Is(err, repoconfig.ErrNotArchive) {
-		return nil, invalid("upload is not a tar or tar.gz archive")
+	return n, err
+}
+
+// uploadWriter keeps the first write error, for the same reason.
+type uploadWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (u *uploadWriter) Write(p []byte) (int, error) {
+	n, err := u.w.Write(p)
+	if err != nil && u.err == nil {
+		u.err = err
 	}
-	if err != nil {
-		return nil, invalid("%s: %v", repoconfig.FileName, err)
-	}
-	if !found {
-		return nil, nil
-	}
-	return &rc, nil
+	return n, err
 }
 
 // Rollback creates a new release from an earlier release's image and
