@@ -61,7 +61,7 @@ the others also change an existing config, touching only their own keys.
 | `CLOUDFLARED_VERSION`, `CLOUDFLARED_SHA256` | `2026.10.3`, pinned | Another `cloudflared` release and the SHA-256 of `cloudflared-linux-<arch>` from its release notes |
 | `NODE_LISTEN` | empty | Accept nodes on this address, e.g. `100.64.0.10:7443` → `[node] listen`. Control plane only |
 | `REGISTRY` | empty | `1` runs the [image registry](#registry) → `[registry] enabled`. Control plane only |
-| `REGISTRY_NAME` | empty | The registry's name in its tokens, e.g. `dock-registry` → `[registry] public_name` |
+| `REGISTRY_NAME` | `dock-registry` with `REGISTRY=1` | The registry's name in its tokens → `[registry] public_name` |
 | `REGISTRY_LISTEN` | `127.0.0.1:5000` | Host address the registry container is published on → `[registry] listen` |
 | `NODE_JOIN_TOKEN` | empty | From `dock server add`; implies `--node`. Needed on the first run, and to re-join |
 
@@ -309,8 +309,7 @@ else.
    tokens carry it.
 
    ```sh
-   sudo NODE_LISTEN="$(tailscale ip -4):7443" REGISTRY=1 REGISTRY_NAME=dock-registry \
-     DOCK_BINARY=./dock ./deploy/install.sh
+   sudo NODE_LISTEN="$(tailscale ip -4):7443" REGISTRY=1 DOCK_BINARY=./dock ./deploy/install.sh
    ```
 
 2. **Anywhere you're logged in as an admin:** add the server. Choose the
@@ -377,7 +376,7 @@ the same on every server. Nodes hold no registry credentials; the control
 plane hands them a short-lived token per pull or push.
 
 ```sh
-sudo REGISTRY=1 REGISTRY_NAME=dock-registry DOCK_BINARY=./dock ./deploy/install.sh
+sudo REGISTRY=1 DOCK_BINARY=./dock ./deploy/install.sh
 ```
 
 | What | Where |
