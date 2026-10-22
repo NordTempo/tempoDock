@@ -18,8 +18,22 @@ import (
 // Client.Events sends when events may have been missed: after the server
 // reconnected, or the node's event stream restarted. Nothing else is set
 // on it. Core reconciles the server when it sees one; events after it are
-// from the new stream.
+// from the new stream. Events with this action from the node itself are
+// dropped.
 const ActionResync = "dock.resync"
+
+// Deadlines of calls on the control plane (ADR 0014 amendment, compromised
+// node). Control calls get DefaultCallTimeout (HubOptions.CallTimeout);
+// Stop and HealthCheck that plus their own timeout. Logs and Events
+// streams have none: a quiet stream is normal, a dead link is caught by
+// the keepalive, and their caller's ctx ends them.
+const (
+	DefaultCallTimeout = 30 * time.Second
+	// pullTimeout bounds a pull. Its progress isn't byte level, so a big
+	// layer can be silent for minutes; this only stops a node that never
+	// finishes.
+	pullTimeout = 30 * time.Minute
+)
 
 // Client is a remote server's node.Runtime on the control plane. Calls go
 // over the server's current connection; while it has none they fail with
@@ -58,7 +72,7 @@ func (c *Client) Pull(ctx context.Context, ref string, logs io.Writer, opts ...n
 	if len(opts) > 0 {
 		req.Token = opts[0].Token
 	}
-	r, err := callWithLogs[imageIDResult](ctx, c, opPull, req, nil, logs)
+	r, err := callWithLogs[imageIDResult](ctx, c, opPull, pullTimeout, req, nil, logs)
 	return r.ImageID, err
 }
 
@@ -94,7 +108,7 @@ func (c *Client) Start(ctx context.Context, spec node.ContainerSpec) (node.Conta
 
 // Stop implements node.Containers.
 func (c *Client) Stop(ctx context.Context, id string, timeout time.Duration) error {
-	_, err := unaryCall[empty](ctx, c, opStop, stopRequest{ID: id, TimeoutMS: timeout.Milliseconds()})
+	_, err := callWithLogs[empty](ctx, c, opStop, timeout+c.hub.callTimeout(), stopRequest{ID: id, TimeoutMS: timeout.Milliseconds()}, nil, nil)
 	return err
 }
 
@@ -133,7 +147,8 @@ func (c *Client) ReleaseContainers(ctx context.Context, want node.Labels) ([]str
 // HealthCheck implements node.Containers. It blocks on the node, where the
 // container's port is reachable.
 func (c *Client) HealthCheck(ctx context.Context, ct node.Container, hc node.HealthCheck) error {
-	_, err := unaryCall[empty](ctx, c, opHealthCheck, healthRequest{Container: toWireContainer(ct), Check: toWireHealthCheck(hc)})
+	_, err := callWithLogs[empty](ctx, c, opHealthCheck, hc.Timeout+hc.Grace+c.hub.callTimeout(),
+		healthRequest{Container: toWireContainer(ct), Check: toWireHealthCheck(hc)}, nil, nil)
 	return err
 }
 
@@ -169,6 +184,12 @@ func (c *Client) Events(ctx context.Context) (<-chan node.ContainerEvent, error)
 					return
 				}
 				for ev := range ch {
+					if ev.Action == ActionResync {
+						// Only this client says when events were missed; a
+						// node sending it would make core re-read the
+						// server on every event.
+						continue
+					}
 					if !send(ctx, out, ev) {
 						return
 					}
@@ -204,7 +225,8 @@ func (c *Client) Build(ctx context.Context, req node.BuildRequest) (string, erro
 		Dockerfile: req.Dockerfile, BuildCommand: req.BuildCommand, StartCommand: req.StartCommand,
 		BuildArgs: req.BuildArgs, CacheScope: req.CacheScope, Tag: req.Tag, Push: toWirePushTarget(req.Push),
 	}
-	r, err := callWithLogs[imageIDResult](ctx, c, opBuild, args, req.Source, req.Logs)
+	// No deadline of its own: core bounds builds ([buildkit] timeout_minutes).
+	r, err := callWithLogs[imageIDResult](ctx, c, opBuild, 0, args, req.Source, req.Logs)
 	return r.ImageID, err
 }
 
@@ -235,13 +257,16 @@ func (c *Client) ContainerStats(ctx context.Context, ids []string) ([]node.Conta
 	return fromWireContainerStats(r.Stats), nil
 }
 
+// unaryCall makes a control call, bounded by the hub's call timeout.
 func unaryCall[R any](ctx context.Context, c *Client, op string, args any) (R, error) {
-	return callWithLogs[R](ctx, c, op, args, nil, nil)
+	return callWithLogs[R](ctx, c, op, c.hub.callTimeout(), args, nil, nil)
 }
 
 // callWithLogs makes a call that may upload body and writes progress to
-// logs before its result.
-func callWithLogs[R any](ctx context.Context, c *Client, op string, args any, body io.Reader, logs io.Writer) (R, error) {
+// logs before its result. A positive timeout bounds it (unless ctx ends
+// sooner), so a node that accepts calls but never answers can't hold the
+// caller (a global loop, a deploy) forever.
+func callWithLogs[R any](ctx context.Context, c *Client, op string, timeout time.Duration, args any, body io.Reader, logs io.Writer) (R, error) {
 	var r R
 	s, err := c.session(ctx)
 	if err != nil {
@@ -251,7 +276,16 @@ func callWithLogs[R any](ctx context.Context, c *Client, op string, args any, bo
 	if logs != nil {
 		onLog = func(l string) { _, _ = io.WriteString(logs, l) }
 	}
-	err = call(ctx, s, op, args, body, onLog, nil, &r)
+	callCtx := ctx
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		callCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	err = call(callCtx, s, op, args, body, onLog, nil, &r)
+	if err != nil && ctx.Err() == nil && errors.Is(callCtx.Err(), context.DeadlineExceeded) {
+		err = fmt.Errorf("server %s didn't answer %s within %s: %w", s.name, op, timeout, context.DeadlineExceeded)
+	}
 	return r, err
 }
 

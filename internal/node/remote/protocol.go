@@ -81,6 +81,11 @@ const (
 	maxErrorMessage = 4 << 10
 	// maxHeaderBytes caps HTTP/2 headers in both directions.
 	maxHeaderBytes = 64 << 10
+	// maxListItems caps the elements of any list in a node's answer
+	// (containers, IDs, samples, IPs). A frame under maxMessage can still
+	// hold 300k empty objects, each a full struct once decoded; capped
+	// lists reject such a message instead of allocating it.
+	maxListItems = 10_000
 )
 
 var (
@@ -93,6 +98,8 @@ var (
 	ErrIncompatible = errors.New("server runs an incompatible version of dock; upgrade dock on it")
 	// errTooLarge is a message over maxMessage.
 	errTooLarge = fmt.Errorf("message over the %d byte limit", maxMessage)
+	// errTooMany is a list over maxListItems.
+	errTooMany = fmt.Errorf("list over the %d item limit", maxListItems)
 )
 
 // Operations, served at POST /v1/<op>.

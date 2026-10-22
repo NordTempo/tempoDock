@@ -77,9 +77,10 @@ var ErrJoinRejected = errors.New("join token is invalid, expired or already used
 type Store interface {
 	// NodeKey looks up the server whose current or next key is
 	// fingerprint. A revoked server (no key) or unknown key is ok=false.
-	// It runs during the TLS handshake of every connection, so revoking a
-	// key takes effect on the next connect (Hub.Disconnect ends the
-	// current one).
+	// It runs during the TLS handshake of every connection and again just
+	// before its session is registered, so revoking a key takes effect on
+	// the next connect and on one still saying hello (Hub.Disconnect ends
+	// the current one).
 	NodeKey(ctx context.Context, fingerprint string) (key NodeKey, ok bool, err error)
 	// Join redeems a join token. In one transaction it must find the token
 	// by req.SecretHash, check it is unused and unexpired, mark it used and
@@ -112,8 +113,12 @@ type HubOptions struct {
 	// time: online (or incompatible) after each hello, also when a
 	// reconnect replaced a connection that still looked alive; offline when
 	// the connection ends. Each online is a reconnect: reconcile the
-	// server. It must not block for long, and must not call RotateKey.
+	// server. It must not block for long, and must not call RotateKey or
+	// Disconnect.
 	OnStatus func(State)
+	// CallTimeout bounds each control call (DefaultCallTimeout when zero);
+	// see Client.
+	CallTimeout time.Duration
 	// MinProtocol defaults to the package's MinProtocol.
 	MinProtocol int
 	// KeepAlive defaults to DefaultKeepAlive.
@@ -148,13 +153,15 @@ type Hub struct {
 
 // session is one live connection to a node.
 type session struct {
-	id     int64
-	name   string
-	hello  Hello
-	status Status
-	cc     *http.ClientConn
-	closed atomic.Bool
-	done   chan struct{}
+	id   int64
+	name string
+	// fingerprint is the node's key, checked again when registering.
+	fingerprint string
+	hello       Hello
+	status      Status
+	cc          *http.ClientConn
+	closed      atomic.Bool
+	done        chan struct{}
 	// ctx ends with the session, for calls that live as long as it.
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -252,6 +259,7 @@ func (h *Hub) handle(ctx context.Context, raw net.Conn) error {
 	hsCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	var key NodeKey
+	var keyFP string
 	conn := tls.Server(raw, controlPlaneTLS(h.o.Identity, func(cs tls.ConnectionState, fp string) error {
 		switch cs.NegotiatedProtocol {
 		case joinALPN:
@@ -267,7 +275,7 @@ func (h *Hub) handle(ctx context.Context, raw net.Conn) error {
 			if !ok {
 				return fmt.Errorf("unknown or revoked node key %s", fp)
 			}
-			key = k
+			key, keyFP = k, fp
 			return nil
 		}
 		return fmt.Errorf("unsupported protocol %q", cs.NegotiatedProtocol)
@@ -278,7 +286,7 @@ func (h *Hub) handle(ctx context.Context, raw net.Conn) error {
 	if conn.ConnectionState().NegotiatedProtocol == joinALPN {
 		return h.join(ctx, conn)
 	}
-	return h.connect(ctx, hsCtx, conn, key)
+	return h.connect(ctx, hsCtx, conn, key, keyFP)
 }
 
 // newClientConn starts the control plane's HTTP/2 client on conn.
@@ -296,12 +304,13 @@ func (h *Hub) newClientConn(ctx context.Context, conn net.Conn) (*http.ClientCon
 }
 
 // connect says hello to a known node and registers its session.
-func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey) error {
+func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey, fp string) error {
 	cc, err := h.newClientConn(ctx, conn)
 	if err != nil {
 		return err
 	}
 	s := newSession(ctx, key.ID, key.Name, cc)
+	s.fingerprint = fp
 	cc.SetStateHook(func(cc *http.ClientConn) {
 		if cc.Err() != nil {
 			s.close()
@@ -330,7 +339,10 @@ func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey
 		h.log.Error("node is too old: upgrade dock on it", "server", s.name, "version", s.hello.Version,
 			"protocol", s.hello.Protocol, "min_protocol", minProto)
 	}
-	h.register(s)
+	if err := h.register(helloCtx, s); err != nil {
+		s.close()
+		return fmt.Errorf("hello from %s: %w", s.name, err)
+	}
 	h.log.Info("node connected", "server", s.name, "version", s.hello.Version, "status", s.status)
 	if s.status == StatusOnline && h.o.Registry != "" {
 		(&registryPool{h: h, s: s}).fill()
@@ -354,9 +366,21 @@ func checkFacts(f Facts) error {
 
 // register makes s the server's session. A node that reconnects before its
 // old connection timed out replaces it.
-func (h *Hub) register(s *session) {
+//
+// The node's key was checked in the handshake, but hello can take seconds,
+// and a revoke in between finds no session to close. So the key is looked
+// up again here, under statusMu, which Disconnect takes too: either this
+// lookup sees the revoked (or removed) key, or Disconnect sees the session.
+func (h *Hub) register(ctx context.Context, s *session) error {
 	h.statusMu.Lock()
 	defer h.statusMu.Unlock()
+	k, ok, err := h.o.Store.NodeKey(ctx, s.fingerprint)
+	if err != nil {
+		return fmt.Errorf("look up node key: %w", err)
+	}
+	if !ok || k.ID != s.id {
+		return fmt.Errorf("node key %s was revoked during hello", s.fingerprint)
+	}
 	h.mu.Lock()
 	old := h.sessions[s.id]
 	h.sessions[s.id] = s
@@ -369,6 +393,7 @@ func (h *Hub) register(s *session) {
 	if h.o.OnStatus != nil {
 		h.o.OnStatus(s.state())
 	}
+	return nil
 }
 
 // unregister removes s if it is still the server's session.
@@ -419,8 +444,11 @@ func (h *Hub) State(serverID int64) State {
 }
 
 // Disconnect drops a server's connection. Revoking a server is clearing
-// its key in the store, then Disconnect: the node's next handshake fails.
+// its key in the store, then Disconnect: the node's next handshake fails,
+// and a connection still in hello isn't registered (see register).
 func (h *Hub) Disconnect(serverID int64) {
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
 	if s := h.session(serverID); s != nil {
 		s.close()
 	}
@@ -436,7 +464,10 @@ func (h *Hub) RotateKey(ctx context.Context, serverID int64) (string, error) {
 		return "", err
 	}
 	var r rotateResult
-	if err := call(ctx, s, opRotate, empty{}, nil, nil, nil, &r); err != nil {
+	callCtx, cancel := context.WithTimeout(ctx, h.callTimeout())
+	err = call(callCtx, s, opRotate, empty{}, nil, nil, nil, &r)
+	cancel()
+	if err != nil {
 		return "", err
 	}
 	if _, err := fingerprintBytes(r.Fingerprint); err != nil {
@@ -448,6 +479,9 @@ func (h *Hub) RotateKey(ctx context.Context, serverID int64) (string, error) {
 	s.close()
 	return r.Fingerprint, nil
 }
+
+// callTimeout is HubOptions.CallTimeout or its default.
+func (h *Hub) callTimeout() time.Duration { return or(h.o.CallTimeout, DefaultCallTimeout) }
 
 func (h *Hub) session(serverID int64) *session {
 	h.mu.Lock()

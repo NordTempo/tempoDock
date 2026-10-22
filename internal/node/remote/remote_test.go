@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -358,6 +359,73 @@ func TestRevokedNodeStaysOut(t *testing.T) {
 	}
 }
 
+// A node revoked while its hello is still running is not let in: the
+// handshake had accepted its key, but registering checks it again.
+func TestRevokeDuringHello(t *testing.T) {
+	h := newHarness(t)
+	h.stopNode()
+	waitFor(t, "disconnect", func() bool { return !h.client.Online() })
+	inHello, release := make(chan struct{}, 1), make(chan struct{})
+	h.startNode(func(n *Node) {
+		n.Facts = func(ctx context.Context) (Facts, error) {
+			signal(inHello, struct{}{})
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return testFacts, nil
+		}
+	})
+	<-inHello
+	h.store.revoke(h.id)
+	h.hub.Disconnect(h.id) // nothing registered yet to close
+	close(release)
+	waitFor(t, "the hub to refuse the session", func() bool { return strings.Contains(h.hubLog.String(), "revoked during hello") })
+	time.Sleep(100 * time.Millisecond) // reconnect attempts fail in the handshake
+	if h.client.Online() || h.connects.Load() != 1 {
+		t.Fatalf("revoked node registered: online %v, connects %d", h.client.Online(), h.connects.Load())
+	}
+}
+
+// A node that accepts a call but never answers fails it after the call
+// timeout instead of holding the caller; the link stays usable.
+func TestCallTimeout(t *testing.T) {
+	h := newHarness(t, func(o *HubOptions) { o.CallTimeout = 200 * time.Millisecond })
+	ct := h.start("web-1")
+	release := h.rt.HoldHealthChecks()
+	defer release()
+	start := time.Now()
+	err := h.client.HealthCheck(context.Background(), ct, node.HealthCheck{})
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "didn't answer health-check") || errors.Is(err, ErrOffline) {
+		t.Fatalf("hung health check = %v", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("timed out after %v", d)
+	}
+	if _, err := h.client.List(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Only the client itself says events were missed: a resync sent by the
+// node is dropped, so it can't make core re-read the server at will.
+func TestNodeCantSendResync(t *testing.T) {
+	h := newHarness(t)
+	ct := h.start("web-1")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, err := h.client.Events(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.emitUntilReceived(events, ct.ID)
+	h.rt.Emit(node.ContainerEvent{Action: ActionResync})
+	h.rt.Emit(node.ContainerEvent{ContainerID: ct.ID, Action: "start"})
+	if ev := recv(t, events); ev.Action != "start" {
+		t.Fatalf("event = %+v, want the start after the dropped resync", ev)
+	}
+}
+
 func TestRotateKey(t *testing.T) {
 	h := newHarness(t)
 	old := h.store.key(h.id)
@@ -481,6 +549,25 @@ func TestLimits(t *testing.T) {
 		}
 		if _, err := lr.next(); !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Fatalf("cut line = %v", err)
+		}
+	})
+
+	t.Run("lists are capped", func(t *testing.T) {
+		// Empty objects are 3 bytes on the wire but a whole struct each
+		// once decoded: a frame under maxMessage could hold 300k.
+		many := func(n int) []byte {
+			return []byte(`{"containers":[` + strings.TrimSuffix(strings.Repeat("{},", n), ",") + `]}`)
+		}
+		var r containersResult
+		if err := json.Unmarshal(many(maxListItems+1), &r); !errors.Is(err, errTooMany) {
+			t.Fatalf("over the cap = %v, %d items", err, len(r.Containers))
+		}
+		if err := json.Unmarshal(many(maxListItems), &r); err != nil || len(r.Containers) != maxListItems {
+			t.Fatalf("at the cap = %v, %d items", err, len(r.Containers))
+		}
+		var ids idsResult
+		if err := json.Unmarshal([]byte(`{"ids":null}`), &ids); err != nil || ids.IDs != nil {
+			t.Fatalf("null list = %v, %v", ids.IDs, err)
 		}
 	})
 }
