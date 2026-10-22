@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -61,13 +60,6 @@ func New(pool netip.Prefix) (*Runtime, error) {
 
 // Close releases the underlying Docker client.
 func (r *Runtime) Close() error { return r.cli.Close() }
-
-// Dial implements node.Containers.
-// TODO(ADR 0016 phase 2, Dial track): check the container's labels and dial
-// its IP on its environment network.
-func (r *Runtime) Dial(context.Context, node.DialRequest) (net.Conn, error) {
-	return nil, fmt.Errorf("docker: dial is not implemented yet: %w", errors.ErrUnsupported)
-}
 
 // managedFilter matches only platform-managed resources.
 func managedFilter() client.Filters {
