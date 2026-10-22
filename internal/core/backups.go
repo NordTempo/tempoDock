@@ -505,16 +505,14 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (ba
 			return backup.Result{}, notRunningErr(ss, err)
 		}
 		src.Port, src.User, src.Password, src.Database = conn.port, conn.owner.User, conn.owner.Password, conn.database
-		if image, err = c.activeImage(ctx, ss); err != nil {
-			return backup.Result{}, err
-		}
+		image = jobImage(ss)
 	case apitypes.BackupRedis:
-		env, img, err := c.activeEnv(ctx, ss)
+		env, err := c.activeEnv(ctx, ss)
 		if err != nil {
 			return backup.Result{}, err
 		}
 		t, _ := templateOf(ss.svc)
-		src.Port, src.Password, image = t.port, env["REDIS_PASSWORD"], img
+		src.Port, src.Password, image = t.port, env["REDIS_PASSWORD"], jobImage(ss)
 	case apitypes.BackupVolume:
 		for _, v := range vols {
 			mounts = append(mounts, node.Mount{Volume: v.DockerName, Path: backup.VolumesPath + "/" + v.Name, ReadOnly: true})
@@ -537,9 +535,23 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (ba
 	}
 	res, err := backup.ParseBackup(out)
 	if err != nil {
-		return res, fmt.Errorf("%w: %s", err, backup.ErrorText(out))
+		return res, fmt.Errorf("%w%s", err, withOutput(out))
 	}
 	return res, nil
+}
+
+// jobOutput is what a job's error shows of its output (backup.ErrorText)
+// without control characters: it reaches the audit log, alert channels
+// and terminals, and a database's error messages are its owner's text.
+func jobOutput(out string) string { return cleanLine(backup.ErrorText(out), 2048) }
+
+// withOutput is ": <jobOutput>" to end an error with, or "" when the job
+// printed nothing worth showing.
+func withOutput(out string) string {
+	if text := jobOutput(out); text != "" {
+		return ": " + text
+	}
+	return ""
 }
 
 // notRunningErr says a database must be running to be backed up or
@@ -551,28 +563,31 @@ func notRunningErr(ss svcScope, err error) error {
 	return err
 }
 
-// activeImage is the image of a service's active release: what its
-// container runs, so dump tools match the server's version.
-func (c *Core) activeImage(ctx context.Context, ss svcScope) (string, error) {
-	_, img, err := c.activeEnv(ctx, ss)
-	return img, err
+// jobImage is the image a template database's backup and restore jobs
+// run in: the template's pinned image (its pg_dump or redis-cli), never
+// the service's active image. Jobs carry the install's repository
+// password and S3 credentials, and anyone with deploy on the environment
+// can deploy any image to the service, so that image must not run with
+// them (ADR 0019, amendment).
+func jobImage(ss svcScope) string {
+	t, _ := templateOf(ss.svc)
+	return t.image
 }
 
-// activeEnv returns the resolved variables and image of a service's active
-// release.
-func (c *Core) activeEnv(ctx context.Context, ss svcScope) (map[string]string, string, error) {
+// activeEnv returns the resolved variables of a service's active release.
+func (c *Core) activeEnv(ctx context.Context, ss svcScope) (map[string]string, error) {
 	rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
 	if store.IsNotFound(err) {
-		return nil, "", notRunningErr(ss, errNotRunning)
+		return nil, notRunningErr(ss, errNotRunning)
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	cfg, err := c.openConfig(rel.Config)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return cfg.Env, cmp.Or(rel.ImageID, rel.ImageRef), nil
+	return cfg.Env, nil
 }
 
 // runResticJob runs spec on a server with restic and the repository
@@ -605,7 +620,7 @@ func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime
 		return res.Output, c.nodeErr(serverID, err)
 	}
 	if res.ExitCode != 0 {
-		return res.Output, fmt.Errorf("exit code %d: %s", res.ExitCode, backup.ErrorText(res.Output))
+		return res.Output, fmt.Errorf("exit code %d%s", res.ExitCode, withOutput(res.Output))
 	}
 	return res.Output, nil
 }
@@ -646,7 +661,7 @@ func (c *Core) ensureRestic(ctx context.Context, serverID int64, rt node.Runtime
 		return "", fmt.Errorf("install restic: %w", c.nodeErr(serverID, err))
 	}
 	if res.ExitCode != 0 {
-		return "", fmt.Errorf("install restic: exit code %d: %s", res.ExitCode, backup.ErrorText(res.Output))
+		return "", fmt.Errorf("install restic: exit code %d%s", res.ExitCode, withOutput(res.Output))
 	}
 	c.backups.mu.Lock()
 	c.backups.restic[serverID] = true

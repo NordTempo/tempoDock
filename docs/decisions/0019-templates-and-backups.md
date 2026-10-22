@@ -21,7 +21,7 @@ user has to babysit.
 | What a template creates | The service (pinned image, tuned start command, memory limit), a `data` volume and generated credentials as staged service variables, then an image deploy that applies them. |
 | Health | Template services publish no port (private by default). A new `HealthCheck.Port` probes the container's port over TCP on its environment network, like `Dial`. |
 | Data panel | Postgres templates set `database = postgres`; the first time a release goes active, Dock runs data setup as `system` (0016's explicit-setup rule is for non-template databases). |
-| Backup jobs | A new runtime call, `RunJob`: a one-off container that runs to completion and is removed. Backups run in the database's **own image** (version-matched `pg_dump` / `redis-cli`) on the environment network, with the restic binary mounted read-only from a per-server volume. No exec, no Docker socket, no extra privileges. |
+| Backup jobs | A new runtime call, `RunJob`: a one-off container that runs to completion and is removed. Backups run in the database's **own image**, the template's pinned one (its `pg_dump` / `redis-cli`; see the amendment), on the environment network, with the restic binary mounted read-only from a per-server volume. No exec, no Docker socket, no extra privileges. |
 | Formats | Postgres: `pg_dump -Fc` streamed into restic (`--stdin-from-command`, so a failing dump fails the backup). Redis: `redis-cli --rdb` (a consistent snapshot over the replication protocol), then into restic. Generic volumes: file-level restic backup of the volumes mounted read-only, with a warning. |
 | Repository | One per install. `dock backup configure`: an S3-compatible `s3:` URL, access key and secret, retention and the default hour, stored in SQLite (credentials sealed). Without one, each server keeps a local restic repository in a `dock_backups_<install>` volume, labelled **not off-box** everywhere it shows. |
 | Repository password | Generated once, sealed in SQLite, printed once by `dock backup configure`, shown again to admins with `dock backup status --reveal`. Without it, an off-box repository can't be read after losing the server. |
@@ -141,3 +141,30 @@ the repository password); restoring them into a new service is a follow-up.
   configure` says so.
 - The platform's own SQLite file isn't backed up by this yet (follow-up,
   same repository).
+
+## Amendment (2026-10-22): jobs run in the template's image
+
+Decided by the agent after a security review.
+
+Backup and restore jobs carry the install's repository password and S3
+credentials: one repository holds every environment's backups. They ran in
+the service's *active* image, and anyone with `deploy` on an environment
+can deploy any image to a template service. A token limited to
+`myapp/staging` could deploy an image whose `/bin/sh` prints its
+environment, run a backup, and read (or forget) production's backups.
+
+Jobs for template databases now always run in the template's pinned image
+(`dbTemplate.image`), whatever the service runs, and the restore of a
+Postgres snapshot no longer reads the new service's image either. The
+volume of a generic service is still backed up from the restic image.
+
+- `pg_dump` dumps servers of its own major version and older, so a
+  service moved to a newer major (another image) fails its backups with
+  `pg_dump`'s version mismatch error until the template catches up.
+  Minor versions are fine.
+- Job output that ends up in errors (audit, alerts, the backup list) loses
+  control characters first.
+- Still open: the job's environment, credentials included, shows in
+  `docker inspect` while it runs. Only root and the `docker` group can
+  read it, and they can read the daemon's secrets key anyway; avoiding it
+  needs a way to hand a job a secret file, a new runtime primitive.

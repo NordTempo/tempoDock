@@ -136,15 +136,11 @@ func (r *restore) pgRestore(ctx context.Context) error {
 	if err != nil {
 		return notRunningErr(to, err)
 	}
-	image, err := c.activeImage(ctx, to)
-	if err != nil {
-		return err
-	}
 	target := backup.Source{
 		Kind: apitypes.BackupPostgres, Host: to.svc.Name, Port: conn.port,
 		User: conn.owner.User, Password: conn.owner.Password, Database: conn.database,
 	}
-	return r.run(ctx, to, image, target, nil)
+	return r.run(ctx, to, target, nil)
 }
 
 // fillVolume writes a Redis snapshot into the new service's volume, then
@@ -162,7 +158,7 @@ func (r *restore) fillVolume(ctx context.Context, a Actor) {
 		return
 	}
 	mounts := []node.Mount{{Volume: vol, Path: r.t.mountPath}}
-	if err := r.run(ctx, r.to, r.t.image, backup.Source{}, mounts); err != nil {
+	if err := r.run(ctx, r.to, backup.Source{}, mounts); err != nil {
 		r.finish(ctx, err)
 		return
 	}
@@ -171,10 +167,10 @@ func (r *restore) fillVolume(ctx context.Context, a Actor) {
 	}
 }
 
-// run runs the restore job for the new service on its server: target
-// is how it reaches the new database (Postgres), mounts its volume
-// (Redis).
-func (r *restore) run(ctx context.Context, to svcScope, image string, target backup.Source, mounts []node.Mount) error {
+// run runs the restore job for the new service on its server, in the
+// template's image (jobImage): target is how it reaches the new database
+// (Postgres), mounts its volume (Redis).
+func (r *restore) run(ctx context.Context, to svcScope, target backup.Source, mounts []node.Mount) error {
 	c := r.c
 	rt, err := c.runtimeFor(to.env.ServerID)
 	if err != nil {
@@ -194,7 +190,7 @@ func (r *restore) run(ctx context.Context, to svcScope, image string, target bac
 	}
 	spec := node.JobSpec{
 		Name:  fmt.Sprintf("dock_p%d_e%d_s%d_restore%d", to.project.ID, to.env.ID, to.svc.ID, r.row.ID),
-		Image: image, Labels: c.labels(to, 0), Env: backup.RestoreEnv(r.snapshot, target, repo), Script: script,
+		Image: jobImage(to), Labels: c.labels(to, 0), Env: backup.RestoreEnv(r.snapshot, target, repo), Script: script,
 		Network: networkName(to.envScope), Mounts: mounts,
 	}
 	_, err = c.runResticJob(ctx, to.env.ServerID, rt, repo, spec)
