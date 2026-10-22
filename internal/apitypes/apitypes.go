@@ -65,6 +65,8 @@ type Project struct {
 	// ArchivedAt is set for archived projects, which are hidden from lists
 	// unless asked for.
 	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+	// ArchiveNotes as on Service: only in an archive's answer.
+	ArchiveNotes []string `json:"archive_notes,omitempty" doc:"Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)"`
 }
 
 // CreateProjectRequest creates a project.
@@ -180,6 +182,10 @@ type Service struct {
 	PendingChanges int        `json:"pending_changes"`
 	CreatedAt      time.Time  `json:"created_at"`
 	ArchivedAt     *time.Time `json:"archived_at,omitempty"`
+	// ArchiveNotes, only in an archive's answer, say what couldn't be
+	// done at once: containers on a server that is offline (stopped when
+	// it reconnects) or revoked (left running there).
+	ArchiveNotes []string `json:"archive_notes,omitempty" doc:"Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)"`
 }
 
 // CreateServiceRequest creates a service. It doesn't deploy anything.

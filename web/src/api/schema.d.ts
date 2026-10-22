@@ -2189,6 +2189,8 @@ export interface components {
             server: string;
         };
         Project: {
+            /** @description Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there) */
+            archive_notes?: string[] | null;
             /** Format: date-time */
             archived_at?: string;
             /** Format: date-time */
@@ -2419,6 +2421,8 @@ export interface components {
         Service: {
             /** Format: int64 */
             active_release?: number;
+            /** @description Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there) */
+            archive_notes?: string[] | null;
             /** Format: date-time */
             archived_at?: string;
             build_command: string;

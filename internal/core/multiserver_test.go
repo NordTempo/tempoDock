@@ -215,6 +215,49 @@ func TestStatusOnOfflineServer(t *testing.T) {
 	}
 }
 
+// Archiving on a server that can't be reached succeeds and says what was
+// left: an offline server's containers stop when it reconnects, a revoked
+// one's are left running.
+func TestArchiveOnUnreachableServer(t *testing.T) {
+	p, lab := labPool(t)
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	api := p.createService("staging", "api", apitypes.CreateServiceRequest{})
+	p.deploy(web, "app:1")
+	p.deploy(api, "app:1")
+	ss, err := p.c.loadService(p.ctx, web)
+	if err != nil {
+		t.Fatal(err)
+	}
+	webCtr := containerName(ss, 1)
+
+	p.setOffline("homelab", true)
+	svc, err := p.c.ArchiveService(p.ctx, System, web)
+	if err != nil || svc.ArchivedAt == nil {
+		t.Fatalf("archive: %+v, %v", svc, err)
+	}
+	if want := []string{"server homelab is offline: its containers (1) are stopped when it reconnects"}; !slices.Equal(svc.ArchiveNotes, want) {
+		t.Fatalf("notes = %q", svc.ArchiveNotes)
+	}
+	if !slices.Contains(lab.Running(), webCtr) {
+		t.Fatalf("running on homelab = %v", lab.Running())
+	}
+	p.setOffline("homelab", false)
+	p.c.NodeStatus(remote.State{ServerID: p.ids["homelab"], Server: "homelab", Status: remote.StatusOnline,
+		Hello: remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect}}})
+	waitOps(t, lab, "stop "+webCtr)
+
+	if _, err := p.c.RevokeServer(p.ctx, System, "homelab"); err != nil {
+		t.Fatal(err)
+	}
+	proj, err := p.c.ArchiveProject(p.ctx, System, "shop")
+	if err != nil || proj.ArchivedAt == nil {
+		t.Fatalf("archive project: %+v, %v", proj, err)
+	}
+	if len(proj.ArchiveNotes) != 1 || !strings.HasPrefix(proj.ArchiveNotes[0], "containers on revoked server homelab were left running (1)") {
+		t.Fatalf("notes = %q", proj.ArchiveNotes)
+	}
+}
+
 // When a server reconnects, its leftover containers of retired releases
 // are removed, statuses are read and routes applied again; afterwards its
 // container events reach service statuses.

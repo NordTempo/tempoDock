@@ -288,6 +288,9 @@ func newServiceArchiveCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(svc, func() error {
 				g.io.Successf("Archived %s. Its container is stopping; volumes and release history are kept.", t)
+				for _, n := range svc.ArchiveNotes {
+					g.io.Warnf("%s", n)
+				}
 				return nil
 			})
 		},

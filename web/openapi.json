@@ -2364,6 +2364,16 @@
       "Project": {
         "additionalProperties": false,
         "properties": {
+          "archive_notes": {
+            "description": "Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "archived_at": {
             "format": "date-time",
             "type": "string"
@@ -3180,6 +3190,16 @@
           "active_release": {
             "format": "int64",
             "type": "integer"
+          },
+          "archive_notes": {
+            "description": "Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "archived_at": {
             "format": "date-time",
