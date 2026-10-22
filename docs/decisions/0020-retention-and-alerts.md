@@ -116,9 +116,10 @@ document sealed with the secrets key; the API returns only a target
 without secrets (`https://hooks.slack.com`, the email recipients). A
 webhook without a secret gets a generated one, shown once.
 
-Webhook URLs may point anywhere, private addresses included (a homelab
-ntfy or a chat bridge): only unlimited admins configure them, and they
-already control what runs on every server. Redirects are not followed.
+Webhook URLs may point almost anywhere, private addresses included (a
+homelab ntfy or a chat bridge): only unlimited admins configure them, and
+they already control what runs on every server. Not the server itself or
+cloud metadata, though (see the amendment). Redirects are not followed.
 
 ## Consequences
 
@@ -134,3 +135,27 @@ already control what runs on every server. Redirects are not followed.
   stays open and reminders pick it up.
 - Old releases lose their build logs and progress lines after 30 days;
   their errors stay on the release.
+
+## Amendment (2026-10-22): where channels may deliver
+
+Decided by the agent after a security review.
+
+- **Not the server itself, not metadata.** "Webhook URLs may point
+  anywhere" let a channel reach what only the daemon can: its
+  loopback-only internal listener and registry, which the app firewall
+  keeps apps away from, and the cloud metadata service. Webhook and Slack
+  channels now refuse loopback and unspecified addresses, link-local and
+  multicast ones (169.254.169.254) and the metadata addresses outside
+  them (`fd00:ec2::254`, `100.100.100.200`). Literal addresses are refused
+  when the channel is added; names are checked on every connection, after
+  DNS, so a name that later resolves to 127.0.0.1 is refused too. Private,
+  CGNAT and tailnet addresses stay allowed. Email is unchanged: a local
+  MTA on 127.0.0.1 is common, and SMTP to an HTTP service reads nothing.
+- **Signatures are made per attempt.** `t` in `Dock-Signature` is when the
+  attempt is sent, not when the alert was: receivers reject old
+  timestamps, and the last retry goes out about 20 minutes later.
+- **Slack text is escaped** (`&`, `<`, `>`): alert messages quote release
+  errors and build output, which must not become `@channel` mentions or
+  disguised links.
+- Email envelopes use the bare address, so a `From` or recipient with a
+  name works; the subject is MIME-encoded.

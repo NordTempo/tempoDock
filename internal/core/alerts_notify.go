@@ -12,15 +12,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/mail"
+	"net/netip"
 	"net/smtp"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -255,15 +258,17 @@ func (c *Core) send(ctx context.Context, ch store.AlertChannel, n apitypes.Alert
 		if err != nil {
 			return err
 		}
-		return post(ctx, cfg.URL, body, map[string]string{
-			SignatureHeader: signWebhook(cfg.Secret, n.SentAt, body), "Dock-Event": n.Event,
+		// Signed at the attempt, not at sent_at: receivers reject old
+		// timestamps, and a retry goes out up to 20 minutes later.
+		return c.alerts.post(ctx, cfg.URL, body, map[string]string{
+			SignatureHeader: signWebhook(cfg.Secret, time.Now(), body), "Dock-Event": n.Event,
 		})
 	case apitypes.ChannelSlack:
 		body, err := json.Marshal(map[string]string{"text": slackText(n)})
 		if err != nil {
 			return err
 		}
-		return post(ctx, cfg.URL, body, nil)
+		return c.alerts.post(ctx, cfg.URL, body, nil)
 	case apitypes.ChannelEmail:
 		if cfg.SMTP == nil {
 			return errors.New("the channel has no SMTP settings")
@@ -286,15 +291,64 @@ func signWebhook(secret string, at time.Time, body []byte) string {
 	return "t=" + t + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// webhookClient never follows redirects: a channel's URL is where alerts
-// go, nowhere else.
-var webhookClient = &http.Client{
-	Timeout:       deliveryTimeout,
-	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+// newChannelClient is the HTTP client webhook and Slack channels post
+// with. It never follows redirects: a channel's URL is where alerts go,
+// nowhere else. It never connects to the server itself or to link-local
+// addresses either (e.addrErr, checked after DNS), and keeps no idle
+// connections: alerts are rare.
+func newChannelClient(e *alertEngine) *http.Client {
+	dial := func(_, address string, _ syscall.RawConn) error {
+		ap, err := netip.ParseAddrPort(address)
+		if err != nil {
+			return err
+		}
+		return e.addrErr(ap.Addr())
+	}
+	return &http.Client{
+		Timeout:       deliveryTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Transport: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			DialContext:         (&net.Dialer{Timeout: deliveryTimeout, Control: dial}).DialContext,
+			TLSHandshakeTimeout: deliveryTimeout,
+			DisableKeepAlives:   true,
+		},
+	}
+}
+
+// AllowLoopbackAlertChannels lets alert channels deliver to this server's
+// own addresses, which they never may in production (alertEngine.addrErr).
+// For tests whose receivers listen on 127.0.0.1.
+func (c *Core) AllowLoopbackAlertChannels(allow bool) { c.alerts.loopback.Store(allow) }
+
+// Cloud metadata services outside 169.254.0.0/16: AWS over IPv6 and
+// Alibaba Cloud.
+var (
+	awsMetadataV6   = netip.MustParseAddr("fd00:ec2::254")
+	alibabaMetadata = netip.MustParseAddr("100.100.100.200")
+)
+
+// addrErr says why alerts can't be sent to ip, or nil. Loopback would
+// reach the daemon's own loopback-only services (the internal listener,
+// the registry) past the app firewall; link-local holds cloud metadata
+// (169.254.169.254). Private, CGNAT and tailnet addresses are fine: a
+// homelab's ntfy or chat bridge lives there (ADR 0020).
+func (e *alertEngine) addrErr(ip netip.Addr) error {
+	ip = ip.Unmap()
+	switch {
+	case ip.IsLoopback() || ip.IsUnspecified():
+		if e.loopback.Load() {
+			return nil
+		}
+		return fmt.Errorf("%s is this server itself; alerts go to other hosts (use the receiver's LAN, tailnet or public address)", ip)
+	case ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip == awsMetadataV6 || ip == alibabaMetadata:
+		return fmt.Errorf("%s is a link-local, multicast or cloud metadata address; alerts can't go there", ip)
+	}
+	return nil
 }
 
 // post sends a JSON body; anything but a 2xx answer is an error.
-func post(ctx context.Context, target string, body []byte, headers map[string]string) error {
+func (e *alertEngine) post(ctx context.Context, target string, body []byte, headers map[string]string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -304,7 +358,7 @@ func post(ctx context.Context, target string, body []byte, headers map[string]st
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := webhookClient.Do(req)
+	resp, err := e.client.Do(req)
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {
@@ -335,12 +389,19 @@ func headline(n apitypes.AlertNotification) string {
 	return "[" + string(a.Severity) + "] " + a.Title
 }
 
+// slackText is a Slack message, escaped: alert messages quote release
+// errors and build output, which must not turn into @channel mentions or
+// disguised links (<https://...|text>).
 func slackText(n apitypes.AlertNotification) string {
-	if n.Alert.Message == "" || n.Event == "resolved" {
-		return headline(n)
+	text := headline(n)
+	if n.Alert.Message != "" && n.Event != "resolved" {
+		text += "\n" + n.Alert.Message
 	}
-	return headline(n) + "\n" + n.Alert.Message
+	return slackEscaper.Replace(text)
 }
+
+// slackEscaper escapes Slack's control characters.
+var slackEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 func emailText(n apitypes.AlertNotification) (subject, text string) {
 	a := n.Alert
@@ -406,11 +467,13 @@ func sendMail(ctx context.Context, s apitypes.SMTPSettings, subject, text string
 			return fmt.Errorf("SMTP login: %w", err)
 		}
 	}
-	if err := cl.Mail(s.From); err != nil {
+	// The envelope takes bare addresses; From and To may carry names
+	// ("Dock <dock@example.com>").
+	if err := cl.Mail(envelopeAddr(s.From)); err != nil {
 		return fmt.Errorf("SMTP sender: %w", err)
 	}
 	for _, to := range s.To {
-		if err := cl.Rcpt(to); err != nil {
+		if err := cl.Rcpt(envelopeAddr(to)); err != nil {
 			return fmt.Errorf("SMTP recipient %s: %w", to, err)
 		}
 	}
@@ -420,7 +483,7 @@ func sendMail(ctx context.Context, s apitypes.SMTPSettings, subject, text string
 	}
 	var msg strings.Builder
 	for _, h := range [][2]string{
-		{"From", s.From}, {"To", strings.Join(s.To, ", ")}, {"Subject", oneLine(subject)},
+		{"From", s.From}, {"To", strings.Join(s.To, ", ")}, {"Subject", mime.QEncoding.Encode("utf-8", oneLine(subject))},
 		{"Date", time.Now().UTC().Format(time.RFC1123Z)}, {"MIME-Version", "1.0"},
 		{"Content-Type", "text/plain; charset=utf-8"},
 	} {
@@ -434,6 +497,15 @@ func sendMail(ctx context.Context, s apitypes.SMTPSettings, subject, text string
 		return fmt.Errorf("SMTP data: %w", err)
 	}
 	return cl.Quit()
+}
+
+// envelopeAddr is the bare address of a checked email address
+// (channelSettings parsed it when the channel was added).
+func envelopeAddr(addr string) string {
+	if a, err := mail.ParseAddress(addr); err == nil {
+		return a.Address
+	}
+	return addr
 }
 
 // oneLine keeps a header value on one line.
@@ -486,7 +558,7 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, req apitypes.Cre
 	if err := validName("channel", req.Name); err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
-	cfg, target, generated, err := channelSettings(req)
+	cfg, target, generated, err := c.alerts.channelSettings(req)
 	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
@@ -529,7 +601,7 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, req apitypes.Cre
 
 // channelSettings validates a new channel's settings and returns what is
 // sealed, what lists show, and a generated webhook secret.
-func channelSettings(req apitypes.CreateAlertChannelRequest) (cfg channelConfig, target, generated string, err error) {
+func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest) (cfg channelConfig, target, generated string, err error) {
 	switch req.Kind {
 	case apitypes.ChannelWebhook, apitypes.ChannelSlack:
 		u, perr := url.Parse(req.URL)
@@ -538,6 +610,16 @@ func channelSettings(req apitypes.CreateAlertChannelRequest) (cfg channelConfig,
 		}
 		if req.SMTP != nil {
 			return cfg, "", "", invalid("SMTP settings are for email channels")
+		}
+		// Named hosts are checked when delivering (newChannelClient), after DNS.
+		host := strings.ToLower(u.Hostname())
+		if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+			host = "127.0.0.1"
+		}
+		if ip, perr := netip.ParseAddr(host); perr == nil {
+			if err := e.addrErr(ip); err != nil {
+				return cfg, "", "", invalid("%v", err)
+			}
 		}
 		cfg.URL, target = req.URL, u.Scheme+"://"+u.Host
 		if req.Kind == apitypes.ChannelWebhook {

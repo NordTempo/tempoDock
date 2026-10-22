@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -52,8 +54,10 @@ type alertEngine struct {
 	// open holds the open alerts by key: a handful, bounded by servers,
 	// services and domains.
 	open map[string]store.Alert
-	// restarts tracks container restarts per service ("p/e/s") for crash
-	// loops; entries go once quiet and without an open alert.
+	// restarts tracks container restarts per running service ("p/e/s")
+	// for crash loops; an entry goes when the service stops (archived,
+	// nothing deployed) or a new release goes live. A quiet entry is kept
+	// with no times, so its next restart counts.
 	restarts map[string]*restartLog
 	// offline is when each unreachable server was first seen so.
 	offline map[int64]time.Time
@@ -62,6 +66,10 @@ type alertEngine struct {
 	started time.Time
 	// outbox holds notifications being sent (alerts_notify.go).
 	outbox outbox
+	// client posts to webhook and Slack channels (newChannelClient);
+	// loopback lets it reach this server, for tests only.
+	client   *http.Client
+	loopback atomic.Bool
 }
 
 // restartLog is a service's restart count as last seen and the times of
@@ -72,10 +80,12 @@ type restartLog struct {
 }
 
 func newAlertEngine() *alertEngine {
-	return &alertEngine{
+	e := &alertEngine{
 		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, offline: map[int64]time.Time{},
 		outbox: outbox{queues: map[int64][]apitypes.AlertNotification{}},
 	}
+	e.client = newChannelClient(e)
+	return e
 }
 
 // startAlerts loads the open alerts, brings deploy and domain alerts in
@@ -215,7 +225,7 @@ func backupFailed(project, env, service string, id int64, reason string) alertSi
 	return alertSignal{
 		Key: "backup:" + svc, Kind: apitypes.AlertBackupFailed, Severity: apitypes.SeverityWarning,
 		Title:   "Backup of " + svc + " failed",
-		Message: fmt.Sprintf("Backup %d failed: %s.", id, reason),
+		Message: fmt.Sprintf("Backup %d failed: %s.", id, strings.TrimRight(strings.TrimSpace(reason), ".:; ")),
 		Project: project, Environment: env, Service: service,
 	}
 }
@@ -378,7 +388,8 @@ func (c *Core) offlineAlert(ctx context.Context, srv store.Server, now time.Time
 }
 
 // calmCrashLoops resolves crash loop alerts of services that haven't
-// restarted for [alerts] crash_loop_minutes, and forgets quiet services.
+// restarted for [alerts] crash_loop_minutes, and clears quiet services'
+// restart times.
 func (c *Core) calmCrashLoops(ctx context.Context, now time.Time) {
 	window := time.Duration(c.cfg.Alerts.CrashLoopMinutes) * time.Minute
 	e := c.alerts
