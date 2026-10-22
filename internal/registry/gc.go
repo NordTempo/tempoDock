@@ -1,0 +1,94 @@
+package registry
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"time"
+
+	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+
+	"github.com/NordTempo/tempoDock/internal/node"
+)
+
+// GarbageCollect removes the blobs no manifest references any more, after
+// Client.Prune deleted manifests, with Distribution's own
+// `registry garbage-collect --delete-untagged` in a one-shot container.
+//
+// The collector must not run next to a registry that accepts pushes, or
+// it can delete blobs an upload is still linking, so the registry
+// container (registry, normally ContainerName) is stopped for the run and
+// started again afterwards, whatever happens. Pulls and pushes fail for
+// those seconds; the caller schedules it when no build or pull is in
+// flight. The collector gets the registry's volumes and config
+// (VolumesFrom), no network, and a memory cap. Its output goes to logs.
+func GarbageCollect(ctx context.Context, docker *client.Client, registry string, logs io.Writer) (err error) {
+	if logs == nil {
+		logs = io.Discard
+	}
+	inspect, err := docker.ContainerInspect(ctx, registry, client.ContainerInspectOptions{})
+	if err != nil {
+		return fmt.Errorf("garbage collect: inspect %s: %w", registry, err)
+	}
+	if inspect.Container.State.Running {
+		timeout := 30
+		if _, err := docker.ContainerStop(ctx, registry, client.ContainerStopOptions{Timeout: &timeout}); err != nil {
+			return fmt.Errorf("garbage collect: stop %s: %w", registry, err)
+		}
+		defer func() {
+			// Restart even if ctx ended: a stopped registry fails every deploy.
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+			defer cancel()
+			if _, serr := docker.ContainerStart(ctx, registry, client.ContainerStartOptions{}); serr != nil && err == nil {
+				err = fmt.Errorf("garbage collect: restart %s: %w", registry, serr)
+			}
+		}()
+	}
+
+	name := registry + "-gc"
+	// A collector left over from a crash would hold the name.
+	if _, err := docker.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("garbage collect: remove old %s: %w", name, err)
+	}
+	const mem = 256 << 20
+	created, err := docker.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Name: name,
+		Config: &container.Config{
+			Image:  inspect.Container.Image, // the registry's own image ID
+			Cmd:    []string{"garbage-collect", "--delete-untagged", configPath},
+			Labels: map[string]string{node.LabelManaged: "true", node.LabelRole: "registry-gc"},
+		},
+		HostConfig: &container.HostConfig{
+			VolumesFrom: []string{registry},
+			NetworkMode: "none",
+			Resources:   container.Resources{Memory: mem, MemorySwap: mem},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("garbage collect: create %s: %w", name, err)
+	}
+	defer func() {
+		_, _ = docker.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+	}()
+	if _, err := docker.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		return fmt.Errorf("garbage collect: start %s: %w", name, err)
+	}
+	wait := docker.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	var exit container.WaitResponse
+	select {
+	case exit = <-wait.Result:
+	case err := <-wait.Error:
+		return fmt.Errorf("garbage collect: wait for %s: %w", name, err)
+	}
+	if out, err := docker.ContainerLogs(ctx, created.ID, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}); err == nil {
+		_, _ = stdcopy.StdCopy(logs, logs, out)
+		_ = out.Close()
+	}
+	if exit.StatusCode != 0 {
+		return fmt.Errorf("garbage collect: registry garbage-collect exited with %d", exit.StatusCode)
+	}
+	return nil
+}
