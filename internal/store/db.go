@@ -66,6 +66,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.clearReleaseHostPortStmt, err = db.PrepareContext(ctx, clearReleaseHostPort); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearReleaseHostPort: %w", err)
 	}
+	if q.consumeJoinTokenStmt, err = db.PrepareContext(ctx, consumeJoinToken); err != nil {
+		return nil, fmt.Errorf("error preparing query ConsumeJoinToken: %w", err)
+	}
 	if q.countKindEnvironmentsStmt, err = db.PrepareContext(ctx, countKindEnvironments); err != nil {
 		return nil, fmt.Errorf("error preparing query CountKindEnvironments: %w", err)
 	}
@@ -90,8 +93,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createEnvironmentStmt, err = db.PrepareContext(ctx, createEnvironment); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateEnvironment: %w", err)
 	}
+	if q.createJoinTokenStmt, err = db.PrepareContext(ctx, createJoinToken); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateJoinToken: %w", err)
+	}
 	if q.createProjectStmt, err = db.PrepareContext(ctx, createProject); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateProject: %w", err)
+	}
+	if q.createPromotedReleaseStmt, err = db.PrepareContext(ctx, createPromotedRelease); err != nil {
+		return nil, fmt.Errorf("error preparing query CreatePromotedRelease: %w", err)
 	}
 	if q.createReleaseStmt, err = db.PrepareContext(ctx, createRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateRelease: %w", err)
@@ -135,11 +144,20 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteExpiredSessionsStmt, err = db.PrepareContext(ctx, deleteExpiredSessions); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteExpiredSessions: %w", err)
 	}
+	if q.deleteJoinTokenStmt, err = db.PrepareContext(ctx, deleteJoinToken); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteJoinToken: %w", err)
+	}
 	if q.deleteSavedQueryStmt, err = db.PrepareContext(ctx, deleteSavedQuery); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSavedQuery: %w", err)
 	}
 	if q.deleteSensitiveColumnsStmt, err = db.PrepareContext(ctx, deleteSensitiveColumns); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSensitiveColumns: %w", err)
+	}
+	if q.deleteServerStmt, err = db.PrepareContext(ctx, deleteServer); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteServer: %w", err)
+	}
+	if q.deleteServerPlacementsStmt, err = db.PrepareContext(ctx, deleteServerPlacements); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteServerPlacements: %w", err)
 	}
 	if q.deleteSessionStmt, err = db.PrepareContext(ctx, deleteSession); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSession: %w", err)
@@ -221,6 +239,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getServerStmt, err = db.PrepareContext(ctx, getServer); err != nil {
 		return nil, fmt.Errorf("error preparing query GetServer: %w", err)
+	}
+	if q.getServerByFingerprintStmt, err = db.PrepareContext(ctx, getServerByFingerprint); err != nil {
+		return nil, fmt.Errorf("error preparing query GetServerByFingerprint: %w", err)
 	}
 	if q.getServerByNameStmt, err = db.PrepareContext(ctx, getServerByName); err != nil {
 		return nil, fmt.Errorf("error preparing query GetServerByName: %w", err)
@@ -306,6 +327,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listPendingDomainsStmt, err = db.PrepareContext(ctx, listPendingDomains); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPendingDomains: %w", err)
 	}
+	if q.listPendingJoinTokensStmt, err = db.PrepareContext(ctx, listPendingJoinTokens); err != nil {
+		return nil, fmt.Errorf("error preparing query ListPendingJoinTokens: %w", err)
+	}
 	if q.listPlacementsStmt, err = db.PrepareContext(ctx, listPlacements); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPlacements: %w", err)
 	}
@@ -329,6 +353,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listProjectsStmt, err = db.PrepareContext(ctx, listProjects); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjects: %w", err)
+	}
+	if q.listPromotableReleasesStmt, err = db.PrepareContext(ctx, listPromotableReleases); err != nil {
+		return nil, fmt.Errorf("error preparing query ListPromotableReleases: %w", err)
 	}
 	if q.listReleaseEventsStmt, err = db.PrepareContext(ctx, listReleaseEvents); err != nil {
 		return nil, fmt.Errorf("error preparing query ListReleaseEvents: %w", err)
@@ -396,14 +423,23 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.nextReleaseNumberStmt, err = db.PrepareContext(ctx, nextReleaseNumber); err != nil {
 		return nil, fmt.Errorf("error preparing query NextReleaseNumber: %w", err)
 	}
+	if q.promoteServerKeyStmt, err = db.PrepareContext(ctx, promoteServerKey); err != nil {
+		return nil, fmt.Errorf("error preparing query PromoteServerKey: %w", err)
+	}
 	if q.pruneServerStatsStmt, err = db.PrepareContext(ctx, pruneServerStats); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneServerStats: %w", err)
 	}
 	if q.pruneServiceStatsStmt, err = db.PrepareContext(ctx, pruneServiceStats); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneServiceStats: %w", err)
 	}
+	if q.registerNodeServerStmt, err = db.PrepareContext(ctx, registerNodeServer); err != nil {
+		return nil, fmt.Errorf("error preparing query RegisterNodeServer: %w", err)
+	}
 	if q.restoreVariableStmt, err = db.PrepareContext(ctx, restoreVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query RestoreVariable: %w", err)
+	}
+	if q.revokeServerStmt, err = db.PrepareContext(ctx, revokeServer); err != nil {
+		return nil, fmt.Errorf("error preparing query RevokeServer: %w", err)
 	}
 	if q.revokeTokenStmt, err = db.PrepareContext(ctx, revokeToken); err != nil {
 		return nil, fmt.Errorf("error preparing query RevokeToken: %w", err)
@@ -417,11 +453,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setEnvironmentApplyErrorStmt, err = db.PrepareContext(ctx, setEnvironmentApplyError); err != nil {
 		return nil, fmt.Errorf("error preparing query SetEnvironmentApplyError: %w", err)
 	}
+	if q.setJoinTokenServerStmt, err = db.PrepareContext(ctx, setJoinTokenServer); err != nil {
+		return nil, fmt.Errorf("error preparing query SetJoinTokenServer: %w", err)
+	}
 	if q.setPendingSettingsStmt, err = db.PrepareContext(ctx, setPendingSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPendingSettings: %w", err)
 	}
 	if q.setReleaseContainerStmt, err = db.PrepareContext(ctx, setReleaseContainer); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseContainer: %w", err)
+	}
+	if q.setReleaseDigestStmt, err = db.PrepareContext(ctx, setReleaseDigest); err != nil {
+		return nil, fmt.Errorf("error preparing query SetReleaseDigest: %w", err)
 	}
 	if q.setReleaseImageStmt, err = db.PrepareContext(ctx, setReleaseImage); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseImage: %w", err)
@@ -429,8 +471,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setReleaseStatusStmt, err = db.PrepareContext(ctx, setReleaseStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseStatus: %w", err)
 	}
+	if q.setServerDisconnectedStmt, err = db.PrepareContext(ctx, setServerDisconnected); err != nil {
+		return nil, fmt.Errorf("error preparing query SetServerDisconnected: %w", err)
+	}
+	if q.setServerHelloStmt, err = db.PrepareContext(ctx, setServerHello); err != nil {
+		return nil, fmt.Errorf("error preparing query SetServerHello: %w", err)
+	}
 	if q.setServerMemoryStmt, err = db.PrepareContext(ctx, setServerMemory); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServerMemory: %w", err)
+	}
+	if q.setServerNextKeyStmt, err = db.PrepareContext(ctx, setServerNextKey); err != nil {
+		return nil, fmt.Errorf("error preparing query SetServerNextKey: %w", err)
 	}
 	if q.setServiceDatabaseSettingsStmt, err = db.PrepareContext(ctx, setServiceDatabaseSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServiceDatabaseSettings: %w", err)
@@ -467,6 +518,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.updateServerPlacementStmt, err = db.PrepareContext(ctx, updateServerPlacement); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateServerPlacement: %w", err)
+	}
+	if q.updateServerSettingsStmt, err = db.PrepareContext(ctx, updateServerSettings); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateServerSettings: %w", err)
 	}
 	if q.updateServiceStmt, err = db.PrepareContext(ctx, updateService); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateService: %w", err)
@@ -552,6 +606,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing clearReleaseHostPortStmt: %w", cerr)
 		}
 	}
+	if q.consumeJoinTokenStmt != nil {
+		if cerr := q.consumeJoinTokenStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing consumeJoinTokenStmt: %w", cerr)
+		}
+	}
 	if q.countKindEnvironmentsStmt != nil {
 		if cerr := q.countKindEnvironmentsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countKindEnvironmentsStmt: %w", cerr)
@@ -592,9 +651,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createEnvironmentStmt: %w", cerr)
 		}
 	}
+	if q.createJoinTokenStmt != nil {
+		if cerr := q.createJoinTokenStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createJoinTokenStmt: %w", cerr)
+		}
+	}
 	if q.createProjectStmt != nil {
 		if cerr := q.createProjectStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createProjectStmt: %w", cerr)
+		}
+	}
+	if q.createPromotedReleaseStmt != nil {
+		if cerr := q.createPromotedReleaseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createPromotedReleaseStmt: %w", cerr)
 		}
 	}
 	if q.createReleaseStmt != nil {
@@ -667,6 +736,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteExpiredSessionsStmt: %w", cerr)
 		}
 	}
+	if q.deleteJoinTokenStmt != nil {
+		if cerr := q.deleteJoinTokenStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteJoinTokenStmt: %w", cerr)
+		}
+	}
 	if q.deleteSavedQueryStmt != nil {
 		if cerr := q.deleteSavedQueryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSavedQueryStmt: %w", cerr)
@@ -675,6 +749,16 @@ func (q *Queries) Close() error {
 	if q.deleteSensitiveColumnsStmt != nil {
 		if cerr := q.deleteSensitiveColumnsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSensitiveColumnsStmt: %w", cerr)
+		}
+	}
+	if q.deleteServerStmt != nil {
+		if cerr := q.deleteServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteServerStmt: %w", cerr)
+		}
+	}
+	if q.deleteServerPlacementsStmt != nil {
+		if cerr := q.deleteServerPlacementsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteServerPlacementsStmt: %w", cerr)
 		}
 	}
 	if q.deleteSessionStmt != nil {
@@ -810,6 +894,11 @@ func (q *Queries) Close() error {
 	if q.getServerStmt != nil {
 		if cerr := q.getServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getServerStmt: %w", cerr)
+		}
+	}
+	if q.getServerByFingerprintStmt != nil {
+		if cerr := q.getServerByFingerprintStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getServerByFingerprintStmt: %w", cerr)
 		}
 	}
 	if q.getServerByNameStmt != nil {
@@ -952,6 +1041,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listPendingDomainsStmt: %w", cerr)
 		}
 	}
+	if q.listPendingJoinTokensStmt != nil {
+		if cerr := q.listPendingJoinTokensStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listPendingJoinTokensStmt: %w", cerr)
+		}
+	}
 	if q.listPlacementsStmt != nil {
 		if cerr := q.listPlacementsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listPlacementsStmt: %w", cerr)
@@ -990,6 +1084,11 @@ func (q *Queries) Close() error {
 	if q.listProjectsStmt != nil {
 		if cerr := q.listProjectsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listProjectsStmt: %w", cerr)
+		}
+	}
+	if q.listPromotableReleasesStmt != nil {
+		if cerr := q.listPromotableReleasesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listPromotableReleasesStmt: %w", cerr)
 		}
 	}
 	if q.listReleaseEventsStmt != nil {
@@ -1102,6 +1201,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing nextReleaseNumberStmt: %w", cerr)
 		}
 	}
+	if q.promoteServerKeyStmt != nil {
+		if cerr := q.promoteServerKeyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing promoteServerKeyStmt: %w", cerr)
+		}
+	}
 	if q.pruneServerStatsStmt != nil {
 		if cerr := q.pruneServerStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing pruneServerStatsStmt: %w", cerr)
@@ -1112,9 +1216,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing pruneServiceStatsStmt: %w", cerr)
 		}
 	}
+	if q.registerNodeServerStmt != nil {
+		if cerr := q.registerNodeServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing registerNodeServerStmt: %w", cerr)
+		}
+	}
 	if q.restoreVariableStmt != nil {
 		if cerr := q.restoreVariableStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing restoreVariableStmt: %w", cerr)
+		}
+	}
+	if q.revokeServerStmt != nil {
+		if cerr := q.revokeServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing revokeServerStmt: %w", cerr)
 		}
 	}
 	if q.revokeTokenStmt != nil {
@@ -1137,6 +1251,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setEnvironmentApplyErrorStmt: %w", cerr)
 		}
 	}
+	if q.setJoinTokenServerStmt != nil {
+		if cerr := q.setJoinTokenServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setJoinTokenServerStmt: %w", cerr)
+		}
+	}
 	if q.setPendingSettingsStmt != nil {
 		if cerr := q.setPendingSettingsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setPendingSettingsStmt: %w", cerr)
@@ -1145,6 +1264,11 @@ func (q *Queries) Close() error {
 	if q.setReleaseContainerStmt != nil {
 		if cerr := q.setReleaseContainerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setReleaseContainerStmt: %w", cerr)
+		}
+	}
+	if q.setReleaseDigestStmt != nil {
+		if cerr := q.setReleaseDigestStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setReleaseDigestStmt: %w", cerr)
 		}
 	}
 	if q.setReleaseImageStmt != nil {
@@ -1157,9 +1281,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setReleaseStatusStmt: %w", cerr)
 		}
 	}
+	if q.setServerDisconnectedStmt != nil {
+		if cerr := q.setServerDisconnectedStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setServerDisconnectedStmt: %w", cerr)
+		}
+	}
+	if q.setServerHelloStmt != nil {
+		if cerr := q.setServerHelloStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setServerHelloStmt: %w", cerr)
+		}
+	}
 	if q.setServerMemoryStmt != nil {
 		if cerr := q.setServerMemoryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setServerMemoryStmt: %w", cerr)
+		}
+	}
+	if q.setServerNextKeyStmt != nil {
+		if cerr := q.setServerNextKeyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setServerNextKeyStmt: %w", cerr)
 		}
 	}
 	if q.setServiceDatabaseSettingsStmt != nil {
@@ -1220,6 +1359,11 @@ func (q *Queries) Close() error {
 	if q.updateServerPlacementStmt != nil {
 		if cerr := q.updateServerPlacementStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateServerPlacementStmt: %w", cerr)
+		}
+	}
+	if q.updateServerSettingsStmt != nil {
+		if cerr := q.updateServerSettingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateServerSettingsStmt: %w", cerr)
 		}
 	}
 	if q.updateServiceStmt != nil {
@@ -1290,6 +1434,7 @@ type Queries struct {
 	archiveProjectStmt                 *sql.Stmt
 	archiveServiceStmt                 *sql.Stmt
 	clearReleaseHostPortStmt           *sql.Stmt
+	consumeJoinTokenStmt               *sql.Stmt
 	countKindEnvironmentsStmt          *sql.Stmt
 	countPendingCLILoginsStmt          *sql.Stmt
 	countUsersStmt                     *sql.Stmt
@@ -1298,7 +1443,9 @@ type Queries struct {
 	createChangesetStmt                *sql.Stmt
 	createDomainStmt                   *sql.Stmt
 	createEnvironmentStmt              *sql.Stmt
+	createJoinTokenStmt                *sql.Stmt
 	createProjectStmt                  *sql.Stmt
+	createPromotedReleaseStmt          *sql.Stmt
 	createReleaseStmt                  *sql.Stmt
 	createServerStmt                   *sql.Stmt
 	createServiceStmt                  *sql.Stmt
@@ -1313,8 +1460,11 @@ type Queries struct {
 	deleteDomainStmt                   *sql.Stmt
 	deleteExpiredCLILoginsStmt         *sql.Stmt
 	deleteExpiredSessionsStmt          *sql.Stmt
+	deleteJoinTokenStmt                *sql.Stmt
 	deleteSavedQueryStmt               *sql.Stmt
 	deleteSensitiveColumnsStmt         *sql.Stmt
+	deleteServerStmt                   *sql.Stmt
+	deleteServerPlacementsStmt         *sql.Stmt
 	deleteSessionStmt                  *sql.Stmt
 	deleteUserStmt                     *sql.Stmt
 	deleteUserSessionsStmt             *sql.Stmt
@@ -1342,6 +1492,7 @@ type Queries struct {
 	getReleaseStmt                     *sql.Stmt
 	getReleaseByNumberStmt             *sql.Stmt
 	getServerStmt                      *sql.Stmt
+	getServerByFingerprintStmt         *sql.Stmt
 	getServerByNameStmt                *sql.Stmt
 	getServiceStmt                     *sql.Stmt
 	getServiceByNameStmt               *sql.Stmt
@@ -1370,6 +1521,7 @@ type Queries struct {
 	listInFlightReleasesStmt           *sql.Stmt
 	listPendingChangesetsStmt          *sql.Stmt
 	listPendingDomainsStmt             *sql.Stmt
+	listPendingJoinTokensStmt          *sql.Stmt
 	listPlacementsStmt                 *sql.Stmt
 	listProjectAuditEventsStmt         *sql.Stmt
 	listProjectAuditEventsByActionStmt *sql.Stmt
@@ -1378,6 +1530,7 @@ type Queries struct {
 	listProjectServicesStmt            *sql.Stmt
 	listProjectVolumesStmt             *sql.Stmt
 	listProjectsStmt                   *sql.Stmt
+	listPromotableReleasesStmt         *sql.Stmt
 	listReleaseEventsStmt              *sql.Stmt
 	listReleasesStmt                   *sql.Stmt
 	listRetiredPortHoldersStmt         *sql.Stmt
@@ -1400,18 +1553,26 @@ type Queries struct {
 	listVariablesStmt                  *sql.Stmt
 	listVolumesStmt                    *sql.Stmt
 	nextReleaseNumberStmt              *sql.Stmt
+	promoteServerKeyStmt               *sql.Stmt
 	pruneServerStatsStmt               *sql.Stmt
 	pruneServiceStatsStmt              *sql.Stmt
+	registerNodeServerStmt             *sql.Stmt
 	restoreVariableStmt                *sql.Stmt
+	revokeServerStmt                   *sql.Stmt
 	revokeTokenStmt                    *sql.Stmt
 	saveQueryStmt                      *sql.Stmt
 	setDataMaskedSyncedHashStmt        *sql.Stmt
 	setEnvironmentApplyErrorStmt       *sql.Stmt
+	setJoinTokenServerStmt             *sql.Stmt
 	setPendingSettingsStmt             *sql.Stmt
 	setReleaseContainerStmt            *sql.Stmt
+	setReleaseDigestStmt               *sql.Stmt
 	setReleaseImageStmt                *sql.Stmt
 	setReleaseStatusStmt               *sql.Stmt
+	setServerDisconnectedStmt          *sql.Stmt
+	setServerHelloStmt                 *sql.Stmt
 	setServerMemoryStmt                *sql.Stmt
+	setServerNextKeyStmt               *sql.Stmt
 	setServiceDatabaseSettingsStmt     *sql.Stmt
 	setTokenDataAccessStmt             *sql.Stmt
 	setUserDisabledStmt                *sql.Stmt
@@ -1424,6 +1585,7 @@ type Queries struct {
 	updateDomainStatusStmt             *sql.Stmt
 	updateSavedQueryStmt               *sql.Stmt
 	updateServerPlacementStmt          *sql.Stmt
+	updateServerSettingsStmt           *sql.Stmt
 	updateServiceStmt                  *sql.Stmt
 	upsertDataAccessStmt               *sql.Stmt
 	upsertPlacementStmt                *sql.Stmt
@@ -1447,6 +1609,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		archiveProjectStmt:                 q.archiveProjectStmt,
 		archiveServiceStmt:                 q.archiveServiceStmt,
 		clearReleaseHostPortStmt:           q.clearReleaseHostPortStmt,
+		consumeJoinTokenStmt:               q.consumeJoinTokenStmt,
 		countKindEnvironmentsStmt:          q.countKindEnvironmentsStmt,
 		countPendingCLILoginsStmt:          q.countPendingCLILoginsStmt,
 		countUsersStmt:                     q.countUsersStmt,
@@ -1455,7 +1618,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createChangesetStmt:                q.createChangesetStmt,
 		createDomainStmt:                   q.createDomainStmt,
 		createEnvironmentStmt:              q.createEnvironmentStmt,
+		createJoinTokenStmt:                q.createJoinTokenStmt,
 		createProjectStmt:                  q.createProjectStmt,
+		createPromotedReleaseStmt:          q.createPromotedReleaseStmt,
 		createReleaseStmt:                  q.createReleaseStmt,
 		createServerStmt:                   q.createServerStmt,
 		createServiceStmt:                  q.createServiceStmt,
@@ -1470,8 +1635,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteDomainStmt:                   q.deleteDomainStmt,
 		deleteExpiredCLILoginsStmt:         q.deleteExpiredCLILoginsStmt,
 		deleteExpiredSessionsStmt:          q.deleteExpiredSessionsStmt,
+		deleteJoinTokenStmt:                q.deleteJoinTokenStmt,
 		deleteSavedQueryStmt:               q.deleteSavedQueryStmt,
 		deleteSensitiveColumnsStmt:         q.deleteSensitiveColumnsStmt,
+		deleteServerStmt:                   q.deleteServerStmt,
+		deleteServerPlacementsStmt:         q.deleteServerPlacementsStmt,
 		deleteSessionStmt:                  q.deleteSessionStmt,
 		deleteUserStmt:                     q.deleteUserStmt,
 		deleteUserSessionsStmt:             q.deleteUserSessionsStmt,
@@ -1499,6 +1667,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getReleaseStmt:                     q.getReleaseStmt,
 		getReleaseByNumberStmt:             q.getReleaseByNumberStmt,
 		getServerStmt:                      q.getServerStmt,
+		getServerByFingerprintStmt:         q.getServerByFingerprintStmt,
 		getServerByNameStmt:                q.getServerByNameStmt,
 		getServiceStmt:                     q.getServiceStmt,
 		getServiceByNameStmt:               q.getServiceByNameStmt,
@@ -1527,6 +1696,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listInFlightReleasesStmt:           q.listInFlightReleasesStmt,
 		listPendingChangesetsStmt:          q.listPendingChangesetsStmt,
 		listPendingDomainsStmt:             q.listPendingDomainsStmt,
+		listPendingJoinTokensStmt:          q.listPendingJoinTokensStmt,
 		listPlacementsStmt:                 q.listPlacementsStmt,
 		listProjectAuditEventsStmt:         q.listProjectAuditEventsStmt,
 		listProjectAuditEventsByActionStmt: q.listProjectAuditEventsByActionStmt,
@@ -1535,6 +1705,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listProjectServicesStmt:            q.listProjectServicesStmt,
 		listProjectVolumesStmt:             q.listProjectVolumesStmt,
 		listProjectsStmt:                   q.listProjectsStmt,
+		listPromotableReleasesStmt:         q.listPromotableReleasesStmt,
 		listReleaseEventsStmt:              q.listReleaseEventsStmt,
 		listReleasesStmt:                   q.listReleasesStmt,
 		listRetiredPortHoldersStmt:         q.listRetiredPortHoldersStmt,
@@ -1557,18 +1728,26 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listVariablesStmt:                  q.listVariablesStmt,
 		listVolumesStmt:                    q.listVolumesStmt,
 		nextReleaseNumberStmt:              q.nextReleaseNumberStmt,
+		promoteServerKeyStmt:               q.promoteServerKeyStmt,
 		pruneServerStatsStmt:               q.pruneServerStatsStmt,
 		pruneServiceStatsStmt:              q.pruneServiceStatsStmt,
+		registerNodeServerStmt:             q.registerNodeServerStmt,
 		restoreVariableStmt:                q.restoreVariableStmt,
+		revokeServerStmt:                   q.revokeServerStmt,
 		revokeTokenStmt:                    q.revokeTokenStmt,
 		saveQueryStmt:                      q.saveQueryStmt,
 		setDataMaskedSyncedHashStmt:        q.setDataMaskedSyncedHashStmt,
 		setEnvironmentApplyErrorStmt:       q.setEnvironmentApplyErrorStmt,
+		setJoinTokenServerStmt:             q.setJoinTokenServerStmt,
 		setPendingSettingsStmt:             q.setPendingSettingsStmt,
 		setReleaseContainerStmt:            q.setReleaseContainerStmt,
+		setReleaseDigestStmt:               q.setReleaseDigestStmt,
 		setReleaseImageStmt:                q.setReleaseImageStmt,
 		setReleaseStatusStmt:               q.setReleaseStatusStmt,
+		setServerDisconnectedStmt:          q.setServerDisconnectedStmt,
+		setServerHelloStmt:                 q.setServerHelloStmt,
 		setServerMemoryStmt:                q.setServerMemoryStmt,
+		setServerNextKeyStmt:               q.setServerNextKeyStmt,
 		setServiceDatabaseSettingsStmt:     q.setServiceDatabaseSettingsStmt,
 		setTokenDataAccessStmt:             q.setTokenDataAccessStmt,
 		setUserDisabledStmt:                q.setUserDisabledStmt,
@@ -1581,6 +1760,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateDomainStatusStmt:             q.updateDomainStatusStmt,
 		updateSavedQueryStmt:               q.updateSavedQueryStmt,
 		updateServerPlacementStmt:          q.updateServerPlacementStmt,
+		updateServerSettingsStmt:           q.updateServerSettingsStmt,
 		updateServiceStmt:                  q.updateServiceStmt,
 		upsertDataAccessStmt:               q.upsertDataAccessStmt,
 		upsertPlacementStmt:                q.upsertPlacementStmt,

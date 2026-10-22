@@ -345,11 +345,7 @@ func TestDataQueryHistory(t *testing.T) {
 func TestDataQueryPlans(t *testing.T) {
 	f := newDataFixture(t)
 	now := time.Now()
-	for _, tc := range []struct {
-		name string
-		sql  string
-		args []any
-	}{
+	checkPlans(t, f.s, []planCase{
 		{"ListDataPolicyRules", listDataPolicyRules, []any{1, 2}},
 		{"ListEffectiveDataPolicyRules", listEffectiveDataPolicyRules, []any{1, 2}},
 		{"DeleteDataPolicyRules", deleteDataPolicyRules, []any{1, 2}},
@@ -370,8 +366,22 @@ func TestDataQueryPlans(t *testing.T) {
 		{"ListDataQueryHistory", listDataQueryHistory, []any{"shop/staging/postgres", 1, nil, math.MaxInt64, 50}},
 		{"SetServiceDatabaseSettings", setServiceDatabaseSettings, []any{"", "", 1}},
 		{"SetTokenDataAccess", setTokenDataAccess, []any{nil, nil, nil, 1}},
-	} {
-		rows, err := f.s.DB.Query("EXPLAIN QUERY PLAN "+tc.sql, tc.args...)
+	})
+}
+
+// planCase is one query for checkPlans: its SQL and arguments to plan it with.
+type planCase struct {
+	name string
+	sql  string
+	args []any
+}
+
+// checkPlans fails the test for every query whose plan scans a table or
+// sorts in a temporary b-tree. Run with -v to see the plans.
+func checkPlans(t *testing.T, s *Store, cases []planCase) {
+	t.Helper()
+	for _, tc := range cases {
+		rows, err := s.DB.Query("EXPLAIN QUERY PLAN "+tc.sql, tc.args...)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}

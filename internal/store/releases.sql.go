@@ -59,7 +59,7 @@ func (q *Queries) ClearReleaseHostPort(ctx context.Context, id int64) error {
 const createRelease = `-- name: CreateRelease :one
 INSERT INTO releases (service_id, number, source, from_release, image_ref, image_id, config, host_port, created_by, carried)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried
+RETURNING id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id
 `
 
 type CreateReleaseParams struct {
@@ -107,6 +107,9 @@ func (q *Queries) CreateRelease(ctx context.Context, arg CreateReleaseParams) (R
 		&i.CreatedAt,
 		&i.FinishedAt,
 		&i.Carried,
+		&i.ImageDigest,
+		&i.BuiltOnServerID,
+		&i.PromotedFromReleaseID,
 	)
 	return i, err
 }
@@ -133,7 +136,7 @@ func (q *Queries) FailRelease(ctx context.Context, arg FailReleaseParams) error 
 }
 
 const getActiveRelease = `-- name: GetActiveRelease :one
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = +? AND status = 'active'
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id FROM releases WHERE service_id = +? AND status = 'active'
 `
 
 func (q *Queries) GetActiveRelease(ctx context.Context, serviceID int64) (Release, error) {
@@ -157,12 +160,15 @@ func (q *Queries) GetActiveRelease(ctx context.Context, serviceID int64) (Releas
 		&i.CreatedAt,
 		&i.FinishedAt,
 		&i.Carried,
+		&i.ImageDigest,
+		&i.BuiltOnServerID,
+		&i.PromotedFromReleaseID,
 	)
 	return i, err
 }
 
 const getInFlightRelease = `-- name: GetInFlightRelease :one
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id FROM releases
 WHERE service_id = +? AND status IN ('queued', 'building', 'starting', 'health_checking')
 `
 
@@ -187,12 +193,15 @@ func (q *Queries) GetInFlightRelease(ctx context.Context, serviceID int64) (Rele
 		&i.CreatedAt,
 		&i.FinishedAt,
 		&i.Carried,
+		&i.ImageDigest,
+		&i.BuiltOnServerID,
+		&i.PromotedFromReleaseID,
 	)
 	return i, err
 }
 
 const getRelease = `-- name: GetRelease :one
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE id = +?
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id FROM releases WHERE id = +?
 `
 
 func (q *Queries) GetRelease(ctx context.Context, id int64) (Release, error) {
@@ -216,12 +225,15 @@ func (q *Queries) GetRelease(ctx context.Context, id int64) (Release, error) {
 		&i.CreatedAt,
 		&i.FinishedAt,
 		&i.Carried,
+		&i.ImageDigest,
+		&i.BuiltOnServerID,
+		&i.PromotedFromReleaseID,
 	)
 	return i, err
 }
 
 const getReleaseByNumber = `-- name: GetReleaseByNumber :one
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = +? AND number = +?
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id FROM releases WHERE service_id = +? AND number = +?
 `
 
 type GetReleaseByNumberParams struct {
@@ -250,12 +262,15 @@ func (q *Queries) GetReleaseByNumber(ctx context.Context, arg GetReleaseByNumber
 		&i.CreatedAt,
 		&i.FinishedAt,
 		&i.Carried,
+		&i.ImageDigest,
+		&i.BuiltOnServerID,
+		&i.PromotedFromReleaseID,
 	)
 	return i, err
 }
 
 const listActiveReleases = `-- name: ListActiveReleases :many
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE status = 'active'
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id FROM releases WHERE status = 'active'
 `
 
 func (q *Queries) ListActiveReleases(ctx context.Context) ([]Release, error) {
@@ -285,6 +300,9 @@ func (q *Queries) ListActiveReleases(ctx context.Context) ([]Release, error) {
 			&i.CreatedAt,
 			&i.FinishedAt,
 			&i.Carried,
+			&i.ImageDigest,
+			&i.BuiltOnServerID,
+			&i.PromotedFromReleaseID,
 		); err != nil {
 			return nil, err
 		}
@@ -335,7 +353,7 @@ func (q *Queries) ListEnvironmentActiveReleases(ctx context.Context, environment
 }
 
 const listInFlightReleases = `-- name: ListInFlightReleases :many
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE status IN ('queued', 'building', 'starting', 'health_checking')
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id FROM releases WHERE status IN ('queued', 'building', 'starting', 'health_checking')
 `
 
 func (q *Queries) ListInFlightReleases(ctx context.Context) ([]Release, error) {
@@ -365,6 +383,9 @@ func (q *Queries) ListInFlightReleases(ctx context.Context) ([]Release, error) {
 			&i.CreatedAt,
 			&i.FinishedAt,
 			&i.Carried,
+			&i.ImageDigest,
+			&i.BuiltOnServerID,
+			&i.PromotedFromReleaseID,
 		); err != nil {
 			return nil, err
 		}
@@ -385,14 +406,14 @@ WITH svc AS (
     JOIN environments ON environments.id = services.environment_id
     WHERE environments.project_id = +?
 )
-SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried FROM releases
+SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id FROM releases
 WHERE releases.status = 'active' AND releases.service_id IN (SELECT id FROM svc)
 UNION ALL
-SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried FROM releases
+SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id FROM releases
 WHERE releases.status IN ('queued', 'building', 'starting', 'health_checking')
   AND releases.service_id IN (SELECT id FROM svc)
 UNION ALL
-SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried FROM svc JOIN releases ON releases.service_id = svc.id
+SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id FROM svc JOIN releases ON releases.service_id = svc.id
 WHERE releases.number = (SELECT max(latest.number) FROM releases latest WHERE latest.service_id = svc.id)
 `
 
@@ -425,6 +446,9 @@ func (q *Queries) ListProjectReleaseHeads(ctx context.Context, projectID int64) 
 			&i.CreatedAt,
 			&i.FinishedAt,
 			&i.Carried,
+			&i.ImageDigest,
+			&i.BuiltOnServerID,
+			&i.PromotedFromReleaseID,
 		); err != nil {
 			return nil, err
 		}
@@ -472,7 +496,7 @@ func (q *Queries) ListReleaseEvents(ctx context.Context, releaseID int64) ([]Rel
 }
 
 const listReleases = `-- name: ListReleases :many
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE service_id = +? ORDER BY number DESC LIMIT +?
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id FROM releases WHERE service_id = +? ORDER BY number DESC LIMIT +?
 `
 
 type ListReleasesParams struct {
@@ -507,6 +531,9 @@ func (q *Queries) ListReleases(ctx context.Context, arg ListReleasesParams) ([]R
 			&i.CreatedAt,
 			&i.FinishedAt,
 			&i.Carried,
+			&i.ImageDigest,
+			&i.BuiltOnServerID,
+			&i.PromotedFromReleaseID,
 		); err != nil {
 			return nil, err
 		}

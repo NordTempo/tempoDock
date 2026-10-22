@@ -1,0 +1,125 @@
+-- Remote servers, join tokens and promotion (ADR 0014). Parameters compared
+-- to indexed columns are written `= +?` (docs/performance.md, the
+-- re-prepare pitfall). Server rows themselves are read with GetServer,
+-- GetServerByName, ListServers and ListServerLoads (projects.sql).
+
+-- name: CreateJoinToken :one
+-- Records a join token for `dock server join`; the secret itself is only
+-- ever shown once, to the admin.
+INSERT INTO join_tokens (hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ConsumeJoinToken :one
+-- Marks the token with this hash used, if it is unused and not expired at
+-- now, and returns it. sql.ErrNoRows: unknown, used or expired. Run it in
+-- the transaction that registers the server (RegisterNodeServer, then
+-- SetJoinTokenServer), so a failed registration leaves the token unused.
+UPDATE join_tokens SET used_at = sqlc.arg(now)
+WHERE hash = +sqlc.arg(hash) AND used_at IS NULL AND expires_at > +sqlc.arg(now)
+RETURNING *;
+
+-- name: SetJoinTokenServer :exec
+-- Records which server a consumed token created or re-keyed.
+UPDATE join_tokens SET used_by_server_id = CAST(sqlc.arg(server_id) AS INTEGER) WHERE id = +sqlc.arg(id);
+
+-- name: ListPendingJoinTokens :many
+-- Unused, unexpired tokens: servers that are still "joining".
+SELECT * FROM join_tokens WHERE used_at IS NULL AND expires_at > +sqlc.arg(now) ORDER BY expires_at;
+
+-- name: DeleteJoinToken :execrows
+-- Cancels an unused token.
+DELETE FROM join_tokens WHERE id = +sqlc.arg(id) AND used_at IS NULL;
+
+-- name: RegisterNodeServer :one
+-- Creates the server row for a node that joined with a token, pinning its
+-- key. A revoked remote server of the same name is re-keyed instead and
+-- keeps its settings and environments. sql.ErrNoRows: the name belongs to
+-- a server that isn't revoked (or the local one).
+INSERT INTO servers (name, accepts_production, accepts_non_production, builder, local, status, key_fingerprint)
+VALUES (sqlc.arg(name), sqlc.arg(accepts_production), sqlc.arg(accepts_non_production), sqlc.arg(builder), 0, 'offline', CAST(sqlc.arg(key_fingerprint) AS TEXT))
+ON CONFLICT (name) DO UPDATE SET
+    key_fingerprint = excluded.key_fingerprint, next_key_fingerprint = NULL, revoked_at = NULL
+WHERE servers.revoked_at IS NOT NULL AND servers.local = 0
+RETURNING *;
+
+-- name: GetServerByFingerprint :one
+-- The server a connecting node's key belongs to, by its current or its
+-- next (rotating) key. Runs on every node handshake.
+SELECT * FROM servers
+WHERE key_fingerprint = +CAST(sqlc.arg(fingerprint) AS TEXT) OR next_key_fingerprint = +CAST(sqlc.arg(fingerprint) AS TEXT);
+
+-- name: SetServerHello :one
+-- Records a link that came up and passed hello: the facts the node
+-- reported, and now as connected_at and last_seen_at.
+UPDATE servers SET
+    version = sqlc.arg(version), docker_version = sqlc.arg(docker_version),
+    ingress = sqlc.arg(ingress), public_ips = sqlc.arg(public_ips), tunnel_hostname = sqlc.arg(tunnel_hostname),
+    memory_bytes = sqlc.arg(memory_bytes),
+    connected_at = sqlc.arg(now), last_seen_at = sqlc.arg(now), disconnect_reason = ''
+WHERE id = +sqlc.arg(id)
+RETURNING *;
+
+-- name: SetServerDisconnected :exec
+-- Records a link that went down at now, and why.
+UPDATE servers SET last_seen_at = sqlc.arg(now), disconnect_reason = sqlc.arg(reason) WHERE id = +sqlc.arg(id);
+
+-- name: UpdateServerSettings :one
+-- The control plane's own settings for a server (`dock server set`).
+UPDATE servers SET base_domain = sqlc.arg(base_domain), builder = sqlc.arg(builder)
+WHERE id = +sqlc.arg(id)
+RETURNING *;
+
+-- name: RevokeServer :one
+-- Forgets a remote server's keys, so its next handshake fails; it stays
+-- (with its environments) until it re-joins or is removed.
+UPDATE servers SET key_fingerprint = NULL, next_key_fingerprint = NULL, revoked_at = sqlc.arg(now)
+WHERE servers.id = +sqlc.arg(id) AND servers.local = 0
+RETURNING *;
+
+-- name: SetServerNextKey :execrows
+-- Starts a key rotation: the node's new key is accepted alongside the
+-- current one until PromoteServerKey. 0 rows: revoked or local.
+UPDATE servers SET next_key_fingerprint = CAST(sqlc.arg(fingerprint) AS TEXT)
+WHERE id = +sqlc.arg(id) AND key_fingerprint IS NOT NULL;
+
+-- name: PromoteServerKey :one
+-- Finishes a key rotation once the node connected with its next key: that
+-- key becomes the only one. sql.ErrNoRows: no such rotation in progress.
+UPDATE servers SET key_fingerprint = next_key_fingerprint, next_key_fingerprint = NULL
+WHERE id = +sqlc.arg(id) AND next_key_fingerprint = +CAST(sqlc.arg(fingerprint) AS TEXT)
+RETURNING *;
+
+-- name: DeleteServerPlacements :exec
+-- Drops a server's project placements (pins included), before DeleteServer.
+DELETE FROM project_placements WHERE server_id = +sqlc.arg(server_id);
+
+-- name: DeleteServer :execrows
+-- Removes a remote server with no environments. 0 rows: local, or
+-- environments (archived projects' included) are still placed there.
+DELETE FROM servers
+WHERE servers.id = +sqlc.arg(id) AND servers.local = 0
+  AND NOT EXISTS (SELECT 1 FROM environments WHERE environments.server_id = servers.id);
+
+-- name: SetReleaseDigest :exec
+-- Records a pushed build: its registry digest and the builder that made it.
+UPDATE releases SET image_digest = sqlc.arg(image_digest), built_on_server_id = sqlc.narg(built_on_server_id)
+WHERE id = +sqlc.arg(id);
+
+-- name: ListPromotableReleases :many
+-- What `dock promote` carries from an environment: each live service's
+-- active release, with the service's name to match in the target.
+SELECT services.name AS service_name, sqlc.embed(releases)
+FROM services JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
+WHERE services.environment_id = +sqlc.arg(environment_id) AND services.archived_at IS NULL
+ORDER BY services.name;
+
+-- name: CreatePromotedRelease :one
+-- Creates a target service's release from a promoted one: the same image
+-- by digest, with the target's own config.
+INSERT INTO releases (service_id, number, source, image_ref, image_digest, built_on_server_id,
+    promoted_from_release_id, config, host_port, created_by, carried)
+VALUES (sqlc.arg(service_id), sqlc.arg(number), 'promote', sqlc.arg(image_ref), sqlc.arg(image_digest),
+    sqlc.narg(built_on_server_id), CAST(sqlc.arg(promoted_from_release_id) AS INTEGER), sqlc.arg(config), sqlc.arg(host_port),
+    sqlc.arg(created_by), sqlc.arg(carried))
+RETURNING *;

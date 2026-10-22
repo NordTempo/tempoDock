@@ -108,6 +108,20 @@ type Environment struct {
 	Kind       string
 }
 
+type JoinToken struct {
+	ID                   int64
+	Hash                 string
+	ServerName           string
+	AcceptsProduction    bool
+	AcceptsNonProduction bool
+	Builder              bool
+	CreatedBy            string
+	CreatedAt            time.Time
+	ExpiresAt            time.Time
+	UsedAt               *time.Time
+	UsedByServerID       *int64
+}
+
 type Project struct {
 	ID         int64
 	Name       string
@@ -124,23 +138,26 @@ type ProjectPlacement struct {
 }
 
 type Release struct {
-	ID          int64
-	ServiceID   int64
-	Number      int64
-	Status      string
-	Source      string
-	FromRelease int64
-	ImageRef    string
-	ImageID     string
-	Config      []byte
-	ContainerID string
-	HostPort    int64
-	Error       string
-	ErrorCode   string
-	CreatedBy   string
-	CreatedAt   time.Time
-	FinishedAt  *time.Time
-	Carried     string
+	ID                    int64
+	ServiceID             int64
+	Number                int64
+	Status                string
+	Source                string
+	FromRelease           int64
+	ImageRef              string
+	ImageID               string
+	Config                []byte
+	ContainerID           string
+	HostPort              int64
+	Error                 string
+	ErrorCode             string
+	CreatedBy             string
+	CreatedAt             time.Time
+	FinishedAt            *time.Time
+	Carried               string
+	ImageDigest           string
+	BuiltOnServerID       *int64
+	PromotedFromReleaseID *int64
 }
 
 type ReleaseEvent struct {
@@ -180,6 +197,16 @@ type Server struct {
 	DisabledForPlacement bool
 	MemoryBytes          int64
 	Version              string
+	KeyFingerprint       *string
+	NextKeyFingerprint   *string
+	RevokedAt            *time.Time
+	Ingress              string
+	PublicIps            string
+	TunnelHostname       string
+	DockerVersion        string
+	BaseDomain           string
+	ConnectedAt          *time.Time
+	DisconnectReason     string
 }
 
 type ServerStat struct {
