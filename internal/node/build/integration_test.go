@@ -129,12 +129,14 @@ func (w testWriter) Write(p []byte) (int, error) {
 }
 
 // run starts image with port 3000 published on loopback and returns its URL.
+// The container is name plus the test process's ID, so test runs of other
+// checkouts on the same Docker host don't collide.
 func run(t *testing.T, docker *client.Client, name, image string, cmd ...string) string {
 	t.Helper()
 	ctx := t.Context()
 	port := network.MustParsePort("3000/tcp")
 	created, err := docker.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name: name,
+		Name: fmt.Sprintf("%s-%d", name, os.Getpid()),
 		Config: &container.Config{
 			Image:        image,
 			Cmd:          cmd,
