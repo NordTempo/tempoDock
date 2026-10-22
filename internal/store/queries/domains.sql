@@ -38,3 +38,9 @@ JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.project_id = +?
 ORDER BY domains.service_id, domains.id;
+
+-- name: ListEnvironmentDomains :many
+-- Every domain of every service in an environment, in no particular order.
+SELECT domains.* FROM domains
+JOIN services ON services.id = domains.service_id
+WHERE services.environment_id = +?;

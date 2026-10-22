@@ -166,7 +166,11 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 			target = svcs[i]
 		}
 	}
-	r, err := c.envResolver(ctx, q, ss.envScope, svcs, target.ID, false)
+	ev, err := loadEnvVars(ctx, q, ss.envScope, svcs, nil)
+	if err != nil {
+		return releaseConfig{}, err
+	}
+	r, err := c.envResolver(ev, target.ID, false)
 	if err != nil {
 		return releaseConfig{}, err
 	}
@@ -216,19 +220,55 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 	return cfg, nil
 }
 
+// envVars is what resolving an environment's variables reads, loaded once
+// in a fixed number of queries and resolvable live or staged.
+type envVars struct {
+	es   envScope
+	svcs []store.Service // by name
+	vars []store.Variable
+	// public is each service's public domain (DOCK_PUBLIC_DOMAIN): its
+	// first domain that isn't a redirect.
+	public map[int64]string
+}
+
+// loadEnvVars loads an environment's domains, and its services (by name)
+// and variables unless they are given (nil: load them).
+func loadEnvVars(ctx context.Context, q *store.Queries, es envScope, svcs []store.Service, vars []store.Variable) (envVars, error) {
+	ev := envVars{es: es, svcs: svcs, vars: vars, public: map[int64]string{}}
+	var err error
+	if ev.svcs == nil {
+		if ev.svcs, err = q.ListServices(ctx, es.env.ID); err != nil {
+			return ev, err
+		}
+	}
+	if ev.vars == nil {
+		if ev.vars, err = q.ListVariables(ctx, es.env.ID); err != nil {
+			return ev, err
+		}
+	}
+	domains, err := q.ListEnvironmentDomains(ctx, es.env.ID)
+	if err != nil {
+		return ev, err
+	}
+	first := map[int64]int64{} // domain ID of each service's public domain
+	for _, d := range domains {
+		if id, ok := first[d.ServiceID]; d.RedirectTo == "" && (!ok || d.ID < id) {
+			first[d.ServiceID], ev.public[d.ServiceID] = d.ID, d.Hostname
+		}
+	}
+	return ev, nil
+}
+
 // envResolver sets up resolving variable references in an environment:
 // the variables each service gets (shared, then its own, then injected
 // ones). Archived services are left out, except include. With staged, the
 // environment's staged variable and port changes count as applied, to
 // preview what applying them would do.
-func (c *Core) envResolver(ctx context.Context, q *store.Queries, es envScope, svcs []store.Service, include int64, staged bool) (*resolver, error) {
-	rows, err := q.ListVariables(ctx, es.env.ID)
-	if err != nil {
-		return nil, err
-	}
+func (c *Core) envResolver(ev envVars, include int64, staged bool) (*resolver, error) {
+	es := ev.es
 	shared := map[string]string{}
 	own := map[int64]map[string]string{}
-	for _, v := range rows {
+	for _, v := range ev.vars {
 		sealed := v.Value
 		if staged {
 			switch v.Pending {
@@ -256,16 +296,12 @@ func (c *Core) envResolver(ctx context.Context, q *store.Queries, es envScope, s
 	}
 
 	r := &resolver{env: es.String(), vars: map[string]map[string]string{sharedScope: shared}, done: map[string]string{}, visiting: map[string]bool{}}
-	for _, s := range svcs {
+	for _, s := range ev.svcs {
 		if s.ArchivedAt != nil && s.ID != include {
 			continue
 		}
 		if next, err := pendingSettings(s); staged && err == nil && next != nil {
 			s.Port = int64(next.Port)
-		}
-		domains, err := q.ListDomainsByService(ctx, s.ID)
-		if err != nil {
-			return nil, err
 		}
 		vars := maps.Clone(shared)
 		maps.Copy(vars, own[s.ID])
@@ -275,31 +311,34 @@ func (c *Core) envResolver(ctx context.Context, q *store.Queries, es envScope, s
 		vars["DOCK_ENVIRONMENT"] = es.env.Name
 		vars["DOCK_SERVICE"] = s.Name
 		vars["DOCK_PRIVATE_DOMAIN"] = s.Name
-		for _, d := range domains {
-			if d.RedirectTo == "" {
-				vars["DOCK_PUBLIC_DOMAIN"] = d.Hostname
-				break
-			}
+		if host, ok := ev.public[s.ID]; ok {
+			vars["DOCK_PUBLIC_DOMAIN"] = host
 		}
 		r.vars[s.Name] = vars
 	}
 	return r, nil
 }
 
-// resolveEnvs resolves the variables of every non-archived service in an
-// environment, by service ID (see envResolver for staged). A service whose
-// references don't resolve is in broken instead.
+// resolveEnvs loads and resolves the variables of every non-archived
+// service in an environment (see resolveLoaded).
 func (c *Core) resolveEnvs(ctx context.Context, q *store.Queries, es envScope, staged bool) (envs map[int64]map[string]string, broken map[int64]error, err error) {
-	svcs, err := q.ListServices(ctx, es.env.ID)
+	ev, err := loadEnvVars(ctx, q, es, nil, nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	r, err := c.envResolver(ctx, q, es, svcs, 0, staged)
+	return c.resolveLoaded(ev, staged)
+}
+
+// resolveLoaded resolves the variables of every non-archived service in
+// ev, by service ID (see envResolver for staged). A service whose
+// references don't resolve is in broken instead.
+func (c *Core) resolveLoaded(ev envVars, staged bool) (envs map[int64]map[string]string, broken map[int64]error, err error) {
+	r, err := c.envResolver(ev, 0, staged)
 	if err != nil {
 		return nil, nil, err
 	}
 	envs, broken = map[int64]map[string]string{}, map[int64]error{}
-	for _, s := range svcs {
+	for _, s := range ev.svcs {
 		if s.ArchivedAt != nil {
 			continue
 		}

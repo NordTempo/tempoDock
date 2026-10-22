@@ -195,23 +195,25 @@ func BenchmarkCoreReads(b *testing.B) {
 			}
 		})
 	})
-	// A staged variable makes the overview compute each environment's
-	// pending changes, which resolves every service's variables.
-	b.Run("Overview/services=60,staged", func(b *testing.B) {
+	// With a staged variable, the overview counts each environment's
+	// staged changes, and the pending-changes diff resolves the
+	// environment's variables as they are and as they would be.
+	staged := func(name string, fn func() error) {
 		if _, err := c.SetVariables(ctx, System, prod, apitypes.SetVariablesRequest{Set: map[string]string{"REGION": "eu-west"}}); err != nil {
 			b.Fatal(err)
 		}
-		defer func() {
-			if _, err := c.DiscardChanges(ctx, System, prod, apitypes.DiscardChangesRequest{}); err != nil {
-				b.Fatal(err)
-			}
-		}()
-		b.ReportAllocs()
-		for b.Loop() {
-			if _, err := c.Overview(ctx, System, "big"); err != nil {
-				b.Fatal(err)
-			}
+		run(name, fn)
+		if _, err := c.DiscardChanges(ctx, System, prod, apitypes.DiscardChangesRequest{}); err != nil {
+			b.Fatal(err)
 		}
+	}
+	staged("Overview/services=60,staged", func() error {
+		_, err := c.Overview(ctx, System, "big")
+		return err
+	})
+	staged("Changes/services=20,staged", func() error {
+		_, err := c.GetChanges(ctx, System, prod, false)
+		return err
 	})
 	run("ListServices/services=20", func() error {
 		_, err := c.ListServices(ctx, System, prod)

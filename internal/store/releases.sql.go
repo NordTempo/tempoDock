@@ -299,6 +299,41 @@ func (q *Queries) ListActiveReleases(ctx context.Context) ([]Release, error) {
 	return items, nil
 }
 
+const listEnvironmentActiveReleases = `-- name: ListEnvironmentActiveReleases :many
+SELECT releases.service_id, releases.number FROM services
+JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
+WHERE services.environment_id = +?
+`
+
+type ListEnvironmentActiveReleasesRow struct {
+	ServiceID int64
+	Number    int64
+}
+
+// The active release number of every service in an environment that has one.
+func (q *Queries) ListEnvironmentActiveReleases(ctx context.Context, environmentID int64) ([]ListEnvironmentActiveReleasesRow, error) {
+	rows, err := q.query(ctx, q.listEnvironmentActiveReleasesStmt, listEnvironmentActiveReleases, environmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEnvironmentActiveReleasesRow
+	for rows.Next() {
+		var i ListEnvironmentActiveReleasesRow
+		if err := rows.Scan(&i.ServiceID, &i.Number); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInFlightReleases = `-- name: ListInFlightReleases :many
 SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried FROM releases WHERE status IN ('queued', 'building', 'starting', 'health_checking')
 `

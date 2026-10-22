@@ -63,7 +63,7 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 			continue
 		}
 		es := envScope{p, e}
-		pending, err := c.pendingChanges(ctx, c.store.Queries, es, false)
+		pending, _, _, err := c.stagedChanges(ctx, c.store.Queries, es, false)
 		if err != nil {
 			return out, err
 		}

@@ -117,6 +117,45 @@ func (q *Queries) ListDomainsByService(ctx context.Context, serviceID int64) ([]
 	return items, nil
 }
 
+const listEnvironmentDomains = `-- name: ListEnvironmentDomains :many
+SELECT domains.id, domains.hostname, domains.service_id, domains."generated", domains.redirect_to, domains.status, domains.status_reason, domains.created_at FROM domains
+JOIN services ON services.id = domains.service_id
+WHERE services.environment_id = +?
+`
+
+// Every domain of every service in an environment, in no particular order.
+func (q *Queries) ListEnvironmentDomains(ctx context.Context, environmentID int64) ([]Domain, error) {
+	rows, err := q.query(ctx, q.listEnvironmentDomainsStmt, listEnvironmentDomains, environmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Domain
+	for rows.Next() {
+		var i Domain
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hostname,
+			&i.ServiceID,
+			&i.Generated,
+			&i.RedirectTo,
+			&i.Status,
+			&i.StatusReason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingDomains = `-- name: ListPendingDomains :many
 SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at FROM domains WHERE status != 'active' ORDER BY id
 `

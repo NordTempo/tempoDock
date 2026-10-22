@@ -90,3 +90,9 @@ WHERE releases.status IN ('queued', 'building', 'starting', 'health_checking')
 UNION ALL
 SELECT releases.* FROM svc JOIN releases ON releases.service_id = svc.id
 WHERE releases.number = (SELECT max(latest.number) FROM releases latest WHERE latest.service_id = svc.id);
+
+-- name: ListEnvironmentActiveReleases :many
+-- The active release number of every service in an environment that has one.
+SELECT releases.service_id, releases.number FROM services
+JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
+WHERE services.environment_id = +?;
