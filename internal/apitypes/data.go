@@ -58,7 +58,6 @@ const (
 	AuditDataReject  = "data.reject"
 	AuditDataReveal  = "data.reveal" // sensitive values revealed in a page; throttled like data.browse
 	AuditDataSetup   = "data.setup"  // Dock roles created or rotated
-	AuditDataConnect = "data.connect"
 	AuditDataPolicy  = "data.policy" // a data access policy or token override changed
 )
 

@@ -844,6 +844,46 @@
         },
         "type": "object"
       },
+      "ConnectInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/DataPermission"
+          },
+          "confirm": {
+            "type": "boolean"
+          },
+          "database": {
+            "type": "string"
+          },
+          "engine": {
+            "enum": [
+              "postgres"
+            ],
+            "type": "string"
+          },
+          "port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "port",
+          "confirm",
+          "access"
+        ],
+        "type": "object"
+      },
       "CreateAlertChannelRequest": {
         "additionalProperties": false,
         "properties": {
@@ -10351,6 +10391,168 @@
         "summary": "Change a service's backup schedule",
         "tags": [
           "backups"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/connect": {
+      "get": {
+        "description": "What tunnels to the service reach (port, and the owner's user and database for Postgres) and the caller's data access. Tunnels are raw access: they need data access level write with sensitive visible, and on production `confirm` set to the environment's name. Each tunnelled connection is `GET /api/v1/projects/{project}/environments/{environment}/services/{service}/tunnel` with `Connection: Upgrade` and `Upgrade: dock-tunnel` (bearer token only), answered with 101 and then raw bytes.",
+        "operationId": "get-connect",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The environment's name; needed on production",
+            "explode": false,
+            "in": "query",
+            "name": "confirm",
+            "schema": {
+              "description": "The environment's name; needed on production",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Add the connection URL with its password; audited as data.reveal",
+            "explode": false,
+            "in": "query",
+            "name": "reveal",
+            "schema": {
+              "description": "Add the connection URL with its password; audited as data.reveal",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Check access for `dock connect`",
+        "tags": [
+          "data"
         ]
       }
     },

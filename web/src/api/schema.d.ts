@@ -765,6 +765,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check access for `dock connect`
+         * @description What tunnels to the service reach (port, and the owner's user and database for Postgres) and the caller's data access. Tunnels are raw access: they need data access level write with sensitive visible, and on production `confirm` set to the environment's name. Each tunnelled connection is `GET /api/v1/projects/{project}/environments/{environment}/services/{service}/tunnel` with `Connection: Upgrade` and `Upgrade: dock-tunnel` (bearer token only), answered with 101 and then raw bytes.
+         */
+        get: operations["get-connect"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/data": {
         parameters: {
             query?: never;
@@ -2097,6 +2117,18 @@ export interface components {
             /** @description s3:https://host/bucket/path, or empty for local repositories (not off-box) */
             repository?: string;
             secret_access_key?: string;
+        };
+        ConnectInfo: {
+            access: components["schemas"]["DataPermission"];
+            confirm: boolean;
+            database?: string;
+            /** @enum {string} */
+            engine?: "postgres";
+            /** Format: int64 */
+            port: number;
+            service: string;
+            url?: string;
+            user?: string;
         };
         CreateAlertChannelRequest: {
             /** @enum {string} */
@@ -7184,6 +7216,110 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-connect": {
+        parameters: {
+            query?: {
+                /** @description The environment's name; needed on production */
+                confirm?: string;
+                /** @description Add the connection URL with its password; audited as data.reveal */
+                reveal?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

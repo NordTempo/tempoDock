@@ -280,7 +280,7 @@ into a detail row, so the main log stays scannable.
 | `data.propose`, `data.approve`, `data.reject` | Changeset lifecycle | Changeset ID |
 | `data.reveal` | A page with `reveal=true` per actor and table, then at most every 10 min | Table, columns |
 | `data.setup` | Roles created or rotated | |
-| `data.connect` | Raw tunnel opened and closed | Duration, bytes |
+| `data.connect`, `data.disconnect` | Raw tunnel connection opened, closed ([0023](0023-connect-tunnels.md)) | Port and address; duration, bytes |
 | `data.policy` | A data policy or a token's data override changed | |
 
 `AuditEvent` gains an optional `detail_id`. **Query history** is the
@@ -473,3 +473,11 @@ its standalone product shape, stack and permission model do not.
 | Mask sensitive columns for `deploy` users too, or only for tokens? | Per subject in the policy; masked for everyone but admins by default. |
 | A data MCP server, or a separate agent API? | Neither: agents use Dock's API and CLI, and later Dock's one MCP endpoint, data tools included. |
 | Set up the Dock roles automatically on first open? | No: an explicit "Set up data access" admin action (`dock db setup`), since it writes to a user database. Template databases are set up when created. |
+
+## Amendment (2026-10-22): `dock connect`
+
+[0023](0023-connect-tunnels.md) builds `dock connect` on `Runtime.Dial`. Raw
+access is no longer admin-only by rule: it needs the policy's top level,
+`write` with sensitive `visible`, which by default only admins have. Tokens
+never get it on production (write acts as propose there). `dock db shell`
+is not built.

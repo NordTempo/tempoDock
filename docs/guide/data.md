@@ -170,10 +170,46 @@ tab, and each reveal is audited (`data.reveal`). Their SQL isn't masked;
 every statement is in the audit log anyway. The Schema tab suggests
 columns to mark from their names (email, password, token, phone, ...).
 
+## Connecting from your machine
+
+For psql, TablePlus, pg_dump, redis-cli and the like, `dock connect` opens a
+port on `127.0.0.1` and carries every connection to the service's private
+port through the API. The service never gets a public port. It works for
+any service with a port, on any server, and runs until Ctrl-C. The design
+is [ADR 0023](../decisions/0023-connect-tunnels.md).
+
+```sh
+dock connect db                        # 127.0.0.1:5432, or a free port if that's taken
+psql -h 127.0.0.1 -p 5432 -U postgres app
+dock connect db --show-url             # also prints postgres://postgres:...@127.0.0.1:5432/app
+dock connect cache --port 6380         # pick the local port
+dock connect db -e production --confirm production
+```
+
+- A tunnel is raw access: no masking, no changesets, and the SQL you run
+  isn't in Dock's audit log. So it needs level `write` with sensitive
+  `visible` in that environment. By default only admins have that; an
+  admin can grant it, e.g. `dock db policy set
+  deploy.non-production=write,visible -p shop`.
+- API tokens (agents) never open tunnels to production, whatever their
+  scope (`write` acts as `propose` there). Use `dock login` for that.
+- Production needs `--confirm <environment>`.
+- You log in with the database's own credentials. `--show-url` prints the
+  connection URL with its password, pointed at the local port, and is
+  audited (`data.reveal`). Without it the password isn't shown.
+- Each connection is audited when it opens (`data.connect`, with your
+  address) and closes (`data.disconnect`, with its duration and bytes),
+  never its traffic. Access is checked per connection; open ones stay open
+  when access changes.
+- At most 16 open connections per user or token. Closing either end
+  closes the other; there is no idle timeout.
+- A reverse proxy in front of the API must pass HTTP upgrades on (Caddy
+  and nginx with the usual WebSocket settings do).
+
 ## Audit
 
 Every query, the first page and the first reveal of a table per person (then
-at most every 10 minutes), every changeset step, setup and policy change go
-into the audit log (`dock audit --action data.`), with the SQL kept in the
+at most every 10 minutes), every changeset step, setup, policy change and
+tunnel connection go into the audit log (`dock audit --action data.`), with the SQL kept in the
 event's detail.
 Your query history is read from it.

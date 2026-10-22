@@ -12,7 +12,9 @@ daemon's `listen` address. Anything they do, you can do with `curl`.
 
 These need no auth; everything else does. `/api/v1/mcp` is the MCP
 endpoint for agents (JSON-RPC, not in the spec; see
-[agents](agents.md#mcp)).
+[agents](agents.md#mcp)). `GET .../services/{s}/tunnel` carries one
+`dock connect` connection: an HTTP/1.1 upgrade to `dock-tunnel` with a
+bearer token, then raw bytes ([ADR 0023](../decisions/0023-connect-tunnels.md)).
 
 The spec is also printed offline by `dock openapi` (hidden command).
 
