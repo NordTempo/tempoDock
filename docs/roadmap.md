@@ -12,7 +12,7 @@ are deliberately vaguer; we refine them as we learn.
 | M2 | Done: projects, environments, services, references, private networking, users and scoped tokens, audit, the v2 web UI with full CLI parity. |
 | M3 | Nearly done: placement and server pools ([0015](decisions/0015-server-pools-and-placement.md)), statistics, the admin dashboard, `dock node` join over the outbound link, the remote runtime, the registry, builder servers and `dock promote` ([0014](decisions/0014-node-protocol.md)), verified across two machines. Left: moving the control plane to another server. |
 | M4 | Nearly done: GitHub push-to-deploy ([0018](decisions/0018-git-push-deploy.md)); retention, disk pruning and alerts with webhook, Slack and email channels ([0020](decisions/0020-retention-and-alerts.md)). Left: clone an environment, export a project's config. |
-| M5 | Nearly done: the native database panel ([0016](decisions/0016-database-panel.md)); Postgres and Redis templates, scheduled restic backups and restore into a new service ([0019](decisions/0019-templates-and-backups.md)). Left: `dock connect` tunnels. |
+| M5 | Done: the native database panel ([0016](decisions/0016-database-panel.md)); Postgres and Redis templates, scheduled restic backups and restore into a new service ([0019](decisions/0019-templates-and-backups.md)); `dock connect` tunnels ([0023](decisions/0023-connect-tunnels.md)). |
 
 ## Where we start
 
@@ -100,7 +100,8 @@ doesn't affect production.
 - Scheduled off-box backups and tested restore.
 - Database templates (Postgres, Redis): regular services with volumes and
   backup presets ([ADR 0011](decisions/0011-stateful-services-and-databases.md)).
-- Non-destructive restore into a new service; `dock connect` tunnels.
+- Non-destructive restore into a new service; `dock connect` tunnels
+  ([ADR 0023](decisions/0023-connect-tunnels.md)).
 
 ## M6: Ready for others (if we go open source)
 

@@ -27,7 +27,8 @@ In the UI: **add database** next to an environment on the project page.
   so on.
 - It publishes no port. Other services reach it by name on the
   environment's private network; the health check connects there too.
-  From your laptop use the Data tab or `dock db`.
+  From your laptop use the Data tab, `dock db`, or your own client through
+  [`dock connect`](data.md#connecting-from-your-machine).
 - Postgres templates get the [Data tab](data.md) set up automatically.
 - Changing `POSTGRES_PASSWORD` later doesn't change the database's
   password (Postgres only reads it when the volume is first initialised).

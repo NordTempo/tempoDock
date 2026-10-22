@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/cli/output"
@@ -28,6 +29,9 @@ type Client struct {
 	base  *url.URL
 	token string
 	http  *http.Client
+	// upgrades is the HTTP/1.1-only client of Upgrade, made on first use.
+	upgrades     *http.Client
+	upgradesOnce sync.Once
 }
 
 // New returns a client for server (an http or https URL, optionally with a

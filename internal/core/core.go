@@ -120,6 +120,8 @@ type Core struct {
 	data     data.Engine
 	browse   browseLog
 	deciding decisions
+	// tunnels are the open `dock connect` tunnels (data_connect.go).
+	tunnels tunnelSet
 
 	// backups is the backup scheduler's kick and the runs in flight
 	// (backups.go).
@@ -292,9 +294,10 @@ func (c *Core) clearTempFiles() {
 
 // Close abandons in-flight deploys and waits for background work to finish.
 // It never stops or waits on app containers: the next Start's recovery
-// fails abandoned releases and removes their containers. Database panel
-// connections are closed.
+// fails abandoned releases and removes their containers. Open `dock
+// connect` tunnels and database panel connections are closed.
 func (c *Core) Close() {
+	c.tunnels.closeAll()
 	c.closeStats()
 	// Under serversMu and git.mu, so kickServer and kickGit can't start a
 	// goroutine after this.
