@@ -400,6 +400,9 @@ type releaseSpec struct {
 	carried carried
 	// promote is set for promotions (Promote).
 	promote *promoteStep
+	// commit is the pushed commit an upload was fetched from (ADR 0018).
+	// Releases that copy an image copy its commit instead.
+	commit *apitypes.Commit
 }
 
 var errNoActiveRelease = errors.New("service has no active release")
@@ -461,6 +464,7 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 		}
 		params := store.CreateReleaseParams{ServiceID: ss.svc.ID, Number: number, Source: string(spec.source), CreatedBy: a.Name, Carried: carriedJSON}
 		var repo *repoDeploy
+		commit := spec.commit
 		switch spec.source {
 		case apitypes.SourceImage:
 			params.ImageRef = spec.imageRef
@@ -500,6 +504,7 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 				return err
 			}
 			repo = activeCfg.Repo // same code, same dock.toml
+			commit = commitOf(active)
 		case apitypes.SourcePromote:
 			p := spec.promote
 			params.ImageRef, params.ImageID = p.imageRef, p.imageID
@@ -509,9 +514,11 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 				return err
 			}
 			repo = fromCfg.Repo // same code, same dock.toml
+			commit = commitOf(p.from)
 		}
 		var cfg releaseConfig
 		if spec.from != nil {
+			commit = commitOf(*spec.from)
 			params.FromRelease = spec.from.Number
 			params.ImageRef, params.ImageID = spec.from.ImageRef, spec.from.ImageID
 			params.ImageDigest, params.BuiltOnServerID = spec.from.ImageDigest, spec.from.BuiltOnServerID
@@ -538,10 +545,16 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 				ImageDigest: params.ImageDigest, BuiltOnServerID: params.BuiltOnServerID, PromotedFromReleaseID: spec.promote.from.ID,
 				Config: params.Config, HostPort: params.HostPort, CreatedBy: params.CreatedBy, Carried: params.Carried,
 			})
+		} else {
+			rel, err = q.CreateRelease(ctx, params)
+		}
+		if err != nil || commit == nil {
 			return err
 		}
-		rel, err = q.CreateRelease(ctx, params)
-		return err
+		rel.CommitSha, rel.CommitMessage, rel.CommitAuthor = commit.SHA, commit.Message, commit.Author
+		return q.SetReleaseCommit(ctx, store.SetReleaseCommitParams{
+			CommitSha: commit.SHA, CommitMessage: commit.Message, CommitAuthor: commit.Author, ID: rel.ID,
+		})
 	})
 	if store.IsUnique(err) {
 		return rel, errf(apitypes.CodeDeployInProgress, "another deploy of %s just started; wait for it to finish", ss)
@@ -594,40 +607,57 @@ func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body i
 	if err != nil {
 		return apitypes.Release{}, err
 	}
-	// Fail fast, before receiving a large upload.
-	if ss.svc.ArchivedAt != nil {
-		return apitypes.Release{}, invalid("service %s is archived", ss)
-	}
-	srv, err := c.store.GetServer(ctx, ss.env.ServerID)
+	rel, err := c.deploySource(ctx, a, ss, func() (io.ReadCloser, error) { return io.NopCloser(body), nil }, maxBytes, nil)
 	if err != nil {
-		return apitypes.Release{}, err
-	}
-	if _, err := c.runtimeFor(srv.ID); err != nil {
-		return apitypes.Release{}, err
-	}
-	if _, _, err := c.builderFor(ctx, srv); err != nil {
-		return apitypes.Release{}, err
-	}
-	done, err := c.beginUpload(ss)
-	if err != nil {
-		return apitypes.Release{}, err
-	}
-	// Held until the release exists, which then blocks further deploys.
-	defer done()
-	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
-		return apitypes.Release{}, deployInProgress(ss, r)
-	}
-	path, repo, err := c.saveUpload(body, maxBytes)
-	if err != nil {
-		return apitypes.Release{}, err
-	}
-	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceUpload, upload: path, repo: repo})
-	if err != nil {
-		_ = os.Remove(path)
 		return apitypes.Release{}, err
 	}
 	c.audit(ctx, a, "release.deploy", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d from source upload", rel.Number))
 	return c.toRelease(ctx, ss, rel, false)
+}
+
+// deploySource saves the source that open returns and starts its release.
+// open runs once the checks pass and the service's upload slot is held,
+// so nothing is received (or fetched) for a deploy that would be refused.
+// commit is the pushed commit the source is (nil for uploads).
+func (c *Core) deploySource(ctx context.Context, a Actor, ss svcScope, open func() (io.ReadCloser, error), maxBytes int64, commit *apitypes.Commit) (store.Release, error) {
+	// Fail fast, before receiving a large upload.
+	if ss.svc.ArchivedAt != nil {
+		return store.Release{}, invalid("service %s is archived", ss)
+	}
+	srv, err := c.store.GetServer(ctx, ss.env.ServerID)
+	if err != nil {
+		return store.Release{}, err
+	}
+	if _, err := c.runtimeFor(srv.ID); err != nil {
+		return store.Release{}, err
+	}
+	if _, _, err := c.builderFor(ctx, srv); err != nil {
+		return store.Release{}, err
+	}
+	done, err := c.beginUpload(ss)
+	if err != nil {
+		return store.Release{}, err
+	}
+	// Held until the release exists, which then blocks further deploys.
+	defer done()
+	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+		return store.Release{}, deployInProgress(ss, r)
+	}
+	body, err := open()
+	if err != nil {
+		return store.Release{}, err
+	}
+	path, repo, err := c.saveUpload(body, maxBytes)
+	_ = body.Close()
+	if err != nil {
+		return store.Release{}, err
+	}
+	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceUpload, upload: path, repo: repo, commit: commit})
+	if err != nil {
+		_ = os.Remove(path)
+		return store.Release{}, err
+	}
+	return rel, nil
 }
 
 // maxConcurrentUploads caps source uploads streaming to disk at once on
@@ -824,7 +854,7 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 		ID: r.ID, Number: r.Number, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source), FromRelease: r.FromRelease,
 		ImageRef: r.ImageRef, ImageID: r.ImageID, ImageDigest: r.ImageDigest, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
-		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt,
+		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, Commit: commitOf(r),
 	}
 	cfg, err := c.openConfig(r.Config)
 	if err != nil {
@@ -855,7 +885,7 @@ func summarize(r store.Release) *apitypes.ReleaseSummary {
 	return &apitypes.ReleaseSummary{
 		Number: r.Number, Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source),
 		ImageRef: r.ImageRef, ImageID: r.ImageID, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
-		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt,
+		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, Commit: commitOf(r),
 	}
 }
 

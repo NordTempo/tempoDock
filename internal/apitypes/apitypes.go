@@ -268,6 +268,9 @@ type Release struct {
 	// (sha256:...), which other servers pull and promotions carry; empty
 	// for images that were never pushed there.
 	ImageDigest string `json:"image_digest,omitempty"`
+	// Commit is the commit the image was built from (push-to-deploy, ADR
+	// 0018); releases that reuse an image keep it.
+	Commit *Commit `json:"commit,omitempty"`
 	// Error and ErrorCode explain a failed release.
 	Error      string         `json:"error,omitempty"`
 	ErrorCode  ErrorCode      `json:"error_code,omitempty"`
@@ -1012,6 +1015,7 @@ type ReleaseSummary struct {
 	Source    ReleaseSource `json:"source" enum:"upload,image,config,rollback,restart,promote"`
 	ImageRef  string        `json:"image_ref"`
 	ImageID   string        `json:"image_id"`
+	Commit    *Commit       `json:"commit,omitempty"`
 	CreatedBy string        `json:"created_by"`
 	CreatedAt time.Time     `json:"created_at"`
 	// Error and ErrorCode explain a failed release.

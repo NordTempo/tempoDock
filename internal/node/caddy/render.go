@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -82,6 +83,7 @@ type route struct {
 
 type match struct {
 	Host []string `json:"host"`
+	Path []string `json:"path,omitempty"`
 }
 
 // handler covers the handlers we use: reverse_proxy, static_response and
@@ -231,7 +233,11 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		if r.RedirectTo != "" {
 			h = redirect(scheme + "://" + r.RedirectTo + portSuffix(scheme, port) + "{http.request.uri}")
 		}
-		main = append(main, route{Match: []match{{Host: r.Hostnames}}, Handle: []handler{h}, Terminal: true})
+		m := match{Host: r.Hostnames}
+		if r.PathPrefix != "" {
+			m.Path = []string{r.PathPrefix + "*"}
+		}
+		main = append(main, route{Match: []match{m}, Handle: []handler{h}, Terminal: true})
 	}
 	main = append(main, notFoundRoute())
 
@@ -352,6 +358,9 @@ func validateRoutes(routes []node.Route) error {
 		if r.RedirectTo != "" && !validHostname(r.RedirectTo) {
 			return fmt.Errorf("redirect target %q is not a valid hostname", r.RedirectTo)
 		}
+		if r.PathPrefix != "" && !validPathPrefix(r.PathPrefix) {
+			return fmt.Errorf("path prefix %q must look like /a/b/", r.PathPrefix)
+		}
 		for _, h := range r.Hostnames {
 			if !validHostname(h) {
 				return fmt.Errorf("%q is not a valid hostname", h)
@@ -363,6 +372,20 @@ func validateRoutes(routes []node.Route) error {
 		}
 	}
 	return nil
+}
+
+// validPathPrefix accepts "/" plus lower-case segments, each ending in
+// "/", so no Caddy placeholder or wildcard can sneak in.
+func validPathPrefix(p string) bool {
+	if len(p) < 2 || p[0] != '/' || p[len(p)-1] != '/' || strings.Contains(p, "//") {
+		return false
+	}
+	for _, c := range p {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' && c != '/' {
+			return false
+		}
+	}
+	return true
 }
 
 // validHostname accepts lower-case DNS names. It mainly keeps characters

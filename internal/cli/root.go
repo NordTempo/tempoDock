@@ -60,7 +60,7 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 		newMCPCmd(g))
 	addGroup(root, "ship", "Deploy and operate:",
 		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g),
-		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g))
+		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g), newGitCmd(g))
 	addGroup(root, "config", "Configure (changes are staged until applied):",
 		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newDiscardCmd(g), newDomainCmd(g), newVolumeCmd(g),
 		newServiceCmd(g), newEnvironmentCmd(g), newProjectCmd(g))

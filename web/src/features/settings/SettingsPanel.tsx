@@ -20,6 +20,7 @@ import {
 } from "../../data/queries";
 import type { Service, ServiceRef, SettingChange } from "../../data/types";
 import { Button, ErrorText, SectionHead } from "../../ui/kit";
+import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
 import { ApplyBox } from "../variables/ApplyBox";
 import {
@@ -128,6 +129,8 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </p>
 
       <ApplyBox env={envPath(ref)} reveal={false} />
+
+      <SourceSection serviceRef={ref} />
 
       <DatabaseSettings serviceRef={ref} service={service} />
 

@@ -108,6 +108,32 @@ type Environment struct {
 	Kind       string
 }
 
+type GitConnection struct {
+	ID             int64
+	ServiceID      int64
+	HookID         string
+	Repo           string
+	Branch         string
+	Dir            string
+	Secret         []byte
+	Token          []byte
+	PostStatus     bool
+	PendingSha     string
+	PendingMessage string
+	PendingAuthor  string
+	PendingBy      string
+	PendingForce   bool
+	LastEvent      string
+	LastEventAt    *time.Time
+	CreatedBy      string
+	CreatedAt      time.Time
+}
+
+type GitDelivery struct {
+	DeliveryID string
+	CreatedAt  time.Time
+}
+
 type Install struct {
 	ID        int64
 	InstallID string
@@ -163,6 +189,9 @@ type Release struct {
 	ImageDigest           string
 	BuiltOnServerID       *int64
 	PromotedFromReleaseID *int64
+	CommitSha             string
+	CommitMessage         string
+	CommitAuthor          string
 }
 
 type ReleaseEvent struct {

@@ -94,6 +94,8 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       );
       // Which release is active, deploying or latest lives in the overview.
       queryClient.invalidateQueries({ queryKey: keys.overview(ref.project) });
+      // A push may have been dequeued; refetches only while it is shown.
+      queryClient.invalidateQueries({ queryKey: keys.git(ref) });
       return;
     }
     case "release_event": {

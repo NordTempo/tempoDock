@@ -46,5 +46,5 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 			routes = append(routes, node.Route{Hostnames: []string{d.Hostname}, Upstream: fmt.Sprintf("127.0.0.1:%d", port)})
 		}
 	}
-	return c.runtime(serverID).ApplyRoutes(ctx, routes)
+	return c.runtime(serverID).ApplyRoutes(ctx, c.withHookRoute(serverID, routes))
 }

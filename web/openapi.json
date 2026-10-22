@@ -466,6 +466,28 @@
         ],
         "type": "object"
       },
+      "Commit": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "description": "GitHub login of the author, else their name",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "sha": {
+            "description": "Full commit SHA",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha",
+          "message",
+          "author"
+        ],
+        "type": "object"
+      },
       "CreateEnvironmentRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2157,6 +2179,157 @@
         ],
         "type": "object"
       },
+      "GitConnectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "dir": {
+            "description": "Subdirectory to build; empty for the repository root",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "repo": {
+            "description": "owner/name",
+            "maxLength": 140,
+            "minLength": 3,
+            "type": "string"
+          },
+          "rotate_secret": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "boolean"
+          },
+          "token": {
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "branch"
+        ],
+        "type": "object"
+      },
+      "GitConnectResult": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/GitConnection"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "hooks_hint": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "created"
+        ],
+        "type": "object"
+      },
+      "GitConnection": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "dir": {
+            "description": "Subdirectory used as the build context; empty for the repository root",
+            "type": "string"
+          },
+          "last_event": {
+            "type": "string"
+          },
+          "last_event_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pending": {
+            "$ref": "#/components/schemas/Commit"
+          },
+          "repo": {
+            "description": "owner/name",
+            "type": "string"
+          },
+          "status": {
+            "type": "boolean"
+          },
+          "token_set": {
+            "type": "boolean"
+          },
+          "webhook_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "branch",
+          "token_set",
+          "status",
+          "webhook_url",
+          "created_by",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "GitDeployRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "description": "Commit SHA, branch or tag; default the connected branch's head",
+            "maxLength": 255,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitDeployResult": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "$ref": "#/components/schemas/Commit"
+          }
+        },
+        "required": [
+          "commit"
+        ],
+        "type": "object"
+      },
+      "GitSource": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/GitConnection"
+          },
+          "hooks_hint": {
+            "type": "string"
+          },
+          "hooks_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hooks_ready"
+        ],
+        "type": "object"
+      },
       "Health": {
         "additionalProperties": false,
         "properties": {
@@ -2506,6 +2679,9 @@
       "Release": {
         "additionalProperties": false,
         "properties": {
+          "commit": {
+            "$ref": "#/components/schemas/Commit"
+          },
           "config": {
             "$ref": "#/components/schemas/ReleaseConfig"
           },
@@ -2702,6 +2878,9 @@
       "ReleaseSummary": {
         "additionalProperties": false,
         "properties": {
+          "commit": {
+            "$ref": "#/components/schemas/Commit"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -11505,6 +11684,543 @@
         "summary": "Remove a domain",
         "tags": [
           "domains"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/git": {
+      "delete": {
+        "description": "Removes the connection, its token and any queued push; the webhook stops working. Releases are kept. Scope: deploy.",
+        "operationId": "disconnect-git",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Disconnect the GitHub repository",
+        "tags": [
+          "git"
+        ]
+      },
+      "get": {
+        "description": "The connected repository, branch and directory, the webhook URL, a queued push and what the latest delivery did. The webhook secret and token are never returned (`token_set` only).",
+        "operationId": "get-git-source",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitSource"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get the GitHub source",
+        "tags": [
+          "git"
+        ]
+      },
+      "put": {
+        "description": "Pushes to the branch then deploy the service from source, like `dock deploy` of that directory. Creates the connection or changes it. A new connection (or `rotate_secret`) returns the webhook secret once in `secret`. Scope: deploy.",
+        "operationId": "connect-git",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitConnectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitConnectResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Connect a GitHub repository",
+        "tags": [
+          "git"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/git/deploy": {
+      "post": {
+        "description": "Queues a commit (default: the branch's head) as if it had been pushed, even if it is already live. Its release starts once no other deploy of the service runs; follow `/events`. Scope: deploy.",
+        "operationId": "deploy-git",
+        "parameters": [
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitDeployRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitDeployResult"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Deploy a commit from GitHub",
+        "tags": [
+          "git"
         ]
       }
     },

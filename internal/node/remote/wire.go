@@ -341,12 +341,13 @@ type wireRoute struct {
 	Hostnames  []string `json:"hostnames"`
 	Upstream   string   `json:"upstream,omitempty"`
 	RedirectTo string   `json:"redirect_to,omitempty"`
+	PathPrefix string   `json:"path_prefix,omitempty"`
 }
 
 func toWireRoutes(rs []node.Route) []wireRoute {
 	out := make([]wireRoute, len(rs))
 	for i, r := range rs {
-		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo}
+		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix}
 	}
 	return out
 }
@@ -354,7 +355,7 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 func fromWireRoutes(ws []wireRoute) []node.Route {
 	out := make([]node.Route, len(ws))
 	for i, w := range ws {
-		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo}
+		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix}
 	}
 	return out
 }

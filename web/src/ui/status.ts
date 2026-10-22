@@ -155,7 +155,10 @@ export function releaseWhat(r: Release | ReleaseSummary) {
     "from_release" in r && r.from_release ? ` r${r.from_release}` : "";
   switch (r.source) {
     case "upload":
-      return "deploy from source";
+      // From a push (ADR 0018): "deploy abc1234 fix checkout".
+      return r.commit
+        ? `deploy ${r.commit.sha.slice(0, 7)} ${r.commit.message}`.trim()
+        : "deploy from source";
     case "image":
       return "deploy";
     case "config":

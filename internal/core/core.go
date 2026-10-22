@@ -54,6 +54,10 @@ type Options struct {
 	// CutoverDrain overrides DefaultCutoverDrain when positive (tests use
 	// a tiny value).
 	CutoverDrain time.Duration
+	// GitHubAPI overrides the GitHub REST API's base URL
+	// (https://api.github.com) for push-to-deploy; tests point it at a
+	// fake.
+	GitHubAPI string
 }
 
 // Core is the control plane.
@@ -117,6 +121,9 @@ type Core struct {
 	uploadsMu sync.Mutex
 	uploads   map[int64]bool
 
+	// git is GitHub push-to-deploy's state (git.go).
+	git gitState
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -153,6 +160,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		cliLogins:  newCLILogins(),
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
+		git:        newGitState(o.GitHubAPI),
 	}
 	if c.data == nil {
 		c.data = pg.New()
@@ -223,6 +231,9 @@ func (c *Core) Start(ctx context.Context) error {
 	go c.watchRuntime(events)
 	go c.checkDomains()
 	go c.collectStats()
+	if err := c.resumeGit(ctx); err != nil {
+		return fmt.Errorf("resume queued pushes: %w", err)
+	}
 	// Remote servers are reconciled as they connect (NodeStatus); ones a
 	// hub that already serves has connected are reconciled now.
 	if c.nodes != nil {
@@ -264,9 +275,12 @@ func (c *Core) clearTempFiles() {
 // connections are closed.
 func (c *Core) Close() {
 	c.closeStats()
-	// Under serversMu, so kickServer can't start a watcher after this.
+	// Under serversMu and git.mu, so kickServer and kickGit can't start a
+	// goroutine after this.
 	c.serversMu.Lock()
+	c.git.mu.Lock()
 	c.cancel()
+	c.git.mu.Unlock()
 	c.serversMu.Unlock()
 	c.wg.Wait()
 	c.data.Close()
