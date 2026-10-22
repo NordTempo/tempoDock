@@ -97,6 +97,8 @@ Everything periodic in the daemon and CLI:
 | Node event stream retry | `internal/node/remote/client.go` | 1 s | a node's event stream failed | one reconnect |
 | Node reconnect | `internal/node/remote/node.go` | jittered backoff | a node lost its control plane | one dial |
 | Registry tunnel wait | `internal/node/remote/registry.go` | once, up to 10 s | a registry connection on a node waits for a free tunnel | one timer per waiting connection |
+| Backup scheduler | `internal/core/backups_schedule.go` | once, at the next due backup (daily per stateful service) | a stateful service has scheduled backups | one goroutine and one timer; a pass is three queries, then one job container per due backup |
+| CLI backup wait | `internal/cli/backup.go` | 2 s | `dock backup run`/`restore` waits for a run | one GET |
 | Data connection idle close | `internal/data/pg` | once, 60 s after last use | a database connection is open | one timer per connection |
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
