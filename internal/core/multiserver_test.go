@@ -403,6 +403,16 @@ func TestServerLifecycle(t *testing.T) {
 	if err := p.c.RemoveServer(p.ctx, System, "homelab"); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("removing a server with environments: %v", err)
 	}
+	// Once shop is archived, its staging no longer holds homelab.
+	if _, err := p.c.ArchiveProject(p.ctx, System, "shop"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.c.RemoveServer(p.ctx, System, "homelab"); err != nil {
+		t.Fatalf("removing a server with only archived environments: %v", err)
+	}
+	if got := p.server("shop", "staging"); got != p.c.local.Name {
+		t.Fatalf("archived staging moved to %s, want the local server %s", got, p.c.local.Name)
+	}
 	if err := p.c.RemoveServer(p.ctx, System, "lab2"); err != nil {
 		t.Fatal(err)
 	}

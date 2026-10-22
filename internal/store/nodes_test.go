@@ -209,6 +209,8 @@ func TestNodeQueryPlans(t *testing.T) {
 		{"RevokeServer", revokeServer, []any{now, 1}},
 		{"PromoteServerKey", promoteServerKey, []any{1, "sha256:a"}},
 		{"DeleteServerPlacements", deleteServerPlacements, []any{1}},
+		{"ClearArchivedHostPorts", clearArchivedHostPorts, []any{1}},
+		{"MoveArchivedEnvironments", moveArchivedEnvironments, []any{1, 2}},
 		{"DeleteServer", deleteServer, []any{1}},
 		{"SetReleaseDigest", setReleaseDigest, []any{"sha256:d", 1, 1}},
 		{"ListPromotableReleases", listPromotableReleases, []any{1}},

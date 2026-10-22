@@ -357,7 +357,7 @@ control plane is unreachable. Stopping or upgrading it never stops apps.
 |---|---|
 | `dock server revoke homelab` | Forgets its key and drops the link. It stays out until it joins again; its apps keep running, but nothing deploys there |
 | `dock server rotate-key homelab` | The online node switches to a new key |
-| `dock server remove homelab` | Only once nothing is placed on it |
+| `dock server remove homelab` | Only once no live project uses it; archive projects first. Archived projects' environments move to the control plane's server. Containers a revoked or offline server still runs stay there; remove them by hand |
 
 Upgrade a node like the control plane: re-run `install.sh` with the new
 binary; no token needed. Upgrade the control plane first. To re-join (after

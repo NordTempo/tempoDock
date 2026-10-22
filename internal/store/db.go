@@ -63,6 +63,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.archiveServiceStmt, err = db.PrepareContext(ctx, archiveService); err != nil {
 		return nil, fmt.Errorf("error preparing query ArchiveService: %w", err)
 	}
+	if q.clearArchivedHostPortsStmt, err = db.PrepareContext(ctx, clearArchivedHostPorts); err != nil {
+		return nil, fmt.Errorf("error preparing query ClearArchivedHostPorts: %w", err)
+	}
 	if q.clearReleaseHostPortStmt, err = db.PrepareContext(ctx, clearReleaseHostPort); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearReleaseHostPort: %w", err)
 	}
@@ -423,6 +426,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listVolumesStmt, err = db.PrepareContext(ctx, listVolumes); err != nil {
 		return nil, fmt.Errorf("error preparing query ListVolumes: %w", err)
 	}
+	if q.moveArchivedEnvironmentsStmt, err = db.PrepareContext(ctx, moveArchivedEnvironments); err != nil {
+		return nil, fmt.Errorf("error preparing query MoveArchivedEnvironments: %w", err)
+	}
 	if q.nextReleaseNumberStmt, err = db.PrepareContext(ctx, nextReleaseNumber); err != nil {
 		return nil, fmt.Errorf("error preparing query NextReleaseNumber: %w", err)
 	}
@@ -602,6 +608,11 @@ func (q *Queries) Close() error {
 	if q.archiveServiceStmt != nil {
 		if cerr := q.archiveServiceStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing archiveServiceStmt: %w", cerr)
+		}
+	}
+	if q.clearArchivedHostPortsStmt != nil {
+		if cerr := q.clearArchivedHostPortsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing clearArchivedHostPortsStmt: %w", cerr)
 		}
 	}
 	if q.clearReleaseHostPortStmt != nil {
@@ -1204,6 +1215,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listVolumesStmt: %w", cerr)
 		}
 	}
+	if q.moveArchivedEnvironmentsStmt != nil {
+		if cerr := q.moveArchivedEnvironmentsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing moveArchivedEnvironmentsStmt: %w", cerr)
+		}
+	}
 	if q.nextReleaseNumberStmt != nil {
 		if cerr := q.nextReleaseNumberStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing nextReleaseNumberStmt: %w", cerr)
@@ -1441,6 +1457,7 @@ type Queries struct {
 	applyVolumeStmt                    *sql.Stmt
 	archiveProjectStmt                 *sql.Stmt
 	archiveServiceStmt                 *sql.Stmt
+	clearArchivedHostPortsStmt         *sql.Stmt
 	clearReleaseHostPortStmt           *sql.Stmt
 	consumeJoinTokenStmt               *sql.Stmt
 	countKindEnvironmentsStmt          *sql.Stmt
@@ -1561,6 +1578,7 @@ type Queries struct {
 	listUsersWithCountsStmt            *sql.Stmt
 	listVariablesStmt                  *sql.Stmt
 	listVolumesStmt                    *sql.Stmt
+	moveArchivedEnvironmentsStmt       *sql.Stmt
 	nextReleaseNumberStmt              *sql.Stmt
 	promoteServerKeyStmt               *sql.Stmt
 	pruneServerStatsStmt               *sql.Stmt
@@ -1617,6 +1635,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		applyVolumeStmt:                    q.applyVolumeStmt,
 		archiveProjectStmt:                 q.archiveProjectStmt,
 		archiveServiceStmt:                 q.archiveServiceStmt,
+		clearArchivedHostPortsStmt:         q.clearArchivedHostPortsStmt,
 		clearReleaseHostPortStmt:           q.clearReleaseHostPortStmt,
 		consumeJoinTokenStmt:               q.consumeJoinTokenStmt,
 		countKindEnvironmentsStmt:          q.countKindEnvironmentsStmt,
@@ -1737,6 +1756,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listUsersWithCountsStmt:            q.listUsersWithCountsStmt,
 		listVariablesStmt:                  q.listVariablesStmt,
 		listVolumesStmt:                    q.listVolumesStmt,
+		moveArchivedEnvironmentsStmt:       q.moveArchivedEnvironmentsStmt,
 		nextReleaseNumberStmt:              q.nextReleaseNumberStmt,
 		promoteServerKeyStmt:               q.promoteServerKeyStmt,
 		pruneServerStatsStmt:               q.pruneServerStatsStmt,

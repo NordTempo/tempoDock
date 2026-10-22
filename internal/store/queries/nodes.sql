@@ -94,9 +94,28 @@ RETURNING *;
 -- Drops a server's project placements (pins included), before DeleteServer.
 DELETE FROM project_placements WHERE server_id = +sqlc.arg(server_id);
 
+-- name: ClearArchivedHostPorts :exec
+-- Frees the host ports of archived projects' releases on a server being
+-- removed (before MoveArchivedEnvironments): their containers, if any are
+-- left, are on that server, not where the environments move.
+UPDATE releases SET host_port = 0
+WHERE host_port > 0 AND service_id IN (
+    SELECT services.id FROM services
+    JOIN environments ON environments.id = services.environment_id
+    JOIN projects ON projects.id = environments.project_id
+    WHERE environments.server_id = +sqlc.arg(server_id) AND projects.archived_at IS NOT NULL);
+
+-- name: MoveArchivedEnvironments :exec
+-- Moves archived projects' environments off a server being removed, to
+-- the control plane's own server: nothing of theirs runs anywhere, and an
+-- environment always names a server.
+UPDATE environments SET server_id = sqlc.arg(local_server_id)
+WHERE server_id = +sqlc.arg(server_id) AND EXISTS (
+    SELECT 1 FROM projects WHERE projects.id = environments.project_id AND projects.archived_at IS NOT NULL);
+
 -- name: DeleteServer :execrows
 -- Removes a remote server with no environments. 0 rows: local, or
--- environments (archived projects' included) are still placed there.
+-- environments are still placed there (MoveArchivedEnvironments first).
 DELETE FROM servers
 WHERE servers.id = +sqlc.arg(id) AND servers.local = 0
   AND NOT EXISTS (SELECT 1 FROM environments WHERE environments.server_id = servers.id);

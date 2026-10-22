@@ -1314,7 +1314,7 @@ export interface paths {
         post?: never;
         /**
          * Remove a server
-         * @description Only a server with no environments placed on it, and never the control plane's own. Scope: admin, unlimited.
+         * @description Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Scope: admin, unlimited.
          */
         delete: operations["remove-server"];
         options?: never;

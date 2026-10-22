@@ -371,9 +371,11 @@ func (c *Core) RotateServerKey(ctx context.Context, a Actor, name string) (apity
 	return c.serverDetail(ctx, srv.ID)
 }
 
-// RemoveServer removes a remote server with no environments (archived
-// projects' included), or cancels the join tokens of a server that hasn't
-// joined yet. Its project pins go with it. Admin only.
+// RemoveServer removes a remote server no live project has environments
+// on, or cancels the join tokens of a server that hasn't joined yet. Its
+// project pins go with it, and archived projects' environments move to
+// the local server (nothing of theirs runs; containers an unreachable
+// server still had are left to it). Admin only.
 func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "removing a server"); err != nil {
 		return err
@@ -401,9 +403,15 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		if err := q.DeleteServerPlacements(ctx, srv.ID); err != nil {
 			return err
 		}
+		if err := q.ClearArchivedHostPorts(ctx, srv.ID); err != nil {
+			return err
+		}
+		if err := q.MoveArchivedEnvironments(ctx, store.MoveArchivedEnvironmentsParams{LocalServerID: c.local.ID, ServerID: srv.ID}); err != nil {
+			return err
+		}
 		removed, err := q.DeleteServer(ctx, srv.ID)
 		if err == nil && removed == 0 {
-			return conflict("server %s still has environments; delete them (or their projects) first; `dock server show %s` lists them", srv.Name, srv.Name)
+			return conflict("server %s still has environments; archive their projects first; `dock server show %s` lists them", srv.Name, srv.Name)
 		}
 		return err
 	})

@@ -188,7 +188,7 @@ func newServerRemoveCmd(g *globals) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "remove <name>",
-		Short: "Remove a server with nothing placed on it (admin)",
+		Short: "Remove a server no live project uses (admin)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes {
