@@ -21,6 +21,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -108,7 +109,7 @@ type Core struct {
 
 	// loginLimit throttles password attempts per client IP and per email;
 	// bcryptSem caps concurrent password checks (each is ~50ms of CPU).
-	loginLimit *limiter
+	loginLimit *httpkit.Limiter
 	bcryptSem  chan struct{}
 
 	// stats holds the latest resource samples and the live samplers.
@@ -173,7 +174,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		status:     map[int64]apitypes.ServiceStatus{},
 		removing:   map[string]bool{},
 		uploads:    map[int64]bool{},
-		loginLimit: newLimiter(5, 10*time.Second),
+		loginLimit: httpkit.NewLimiter(5, 10*time.Second),
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),
 		backups:    newBackupState(),

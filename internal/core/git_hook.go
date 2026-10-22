@@ -94,7 +94,7 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 	}
 	// Hook IDs are unguessable, so only someone who has the URL can spend
 	// this; the bound keeps a leaked URL from costing more.
-	if !c.git.limit.allow(conn.HookID, time.Now()) {
+	if !c.git.limit.Allow(conn.HookID, time.Now()) {
 		return "", errf(apitypes.CodeRateLimited, "too many deliveries for this webhook; try again in a minute")
 	}
 	secret, err := c.box.Open(conn.Secret)

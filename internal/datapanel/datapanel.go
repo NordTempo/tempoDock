@@ -96,6 +96,16 @@ type Words struct {
 	// LoginFailedHint follows an owner login failure: Dock points at
 	// database_url_variable, tempoBase at the connection's URL.
 	LoginFailedHint string
+	// SetupAction is how an admin sets up, in "Not set up. <SetupAction>
+	// to create Dock's roles in the database.": "Set up data access
+	// (`dock db setup`)".
+	SetupAction string
+	// ConfirmWhat is what a production commit confirms with: "the
+	// environment's name", "the connection's name".
+	ConfirmWhat string
+	// Database is what a database is to the host, in API docs ("per user
+	// and service"): "service", "connection".
+	Database string
 }
 
 // Options configure a Panel.

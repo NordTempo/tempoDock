@@ -23,6 +23,16 @@ import (
 // engine (Core.data) talks to the database through the service's running
 // container (data_target.go); changesets are in data_changesets.go.
 
+// DataWords are Dock's words in the data panel's messages and API docs.
+var DataWords = datapanel.Words{
+	Product:         "Dock",
+	SetupHint:       "an admin can run `dock db setup`",
+	LoginFailedHint: "If POSTGRES_PASSWORD changed after the database was created, set database_url_variable to a variable with the current postgres:// URL",
+	SetupAction:     "Set up data access (`dock db setup`)",
+	ConfirmWhat:     "the environment's name",
+	Database:        "service",
+}
+
 // ErrDataNotImplemented was returned by the phase 1 stubs. Nothing returns
 // it any more; it stays for code written against them.
 var ErrDataNotImplemented error = &Error{Code: apitypes.CodeValidation, Msg: "the database panel is not available yet"}

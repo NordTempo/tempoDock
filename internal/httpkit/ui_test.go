@@ -1,4 +1,4 @@
-package api
+package httpkit
 
 import (
 	"bytes"
@@ -15,11 +15,11 @@ import (
 // routes) is revalidated by ETag; fonts are sent as they are.
 func TestUIHandlerCachingAndCompression(t *testing.T) {
 	js := strings.Repeat("export const x = 1;\n", 200)
-	h := newUIHandler(fstest.MapFS{
+	h := UIHandler(fstest.MapFS{
 		"index.html":            {Data: []byte("<!doctype html>" + strings.Repeat("<div></div>", 100))},
 		"assets/index-abc.js":   {Data: []byte(js)},
 		"assets/font-abc.woff2": {Data: bytes.Repeat([]byte{1, 2, 3}, 400)},
-	})
+	}, "not built")
 	get := func(path string, hdr ...string) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
