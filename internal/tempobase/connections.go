@@ -265,12 +265,13 @@ func (a *App) CreateConnection(ctx context.Context, act Actor, req tbtypes.Creat
 		return tbtypes.Connection{}, err
 	}
 	a.audit(ctx, act, "connection.create", &c.ID, "connection "+c.Name,
-		fmt.Sprintf("added connection %s: %s, sslmode %s, %s", c.Name, u.describe(), u.TLS, kindWords(kindOf(c))))
+		fmt.Sprintf("added connection %s: %s, sslmode %s, %s", c.Name, u.describe(), u.TLS, datapanel.KindWords(kindOf(c))))
 	return toConnection(c, permission(act, c, nil), 0), nil
 }
 
 // UpdateConnection changes a connection's name, URL, production flag or
-// CA. It applies at once. Admin only.
+// CA. It applies at once: the panel drops its cached connections and
+// schema. Admin only.
 func (a *App) UpdateConnection(ctx context.Context, act Actor, name string, req tbtypes.UpdateConnectionRequest) (tbtypes.Connection, error) {
 	if err := act.requireAdmin("changing connections"); err != nil {
 		return tbtypes.Connection{}, err
@@ -304,7 +305,7 @@ func (a *App) UpdateConnection(ctx context.Context, act Actor, name string, req 
 	}
 	if req.Production != nil && boolInt(*req.Production) != c.Production {
 		c.Production = boolInt(*req.Production)
-		changes = append(changes, kindWords(kindOf(c)))
+		changes = append(changes, datapanel.KindWords(kindOf(c)))
 	}
 	if _, _, err := tlsConfig(tbtypes.TLSMode(c.TlsMode), c.Host, c.CaPem); err != nil {
 		return tbtypes.Connection{}, err
@@ -320,6 +321,8 @@ func (a *App) UpdateConnection(ctx context.Context, act Actor, name string, req 
 		if err != nil {
 			return tbtypes.Connection{}, err
 		}
+		// Cached connections and schema may be of the old URL or database.
+		a.panel.Forget(c.ID)
 		a.audit(ctx, act, "connection.update", &c.ID, "connection "+c.Name, "changed connection "+name+": "+strings.Join(changes, "; "))
 	}
 	return a.GetConnection(ctx, act, c.Name)
@@ -339,6 +342,7 @@ func (a *App) DeleteConnection(ctx context.Context, act Actor, name string) erro
 	if err := a.store.DeleteConnection(ctx, c.ID); err != nil {
 		return err
 	}
+	a.panel.Forget(c.ID)
 	a.audit(ctx, act, "connection.delete", &c.ID, "connection "+c.Name,
 		"removed connection "+c.Name+" ("+c.Username+"@"+c.Host+"/"+c.Database+"); tempoBase's roles stay in the database")
 	return nil
@@ -359,14 +363,24 @@ func (a *App) TestConnection(ctx context.Context, act Actor, req tbtypes.TestCon
 	if err != nil {
 		return tbtypes.TestConnectionResult{}, err
 	}
-	info, canSetUp, err := checkOwner(ctx, conn)
-	res := tbtypes.TestConnectionResult{ServerVersion: info.Version, CanSetUp: canSetUp}
+	ctx, cancel := context.WithTimeout(ctx, 2*dialTimeout)
+	defer cancel()
+	info, err := a.engine.Check(ctx, target(0, conn), conn.Owner)
+	res := tbtypes.TestConnectionResult{ServerVersion: info.Version, OK: err == nil, CanSetUp: err == nil}
+	if errors.Is(err, data.ErrCannotSetUp) {
+		// The login works; only setup would fail.
+		res.OK = true
+	}
 	if err != nil {
 		res.Error = err.Error()
-		return res, nil
 	}
-	res.OK = true
 	return res, nil
+}
+
+// target is a datapanel.Conn as the engine takes it, for database id (0:
+// not saved yet, so nothing is cached for it).
+func target(id int64, c datapanel.Conn) data.Target {
+	return data.Target{ServiceID: id, Dial: c.Dial, TLS: c.TLS, TLSOptional: c.TLSOptional, Database: c.Database}
 }
 
 func toConnection(c tbstore.Connection, perm apitypes.DataPermission, pending int) tbtypes.Connection {

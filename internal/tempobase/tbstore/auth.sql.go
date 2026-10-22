@@ -358,21 +358,25 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (GetTokenRow, error) {
 
 const getTokenAuth = `-- name: GetTokenAuth :one
 SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, users.email AS user_email, users.role AS user_role, users.disabled_at AS user_disabled_at,
-    CAST(coalesce((SELECT group_concat(connection_id) FROM token_connections WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_ids
+    CAST(coalesce((SELECT group_concat(connection_id) FROM token_connections WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_ids,
+    CAST(coalesce((SELECT group_concat(connections.name) FROM token_connections
+        JOIN connections ON connections.id = token_connections.connection_id
+        WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_names
 FROM tokens JOIN users ON users.id = tokens.user_id
 WHERE tokens.secret_hash = +?
 `
 
 type GetTokenAuthRow struct {
-	Token          Token
-	UserEmail      string
-	UserRole       string
-	UserDisabledAt *time.Time
-	ConnectionIds  string
+	Token           Token
+	UserEmail       string
+	UserRole        string
+	UserDisabledAt  *time.Time
+	ConnectionIds   string
+	ConnectionNames string
 }
 
 // Authenticates a bearer token: the token, its user and its connection
-// limit (comma-separated IDs, ” for none) in one query.
+// limit (comma-separated IDs and names, ” for none) in one query.
 func (q *Queries) GetTokenAuth(ctx context.Context, secretHash string) (GetTokenAuthRow, error) {
 	row := q.queryRow(ctx, q.getTokenAuthStmt, getTokenAuth, secretHash)
 	var i GetTokenAuthRow
@@ -392,6 +396,7 @@ func (q *Queries) GetTokenAuth(ctx context.Context, secretHash string) (GetToken
 		&i.UserRole,
 		&i.UserDisabledAt,
 		&i.ConnectionIds,
+		&i.ConnectionNames,
 	)
 	return i, err
 }

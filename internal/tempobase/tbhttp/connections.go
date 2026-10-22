@@ -11,13 +11,14 @@ import (
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 )
 
-// connPath names a connection in a path.
-type connPath struct {
+// ConnPath names a connection in a path. Path types are exported: Huma
+// only sees the fields of exported embedded types.
+type ConnPath struct {
 	Connection string `path:"connection" doc:"The connection's name"`
 }
 
 type updateConnInput struct {
-	connPath
+	ConnPath
 	Body tbtypes.UpdateConnectionRequest
 }
 
@@ -26,7 +27,7 @@ type setPolicyInput struct {
 }
 
 type setConnPolicyInput struct {
-	connPath
+	ConnPath
 	Body apitypes.UpdateDataPolicyRequest
 }
 
@@ -68,7 +69,7 @@ func registerConnections(s *server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "get-connection", Method: http.MethodGet, Path: Prefix + "/connections/{connection}",
 		Summary: "Get a connection", Tags: tags,
-	}, func(ctx context.Context, act tempobase.Actor, in *connPath) (*out[tbtypes.Connection], error) {
+	}, func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[tbtypes.Connection], error) {
 		return reply(s.app.GetConnection(ctx, act, in.Connection))
 	})
 	authed(s, a, huma.Operation{
@@ -84,7 +85,7 @@ func registerConnections(s *server, a huma.API) {
 		Summary:     "Remove a connection",
 		Description: "Admin only. Deletes what tempoBase keeps about it (setup, sensitive columns, saved queries, changesets, policy, token limits) but its audit events. tempoBase's roles stay in the database.",
 		Tags:        tags, DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, act tempobase.Actor, in *connPath) (*empty, error) {
+	}, func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*empty, error) {
 		return nil, s.app.DeleteConnection(ctx, act, in.Connection)
 	})
 }
@@ -108,7 +109,7 @@ func registerPolicy(s *server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "get-connection-data-policy", Method: http.MethodGet, Path: Prefix + "/connections/{connection}/data-policy",
 		Summary: "Get a connection's data access policy", Tags: tags,
-	}, func(ctx context.Context, act tempobase.Actor, in *connPath) (*out[apitypes.DataPolicy], error) {
+	}, func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[apitypes.DataPolicy], error) {
 		return reply(s.app.GetDataPolicy(ctx, act, in.Connection))
 	})
 	authed(s, a, huma.Operation{
@@ -132,7 +133,9 @@ func registerAudit(s *server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "get-audit-detail", Method: http.MethodGet, Path: Prefix + "/audit/{id}/detail",
 		Summary: "The SQL of a data.query or data.commit event", Description: "Admin only.", Tags: tags,
-	}, func(ctx context.Context, act tempobase.Actor, in *idPath) (*out[apitypes.AuditDetail], error) {
+	}, func(ctx context.Context, act tempobase.Actor, in *struct {
+		ID int64 `path:"id" doc:"The event's detail_id"`
+	}) (*out[apitypes.AuditDetail], error) {
 		return reply(s.app.GetAuditDetail(ctx, act, in.ID))
 	})
 }

@@ -51,7 +51,7 @@ func kindOf(c tbstore.Connection) apitypes.EnvironmentKind {
 func toRule(r tbstore.DataPolicyRule) apitypes.DataPolicyRule {
 	from := apitypes.PolicyDefault
 	if r.ConnectionID != nil {
-		from = policyConnection
+		from = apitypes.PolicyConnection
 	}
 	return apitypes.DataPolicyRule{
 		Subject: apitypes.DataSubject(r.Subject), Kind: apitypes.EnvironmentKind(r.Kind),
@@ -85,7 +85,7 @@ func permission(act Actor, c tbstore.Connection, rules []apitypes.DataPolicyRule
 			in.Token.Caps = []datapanel.Cap{{Subject: subjectOf(act.Role), Why: "capped by its owner " + act.Email + "'s current role " + string(act.Role) + ": "}}
 		}
 	}
-	return decide(in)
+	return datapanel.Decide(in)
 }
 
 // visible reports whether act may see a connection where its permission
@@ -139,14 +139,14 @@ func (a *App) policyScope(ctx context.Context, act Actor, connection string) (ap
 	if err != nil {
 		return apitypes.DataPolicy{}, nil, err
 	}
-	return apitypes.DataPolicy{Scope: policyConnection}, &c, nil
+	return apitypes.DataPolicy{Scope: apitypes.PolicyConnection, Connection: c.Name}, &c, nil
 }
 
 // loadPolicy fills a policy's own and effective rules (one or two
 // queries).
 func (a *App) loadPolicy(ctx context.Context, pol apitypes.DataPolicy, c *tbstore.Connection) (apitypes.DataPolicy, error) {
 	var id int64
-	kinds := envKinds
+	kinds := datapanel.Kinds
 	if c != nil {
 		id, kinds = c.ID, []apitypes.EnvironmentKind{kindOf(*c)}
 	}
@@ -165,7 +165,7 @@ func (a *App) loadPolicy(ctx context.Context, pol apitypes.DataPolicy, c *tbstor
 		pol.Rules[i] = toRule(r)
 		pol.Rules[i].From = ""
 	}
-	pol.Effective = effectiveRules(rulesFor(all, id), kinds, builtIn)
+	pol.Effective = datapanel.Effective(rulesFor(all, id), kinds, builtIn)
 	return pol, nil
 }
 
@@ -187,7 +187,7 @@ func (a *App) SetDataPolicy(ctx context.Context, act Actor, connection string, r
 	if c != nil {
 		only, id, target = kindOf(*c), &c.ID, "connection "+c.Name
 	}
-	if err := validateRules(req.Rules, only, target); err != nil {
+	if err := datapanel.ValidateRules(req.Rules, only, target); err != nil {
 		return pol, err
 	}
 	err = a.store.Tx(ctx, func(q *tbstore.Queries) error {
@@ -210,6 +210,6 @@ func (a *App) SetDataPolicy(ctx context.Context, act Actor, connection string, r
 	if err != nil {
 		return pol, err
 	}
-	a.audit(ctx, act, apitypes.AuditDataPolicy, id, target, describeRules(target, req.Rules))
+	a.audit(ctx, act, apitypes.AuditDataPolicy, id, target, datapanel.DescribeRules(target, req.Rules))
 	return a.loadPolicy(ctx, pol, c)
 }

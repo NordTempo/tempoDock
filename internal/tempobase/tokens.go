@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbstore"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 )
@@ -70,7 +71,7 @@ func (a *App) CreateToken(ctx context.Context, act Actor, req tbtypes.CreateToke
 	if name == "" || len(name) > 100 {
 		return tbtypes.CreatedToken{}, invalid("a token name of 1-100 characters is required")
 	}
-	if err := validateTokenAccess(req.Data); err != nil {
+	if err := datapanel.ValidateTokenAccess(req.Data); err != nil {
 		return tbtypes.CreatedToken{}, err
 	}
 	if req.ExpiresInDays < 0 || req.ExpiresInDays > 3650 {
@@ -108,7 +109,7 @@ func (a *App) CreateToken(ctx context.Context, act Actor, req tbtypes.CreateToke
 		limit = strings.Join(req.Connections, ", ")
 	}
 	a.audit(ctx, act, "token.create", nil, "token "+t.Name,
-		fmt.Sprintf("created token %q (id %d) for %s; %s", t.Name, t.ID, limit, describeTokenAccess(req.Data)))
+		fmt.Sprintf("created token %q (id %d) for %s; %s", t.Name, t.ID, limit, datapanel.DescribeTokenAccess(req.Data)))
 	return tbtypes.CreatedToken{Token: toToken(t, act.Email, strings.Join(req.Connections, ",")), Secret: secret}, nil
 }
 
@@ -155,7 +156,7 @@ func (a *App) UpdateToken(ctx context.Context, act Actor, id int64, req apitypes
 	if r.Token.RevokedAt != nil {
 		return tbtypes.Token{}, invalid("token %q is revoked; create a new one", r.Token.Name)
 	}
-	if err := validateTokenAccess(req.Data); err != nil {
+	if err := datapanel.ValidateTokenAccess(req.Data); err != nil {
 		return tbtypes.Token{}, err
 	}
 	t := r.Token
@@ -165,7 +166,7 @@ func (a *App) UpdateToken(ctx context.Context, act Actor, id int64, req apitypes
 	}); err != nil {
 		return tbtypes.Token{}, err
 	}
-	a.audit(ctx, act, apitypes.AuditDataPolicy, nil, "token "+t.Name, fmt.Sprintf("token %q (id %d) %s", t.Name, t.ID, describeTokenAccess(req.Data)))
+	a.audit(ctx, act, apitypes.AuditDataPolicy, nil, "token "+t.Name, fmt.Sprintf("token %q (id %d) %s", t.Name, t.ID, datapanel.DescribeTokenAccess(req.Data)))
 	return toToken(t, r.UserEmail, r.ConnectionNames), nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 
@@ -19,9 +20,12 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/datapanel"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/tempobase"
+	"github.com/NordTempo/tempoDock/internal/tempobase/tbmcp"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 	"github.com/NordTempo/tempoDock/internal/version"
+	tbweb "github.com/NordTempo/tempoDock/web/tempobase"
 )
 
 // Prefix is the base path of every API operation.
@@ -39,17 +43,27 @@ type server struct {
 	opts Options
 }
 
-// New returns tempoBase's root handler: the API and the web UI behind
-// the security headers and the CSRF guard.
+// New returns tempoBase's root handler: the API, the MCP endpoint and the
+// web UI behind the security headers and the CSRF guard.
 func New(app *tempobase.App, opts Options) http.Handler {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
 	mux := http.NewServeMux()
 	newAPI(mux, &server{app: app, cfg: app.Config(), opts: opts})
-	mux.Handle("/", uiHandler())
-	return guard(mux)
+	// The MCP endpoint speaks JSON-RPC, not REST, so it sits next to the
+	// Huma API rather than in its OpenAPI spec.
+	mux.Handle(Prefix+"/mcp", tbmcp.Handler(app, opts.Logger))
+	dist, _ := fs.Sub(tbweb.Dist, "dist")
+	mux.Handle("/", httpkit.UIHandler(dist, placeholderPage))
+	return httpkit.Guard(mux, nil)
 }
+
+// placeholderPage is served instead of the UI when the binary was built
+// without web/tempobase/dist.
+const placeholderPage = `<!doctype html><meta charset="utf-8"><title>tempoBase</title>
+<body style="background:#000;color:#fff;font:14px ui-monospace,monospace;padding:2rem">
+tempoBase is running. The web UI has not been built into this binary.`
 
 // Spec returns the OpenAPI document (JSON) without a running server.
 func Spec() ([]byte, error) {
@@ -79,6 +93,7 @@ func newAPI(mux *http.ServeMux, s *server) huma.API {
 	registerTokens(s, a)
 	registerConnections(s, a)
 	registerPolicy(s, a)
+	registerData(s, a)
 	registerAudit(s, a)
 	return a
 }

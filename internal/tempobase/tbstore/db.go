@@ -105,6 +105,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.expireChangesetsStmt, err = db.PrepareContext(ctx, expireChangesets); err != nil {
 		return nil, fmt.Errorf("error preparing query ExpireChangesets: %w", err)
 	}
+	if q.getAuditDetailStmt, err = db.PrepareContext(ctx, getAuditDetail); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAuditDetail: %w", err)
+	}
 	if q.getChangesetStmt, err = db.PrepareContext(ctx, getChangeset); err != nil {
 		return nil, fmt.Errorf("error preparing query GetChangeset: %w", err)
 	}
@@ -113,9 +116,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getDataAccessStmt, err = db.PrepareContext(ctx, getDataAccess); err != nil {
 		return nil, fmt.Errorf("error preparing query GetDataAccess: %w", err)
-	}
-	if q.getEventAuditDetailStmt, err = db.PrepareContext(ctx, getEventAuditDetail); err != nil {
-		return nil, fmt.Errorf("error preparing query GetEventAuditDetail: %w", err)
 	}
 	if q.getLinkByHashStmt, err = db.PrepareContext(ctx, getLinkByHash); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLinkByHash: %w", err)
@@ -365,6 +365,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing expireChangesetsStmt: %w", cerr)
 		}
 	}
+	if q.getAuditDetailStmt != nil {
+		if cerr := q.getAuditDetailStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAuditDetailStmt: %w", cerr)
+		}
+	}
 	if q.getChangesetStmt != nil {
 		if cerr := q.getChangesetStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getChangesetStmt: %w", cerr)
@@ -378,11 +383,6 @@ func (q *Queries) Close() error {
 	if q.getDataAccessStmt != nil {
 		if cerr := q.getDataAccessStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getDataAccessStmt: %w", cerr)
-		}
-	}
-	if q.getEventAuditDetailStmt != nil {
-		if cerr := q.getEventAuditDetailStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getEventAuditDetailStmt: %w", cerr)
 		}
 	}
 	if q.getLinkByHashStmt != nil {
@@ -631,10 +631,10 @@ type Queries struct {
 	deleteUserResetLinksStmt              *sql.Stmt
 	deleteUserSessionsStmt                *sql.Stmt
 	expireChangesetsStmt                  *sql.Stmt
+	getAuditDetailStmt                    *sql.Stmt
 	getChangesetStmt                      *sql.Stmt
 	getConnectionByNameStmt               *sql.Stmt
 	getDataAccessStmt                     *sql.Stmt
-	getEventAuditDetailStmt               *sql.Stmt
 	getLinkByHashStmt                     *sql.Stmt
 	getSessionUserStmt                    *sql.Stmt
 	getTokenStmt                          *sql.Stmt
@@ -704,10 +704,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteUserResetLinksStmt:              q.deleteUserResetLinksStmt,
 		deleteUserSessionsStmt:                q.deleteUserSessionsStmt,
 		expireChangesetsStmt:                  q.expireChangesetsStmt,
+		getAuditDetailStmt:                    q.getAuditDetailStmt,
 		getChangesetStmt:                      q.getChangesetStmt,
 		getConnectionByNameStmt:               q.getConnectionByNameStmt,
 		getDataAccessStmt:                     q.getDataAccessStmt,
-		getEventAuditDetailStmt:               q.getEventAuditDetailStmt,
 		getLinkByHashStmt:                     q.getLinkByHashStmt,
 		getSessionUserStmt:                    q.getSessionUserStmt,
 		getTokenStmt:                          q.getTokenStmt,

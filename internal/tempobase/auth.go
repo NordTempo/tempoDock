@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -113,6 +114,7 @@ func (a *App) AuthenticateToken(ctx context.Context, secret string) (Actor, erro
 			}
 			act.TokenConnections = append(act.TokenConnections, id)
 		}
+		act.TokenConnectionNames = strings.Split(row.ConnectionNames, ",")
 	}
 	return act, nil
 }
@@ -122,18 +124,10 @@ func userActor(u tbstore.User) Actor {
 }
 
 // Me describes the caller.
-func (a *App) Me(ctx context.Context, act Actor) (tbtypes.Me, error) {
+func (a *App) Me(_ context.Context, act Actor) (tbtypes.Me, error) {
 	me := tbtypes.Me{Kind: act.Kind, Name: act.Name, Email: act.Email, Role: act.Role, TokenConnections: []string{}}
-	if act.TokenConnections != nil {
-		conns, err := a.store.ListConnections(ctx)
-		if err != nil {
-			return me, err
-		}
-		for _, c := range conns {
-			if act.mayUse(c.ID) {
-				me.TokenConnections = append(me.TokenConnections, c.Name)
-			}
-		}
+	if act.TokenConnectionNames != nil {
+		me.TokenConnections = slices.Sorted(slices.Values(act.TokenConnectionNames))
 	}
 	return me, nil
 }
@@ -145,7 +139,7 @@ var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password"
 func (a *App) allow(keys ...string) error {
 	t := a.now()
 	for _, k := range keys {
-		if !a.loginLimit.allow(k, t) {
+		if !a.loginLimit.Allow(k, t) {
 			return errf(apitypes.CodeRateLimited, "too many attempts; wait a minute and try again")
 		}
 	}

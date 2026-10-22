@@ -20,14 +20,18 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/data/pg"
 	"github.com/NordTempo/tempoDock/internal/datapanel"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbstore"
 )
 
-// App is a running tempoBase: its store, key and in-memory state. Create
-// it with Open; it is safe for concurrent use and does nothing on its own
-// (no goroutines, no timers).
+// App is a running tempoBase: its store, key, data panel and in-memory
+// state. Create it with Open; it is safe for concurrent use and does
+// nothing on its own: the only timers are the engine's, each closing a
+// database connection 60 s after its last use.
 type App struct {
 	cfg   Config
 	store *tbstore.Store
@@ -35,11 +39,16 @@ type App struct {
 	log   *slog.Logger
 	now   func() time.Time
 
+	// engine talks to the saved databases as tempoBase's roles; panel is
+	// the shared data panel over it with the App as its host.
+	engine data.Engine
+	panel  *datapanel.Panel[*tbstore.Connection]
+
 	// bcrypt caps concurrent password hashes (each is ~50 ms of CPU).
 	bcrypt chan struct{}
 	// loginLimit rate limits sign-in, setup and password attempts per
 	// client IP and per email.
-	loginLimit *limiter
+	loginLimit *httpkit.Limiter
 
 	// setupMu guards setupCode, the one-time code that creates the first
 	// admin; empty once used, or when there are users.
@@ -73,15 +82,33 @@ func New(cfg Config, st *tbstore.Store, box *secrets.Box, log *slog.Logger) *App
 	if log == nil {
 		log = slog.Default()
 	}
-	return &App{
+	a := &App{
 		cfg: cfg, store: st, box: box, log: log, now: time.Now,
+		engine:     pg.New(pg.Options{Roles: data.TempoBaseRoles, AppName: "tempobase"}),
 		bcrypt:     make(chan struct{}, 2),
-		loginLimit: newLimiter(5, 10*time.Second),
+		loginLimit: httpkit.NewLimiter(5, 10*time.Second),
 	}
+	a.panel = datapanel.New(datapanel.Options[*tbstore.Connection]{
+		Host: host{a}, Engine: a.engine, Box: box, Roles: data.TempoBaseRoles, Words: Words, Logger: log,
+	})
+	return a
 }
 
-// Close closes the database.
-func (a *App) Close() error { return a.store.Close() }
+// Words are tempoBase's wording in the data panel's messages and API docs.
+var Words = datapanel.Words{
+	Product:         "tempoBase",
+	SetupHint:       "an admin can run Set up data access in the connection's settings",
+	LoginFailedHint: "Check the user and password in the connection's URL (connection settings)",
+	SetupAction:     "Set up data access in the connection's settings",
+	ConfirmWhat:     "the connection's name",
+	Database:        "connection",
+}
+
+// Close closes the database connections and the store.
+func (a *App) Close() error {
+	a.panel.Close()
+	return a.store.Close()
+}
 
 // Store is the App's database, for `tempobase admin backup`.
 func (a *App) Store() *tbstore.Store { return a.store }
