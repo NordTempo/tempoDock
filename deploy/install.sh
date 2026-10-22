@@ -33,7 +33,7 @@
 #   LISTEN            API/UI address (default: Tailscale IP:7070 if present, else 127.0.0.1:7070)
 #   NODE_LISTEN       accept nodes on this address, e.g. "$(tailscale ip -4):7443" → [node] listen
 #   REGISTRY          "1" runs the image registry (dock-registry container) → [registry] enabled
-#   REGISTRY_NAME     the registry's host[:port] as nodes reach it → [registry] public_name
+#   REGISTRY_NAME     the registry's name in its tokens (default dock-registry) → [registry] public_name
 #   REGISTRY_LISTEN   host address the registry is published on (default 127.0.0.1:5000)
 # Node only:
 #   NODE_JOIN_TOKEN   from `dock server add` on the control plane; implies --node.
@@ -355,7 +355,7 @@ listen = ""
 enabled = false
 listen = "127.0.0.1:5000"
 storage_dir = "/var/lib/dock-registry"
-# The registry's host[:port] as nodes reach it.
+# The registry's name: the audience of its tokens.
 public_name = ""
 CONF
   fi
@@ -373,6 +373,10 @@ fi
 [[ -z "${NODE_LISTEN:-}" ]] || toml_set "$staged" node listen "\"$NODE_LISTEN\""
 if [[ "${REGISTRY:-}" == 1 ]]; then
   toml_set "$staged" registry enabled true
+  # The name only has to be set; this one is as good as any.
+  if [[ -z "${REGISTRY_NAME:-}" && -z "$(toml_get "$staged" registry public_name)" ]]; then
+    REGISTRY_NAME=dock-registry
+  fi
 fi
 [[ -z "${REGISTRY_NAME:-}" ]] || toml_set "$staged" registry public_name "\"$REGISTRY_NAME\""
 [[ -z "${REGISTRY_LISTEN:-}" ]] || toml_set "$staged" registry listen "\"$REGISTRY_LISTEN\""
@@ -539,7 +543,8 @@ else
     say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
   fi
   if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
-    say "  Registry: $(toml_get "$CONF" registry public_name) (container dock-registry on $(toml_get "$CONF" registry listen))"
+    registry_listen="$(toml_get "$CONF" registry listen)"
+    say "  Registry: $(toml_get "$CONF" registry public_name) (container dock-registry on ${registry_listen:-127.0.0.1:5000})"
   fi
 fi
 say ""

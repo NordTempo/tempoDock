@@ -10,6 +10,23 @@ import (
 	"time"
 )
 
+const clearArchivedHostPorts = `-- name: ClearArchivedHostPorts :exec
+UPDATE releases SET host_port = 0
+WHERE host_port > 0 AND service_id IN (
+    SELECT services.id FROM services
+    JOIN environments ON environments.id = services.environment_id
+    JOIN projects ON projects.id = environments.project_id
+    WHERE environments.server_id = +?1 AND projects.archived_at IS NOT NULL)
+`
+
+// Frees the host ports of archived projects' releases on a server being
+// removed (before MoveArchivedEnvironments): their containers, if any are
+// left, are on that server, not where the environments move.
+func (q *Queries) ClearArchivedHostPorts(ctx context.Context, serverID int64) error {
+	_, err := q.exec(ctx, q.clearArchivedHostPortsStmt, clearArchivedHostPorts, serverID)
+	return err
+}
+
 const consumeJoinToken = `-- name: ConsumeJoinToken :one
 UPDATE join_tokens SET used_at = ?1
 WHERE hash = +?2 AND used_at IS NULL AND expires_at > +?1
@@ -182,7 +199,7 @@ WHERE servers.id = +?1 AND servers.local = 0
 `
 
 // Removes a remote server with no environments. 0 rows: local, or
-// environments (archived projects' included) are still placed there.
+// environments are still placed there (MoveArchivedEnvironments first).
 func (q *Queries) DeleteServer(ctx context.Context, id int64) (int64, error) {
 	result, err := q.exec(ctx, q.deleteServerStmt, deleteServer, id)
 	if err != nil {
@@ -202,7 +219,7 @@ func (q *Queries) DeleteServerPlacements(ctx context.Context, serverID int64) er
 }
 
 const getServerByFingerprint = `-- name: GetServerByFingerprint :one
-SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason FROM servers
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http FROM servers
 WHERE key_fingerprint = +CAST(?1 AS TEXT) OR next_key_fingerprint = +CAST(?1 AS TEXT)
 `
 
@@ -234,6 +251,7 @@ func (q *Queries) GetServerByFingerprint(ctx context.Context, fingerprint string
 		&i.BaseDomain,
 		&i.ConnectedAt,
 		&i.DisconnectReason,
+		&i.PlainHttp,
 	)
 	return i, err
 }
@@ -373,10 +391,29 @@ func (q *Queries) ListPromotableReleases(ctx context.Context, environmentID int6
 	return items, nil
 }
 
+const moveArchivedEnvironments = `-- name: MoveArchivedEnvironments :exec
+UPDATE environments SET server_id = ?1
+WHERE server_id = +?2 AND EXISTS (
+    SELECT 1 FROM projects WHERE projects.id = environments.project_id AND projects.archived_at IS NOT NULL)
+`
+
+type MoveArchivedEnvironmentsParams struct {
+	LocalServerID int64
+	ServerID      int64
+}
+
+// Moves archived projects' environments off a server being removed, to
+// the control plane's own server: nothing of theirs runs anywhere, and an
+// environment always names a server.
+func (q *Queries) MoveArchivedEnvironments(ctx context.Context, arg MoveArchivedEnvironmentsParams) error {
+	_, err := q.exec(ctx, q.moveArchivedEnvironmentsStmt, moveArchivedEnvironments, arg.LocalServerID, arg.ServerID)
+	return err
+}
+
 const promoteServerKey = `-- name: PromoteServerKey :one
 UPDATE servers SET key_fingerprint = next_key_fingerprint, next_key_fingerprint = NULL
 WHERE id = +?1 AND next_key_fingerprint = +CAST(?2 AS TEXT)
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http
 `
 
 type PromoteServerKeyParams struct {
@@ -412,6 +449,7 @@ func (q *Queries) PromoteServerKey(ctx context.Context, arg PromoteServerKeyPara
 		&i.BaseDomain,
 		&i.ConnectedAt,
 		&i.DisconnectReason,
+		&i.PlainHttp,
 	)
 	return i, err
 }
@@ -422,7 +460,7 @@ VALUES (?1, ?2, ?3, ?4, 0, 'offline', CAST(?5 AS TEXT))
 ON CONFLICT (name) DO UPDATE SET
     key_fingerprint = excluded.key_fingerprint, next_key_fingerprint = NULL, revoked_at = NULL
 WHERE servers.revoked_at IS NOT NULL AND servers.local = 0
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http
 `
 
 type RegisterNodeServerParams struct {
@@ -469,6 +507,7 @@ func (q *Queries) RegisterNodeServer(ctx context.Context, arg RegisterNodeServer
 		&i.BaseDomain,
 		&i.ConnectedAt,
 		&i.DisconnectReason,
+		&i.PlainHttp,
 	)
 	return i, err
 }
@@ -476,7 +515,7 @@ func (q *Queries) RegisterNodeServer(ctx context.Context, arg RegisterNodeServer
 const revokeServer = `-- name: RevokeServer :one
 UPDATE servers SET key_fingerprint = NULL, next_key_fingerprint = NULL, revoked_at = ?1
 WHERE servers.id = +?2 AND servers.local = 0
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http
 `
 
 type RevokeServerParams struct {
@@ -512,6 +551,7 @@ func (q *Queries) RevokeServer(ctx context.Context, arg RevokeServerParams) (Ser
 		&i.BaseDomain,
 		&i.ConnectedAt,
 		&i.DisconnectReason,
+		&i.PlainHttp,
 	)
 	return i, err
 }
@@ -568,10 +608,10 @@ const setServerHello = `-- name: SetServerHello :one
 UPDATE servers SET
     version = ?1, docker_version = ?2,
     ingress = ?3, public_ips = ?4, tunnel_hostname = ?5,
-    memory_bytes = ?6,
-    connected_at = ?7, last_seen_at = ?7, disconnect_reason = ''
-WHERE id = +?8
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason
+    memory_bytes = ?6, plain_http = ?7,
+    connected_at = ?8, last_seen_at = ?8, disconnect_reason = ''
+WHERE id = +?9
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http
 `
 
 type SetServerHelloParams struct {
@@ -581,6 +621,7 @@ type SetServerHelloParams struct {
 	PublicIps      string
 	TunnelHostname string
 	MemoryBytes    int64
+	PlainHttp      bool
 	Now            *time.Time
 	ID             int64
 }
@@ -595,6 +636,7 @@ func (q *Queries) SetServerHello(ctx context.Context, arg SetServerHelloParams) 
 		arg.PublicIps,
 		arg.TunnelHostname,
 		arg.MemoryBytes,
+		arg.PlainHttp,
 		arg.Now,
 		arg.ID,
 	)
@@ -622,6 +664,7 @@ func (q *Queries) SetServerHello(ctx context.Context, arg SetServerHelloParams) 
 		&i.BaseDomain,
 		&i.ConnectedAt,
 		&i.DisconnectReason,
+		&i.PlainHttp,
 	)
 	return i, err
 }
@@ -649,7 +692,7 @@ func (q *Queries) SetServerNextKey(ctx context.Context, arg SetServerNextKeyPara
 const updateServerSettings = `-- name: UpdateServerSettings :one
 UPDATE servers SET base_domain = ?1, builder = ?2
 WHERE id = +?3
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http
 `
 
 type UpdateServerSettingsParams struct {
@@ -685,6 +728,7 @@ func (q *Queries) UpdateServerSettings(ctx context.Context, arg UpdateServerSett
 		&i.BaseDomain,
 		&i.ConnectedAt,
 		&i.DisconnectReason,
+		&i.PlainHttp,
 	)
 	return i, err
 }

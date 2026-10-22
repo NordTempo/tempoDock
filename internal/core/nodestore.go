@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -145,6 +146,11 @@ func (s nodeStore) Join(ctx context.Context, req remote.JoinRequest) (remote.Ser
 		if srv, err = q.SetServerHello(ctx, helloParams(srv.ID, req.Hello, t)); err != nil {
 			return err
 		}
+		if base := joinBaseDomain(srv, req.Hello); base != "" {
+			if srv, err = q.UpdateServerSettings(ctx, store.UpdateServerSettingsParams{BaseDomain: base, Builder: srv.Builder, ID: srv.ID}); err != nil {
+				return err
+			}
+		}
 		return q.SetJoinTokenServer(ctx, store.SetJoinTokenServerParams{ServerID: srv.ID, ID: tok.ID})
 	})
 	if err != nil {
@@ -154,6 +160,20 @@ func (s nodeStore) Join(ctx context.Context, req remote.JoinRequest) (remote.Ser
 		fmt.Sprintf("server %s joined from %s with a token from %s (dock %s, key %s)", srv.Name, req.RemoteAddr, tok.CreatedBy, req.Hello.Version, req.Fingerprint))
 	c.publishServer(ctx, srv.ID)
 	return remote.Server{ID: srv.ID, Name: srv.Name}, nil
+}
+
+// joinBaseDomain is the base domain a joining node's config names
+// (BASE_DOMAIN at install), if the server has none yet and it is a valid
+// hostname; "" otherwise. A re-joining server keeps the one it has.
+func joinBaseDomain(srv store.Server, h remote.Hello) string {
+	if srv.BaseDomain != "" || h.BaseDomain == "" {
+		return ""
+	}
+	base, err := normalizeHostname(strings.TrimPrefix(strings.TrimSpace(h.BaseDomain), "*."))
+	if err != nil {
+		return ""
+	}
+	return base
 }
 
 // SetNextKey implements remote.Store.
@@ -193,7 +213,7 @@ func helloParams(serverID int64, h remote.Hello, t time.Time) store.SetServerHel
 	}
 	return store.SetServerHelloParams{
 		Version: h.Version, DockerVersion: h.DockerVersion, Ingress: ingress, PublicIps: string(raw),
-		TunnelHostname: h.TunnelHostname, MemoryBytes: toInt64(h.MemoryTotal), Now: &t, ID: serverID,
+		TunnelHostname: h.TunnelHostname, MemoryBytes: toInt64(h.MemoryTotal), PlainHttp: h.PlainHTTP, Now: &t, ID: serverID,
 	}
 }
 

@@ -375,7 +375,7 @@ func TestServerLifecycle(t *testing.T) {
 	ns := p.c.NodeStore()
 	fp := "sha256:" + strings.Repeat("ef", 32)
 	srv, err := ns.Join(p.ctx, remote.JoinRequest{SecretHash: tok.SecretHash(), Fingerprint: fp,
-		Hello: remote.Hello{Version: "v1", Facts: remote.Facts{Ingress: remote.IngressCloudflareTunnel, TunnelHostname: "abc.cfargotunnel.com"}}})
+		Hello: remote.Hello{Version: "v1", Facts: remote.Facts{Ingress: remote.IngressCloudflareTunnel, TunnelHostname: "abc.cfargotunnel.com", BaseDomain: "apps.example.dev"}}})
 	if err != nil || srv.Name != "lab2" {
 		t.Fatalf("join: %+v, %v", srv, err)
 	}
@@ -386,7 +386,8 @@ func TestServerLifecycle(t *testing.T) {
 		t.Fatalf("node key: %+v %v %v", key, ok, err)
 	}
 	got, err := p.c.GetServer(p.ctx, System, "lab2")
-	if err != nil || got.Server.Ingress != apitypes.IngressCloudflareTunnel || got.Server.TunnelHostname != "abc.cfargotunnel.com" || !got.Server.Builder {
+	if err != nil || got.Server.Ingress != apitypes.IngressCloudflareTunnel || got.Server.TunnelHostname != "abc.cfargotunnel.com" || !got.Server.Builder ||
+		got.Server.BaseDomain != "apps.example.dev" {
 		t.Fatalf("lab2: %+v, %v", got.Server, err)
 	}
 
@@ -401,6 +402,16 @@ func TestServerLifecycle(t *testing.T) {
 	}
 	if err := p.c.RemoveServer(p.ctx, System, "homelab"); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("removing a server with environments: %v", err)
+	}
+	// Once shop is archived, its staging no longer holds homelab.
+	if _, err := p.c.ArchiveProject(p.ctx, System, "shop"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.c.RemoveServer(p.ctx, System, "homelab"); err != nil {
+		t.Fatalf("removing a server with only archived environments: %v", err)
+	}
+	if got := p.server("shop", "staging"); got != p.c.local.Name {
+		t.Fatalf("archived staging moved to %s, want the local server %s", got, p.c.local.Name)
 	}
 	if err := p.c.RemoveServer(p.ctx, System, "lab2"); err != nil {
 		t.Fatal(err)
@@ -433,5 +444,19 @@ func TestDomainsFollowTheirServer(t *testing.T) {
 	d := custom.Domain
 	if d.URL != "https://shop.example.com" || len(d.DNSRecords) == 0 || d.DNSRecords[0] != (apitypes.DNSRecord{Type: "CNAME", Name: "shop.example.com", Value: "t1.cfargotunnel.com"}) {
 		t.Fatalf("tunnel domain: %+v", d)
+	}
+}
+
+// A node whose Caddy has TLS disabled says so in hello; its domains are
+// http:// even though the control plane serves TLS.
+func TestPlainHTTPNode(t *testing.T) {
+	p, _ := labPool(t)
+	lab := p.ids["homelab"]
+	p.nodes.add(lab, p.rts[lab], remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect, PublicIPs: []string{"192.0.2.7"}, PlainHTTP: true}})
+	p.c.NodeStatus(p.nodes.State(lab))
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	d, err := p.c.AddDomain(p.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
+	if err != nil || d.Domain.URL != "http://shop.example.com" {
+		t.Fatalf("domain on a plain HTTP node: %+v, %v", d.Domain, err)
 	}
 }

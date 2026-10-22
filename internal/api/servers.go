@@ -73,7 +73,7 @@ func registerServers(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "remove-server", Method: http.MethodDelete, Path: serverPathT,
 		Summary: "Remove a server", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "Only a server with no environments placed on it, and never the control plane's own. Scope: admin, unlimited.",
+		Description: "Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Scope: admin, unlimited.",
 	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*struct{}, error) {
 		return nil, s.core.RemoveServer(ctx, actor, in.Server)
 	})

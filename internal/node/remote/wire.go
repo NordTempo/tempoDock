@@ -35,6 +35,14 @@ type Facts struct {
 	Builder bool `json:"builder"`
 	// MemoryTotal is the machine's memory in bytes, for placement.
 	MemoryTotal uint64 `json:"memory_total"`
+	// PlainHTTP is true when the node's Caddy serves apps over http://
+	// only ([caddy] disable_tls in direct mode): no certificates to wait
+	// for, and app URLs are http://.
+	PlainHTTP bool `json:"plain_http,omitempty"`
+	// BaseDomain is the node config's base_domain (BASE_DOMAIN at install).
+	// The control plane takes it when the server joins without one; after
+	// that `dock server update --base-domain` decides.
+	BaseDomain string `json:"base_domain,omitempty"`
 }
 
 // Hello is what the control plane learns about a node each time it

@@ -188,7 +188,7 @@ func newServerRemoveCmd(g *globals) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "remove <name>",
-		Short: "Remove a server with nothing placed on it (admin)",
+		Short: "Remove a server no live project uses (admin)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes {
@@ -334,7 +334,14 @@ already on the server stay where they are.`,
 				return err
 			}
 			return g.io.Print(sv, func() error {
-				g.io.Successf("Server %s accepts %s", sv.Name, accepts(sv))
+				builds, base := "doesn't build", "no base domain"
+				if sv.Builder {
+					builds = "builds images"
+				}
+				if sv.BaseDomain != "" {
+					base = "base domain " + sv.BaseDomain
+				}
+				g.io.Successf("Server %s accepts %s; %s; %s", sv.Name, accepts(sv), builds, base)
 				return nil
 			})
 		},

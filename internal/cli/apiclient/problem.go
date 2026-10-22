@@ -86,6 +86,12 @@ var exitHints = map[output.ExitCode]string{
 	output.ExitIncompatible: "Update the CLI to match the server's version.",
 }
 
+// codeHints replace the exit code's hint for codes where it would mislead:
+// a server_offline 503 comes from a control plane that is answering.
+var codeHints = map[string]string{
+	"server_offline": "The control plane is fine; the server the environment runs on isn't connected, and its apps keep running. Check `dock server list`, and the node there (`journalctl -u dock-node`).",
+}
+
 // problemError turns a non-2xx response into an *output.Error wrapping a
 // *Problem. Bodies that aren't problem+json (say, a proxy's HTML page) still
 // yield a Problem built from the status.
@@ -111,5 +117,9 @@ func problemExit(p *Problem, status int) error {
 	if e, ok := codeExits[p.Code]; ok {
 		exit = e
 	}
-	return &output.Error{Exit: exit, Code: p.Code, Hint: exitHints[exit], Err: p}
+	hint, ok := codeHints[p.Code]
+	if !ok {
+		hint = exitHints[exit]
+	}
+	return &output.Error{Exit: exit, Code: p.Code, Hint: hint, Err: p}
 }

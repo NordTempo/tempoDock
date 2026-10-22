@@ -111,7 +111,7 @@ the others also change an existing config, touching only their own keys.
 | `CLOUDFLARED_VERSION`, `CLOUDFLARED_SHA256` | `2026.10.3`, pinned | Another `cloudflared` release and the SHA-256 of `cloudflared-linux-<arch>` from its release notes |
 | `NODE_LISTEN` | empty | Accept nodes on this address, e.g. `100.64.0.10:7443` → `[node] listen`. Control plane only |
 | `REGISTRY` | empty | `1` runs the [image registry](#registry) → `[registry] enabled`. Control plane only |
-| `REGISTRY_NAME` | empty | The registry's name in its tokens, e.g. `dock-registry` → `[registry] public_name` |
+| `REGISTRY_NAME` | `dock-registry` with `REGISTRY=1` | The registry's name in its tokens → `[registry] public_name` |
 | `REGISTRY_LISTEN` | `127.0.0.1:5000` | Host address the registry container is published on → `[registry] listen` |
 | `NODE_JOIN_TOKEN` | empty | From `dock server add`; implies `--node`. Needed on the first run, and to re-join |
 
@@ -359,8 +359,7 @@ else.
    tokens carry it.
 
    ```sh
-   sudo NODE_LISTEN="$(tailscale ip -4):7443" REGISTRY=1 REGISTRY_NAME=dock-registry \
-     DOCK_BINARY=./dock ./deploy/install.sh
+   sudo NODE_LISTEN="$(tailscale ip -4):7443" REGISTRY=1 DOCK_BINARY=./dock ./deploy/install.sh
    ```
 
 2. **Anywhere you're logged in as an admin:** add the server. Choose the
@@ -391,8 +390,9 @@ else.
    `dock-node.service`. The node reports its ingress mode, public IP or
    tunnel hostname, Docker version and memory every time it connects.
 
-4. **Check** that it's online, and set its base domain for generated
-   hostnames:
+4. **Check** that it's online. A `BASE_DOMAIN` given to the node's
+   install becomes its base domain for generated hostnames when it joins;
+   otherwise set one (this also changes it later):
 
    ```sh
    dock server list
@@ -408,13 +408,21 @@ control plane is unreachable. Stopping or upgrading it never stops apps.
 |---|---|
 | `dock server revoke homelab` | Forgets its key and drops the link. It stays out until it joins again; its apps keep running, but nothing deploys there |
 | `dock server rotate-key homelab` | The online node switches to a new key |
-| `dock server remove homelab` | Only once nothing is placed on it |
+| `dock server remove homelab` | Only once no live project uses it; archive projects first. Archived projects' environments move to the control plane's server. Containers a revoked or offline server still runs stay there; remove them by hand |
 
 Upgrade a node like the control plane: re-run `install.sh` with the new
 binary; no token needed. Upgrade the control plane first. To re-join (after
 `dock server revoke`, or once the control plane's key changed), get a new
 token with `dock server add` and re-run with it as `NODE_JOIN_TOKEN`. Node
 logs: `journalctl -u dock-node`.
+
+What to expect, measured on two LAN machines (control plane building,
+node non-production only, plain HTTP): joining takes about 20 ms; a source
+deploy to the node (build on the control plane, push, pull by digest over
+the link, health check) 5 s with a warm build cache; promoting it to
+production 6 s. Upgrading the control plane drops node links for about a
+second. A stopped node turns `offline` at once, deploys to it fail
+immediately with `server_offline`, and its apps keep serving.
 
 ### Registry
 
@@ -427,7 +435,7 @@ the same on every server. Nodes hold no registry credentials; the control
 plane hands them a short-lived token per pull or push.
 
 ```sh
-sudo REGISTRY=1 REGISTRY_NAME=dock-registry DOCK_BINARY=./dock ./deploy/install.sh
+sudo REGISTRY=1 DOCK_BINARY=./dock ./deploy/install.sh
 ```
 
 | What | Where |

@@ -371,9 +371,11 @@ func (c *Core) RotateServerKey(ctx context.Context, a Actor, name string) (apity
 	return c.serverDetail(ctx, srv.ID)
 }
 
-// RemoveServer removes a remote server with no environments (archived
-// projects' included), or cancels the join tokens of a server that hasn't
-// joined yet. Its project pins go with it. Admin only.
+// RemoveServer removes a remote server no live project has environments
+// on, or cancels the join tokens of a server that hasn't joined yet. Its
+// project pins go with it, and archived projects' environments move to
+// the local server (nothing of theirs runs; containers an unreachable
+// server still had are left to it). Admin only.
 func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "removing a server"); err != nil {
 		return err
@@ -401,9 +403,15 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		if err := q.DeleteServerPlacements(ctx, srv.ID); err != nil {
 			return err
 		}
+		if err := q.ClearArchivedHostPorts(ctx, srv.ID); err != nil {
+			return err
+		}
+		if err := q.MoveArchivedEnvironments(ctx, store.MoveArchivedEnvironmentsParams{LocalServerID: c.local.ID, ServerID: srv.ID}); err != nil {
+			return err
+		}
 		removed, err := q.DeleteServer(ctx, srv.ID)
 		if err == nil && removed == 0 {
-			return conflict("server %s still has environments; delete them (or their projects) first; `dock server show %s` lists them", srv.Name, srv.Name)
+			return conflict("server %s still has environments; archive their projects first; `dock server show %s` lists them", srv.Name, srv.Name)
 		}
 		return err
 	})
@@ -472,8 +480,9 @@ type serverIngress struct {
 	publicIPs  []string
 	tunnel     string // CNAME target of its Cloudflare tunnel
 	baseDomain string
-	// plainHTTP: the local server serves apps over http:// only
-	// ([caddy] disable_tls in direct mode).
+	// plainHTTP: the server serves apps over http:// only ([caddy]
+	// disable_tls in direct mode): its own config on the local server, a
+	// hello fact on a remote one.
 	plainHTTP bool
 }
 
@@ -485,6 +494,7 @@ func (c *Core) ingressOf(s store.Server) serverIngress {
 	ing := serverIngress{mode: apitypes.Ingress(s.Ingress), tunnel: s.TunnelHostname, baseDomain: s.BaseDomain, publicIPs: []string{}}
 	_ = json.Unmarshal([]byte(s.PublicIps), &ing.publicIPs)
 	if !s.Local {
+		ing.plainHTTP = ing.mode == apitypes.IngressDirect && s.PlainHttp
 		return ing
 	}
 	ing.mode = apitypes.Ingress(c.cfg.Ingress.Mode)

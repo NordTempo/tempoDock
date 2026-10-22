@@ -207,6 +207,7 @@ type Server struct {
 	BaseDomain           string
 	ConnectedAt          *time.Time
 	DisconnectReason     string
+	PlainHttp            bool
 }
 
 type ServerStat struct {
