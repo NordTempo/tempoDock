@@ -1626,6 +1626,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "exact_rows": {
+            "format": "int64",
+            "type": "integer"
+          },
           "foreign_keys": {
             "items": {
               "$ref": "#/components/schemas/DataForeignKey"

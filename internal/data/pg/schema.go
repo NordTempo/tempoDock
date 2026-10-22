@@ -1,12 +1,16 @@
 package pg
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
@@ -149,7 +153,7 @@ func (e *Engine) Schema(ctx context.Context, t data.Target, c data.Call, sensiti
 	var cat *catalog
 	err := e.read(ctx, t, c, apitypes.DataQueryTimeout, func(cn *conn) error {
 		var err error
-		cat, err = e.catalog(ctx, t, cn)
+		cat, err = e.catalog(ctx, t, cn, true)
 		return err
 	})
 	if err != nil {
@@ -184,8 +188,10 @@ func markSensitive(cat *catalog, marks map[colRef]bool) apitypes.DataSchema {
 	return out
 }
 
-// catalog returns the service's cached catalog, or reads it on cn.
-func (e *Engine) catalog(ctx context.Context, t data.Target, cn *conn) (*catalog, error) {
+// catalog returns the service's cached catalog, or reads it on cn. Reads
+// run in a read transaction (inTx) and also count a few never-analysed
+// tables (countUnanalysed); Commit's read outside one doesn't.
+func (e *Engine) catalog(ctx context.Context, t data.Target, cn *conn, inTx bool) (*catalog, error) {
 	e.mu.Lock()
 	cat := e.schemas[t.ServiceID]
 	e.mu.Unlock()
@@ -200,12 +206,62 @@ func (e *Engine) catalog(ctx context.Context, t data.Target, cn *conn) (*catalog
 	if err != nil {
 		return nil, err
 	}
+	if inTx {
+		if err := e.countUnanalysed(ctx, cn, cat); err != nil {
+			return nil, err
+		}
+	}
 	e.mu.Lock()
 	if !e.closed {
 		e.schemas[t.ServiceID] = cat
 	}
 	e.mu.Unlock()
 	return cat, nil
+}
+
+// Exact counts for never-analysed tables, whose reltuples is -1 until the
+// first ANALYZE or autovacuum: rather than "unknown", count the smallest
+// few, each under a short statement timeout.
+const (
+	maxExactCounts    = 4
+	exactCountTimeout = 200 * time.Millisecond
+)
+
+// countUnanalysed sets ExactRows on up to maxExactCounts never-analysed
+// tables and materialized views of cat, smallest first, as the reader in
+// cn's read transaction. Each count runs in a savepoint under
+// e.countTimeout, so a timeout (or any database error) only leaves that
+// table unknown and the transaction, its timeouts included, as it was.
+func (e *Engine) countUnanalysed(ctx context.Context, cn *conn, cat *catalog) error {
+	var todo []*apitypes.DataTable
+	for i := range cat.tables {
+		tb := &cat.tables[i]
+		if tb.EstimatedRows < 0 && (tb.Kind == apitypes.TableKindTable || tb.Kind == apitypes.TableKindMatView) {
+			todo = append(todo, tb)
+		}
+	}
+	slices.SortStableFunc(todo, func(a, b *apitypes.DataTable) int { return cmp.Compare(a.SizeBytes, b.SizeBytes) })
+	if len(todo) > maxExactCounts {
+		todo = todo[:maxExactCounts]
+	}
+	timeout := "SAVEPOINT dock_count; SET LOCAL statement_timeout = " + strconv.FormatInt(max(e.countTimeout.Milliseconds(), 1), 10)
+	for _, tb := range todo {
+		if err := simpleExec(ctx, cn.pg, timeout); err != nil {
+			return dbError(err)
+		}
+		var n int64
+		err := cn.pg.QueryRow(ctx, "SELECT count(*) FROM "+pgx.Identifier{tb.Schema, tb.Name}.Sanitize(), pgx.QueryExecModeSimpleProtocol).Scan(&n)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := simpleExec(ctx, cn.pg, "ROLLBACK TO SAVEPOINT dock_count"); err != nil {
+			return dbError(err)
+		}
+		if err == nil {
+			tb.ExactRows = &n
+		}
+	}
+	return nil
 }
 
 // parseCatalog builds a catalog from catalogSQL's document.

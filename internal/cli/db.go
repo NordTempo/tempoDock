@@ -226,7 +226,7 @@ func newDBTablesCmd(g *globals) *cobra.Command {
 		return g.io.Print(sc.Tables, func() error {
 			t := g.io.Table("table", "kind", "rows", "size", "key")
 			for _, tb := range sc.Tables {
-				t.Row(tb.Schema+"."+tb.Name, string(tb.Kind), estimate(tb.EstimatedRows), bytesize(tb.SizeBytes), dash(strings.Join(tb.PrimaryKey, ", ")))
+				t.Row(tb.Schema+"."+tb.Name, string(tb.Kind), tableRows(tb), bytesize(tb.SizeBytes), dash(strings.Join(tb.PrimaryKey, ", ")))
 			}
 			return t.Flush()
 		})
@@ -240,6 +240,15 @@ func estimate(n int64) string {
 		return "?"
 	}
 	return "~" + itoa(n)
+}
+
+// tableRows renders a table's row count: exact when the server counted a
+// never-analysed table, else the estimate.
+func tableRows(tb apitypes.DataTable) string {
+	if tb.ExactRows != nil {
+		return itoa(*tb.ExactRows)
+	}
+	return estimate(tb.EstimatedRows)
 }
 
 func newDBSchemaCmd(g *globals) *cobra.Command {
@@ -302,7 +311,7 @@ func findTable(sc apitypes.DataSchema, name string) (apitypes.DataTable, error) 
 
 // describeTable prints one table's structure.
 func describeTable(o *output.IO, tb apitypes.DataTable) error {
-	_, _ = fmt.Fprintf(o.Out, "%s.%s  %s  %s rows  %s\n", tb.Schema, tb.Name, tb.Kind, estimate(tb.EstimatedRows), bytesize(tb.SizeBytes))
+	_, _ = fmt.Fprintf(o.Out, "%s.%s  %s  %s rows  %s\n", tb.Schema, tb.Name, tb.Kind, tableRows(tb), bytesize(tb.SizeBytes))
 	if tb.Comment != "" {
 		_, _ = fmt.Fprintln(o.Out, tb.Comment)
 	}

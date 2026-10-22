@@ -1940,6 +1940,8 @@ export interface components {
             editable: boolean;
             /** Format: int64 */
             estimated_rows: number;
+            /** Format: int64 */
+            exact_rows?: number;
             foreign_keys: components["schemas"]["DataForeignKey"][] | null;
             indexes: components["schemas"]["DataIndex"][] | null;
             /** @enum {string} */

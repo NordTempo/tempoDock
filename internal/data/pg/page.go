@@ -68,7 +68,7 @@ type cursor struct {
 func (e *Engine) Page(ctx context.Context, t data.Target, c data.Call, req apitypes.DataPageRequest) (apitypes.DataPage, error) {
 	var page apitypes.DataPage
 	err := e.read(ctx, t, c, apitypes.DataQueryTimeout, func(cn *conn) error {
-		cat, err := e.catalog(ctx, t, cn)
+		cat, err := e.catalog(ctx, t, cn, true)
 		if err != nil {
 			return err
 		}
@@ -472,7 +472,7 @@ func (e *Engine) References(ctx context.Context, t data.Target, c data.Call, req
 	}
 	var out []apitypes.DataReferences
 	err := e.read(ctx, t, c, apitypes.DataQueryTimeout, func(cn *conn) error {
-		cat, err := e.catalog(ctx, t, cn)
+		cat, err := e.catalog(ctx, t, cn, true)
 		if err != nil {
 			return err
 		}

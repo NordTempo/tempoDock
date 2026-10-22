@@ -114,7 +114,7 @@ New package `internal/data` (engine-neutral types) and `internal/data/pg`
 | Streaming | SQL results go out as NDJSON: a header frame (columns, types), row frames of up to 500 rows, an end frame (row count, truncated, duration). Rows are encoded as they are read; memory is bounded by one batch. |
 | Caps | UI 10 000 rows per query, CLI default 1 000 and `--limit` up to 100 000, 64 MB per response, cells over 8 KB truncated (full value on request). Hitting a cap ends the stream with `truncated: true`. |
 | Cancel | Client disconnect cancels the context; pgx cancels the query on the server. |
-| Table pages | Keyset pagination: `ORDER BY` the primary key (or a sort column plus the key), cursor = last key values, `LIMIT 100`. No `OFFSET`. Tables without a primary key page by `ctid` and are read-only. Row counts are `pg_class.reltuples` estimates; exact count on request, under the statement timeout. |
+| Table pages | Keyset pagination: `ORDER BY` the primary key (or a sort column plus the key), cursor = last key values, `LIMIT 100`. No `OFFSET`. Tables without a primary key page by `ctid` and are read-only. Row counts are `pg_class.reltuples` estimates; exact count on request, under the statement timeout. Never-analysed tables (`reltuples = -1`) get a `COUNT(*)` with the catalog, the smallest 4 at most, 200 ms each; still unknown after that. |
 | Filters | Structured (`column op value`) and compiled to parameterised SQL. Free-form filtering is the SQL editor. |
 | Introspection | One catalog query per panel open (schemas, tables, columns, keys, foreign keys, indexes, sizes), cached in memory 60 s. Feeds the table list, FK navigation, editor autocomplete and the schema view. |
 

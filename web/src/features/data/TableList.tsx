@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useShortcuts } from "../../shell/keys";
-import { compactCount, tableName } from "./cells";
+import { compactCount, tableName, tableRows } from "./cells";
 import type { DataTable } from "./types";
 
 const kindMark: Partial<Record<DataTable["kind"], string>> = {
@@ -11,7 +11,7 @@ const kindMark: Partial<Record<DataTable["kind"], string>> = {
 };
 
 /**
- * The schema sidebar: tables grouped by schema with estimated rows, and a
+ * The schema sidebar: tables grouped by schema with row counts, and a
  * filter (`/`). `selected` and `onSelect` use "schema.name".
  */
 export function TableList({
@@ -81,7 +81,7 @@ export function TableList({
                         <span className="text-faint">{kindMark[t.kind]}</span>
                       )}
                       <span className="ml-auto pr-1.5 text-faint">
-                        {compactCount(t.estimated_rows)}
+                        {compactCount(tableRows(t))}
                       </span>
                     </button>
                   </li>

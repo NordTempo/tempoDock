@@ -57,7 +57,8 @@ dock db saved run open-orders
 ```
 
 - Pages are keyset pages (100 rows, at most 1 000), never `OFFSET`; the
-  cursor for the next one is printed on stderr. Row counts are estimates;
+  cursor for the next one is printed on stderr. Row counts are estimates
+  (`~N`); tables never analysed are counted exactly when small, else `?`.
   `--count` counts exactly.
 - Filters: `col=value`, `col=op:value` (`eq ne lt lte gt gte like ilike in`),
   `col=is_null`, `col=not_null`. Anything fancier is SQL.

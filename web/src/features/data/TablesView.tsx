@@ -2,7 +2,7 @@ import { useReducer, useState } from "react";
 import type { ServiceRef } from "../../data/types";
 import { plural } from "../../ui/format";
 import { type TableQuery, useTableRows } from "./api";
-import { cellInput, estimate, filterFlag, rowKey, tableName } from "./cells";
+import { cellInput, filterFlag, rowCount, rowKey, tableName } from "./cells";
 import { editsReducer, noEdits, rowId, toChanges } from "./edits";
 import { FilterBar } from "./FilterBar";
 import { Grid, type GridCol } from "./Grid";
@@ -95,10 +95,12 @@ export function TablesView({
     });
 
   const loaded = data.length;
-  const total =
-    pages.at(-1)?.exact_rows ??
-    pages[0]?.estimated_rows ??
-    table.estimated_rows;
+  // An exact count asked for wins, then the schema's count of a
+  // never-analysed table, then the estimate.
+  const total = {
+    estimated: pages[0]?.estimated_rows ?? table.estimated_rows,
+    exact: pages.at(-1)?.exact_rows ?? table.exact_rows,
+  };
   const cli = [
     `dock db rows ${name}`,
     ...filters.map(filterFlag).filter(Boolean),
@@ -116,7 +118,7 @@ export function TablesView({
           <span className="text-mut">
             {filters.length
               ? `${loaded}${rows.hasNextPage ? "+" : ""} matching`
-              : estimate(total)}
+              : rowCount(total)}
             {!table.editable &&
               (pk.length ? ", read-only view" : ", no primary key: read-only")}
           </span>

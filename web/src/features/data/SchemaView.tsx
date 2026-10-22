@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Scroll } from "../../ui/kit";
-import { byteSize, estimate, tableName } from "./cells";
+import { byteSize, rowCount, tableName, tableRows } from "./cells";
 import type { DataTable } from "./types";
 
 const kindLabel: Record<DataTable["kind"], string> = {
@@ -44,7 +44,7 @@ export function SchemaView({
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h2 className="font-mono text-md font-semibold">{name}</h2>
         <span className="text-mut">
-          {kindLabel[table.kind]}, {estimate(table.estimated_rows)}
+          {kindLabel[table.kind]}, {rowCount(tableRows(table))}
           {table.size_bytes > 0 && `, ${byteSize(table.size_bytes)}`}
           {!table.editable && ", read-only"}
         </span>

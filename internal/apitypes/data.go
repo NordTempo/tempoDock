@@ -349,10 +349,14 @@ type DataTable struct {
 	Kind   DataTableKind `json:"kind" enum:"table,partitioned_table,view,materialized_view,foreign_table"`
 	// EstimatedRows is Postgres' estimate (pg_class.reltuples); -1 when
 	// the table was never analysed.
-	EstimatedRows int64        `json:"estimated_rows"`
-	SizeBytes     int64        `json:"size_bytes"`
-	Comment       string       `json:"comment,omitempty"`
-	Columns       []DataColumn `json:"columns"`
+	EstimatedRows int64 `json:"estimated_rows"`
+	// ExactRows is set for a few never-analysed tables (the smallest),
+	// counted with COUNT(*) when the catalog is read if that finished
+	// within 200 ms. Unset while EstimatedRows is -1: unknown.
+	ExactRows *int64       `json:"exact_rows,omitempty"`
+	SizeBytes int64        `json:"size_bytes"`
+	Comment   string       `json:"comment,omitempty"`
+	Columns   []DataColumn `json:"columns"`
 	// PrimaryKey lists the key's columns in order. Empty means pages go by
 	// ctid and the table is read-only.
 	PrimaryKey  []string         `json:"primary_key"`
