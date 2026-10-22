@@ -53,6 +53,10 @@ func (noBuilder) Build(context.Context, node.BuildRequest) (string, error) {
 	return "", errors.New("no builds in this test")
 }
 
+func (noBuilder) PruneBuildCache(context.Context, int64) (node.PruneResult, error) {
+	return node.PruneResult{}, nil
+}
+
 // dockerHarness starts Core on the local Docker Engine with a temp data
 // dir. DB IDs start at a random high number, so container labels and names
 // (dock_p<id>_...) can't match those of another daemon on the same Docker

@@ -186,6 +186,10 @@ func TestBuildDockerfile(t *testing.T) {
 	if body := get(t, run(t, docker, "dock-test-dockerfile", id)); body != "hello dockerfile" {
 		t.Fatalf("body = %q", body)
 	}
+	// The prune API answers; a terabyte to keep leaves the shared cache be.
+	if res, err := b.PruneBuildCache(context.Background(), 1<<40); err != nil || res.Removed != 0 {
+		t.Fatalf("PruneBuildCache = %+v, %v", res, err)
+	}
 }
 
 func TestBuildRailpack(t *testing.T) {

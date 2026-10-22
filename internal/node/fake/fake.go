@@ -297,6 +297,15 @@ func (r *Runtime) RemoveImage(_ context.Context, ref string) error {
 	return nil
 }
 
+// PruneImages implements node.Containers, recorded as "prune images
+// keep=<ids>". The fake has no dangling images, so nothing is removed.
+func (r *Runtime) PruneImages(_ context.Context, keep []string) (node.PruneResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.op("prune images keep=%s", strings.Join(keep, ","))
+	return node.PruneResult{}, nil
+}
+
 // HasImageID reports whether an image with this ID is present under any
 // reference.
 func (r *Runtime) HasImageID(id string) bool {
@@ -615,6 +624,15 @@ func (r *Runtime) Build(_ context.Context, req node.BuildRequest) (string, error
 		_, _ = fmt.Fprintf(req.Logs, "Pushed %s\n", p.Ref)
 	}
 	return r.images[req.Tag], nil
+}
+
+// PruneBuildCache implements node.Builder, recorded as "prune cache
+// <keepBytes>".
+func (r *Runtime) PruneBuildCache(_ context.Context, keepBytes int64) (node.PruneResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.op("prune cache %d", keepBytes)
+	return node.PruneResult{}, nil
 }
 
 // ApplyRoutes implements node.Proxy.

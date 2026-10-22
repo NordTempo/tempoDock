@@ -70,6 +70,8 @@ function problemKey(p: Problem) {
       return `staged:${p.environment.environment.id}`;
     case "domain":
       return `domain:${p.domain.hostname}`;
+    case "alert":
+      return `alert:${p.alert.id}`;
     default:
       return `${p.kind}:${p.service.service.id}`;
   }
@@ -250,6 +252,32 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
     }
     case "staged":
       return <StagedRow n={n} environment={p.environment} project={project} />;
+    case "alert": {
+      const a = p.alert;
+      const critical = a.severity === "critical";
+      return (
+        <Row
+          n={key}
+          tone={critical ? "fail" : "warn"}
+          glyph={critical ? "✕" : "▲"}
+          title={a.kind === "disk" ? "Disk filling up" : "Alert"}
+          where={
+            a.environment && a.service
+              ? `${a.environment}/${a.service}`
+              : (a.server ?? "")
+          }
+          time={since(a.opened_at)}
+          action={
+            <Link to="/alerts" className={actionClass} data-problem={n}>
+              Alerts
+            </Link>
+          }
+        >
+          {a.title}.
+          {a.message && <span className="text-mut"> {a.message}</span>}
+        </Row>
+      );
+    }
     case "server_offline":
       return (
         <Row

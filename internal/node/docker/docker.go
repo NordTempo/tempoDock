@@ -179,6 +179,35 @@ func (r *Runtime) RemoveImage(ctx context.Context, ref string) error {
 	return nil
 }
 
+// PruneImages implements node.Containers. Docker's own `image prune`
+// can't be told what to keep, so this lists dangling images and removes
+// them one by one, without force: one a container uses is refused and
+// skipped.
+func (r *Runtime) PruneImages(ctx context.Context, keep []string) (node.PruneResult, error) {
+	res, err := r.cli.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("dangling", "true")})
+	if err != nil {
+		return node.PruneResult{}, fmt.Errorf("list dangling images: %w", err)
+	}
+	var out node.PruneResult
+	for _, img := range res.Items {
+		if slices.Contains(keep, img.ID) {
+			continue
+		}
+		_, err := r.cli.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{PruneChildren: true})
+		switch {
+		case err == nil:
+			out.Removed++
+			out.ReclaimedBytes += img.Size
+		case cerrdefs.IsConflict(err) || cerrdefs.IsNotFound(err):
+		case ctx.Err() != nil:
+			return out, ctx.Err()
+		default:
+			return out, fmt.Errorf("remove image %s: %w", img.ID, err)
+		}
+	}
+	return out, nil
+}
+
 // BridgePrefix starts the host interface name of every network the runtime
 // creates, so the firewall (`dock admin firewall`) can match app traffic by
 // interface: "dk-+" in iptables.

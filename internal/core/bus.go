@@ -14,9 +14,13 @@ type busEvent struct {
 	projectID int64
 	envID     int64
 	serviceID int64
-	// serverStats marks server-wide statistics, for unlimited admins only.
+	// serverStats marks platform-wide events (server statistics, alerts),
+	// for unlimited admins only.
 	serverStats bool
 	ev          apitypes.Event
+	// alert, when set, raises or resolves an alert along with the event
+	// (alerts.go). Subscribers other than the alert engine never see it.
+	alert *alertSignal
 }
 
 // LiveEvent is an event as delivered to subscribers. Every subscriber that
@@ -27,9 +31,11 @@ type LiveEvent struct{ *liveEvent }
 
 type liveEvent struct {
 	apitypes.Event
-	once sync.Once
-	json []byte
-	err  error
+	// signal is the event's alertSignal, for the alert engine.
+	signal *alertSignal
+	once   sync.Once
+	json   []byte
+	err    error
 }
 
 func newLiveEvent(ev apitypes.Event) LiveEvent {
@@ -75,6 +81,7 @@ func (b *bus) publish(e busEvent) {
 		e.ev.Time = time.Now().UTC()
 	}
 	live := newLiveEvent(e.ev)
+	live.signal = e.alert
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for s := range b.subs {

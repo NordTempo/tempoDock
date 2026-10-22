@@ -8,6 +8,43 @@ import (
 	"time"
 )
 
+type Alert struct {
+	ID          int64
+	Key         string
+	Kind        string
+	Severity    string
+	Title       string
+	Message     string
+	Project     string
+	Environment string
+	Service     string
+	Server      string
+	OpenedAt    time.Time
+	UpdatedAt   time.Time
+	ResolvedAt  *time.Time
+}
+
+type AlertChannel struct {
+	ID              int64
+	Name            string
+	Kind            string
+	Target          string
+	Config          []byte
+	MinSeverity     string
+	RenotifyMinutes int64
+	CreatedAt       time.Time
+	LastSentAt      *time.Time
+	LastError       string
+	LastErrorAt     *time.Time
+	Failures        int64
+}
+
+type AlertNotice struct {
+	AlertID    int64
+	ChannelID  int64
+	NotifiedAt int64
+}
+
 type AuditDetail struct {
 	ID         int64
 	Sql        string
@@ -229,6 +266,7 @@ type Release struct {
 	CommitSha             string
 	CommitMessage         string
 	CommitAuthor          string
+	HistoryTrimmed        bool
 }
 
 type ReleaseEvent struct {

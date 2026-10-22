@@ -56,6 +56,50 @@ type Config struct {
 	Ingress  Ingress  `toml:"ingress"`
 	Hooks    Hooks    `toml:"hooks"`
 	Backup   Backup   `toml:"backup"`
+	// Retention and Alerts are control plane settings (ADR 0020).
+	Retention Retention `toml:"retention"`
+	Alerts    Alerts    `toml:"alerts"`
+}
+
+// Retention is how long the control plane keeps history, and when it
+// prunes servers' disks (ADR 0020). Retention runs on the statistics tick,
+// at most hourly; pruning when a server's disk passes PruneDiskPercent.
+type Retention struct {
+	// BuildLogDays keeps a release's history (build log, saved container
+	// output, progress events) this many days. Releases in their service's
+	// rollback window ([defaults] keep_releases), active and deploying
+	// ones keep theirs whatever their age.
+	BuildLogDays int `toml:"build_log_days"`
+	// AuditDays keeps audit events this many days; AuditMaxEvents, when
+	// above 0, also caps how many are kept (the oldest go first).
+	AuditDays      int `toml:"audit_days"`
+	AuditMaxEvents int `toml:"audit_max_events"`
+	// AlertDays keeps resolved alerts this many days.
+	AlertDays int `toml:"alert_days"`
+	// PruneDiskPercent: when the filesystem holding Docker's data passes
+	// it on a server, its BuildKit cache is pruned down to BuildCacheKeepMB
+	// and its dangling images outside the rollback window are removed, at
+	// most once an hour. 0 turns pruning off.
+	PruneDiskPercent int `toml:"prune_disk_percent"`
+	BuildCacheKeepMB int `toml:"build_cache_keep_mb"`
+}
+
+// Alerts sets when the control plane raises alerts (ADR 0020). Where
+// alerts are sent (webhook, Slack, email) is configured with `dock alerts
+// channel add`, not here.
+type Alerts struct {
+	// DiskWarningPercent and DiskCriticalPercent are how full a server's
+	// disk (Docker's data, or dock's) may get before a warning or critical
+	// alert.
+	DiskWarningPercent  int `toml:"disk_warning_percent"`
+	DiskCriticalPercent int `toml:"disk_critical_percent"`
+	// ServerOfflineMinutes is how long a server may be unreachable before
+	// an alert.
+	ServerOfflineMinutes int `toml:"server_offline_minutes"`
+	// A service whose container restarts CrashLoopRestarts times within
+	// CrashLoopMinutes is crash looping.
+	CrashLoopRestarts int `toml:"crash_loop_restarts"`
+	CrashLoopMinutes  int `toml:"crash_loop_minutes"`
 }
 
 // Backup configures backup jobs (ADR 0019). The repository, credentials,
@@ -234,6 +278,20 @@ func Default() Config {
 		Backup: Backup{
 			ResticImage: "restic/restic:0.18.1@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76",
 		},
+		Retention: Retention{
+			BuildLogDays:     30,
+			AuditDays:        365,
+			AlertDays:        90,
+			PruneDiskPercent: 80,
+			BuildCacheKeepMB: 2048,
+		},
+		Alerts: Alerts{
+			DiskWarningPercent:   85,
+			DiskCriticalPercent:  95,
+			ServerOfflineMinutes: 5,
+			CrashLoopRestarts:    3,
+			CrashLoopMinutes:     10,
+		},
 	}
 }
 
@@ -277,6 +335,12 @@ func (c *Config) validate() error {
 		}
 	}
 	if err := c.Hooks.validate(); err != nil {
+		return err
+	}
+	if err := c.Retention.validate(); err != nil {
+		return err
+	}
+	if err := c.Alerts.validate(); err != nil {
 		return err
 	}
 	switch c.Ingress.Mode {
@@ -335,6 +399,28 @@ func checkHostPort(field, addr string) error {
 	}
 	if err != nil {
 		return fmt.Errorf("%s %q must be host:port, e.g. \"100.64.0.10:7443\": %w", field, addr, err)
+	}
+	return nil
+}
+
+func (r Retention) validate() error {
+	switch {
+	case r.BuildLogDays < 1 || r.AuditDays < 1 || r.AlertDays < 1:
+		return errors.New("[retention] build_log_days, audit_days and alert_days must be at least 1")
+	case r.AuditMaxEvents < 0 || r.BuildCacheKeepMB < 0:
+		return errors.New("[retention] audit_max_events and build_cache_keep_mb can't be negative")
+	case r.PruneDiskPercent < 0 || r.PruneDiskPercent > 100:
+		return errors.New("[retention] prune_disk_percent must be 0 (off) to 100")
+	}
+	return nil
+}
+
+func (a Alerts) validate() error {
+	switch {
+	case a.DiskWarningPercent < 1 || a.DiskCriticalPercent > 100 || a.DiskWarningPercent > a.DiskCriticalPercent:
+		return errors.New("[alerts] needs 1 <= disk_warning_percent <= disk_critical_percent <= 100")
+	case a.ServerOfflineMinutes < 1 || a.CrashLoopMinutes < 1 || a.CrashLoopRestarts < 1:
+		return errors.New("[alerts] server_offline_minutes, crash_loop_restarts and crash_loop_minutes must be at least 1")
 	}
 	return nil
 }

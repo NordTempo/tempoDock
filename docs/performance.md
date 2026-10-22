@@ -43,8 +43,8 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
 - **Benchmarks** live in `*_bench_test.go` files; `make perf` finds them by
   that name. They cover the hot paths: project overview, service and release
   lists, audit log, variable resolution, event bus fan-out, SSE writes,
-  Caddy config rendering, source packing, `dock.toml` parsing, and prepared
-  SQLite queries. Use `b.Loop()` and `b.ReportAllocs()`, seed realistic data
+  Caddy config rendering, source packing, `dock.toml` parsing, prepared
+  SQLite queries, the retention pass and the alert engine's event handling. Use `b.Loop()` and `b.ReportAllocs()`, seed realistic data
   (the core benchmarks use a 60-service project), and add one for every new
   hot path.
 - **Comparing across machines.** A fixed pure-Go workload is timed next to
@@ -71,9 +71,9 @@ There are no waivers at the moment.
 An idle daemon does nothing: 0 CPU and almost no wake-ups. Live data is
 event driven: Docker's event stream, the in-process event bus and SSE.
 
-- The statistics tick (below) is the one always-on periodic job. `make
-  perf` measures idle windows between two ticks and budgets the tick with
-  `BenchmarkStatsTick50`.
+- The statistics tick (below) is the one always-on periodic job; alerts
+  and retention ride on it (ADR 0020). `make perf` measures idle windows
+  between two ticks and budgets the tick with `BenchmarkStatsTick50`.
 - No polling, tickers or timers without a written justification in a doc
   comment, and an entry in the table below with its interval and cost.
 - Periodic work runs only while it has a reason to (a deploy in progress, a
@@ -87,6 +87,10 @@ Everything periodic in the daemon and CLI:
 | What | Where | Interval | Runs only while | Cost |
 |---|---|---|---|---|
 | Statistics tick | `internal/core/stats.go` | 1 min, on the minute | always (ADR 0015) | a few file reads per server and container, one transaction, one `usage` event per server and per environment (`BenchmarkStatsTick50`) |
+| Alerts on the tick | `internal/core/alerts.go` | with the statistics tick | always (ADR 0020) | in memory: disk use and offline time per server, quiet crash loops; one reminder query only while alerts are open (part of `BenchmarkStatsTick50`) |
+| Retention pass | `internal/core/retention.go` | at most hourly, on the statistics tick | always (ADR 0020) | three indexed reads when nothing is due (`BenchmarkRetentionPass`, ~50 µs); otherwise batches of 200 deletes, 10 per kind |
+| Disk prune | `internal/core/retention.go` | at most hourly per server, on the statistics tick | a server's Docker disk is past `prune_disk_percent` | one image list and removals, a BuildKit prune on builders, in the background |
+| Alert delivery retry | `internal/core/alerts_notify.go` | 0, 10 s, 1 min, 5 min, 15 min | a channel has notifications queued | one HTTP POST or SMTP session per attempt |
 | Live statistics | `internal/core/stats.go` | 3 s | someone watches a server or service live | the same reads for what is watched |
 | SSE heartbeat | `internal/api/streams.go` | 25 s | an SSE stream is open | one small write per stream |
 | Domain DNS/TLS checks | `internal/core/domains.go` | 5 s, backing off to 5 min | a domain is pending | a DNS lookup and TLS dial per domain |

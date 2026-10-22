@@ -108,6 +108,10 @@ type Core struct {
 
 	// stats holds the latest resource samples and the live samplers.
 	stats *statsState
+	// alerts is the alert engine (alerts.go); retention the state of
+	// retention passes and disk prunes (retention.go).
+	alerts    *alertEngine
+	retention *retention
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
 
@@ -151,6 +155,8 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		rt:         o.Runtime,
 		reg:        o.Registry,
 		stats:      newStatsState(),
+		alerts:     newAlertEngine(),
+		retention:  newRetention(),
 		log:        o.Logger,
 		bus:        newBus(),
 		servers:    map[int64]*serverState{},
@@ -234,6 +240,9 @@ func (c *Core) Start(ctx context.Context) error {
 	events, err := c.rt.Events(c.ctx)
 	if err != nil {
 		return fmt.Errorf("runtime events: %w", err)
+	}
+	if err := c.startAlerts(ctx); err != nil {
+		return err
 	}
 	c.wg.Add(4)
 	go c.watchRuntime(events)
