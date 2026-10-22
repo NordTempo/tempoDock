@@ -27,7 +27,7 @@ import {
   ErrorText,
   Glyph,
   Page,
-  Scroll,
+  Panel,
   SectionHead,
   StateText,
   TitleRow,
@@ -171,7 +171,7 @@ function StatusSentence({ detail }: { detail: ServerDetail }) {
   switch (s.status) {
     case "offline":
       return (
-        <p className="text-lg leading-normal">
+        <p className="text-md leading-normal">
           <span className="text-fail">✕</span> Offline
           {s.last_seen_at && `, last seen ${ago(s.last_seen_at)}`}.{" "}
           <span className="text-mut">
@@ -183,7 +183,7 @@ function StatusSentence({ detail }: { detail: ServerDetail }) {
       );
     case "joining":
       return (
-        <p className="text-lg leading-normal">
+        <p className="text-md leading-normal">
           <span className="text-prog">
             <Glyph char="◐" />
           </span>{" "}
@@ -197,7 +197,7 @@ function StatusSentence({ detail }: { detail: ServerDetail }) {
       );
     case "incompatible":
       return (
-        <p className="text-lg leading-normal">
+        <p className="text-md leading-normal">
           <span className="text-warn">▲</span> Connected, but dock{" "}
           {s.version || "there"} is too far from this control plane's.{" "}
           <span className="text-mut">
@@ -207,7 +207,7 @@ function StatusSentence({ detail }: { detail: ServerDetail }) {
       );
     case "revoked":
       return (
-        <p className="text-lg leading-normal">
+        <p className="text-md leading-normal">
           <span className="text-mut">○</span> Revoked
           {s.revoked_at && ` ${ago(s.revoked_at)}`}.{" "}
           <span className="text-mut">
@@ -221,7 +221,7 @@ function StatusSentence({ detail }: { detail: ServerDetail }) {
       break;
   }
   return (
-    <p className="text-lg leading-normal">
+    <p className="text-md leading-normal">
       <span className="text-ok">●</span> Online, running {what}.{" "}
       <span className="text-mut">
         {reserved} {s.disabled_for_placement && "Takes no new projects."}
@@ -344,7 +344,7 @@ function Placements({ detail }: { detail: ServerDetail }) {
     return <p className="text-mut">No projects are placed here yet.</p>;
   }
   return (
-    <Scroll>
+    <Panel>
       <table>
         <thead>
           <tr>
@@ -375,7 +375,7 @@ function Placements({ detail }: { detail: ServerDetail }) {
           ))}
         </tbody>
       </table>
-    </Scroll>
+    </Panel>
   );
 }
 
@@ -404,7 +404,7 @@ function Services({
       {services.length === 0 ? (
         <p className="text-mut">No services run here.</p>
       ) : (
-        <Scroll>
+        <Panel>
           <table>
             <thead>
               <tr>
@@ -424,7 +424,7 @@ function Services({
               ))}
             </tbody>
           </table>
-        </Scroll>
+        </Panel>
       )}
     </section>
   );

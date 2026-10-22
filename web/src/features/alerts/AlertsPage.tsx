@@ -6,7 +6,7 @@ import {
   ErrorText,
   Glyph,
   Page,
-  Scroll,
+  Panel,
   SectionHead,
   TitleRow,
 } from "../../ui/kit";
@@ -91,7 +91,7 @@ function AlertTable({
   resolvable?: boolean;
 }) {
   return (
-    <Scroll>
+    <Panel>
       <table>
         <thead>
           <tr>
@@ -108,7 +108,7 @@ function AlertTable({
           ))}
         </tbody>
       </table>
-    </Scroll>
+    </Panel>
   );
 }
 
@@ -172,7 +172,7 @@ function Channels() {
         Channels
       </SectionHead>
       {channels.length > 0 ? (
-        <Scroll>
+        <Panel>
           <table>
             <thead>
               <tr>
@@ -192,7 +192,7 @@ function Channels() {
               ))}
             </tbody>
           </table>
-        </Scroll>
+        </Panel>
       ) : (
         !adding && (
           <p className="py-2 text-mut">
@@ -308,7 +308,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
 
   if (secret) {
     return (
-      <div className="flex max-w-[760px] flex-col gap-2.5 border border-ok p-4">
+      <div className="flex max-w-[760px] flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4">
         <p>
           <b className="font-semibold">Copy the signing secret now.</b>{" "}
           <span className="text-mut">
@@ -316,7 +316,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             with it.
           </span>
         </p>
-        <div className="flex flex-wrap items-center gap-2.5 border border-line bg-[#050505] px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
           <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
             {secret}
           </code>

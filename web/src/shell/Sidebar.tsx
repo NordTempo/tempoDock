@@ -58,7 +58,12 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
             ? "Settings"
             : "Workspace"
       }
-      className="flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky lg:top-0 lg:h-screen lg:w-[248px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0"
+      className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky lg:w-[248px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 ${
+        // Under the console's sticky amber bar.
+        mode === "console"
+          ? "lg:top-8 lg:h-[calc(100vh-2rem)]"
+          : "lg:top-0 lg:h-screen"
+      }`}
     >
       {mode === "app" && <AppNav />}
       {mode === "settings" && <SettingsNav />}

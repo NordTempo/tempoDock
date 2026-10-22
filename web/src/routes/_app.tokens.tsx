@@ -23,7 +23,7 @@ import {
   CopyButton,
   ErrorText,
   Page,
-  Scroll,
+  Panel,
   SectionHead,
   TitleRow,
 } from "../ui/kit";
@@ -52,9 +52,9 @@ function Tokens() {
       {created && (
         <section
           aria-labelledby="new-token"
-          className="flex flex-col gap-2.5 border border-ok p-4"
+          className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
         >
-          <h2 id="new-token" className="text-[15px] font-semibold">
+          <h2 id="new-token" className="font-semibold">
             <span className="text-ok">✓</span> Created{" "}
             <span className="font-mono font-medium">{created.name}</span>
           </h2>
@@ -65,7 +65,7 @@ function Tokens() {
               a new token.
             </span>
           </p>
-          <div className="flex flex-wrap items-center gap-2.5 border border-line bg-[#050505] px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
             <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
               {created.secret}
             </code>
@@ -85,7 +85,7 @@ function Tokens() {
 
       <section aria-labelledby="tokens">
         <SectionHead id="tokens">{plural(live.length, "token")}</SectionHead>
-        <Scroll>
+        <Panel>
           <table>
             <thead>
               <tr>
@@ -105,7 +105,7 @@ function Tokens() {
               ))}
             </tbody>
           </table>
-        </Scroll>
+        </Panel>
         {tokens.length === 0 && <p className="py-2 text-mut">No tokens yet.</p>}
       </section>
 
@@ -125,9 +125,7 @@ function TokenRow({ token }: { token: Token }) {
   return (
     <>
       <tr className={dead ? "text-faint" : undefined}>
-        <td className={`py-2.5 font-mono ${dead ? "" : "text-prog"}`}>
-          ◇ {token.name}
-        </td>
+        <td className={`py-2.5 ${dead ? "" : "text-info"}`}>◇ {token.name}</td>
         <td className="py-2.5">{token.scope}</td>
         <td className="py-2.5 font-mono">
           {token.project ? (
@@ -259,9 +257,9 @@ function CreateToken({
   return (
     <section
       aria-labelledby="create"
-      className="flex max-w-[760px] flex-col gap-4 border-t border-line pt-[18px]"
+      className="flex max-w-[760px] flex-col gap-4 rounded-panel border border-line p-4"
     >
-      <h2 id="create" className="text-md font-semibold">
+      <h2 id="create" className="text-sm font-semibold">
         Create a token
       </h2>
       <form
@@ -288,7 +286,8 @@ function CreateToken({
       >
         <label className="flex flex-col gap-1.5">
           <span>
-            Name <span className="text-mut">shown in the audit log</span>
+            Name{" "}
+            <span className="text-xs text-faint">shown in the audit log</span>
           </span>
           <input
             value={name}
@@ -304,6 +303,7 @@ function CreateToken({
               <label key={s.scope} className="flex items-baseline gap-2">
                 <input
                   type="radio"
+                  className="accent-fg"
                   name="scope"
                   checked={scope === s.scope}
                   onChange={() => setScope(s.scope)}

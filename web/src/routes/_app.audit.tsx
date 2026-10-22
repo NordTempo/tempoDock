@@ -196,7 +196,7 @@ function Audit() {
       </p>
       <AuditTable events={shown} />
       <p className="text-xs text-mut">
-        <span className="text-prog">◇</span> token · ○ person · the newest 100
+        <span className="text-info">◇</span> token · ○ person · the newest 100
         events
         {search.action ? " of this kind" : ""}
       </p>

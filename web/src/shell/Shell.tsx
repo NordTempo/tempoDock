@@ -38,7 +38,7 @@ export function Shell() {
 /** The console's reminder that changes here reach every project. */
 function ConsoleBar() {
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-warn-edge bg-warn-bg px-4 py-1.5 text-xs">
+    <div className="sticky top-0 z-30 flex min-h-8 flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-warn-edge bg-warn-bg px-4 py-1.5 text-xs">
       <Icon name="console" size={13} className="text-warn" />
       <span className="font-semibold text-warn">Platform console</span>
       <span className="text-warn-text">

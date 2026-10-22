@@ -22,7 +22,7 @@ import { Version } from "./parts";
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-mut">{label}</dt>
+      <dt>{label}</dt>
       <dd className="min-w-0">{children}</dd>
     </>
   );
@@ -39,7 +39,7 @@ export function LinkSection({ server: s }: { server: Server }) {
   return (
     <section aria-labelledby="link" className="flex flex-col gap-2">
       <SectionHead id="link">Link</SectionHead>
-      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[18px] gap-y-1.5">
+      <dl className="props max-w-[960px] grid-cols-[140px_minmax(0,1fr)]">
         <Fact label="Status">
           <StateText state={serverState(s.status)} />{" "}
           <span className="text-mut">{statusDetail(s)}</span>
