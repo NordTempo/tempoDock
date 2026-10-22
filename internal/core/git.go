@@ -46,6 +46,11 @@ type gitState struct {
 	// limit throttles webhook deliveries per hook.
 	limit  *limiter
 	github githubClient
+	// statusMu guards statusTail: per service, the last commit status
+	// post queued. Each post waits for the one before it, so GitHub sees
+	// pending before success (it shows the newest status per context).
+	statusMu   sync.Mutex
+	statusTail map[int64]chan struct{}
 }
 
 // gitWorker is the state of a service's running worker.
@@ -61,7 +66,8 @@ type gitWorker struct {
 
 func newGitState(api string) gitState {
 	return gitState{
-		workers: map[int64]*gitWorker{},
+		workers:    map[int64]*gitWorker{},
+		statusTail: map[int64]chan struct{}{},
 		// GitHub sends one delivery per push; bursts beyond this are
 		// either a flood or a stolen URL.
 		limit:  newLimiter(30, 2*time.Second),
@@ -565,8 +571,9 @@ func (c *Core) gitDeployDone(ss svcScope, rel store.Release, deployErr error) {
 	}
 }
 
-// postGitStatus posts a commit status in the background. Failures are
-// logged; a deploy never waits for or fails on GitHub.
+// postGitStatus posts a commit status in the background, after the
+// service's earlier posts. Failures are logged; a deploy never waits for
+// or fails on GitHub.
 func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Release, state, desc string) {
 	token, err := c.gitToken(conn)
 	if err != nil || token == "" {
@@ -580,9 +587,29 @@ func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Re
 	if c.cfg.Hooks.UIURL != "" && rel.Number != 0 {
 		st.TargetURL = fmt.Sprintf("%s/%s/releases/%d", c.cfg.Hooks.UIURL, ss.String(), rel.Number)
 	}
+	id, done := ss.svc.ID, make(chan struct{})
+	c.git.statusMu.Lock()
+	prev := c.git.statusTail[id]
+	c.git.statusTail[id] = done
+	c.git.statusMu.Unlock()
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
+		defer func() {
+			close(done)
+			c.git.statusMu.Lock()
+			if c.git.statusTail[id] == done {
+				delete(c.git.statusTail, id)
+			}
+			c.git.statusMu.Unlock()
+		}()
+		if prev != nil {
+			select {
+			case <-prev:
+			case <-c.ctx.Done():
+				return
+			}
+		}
 		ctx, cancel := context.WithTimeout(c.ctx, githubCallTimeout)
 		defer cancel()
 		if err := c.git.github.status(ctx, conn.Repo, sha, token, st); err != nil {

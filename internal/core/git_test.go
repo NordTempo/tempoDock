@@ -36,6 +36,9 @@ type fakeGitHub struct {
 	auth []string
 	// tarballs counts tarball downloads.
 	tarballs int
+	// slowPending delays answering "pending" statuses, so a later status
+	// would overtake it unless posts are ordered.
+	slowPending time.Duration
 }
 
 const (
@@ -90,6 +93,12 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 	mux.HandleFunc("POST /repos/acme/shop/statuses/{sha}", func(w http.ResponseWriter, r *http.Request) {
 		var st githubStatus
 		_ = json.NewDecoder(r.Body).Decode(&st)
+		g.mu.Lock()
+		slow := g.slowPending
+		g.mu.Unlock()
+		if st.State == "pending" {
+			time.Sleep(slow)
+		}
 		g.mu.Lock()
 		g.statuses = append(g.statuses, strings.TrimSpace(fmt.Sprintf("%s %s %s %s", r.PathValue("sha")[:7], st.State, st.Context, st.TargetURL)))
 		g.mu.Unlock()
@@ -248,6 +257,10 @@ func TestPushDecision(t *testing.T) {
 // signatures deploy nothing.
 func TestGitWebhookDeploys(t *testing.T) {
 	h, gh := gitHarness(t)
+	// The pending status answers late: success must still come after it.
+	gh.mu.Lock()
+	gh.slowPending = 100 * time.Millisecond
+	gh.mu.Unlock()
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	token, on := "github_pat_secret", true
 	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/web", Token: &token, Status: &on})
