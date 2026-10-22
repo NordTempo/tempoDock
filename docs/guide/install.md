@@ -21,14 +21,37 @@ control plane.
 
 ## Install
 
-Build the binary (on any machine; it's static), copy it and the `deploy/`
-directory to the server, then run the script as root.
+A server needs two files from a [release](https://github.com/NordTempo/tempoDock/releases):
+the `dock-linux-<arch>` binary and `dock-install-<version>.tar.gz` (the
+`deploy/` directory: `install.sh` and the systemd units). The repository is
+private, so download with `gh` (logged in to an account that can read it),
+check them against `SHA256SUMS`, copy them over and run the script as root:
 
 ```sh
-make web && GOOS=linux GOARCH=amd64 make build     # bin/dock
-scp -r bin/dock deploy server:/tmp/dock-install/
-ssh server 'cd /tmp/dock-install && sudo DOCK_BINARY=./dock ./deploy/install.sh'
+v=v0.1.0
+gh release download $v -R NordTempo/tempoDock -D dock-$v \
+  -p dock-linux-amd64 -p "dock-install-$v.tar.gz" -p SHA256SUMS
+(cd dock-$v && grep -E " (dock-linux-amd64|dock-install-$v.tar.gz)\$" SHA256SUMS | shasum -a 256 -c)
+scp -r dock-$v server:/tmp/
+ssh server "cd /tmp/dock-$v && tar -xzf dock-install-$v.tar.gz && sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh"
 ```
+
+Without `DOCK_BINARY`, `install.sh` downloads the binary itself: the
+version the tarball came from (or `DOCK_VERSION`), checked against the
+release's `SHA256SUMS`. While the repository is private it needs a
+`GITHUB_TOKEN` that can read it, e.g. a fine-grained token with read access
+to its contents, or `gh auth token`:
+
+```sh
+tar -xzf dock-install-v0.1.0.tar.gz
+export GITHUB_TOKEN=github_pat_...
+sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh
+```
+
+From source instead: `make web && GOOS=linux GOARCH=amd64 make build`
+builds `bin/dock`; copy it and `deploy/` over and pass
+`DOCK_BINARY=./dock`. The examples below say `DOCK_BINARY=./dock`; use
+whichever binary you have.
 
 The last lines of output print the API address and the first admin token
 (shown once). `install.sh` also creates an admin user `admin@localhost` for
@@ -42,6 +65,31 @@ dock login http://100.64.0.10:7070
 Keep the admin token for scripts and for creating agent tokens
 (`dock login <url> --token-stdin` works too).
 
+### The CLI
+
+Laptops and CI only need the client, `dock-cli-<os>-<arch>` (a quarter of
+the size; see [CLI-only build](../cli.md#cli-only-build)). Install the one
+matching the server's version: `install-cli.sh` from the release picks the
+right build, checks it against `SHA256SUMS` and installs it as `dock` in
+`~/.local/bin` (`/usr/local/bin` as root, or `DOCK_INSTALL_DIR`). It
+downloads with `gh` when that is logged in, otherwise with curl and
+`GITHUB_TOKEN`.
+
+```sh
+gh release download v0.1.0 -R NordTempo/tempoDock -p install-cli.sh -O - | DOCK_VERSION=v0.1.0 sh
+```
+
+Or by hand:
+
+```sh
+gh release download v0.1.0 -R NordTempo/tempoDock -p dock-cli-darwin-arm64 -p SHA256SUMS
+grep ' dock-cli-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
+install -m 0755 dock-cli-darwin-arm64 ~/.local/bin/dock
+```
+
+`dock version` shows the CLI's version and the server's, and the command
+that installs the matching CLI when they differ. `dock login` warns too.
+
 ### install.sh options
 
 `--node` installs a [node](#add-a-server) instead of a control plane. The
@@ -51,7 +99,9 @@ the others also change an existing config, touching only their own keys.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DOCK_BINARY` | (required) | Path to the built `dock` binary |
+| `DOCK_BINARY` | download | Path to a `dock` binary: a release's `dock-linux-<arch>`, or `bin/dock` from `make build` |
+| `DOCK_VERSION` | the tarball's version, else the latest release | Without `DOCK_BINARY`: the release to download `dock-linux-<arch>` from, checked against its `SHA256SUMS` |
+| `GITHUB_TOKEN` | empty | For that download: a token that can read the repository's releases (pass it with `sudo --preserve-env=GITHUB_TOKEN`) |
 | `CADDY_VERSION` | `2.11.7` | Caddy release to download from GitHub |
 | `PUBLIC_IP` | auto (`api.ipify.org`), empty on tunnel servers | Address users point DNS at → `public_ip` |
 | `LISTEN` | Tailscale IPv4`:7070`, else `127.0.0.1:7070` | API and UI address → `listen`. Control plane only |
@@ -325,7 +375,8 @@ else.
    ```
 
 3. **The new server:** install Docker, join the tailnet, copy the `dock`
-   binary and `deploy/` over, then run the printed command. Add
+   binary and `deploy/` over (the control plane's release, as in
+   [Install](#install)), then run the printed command. Add
    `CLOUDFLARE_TUNNEL_TOKEN` (and `BASE_DOMAIN`) for a
    [tunnel](#cloudflare-tunnel) server.
 
@@ -407,13 +458,20 @@ shows.
 ## Upgrading
 
 Swap the binary and restart the daemon. Apps and routing are unaffected; only
-the API is down for a second.
+the API is down for a second. Download the new release as in
+[Install](#install) and re-run the script from its tarball, so the units
+match the binary:
 
 ```sh
-sudo DOCK_BINARY=./dock ./deploy/install.sh     # also refreshes units and caddy.json
+sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh     # also refreshes units and caddy.json
+# or let it download the tarball's version:
+sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh
 # or by hand:
-sudo install -m 0755 ./dock /usr/local/bin/dock && sudo systemctl restart dock
+sudo install -m 0755 ./dock-linux-amd64 /usr/local/bin/dock && sudo systemctl restart dock
 ```
+
+Then install the matching CLI on laptops and in CI ([The CLI](#the-cli));
+`dock version` shows whether they are in step.
 
 - Database migrations run on start and only go forward. Back up first.
 - A deploy running during the restart is marked `failed`; the previous

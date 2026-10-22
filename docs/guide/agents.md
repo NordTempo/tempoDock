@@ -199,8 +199,22 @@ The token can deploy `shop/staging` only.
 Deploy an image built in CI; the server only pulls it. The server needs pull
 access to the registry.
 
+The runner needs the CLI: download `dock-cli-linux-amd64` from the release
+the server runs (`dock version` shows it) and check it against
+`SHA256SUMS`. The repository is private, so `gh` needs a token that can read
+its releases (a fine-grained token with read access to its contents), not
+the workflow's own `GITHUB_TOKEN`. The deploy itself only uses `DOCK_URL`
+and `DOCK_TOKEN`.
+
 ```yaml
 # .github/workflows/deploy.yml (excerpt)
+- name: Install dock
+  env:
+    GH_TOKEN: ${{ secrets.DOCK_RELEASES_TOKEN }}
+  run: |
+    gh release download v0.1.0 -R NordTempo/tempoDock -p dock-cli-linux-amd64 -p SHA256SUMS
+    grep ' dock-cli-linux-amd64$' SHA256SUMS | sha256sum --check
+    sudo install -m 0755 dock-cli-linux-amd64 /usr/local/bin/dock
 - name: Deploy to staging
   env:
     DOCK_URL: ${{ secrets.DOCK_URL }}
@@ -212,4 +226,4 @@ access to the registry.
 
 The runner must reach the API: join it to the tailnet (e.g.
 `tailscale/github-action`) rather than exposing the API port.
-<!-- verify: how CI gets the dock binary (no published releases yet), and how the server authenticates to private registries (not implemented as of 56c9cfa). -->
+<!-- verify: how the server authenticates to private registries (not implemented as of 56c9cfa). -->

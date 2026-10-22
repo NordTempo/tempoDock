@@ -32,7 +32,11 @@ make generate          # sqlc queries, OpenAPI spec and the UI's API client
 ```
 
 `cd web && pnpm dev` serves the UI with hot reload, proxying `/api` to the
-daemon. Install on a server with [`deploy/install.sh`](deploy/install.sh).
+daemon. Install on a server from a release with
+[`deploy/install.sh`](deploy/install.sh), and the CLI on laptops and CI
+with `install-cli.sh` ([install guide](docs/guide/install.md#install)).
+`make release-local VERSION=v0.0.0-dev` builds a release's artifacts into
+`dist/`; pushing a `v*` tag publishes one.
 
 ## Docs
 

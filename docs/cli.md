@@ -132,6 +132,7 @@ keeps the linked service, so it means "this service, in staging".
 | Command | What it does |
 |---|---|
 | `login [url] [--no-browser \| --token-stdin]` | Log in through the browser (on a terminal, or with `--no-browser`), or verify a token from stdin; store it as a context and use it. Warns when the server runs another version |
+| `version` | The CLI's version and, when a server is configured, the server's (one unauthenticated request; nothing without a server), with the command that installs the matching CLI when they differ |
 | `logout` | Remove the context's token; revoke it on the server if it came from a browser login |
 | `whoami` | Who the token belongs to and its scope |
 | `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions end; the CLI's token stays valid |
@@ -210,4 +211,5 @@ make build-cli   # bin/dock-cli for this machine, plus bin/dock-cli-<os>-<arch>
 | `dock context list` | 5.1 ms, 28 MB RSS | 1.8 ms, 11 MB RSS |
 | Package init | 2.9 ms | 0.3 ms |
 
-Every other command behaves the same in both.
+Every other command behaves the same in both. Releases publish `dock-cli`
+for these four platforms; see [install the CLI](guide/install.md#the-cli).
