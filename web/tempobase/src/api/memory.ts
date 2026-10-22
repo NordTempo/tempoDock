@@ -40,12 +40,11 @@ import type {
   User,
 } from "./types";
 
-// An in-memory tempoBase server for developing the UI before the real one
-// exists (ADR 0024 workstream C step 2). It follows section 3's contract
-// and the policy rules closely enough to click through every page. The
-// state lives in localStorage so a reload keeps you signed in; clear
+// An in-memory tempoBase server for working on the UI without one
+// (`pnpm dev:tempobase:memory`); production builds leave it out. It
+// follows ADR 0024 section 3's contract and the policy rules closely
+// enough to click through every page. The state lives in localStorage so a reload keeps you signed in; clear
 // `tempobase-memory` to start over. The first-admin setup code is "dev".
-// Not shipped once the HTTP backend lands.
 
 const storageKey = "tempobase-memory";
 const setupCode = "dev";
@@ -244,7 +243,6 @@ export function memoryBackend(): Backend {
     code: _c,
     used: _u,
     user_id: _i,
-    created_by: _b,
     ...l
   }: StoredLink): Link => l;
 
@@ -364,7 +362,7 @@ export function memoryBackend(): Backend {
     return {
       ...rest,
       access: access(u, c),
-      ...(u.role === "admin" && { pending: pendingOf(c) }),
+      pending: u.role === "admin" ? pendingOf(c) : 0,
     };
   }
 
@@ -1019,6 +1017,7 @@ export function memoryBackend(): Backend {
         const code = secret("");
         const l: StoredLink = {
           id: id(s),
+          created_at: now(),
           kind: "reset",
           email: u.email,
           user_id: u.id,
@@ -1051,6 +1050,7 @@ export function memoryBackend(): Backend {
         const code = secret("");
         const l: StoredLink = {
           id: id(s),
+          created_at: now(),
           kind: "invite",
           email: req.email,
           role: req.role,
@@ -1169,6 +1169,7 @@ export function memoryBackend(): Backend {
           engine: "postgres",
           ...parts,
           production: req.production,
+          custom_ca: !!req.ca_pem,
           created_at: now(),
           created_by: u.email,
         };
@@ -1189,6 +1190,7 @@ export function memoryBackend(): Backend {
       if (parts.host.startsWith("unreachable"))
         return {
           ok: false,
+          can_set_up: false,
           error: `dial tcp ${parts.host}:${parts.port}: no such host`,
         };
       return {
@@ -1289,7 +1291,7 @@ export function memoryBackend(): Backend {
         .filter(
           (e) =>
             (!q.connection || e.connection === q.connection) &&
-            (!q.action || e.action.startsWith(q.action)) &&
+            (!q.action || e.action === q.action) &&
             (!q.before || e.id < q.before),
         )
         .slice(0, q.limit ?? 100);

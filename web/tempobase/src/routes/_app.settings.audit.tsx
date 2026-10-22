@@ -16,13 +16,13 @@ export const Route = createFileRoute("/_app/settings/audit")({
   component: Activity,
 });
 
+// The server filters by one exact action.
 const filters = [
   ["", "All"],
-  ["data.", "Data"],
   ["data.query", "Queries"],
-  ["user.", "People"],
-  ["token.", "Agents"],
-  ["connection.", "Connections"],
+  ["data.commit", "Commits"],
+  ["data.propose", "Proposals"],
+  ["user.login", "Sign-ins"],
 ] as const;
 
 const pageSize = 100;

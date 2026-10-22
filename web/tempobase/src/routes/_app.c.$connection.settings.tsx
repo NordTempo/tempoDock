@@ -132,7 +132,12 @@ function Edit({ c }: { c: Connection }) {
         );
       }}
     >
-      <p className="font-mono text-xs text-(--g-dim)">{c.url}</p>
+      <p className="font-mono text-xs text-(--g-dim)">
+        {c.url}
+        {c.custom_ca && (
+          <span className="font-sans text-(--g-mut)"> · custom CA</span>
+        )}
+      </p>
       <ConnectionFields
         form={form}
         onChange={setForm}

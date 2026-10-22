@@ -1,5 +1,6 @@
 import type { DataEndpoints } from "../../../src/features/data/api";
 import type { PolicyRule } from "../../../src/features/data/policy";
+import { httpBackend } from "./http";
 import type {
   AuditDetail,
   AuditEvent,
@@ -7,6 +8,7 @@ import type {
   Connection,
   ConnectionTest,
   CreateConnectionRequest,
+  CreatedToken,
   CreateTokenRequest,
   Link,
   LinkInfo,
@@ -22,9 +24,9 @@ import type {
 } from "./types";
 
 // tempoBase's HTTP API (ADR 0024 section 3) as one typed interface. The
-// UI only talks to the server through it, so the in-memory backend
-// (./memory.ts, for development until the server exists) and the HTTP
-// one are interchangeable. Each method names its endpoint under /api/v1.
+// UI only talks to the server through it: ./http.ts implements it with the
+// generated client, ./memory.ts in memory for UI work without a server.
+// Each method names its endpoint under /api/v1.
 
 export type Backend = {
   /** GET /version */
@@ -72,9 +74,7 @@ export type Backend = {
   /** GET /tokens: one's own, or every token for admins. */
   tokens(): Promise<Token[]>;
   /** POST /tokens: the secret is in the response only. */
-  createToken(
-    req: CreateTokenRequest,
-  ): Promise<{ token: Token; secret: string }>;
+  createToken(req: CreateTokenRequest): Promise<CreatedToken>;
   /** PATCH /tokens/{id}: the token's own data access (creator or admin). */
   updateToken(id: number, req: UpdateTokenRequest): Promise<Token>;
   /** DELETE /tokens/{id}: revokes it (creator or admin). */
@@ -110,29 +110,23 @@ export type Backend = {
   data(connection: string): DataEndpoints;
 };
 
-/** A failed call: the problem's status, code and message. */
-export class ApiError extends Error {
-  readonly status: number;
-  readonly code: string;
-  constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
-
-export const isUnauthorized = (error: unknown) =>
-  error instanceof ApiError && error.status === 401;
+export { ApiError, isUnauthorized } from "../../../src/api/client";
 
 let current: Backend | undefined;
 
 /**
- * Loads the backend before the app renders. Until tempoBase's server
- * and spec exist this is the in-memory one, in its own chunk.
+ * Loads the backend before the app renders: the server's HTTP API, or
+ * with VITE_TEMPOBASE_MEMORY=1 (`pnpm dev:tempobase:memory`) the
+ * in-memory one for working on the UI without a server. The check is
+ * static, so production builds leave the in-memory backend out.
  */
 export async function loadBackend() {
-  const { memoryBackend } = await import("./memory");
-  current = memoryBackend();
+  if (import.meta.env.VITE_TEMPOBASE_MEMORY === "1") {
+    const { memoryBackend } = await import("./memory");
+    current = memoryBackend();
+  } else {
+    current = httpBackend();
+  }
 }
 
 /** The loaded backend. */
