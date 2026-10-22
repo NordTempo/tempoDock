@@ -24,6 +24,9 @@ jobs:
         with:
           version: v2.15.0
       - run: make test
+      # tempoBase must not link Dock's daemon (ADR 0024); skips until
+      # cmd/tempobase exists.
+      - run: make tempobase-deps
       - name: Install Caddy
         run: curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin caddy
       - name: Integration tests (Docker, Caddy, BuildKit)
@@ -39,14 +42,28 @@ jobs:
           cache_dependency_path: web/pnpm-lock.yaml
       - run: make web
       - run: make build
+      - run: make build-tempobase
+        if: hashFiles('cmd/tempobase/*.go') != ''
 
   # Performance budgets (docs/performance.md): binary size, CLI start-up,
   # daemon idle memory/CPU/wake-ups, API latency, UI bundle and benchmarks
-  # against scripts/perf/baseline.json. Takes about three minutes, most of
-  # it two 30 s idle windows and the benchmarks.
+  # against scripts/perf/baseline.json, for Dock and tempoBase. Takes about
+  # three minutes, most of it the 30 s idle windows and the benchmarks.
   perf:
     needs: [go, web]
     runs-on: ubuntu-latest
+    # For tempoBase's check that it closes Postgres connections after use.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: perf
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -62,7 +79,10 @@ jobs:
           cache_dependency_path: web/pnpm-lock.yaml
       # Shared runners are too noisy for timing budgets: they warn here and
       # are enforced locally (make perf). Sizes, memory and allocs still fail.
-      - run: make perf PERF_FLAGS=-soft-timing
+      - run: make perf PERF_FLAGS="-soft-timing -tempobase-pg $PERF_PG_URL"
+        env:
+          # The throwaway service above, not a secret.
+          PERF_PG_URL: postgres://postgres:perf@127.0.0.1:5432/postgres?sslmode=disable
 
   web:
     runs-on: ubuntu-latest
