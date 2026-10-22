@@ -2049,12 +2049,13 @@ export interface components {
             project?: string;
             release?: components["schemas"]["Release"];
             release_event?: components["schemas"]["ReleaseEvent"];
+            server?: components["schemas"]["Server"];
             service?: string;
             service_status?: components["schemas"]["ServiceStatus"];
             /** Format: date-time */
             time: string;
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "server";
             usage?: components["schemas"]["UsageUpdate"];
         };
         Health: {
@@ -2134,6 +2135,7 @@ export interface components {
             from_release?: number;
             /** Format: int64 */
             id: number;
+            image_digest?: string;
             image_id: string;
             image_ref: string;
             /** Format: int64 */
@@ -2199,12 +2201,23 @@ export interface components {
         Server: {
             accepts_non_production: boolean;
             accepts_production: boolean;
+            base_domain: string;
+            /** @description Source builds may run here */
             builder: boolean;
+            /** Format: date-time */
+            connected_at?: string;
             disabled_for_placement: boolean;
+            disconnect_reason?: string;
+            docker_version?: string;
             /** Format: int64 */
             environments: number;
             /** Format: int64 */
             id: number;
+            /** @enum {string} */
+            ingress: "direct" | "cloudflare_tunnel";
+            /** Format: date-time */
+            join_expires_at?: string;
+            key_fingerprint?: string;
             /** Format: date-time */
             last_seen_at?: string;
             /** @description Runs the control plane */
@@ -2217,10 +2230,16 @@ export interface components {
              * @description Projects with environments placed here
              */
             projects: number;
+            /** @description What DNS records point at (direct ingress) */
+            public_ips: string[] | null;
             /** Format: int64 */
             reserved_memory_bytes: number;
+            /** Format: date-time */
+            revoked_at?: string;
             /** @enum {string} */
-            status: "online" | "offline";
+            status: "online" | "offline" | "incompatible" | "joining" | "revoked";
+            /** @description CNAME target of its Cloudflare tunnel */
+            tunnel_hostname?: string;
             usage?: components["schemas"]["ServerUsage"];
             version: string;
         };
@@ -2470,6 +2489,8 @@ export interface components {
         UpdateServerRequest: {
             accepts_non_production?: boolean;
             accepts_production?: boolean;
+            base_domain?: string;
+            builder?: boolean;
             disabled_for_placement?: boolean;
         };
         UpdateServiceRequest: {

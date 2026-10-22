@@ -138,6 +138,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "usage":
       applyUsage(queryClient, event);
       return;
+    case "server":
+      // A server connected, disconnected, joined or changed (rare).
+      queryClient.invalidateQueries({ queryKey: keys.servers });
+      return;
     case "build_log":
       return; // not subscribed, see busEvents
     default:

@@ -2067,6 +2067,9 @@
           "release_event": {
             "$ref": "#/components/schemas/ReleaseEvent"
           },
+          "server": {
+            "$ref": "#/components/schemas/Server"
+          },
           "service": {
             "type": "string"
           },
@@ -2087,7 +2090,8 @@
               "audit",
               "drift",
               "lagged",
-              "usage"
+              "usage",
+              "server"
             ],
             "type": "string"
           },
@@ -2397,6 +2401,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "image_digest": {
+            "type": "string"
+          },
           "image_id": {
             "type": "string"
           },
@@ -2662,11 +2669,25 @@
           "accepts_production": {
             "type": "boolean"
           },
+          "base_domain": {
+            "type": "string"
+          },
           "builder": {
+            "description": "Source builds may run here",
             "type": "boolean"
+          },
+          "connected_at": {
+            "format": "date-time",
+            "type": "string"
           },
           "disabled_for_placement": {
             "type": "boolean"
+          },
+          "disconnect_reason": {
+            "type": "string"
+          },
+          "docker_version": {
+            "type": "string"
           },
           "environments": {
             "format": "int64",
@@ -2675,6 +2696,20 @@
           "id": {
             "format": "int64",
             "type": "integer"
+          },
+          "ingress": {
+            "enum": [
+              "direct",
+              "cloudflare_tunnel"
+            ],
+            "type": "string"
+          },
+          "join_expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "key_fingerprint": {
+            "type": "string"
           },
           "last_seen_at": {
             "format": "date-time",
@@ -2696,15 +2731,36 @@
             "format": "int64",
             "type": "integer"
           },
+          "public_ips": {
+            "description": "What DNS records point at (direct ingress)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "reserved_memory_bytes": {
             "format": "int64",
             "type": "integer"
           },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "online",
-              "offline"
+              "offline",
+              "incompatible",
+              "joining",
+              "revoked"
             ],
+            "type": "string"
+          },
+          "tunnel_hostname": {
+            "description": "CNAME target of its Cloudflare tunnel",
             "type": "string"
           },
           "usage": {
@@ -2721,6 +2777,9 @@
           "local",
           "status",
           "version",
+          "ingress",
+          "public_ips",
+          "base_domain",
           "accepts_production",
           "accepts_non_production",
           "disabled_for_placement",
@@ -3519,6 +3578,13 @@
             "type": "boolean"
           },
           "accepts_production": {
+            "type": "boolean"
+          },
+          "base_domain": {
+            "maxLength": 253,
+            "type": "string"
+          },
+          "builder": {
             "type": "boolean"
           },
           "disabled_for_placement": {
