@@ -31,6 +31,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0021](0021-control-plane-backup-and-move.md) | Control plane backup, restore and move | accepted |
 | [0022](0022-clone-and-export.md) | Clone an environment, export a project's config | accepted |
 | [0023](0023-connect-tunnels.md) | `dock connect`: tunnels to private services through the API | accepted |
+| [0024](0024-tempobase-standalone.md) | tempoBase: a standalone build of the Data panel from this codebase | accepted |
 
 ## Template
 

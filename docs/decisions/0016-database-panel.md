@@ -481,3 +481,11 @@ access is no longer admin-only by rule: it needs the policy's top level,
 `write` with sensitive `visible`, which by default only admins have. Tokens
 never get it on production (write acts as propose there). `dock db shell`
 is not built.
+
+## Amendment (2026-10-22): tempoBase standalone
+
+[0024](0024-tempobase-standalone.md) brings back a standalone tempoBase,
+but as a second binary built from this repository: the panel's logic
+moves to `internal/datapanel` and is shared by Dock and tempoBase. The
+"Note on tempoBase" above still holds for the TypeScript app, which is
+retired; this ADR's safety model and policy apply to both products.

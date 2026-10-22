@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -25,7 +26,8 @@ import (
 // runtime) and before its first send, so nothing published after a client
 // sees "ready" is missed. An error before ready means nothing was sent.
 // Each send delivers one or more items, written to the client together.
-type Stream[T any] func(ctx context.Context, ready func(), send func(...T) error) error
+// It is datapanel.Stream, so the data panel's streams are core's too.
+type Stream[T any] = datapanel.Stream[T]
 
 // EventFilter narrows the event stream. Environment needs Project, and
 // Service needs Environment.

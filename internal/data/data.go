@@ -86,6 +86,21 @@ const (
 	RoleReaderMasked Role = "dock_reader_masked"
 )
 
+// Roles names the roles a host creates in a user's database. Dock and
+// tempoBase use different names (ADR 0024), so both can manage one
+// database without rotating each other's passwords. Engines are built
+// with one set (workstream A adds pg.Options.Roles; until then they use
+// DockRoles).
+type Roles struct {
+	Reader, Writer, ReaderMasked Role
+}
+
+// DockRoles are Tempo Dock's roles; TempoBaseRoles are tempoBase's.
+var (
+	DockRoles      = Roles{Reader: RoleReader, Writer: RoleWriter, ReaderMasked: RoleReaderMasked}
+	TempoBaseRoles = Roles{Reader: "tempobase_reader", Writer: "tempobase_writer", ReaderMasked: "tempobase_reader_masked"}
+)
+
 // Credentials log in to a database. They never leave the daemon: String
 // leaves out the password and JSON leaves it out entirely.
 type Credentials struct {
