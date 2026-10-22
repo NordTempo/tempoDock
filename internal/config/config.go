@@ -12,9 +12,12 @@ import (
 	"io/fs"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -51,6 +54,7 @@ type Config struct {
 	Node     Node     `toml:"node"`
 	Registry Registry `toml:"registry"`
 	Ingress  Ingress  `toml:"ingress"`
+	Hooks    Hooks    `toml:"hooks"`
 }
 
 // PortRange is an inclusive range of TCP ports.
@@ -165,6 +169,22 @@ type Ingress struct {
 	TunnelHostname string `toml:"tunnel_hostname"`
 }
 
+// Hooks configures incoming webhooks for GitHub push-to-deploy (ADR 0018).
+// The API stays private: only /hooks/github/ on PublicHost is routed by the
+// control plane's Caddy, to a loopback listener that serves nothing else.
+type Hooks struct {
+	// PublicHost is the public hostname GitHub posts to, e.g.
+	// "hooks.example.com"; its DNS points at this server like an app
+	// domain. Empty: push-to-deploy can be connected but receives nothing.
+	PublicHost string `toml:"public_host"`
+	// Listen is the loopback address Caddy proxies webhook requests to.
+	Listen string `toml:"listen"`
+	// UIURL is the UI's base URL, e.g. "https://dock.example.com", used
+	// for the "Details" link of commit statuses. Empty: statuses have no
+	// link (it is shown to everyone who can see the repository).
+	UIURL string `toml:"ui_url"`
+}
+
 // Default returns the configuration used when no file overrides it.
 func Default() Config {
 	return Config{
@@ -198,6 +218,7 @@ func Default() Config {
 			StorageDir: "/var/lib/dock-registry",
 		},
 		Ingress: Ingress{Mode: IngressDirect},
+		Hooks:   Hooks{Listen: "127.0.0.1:7072"},
 	}
 }
 
@@ -240,6 +261,9 @@ func (c *Config) validate() error {
 			return err
 		}
 	}
+	if err := c.Hooks.validate(); err != nil {
+		return err
+	}
 	switch c.Ingress.Mode {
 	case "":
 		c.Ingress.Mode = IngressDirect
@@ -253,6 +277,35 @@ func (c *Config) validate() error {
 	}
 	return nil
 }
+
+// validate normalizes public_host and ui_url and checks them.
+func (h *Hooks) validate() error {
+	h.PublicHost = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(h.PublicHost)), ".")
+	if h.PublicHost != "" && !hostnameRe.MatchString(h.PublicHost) {
+		return fmt.Errorf("[hooks] public_host %q must be a hostname like hooks.example.com", h.PublicHost)
+	}
+	if err := checkHostPort("[hooks] listen", h.Listen); err != nil {
+		return err
+	}
+	if h.PublicHost != "" {
+		// Caddy on this server proxies to it; nothing else may reach it.
+		host, _, _ := net.SplitHostPort(h.Listen)
+		if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return fmt.Errorf("[hooks] listen %q must be a loopback address like 127.0.0.1:7072", h.Listen)
+		}
+	}
+	if h.UIURL != "" {
+		u, err := url.Parse(h.UIURL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return fmt.Errorf("[hooks] ui_url %q must be an http(s) URL like https://dock.example.com", h.UIURL)
+		}
+		h.UIURL = strings.TrimSuffix(h.UIURL, "/")
+	}
+	return nil
+}
+
+// hostnameRe matches lower-case DNS names with at least two labels.
+var hostnameRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // checkHostPort accepts "" (unset) or "host:port" with a port in 1-65535.
 func checkHostPort(field, addr string) error {

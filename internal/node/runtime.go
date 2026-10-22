@@ -404,6 +404,10 @@ type Route struct {
 	// RedirectTo, when set, permanently redirects to this hostname instead
 	// of proxying.
 	RedirectTo string
+	// PathPrefix, when set, proxies only paths under it (e.g.
+	// "/hooks/github/"); other paths on the hostnames get the 404 page.
+	// The control plane's webhook route uses it (ADR 0018).
+	PathPrefix string
 }
 
 // DomainCheck is the observed state of one hostname on this server.

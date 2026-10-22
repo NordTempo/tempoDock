@@ -58,10 +58,18 @@ func newReleaseListCmd(g *globals, use string) *cobra.Command {
 	return cmd
 }
 
-// describeSource is "upload", or "rollback of 12" for copies.
+// describeSource is "upload", "rollback of 12" for copies, or "git
+// abc1234 fix checkout" for releases built from a push.
 func describeSource(r apitypes.Release) string {
-	if r.FromRelease != 0 {
+	switch {
+	case r.FromRelease != 0:
 		return fmt.Sprintf("%s of %d", r.Source, r.FromRelease)
+	case r.Source == apitypes.SourceUpload && r.Commit != nil:
+		msg := r.Commit.Message
+		if len([]rune(msg)) > 50 {
+			msg = string([]rune(msg)[:49]) + "…"
+		}
+		return strings.TrimSpace("git " + r.Commit.SHA[:min(7, len(r.Commit.SHA))] + " " + msg)
 	}
 	return string(r.Source)
 }
@@ -106,11 +114,19 @@ func newReleaseShowCmd(g *globals) *cobra.Command {
 				for i, m := range r.Config.Mounts {
 					mounts[i] = m.Volume + " at " + m.Path
 				}
+				commit := ""
+				if c := r.Commit; c != nil {
+					commit = c.SHA + " " + c.Message
+					if c.Author != "" {
+						commit += " (" + c.Author + ")"
+					}
+				}
 				if err := g.io.Fields(
 					"release", fmt.Sprintf("%d of %s/%s/%s", r.Number, r.Project, r.Environment, r.Service),
 					"status", string(r.Status),
 					"error", errText,
 					"source", describeSource(r),
+					"commit", commit,
 					"image", r.ImageRef,
 					"image id", shortID(r.ImageID),
 					"created", ago(r.CreatedAt)+" by "+r.CreatedBy,

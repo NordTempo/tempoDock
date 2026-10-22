@@ -11,7 +11,7 @@ served traffic can be started again exactly as it was.
 |---|---|---|---|
 | Source | `dock deploy` | On the server, by BuildKit | Available |
 | Image | `dock deploy --image ghcr.io/acme/web:1.4.2` | Elsewhere (CI); the server only pulls | Available |
-| Git push | GitHub webhook per service and branch | On a builder server | M4 |
+| Git push | `dock git connect acme/shop --branch main`, then `git push` ([below](#deploy-on-git-push)) | On the server, by BuildKit, like `dock deploy` | Available |
 | Promote | `dock promote staging production` | Nowhere: reuses the exact image that ran in staging ([below](#promote)) | Available |
 
 ### Image services and source services
@@ -203,18 +203,69 @@ push to the same tag changes nothing.
   involved, so promoting from the homelab works while it is off, as long
   as the image went through the [registry](install.md#registry).
 
+## Deploy on git push
+
+Connect a service to a GitHub repository and branch, and every push to it
+deploys the service from source: the commit's files (or a subdirectory's)
+go through exactly the pipeline of `dock deploy`, `dock.toml` included
+([ADR 0018](../decisions/0018-git-push-deploy.md)).
+
+```sh
+dock git connect acme/shop --branch main                  # public repository
+dock git connect acme/monorepo --branch main --dir apps/web
+printf %s "$GITHUB_TOKEN" | dock git connect acme/shop --branch main --token-stdin --status
+dock git status                                           # webhook, queued push, last delivery
+dock git deploy                                           # the branch's head now (or --ref <sha>)
+dock git disconnect
+```
+
+`connect` prints the webhook to add on GitHub (repository → Settings →
+Webhooks): its Payload URL, content type `application/json`, the secret
+(shown once; `--rotate-secret` makes a new one) and "Just the push event".
+The UI does the same under the service's **Settings → Source**.
+
+| What arrives | What happens |
+|---|---|
+| A push to the branch | Queued, then deployed as a source release with the commit SHA, subject and author on it (`deploy abc1234 fix checkout`) |
+| A push while a deploy of the service runs | Waits for it; a newer push replaces it. A running deploy is never cancelled |
+| Other branches, tags, deleted branches | Ignored |
+| With `--dir`: a push changing nothing in the directory | Ignored |
+| The commit already live | Ignored (`dock git deploy` deploys it anyway) |
+| A bad or missing signature, an unknown webhook | Refused (401, 404) |
+| A delivery ID seen in the last 7 days (a replay or a GitHub redelivery) | Answered, nothing deployed; use `dock git deploy` instead |
+
+- **The server needs a public address for webhooks.** The API stays on
+  Tailscale or loopback; set [`[hooks] public_host`](install.md#configtoml)
+  to a hostname that points at the control plane (like an app domain) and
+  Caddy serves only `https://<public_host>/hooks/github/` there. Until it
+  is set, `connect` works but says how to set it.
+- **Private repositories** need a fine-grained token with Contents read
+  access to the repository; `--status` (commit statuses: pending, then
+  success or failure, linking to the release when `[hooks] ui_url` is set)
+  also needs Commit statuses read and write. Tokens are stored encrypted
+  and never shown again: the API and UI only say whether one is set.
+- Pushed releases are created by `github:<pusher>`; `dock git deploy`
+  releases by whoever ran it. Connecting, changing and deploying need
+  `deploy` on the environment.
+- What happened to the latest delivery shows in `dock git status`, and in
+  GitHub's delivery log (the response body).
+
 ## Release sources
 
 The `source` field of a release says what created it.
 
 | Source | Created by |
 |---|---|
-| `upload` | Source deploy |
+| `upload` | Source deploy, or a git push (`commit` set) |
 | `image` | Image deploy (which also sets the service's `image` setting), or applying a change to that setting |
 | `config` | Applying staged changes, or adding a domain to a service whose port wasn't published yet |
 | `rollback` | `dock rollback` (`from_release` is the copied release) |
 | `restart` | `dock restart` |
 | `promote` | `dock promote`: the image of the source environment's active release, by digest |
+
+Releases that reuse an image (`config`, `rollback`, `restart`, `promote`)
+keep the `commit` of the release they copy, so the code a release runs is
+always known.
 
 ## Archiving a service
 

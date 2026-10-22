@@ -249,3 +249,21 @@ func assertNotFound(t *testing.T, r route) {
 		t.Errorf("catch-all handler = %s %d", h.Handler, h.StatusCode)
 	}
 }
+
+// A route with a path prefix proxies only that path; the host's other
+// paths fall through to the 404 page.
+func TestRenderPathPrefix(t *testing.T) {
+	cfg := render(t, testOptions(), []node.Route{
+		{Hostnames: []string{"hooks.example.com"}, Upstream: "127.0.0.1:7072", PathPrefix: "/hooks/github/"},
+	})
+	r := cfg.Apps.HTTP.Servers["https"].Routes[0]
+	if m := r.Match[0]; len(m.Path) != 1 || m.Path[0] != "/hooks/github/*" || m.Host[0] != "hooks.example.com" {
+		t.Fatalf("match = %+v", m)
+	}
+	assertNotFound(t, cfg.Apps.HTTP.Servers["https"].Routes[1])
+	for _, bad := range []string{"/hooks/{uri}/", "hooks/", "/hooks", "/a//b/", "/*/"} {
+		if _, err := Render(testOptions(), []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", PathPrefix: bad}}); err == nil {
+			t.Errorf("path prefix %q: Render succeeded, want an error", bad)
+		}
+	}
+}

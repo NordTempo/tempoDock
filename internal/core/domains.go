@@ -145,6 +145,9 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 	if ss.svc.ArchivedAt != nil {
 		return apitypes.DomainChange{}, invalid("service %s is archived", ss)
 	}
+	if host == c.cfg.Hooks.PublicHost {
+		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is this server's webhook hostname ([hooks] public_host); use another hostname", host)
+	}
 	d, err := c.store.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: ss.svc.ID, Generated: generated, RedirectTo: redirect})
 	if store.IsUnique(err) {
 		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is already in use by a service; a hostname can belong to only one service", host)
@@ -228,6 +231,9 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	host, err := normalizeHostname(hostname)
 	if err != nil {
 		return false, nil
+	}
+	if host == c.cfg.Hooks.PublicHost {
+		return true, nil // the webhook route (ADR 0018)
 	}
 	d, err := c.store.GetDomainByHostname(ctx, host)
 	if store.IsNotFound(err) {

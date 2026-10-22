@@ -152,6 +152,8 @@ keeps the linked service, so it means "this service, in staging".
 | `releases`, `release list\|show N` | Release history and one release with its events |
 | `rollback [N]`, `release rollback [N]` | New release from an earlier one; default the one that served before the active one. Says which release it copies and that release's image and config |
 | `restart` | New release identical to the active one |
+| `git connect OWNER/REPO [--branch B] [--dir D] [--token-stdin\|--remove-token] [--status] [--rotate-secret]` | Deploy on every push to a GitHub branch ([guide](guide/deploying.md#deploy-on-git-push)). Prints the webhook settings for GitHub and its secret, once (again only with `--rotate-secret`). Running it again changes the branch, directory, token or statuses. The token is read from stdin only and never printed |
+| `git status`, `git deploy [--ref R]`, `git disconnect [-y]` | The GitHub source: webhook URL, token set or not, queued push, latest delivery; queue the branch's head (or a SHA, branch or tag) now, even if live; remove the connection and its token |
 | `env list [--reveal]` | Shared and service variables |
 | `env set K=V... \| unset K... \| import FILE [--shared] [--deploy]` | Stage variable changes; `--shared` for environment-level, `--deploy` to apply right away |
 | `changes [--reveal]`, `apply` | Show or apply (and follow the resulting releases) the environment's staged changes |

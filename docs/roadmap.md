@@ -83,7 +83,7 @@ doesn't affect production.
 
 ## M4: Day-to-day comfort
 
-- GitHub push-to-deploy (webhook per service and branch).
+- GitHub push-to-deploy (webhook per service and branch). Done: [0018](decisions/0018-git-push-deploy.md).
 - Resource limits in the UI. (Stored, downsampled metrics per server and
   service: 24 hours at 1 minute, 7 days at 10 minutes, landed early with
   ADR 0015.)

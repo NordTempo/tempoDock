@@ -120,6 +120,13 @@ func serve(ctx context.Context, cfg config.Config) error {
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}
+	if cfg.Hooks.PublicHost != "" {
+		// GitHub webhooks, the only thing Caddy exposes publicly (ADR 0018).
+		servers = append(servers, &http.Server{
+			Addr: cfg.Hooks.Listen, Handler: api.Hooks(c, log),
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		})
+	}
 	errc := make(chan error, len(servers)+1)
 	for _, srv := range servers {
 		go func() { errc <- srv.ListenAndServe() }()

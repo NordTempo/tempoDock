@@ -49,6 +49,8 @@ export const keys = {
     number,
   ],
   volumes: (s: ServiceRef) => [...serviceKey(s), "volumes"],
+  /** The GitHub source (push-to-deploy); release events refetch it. */
+  git: (s: ServiceRef) => [...serviceKey(s), "git"],
   /** Covers every server's detail too. */
   servers: ["servers"],
   server: (name: string) => ["servers", name],

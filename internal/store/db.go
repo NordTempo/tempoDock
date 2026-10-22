@@ -39,6 +39,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addDataPolicyRuleStmt, err = db.PrepareContext(ctx, addDataPolicyRule); err != nil {
 		return nil, fmt.Errorf("error preparing query AddDataPolicyRule: %w", err)
 	}
+	if q.addGitDeliveryStmt, err = db.PrepareContext(ctx, addGitDelivery); err != nil {
+		return nil, fmt.Errorf("error preparing query AddGitDelivery: %w", err)
+	}
 	if q.addReleaseEventStmt, err = db.PrepareContext(ctx, addReleaseEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query AddReleaseEvent: %w", err)
 	}
@@ -65,6 +68,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.clearArchivedHostPortsStmt, err = db.PrepareContext(ctx, clearArchivedHostPorts); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearArchivedHostPorts: %w", err)
+	}
+	if q.clearGitPendingStmt, err = db.PrepareContext(ctx, clearGitPending); err != nil {
+		return nil, fmt.Errorf("error preparing query ClearGitPending: %w", err)
 	}
 	if q.clearReleaseHostPortStmt, err = db.PrepareContext(ctx, clearReleaseHostPort); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearReleaseHostPort: %w", err)
@@ -95,6 +101,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.createEnvironmentStmt, err = db.PrepareContext(ctx, createEnvironment); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateEnvironment: %w", err)
+	}
+	if q.createGitConnectionStmt, err = db.PrepareContext(ctx, createGitConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateGitConnection: %w", err)
 	}
 	if q.createJoinTokenStmt, err = db.PrepareContext(ctx, createJoinToken); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateJoinToken: %w", err)
@@ -146,6 +155,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteExpiredSessionsStmt, err = db.PrepareContext(ctx, deleteExpiredSessions); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteExpiredSessions: %w", err)
+	}
+	if q.deleteGitConnectionStmt, err = db.PrepareContext(ctx, deleteGitConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteGitConnection: %w", err)
 	}
 	if q.deleteJoinTokenStmt, err = db.PrepareContext(ctx, deleteJoinToken); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteJoinToken: %w", err)
@@ -218,6 +230,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getEnvironmentByNameStmt, err = db.PrepareContext(ctx, getEnvironmentByName); err != nil {
 		return nil, fmt.Errorf("error preparing query GetEnvironmentByName: %w", err)
+	}
+	if q.getGitConnectionByHookStmt, err = db.PrepareContext(ctx, getGitConnectionByHook); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGitConnectionByHook: %w", err)
+	}
+	if q.getGitConnectionByServiceStmt, err = db.PrepareContext(ctx, getGitConnectionByService); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGitConnectionByService: %w", err)
 	}
 	if q.getInFlightReleaseStmt, err = db.PrepareContext(ctx, getInFlightRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query GetInFlightRelease: %w", err)
@@ -323,6 +341,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listEnvironmentsStmt, err = db.PrepareContext(ctx, listEnvironments); err != nil {
 		return nil, fmt.Errorf("error preparing query ListEnvironments: %w", err)
+	}
+	if q.listGitPendingServicesStmt, err = db.PrepareContext(ctx, listGitPendingServices); err != nil {
+		return nil, fmt.Errorf("error preparing query ListGitPendingServices: %w", err)
 	}
 	if q.listInFlightReleasesStmt, err = db.PrepareContext(ctx, listInFlightReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListInFlightReleases: %w", err)
@@ -438,6 +459,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.promoteServerKeyStmt, err = db.PrepareContext(ctx, promoteServerKey); err != nil {
 		return nil, fmt.Errorf("error preparing query PromoteServerKey: %w", err)
 	}
+	if q.pruneGitDeliveriesStmt, err = db.PrepareContext(ctx, pruneGitDeliveries); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneGitDeliveries: %w", err)
+	}
 	if q.pruneServerStatsStmt, err = db.PrepareContext(ctx, pruneServerStats); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneServerStats: %w", err)
 	}
@@ -468,11 +492,20 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setEnvironmentApplyErrorStmt, err = db.PrepareContext(ctx, setEnvironmentApplyError); err != nil {
 		return nil, fmt.Errorf("error preparing query SetEnvironmentApplyError: %w", err)
 	}
+	if q.setGitLastEventStmt, err = db.PrepareContext(ctx, setGitLastEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query SetGitLastEvent: %w", err)
+	}
+	if q.setGitPendingStmt, err = db.PrepareContext(ctx, setGitPending); err != nil {
+		return nil, fmt.Errorf("error preparing query SetGitPending: %w", err)
+	}
 	if q.setJoinTokenServerStmt, err = db.PrepareContext(ctx, setJoinTokenServer); err != nil {
 		return nil, fmt.Errorf("error preparing query SetJoinTokenServer: %w", err)
 	}
 	if q.setPendingSettingsStmt, err = db.PrepareContext(ctx, setPendingSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPendingSettings: %w", err)
+	}
+	if q.setReleaseCommitStmt, err = db.PrepareContext(ctx, setReleaseCommit); err != nil {
+		return nil, fmt.Errorf("error preparing query SetReleaseCommit: %w", err)
 	}
 	if q.setReleaseContainerStmt, err = db.PrepareContext(ctx, setReleaseContainer); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseContainer: %w", err)
@@ -528,6 +561,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateDomainStatusStmt, err = db.PrepareContext(ctx, updateDomainStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateDomainStatus: %w", err)
 	}
+	if q.updateGitConnectionStmt, err = db.PrepareContext(ctx, updateGitConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateGitConnection: %w", err)
+	}
 	if q.updateSavedQueryStmt, err = db.PrepareContext(ctx, updateSavedQuery); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSavedQuery: %w", err)
 	}
@@ -576,6 +612,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing addDataPolicyRuleStmt: %w", cerr)
 		}
 	}
+	if q.addGitDeliveryStmt != nil {
+		if cerr := q.addGitDeliveryStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addGitDeliveryStmt: %w", cerr)
+		}
+	}
 	if q.addReleaseEventStmt != nil {
 		if cerr := q.addReleaseEventStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addReleaseEventStmt: %w", cerr)
@@ -619,6 +660,11 @@ func (q *Queries) Close() error {
 	if q.clearArchivedHostPortsStmt != nil {
 		if cerr := q.clearArchivedHostPortsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing clearArchivedHostPortsStmt: %w", cerr)
+		}
+	}
+	if q.clearGitPendingStmt != nil {
+		if cerr := q.clearGitPendingStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing clearGitPendingStmt: %w", cerr)
 		}
 	}
 	if q.clearReleaseHostPortStmt != nil {
@@ -669,6 +715,11 @@ func (q *Queries) Close() error {
 	if q.createEnvironmentStmt != nil {
 		if cerr := q.createEnvironmentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createEnvironmentStmt: %w", cerr)
+		}
+	}
+	if q.createGitConnectionStmt != nil {
+		if cerr := q.createGitConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createGitConnectionStmt: %w", cerr)
 		}
 	}
 	if q.createJoinTokenStmt != nil {
@@ -754,6 +805,11 @@ func (q *Queries) Close() error {
 	if q.deleteExpiredSessionsStmt != nil {
 		if cerr := q.deleteExpiredSessionsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteExpiredSessionsStmt: %w", cerr)
+		}
+	}
+	if q.deleteGitConnectionStmt != nil {
+		if cerr := q.deleteGitConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteGitConnectionStmt: %w", cerr)
 		}
 	}
 	if q.deleteJoinTokenStmt != nil {
@@ -874,6 +930,16 @@ func (q *Queries) Close() error {
 	if q.getEnvironmentByNameStmt != nil {
 		if cerr := q.getEnvironmentByNameStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getEnvironmentByNameStmt: %w", cerr)
+		}
+	}
+	if q.getGitConnectionByHookStmt != nil {
+		if cerr := q.getGitConnectionByHookStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGitConnectionByHookStmt: %w", cerr)
+		}
+	}
+	if q.getGitConnectionByServiceStmt != nil {
+		if cerr := q.getGitConnectionByServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGitConnectionByServiceStmt: %w", cerr)
 		}
 	}
 	if q.getInFlightReleaseStmt != nil {
@@ -1049,6 +1115,11 @@ func (q *Queries) Close() error {
 	if q.listEnvironmentsStmt != nil {
 		if cerr := q.listEnvironmentsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listEnvironmentsStmt: %w", cerr)
+		}
+	}
+	if q.listGitPendingServicesStmt != nil {
+		if cerr := q.listGitPendingServicesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listGitPendingServicesStmt: %w", cerr)
 		}
 	}
 	if q.listInFlightReleasesStmt != nil {
@@ -1241,6 +1312,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing promoteServerKeyStmt: %w", cerr)
 		}
 	}
+	if q.pruneGitDeliveriesStmt != nil {
+		if cerr := q.pruneGitDeliveriesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneGitDeliveriesStmt: %w", cerr)
+		}
+	}
 	if q.pruneServerStatsStmt != nil {
 		if cerr := q.pruneServerStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing pruneServerStatsStmt: %w", cerr)
@@ -1291,6 +1367,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setEnvironmentApplyErrorStmt: %w", cerr)
 		}
 	}
+	if q.setGitLastEventStmt != nil {
+		if cerr := q.setGitLastEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setGitLastEventStmt: %w", cerr)
+		}
+	}
+	if q.setGitPendingStmt != nil {
+		if cerr := q.setGitPendingStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setGitPendingStmt: %w", cerr)
+		}
+	}
 	if q.setJoinTokenServerStmt != nil {
 		if cerr := q.setJoinTokenServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setJoinTokenServerStmt: %w", cerr)
@@ -1299,6 +1385,11 @@ func (q *Queries) Close() error {
 	if q.setPendingSettingsStmt != nil {
 		if cerr := q.setPendingSettingsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setPendingSettingsStmt: %w", cerr)
+		}
+	}
+	if q.setReleaseCommitStmt != nil {
+		if cerr := q.setReleaseCommitStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setReleaseCommitStmt: %w", cerr)
 		}
 	}
 	if q.setReleaseContainerStmt != nil {
@@ -1391,6 +1482,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateDomainStatusStmt: %w", cerr)
 		}
 	}
+	if q.updateGitConnectionStmt != nil {
+		if cerr := q.updateGitConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateGitConnectionStmt: %w", cerr)
+		}
+	}
 	if q.updateSavedQueryStmt != nil {
 		if cerr := q.updateSavedQueryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateSavedQueryStmt: %w", cerr)
@@ -1465,6 +1561,7 @@ type Queries struct {
 	addAuditEventStmt                  *sql.Stmt
 	addAuditEventWithDetailStmt        *sql.Stmt
 	addDataPolicyRuleStmt              *sql.Stmt
+	addGitDeliveryStmt                 *sql.Stmt
 	addReleaseEventStmt                *sql.Stmt
 	addSensitiveColumnStmt             *sql.Stmt
 	addServerStatsStmt                 *sql.Stmt
@@ -1474,6 +1571,7 @@ type Queries struct {
 	archiveProjectStmt                 *sql.Stmt
 	archiveServiceStmt                 *sql.Stmt
 	clearArchivedHostPortsStmt         *sql.Stmt
+	clearGitPendingStmt                *sql.Stmt
 	clearReleaseHostPortStmt           *sql.Stmt
 	consumeJoinTokenStmt               *sql.Stmt
 	countKindEnvironmentsStmt          *sql.Stmt
@@ -1484,6 +1582,7 @@ type Queries struct {
 	createChangesetStmt                *sql.Stmt
 	createDomainStmt                   *sql.Stmt
 	createEnvironmentStmt              *sql.Stmt
+	createGitConnectionStmt            *sql.Stmt
 	createJoinTokenStmt                *sql.Stmt
 	createProjectStmt                  *sql.Stmt
 	createPromotedReleaseStmt          *sql.Stmt
@@ -1501,6 +1600,7 @@ type Queries struct {
 	deleteDomainStmt                   *sql.Stmt
 	deleteExpiredCLILoginsStmt         *sql.Stmt
 	deleteExpiredSessionsStmt          *sql.Stmt
+	deleteGitConnectionStmt            *sql.Stmt
 	deleteJoinTokenStmt                *sql.Stmt
 	deleteSavedQueryStmt               *sql.Stmt
 	deleteSensitiveColumnsStmt         *sql.Stmt
@@ -1525,6 +1625,8 @@ type Queries struct {
 	getDomainByHostnameStmt            *sql.Stmt
 	getEnvironmentStmt                 *sql.Stmt
 	getEnvironmentByNameStmt           *sql.Stmt
+	getGitConnectionByHookStmt         *sql.Stmt
+	getGitConnectionByServiceStmt      *sql.Stmt
 	getInFlightReleaseStmt             *sql.Stmt
 	getInstallIDStmt                   *sql.Stmt
 	getLocalServerStmt                 *sql.Stmt
@@ -1560,6 +1662,7 @@ type Queries struct {
 	listEnvironmentDomainsStmt         *sql.Stmt
 	listEnvironmentVolumesStmt         *sql.Stmt
 	listEnvironmentsStmt               *sql.Stmt
+	listGitPendingServicesStmt         *sql.Stmt
 	listInFlightReleasesStmt           *sql.Stmt
 	listKeptDigestsStmt                *sql.Stmt
 	listPendingChangesetsStmt          *sql.Stmt
@@ -1598,6 +1701,7 @@ type Queries struct {
 	moveArchivedEnvironmentsStmt       *sql.Stmt
 	nextReleaseNumberStmt              *sql.Stmt
 	promoteServerKeyStmt               *sql.Stmt
+	pruneGitDeliveriesStmt             *sql.Stmt
 	pruneServerStatsStmt               *sql.Stmt
 	pruneServiceStatsStmt              *sql.Stmt
 	registerNodeServerStmt             *sql.Stmt
@@ -1608,8 +1712,11 @@ type Queries struct {
 	saveQueryStmt                      *sql.Stmt
 	setDataMaskedSyncedHashStmt        *sql.Stmt
 	setEnvironmentApplyErrorStmt       *sql.Stmt
+	setGitLastEventStmt                *sql.Stmt
+	setGitPendingStmt                  *sql.Stmt
 	setJoinTokenServerStmt             *sql.Stmt
 	setPendingSettingsStmt             *sql.Stmt
+	setReleaseCommitStmt               *sql.Stmt
 	setReleaseContainerStmt            *sql.Stmt
 	setReleaseDigestStmt               *sql.Stmt
 	setReleaseImageStmt                *sql.Stmt
@@ -1628,6 +1735,7 @@ type Queries struct {
 	touchTokenStmt                     *sql.Stmt
 	unapplyVolumeStmt                  *sql.Stmt
 	updateDomainStatusStmt             *sql.Stmt
+	updateGitConnectionStmt            *sql.Stmt
 	updateSavedQueryStmt               *sql.Stmt
 	updateServerPlacementStmt          *sql.Stmt
 	updateServerSettingsStmt           *sql.Stmt
@@ -1645,6 +1753,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addAuditEventStmt:                  q.addAuditEventStmt,
 		addAuditEventWithDetailStmt:        q.addAuditEventWithDetailStmt,
 		addDataPolicyRuleStmt:              q.addDataPolicyRuleStmt,
+		addGitDeliveryStmt:                 q.addGitDeliveryStmt,
 		addReleaseEventStmt:                q.addReleaseEventStmt,
 		addSensitiveColumnStmt:             q.addSensitiveColumnStmt,
 		addServerStatsStmt:                 q.addServerStatsStmt,
@@ -1654,6 +1763,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		archiveProjectStmt:                 q.archiveProjectStmt,
 		archiveServiceStmt:                 q.archiveServiceStmt,
 		clearArchivedHostPortsStmt:         q.clearArchivedHostPortsStmt,
+		clearGitPendingStmt:                q.clearGitPendingStmt,
 		clearReleaseHostPortStmt:           q.clearReleaseHostPortStmt,
 		consumeJoinTokenStmt:               q.consumeJoinTokenStmt,
 		countKindEnvironmentsStmt:          q.countKindEnvironmentsStmt,
@@ -1664,6 +1774,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createChangesetStmt:                q.createChangesetStmt,
 		createDomainStmt:                   q.createDomainStmt,
 		createEnvironmentStmt:              q.createEnvironmentStmt,
+		createGitConnectionStmt:            q.createGitConnectionStmt,
 		createJoinTokenStmt:                q.createJoinTokenStmt,
 		createProjectStmt:                  q.createProjectStmt,
 		createPromotedReleaseStmt:          q.createPromotedReleaseStmt,
@@ -1681,6 +1792,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteDomainStmt:                   q.deleteDomainStmt,
 		deleteExpiredCLILoginsStmt:         q.deleteExpiredCLILoginsStmt,
 		deleteExpiredSessionsStmt:          q.deleteExpiredSessionsStmt,
+		deleteGitConnectionStmt:            q.deleteGitConnectionStmt,
 		deleteJoinTokenStmt:                q.deleteJoinTokenStmt,
 		deleteSavedQueryStmt:               q.deleteSavedQueryStmt,
 		deleteSensitiveColumnsStmt:         q.deleteSensitiveColumnsStmt,
@@ -1705,6 +1817,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getDomainByHostnameStmt:            q.getDomainByHostnameStmt,
 		getEnvironmentStmt:                 q.getEnvironmentStmt,
 		getEnvironmentByNameStmt:           q.getEnvironmentByNameStmt,
+		getGitConnectionByHookStmt:         q.getGitConnectionByHookStmt,
+		getGitConnectionByServiceStmt:      q.getGitConnectionByServiceStmt,
 		getInFlightReleaseStmt:             q.getInFlightReleaseStmt,
 		getInstallIDStmt:                   q.getInstallIDStmt,
 		getLocalServerStmt:                 q.getLocalServerStmt,
@@ -1740,6 +1854,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listEnvironmentDomainsStmt:         q.listEnvironmentDomainsStmt,
 		listEnvironmentVolumesStmt:         q.listEnvironmentVolumesStmt,
 		listEnvironmentsStmt:               q.listEnvironmentsStmt,
+		listGitPendingServicesStmt:         q.listGitPendingServicesStmt,
 		listInFlightReleasesStmt:           q.listInFlightReleasesStmt,
 		listKeptDigestsStmt:                q.listKeptDigestsStmt,
 		listPendingChangesetsStmt:          q.listPendingChangesetsStmt,
@@ -1778,6 +1893,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		moveArchivedEnvironmentsStmt:       q.moveArchivedEnvironmentsStmt,
 		nextReleaseNumberStmt:              q.nextReleaseNumberStmt,
 		promoteServerKeyStmt:               q.promoteServerKeyStmt,
+		pruneGitDeliveriesStmt:             q.pruneGitDeliveriesStmt,
 		pruneServerStatsStmt:               q.pruneServerStatsStmt,
 		pruneServiceStatsStmt:              q.pruneServiceStatsStmt,
 		registerNodeServerStmt:             q.registerNodeServerStmt,
@@ -1788,8 +1904,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		saveQueryStmt:                      q.saveQueryStmt,
 		setDataMaskedSyncedHashStmt:        q.setDataMaskedSyncedHashStmt,
 		setEnvironmentApplyErrorStmt:       q.setEnvironmentApplyErrorStmt,
+		setGitLastEventStmt:                q.setGitLastEventStmt,
+		setGitPendingStmt:                  q.setGitPendingStmt,
 		setJoinTokenServerStmt:             q.setJoinTokenServerStmt,
 		setPendingSettingsStmt:             q.setPendingSettingsStmt,
+		setReleaseCommitStmt:               q.setReleaseCommitStmt,
 		setReleaseContainerStmt:            q.setReleaseContainerStmt,
 		setReleaseDigestStmt:               q.setReleaseDigestStmt,
 		setReleaseImageStmt:                q.setReleaseImageStmt,
@@ -1808,6 +1927,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		touchTokenStmt:                     q.touchTokenStmt,
 		unapplyVolumeStmt:                  q.unapplyVolumeStmt,
 		updateDomainStatusStmt:             q.updateDomainStatusStmt,
+		updateGitConnectionStmt:            q.updateGitConnectionStmt,
 		updateSavedQueryStmt:               q.updateSavedQueryStmt,
 		updateServerPlacementStmt:          q.updateServerPlacementStmt,
 		updateServerSettingsStmt:           q.updateServerSettingsStmt,

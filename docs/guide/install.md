@@ -180,6 +180,9 @@ running).
 | `[registry] listen` | `127.0.0.1:5000` | Control plane: host address the `dock-registry` container is published on. Node: where `dock node` serves the registry over the link. Image references use it on every server |
 | `[registry] storage_dir` | `/var/lib/dock-registry` | Registry blobs and manifests |
 | `[registry] public_name` | empty | The registry's name: the audience of its tokens. Required when enabled |
+| `[hooks] public_host` | empty | Control plane: the public hostname GitHub delivers pushes to, e.g. `hooks.example.com`, with DNS pointing at this server like an app domain. Caddy routes only `/hooks/github/` on it, to `[hooks] listen`. Empty: [push-to-deploy](deploying.md#deploy-on-git-push) can be connected but receives nothing |
+| `[hooks] listen` | `127.0.0.1:7072` | Loopback listener for webhook deliveries; serves nothing else. Must be loopback |
+| `[hooks] ui_url` | empty | The UI's URL, e.g. `https://dock.example.com`, for the Details link of GitHub commit statuses. Empty: statuses have no link |
 
 Changing `[buildkit]` settings recreates the `dock-buildkit` container
 before the next build. So does finding its memory cap loosened: before each
