@@ -107,7 +107,7 @@ func (e *Engine) Commit(ctx context.Context, t data.Target, c data.Call, changes
 		}
 		return res, err
 	}
-	begin := beginSQL(false, data.WriteStatementTimeout, data.WriteLockTimeout, data.WriteIdleTimeout, c.Actor)
+	begin := beginSQL(false, data.WriteStatementTimeout, data.WriteLockTimeout, data.WriteIdleTimeout, appName(e.app, c.Actor))
 	if err := simpleExec(ctx, cn.pg, begin); err != nil {
 		return fail(fmt.Errorf("%w: %w", data.ErrUnreachable, err))
 	}

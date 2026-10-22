@@ -97,7 +97,7 @@ func (e *Engine) acquire(ctx context.Context, t data.Target, role data.Role) (*c
 			e.conns[k] = append(list, c)
 			e.total++
 			e.mu.Unlock()
-			pc, err := connect(ctx, t, cred)
+			pc, err := e.connect(ctx, t, cred)
 			if err != nil {
 				e.release(c)
 				return nil, loginError(ctx, err, data.ErrNotSetUp)
@@ -254,7 +254,7 @@ func (c *conn) close() {
 	_ = c.pg.Close(context.Background())
 }
 
-// credentials picks the login for a Dock role.
+// credentials picks the login for one of the engine's roles.
 func credentials(t data.Target, role data.Role) (data.Credentials, error) {
 	var cred data.Credentials
 	switch role {
@@ -271,24 +271,31 @@ func credentials(t data.Target, role data.Role) (data.Credentials, error) {
 	return cred, nil
 }
 
-// connect opens one connection to t through t.Dial. Nothing comes from the
-// environment (PG* variables): host, TLS, timeouts and session settings are
-// fixed here. Results come back in text format, so the session settings pin
-// the text output that apitypes.DataRow promises (ISO dates in UTC, hex
-// bytea).
-func connect(ctx context.Context, t data.Target, cred data.Credentials) (*pgx.Conn, error) {
+// connect opens one connection to t through t.Dial, with TLS when t.TLS
+// is set (falling back to plaintext with t.TLSOptional). Nothing comes
+// from the environment (PG* variables): host, TLS, timeouts and session
+// settings are fixed here. Results come back in text format, so the
+// session settings pin the text output that apitypes.DataRow promises
+// (ISO dates in UTC, hex bytea).
+func (e *Engine) connect(ctx context.Context, t data.Target, cred data.Credentials) (*pgx.Conn, error) {
 	cfg, err := pgx.ParseConfig("host=dock port=5432 user=dock sslmode=disable")
 	if err != nil {
 		return nil, err
 	}
 	cfg.User, cfg.Password, cfg.Database = cred.User, cred.Password, t.Database
 	cfg.TLSConfig, cfg.Fallbacks, cfg.ValidateConnect, cfg.AfterConnect = nil, nil, nil, nil
+	if t.TLS != nil {
+		cfg.TLSConfig = t.TLS
+		if t.TLSOptional {
+			cfg.Fallbacks = []*pgconn.FallbackConfig{{Host: cfg.Host, Port: cfg.Port}}
+		}
+	}
 	cfg.ConnectTimeout = connectTimeout
 	dial := t.Dial
 	cfg.DialFunc = func(ctx context.Context, _, _ string) (net.Conn, error) { return dial(ctx) }
 	cfg.LookupFunc = func(_ context.Context, host string) ([]string, error) { return []string{host}, nil }
 	cfg.RuntimeParams = map[string]string{
-		"application_name": "dock",
+		"application_name": e.app,
 		"DateStyle":        "ISO, MDY",
 		"IntervalStyle":    "postgres",
 		"TimeZone":         "UTC",
@@ -329,8 +336,9 @@ func simpleExec(ctx context.Context, pg *pgx.Conn, sql string) error {
 	return pg.PgConn().Exec(ctx, sql).Close()
 }
 
-// beginSQL is the statement that opens a Dock transaction with its limits.
-func beginSQL(readOnly bool, statement, lock time.Duration, idle time.Duration, actor string) string {
+// beginSQL is the statement that opens a panel transaction with its
+// limits; app is application_name (appName).
+func beginSQL(readOnly bool, statement, lock time.Duration, idle time.Duration, app string) string {
 	var b strings.Builder
 	if readOnly {
 		b.WriteString("BEGIN READ ONLY")
@@ -346,7 +354,7 @@ func beginSQL(readOnly bool, statement, lock time.Duration, idle time.Duration, 
 		b.WriteString(strconv.FormatInt(idle.Milliseconds(), 10))
 	}
 	b.WriteString("; SET LOCAL application_name = '")
-	b.WriteString(appName(actor))
+	b.WriteString(app)
 	b.WriteString("'")
 	return b.String()
 }
@@ -361,7 +369,7 @@ func (e *Engine) read(ctx context.Context, t data.Target, role data.Role, c data
 		return err
 	}
 	defer e.release(cn)
-	if err := simpleExec(ctx, cn.pg, beginSQL(true, timeout, data.ReadLockTimeout, 0, c.Actor)); err != nil {
+	if err := simpleExec(ctx, cn.pg, beginSQL(true, timeout, data.ReadLockTimeout, 0, appName(e.app, c.Actor))); err != nil {
 		cn.broken = true
 		return dbError(err)
 	}

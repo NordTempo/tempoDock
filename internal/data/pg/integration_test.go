@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -75,6 +76,11 @@ func target(id int64) data.Target {
 }
 
 var owner = data.Credentials{User: "postgres", Password: ownerPassword}
+
+// connect opens one uncached connection as cred, with Dock's settings.
+func connect(ctx context.Context, t data.Target, cred data.Credentials) (*pgx.Conn, error) {
+	return New(Options{}).connect(ctx, t, cred)
+}
 
 const seedSQL = `
 CREATE TYPE mood AS ENUM ('happy', 'sad');
@@ -144,14 +150,14 @@ func seed() error {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	e := New()
+	e := New(Options{})
 	defer e.Close()
 	_, err := e.Setup(ctx, t, owner, t.Reader, t.Writer)
 	return err
 }
 
 func newEngine(t *testing.T) *Engine {
-	e := New()
+	e := New(Options{})
 	t.Cleanup(e.Close)
 	return e
 }

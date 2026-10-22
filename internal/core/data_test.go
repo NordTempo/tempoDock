@@ -505,7 +505,7 @@ func (e *pageEngine) SyncGrants(context.Context, data.Target, data.Credentials, 
 	return "synced", nil
 }
 
-func (e *pageEngine) Redact(sql string) string { return pg.New().Redact(sql) }
+func (e *pageEngine) Redact(sql string) string { return pg.New(pg.Options{}).Redact(sql) }
 
 func (e *pageEngine) Forget(id int64) {
 	e.mu.Lock()

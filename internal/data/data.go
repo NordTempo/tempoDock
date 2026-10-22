@@ -1,9 +1,9 @@
 // Package data is the engine-neutral side of the database panel (ADR 0016).
 //
-// Core decides who may do what and resolves a service to a Target; an
-// Engine (internal/data/pg for Postgres) talks to the database. Engines
-// know nothing about actors, permissions or the store, and core knows
-// nothing about SQL drivers.
+// The panel (internal/datapanel) decides who may do what and resolves a
+// database to a Target; an Engine (internal/data/pg for Postgres) talks to
+// the database. Engines know nothing about actors, permissions or the
+// store, and the panel knows nothing about SQL drivers.
 //
 // Idle means idle: an engine holds no connections, goroutines or timers
 // while nobody uses the panel. Connections are opened on first use and
@@ -13,6 +13,7 @@ package data
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -71,6 +72,9 @@ var (
 	// should read or write, typically one created by another role since
 	// the last grants sync. Sync the grants (Engine.SyncGrants) and retry.
 	ErrNoPrivilege = errors.New("missing privilege")
+	// ErrCannotSetUp: the owner can log in but can't create roles
+	// (neither superuser nor CREATEROLE), so setup would fail (Check).
+	ErrCannotSetUp = errors.New("the owner can't create roles")
 )
 
 // Role is which database role a call runs as.
@@ -89,8 +93,8 @@ const (
 // Roles names the roles a host creates in a user's database. Dock and
 // tempoBase use different names (ADR 0024), so both can manage one
 // database without rotating each other's passwords. Engines are built
-// with one set (workstream A adds pg.Options.Roles; until then they use
-// DockRoles).
+// with one set (pg.Options.Roles) and keep calling them by Dock's names
+// (RoleReader, ...) inside.
 type Roles struct {
 	Reader, Writer, ReaderMasked Role
 }
@@ -110,14 +114,21 @@ type Credentials struct {
 
 func (c Credentials) String() string { return c.User }
 
-// Target is one service's database, as core resolved it.
+// Target is one database, as the panel resolved it.
 type Target struct {
-	// ServiceID keys the connection cache and the schema cache.
+	// ServiceID is the database's ID (Dock: the service's, tempoBase: the
+	// connection's); it keys the connection cache and the schema cache.
 	ServiceID int64
-	// Dial opens a raw connection to the database: node.Runtime.Dial bound
-	// to the service's running container and port. Engines use it for
+	// Dial opens a raw connection to the database: in Dock
+	// node.Runtime.Dial bound to the service's running container and port,
+	// in tempoBase a TCP dial of the connection's host. Engines use it for
 	// every connection, including Postgres cancel requests.
 	Dial func(ctx context.Context) (net.Conn, error)
+	// TLS, when set, is negotiated over Dial's connection; nil is
+	// plaintext (Dock's private networks). TLSOptional falls back to
+	// plaintext when the server refuses TLS (sslmode=prefer).
+	TLS         *tls.Config
+	TLSOptional bool
 	// Database is the database name to connect to.
 	Database string
 	// Reader and Writer are the Dock roles' credentials (stored encrypted
@@ -176,6 +187,12 @@ type Engine interface {
 	// Kind is the engine this implements.
 	Kind() apitypes.DataEngine
 
+	// Check logs in as owner and reports the server without changing
+	// anything: ErrUnsupported when it is too old, ErrCannotSetUp when the
+	// owner can't create roles, ErrLoginFailed when the login is refused,
+	// ErrUnreachable when the server can't be reached. ServerInfo is set
+	// whenever the login succeeded.
+	Check(ctx context.Context, t Target, owner Credentials) (ServerInfo, error)
 	// Status logs in as Reader and reports the server. ErrNotSetUp when
 	// the role is missing, its password doesn't match or it still has
 	// the grants of an older setup; ErrUnsupported when the server is too

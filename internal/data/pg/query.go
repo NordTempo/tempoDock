@@ -76,7 +76,7 @@ func (e *Engine) Query(ctx context.Context, t data.Target, c data.Call, req apit
 		return stats, err
 	}
 	defer e.release(cn)
-	if err := simpleExec(qctx, cn.pg, beginSQL(true, timeout, data.ReadLockTimeout, 0, c.Actor)); err != nil {
+	if err := simpleExec(qctx, cn.pg, beginSQL(true, timeout, data.ReadLockTimeout, 0, appName(e.app, c.Actor))); err != nil {
 		cn.broken = true
 		return stats, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
 	}

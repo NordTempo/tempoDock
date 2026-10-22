@@ -183,7 +183,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		git:        newGitState(o.GitHubAPI),
 	}
 	if c.data == nil {
-		c.data = pg.New()
+		c.data = pg.New(pg.Options{})
 	}
 	if o.CutoverDrain > 0 {
 		c.drain = o.CutoverDrain

@@ -7,9 +7,10 @@
 // data.IdleTimeout after their last use. There is no pool goroutine: an idle
 // engine holds nothing but the timers of connections still open.
 //
-// Every read runs as dock_reader (masked references and SQL as
-// dock_reader_masked) in a READ ONLY transaction that is rolled back
-// afterwards; commits run as dock_writer in one transaction. The roles hold
+// Every read runs as the reader role (Options.Roles; Dock's dock_reader,
+// masked references and SQL as dock_reader_masked) in a READ ONLY
+// transaction that is rolled back afterwards; commits run as the writer
+// (dock_writer) in one transaction. The roles hold
 // explicit grants on the user schemas only, never the system catalogs
 // (SyncGrants). Results are
 // requested in Postgres' text format and encoded to JSON cells straight from
@@ -54,13 +55,35 @@ type Engine struct {
 	// countTimeout bounds each exact count of a never-analysed table
 	// (countUnanalysed).
 	countTimeout time.Duration
+
+	// roles are the role names the engine creates and logs in as; app
+	// is application_name's prefix (Options).
+	roles data.Roles
+	app   string
+}
+
+// Options configure an engine; the zero Options is Tempo Dock's.
+type Options struct {
+	// Roles are the role names in the user's database; zero means
+	// data.DockRoles. tempoBase passes data.TempoBaseRoles, so both
+	// products can manage one database.
+	Roles data.Roles
+	// AppName prefixes application_name ("<AppName>:<actor>"); "" means
+	// "dock".
+	AppName string
 }
 
 var _ data.Engine = (*Engine)(nil)
 
 // New returns an engine with the limits of package data. It opens nothing
 // until the first call.
-func New() *Engine {
+func New(o Options) *Engine {
+	if o.Roles == (data.Roles{}) {
+		o.Roles = data.DockRoles
+	}
+	if o.AppName == "" {
+		o.AppName = "dock"
+	}
 	return &Engine{
 		conns:       map[connKey][]*conn{},
 		wake:        make(chan struct{}),
@@ -71,6 +94,9 @@ func New() *Engine {
 		maxConns:    data.MaxConns,
 
 		countTimeout: exactCountTimeout,
+
+		roles: o.Roles,
+		app:   o.AppName,
 	}
 }
 
@@ -94,7 +120,7 @@ func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, er
 	var num int
 	var readsAll, masked bool
 	err = cn.pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int, pg_has_role(current_user, 'pg_read_all_data', 'MEMBER'), to_regrole($1) IS NOT NULL",
-		string(data.RoleReaderMasked)).Scan(&num, &readsAll, &masked)
+		string(e.roles.ReaderMasked)).Scan(&num, &readsAll, &masked)
 	if err != nil {
 		cn.broken = true
 		return data.ServerInfo{}, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
@@ -104,10 +130,28 @@ func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, er
 		return info, unsupported(info)
 	}
 	if readsAll {
-		return info, fmt.Errorf("%w: %s still has pg_read_all_data from an older setup, which also reads password hashes; run setup again", data.ErrNotSetUp, data.RoleReader)
+		return info, fmt.Errorf("%w: %s still has pg_read_all_data from an older setup, which also reads password hashes; run setup again", data.ErrNotSetUp, e.roles.Reader)
 	}
 	if t.ReaderMasked.User != "" && !masked {
-		return info, fmt.Errorf("%w: %s is missing; run setup again", data.ErrNotSetUp, data.RoleReaderMasked)
+		return info, fmt.Errorf("%w: %s is missing; run setup again", data.ErrNotSetUp, e.roles.ReaderMasked)
+	}
+	return info, nil
+}
+
+// Check logs in as owner, checks the server version and that the owner
+// is a superuser or has CREATEROLE, and changes nothing.
+func (e *Engine) Check(ctx context.Context, t data.Target, owner data.Credentials) (data.ServerInfo, error) {
+	pg, info, err := e.ownerConn(ctx, t, owner)
+	if err != nil {
+		return info, err
+	}
+	defer func() { _ = pg.Close(context.Background()) }()
+	var canCreate bool
+	if err := pg.QueryRow(ctx, "SELECT rolsuper OR rolcreaterole FROM pg_roles WHERE rolname = current_user").Scan(&canCreate); err != nil {
+		return info, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
+	}
+	if !canCreate {
+		return info, fmt.Errorf("%w: %s is neither a superuser nor has CREATEROLE", data.ErrCannotSetUp, owner.User)
 	}
 	return info, nil
 }
