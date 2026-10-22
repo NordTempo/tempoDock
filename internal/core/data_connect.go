@@ -175,7 +175,7 @@ func (c *Core) OpenTunnel(ctx context.Context, a Actor, ref ServiceRef, req Tunn
 	if err != nil {
 		return nil, err
 	}
-	t := &Tunnel{c: c, a: a, ss: ss, key: actorKey(a), port: target.port, from: req.From}
+	t := &Tunnel{c: c, a: a, ss: ss, key: datapanel.ActorKey(panelActor(a)), port: target.port, from: req.From}
 	if err := c.tunnels.reserve(t.key); err != nil {
 		return nil, err
 	}

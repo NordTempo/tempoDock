@@ -121,11 +121,10 @@ type Core struct {
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
 
-	// data is the database panel engine; browse throttles data.browse
-	// audit events.
-	data     data.Engine
-	browse   browseLog
-	deciding decisions
+	// data is the database panel's engine and panel the shared panel
+	// over it, with Dock as its host (data_host.go).
+	data  data.Engine
+	panel *dataPanel
 	// tunnels are the open `dock connect` tunnels (data_connect.go).
 	tunnels tunnelSet
 
@@ -185,6 +184,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if c.data == nil {
 		c.data = pg.New(pg.Options{})
 	}
+	c.panel = newDataPanel(c)
 	if o.CutoverDrain > 0 {
 		c.drain = o.CutoverDrain
 	}
@@ -328,7 +328,7 @@ func (c *Core) Close() {
 	c.git.mu.Unlock()
 	c.serversMu.Unlock()
 	c.wg.Wait()
-	c.data.Close()
+	c.panel.Close()
 }
 
 func now() time.Time { return time.Now().UTC() }

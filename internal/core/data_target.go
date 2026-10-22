@@ -2,10 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -75,8 +71,9 @@ type dbConn struct {
 	owner       data.Credentials
 }
 
-// errNotRunning means the service has no running container to dial.
-var errNotRunning = errors.New("not running")
+// errNotRunning means the service has no running container to dial; it is
+// the panel's datapanel.ErrNotRunning (dataHost.Connect).
+var errNotRunning = datapanel.ErrNotRunning
 
 // dbConnection derives a database service's connection details from its
 // active release's resolved variables (what the container runs with), per
@@ -207,179 +204,4 @@ func (c *Core) dial(conn dbConn) func(ctx context.Context) (net.Conn, error) {
 		nc, err := rt.Dial(ctx, node.DialRequest{ContainerID: conn.containerID, Port: conn.port})
 		return nc, c.nodeErr(conn.serverID, err)
 	}
-}
-
-// newRolePassword generates a Dock role's password: 32 random bytes as
-// URL-safe base64, printable ASCII as the engine requires.
-func newRolePassword() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
-// maskedPassword derives the masked reader's password from the reader's,
-// so it needs no column of its own and rotates with it. HMAC keeps the
-// reader's password from being recovered from it.
-func maskedPassword(readerPassword string) string {
-	m := hmac.New(sha256.New, []byte(readerPassword))
-	m.Write([]byte(data.RoleReaderMasked))
-	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
-}
-
-// dbTarget is a database service resolved for one call: who asks, what
-// they may do, and how the engine reaches it.
-type dbTarget struct {
-	ss     svcScope
-	engine apitypes.DataEngine
-	by     apitypes.DataDetection
-	perm   apitypes.DataPermission
-	// access is the setup record; nil before setup.
-	access *store.DataAccess
-	// conn and t are set by connect.
-	conn dbConn
-	t    data.Target
-	// sensitive are the marked columns (loaded by connect).
-	sensitive []apitypes.DataColumnRef
-}
-
-// dataService loads a database service the actor can see, with its
-// detection and the actor's permission. Services that aren't databases
-// are not_found.
-func (c *Core) dataService(ctx context.Context, a Actor, ref ServiceRef) (*dbTarget, error) {
-	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "using the database panel")
-	if err != nil {
-		return nil, err
-	}
-	engine, by := detectDatabase(ss.svc)
-	if engine == "" {
-		return nil, notFound("%s is not a database; if it is Postgres, set its database setting to postgres", ss)
-	}
-	perm, err := c.dataPermission(ctx, a, ss.envScope)
-	if err != nil {
-		return nil, err
-	}
-	dt := &dbTarget{ss: ss, engine: engine, by: by, perm: perm}
-	acc, err := c.store.GetDataAccess(ctx, ss.svc.ID)
-	switch {
-	case err == nil:
-		dt.access = &acc
-	case !store.IsNotFound(err):
-		return nil, err
-	}
-	return dt, nil
-}
-
-// dataTarget is dataService plus a level check, a set-up check, connect
-// and, when the grants were never synced, a sync: everything an engine
-// call needs.
-func (c *Core) dataTarget(ctx context.Context, a Actor, ref ServiceRef, need apitypes.DataLevel, action string) (*dbTarget, error) {
-	dt, err := c.dataService(ctx, a, ref)
-	if err != nil {
-		return nil, err
-	}
-	if err := datapanel.RequireLevel(dt.perm, need, action); err != nil {
-		return nil, err
-	}
-	if dt.access == nil {
-		return nil, errNotSetUp(dt)
-	}
-	if err := c.connect(ctx, dt); err != nil {
-		return nil, err
-	}
-	if dt.access.GrantsSyncedHash == "" {
-		// Never synced: an upgrade from the predefined-role grants (or a
-		// sync that failed). Nothing reads before the new grants are in.
-		if err := c.syncGrants(ctx, dt, ""); err != nil {
-			return nil, err
-		}
-	}
-	return dt, nil
-}
-
-// errNotSetUp says data access isn't set up and who can fix it.
-func errNotSetUp(dt *dbTarget) error {
-	return errf(apitypes.CodeConflict, "data access is not set up for %s; an admin can run `dock db setup`", dt.ss)
-}
-
-// connect derives the connection, opens the role passwords and loads the
-// sensitive columns.
-func (c *Core) connect(ctx context.Context, dt *dbTarget) error {
-	conn, err := c.dbConnection(ctx, dt.ss)
-	if errors.Is(err, errNotRunning) {
-		return errf(apitypes.CodeConflict, "%s is not running; deploy or restart it to use its data", dt.ss)
-	}
-	if err != nil {
-		return err
-	}
-	if err := c.useConn(ctx, dt, conn); err != nil {
-		return err
-	}
-	return c.loadSensitive(ctx, dt)
-}
-
-// useConn builds the engine target for a derived connection, with the
-// role passwords once set up.
-func (c *Core) useConn(_ context.Context, dt *dbTarget, conn dbConn) error {
-	dt.conn = conn
-	dt.t = data.Target{ServiceID: dt.ss.svc.ID, Dial: c.dial(conn), Database: conn.database}
-	if dt.access != nil {
-		reader, err := c.box.Open(dt.access.ReaderSecret)
-		if err != nil {
-			return fmt.Errorf("open reader password: %w", err)
-		}
-		writer, err := c.box.Open(dt.access.WriterSecret)
-		if err != nil {
-			return fmt.Errorf("open writer password: %w", err)
-		}
-		dt.t.Reader = data.Credentials{User: string(data.RoleReader), Password: string(reader)}
-		dt.t.Writer = data.Credentials{User: string(data.RoleWriter), Password: string(writer)}
-		dt.t.ReaderMasked = data.Credentials{User: string(data.RoleReaderMasked), Password: maskedPassword(string(reader))}
-	}
-	return nil
-}
-
-// loadSensitive loads the database's sensitive columns.
-func (c *Core) loadSensitive(ctx context.Context, dt *dbTarget) error {
-	rows, err := c.store.ListSensitiveColumns(ctx, dt.ss.svc.ID)
-	if err != nil {
-		return err
-	}
-	dt.sensitive = make([]apitypes.DataColumnRef, len(rows))
-	for i, r := range rows {
-		dt.sensitive[i] = apitypes.DataColumnRef{Schema: r.SchemaName, Table: r.TableName, Column: r.ColumnName}
-	}
-	return nil
-}
-
-// call is the engine call context for the actor. Sensitive columns are
-// masked unless the actor may see them (sensitive visible) and reveals
-// them: explicitly for pages (DataPageRequest.Reveal, audited as
-// data.reveal), implicitly for SQL and changesets, whose every statement
-// is audited with its text.
-func (dt *dbTarget) call(a Actor, reveal bool) data.Call {
-	return data.Call{Actor: a.Name, Masked: !reveal || dt.perm.Sensitive != apitypes.SensitiveVisible, Sensitive: dt.sensitive}
-}
-
-// dataError maps an engine error to what the caller should do. Errors
-// that aren't the engine's pass through.
-func dataError(dt *dbTarget, err error) error {
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, data.ErrNotSetUp):
-		return errf(apitypes.CodeConflict, "Dock's roles in %s are missing or their passwords changed (%v); an admin can run `dock db setup` again", dt.ss, err)
-	case errors.Is(err, data.ErrUnsupported):
-		return invalid("%v; the database panel needs Postgres 14 or later", err)
-	case errors.Is(err, data.ErrLoginFailed):
-		return invalid("%v. If POSTGRES_PASSWORD changed after the database was created, set database_url_variable to a variable with the current postgres:// URL", err)
-	case errors.Is(err, data.ErrUnreachable):
-		return errf(apitypes.CodeConflict, "can't reach %s: %v; check that it is running and healthy", dt.ss, err)
-	case errors.Is(err, data.ErrNoPrivilege):
-		return errf(apitypes.CodeConflict, "Dock's roles in %s lack a privilege even after updating their grants (%v); an admin can run `dock db setup` again", dt.ss, err)
-	case errors.Is(err, data.ErrNoTable):
-		return notFound("%v in %s", err, dt.ss)
-	case errors.Is(err, data.ErrInvalid):
-		return invalid("%v", err)
-	}
-	return err
 }

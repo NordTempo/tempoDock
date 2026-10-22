@@ -1,9 +1,11 @@
-package core
+package datapanel
 
 import (
 	"encoding/base64"
 	"strconv"
 	"strings"
+
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 // Page cursors. The engine's cursors hold the last row's key values in the
@@ -14,20 +16,20 @@ import (
 // for key values) or replayed by someone else.
 
 // errBadCursor is the answer to any cursor that doesn't open.
-var errBadCursor = invalid("the cursor isn't valid for this table and caller; start from the first page")
+var errBadCursor = Errorf(apitypes.CodeValidation, "the cursor isn't valid for this table and caller; start from the first page")
 
 // cursorContext binds a sealed cursor to a database and an actor.
-func cursorContext(a Actor, serviceID int64) string {
-	return strconv.FormatInt(serviceID, 10) + "\x00" + actorKey(a) + "\x00"
+func cursorContext(a Actor, database int64) string {
+	return strconv.FormatInt(database, 10) + "\x00" + ActorKey(a) + "\x00"
 }
 
 // sealCursor turns an engine cursor ("" for none) into the one a caller
 // sees.
-func (c *Core) sealCursor(a Actor, serviceID int64, raw string) (string, error) {
+func (p *Panel[D]) sealCursor(a Actor, database int64, raw string) (string, error) {
 	if raw == "" {
 		return "", nil
 	}
-	b, err := c.box.Seal([]byte(cursorContext(a, serviceID) + raw))
+	b, err := p.box.Seal([]byte(cursorContext(a, database) + raw))
 	if err != nil {
 		return "", err
 	}
@@ -36,7 +38,7 @@ func (c *Core) sealCursor(a Actor, serviceID int64, raw string) (string, error) 
 
 // openCursor reverses sealCursor for the same database and actor; any
 // other cursor is errBadCursor.
-func (c *Core) openCursor(a Actor, serviceID int64, sealed string) (string, error) {
+func (p *Panel[D]) openCursor(a Actor, database int64, sealed string) (string, error) {
 	if sealed == "" {
 		return "", nil
 	}
@@ -44,10 +46,10 @@ func (c *Core) openCursor(a Actor, serviceID int64, sealed string) (string, erro
 	if err != nil {
 		return "", errBadCursor
 	}
-	if b, err = c.box.Open(b); err != nil {
+	if b, err = p.box.Open(b); err != nil {
 		return "", errBadCursor
 	}
-	raw, ok := strings.CutPrefix(string(b), cursorContext(a, serviceID))
+	raw, ok := strings.CutPrefix(string(b), cursorContext(a, database))
 	if !ok {
 		return "", errBadCursor
 	}

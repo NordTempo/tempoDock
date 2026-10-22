@@ -42,3 +42,19 @@ var (
 	// ErrDuplicate: a store write broke a uniqueness rule.
 	ErrDuplicate = errors.New("duplicate")
 )
+
+func invalid(format string, args ...any) error {
+	return Errorf(apitypes.CodeValidation, format, args...)
+}
+
+func notFound(format string, args ...any) error {
+	return Errorf(apitypes.CodeNotFound, format, args...)
+}
+
+func conflict(format string, args ...any) error {
+	return Errorf(apitypes.CodeConflict, format, args...)
+}
+
+func forbidden(format string, args ...any) error {
+	return Errorf(apitypes.CodeForbidden, format, args...)
+}

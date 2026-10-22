@@ -152,7 +152,7 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 		// The service's database container went away (redeploy, archive,
 		// crash): drop the panel's connections to it. Its release is
 		// superseded already when the daemon replaces or archives it.
-		c.data.Forget(ss.svc.ID)
+		c.panel.Forget(ss.svc.ID)
 	}
 	if own || rel.Status != string(apitypes.ReleaseActive) {
 		return // the daemon is stopping it, or it isn't the active container
