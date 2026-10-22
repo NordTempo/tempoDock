@@ -199,8 +199,25 @@ func (w wireLabels) node() node.Labels {
 }
 
 type wireMount struct {
-	Volume string `json:"volume"`
-	Path   string `json:"path"`
+	Volume   string `json:"volume"`
+	Path     string `json:"path"`
+	ReadOnly bool   `json:"read_only,omitempty"`
+}
+
+func toWireMounts(ms []node.Mount) []wireMount {
+	var out []wireMount
+	for _, m := range ms {
+		out = append(out, wireMount{Volume: m.Volume, Path: m.Path, ReadOnly: m.ReadOnly})
+	}
+	return out
+}
+
+func fromWireMounts(ms []wireMount) []node.Mount {
+	var out []node.Mount
+	for _, m := range ms {
+		out = append(out, node.Mount{Volume: m.Volume, Path: m.Path, ReadOnly: m.ReadOnly})
+	}
+	return out
 }
 
 type wireSpec struct {
@@ -222,10 +239,7 @@ func toWireSpec(s node.ContainerSpec) wireSpec {
 	w := wireSpec{
 		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Cmd: s.Cmd,
 		Network: s.Network, Aliases: s.Aliases, Port: s.Port, HostPort: s.HostPort,
-		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs,
-	}
-	for _, m := range s.Mounts {
-		w.Mounts = append(w.Mounts, wireMount{Volume: m.Volume, Path: m.Path})
+		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Mounts: toWireMounts(s.Mounts),
 	}
 	return w
 }
@@ -234,12 +248,46 @@ func (w wireSpec) node() node.ContainerSpec {
 	s := node.ContainerSpec{
 		Name: w.Name, Image: w.Image, Labels: w.Labels.node(), Env: w.Env, Cmd: w.Cmd,
 		Network: w.Network, Aliases: w.Aliases, Port: w.Port, HostPort: w.HostPort,
-		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs},
-	}
-	for _, m := range w.Mounts {
-		s.Mounts = append(s.Mounts, node.Mount{Volume: m.Volume, Path: m.Path})
+		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Mounts: fromWireMounts(w.Mounts),
 	}
 	return s
+}
+
+// jobRequest is RunJob's argument (protocol 2).
+type jobRequest struct {
+	Name        string            `json:"name"`
+	Image       string            `json:"image"`
+	Labels      wireLabels        `json:"labels"`
+	Env         map[string]string `json:"env,omitempty"`
+	Script      string            `json:"script"`
+	Network     string            `json:"network,omitempty"`
+	Mounts      []wireMount       `json:"mounts,omitempty"`
+	MemoryBytes int64             `json:"memory_bytes,omitempty"`
+	NanoCPUs    int64             `json:"nano_cpus,omitempty"`
+}
+
+func toJobRequest(s node.JobSpec) jobRequest {
+	return jobRequest{
+		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Script: s.Script,
+		Network: s.Network, Mounts: toWireMounts(s.Mounts),
+		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs,
+	}
+}
+
+func (w jobRequest) node() node.JobSpec {
+	return node.JobSpec{
+		Name: w.Name, Image: w.Image, Labels: w.Labels.node(), Env: w.Env, Script: w.Script,
+		Network: w.Network, Mounts: fromWireMounts(w.Mounts),
+		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs},
+	}
+}
+
+// jobResult is RunJob's answer. Output is at most node.MaxJobOutput
+// bytes, so the frame stays under maxMessage unless it is mostly bytes
+// JSON escapes; the node trims it further if needed (trimJobOutput).
+type jobResult struct {
+	ExitCode int    `json:"exit_code"`
+	Output   string `json:"output,omitempty"`
 }
 
 type wireContainer struct {
@@ -289,6 +337,7 @@ func fromWireContainers(ws []wireContainer) []node.Container {
 
 type wireHealthCheck struct {
 	Path       string `json:"path,omitempty"`
+	Port       int    `json:"port,omitempty"`
 	TimeoutMS  int64  `json:"timeout_ms,omitempty"`
 	IntervalMS int64  `json:"interval_ms,omitempty"`
 	GraceMS    int64  `json:"grace_ms,omitempty"`
@@ -296,13 +345,13 @@ type wireHealthCheck struct {
 
 func toWireHealthCheck(hc node.HealthCheck) wireHealthCheck {
 	return wireHealthCheck{
-		Path: hc.Path, TimeoutMS: hc.Timeout.Milliseconds(), IntervalMS: hc.Interval.Milliseconds(),
+		Path: hc.Path, Port: hc.Port, TimeoutMS: hc.Timeout.Milliseconds(), IntervalMS: hc.Interval.Milliseconds(),
 		GraceMS: hc.Grace.Milliseconds(),
 	}
 }
 
 func (w wireHealthCheck) node() node.HealthCheck {
-	return node.HealthCheck{Path: w.Path, Timeout: ms(w.TimeoutMS), Interval: ms(w.IntervalMS), Grace: ms(w.GraceMS)}
+	return node.HealthCheck{Path: w.Path, Port: w.Port, Timeout: ms(w.TimeoutMS), Interval: ms(w.IntervalMS), Grace: ms(w.GraceMS)}
 }
 
 func ms(n int64) time.Duration { return time.Duration(n) * time.Millisecond }

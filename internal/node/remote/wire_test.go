@@ -19,13 +19,21 @@ func TestWireRoundTrip(t *testing.T) {
 	check(t, node.ContainerSpec{
 		Name: "web-1", Image: "app:1", Labels: labels, Env: map[string]string{"A": "1"}, Cmd: "serve",
 		Network: "env-2", Aliases: []string{"web"}, Port: 8080, HostPort: 41000,
-		Mounts: []node.Mount{{Volume: "data", Path: "/data"}}, Resources: node.Resources{MemoryBytes: 1 << 28, NanoCPUs: 5e8},
+		Mounts: []node.Mount{{Volume: "data", Path: "/data", ReadOnly: true}}, Resources: node.Resources{MemoryBytes: 1 << 28, NanoCPUs: 5e8},
 	}, toWireSpec, wireSpec.node)
+	check(t, node.JobSpec{
+		Name: "backup-1", Image: "postgres:17", Labels: labels, Env: map[string]string{"A": "1"}, Script: "pg_dump",
+		Network: "env-2", Mounts: []node.Mount{{Volume: "bin", Path: "/bin", ReadOnly: true}},
+		Resources: node.Resources{MemoryBytes: 1 << 28, NanoCPUs: 5e8},
+	}, toJobRequest, jobRequest.node)
+	check(t, node.JobResult{ExitCode: 2, Output: "failed"},
+		func(r node.JobResult) jobResult { return jobResult{ExitCode: r.ExitCode, Output: r.Output} },
+		func(w jobResult) node.JobResult { return node.JobResult{ExitCode: w.ExitCode, Output: w.Output} })
 	check(t, node.Container{
 		ID: "abc", Name: "web-1", Image: "app:1", Labels: labels, State: node.StateRunning, HostPort: 41000,
 		StartedAt: at, ExitCode: 137, RestartCount: 2, OOMKilled: true,
 	}, toWireContainer, wireContainer.node)
-	check(t, node.HealthCheck{Path: "/up", Timeout: time.Minute, Interval: 2 * time.Second, Grace: 3 * time.Second},
+	check(t, node.HealthCheck{Path: "/up", Port: 5432, Timeout: time.Minute, Interval: 2 * time.Second, Grace: 3 * time.Second},
 		toWireHealthCheck, wireHealthCheck.node)
 	check(t, node.LogLine{Time: at, Stream: "stderr", Text: "boom"}, toWireLogLine, wireLogLine.node)
 	check(t, node.ContainerEvent{ContainerID: "abc", Labels: labels, Action: "die", ExitCode: 1, Time: at},

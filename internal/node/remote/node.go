@@ -352,6 +352,10 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h(opHealthCheck, unary(func(ctx context.Context, a healthRequest) (empty, error) {
 		return empty{}, rt.HealthCheck(ctx, a.Container.node(), a.Check.node())
 	}))
+	h(opRunJob, unary(func(ctx context.Context, a jobRequest) (jobResult, error) {
+		res, err := rt.RunJob(ctx, a.node())
+		return jobResult{ExitCode: res.ExitCode, Output: trimJobOutput(res.Output)}, err
+	}))
 	h(opLogs, stream(func(ctx context.Context, a logsRequest) (<-chan node.LogLine, error) {
 		return rt.Logs(ctx, a.ID, node.LogOptions{Follow: a.Follow, Tail: a.Tail, Since: a.Since})
 	}, toWireLogLine))

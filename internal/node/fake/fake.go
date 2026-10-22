@@ -50,6 +50,8 @@ type Runtime struct {
 	stopGate    chan struct{}
 	domainCheck func(hostname string) node.DomainCheck
 	dialAddr    string
+	onJob       func(node.JobSpec) (node.JobResult, error)
+	jobs        []node.JobSpec
 
 	host       node.HostStats
 	hostSet    bool
@@ -558,6 +560,37 @@ func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, err
 	}
 	var d net.Dialer
 	return d.DialContext(ctx, "tcp", addr)
+}
+
+// OnJob makes RunJob answer with fn (nil: exit 0, no output).
+func (r *Runtime) OnJob(fn func(node.JobSpec) (node.JobResult, error)) {
+	r.mu.Lock()
+	r.onJob = fn
+	r.mu.Unlock()
+}
+
+// Jobs returns the specs of every job run so far.
+func (r *Runtime) Jobs() []node.JobSpec {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.jobs)
+}
+
+// RunJob implements node.Containers, recorded as "job <name>". The answer
+// comes from OnJob's function, called without the lock held.
+func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
+	r.mu.Lock()
+	r.op("job %s", spec.Name)
+	r.jobs = append(r.jobs, spec)
+	fn := r.onJob
+	r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return node.JobResult{}, err
+	}
+	if fn == nil {
+		return node.JobResult{}, nil
+	}
+	return fn(spec)
 }
 
 // Build implements node.Builder. It reads the whole source stream. A push
