@@ -131,8 +131,8 @@ instead; that is your login, so don't hand it to an agent.
 
 | Tools | |
 |---|---|
-| Look | `whoami`, `list_projects`, `project_overview`, `service_status`, `list_releases`, `release_details`, `logs`, `list_servers`, `audit_log` |
-| Ship | `deploy_image`, `redeploy`, `rollback`, `promote` |
+| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `list_releases`, `release_details`, `logs`, `list_servers`, `audit_log` |
+| Ship | `deploy_image`, `redeploy`, `rollback`, `promote`, `clone_environment` |
 | Configure | `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain` |
 | Data | `data_status`, `data_schema`, `data_rows`, `data_query`, `propose_data_changes` |
 
@@ -164,6 +164,7 @@ instead; that is your login, so don't hand it to an agent.
 | Set, unset and apply variables | Read secret values, even in the staged-changes diff |
 | Add, generate and remove domains | Manage tokens or users |
 | Add volumes | Delete volumes (nothing deletes volumes as a side effect) |
+| Clone an environment (when not limited to one): references and new template credentials come along | Copy secret values into the clone; they are listed for someone to set |
 | Read status, releases, logs, audit events of its environment | See or touch any other project or environment |
 | | Reach Docker, BuildKit, Caddy or the host. Deploy over the platform itself |
 

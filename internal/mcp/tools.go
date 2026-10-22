@@ -126,6 +126,20 @@ func (h *handler) addPlatformTools() {
 			return reply{fmt.Sprintf("Project %s: %s.", v.Project, strings.Join(parts, ", ")), v}, nil
 		})
 
+	addTool(h, "export_project", "Export project config",
+		"A project's configuration as it is live: environments, services and their settings, volumes, domains, git connections and variable names (never values), sorted by name.",
+		readOnly, func(ctx context.Context, c *call, in ProjectInput) (reply, error) {
+			p, err := c.project(in)
+			if err != nil {
+				return reply{}, err
+			}
+			ex, err := h.core.ExportProject(ctx, c.actor, p)
+			if err != nil {
+				return reply{}, err
+			}
+			return reply{fmt.Sprintf("Project %s: %d environments.", ex.Project, len(ex.Environments)), ex}, nil
+		})
+
 	addTool(h, "service_status", "Service status",
 		"One service's live state: running, crashed (with exit code and restarts, OOM kills), its active release and its latest release if that one failed or is still deploying.",
 		readOnly, func(ctx context.Context, c *call, in ServiceInput) (reply, error) {
@@ -415,6 +429,59 @@ func (h *handler) addReleaseTools() {
 				summary += " Skipped: " + strings.Join(skipped, ", ") + "."
 			}
 			return reply{summary, map[string]any{"releases": vs, "skipped": res.Skipped}}, nil
+		})
+
+	addTool(h, "clone_environment", "Clone an environment",
+		"Create a new environment as a copy of another in the same project: services, settings, variables and new, empty volumes, placed like any new environment of its kind. "+
+			"Values are copied only if you may read them (admin); otherwise reference-only values are copied, database templates get new credentials and the rest are listed as skipped for you to set. "+
+			"Domains, git connections, releases and backups are never copied. With deploy, the images serving in from are deployed like promote, and the tool waits for them. Needs deploy on the project.",
+		mutating, func(ctx context.Context, c *call, in struct {
+			ProjectInput
+			From   string `json:"from" doc:"Environment to copy, e.g. staging."`
+			To     string `json:"to" doc:"Name of the new environment."`
+			Kind   string `json:"kind,omitempty" doc:"production or non_production. Default: production for an environment named production, otherwise non_production."`
+			Deploy bool   `json:"deploy,omitempty" doc:"Also deploy the images serving in from, by digest."`
+			WaitInput
+		}) (reply, error) {
+			p, err := c.project(in.ProjectInput)
+			if err != nil {
+				return reply{}, err
+			}
+			wait, err := in.duration()
+			if err != nil {
+				return reply{}, err
+			}
+			res, err := h.core.CloneEnvironment(ctx, c.actor, core.EnvRef{Project: p, Environment: in.From}, apitypes.CloneEnvironmentRequest{
+				Name: in.To, Kind: apitypes.EnvironmentKind(in.Kind), Deploy: in.Deploy,
+			})
+			if err != nil {
+				return reply{}, err
+			}
+			e := res.Environment
+			summary := fmt.Sprintf("Cloned %s into %s (%s, server %s): %d services, %d variables copied.", res.From, e.Name, e.Kind, e.Server, len(res.Services), res.Variables)
+			if len(res.Skipped) > 0 {
+				names := make([]string, len(res.Skipped))
+				for i, v := range res.Skipped {
+					names[i] = v.String()
+				}
+				summary += " Not copied (needs admin), set them before deploying: " + strings.Join(names, ", ") + "."
+			}
+			summary += " Not copied: " + strings.Join(res.NotCopied, ", ") + "."
+			var vs []releaseView
+			switch {
+			case res.DeployError != "":
+				summary += " Nothing deployed: " + res.DeployError
+			case res.Deploy != nil:
+				rels := make([]apitypes.Release, len(res.Deploy.Promoted))
+				for i, pr := range res.Deploy.Promoted {
+					rels[i] = pr.Release
+				}
+				if vs, err = h.waitReleases(ctx, c, rels, wait); err != nil {
+					return reply{}, err
+				}
+				summary += " " + waitSummary("Deploy", vs)
+			}
+			return reply{summary, map[string]any{"clone": res, "releases": vs}}, nil
 		})
 }
 

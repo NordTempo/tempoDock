@@ -112,6 +112,25 @@ func registerProjects(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *EnvPath) (*out[apitypes.Environment], error) {
 		return reply(s.core.GetEnvironment(ctx, actor, in.ref()))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "clone-environment", Method: http.MethodPost, Path: envPathT + "/clone",
+		Summary: "Clone an environment", Tags: tags, DefaultStatus: http.StatusCreated, Errors: withOffline,
+		Description: "Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. " +
+			"Values are copied only for callers that may read them (admin); otherwise reference-only values are copied, template credentials are made anew and the rest are listed in `skipped`. " +
+			"Domains, git connections, releases, backups and staged changes are never copied. Nothing is deployed unless `deploy: true`, which promotes the source's images. Scope: read on this environment, deploy on the project.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		EnvPath
+		Body apitypes.CloneEnvironmentRequest
+	}) (*out[apitypes.CloneResult], error) {
+		return reply(s.core.CloneEnvironment(ctx, actor, in.ref(), in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "export-project", Method: http.MethodGet, Path: projectPathT + "/export",
+		Summary: "Export a project's config", Tags: []string{"projects"},
+		Description: "The project's environments, services and non-secret settings as they are live, sorted by name. Variables are names only; values are never included. Scope: read.",
+	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[apitypes.ProjectExport], error) {
+		return reply(s.core.ExportProject(ctx, actor, in.Project))
+	})
 
 	authed(s, a, huma.Operation{
 		OperationID: "get-changes", Method: http.MethodGet, Path: envPathT + "/changes",

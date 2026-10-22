@@ -10,7 +10,7 @@ import (
 )
 
 func newProjectCmd(g *globals) *cobra.Command {
-	cmd := group(&cobra.Command{Use: "project", Short: "List, create and archive projects"})
+	cmd := group(&cobra.Command{Use: "project", Short: "List, create, export and archive projects"})
 	var all bool
 	list := &cobra.Command{
 		Use:     "list",
@@ -48,6 +48,7 @@ func newProjectCmd(g *globals) *cobra.Command {
 		list,
 		newProjectArchiveCmd(g),
 		newProjectPinCmd(g),
+		newProjectExportCmd(g),
 		&cobra.Command{
 			Use:   "create <name>",
 			Short: "Create a project (with a production environment)",
@@ -112,7 +113,7 @@ func newProjectArchiveCmd(g *globals) *cobra.Command {
 func newEnvironmentCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "environment",
-		Short: "List and create environments",
+		Short: "List, create and clone environments",
 		Long:  "Environments of a project. (`dock env` manages variables.)",
 	})
 	var listFlags, createFlags targetFlags
@@ -171,6 +172,6 @@ eligible server with the most free memory.`,
 	}
 	createFlags.add(create, needProject)
 	create.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
-	cmd.AddCommand(list, create)
+	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g))
 	return cmd
 }
