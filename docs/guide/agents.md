@@ -94,6 +94,67 @@ them when `DOCK_URL` is set; only its context (server) is ignored.
 | 7 | `unreachable` | Retry with backoff (10 s, 30 s, 60 s), then stop and report |
 | 8 | `incompatible` | Stop. CLI and server versions differ |
 
+## MCP
+
+The daemon is also an MCP server, so agents like Claude Code can operate
+Dock through tools instead of the CLI: no install, no output parsing. It is
+one endpoint for the whole platform, data included, at `/api/v1/mcp`
+(Streamable HTTP). It takes the same scoped token, and every tool goes
+through the same permission checks and audit as the API: a tool can do
+exactly what the token can. Design: [ADR 0017](../decisions/0017-mcp-endpoint.md).
+
+`dock mcp` prints the config for your current context. In the repository,
+with the agent's token in `DOCK_TOKEN`:
+
+```sh
+claude mcp add --transport http --scope project dock https://dock.example.com/api/v1/mcp \
+  --header 'Authorization: Bearer ${DOCK_TOKEN}'
+```
+
+That writes `.mcp.json`, which other clients read too:
+
+```json
+{
+  "mcpServers": {
+    "dock": {
+      "type": "http",
+      "url": "https://dock.example.com/api/v1/mcp",
+      "headers": { "Authorization": "Bearer ${DOCK_TOKEN}" }
+    }
+  }
+}
+```
+
+Claude Code fills in `${DOCK_TOKEN}` from the environment, so the file can
+be committed. `dock mcp --show-token` prints the context's own token
+instead; that is your login, so don't hand it to an agent.
+
+| Tools | |
+|---|---|
+| Look | `whoami`, `list_projects`, `project_overview`, `service_status`, `list_releases`, `release_details`, `logs`, `list_servers`, `audit_log` |
+| Ship | `deploy_image`, `redeploy`, `rollback`, `promote` |
+| Configure | `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain` |
+| Data | `data_status`, `data_schema`, `data_rows`, `data_query`, `propose_data_changes` |
+
+- **Project and environment default to the token's limits**, so a token
+  for `shop/staging` only names the service. `whoami` shows them.
+- **Deploy tools wait** until the release is active or failed (default
+  5 minutes, `wait_seconds` up to 15) and stream each step as a progress
+  notification. A failed release comes back with its reason and the last
+  lines of its container's output and build, so the agent can fix it
+  without rolling back.
+- **Errors are tool results** with the API's codes and a hint:
+  `forbidden` means stop and report, `deploy_in_progress` means wait.
+- **Data** follows the [data access policy](data.md): tokens get nothing
+  until an admin grants it. `propose_data_changes` stores a changeset for
+  an admin to approve, and commits it only on non-production with `write`
+  access; never on production.
+- **Docs**: every guide page is a resource, `dock://docs/<page>`
+  (`dock://docs/agents` is this page), so an agent can read how Dock works
+  and explain it to you.
+- **Not over MCP**: source deploys (use `dock deploy`), archiving, tokens,
+  users, servers, data setup and approvals.
+
 ## What a `deploy` token can and can't do
 
 | Can | Can't |

@@ -135,6 +135,7 @@ keeps the linked service, so it means "this service, in staging".
 | `version` | The CLI's version and, when a server is configured, the server's (one unauthenticated request; nothing without a server), with the command that installs the matching CLI when they differ |
 | `logout` | Remove the context's token; revoke it on the server if it came from a browser login |
 | `whoami` | Who the token belongs to and its scope |
+| `mcp [--show-token] [--name N]` | Print the MCP client config for the context's server ([agents](guide/agents.md#mcp)): the endpoint URL, a `claude mcp add` command and an `mcp.json` entry. The token is `${DOCK_TOKEN}` unless `--show-token` |
 | `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions end; the CLI's token stays valid |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails |

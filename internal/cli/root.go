@@ -56,7 +56,8 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 	root.SetOut(io.Out)
 	root.SetErr(io.Err)
 	addGroup(root, "start", "Getting started:",
-		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newMeCmd(g), newContextCmd(g), newLogoutCmd(g), newVersionCmd(g))
+		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newMeCmd(g), newContextCmd(g), newLogoutCmd(g), newVersionCmd(g),
+		newMCPCmd(g))
 	addGroup(root, "ship", "Deploy and operate:",
 		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g),
 		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g))
