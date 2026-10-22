@@ -99,7 +99,7 @@ function CliLogin() {
     found = (
       <p className="text-mut">
         This login was already {l.status}. Run{" "}
-        <code className="font-mono text-white">dock login</code> again for a new
+        <code className="font-mono text-fg">dock login</code> again for a new
         code.
       </p>
     );

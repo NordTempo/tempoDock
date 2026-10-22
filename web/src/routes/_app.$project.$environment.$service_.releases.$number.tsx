@@ -29,6 +29,7 @@ import {
   ErrorText,
   Glyph,
   Page,
+  PageBar,
   SectionHead,
 } from "../ui/kit";
 import { failurePhrase, inFlight, releaseWhat } from "../ui/status";
@@ -89,113 +90,142 @@ function ReleasePage() {
   ]);
 
   return (
-    <Page width="max-w-[1040px]" gap="gap-[26px]">
-      <section aria-labelledby="release" className="flex flex-col gap-3.5 pt-1">
-        <h1 id="release" className="text-[24px] leading-tight font-semibold">
-          <Title release={release} />
-        </h1>
-        {failed && (
-          <p className="text-lg leading-normal">
-            {serving && serving !== release.number ? (
-              <>
-                <span className="text-ok">●</span>{" "}
-                <b className="font-semibold">r{serving} is still serving.</b>{" "}
+    <>
+      <PageBar
+        parent={
+          <span className="flex items-center gap-1.5">
+            <Link
+              to="/$project"
+              params={{ project: ref.project }}
+              className="hover:text-fg"
+            >
+              {ref.project}
+            </Link>
+            <span aria-hidden className="text-faint">
+              /
+            </span>
+            <Link
+              to="/$project/$environment/$service"
+              params={ref}
+              className="hover:text-fg"
+            >
+              {ref.service}
+            </Link>
+          </span>
+        }
+        title={<span className="font-mono">r{release.number}</span>}
+        after={<span className="text-xs text-faint">{ref.environment}</span>}
+      />
+      <Page width="max-w-[1040px]" gap="gap-[26px]">
+        <section aria-labelledby="release" className="flex flex-col gap-3.5">
+          <h2 id="release" className="text-xl leading-tight font-semibold">
+            <Title release={release} />
+          </h2>
+          {failed && (
+            <p className="text-md leading-normal">
+              {serving && serving !== release.number ? (
+                <>
+                  <span className="text-ok">●</span>{" "}
+                  <b className="font-semibold">r{serving} is still serving.</b>{" "}
+                  <span className="text-mut">
+                    {service.stateful
+                      ? `${r} never got traffic.`
+                      : `Users saw no change. ${r} was stopped and never got traffic.`}
+                  </span>
+                </>
+              ) : (
                 <span className="text-mut">
-                  {service.stateful
-                    ? `${r} never got traffic.`
-                    : `Users saw no change. ${r} was stopped and never got traffic.`}
+                  Nothing was serving before it, so nothing is serving now.
                 </span>
-              </>
-            ) : (
-              <span className="text-mut">
-                Nothing was serving before it, so nothing is serving now.
-              </span>
-            )}
-          </p>
-        )}
-        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[18px] gap-y-1.5">
-          <Fact label="Service">
-            <span className="font-mono">{ref.service}</span> in{" "}
-            {ref.environment}
-          </Fact>
-          <Fact label="Deployed by">
-            <Actor
-              name={release.created_by}
-              kind={actorKind(release.created_by)}
-            />{" "}
-            · {ago(release.created_at)}
-          </Fact>
-          <Fact label="What">
-            {releaseWhat(release)}{" "}
-            <span className="font-mono">{release.image_ref}</span>
-          </Fact>
-          {previous && (
-            <Fact label={`Changed since r${previous.number}`}>
-              <Changes from={previous} to={release} />
-            </Fact>
+              )}
+            </p>
           )}
-        </dl>
-        <div className="mt-1 flex flex-wrap items-start gap-2.5">
-          <Act
-            primary
-            cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
-            onClick={() =>
-              navigate({
-                to: "/$project/$environment/$service/logs",
-                params: ref,
-                search: buildLog,
-              })
-            }
-          >
-            Open build log <kbd>L</kbd>
-          </Act>
-          {failed && service.image && (
+          <dl className="props max-w-[960px] grid-cols-[140px_minmax(0,1fr)]">
+            <Fact label="Service">
+              <span className="font-mono">{ref.service}</span> in{" "}
+              {ref.environment}
+            </Fact>
+            <Fact label="Deployed by">
+              <Actor
+                name={release.created_by}
+                kind={actorKind(release.created_by)}
+              />{" "}
+              · {ago(release.created_at)}
+            </Fact>
+            <Fact label="What">
+              {releaseWhat(release)}{" "}
+              <span className="font-mono">{release.image_ref}</span>
+            </Fact>
+            {previous && (
+              <Fact label={`Changed since r${previous.number}`}>
+                <Changes from={previous} to={release} />
+              </Fact>
+            )}
+          </dl>
+          <div className="mt-1 flex flex-wrap items-start gap-2.5">
             <Act
-              cli={`dock deploy -s ${ref.service} -e ${ref.environment}`}
-              disabled={!!view.deploying || !!blocked || deploy.isPending}
-              title={blocked}
+              primary
+              cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
-                deploy.mutate(ref, {
-                  onSuccess: () =>
-                    navigate({
-                      to: "/$project/$environment/$service",
-                      params: ref,
-                    }),
+                navigate({
+                  to: "/$project/$environment/$service/logs",
+                  params: ref,
+                  search: buildLog,
                 })
               }
             >
-              Deploy {imageLabel({ image_ref: service.image, image_id: "" })}{" "}
-              again
+              Open build log <kbd>L</kbd>
             </Act>
-          )}
-          <Act
-            cli={`dock env set -s ${ref.service} -e ${ref.environment}`}
-            onClick={() =>
-              navigate({
-                to: "/$project/$environment",
-                params: ref,
-                search: { service: ref.service },
-              })
-            }
-          >
-            Variables of {ref.service}
-          </Act>
-          <span className="self-center">
-            {failed && service.image && blocked && (
-              <span className="text-fail">Disabled: {blocked}. </span>
+            {failed && service.image && (
+              <Act
+                cli={`dock deploy -s ${ref.service} -e ${ref.environment}`}
+                disabled={!!view.deploying || !!blocked || deploy.isPending}
+                title={blocked}
+                onClick={() =>
+                  deploy.mutate(ref, {
+                    onSuccess: () =>
+                      navigate({
+                        to: "/$project/$environment/$service",
+                        params: ref,
+                      }),
+                  })
+                }
+              >
+                Deploy {imageLabel({ image_ref: service.image, image_id: "" })}{" "}
+                again
+              </Act>
             )}
-            <ErrorText error={deploy.error} />
-          </span>
-        </div>
-      </section>
+            <Act
+              cli={`dock env set -s ${ref.service} -e ${ref.environment}`}
+              onClick={() =>
+                navigate({
+                  to: "/$project/$environment",
+                  params: ref,
+                  search: { service: ref.service },
+                })
+              }
+            >
+              Variables of {ref.service}
+            </Act>
+            <span className="self-center">
+              {failed && service.image && blocked && (
+                <span className="text-fail">Disabled: {blocked}. </span>
+              )}
+              <ErrorText error={deploy.error} />
+            </span>
+          </div>
+        </section>
 
-      <section aria-labelledby="steps" className="flex flex-col gap-2">
-        <SectionHead id="steps">{failed ? "What failed" : "Steps"}</SectionHead>
-        <StepTable steps={deploySteps(release, serving, service.stateful)} />
-      </section>
+        <section aria-labelledby="steps" className="flex flex-col gap-2">
+          <SectionHead id="steps">
+            {failed ? "What failed" : "Steps"}
+          </SectionHead>
+          <StepTable steps={deploySteps(release, serving, service.stateful)} />
+        </section>
 
-      <LastLines release={release} />
-    </Page>
+        <LastLines release={release} />
+      </Page>
+    </>
   );
 }
 
@@ -231,7 +261,7 @@ function Title({ release }: { release: Release }) {
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-mut">{label}</dt>
+      <dt>{label}</dt>
       <dd>{children}</dd>
     </>
   );
