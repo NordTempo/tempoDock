@@ -66,9 +66,12 @@ INSERT INTO token_connections (token_id, connection_id) VALUES (?, ?);
 
 -- name: GetTokenAuth :one
 -- Authenticates a bearer token: the token, its user and its connection
--- limit (comma-separated IDs, '' for none) in one query.
+-- limit (comma-separated IDs and names, '' for none) in one query.
 SELECT sqlc.embed(tokens), users.email AS user_email, users.role AS user_role, users.disabled_at AS user_disabled_at,
-    CAST(coalesce((SELECT group_concat(connection_id) FROM token_connections WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_ids
+    CAST(coalesce((SELECT group_concat(connection_id) FROM token_connections WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_ids,
+    CAST(coalesce((SELECT group_concat(connections.name) FROM token_connections
+        JOIN connections ON connections.id = token_connections.connection_id
+        WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_names
 FROM tokens JOIN users ON users.id = tokens.user_id
 WHERE tokens.secret_hash = +?;
 

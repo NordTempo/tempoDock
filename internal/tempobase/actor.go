@@ -26,8 +26,10 @@ type Actor struct {
 	// TokenData is a token's own data access; nil follows the tokens rule.
 	TokenData *apitypes.DataTokenAccess
 	// TokenConnections limits a token to these connection IDs; nil: no
-	// limit.
-	TokenConnections []int64
+	// limit. TokenConnectionNames are their names, for messages and the
+	// MCP tools' default connection.
+	TokenConnections     []int64
+	TokenConnectionNames []string
 }
 
 // System is the actor of `tempobase admin` commands.

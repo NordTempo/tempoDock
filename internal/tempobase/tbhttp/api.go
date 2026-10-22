@@ -22,6 +22,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/tempobase"
+	"github.com/NordTempo/tempoDock/internal/tempobase/tbmcp"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 	"github.com/NordTempo/tempoDock/internal/version"
 	tbweb "github.com/NordTempo/tempoDock/web/tempobase"
@@ -42,14 +43,17 @@ type server struct {
 	opts Options
 }
 
-// New returns tempoBase's root handler: the API and the web UI behind
-// the security headers and the CSRF guard.
+// New returns tempoBase's root handler: the API, the MCP endpoint and the
+// web UI behind the security headers and the CSRF guard.
 func New(app *tempobase.App, opts Options) http.Handler {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
 	mux := http.NewServeMux()
 	newAPI(mux, &server{app: app, cfg: app.Config(), opts: opts})
+	// The MCP endpoint speaks JSON-RPC, not REST, so it sits next to the
+	// Huma API rather than in its OpenAPI spec.
+	mux.Handle(Prefix+"/mcp", tbmcp.Handler(app, opts.Logger))
 	dist, _ := fs.Sub(tbweb.Dist, "dist")
 	mux.Handle("/", httpkit.UIHandler(dist, placeholderPage))
 	return httpkit.Guard(mux, nil)
