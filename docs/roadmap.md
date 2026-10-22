@@ -11,7 +11,7 @@ are deliberately vaguer; we refine them as we learn.
 | M1 | Done on the homelab test VM: source and image deploys, health-gated cutover with zero failed requests, rollback, domains, staged variables, `dock.toml`, browser `dock login`. Waiting on a real NordTempo app. |
 | M2 | Done: projects, environments, services, references, private networking, users and scoped tokens, audit, the v2 web UI with full CLI parity. |
 | M3 | Nearly done: placement and server pools ([0015](decisions/0015-server-pools-and-placement.md)), statistics, the admin dashboard, `dock node` join over the outbound link, the remote runtime, the registry, builder servers and `dock promote` ([0014](decisions/0014-node-protocol.md)), verified across two machines. Left: moving the control plane to another server. |
-| M4 | Nearly done: GitHub push-to-deploy ([0018](decisions/0018-git-push-deploy.md)); retention, disk pruning and alerts with webhook, Slack and email channels ([0020](decisions/0020-retention-and-alerts.md)). Left: clone an environment, export a project's config. |
+| M4 | Done: GitHub push-to-deploy ([0018](decisions/0018-git-push-deploy.md)); retention, disk pruning and alerts with webhook, Slack and email channels ([0020](decisions/0020-retention-and-alerts.md)); cloning an environment and exporting a project's config ([0022](decisions/0022-clone-and-export.md)). |
 | M5 | Done: the native database panel ([0016](decisions/0016-database-panel.md)); Postgres and Redis templates, scheduled restic backups and restore into a new service ([0019](decisions/0019-templates-and-backups.md)); `dock connect` tunnels ([0023](decisions/0023-connect-tunnels.md)). |
 
 ## Where we start
@@ -89,7 +89,7 @@ doesn't affect production.
   service: 24 hours at 1 minute, 7 days at 10 minutes, landed early with
   ADR 0015.)
 - Disk pruning, alerts (disk, failed deploys, crash loops).
-- Clone an environment. Export a project's config.
+- Clone an environment. Export a project's config. Done: [0022](decisions/0022-clone-and-export.md).
 
 ## M5: Data
 

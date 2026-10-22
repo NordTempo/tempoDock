@@ -36,7 +36,7 @@ Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit
 | Area | Commands |
 |---|---|
 | Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock context add\|list\|use\|current\|remove`, `dock mcp` |
-| Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|archive\|pin`, `dock environment list\|create`, `dock service list\|create\|show\|update\|archive` |
+| Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|export\|archive\|pin`, `dock environment list\|create\|clone`, `dock service list\|create\|show\|update\|archive` |
 | Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|rollback`, `dock rollback`, `dock restart`, `dock git connect\|status\|deploy\|disconnect` |
 | Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock apply`, `dock discard`, `dock volume list\|add` |
 | Domains | `dock domain add\|list\|remove\|generate` |

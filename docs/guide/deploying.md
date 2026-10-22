@@ -203,6 +203,41 @@ push to the same tag changes nothing.
   involved, so promoting from the homelab works while it is off, as long
   as the image went through the [registry](install.md#registry).
 
+## Clone an environment
+
+```sh
+dock environment clone staging staging-2               # nothing deployed
+dock environment clone production staging --deploy     # and run the same images
+```
+
+Creates a new environment with the source's services, settings, variables
+and volumes as they are live there ([ADR 0022](../decisions/0022-clone-and-export.md)).
+It is placed like `dock environment create`: the kind comes from `--kind`
+or the name, and it goes to the project's server for that kind.
+
+| What | In the clone |
+|---|---|
+| Services and settings | Copied, archived services left out |
+| Volumes | New and empty, created on each service's first deploy |
+| Variables | Live at once. Values copied if you may read them (admin); otherwise values that are only references are copied, database templates get new credentials, and the rest are listed for you to set |
+| Domains, git connections, releases, backups, staged changes | Not copied; the output counts them |
+
+Nothing runs until you deploy. `--deploy` deploys the images serving in
+the source like `dock promote` (by digest, one service at a time) and
+follows them. It needs read on the source and deploy on the project.
+
+## Export a project's config
+
+```sh
+dock project export shop > shop.dock.toml
+```
+
+Prints the project's live configuration as TOML (`--format json` for
+JSON): environments, services and their settings, volumes, domains, git
+connections and variable names. Values are never included. Everything is
+sorted by name, so the file diffs well in git. Reading it back
+(`import`) is not supported yet.
+
 ## Deploy on git push
 
 Connect a service to a GitHub repository and branch, and every push to it
