@@ -40,9 +40,13 @@ func newServerListCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(servers, func() error {
-				t := g.io.Table("name", "status", "version", "ingress", "accepts", "memory reserved", "projects", "environments")
+				t := g.io.Table("name", "status", "version", "ingress", "accepts", "builds", "memory reserved", "projects", "environments")
 				for _, sv := range servers {
-					t.Row(sv.Name, serverStatus(sv), dash(sv.Version), dash(ingressWords(sv.Ingress)), accepts(sv), reserved(sv),
+					builds := ""
+					if sv.Builder {
+						builds = "yes"
+					}
+					t.Row(sv.Name, serverStatus(sv), dash(sv.Version), dash(ingressWords(sv.Ingress)), accepts(sv), dash(builds), reserved(sv),
 						strconv.Itoa(sv.Projects), strconv.Itoa(sv.Environments))
 				}
 				return t.Flush()
@@ -114,7 +118,11 @@ server that builds images for others. All of it can be changed later with
 				return err
 			}
 			return g.io.Print(a, func() error {
-				g.io.Successf("Server %s added; it accepts %s", a.Server.Name, accepts(a.Server))
+				builds := ""
+				if a.Server.Builder {
+					builds = " and builds images"
+				}
+				g.io.Successf("Server %s added; it accepts %s%s", a.Server.Name, accepts(a.Server), builds)
 				_, _ = fmt.Fprintf(g.io.Out, "\nOn the new server, with Docker installed and the dock binary and deploy/ copied over, run:\n\n  %s\n\n", a.Command)
 				_, _ = fmt.Fprintf(g.io.Out, "The token works once, until %s, and is not shown again.\nThen check it is online: dock server list\n", a.ExpiresAt.Local().Format("15:04"))
 				return nil

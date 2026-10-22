@@ -309,13 +309,14 @@ func (o offlineRuntime) Pull(context.Context, string, io.Writer, ...node.PullOpt
 }
 func (o offlineRuntime) HasImage(context.Context, string) (bool, error) { return false, o.err }
 func (o offlineRuntime) RemoveImage(context.Context, string) error      { return o.err }
-func (o offlineRuntime) PruneImages(context.Context, []string) (node.PruneResult, error) {
+func (o offlineRuntime) PruneImages(context.Context, node.PruneImagesRequest) (node.PruneResult, error) {
 	return node.PruneResult{}, o.err
 }
 func (o offlineRuntime) PruneBuildCache(context.Context, int64) (node.PruneResult, error) {
 	return node.PruneResult{}, o.err
 }
 func (o offlineRuntime) EnsureNetwork(context.Context, string, node.Labels) error { return o.err }
+func (o offlineRuntime) RemoveNetwork(context.Context, string, node.Labels) error { return o.err }
 func (o offlineRuntime) EnsureVolume(context.Context, string, node.Labels) error  { return o.err }
 func (o offlineRuntime) Start(context.Context, node.ContainerSpec) (node.Container, error) {
 	return node.Container{}, o.err

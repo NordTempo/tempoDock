@@ -58,6 +58,11 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		}
 		b := build.New(cli, cfg.BuildKit, filepath.Join(cfg.DataDir, "builds", "work"))
 		b.Network = buildkitNetwork
+		// One dock runtime per Docker host: the BuildKit container is
+		// this data dir's, and another runtime's is refused.
+		if b.Owner, err = filepath.Abs(cfg.DataDir); err != nil {
+			return nil, nil, err
+		}
 		builder = b
 	}
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}})

@@ -48,8 +48,10 @@ const (
 
 	// Protocol is the minor version, exchanged in hello. Within a major
 	// version, changes are additive only: new ops, new optional fields.
-	// 2 added run-job (ADR 0019) and the health check's port.
-	Protocol = 2
+	// 2 added run-job (ADR 0019) and the health check's port; 3 made
+	// prune-images only remove the platform's own images and added
+	// remove-network (ADR 0020 amendment).
+	Protocol = 3
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -112,6 +114,7 @@ const (
 	opPruneImages   = "prune-images"
 	opPruneCache    = "prune-build-cache"
 	opEnsureNetwork = "ensure-network"
+	opRemoveNetwork = "remove-network" // protocol 3
 	opEnsureVolume  = "ensure-volume"
 	opStart         = "start"
 	opStop          = "stop"

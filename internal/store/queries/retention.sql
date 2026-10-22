@@ -37,9 +37,9 @@ DELETE FROM audit_details WHERE audit_details.id <= sqlc.arg(through)
 -- name: ListKeptImageIDs :many
 -- The image IDs on one server a rollback may still need: its services'
 -- rollback windows and active and in-flight releases. Image pruning
--- keeps them.
+-- keeps them. Archived services are never rolled back, so theirs go.
 SELECT DISTINCT releases.image_id FROM environments
-JOIN services ON services.environment_id = environments.id
+JOIN services ON services.environment_id = environments.id AND services.archived_at IS NULL
 JOIN releases ON releases.service_id = services.id
 WHERE environments.server_id = +sqlc.arg(server_id) AND releases.image_id != ''
   AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')

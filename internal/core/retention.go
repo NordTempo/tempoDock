@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -107,9 +108,10 @@ func (c *Core) maybePrune(srv store.Server, now time.Time) {
 	}()
 }
 
-// pruneServer removes a server's dangling images except those a rollback
-// may need, and on a builder trims BuildKit's cache to [retention]
-// build_cache_keep_mb.
+// pruneServer removes a server's dangling images that the platform made
+// (built, or pulled from its registry) except those a rollback may need,
+// and on a builder trims its own BuildKit's cache to [retention]
+// build_cache_keep_mb. Other images on the server are never touched.
 func (c *Core) pruneServer(ctx context.Context, srv store.Server) {
 	rt := c.connected(srv.ID)
 	if rt == nil {
@@ -121,7 +123,11 @@ func (c *Core) pruneServer(ctx context.Context, srv store.Server) {
 		c.log.Warn("prune: list kept images", "server", srv.Name, "err", err)
 		return
 	}
-	images, err := rt.PruneImages(ctx, keep)
+	req := node.PruneImagesRequest{Keep: keep}
+	if c.reg != nil {
+		req.Repos = []string{c.reg.Host() + "/" + buildTagPrefix}
+	}
+	images, err := rt.PruneImages(ctx, req)
 	if err != nil {
 		c.log.Warn("prune images", "server", srv.Name, "err", err)
 	}

@@ -28,8 +28,8 @@ periodic job.
 | Audit | Trimmed from the start of the log while older than `audit_days` (365) or past `audit_max_events` (0, no cap), with their details |
 | Alerts history | Resolved alerts kept `alert_days` (90) |
 | Statistics | Unchanged: they prune themselves on the tick |
-| Disk pruning | When the filesystem of Docker's data root passes `prune_disk_percent` (80) on a server: dangling images there are removed except the image IDs of releases a rollback may need, and on a builder BuildKit's cache is pruned to `build_cache_keep_mb` (2048) with BuildKit's prune API |
-| Runtime interface | `Containers.PruneImages(keep)` and `Builder.PruneBuildCache(keepBytes)`, over the node link as `prune-images` and `prune-build-cache`. An older node answers with an error and is skipped |
+| Disk pruning | When the filesystem of Docker's data root passes `prune_disk_percent` (80) on a server: dangling images dock made (see the amendment) are removed except the image IDs of releases a rollback may need, and on a builder its own BuildKit's cache is pruned to `build_cache_keep_mb` (2048) with BuildKit's prune API |
+| Runtime interface | `Containers.PruneImages(keep, repos)` (amended) and `Builder.PruneBuildCache(keepBytes)`, over the node link as `prune-images` and `prune-build-cache`. An older node answers with an error and is skipped |
 | Alert sources | Bus events (release failed or active, service status restarts, domain error or active, server online, removed or revoked) and the tick (disk, server offline, crash loops calming down, reminders). Generic: any event may carry an `alertSignal`, and `signalAlert` raises or resolves one directly |
 | Conditions | disk ≥ 85% warning, ≥ 95% critical, resolved below 83%; server offline ≥ 5 min critical; ≥ 3 restarts in 10 min critical; newest release failed warning; domain in error (certificate not issued) warning; latest backup failed warning, resolved by the next successful one |
 | State | One row per occurrence (`alerts`), at most one open per key; open alerts in memory. Raising an open key updates it in place; resolving closes it. Start and a lagged bus subscription reconcile deploy and domain alerts from the DB |
@@ -159,3 +159,25 @@ Decided by the agent after a security review.
   disguised links.
 - Email envelopes use the bare address, so a `From` or recipient with a
   name works; the subject is MIME-encoded.
+
+## Amendment (2026-10-22): prune only what dock made
+
+Decided by the agent after a test on real hardware: a node joined to a
+machine also used for other work had its disk past `prune_disk_percent`,
+and the prune removed 43 untagged images that weren't dock's (10 GB). Any
+dangling image on the host counted. Now pruning only ever touches what
+dock made, and a few neighbouring gaps are closed.
+
+| Topic | Now |
+|---|---|
+| Built images | Every image dock builds carries the label `dock.image=true`. The frontend (Dockerfile or Railpack) runs from a BuildKit build function, which adds the label to the image config it returns before the export; Railpack's frontend takes no label options, so this is the one way that works for both |
+| Pulled images | A digest pull can't be relabelled. Images pulled from the platform registry are known by their repository: a digest reference under `<registry host>/dock/p` (`127.0.0.1:5000/dock/p1_e2_s3@sha256:...`). Core passes that prefix with the keep set (`PruneImagesRequest{Keep, Repos}`) |
+| What is pruned | Dangling images with the label or such a digest reference, not in the keep set, used by no container. Anything else is never removed, however long it has been dangling: CI images (`--image`), templates (`postgres:17`, whose old copy dangles when the tag moves) and every image of other work. Those are the operator's to prune; dock can't tell its `postgres:17` from anyone else's |
+| Older nodes | Their `prune-images` removes every dangling image, so the control plane doesn't call it on nodes below protocol 3: they are skipped with an error in the log, like a node without the operation |
+| BuildKit cache | Pruned only through dock's own BuildKit container (`dock-buildkit`, reached by `buildctl dial-stdio` inside it), so buildx builders, Docker's own builder and their caches are out of reach. The container must carry dock's labels and this runtime's owner (below), or nothing is pruned |
+| One runtime per Docker host | The BuildKit container's name is fixed, and two runtimes on one Docker host (with different settings) recreated each other's container and killed builds. Rather than a configurable name, the container records its owner (`dock.owner`, the runtime's data dir); another runtime refuses to use, recreate or prune it, with an error saying to run one dock runtime per Docker host or remove the container if its runtime is gone. A container from before the label is taken over once. The smaller and safer option: a name prefix would let two runtimes build side by side, which nothing needs, and the default would still collide |
+| Archived services | They are never rolled back and can't be restored, so their releases leave the keep sets: `ListKeptDigests` (registry) and `ListKeptImageIDs` (servers) skip archived services. An archive starts a registry prune (at most hourly, as after deploys), so a test project's images leave the registry without another deploy. A digest another, live release uses stays |
+| Archived environments' networks | A project archive removes its environments' networks (`Containers.RemoveNetwork`, `remove-network`, protocol 3) once their containers are stopped, so their /24s go back to `[network] pool`, which otherwise ran out after 256 archived environments. Networks on offline or revoked servers stay; the archive's notes name them for `docker network rm` |
+
+No new periodic work: the prune is still a list and removals while a disk
+is full, and archives prune the registry the way deploys do.

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -72,8 +73,12 @@ func TestNodeJoinAndRun(t *testing.T) {
 		t.Fatalf("add without a kind: exit %d %s", code, stderr)
 	}
 	code, stdout, stderr := exec(t, "server", "add", "homelab", "--non-production", "--builder")
-	if code != 0 || !strings.Contains(stdout, "install.sh --node") {
+	if code != 0 || !strings.Contains(stdout, "install.sh --node") || !strings.Contains(stdout+stderr, "accepts non-production and builds images") {
 		t.Fatalf("add: exit %d\n%s%s", code, stdout, stderr)
+	}
+	if code, list, stderr := exec(t, "server", "list"); code != 0 || !strings.Contains(list, "BUILDS") ||
+		!slices.ContainsFunc(strings.Split(list, "\n"), func(l string) bool { return strings.HasPrefix(l, "homelab") && strings.Contains(l, " yes ") }) {
+		t.Fatalf("server list: exit %d\n%s%s", code, list, stderr)
 	}
 	var token string
 	for f := range strings.FieldsSeq(stdout) {

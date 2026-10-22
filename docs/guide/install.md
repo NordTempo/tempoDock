@@ -191,7 +191,7 @@ running).
 | `[retention] audit_days` | `365` | Audit events older than this are deleted |
 | `[retention] audit_max_events` | `0` | Also cap the audit log at this many events; `0` no cap |
 | `[retention] alert_days` | `90` | Resolved alerts older than this are deleted |
-| `[retention] prune_disk_percent` | `80` | When Docker's disk on a server is this full, dangling images (not ones a rollback needs) and BuildKit cache are pruned, at most hourly. `0` never |
+| `[retention] prune_disk_percent` | `80` | When Docker's disk on a server is this full, dangling images dock made (built, or pulled from its registry; not ones a rollback needs) and dock's own BuildKit cache are pruned, at most hourly. Other images and build caches on the server are never touched. `0` never |
 | `[retention] build_cache_keep_mb` | `2048` | BuildKit cache left after such a prune |
 | `[alerts] disk_warning_percent`, `disk_critical_percent` | `85`, `95` | Disk use that raises a warning or critical alert |
 | `[alerts] server_offline_minutes` | `5` | How long a server may be unreachable before an alert |
@@ -205,6 +205,17 @@ before the next build. So does finding its memory cap loosened: before each
 build the daemon checks the container's cgroup, because with Docker's
 systemd cgroup driver a `systemctl daemon-reload` resets its swap limit to
 unlimited.
+
+**One dock runtime per Docker host.** A server runs `dock serve` or `dock
+node`, not both, and not two of either against the same Docker: they would
+share the `dock-buildkit` container (and Caddy's ports). The container
+records the data dir of the runtime that created it; a second runtime's
+builds fail saying so, instead of recreating it under the first one's
+builds. If the runtime that made it is gone for good (reinstalled with
+another data dir), remove it with `docker rm -f dock-buildkit`; the next
+build creates it again and its cache volume is reused. Docker shared with
+other work is fine: dock only ever prunes images it built or pulled from
+its registry, and only its own BuildKit's cache.
 
 ## Network access
 
@@ -329,7 +340,7 @@ needs no setup. More servers [join as nodes](#add-a-server); then an admin
 decides which kinds go where:
 
 ```sh
-dock server list                                       # status, version, accepted kinds, memory reserved
+dock server list                                       # status, version, accepted kinds, builds, memory reserved
 dock server update vps --no-non-production              # production only from now on
 dock server update homelab --non-production --no-production
 dock server update vps-2 --disable-placement            # nothing new lands here

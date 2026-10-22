@@ -30,6 +30,8 @@ const (
 	// labelConfig records the settings the container was created with, so a
 	// config change recreates it.
 	labelConfig = "dock.buildkit.config"
+	// roleBuildKit is the container's node.LabelRole.
+	roleBuildKit = "buildkit"
 
 	// cpuShares is a quarter of Docker's default weight, so app containers
 	// win any CPU contention with a build.
@@ -50,6 +52,11 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 	if b.Network != "" {
 		want += " net=" + b.Network
 	}
+	if b.Owner != "" {
+		// A container from before owners were recorded is recreated
+		// with this runtime's.
+		want += " owner=" + b.Owner
+	}
 	mem := int64(b.cfg.MemoryMB) << 20
 
 	inspect, err := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{})
@@ -62,6 +69,9 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 		return nil, fmt.Errorf("inspect %s: %w", b.name, err)
 	default:
 		ctr := inspect.Container
+		if err := b.checkOwner(ctr.Config.Labels); err != nil {
+			return nil, err
+		}
 		var problem string
 		switch h := ctr.HostConfig; {
 		case ctr.Config.Labels[labelConfig] != want:
@@ -91,6 +101,22 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 	return b.connect(ctx)
 }
 
+// checkOwner refuses a BuildKit container (by its labels) this runtime
+// may not use: one dock didn't create, or one another dock runtime on the
+// same Docker host did (node.LabelOwner). Recreating that one would kill
+// the other runtime's builds, and both would keep doing it. A container
+// without an owner is from before owners were recorded, and is taken over.
+func (b *Builder) checkOwner(labels map[string]string) error {
+	if labels[node.LabelManaged] != "true" || labels[node.LabelRole] != roleBuildKit {
+		return fmt.Errorf("a container named %s exists that dock didn't create; dock runs BuildKit under that name, so rename or remove that container", b.name)
+	}
+	if owner := labels[node.LabelOwner]; owner != "" && owner != b.Owner {
+		return fmt.Errorf("the BuildKit container %s on this Docker host belongs to another dock runtime (data dir %s); "+
+			"run one dock runtime per Docker host, or if that one is gone for good, remove its container with `docker rm -f %s`", b.name, owner, b.name)
+	}
+	return nil
+}
+
 func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.Writer) error {
 	if _, err := b.docker.ImageInspect(ctx, b.cfg.Image); cerrdefs.IsNotFound(err) {
 		_, _ = fmt.Fprintf(logs, "pulling %s\n", b.cfg.Image)
@@ -105,10 +131,14 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 
 	labels := map[string]string{
 		node.LabelManaged: "true",
-		node.LabelRole:    "buildkit",
+		node.LabelRole:    roleBuildKit,
 	}
 	if _, err := b.docker.VolumeCreate(ctx, client.VolumeCreateOptions{Name: b.cacheVolume, Labels: labels}); err != nil {
 		return fmt.Errorf("create volume %s: %w", b.cacheVolume, err)
+	}
+	labels[labelConfig] = configLabel
+	if b.Owner != "" {
+		labels[node.LabelOwner] = b.Owner
 	}
 
 	mem := int64(b.cfg.MemoryMB) << 20
@@ -116,7 +146,7 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 		Name: b.name,
 		Config: &container.Config{
 			Image:  b.cfg.Image,
-			Labels: withLabel(labels, labelConfig, configLabel),
+			Labels: labels,
 		},
 		HostConfig: &container.HostConfig{
 			// Rootful BuildKit needs privileges to create the sandboxes
@@ -148,6 +178,11 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 // keepBytes (MaxUsedSpace) and never below it (ReservedSpace). Records a
 // running build uses stay. A BuildKit container that isn't running isn't
 // started for it: nothing has been built since it stopped.
+//
+// Only this runtime's own BuildKit is pruned (checkOwner): the prune runs
+// over `buildctl dial-stdio` in that one container, so other BuildKit
+// daemons on the host (buildx builders, Docker's own builder) and their
+// caches are out of its reach.
 func (b *Builder) PruneBuildCache(ctx context.Context, keepBytes int64) (node.PruneResult, error) {
 	inspect, err := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{})
 	if cerrdefs.IsNotFound(err) || (err == nil && !inspect.Container.State.Running) {
@@ -155,6 +190,9 @@ func (b *Builder) PruneBuildCache(ctx context.Context, keepBytes int64) (node.Pr
 	}
 	if err != nil {
 		return node.PruneResult{}, fmt.Errorf("inspect %s: %w", b.name, err)
+	}
+	if err := b.checkOwner(inspect.Container.Config.Labels); err != nil {
+		return node.PruneResult{}, err
 	}
 	bk, err := b.connect(ctx)
 	if err != nil {
@@ -212,14 +250,6 @@ func cgroupProblem(out string, mem int64) string {
 		return fmt.Sprintf("its cgroup memory.swap.max is %s, want 0 (no swap)", f[1])
 	}
 	return ""
-}
-
-func withLabel(m map[string]string, k, v string) map[string]string {
-	out := map[string]string{k: v}
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
 }
 
 // connect returns a BuildKit client once buildkitd answers, which takes a

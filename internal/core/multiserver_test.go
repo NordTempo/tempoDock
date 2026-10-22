@@ -253,8 +253,61 @@ func TestArchiveOnUnreachableServer(t *testing.T) {
 	if err != nil || proj.ArchivedAt == nil {
 		t.Fatalf("archive project: %+v, %v", proj, err)
 	}
-	if len(proj.ArchiveNotes) != 1 || !strings.HasPrefix(proj.ArchiveNotes[0], "containers on revoked server homelab were left running (1)") {
+	stagingNet := networkName(ss.envScope)
+	if len(proj.ArchiveNotes) != 2 || !strings.HasPrefix(proj.ArchiveNotes[0], "containers on revoked server homelab were left running (1)") ||
+		proj.ArchiveNotes[1] != "server homelab is revoked: its network "+stagingNet+" stayed; remove it on that machine with `docker network rm "+stagingNet+"`" {
 		t.Fatalf("notes = %q", proj.ArchiveNotes)
+	}
+	if !slices.Contains(lab.Networks(), stagingNet) {
+		t.Fatalf("network removed on a revoked server: %v", lab.Networks())
+	}
+}
+
+// Archived services keep no release a rollback or restore could need, so
+// their images leave the registry's and the servers' keep sets, and the
+// archive starts a registry prune: a test project can be removed for good.
+func TestArchiveReleasesImages(t *testing.T) {
+	p, _ := labPool(t)
+	reg := &fakeRegistry{}
+	p.withRegistry(reg)
+	p.acceptProduction("homelab")
+	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
+	api := p.createService("production", "api", apitypes.CreateServiceRequest{})
+	webRel, apiRel := p.deploySource(web), p.deploySource(api)
+	server := p.ids["cp"]
+	kept := func() (digests, ids []string) {
+		t.Helper()
+		digests, err := p.c.store.ListKeptDigests(p.ctx, 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids, err = p.c.store.ListKeptImageIDs(p.ctx, store.ListKeptImageIDsParams{ServerID: server, Keep: 5})
+		if err != nil {
+			t.Fatal(err)
+		}
+		slices.Sort(digests)
+		return digests, ids
+	}
+	if digests, ids := kept(); len(digests) != 2 || len(ids) != 2 {
+		t.Fatalf("before the archive: digests %v, image IDs %v", digests, ids)
+	}
+
+	p.c.images.mu.Lock()
+	p.c.images.lastPrune = time.Time{} // the deploys' prune was just now
+	p.c.images.mu.Unlock()
+	if _, err := p.c.ArchiveService(p.ctx, System, web); err != nil {
+		t.Fatal(err)
+	}
+	digests, ids := kept()
+	if !slices.Equal(digests, []string{apiRel.ImageDigest}) || len(ids) != 1 {
+		t.Fatalf("after archiving web: digests %v (web %s, api %s), image IDs %v", digests, webRel.ImageDigest, apiRel.ImageDigest, ids)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !slices.Contains(reg.Ops(), "prune keep="+apiRel.ImageDigest) {
+		if time.Now().After(deadline) {
+			t.Fatalf("registry ops: %v", reg.Ops())
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
 }
 

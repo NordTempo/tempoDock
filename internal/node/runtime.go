@@ -38,17 +38,24 @@ type Containers interface {
 	// An image a container uses is never removed (an error). A ref that
 	// isn't there is ErrNotFound (wrapped).
 	RemoveImage(ctx context.Context, ref string) error
-	// PruneImages removes dangling images (no tag left) that no container
-	// uses and whose ID isn't in keep: the images of releases a rollback
-	// may still need, which images pulled by digest look like. Images in
-	// use are skipped, never forced.
-	PruneImages(ctx context.Context, keep []string) (PruneResult, error)
+	// PruneImages removes dangling images (no tag left) that the platform
+	// made, no container uses and whose ID isn't in req.Keep. Made by the
+	// platform means built (LabelImage) or pulled from the platform
+	// registry (req.Repos); no other image on the host is ever touched,
+	// so a server shared with other work keeps its own. Images in use are
+	// skipped, never forced.
+	PruneImages(ctx context.Context, req PruneImagesRequest) (PruneResult, error)
 
 	// EnsureNetwork creates the bridge network, labelled with labels'
 	// project and environment, if it doesn't exist. An existing network
 	// labelled for a different project or environment is an error, so one
 	// environment can never join another's network.
 	EnsureNetwork(ctx context.Context, name string, labels Labels) error
+	// RemoveNetwork removes an environment's network, so its subnet goes
+	// back to the pool. Only a managed network whose labels match labels
+	// (Labels.Matches) is removed; any other, or none, is ErrNotFound
+	// (wrapped). Docker refuses while a container uses it (an error).
+	RemoveNetwork(ctx context.Context, name string, labels Labels) error
 	// EnsureVolume creates the named volume if it doesn't exist. An existing
 	// volume labelled for a different service is an error. Volumes are never
 	// removed by the runtime.
@@ -161,6 +168,18 @@ type Builder interface {
 	PruneBuildCache(ctx context.Context, keepBytes int64) (PruneResult, error)
 }
 
+// PruneImagesRequest says which dangling images Containers.PruneImages may
+// remove.
+type PruneImagesRequest struct {
+	// Keep are image IDs a rollback may still need.
+	Keep []string
+	// Repos are repository prefixes of the platform registry
+	// ("127.0.0.1:5000/dock/p"): a dangling image with a digest reference
+	// under one was pulled from there by the platform. Docker's classic
+	// image store lists images pulled by digest as dangling.
+	Repos []string
+}
+
 // PruneResult is what a prune removed.
 type PruneResult struct {
 	Removed        int
@@ -245,6 +264,15 @@ const (
 	// Containers carrying it are not apps: Containers never lists, returns
 	// or streams events for them.
 	LabelRole = "dock.role"
+	// LabelImage ("true") marks images the platform built, so disk pruning
+	// tells them from other images on a shared host once their tag is
+	// gone. Docker copies image labels to containers made from the image;
+	// nothing reads this one there.
+	LabelImage = "dock.image"
+	// LabelOwner is on the BuildKit container: the data dir of the dock
+	// runtime that created it. Another runtime on the same Docker host
+	// refuses to use or recreate it (one dock runtime per Docker host).
+	LabelOwner = "dock.owner"
 )
 
 // Labels identify what a container or volume belongs to. Values are IDs from

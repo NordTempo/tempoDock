@@ -86,7 +86,7 @@ func (q *Queries) ListExpiredReleaseHistory(ctx context.Context, arg ListExpired
 
 const listKeptImageIDs = `-- name: ListKeptImageIDs :many
 SELECT DISTINCT releases.image_id FROM environments
-JOIN services ON services.environment_id = environments.id
+JOIN services ON services.environment_id = environments.id AND services.archived_at IS NULL
 JOIN releases ON releases.service_id = services.id
 WHERE environments.server_id = +?1 AND releases.image_id != ''
   AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')
@@ -101,7 +101,7 @@ type ListKeptImageIDsParams struct {
 
 // The image IDs on one server a rollback may still need: its services'
 // rollback windows and active and in-flight releases. Image pruning
-// keeps them.
+// keeps them. Archived services are never rolled back, so theirs go.
 func (q *Queries) ListKeptImageIDs(ctx context.Context, arg ListKeptImageIDsParams) ([]string, error) {
 	rows, err := q.query(ctx, q.listKeptImageIDsStmt, listKeptImageIDs, arg.ServerID, arg.Keep)
 	if err != nil {
