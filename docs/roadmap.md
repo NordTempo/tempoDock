@@ -10,9 +10,9 @@ are deliberately vaguer; we refine them as we learn.
 | M0 | Done. Measurements in [experience](experience.md); budgets enforced by `make perf`. |
 | M1 | Done on the homelab test VM: source and image deploys, health-gated cutover with zero failed requests, rollback, domains, staged variables, `dock.toml`, browser `dock login`. Waiting on a real NordTempo app. |
 | M2 | Done: projects, environments, services, references, private networking, users and scoped tokens, audit, the v2 web UI with full CLI parity. |
-| M3 | In progress: placement and server pools ([0015](decisions/0015-server-pools-and-placement.md)), statistics and the admin dashboard landed; the node protocol is designed and spiked ([0014](decisions/0014-node-protocol.md)). Next: join, remote runtime, registry, promote. |
-| M4 | In progress: retention, disk pruning and alerts with webhook, Slack and email channels ([0020](decisions/0020-retention-and-alerts.md)). |
-| M5 | In progress: the native database panel ([0016](decisions/0016-database-panel.md)); Postgres and Redis templates, scheduled restic backups and restore into a new service ([0019](decisions/0019-templates-and-backups.md)). |
+| M3 | Nearly done: placement and server pools ([0015](decisions/0015-server-pools-and-placement.md)), statistics, the admin dashboard, `dock node` join over the outbound link, the remote runtime, the registry, builder servers and `dock promote` ([0014](decisions/0014-node-protocol.md)), verified across two machines. Left: moving the control plane to another server. |
+| M4 | Nearly done: GitHub push-to-deploy ([0018](decisions/0018-git-push-deploy.md)); retention, disk pruning and alerts with webhook, Slack and email channels ([0020](decisions/0020-retention-and-alerts.md)). Left: clone an environment, export a project's config. |
+| M5 | Nearly done: the native database panel ([0016](decisions/0016-database-panel.md)); Postgres and Redis templates, scheduled restic backups and restore into a new service ([0019](decisions/0019-templates-and-backups.md)). Left: `dock connect` tunnels. |
 
 ## Where we start
 
