@@ -22,7 +22,8 @@ headroom below them.
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 116 KB |
 | UI initial JS as the daemon serves it | ≤ 200 KB on the wire, cacheable | 113 KB, then 0 (immutable) |
 | UI initial CSS (gzip) | ≤ 30 KB | 4.6 KB |
-| UI fonts (all font files) | ≤ 150 KB | 0 |
+| UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 64 KB (Inter and JetBrains Mono, Latin subsets) |
+| UI fonts (all font files) | ≤ 150 KB | 64 KB |
 | Binary size | ≤ baseline + 10% | 32.1 MB |
 | Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 15% (+2) | see `scripts/perf/baseline.json` |
 
@@ -30,11 +31,37 @@ Memory is anonymous RSS (`RssAnon`): what the process really costs, without
 the mapped binary. The daemon runs with `GOMEMLIMIT=64MiB` as in
 `deploy/systemd/dock.service`.
 
+### tempoBase
+
+tempoBase, the standalone Data panel server ([ADR
+0024](decisions/0024-tempobase-standalone.md)), has no runtime, statistics
+tick or event stream, so its budgets are tighter. Checks `tempobase-binary`,
+`tempobase-daemon` and `tempobase-ui` run by default; `make perf` builds
+`bin/tempobase` once `cmd/tempobase` exists. Until then (and until
+`web/tempobase` exists, for the UI) they report `skipped`, not built yet.
+
+| What | Budget | Measured |
+|---|---|---|
+| Binary (linux/amd64, UI embedded) | ≤ 20 MB, and baseline + 10% once recorded (`tempobase_binary_bytes`) | not built yet (expected 14-17 MB) |
+| Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | not built yet (target 10 MB) |
+| Idle CPU | ≤ 1 clock tick in 30 s | not built yet |
+| Idle wake-ups | ≤ 0.1/s | not built yet (Go's forced GC is ~0.01/s) |
+| API read p95 (`/me`, `/connections`), 8 clients, 50 connections and 20 users | ≤ 10 ms | not built yet |
+| Postgres connections 65 s after use (`-tempobase-pg URL`, CI's `postgres:17`) | 0 | not built yet |
+| UI initial JS (entry + modulepreloads, gzip) | ≤ 120 KB | not built yet (expected ~90 KB) |
+| UI initial CSS (gzip, Dock's `index.css`) | ≤ 30 KB | not built yet |
+| UI initial fonts (as Dock's; style G itself uses system fonts) | ≤ 100 KB | not built yet |
+| Imports (`make tempobase-deps`, CI) | no `core`, `api`, `store`, `node`, `mcp`, `cli`, Docker, BuildKit or gRPC | passes (skipped until `cmd/tempobase` exists) |
+
+tempoBase runs with `GOMEMLIMIT=48MiB`, as its image and
+`deploy/tempobase/tempobase.service` set it.
+
 ## Running it
 
 ```sh
 make perf                        # builds the UI and binary, checks everything (~2-3 min)
-make perf PERF_FLAGS='-checks bench'          # only some checks: binary,cli,daemon,ui,bench
+make perf PERF_FLAGS='-checks bench'          # only some checks: binary,cli,daemon,ui,bench,tempobase-binary,tempobase-daemon,tempobase-ui
+make perf PERF_FLAGS='-tempobase-pg postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable'  # also tempoBase's Postgres idle close
 make perf PERF_FLAGS='-idle 5s'               # shorter idle windows while iterating
 make perf-baseline               # re-record binary size and benchmarks
 go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmarks
@@ -82,7 +109,7 @@ event driven: Docker's event stream, the in-process event bus and SSE.
   over a fixed retry interval.
 - Resource stats and logs are read only while someone is viewing them.
 
-Everything periodic in the daemon and CLI:
+Everything periodic in the daemon, the CLI and tempoBase (which has nothing else: no statistics tick, no session sweeper, no changeset timer):
 
 | What | Where | Interval | Runs only while | Cost |
 |---|---|---|---|---|
@@ -103,7 +130,8 @@ Everything periodic in the daemon and CLI:
 | Registry tunnel wait | `internal/node/remote/registry.go` | once, up to 10 s | a registry connection on a node waits for a free tunnel | one timer per waiting connection |
 | Backup scheduler | `internal/core/backups_schedule.go` | once, at the next due backup (daily per stateful service, and daily for the control plane itself, ADR 0021) | always: the control plane's own daily backup keeps it armed | one goroutine and one timer; a pass is four queries, then one job container per due backup. The control plane's backup is a `VACUUM INTO` of the database streamed with the keys and build logs into one restic job |
 | CLI backup wait | `internal/cli/backup.go` | 2 s | `dock backup run`/`restore` (or `run --control-plane`) waits for a run | one GET |
-| Data connection idle close | `internal/data/pg` | once, 60 s after last use | a database connection is open | one timer per connection |
+| Data connection idle close | `internal/data/pg` | once, 60 s after last use | a database connection is open (Dock and tempoBase) | one timer per connection |
+| tempoBase audit prune | `internal/tempobase` | at most hourly, inline when an event is written; no timer | something is being audited | one indexed delete of events past `audit_retention_days`, at most 1000 |
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
@@ -194,7 +222,11 @@ Everything periodic in the daemon and CLI:
 - **SSE patches, not refetch storms.** Live events patch the query cache
   (`web/src/data/live.ts`); never invalidate broad query keys per event, and
   never poll.
-- **Fonts** are woff2 and subset.
+- **Fonts** are woff2 and subset, self-hosted, `font-display: swap`, and
+  loaded by the shell CSS, not by route chunks
+  ([design](design/README.md#fonts-and-performance)). The "UI initial
+  fonts" row counts every font the initial CSS declares or `index.html`
+  preloads.
 - **Serve assets compressed and cached** (`internal/api/ui.go`). Text
   files go out gzip-compressed (each compressed once, on its first
   request, and kept), hashed files under `/assets/` with `Cache-Control:

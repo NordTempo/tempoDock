@@ -20,13 +20,29 @@ import (
 	"time"
 )
 
-// daemon is a `dock serve` on the fake runtime with a temp data dir.
+// daemon is a server under test with a temp data dir: `dock serve` on the
+// fake runtime, or `tempobase serve` (tempobase.go).
 type daemon struct {
-	cmd   *exec.Cmd
-	dir   string
-	base  string // http://host:port/api/v1
-	token string
-	http  *http.Client
+	cmd  *exec.Cmd
+	dir  string
+	base string // http://host:port/api/v1
+	// token is an API token; without one, requests carry the session
+	// cookie the way a browser would.
+	token, cookie string
+	http          *http.Client
+}
+
+// authorize adds the daemon's credentials to req: the bearer token, or
+// the session cookie with the same-origin header a browser sends.
+func (d *daemon) authorize(req *http.Request) {
+	if d.token != "" {
+		req.Header.Set("Authorization", "Bearer "+d.token)
+		return
+	}
+	if d.cookie != "" {
+		req.Header.Set("Cookie", d.cookie)
+	}
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
 }
 
 // checkDaemon measures the idle daemon, then the idle daemon with SSE
@@ -45,7 +61,8 @@ func checkDaemon(o options, t *table) error {
 
 	// Let start-up work (migrations, reconcile, first GC) finish.
 	time.Sleep(3 * time.Second)
-	if err := d.idle(t, "daemon idle", o.idle, 0); err != nil {
+	betweenTicks(o.idle)
+	if err := d.idle(t, "daemon idle", o.idle, dockIdle(0)); err != nil {
 		return err
 	}
 
@@ -55,7 +72,8 @@ func checkDaemon(o options, t *table) error {
 		return err
 	}
 	time.Sleep(time.Second)
-	err = d.idle(t, fmt.Sprintf("daemon idle, %d SSE clients", o.sseClients), o.idle, o.sseClients)
+	betweenTicks(o.idle)
+	err = d.idle(t, fmt.Sprintf("daemon idle, %d SSE clients", o.sseClients), o.idle, dockIdle(o.sseClients))
 	cancel()
 	if err != nil {
 		return err
@@ -134,13 +152,26 @@ func (d *daemon) servedUI(t *table) error {
 	return nil
 }
 
-func freePort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+// freePorts picks n distinct free loopback ports. Every listener stays
+// open until all n are chosen, so no two picks can return the same port;
+// they are closed on return, just before the caller starts its server.
+func freePorts(n int) ([]int, error) {
+	ls := make([]net.Listener, 0, n)
+	defer func() {
+		for _, l := range ls {
+			_ = l.Close()
+		}
+	}()
+	ports := make([]int, 0, n)
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, err
+		}
+		ls = append(ls, l)
+		ports = append(ports, l.Addr().(*net.TCPAddr).Port)
 	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port, nil
+	return ports, nil
 }
 
 func startDaemon(bin string) (*daemon, error) {
@@ -148,14 +179,11 @@ func startDaemon(bin string) (*daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	api, err := freePort()
+	ports, err := freePorts(2)
 	if err != nil {
 		return nil, err
 	}
-	internal, err := freePort()
-	if err != nil {
-		return nil, err
-	}
+	api, internal := ports[0], ports[1]
 	data := filepath.Join(dir, "data")
 	cfg := fmt.Sprintf(`data_dir = %q
 listen = "127.0.0.1:%d"
@@ -185,22 +213,8 @@ disable_tls = true
 		return nil, err
 	}
 	d := &daemon{cmd: cmd, dir: dir, base: fmt.Sprintf("http://127.0.0.1:%d/api/v1", api), http: &http.Client{Timeout: 30 * time.Second}}
-
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		resp, err := d.http.Get(d.base + "/health")
-		if err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				break
-			}
-		}
-		if time.Now().After(deadline) {
-			d.stop()
-			log, _ := os.ReadFile(logf.Name())
-			return nil, fmt.Errorf("daemon did not become healthy: %s", log)
-		}
-		time.Sleep(50 * time.Millisecond)
+	if err := d.waitHealthy(logf.Name()); err != nil {
+		return nil, err
 	}
 
 	out, err := exec.Command(bin, "admin", "bootstrap", "--config", cfgPath).Output()
@@ -210,6 +224,27 @@ disable_tls = true
 	}
 	d.token = strings.TrimSpace(string(out))
 	return d, nil
+}
+
+// waitHealthy waits up to 10 s for /health to answer 200. If it doesn't,
+// it stops the server and returns its log.
+func (d *daemon) waitHealthy(logPath string) error {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := d.http.Get(d.base + "/health")
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			log, _ := os.ReadFile(logPath) // before stop removes it
+			d.stop()
+			return fmt.Errorf("%s did not become healthy: %s", filepath.Base(d.cmd.Path), log)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func (d *daemon) stop() {
@@ -276,10 +311,26 @@ func (d *daemon) anon() (int64, error) {
 	return kb << 10, err
 }
 
-// idle measures CPU ticks and wake-ups over one window, with clients SSE
-// streams open, and memory at its end.
-func (d *daemon) idle(t *table, name string, window time.Duration, clients int) error {
-	betweenTicks(window)
+// idleBudgets are the limits of one idle window.
+type idleBudgets struct {
+	anon    int64   // anonymous RSS, bytes
+	ticks   int64   // CPU clock ticks in the window
+	wakeups float64 // voluntary context switches per second
+}
+
+// dockIdle is Dock's idle budget with clients SSE streams open.
+func dockIdle(clients int) idleBudgets {
+	return idleBudgets{
+		anon:    idleAnonBudget,
+		ticks:   idleTicksBudget,
+		wakeups: idleWakeupsBudget + float64(clients)*sseClientWakeupsBudget,
+	}
+}
+
+// idle measures CPU ticks and wake-ups over one window, and memory at its
+// end, and adds a row for each against b. Callers pick when the window
+// starts: Dock's fits between two statistics ticks (betweenTicks).
+func (d *daemon) idle(t *table, name string, window time.Duration, b idleBudgets) error {
 	before, err := d.sample()
 	if err != nil {
 		return err
@@ -294,11 +345,10 @@ func (d *daemon) idle(t *table, name string, window time.Duration, clients int) 
 		return err
 	}
 	ticks := after.ticks - before.ticks
-	t.within(name+": memory", mb(anon)+" anon", "≤ "+mb(idleAnonBudget), anon <= idleAnonBudget)
-	t.withinTiming(name+": CPU", fmt.Sprintf("%d ticks in %s", ticks, window), fmt.Sprintf("≤ %d ticks", idleTicksBudget), ticks <= idleTicksBudget)
+	t.within(name+": memory", mb(anon)+" anon", "≤ "+mb(b.anon), anon <= b.anon)
+	t.withinTiming(name+": CPU", fmt.Sprintf("%d ticks in %s", ticks, window), fmt.Sprintf("≤ %d ticks", b.ticks), ticks <= b.ticks)
 	wakeups := float64(after.wakeups-before.wakeups) / window.Seconds()
-	wakeupsBudget := idleWakeupsBudget + float64(clients)*sseClientWakeupsBudget
-	t.withinTiming(name+": wake-ups", fmt.Sprintf("%.2f/s", wakeups), fmt.Sprintf("≤ %.1f/s", wakeupsBudget), wakeups <= wakeupsBudget)
+	t.withinTiming(name+": wake-ups", fmt.Sprintf("%.2f/s", wakeups), fmt.Sprintf("≤ %.1f/s", b.wakeups), wakeups <= b.wakeups)
 	return nil
 }
 
@@ -370,7 +420,7 @@ func (d *daemon) call(method, path string, body, out any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+d.token)
+	d.authorize(req)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

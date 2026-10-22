@@ -1,0 +1,45 @@
+# tempoBase as a systemd service (docs/tempobase/install.md). Install the
+# binary as /usr/local/bin/tempobase and this file as
+# /etc/systemd/system/tempobase.service, then:
+#
+#   systemctl enable --now tempobase
+#   journalctl -u tempobase    # the setup link for the first admin
+#
+# Settings are Environment= lines here or a TOML file (tempobase.toml next
+# to this one); environment variables win.
+[Unit]
+Description=tempoBase (browse, query and safely change Postgres data)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# A throwaway user with no other access. tempobase.db and secrets.key live
+# in /var/lib/tempobase (StateDirectory), the default data_dir.
+DynamicUser=true
+StateDirectory=tempobase
+StateDirectoryMode=0700
+# The file must exist once this line is uncommented.
+#Environment=TEMPOBASE_CONFIG=/etc/tempobase/tempobase.toml
+#Environment=TEMPOBASE_BASE_URL=https://tempobase.example.com
+# Makes the Go runtime return memory after bursts (large query results).
+Environment=GOMEMLIMIT=48MiB
+ExecStart=/usr/local/bin/tempobase serve
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=20
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+# A safety net; tempoBase idles around 10 MB.
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

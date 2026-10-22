@@ -1,10 +1,11 @@
 // Command perf checks Tempo Dock against its performance budgets and prints
 // a table: binary size, CLI start-up, daemon idle memory and CPU (also with
 // SSE clients connected), API read latency on a seeded daemon, UI bundle
-// sizes, and Go benchmarks compared with a checked-in baseline. It exits
+// sizes, and Go benchmarks compared with a checked-in baseline; and the same
+// for tempoBase, the standalone Data panel server (tempobase.go). It exits
 // non-zero when anything is over budget.
 //
-// Run it through make, which builds the UI and the binary first:
+// Run it through make, which builds the UIs and binaries first:
 //
 //	make perf            # check everything
 //	make perf-baseline   # re-record scripts/perf/baseline.json
@@ -36,7 +37,10 @@ const (
 	initialJSBudget        = 200 << 10 // gzipped
 	cssBudget              = 30 << 10  // gzipped
 	fontsBudget            = 150 << 10 // woff2, already compressed
-	binaryGrowthLimit      = 0.10
+	// Fonts a first load can fetch: style A's Inter and JetBrains Mono,
+	// Latin subsets (docs/design/README.md).
+	initialFontsBudget = 100 << 10
+	binaryGrowthLimit  = 0.10
 )
 
 type options struct {
@@ -48,6 +52,11 @@ type options struct {
 	benchCount           int
 	nsTol, allocsTol     float64
 	update               bool
+
+	// tempobase and tempobaseDist are tempoBase's binary and built UI;
+	// tempobasePG is a Postgres URL for its connection check (optional).
+	tempobase, tempobaseDist, tempobasePG string
+
 	// speed is how much slower this machine is than the one that recorded
 	// the baseline (1 if unknown or faster). API latency budgets scale with
 	// it, so a slow CI runner gets proportionally more time.
@@ -61,11 +70,14 @@ type options struct {
 
 func main() {
 	var o options
-	checks := "binary,cli,daemon,ui,bench"
+	checks := "binary,cli,daemon,ui,bench,tempobase-binary,tempobase-daemon,tempobase-ui"
 	flag.StringVar(&o.dock, "dock", "bin/dock", "dock binary to measure (built with the UI embedded)")
 	flag.StringVar(&o.dist, "dist", "web/dist", "built UI")
-	flag.StringVar(&o.baseline, "baseline", "scripts/perf/baseline.json", "baseline for binary size and benchmarks")
-	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), ui, bench")
+	flag.StringVar(&o.tempobase, "tempobase", "bin/tempobase", "tempobase binary to measure (built with its UI embedded)")
+	flag.StringVar(&o.tempobaseDist, "tempobase-dist", "web/tempobase/dist", "tempoBase's built UI")
+	flag.StringVar(&o.tempobasePG, "tempobase-pg", "", "Postgres URL (owner with CREATEROLE) for tempoBase's idle connection check; skipped when empty")
+	flag.StringVar(&o.baseline, "baseline", "scripts/perf/baseline.json", "baseline for binary sizes and benchmarks")
+	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), ui, bench, tempobase-binary, tempobase-daemon, tempobase-ui")
 	flag.DurationVar(&o.idle, "idle", 30*time.Second, "length of each idle measurement window")
 	flag.IntVar(&o.sseClients, "sse", 20, "SSE clients connected during the second idle window")
 	flag.StringVar(&o.benchTime, "benchtime", "200ms", "go test -benchtime")
@@ -91,7 +103,8 @@ func main() {
 		os.Exit(1)
 	}
 	o.speed = 1
-	if slices.Contains(o.checks, "daemon") && base.CalibrationNs > 0 {
+	timesAPI := slices.Contains(o.checks, "daemon") || slices.Contains(o.checks, "tempobase-daemon")
+	if timesAPI && base.CalibrationNs > 0 {
 		o.speed = max(1, min(calibrate(), calibrate(), calibrate())/base.CalibrationNs)
 	}
 	t := &table{waivers: base.Waivers, softTiming: o.softTiming}
@@ -104,6 +117,9 @@ func main() {
 		{"daemon", checkDaemon},
 		{"ui", checkUI},
 		{"bench", checkBench},
+		{"tempobase-binary", checkTempobaseBinary},
+		{"tempobase-daemon", checkTempobaseDaemon},
+		{"tempobase-ui", checkTempobaseUI},
 	}
 	for _, s := range steps {
 		if !slices.Contains(o.checks, s.name) {
@@ -131,6 +147,8 @@ const (
 	warn result = "warn"
 	// waived is over budget, but listed in baseline.json's waivers.
 	waived result = "waived"
+	// skipped is a check whose subject isn't in the tree yet.
+	skipped result = "skipped"
 )
 
 type row struct {

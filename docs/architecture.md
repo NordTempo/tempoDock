@@ -239,10 +239,38 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
 Upgrading the platform means swapping the binary and restarting the systemd
 unit. Apps and routing are unaffected.
 
+## tempoBase, a second binary
+
+The Data panel also ships on its own as `tempobase`
+([ADR 0024](decisions/0024-tempobase-standalone.md)): a small server for
+people who only want to browse, query and safely change Postgres data.
+
+```
+ browser / agent                 tempobase (one Go binary)
+┌──────────────┐               ┌────────────────────────────────────┐
+│ UI, MCP, API │──────────────▶│ HTTP API, embedded UI, MCP         │
+└──────────────┘               │ datapanel (shared with Dock)       │──▶ Postgres
+                               │ its own SQLite: users, connections │
+                               └────────────────────────────────────┘
+```
+
+- The panel's rules (policy, setup, changesets, masking, cursors, audit
+  summaries) live once, in `internal/datapanel`, behind a generic `Host`
+  interface. Dock's core and tempoBase each implement it over their own
+  store, so a fix lands in both.
+- tempoBase never links Dock's daemon: no `core`, `api`, `store`, `node`,
+  `mcp` or `cli`, no Docker, BuildKit or gRPC. `make tempobase-deps`
+  checks it in CI.
+- One web project with two entries (`web/` and `web/tempobase/`) sharing
+  `features/data`. Dock's UI is style A and tempoBase's style G, on
+  system fonts ([design](design/README.md)). One version and one release for both binaries; the
+  image is `ghcr.io/nordtempo/tempobase`.
+
 ## Code layout
 
 ```
 cmd/dock/        entry point: CLI commands, `dock serve`, `dock node`
+cmd/tempobase/   tempoBase's entry point: `tempobase serve`, `admin`
 internal/apitypes/   the API's JSON contract (requests, responses, events, error
                      codes); no server dependencies, so the CLI imports it
 internal/api/        HTTP handlers (Huma), auth middleware, SSE, internal
@@ -257,8 +285,12 @@ internal/node/       runtime interface, local implementation (Docker, BuildKit, 
 internal/node/stats/ resource statistics from /proc and cgroup files
 internal/node/fake/  in-memory runtime for tests and `make dev`
 internal/cli/        CLI commands, output formatting (human and --json)
+internal/data/       database engines for the Data panel (data/pg: Postgres)
+internal/datapanel/  the Data panel's rules behind a Host interface; Dock and tempoBase
+internal/tempobase/  tempoBase's server: config, auth, connections, its SQLite store
 web/                 React app; build output embedded into the binary
-docs/
+web/tempobase/       tempoBase's app, sharing web/src/features/data
+docs/                design docs; docs/guide is Dock's guide, docs/tempobase tempoBase's
 ```
 
 - `core` depends on the `store` package and the `node.Runtime` interface,

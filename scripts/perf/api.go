@@ -158,11 +158,7 @@ const (
 // pending-changes diff are measured again with a staged change, which makes
 // them resolve every service's variables.
 func (d *daemon) latency(t *table, speed float64) error {
-	budget := time.Duration(float64(apiP95Budget) * speed)
-	budgetText := "≤ " + ms(budget)
-	if speed > 1 {
-		budgetText += fmt.Sprintf(" (%s × %.2f machine speed)", ms(apiP95Budget), speed)
-	}
+	budget, budgetText := scaledBudget(apiP95Budget, speed)
 	prod := "/projects/big/environments/production"
 	svc := prod + "/services/svc-00"
 	measure := func(suffix string, paths ...string) error {
@@ -200,6 +196,17 @@ func (d *daemon) latency(t *table, speed float64) error {
 	return measure(" (staged change)", "/projects/big/overview", prod+"/changes")
 }
 
+// scaledBudget is a latency budget scaled by machine speed (options.speed),
+// and how to print it.
+func scaledBudget(b time.Duration, speed float64) (time.Duration, string) {
+	scaled := time.Duration(float64(b) * speed)
+	text := "≤ " + ms(scaled)
+	if speed > 1 {
+		text += fmt.Sprintf(" (%s × %.2f machine speed)", ms(b), speed)
+	}
+	return scaled, text
+}
+
 // load sends latencyRequests GETs to path from latencyConcurrency workers
 // and returns the median and 95th percentile latency.
 func (d *daemon) load(path string) (p50, p95 time.Duration, err error) {
@@ -207,7 +214,7 @@ func (d *daemon) load(path string) (p50, p95 time.Duration, err error) {
 	defer client.CloseIdleConnections()
 	get := func() (time.Duration, error) {
 		req, _ := http.NewRequest(http.MethodGet, d.base+path, nil)
-		req.Header.Set("Authorization", "Bearer "+d.token)
+		d.authorize(req)
 		start := time.Now()
 		resp, err := client.Do(req)
 		if err != nil {

@@ -1,0 +1,29 @@
+# tempoBase's configuration (docs/tempobase/install.md). Every setting is
+# optional. The environment variable of the same name in capitals with a
+# TEMPOBASE_ prefix wins over it (listen: TEMPOBASE_LISTEN). Point
+# tempobase at this file with --config or TEMPOBASE_CONFIG. No secrets go
+# here.
+
+# HTTP address. Keep it on loopback and put TLS in front (Caddy, a tunnel)
+# for anything public.
+listen = "127.0.0.1:7171"
+
+# Where tempobase.db and, by default, the key file live.
+data_dir = "/var/lib/tempobase"
+
+# The AES-256 key that seals saved connection URLs and role passwords,
+# created on first start. Point it at a mounted secret to keep it out of
+# backups of data_dir.
+# secrets_key_file = "/run/secrets/tempobase.key"
+
+# The address people open. Used for setup, invite and reset links and the
+# MCP snippet, and to decide Secure cookies. Default: from each request.
+# base_url = "https://tempobase.example.com"
+
+# Proxies whose X-Forwarded-For and X-Forwarded-Proto are believed (rate
+# limits, audit addresses, scheme). TEMPOBASE_TRUSTED_PROXIES takes them
+# comma separated. Default: none.
+# trusted_proxies = ["127.0.0.1/32"]
+
+# Audit events older than this are deleted.
+audit_retention_days = 90
