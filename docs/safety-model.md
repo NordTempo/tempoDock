@@ -111,7 +111,11 @@ for the exact rules.
   for Docker, Caddy and the daemon.
 - **Builds are capped** in their own BuildKit container (CPU, RAM, low priority).
 - **Disk hygiene:** log rotation via the `local` log driver, automatic pruning of
-  images outside the rollback window and of old build cache, disk usage alerts.
+  images outside the rollback window and of old build cache, retention of
+  build logs and the audit log, disk usage alerts
+  ([0020](decisions/0020-retention-and-alerts.md)).
+- **Alerts:** full disks, offline servers, crash loops, failed deploys and
+  certificate failures reach admins by webhook, Slack or email.
 - **Platform isolation:** the daemon, Caddy and BuildKit are installed by the
   install script, never deployed through the platform. An agent cannot deploy
   over the control plane.

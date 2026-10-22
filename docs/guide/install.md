@@ -171,7 +171,7 @@ running).
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
 | `[defaults] cpus` | `1` | CPU limit for services that don't set one |
 | `[defaults] health_check_timeout_seconds` | `60` | Health check timeout for services that don't set one |
-| `[defaults] keep_releases` | `5` | Release images kept for rollback. Not enforced yet: nothing prunes old images |
+| `[defaults] keep_releases` | `5` | Releases kept for rollback per service: their images and history are never pruned |
 | `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
 | `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
 | `[node] listen` | empty | Control plane: where nodes connect, e.g. `100.64.0.10:7443` on Tailscale. Join tokens carry it, so it must be an address nodes can dial, not `0.0.0.0`. Empty: no nodes |
@@ -183,6 +183,18 @@ running).
 | `[hooks] public_host` | empty | Control plane: the public hostname GitHub delivers pushes to, e.g. `hooks.example.com`, with DNS pointing at this server like an app domain. Caddy routes only `/hooks/github/` on it, to `[hooks] listen`. Empty: [push-to-deploy](deploying.md#deploy-on-git-push) can be connected but receives nothing |
 | `[hooks] listen` | `127.0.0.1:7072` | Loopback listener for webhook deliveries; serves nothing else. Must be loopback |
 | `[hooks] ui_url` | empty | The UI's URL, e.g. `https://dock.example.com`, for the Details link of GitHub commit statuses. Empty: statuses have no link |
+| `[retention] build_log_days` | `30` | Build logs, saved output and progress lines of releases outside the rollback window are deleted after this many days |
+| `[retention] audit_days` | `365` | Audit events older than this are deleted |
+| `[retention] audit_max_events` | `0` | Also cap the audit log at this many events; `0` no cap |
+| `[retention] alert_days` | `90` | Resolved alerts older than this are deleted |
+| `[retention] prune_disk_percent` | `80` | When Docker's disk on a server is this full, dangling images (not ones a rollback needs) and BuildKit cache are pruned, at most hourly. `0` never |
+| `[retention] build_cache_keep_mb` | `2048` | BuildKit cache left after such a prune |
+| `[alerts] disk_warning_percent`, `disk_critical_percent` | `85`, `95` | Disk use that raises a warning or critical alert |
+| `[alerts] server_offline_minutes` | `5` | How long a server may be unreachable before an alert |
+| `[alerts] crash_loop_restarts`, `crash_loop_minutes` | `3`, `10` | This many restarts within this many minutes is a crash loop |
+
+Where alerts are sent (webhook, Slack, email) is set with `dock alerts
+channel add`, not in this file; see [ADR 0020](../decisions/0020-retention-and-alerts.md).
 
 Changing `[buildkit]` settings recreates the `dock-buildkit` container
 before the next build. So does finding its memory cap loosened: before each

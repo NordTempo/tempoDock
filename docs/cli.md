@@ -28,7 +28,7 @@ What scripts, CI and agents can rely on. The goals behind these are in
 - The CLI only prompts when stdin is a terminal. Otherwise missing input is a
   usage error naming the flag to pass, and commands that ask for
   confirmation (`discard`, `domain remove`, `service archive`, `project archive`,
-  `user delete`, `server revoke`, `server remove`, `db setup`) need `--yes`, and commits to production data
+  `user delete`, `server revoke`, `server remove`, `alerts channel remove`, `db setup`) need `--yes`, and commits to production data
   need `--confirm <environment>`.
 
 ## Exit codes
