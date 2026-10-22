@@ -1,0 +1,224 @@
+package core
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/backup"
+	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
+)
+
+// RestoreBackup restores a template database's snapshot into a NEW
+// service from the same template (ADR 0011, 0019): new credentials, the
+// snapshot's data, nothing referencing it yet. The live service is never
+// touched; switch references to the new one when it checks out. The
+// answer comes at once with the new service; the restore finishes in the
+// background (a restore row on the source service, and audit events).
+func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req apitypes.RestoreBackupRequest) (apitypes.RestoreResult, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "restoring a backup")
+	if err != nil {
+		return apitypes.RestoreResult{}, err
+	}
+	if err := notArchived(ss.project); err != nil {
+		return apitypes.RestoreResult{}, err
+	}
+	t, ok := templateOf(ss.svc)
+	if !ok {
+		return apitypes.RestoreResult{}, invalid("only template databases restore into a new service; restore %s's volume backups by hand with restic (see docs/guide/databases.md)", ss)
+	}
+	snap := strings.TrimSpace(req.Snapshot)
+	if len(snap) < 8 {
+		return apitypes.RestoreResult{}, invalid("give the snapshot ID or at least its first 8 characters; `dock backup list` shows them")
+	}
+	from, err := c.store.GetBackupBySnapshot(ctx, store.GetBackupBySnapshotParams{ServiceID: ss.svc.ID, Prefix: snap})
+	if store.IsNotFound(err) {
+		return apitypes.RestoreResult{}, notFound("%s has no backup with snapshot %s", ss, snap)
+	}
+	if err != nil {
+		return apitypes.RestoreResult{}, err
+	}
+	if from.Pruned {
+		return apitypes.RestoreResult{}, invalid("snapshot %s was removed by retention; pick a newer one", snap)
+	}
+	set, err := c.backupSettings(ctx)
+	if err != nil {
+		return apitypes.RestoreResult{}, err
+	}
+	if set.Repository != from.Repository {
+		return apitypes.RestoreResult{}, invalid("snapshot %s is in %s, but backups now go to %s; configure that repository again to restore it",
+			snap, repoLabel(from.Repository), repoLabel(set.Repository))
+	}
+	name := req.As
+	if name == "" {
+		name = ss.svc.Name + "-restored"
+	}
+	if err := validName("service", name); err != nil {
+		return apitypes.RestoreResult{}, err
+	}
+	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
+		return apitypes.RestoreResult{}, err
+	}
+	if !c.claimService(ss.svc.ID) {
+		return apitypes.RestoreResult{}, conflict("a backup or restore of %s is already running; wait for it to finish", ss)
+	}
+	r := &restore{c: c, from: ss, t: t, snapshot: from.SnapshotID}
+	// Created without a deploy, so the restore row exists before anything
+	// can finish.
+	r.to, err = c.createFromTemplate(ctx, a, ss.envScope, name, t, templateOptions{noDeploy: true})
+	if err != nil {
+		c.releaseService(ss.svc.ID)
+		return apitypes.RestoreResult{}, err
+	}
+	r.row, err = c.store.CreateBackup(ctx, store.CreateBackupParams{
+		ServiceID: ss.svc.ID, Operation: "restore", Kind: string(t.backup), Trigger: "manual",
+		Repository: from.Repository, SnapshotID: from.SnapshotID, RestoredTo: &r.to.svc.ID, CreatedBy: a.Name, StartedAt: now(),
+	})
+	if err != nil {
+		c.releaseService(ss.svc.ID)
+		return apitypes.RestoreResult{}, err
+	}
+	c.audit(ctx, a, "backup.restore", &ss.project, &ss.env, ss.String(),
+		fmt.Sprintf("restoring snapshot %s into new service %s", from.SnapshotID[:8], name))
+	if t.backup == apitypes.BackupRedis {
+		// Redis: fill the new volume first, then deploy.
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			r.fillVolume(c.ctx, a)
+		}()
+	} else if err := c.deployTemplate(ctx, a, r.to, r.deployed); err != nil {
+		r.finish(c.ctx, err)
+	}
+	svc, err := c.toService(ctx, r.to, apitypes.PendingChanges{})
+	return apitypes.RestoreResult{Service: svc, Restore: toBackupRun(r.row, ss.svc.Name, map[int64]string{r.to.svc.ID: name})}, err
+}
+
+// restore is one restore in flight.
+type restore struct {
+	c        *Core
+	from, to svcScope
+	t        dbTemplate
+	snapshot string
+	row      store.Backup
+}
+
+// deployed continues a Postgres restore once the new service's first
+// release finished: pg_restore into it while it runs.
+func (r *restore) deployed(ok bool) {
+	ctx := r.c.ctx
+	if r.t.backup == apitypes.BackupRedis {
+		// The data was in place before it started.
+		if !ok {
+			r.finish(ctx, fmt.Errorf("%s failed to start with the restored data; see its release", r.to.svc.Name))
+			return
+		}
+		r.finish(ctx, nil)
+		return
+	}
+	if !ok {
+		r.finish(ctx, fmt.Errorf("%s failed to start; see its release", r.to.svc.Name))
+		return
+	}
+	r.finish(ctx, r.pgRestore(ctx))
+}
+
+// pgRestore streams the dump into the new, running Postgres.
+func (r *restore) pgRestore(ctx context.Context) error {
+	c := r.c
+	to, err := c.scopeOf(ctx, r.to.svc.ID)
+	if err != nil {
+		return err
+	}
+	conn, err := c.dbConnection(ctx, to)
+	if err != nil {
+		return notRunningErr(to, err)
+	}
+	image, err := c.activeImage(ctx, to)
+	if err != nil {
+		return err
+	}
+	target := backup.Source{
+		Kind: apitypes.BackupPostgres, Host: to.svc.Name, Port: conn.port,
+		User: conn.owner.User, Password: conn.owner.Password, Database: conn.database,
+	}
+	return r.run(ctx, to, image, target, nil)
+}
+
+// fillVolume writes a Redis snapshot into the new service's volume, then
+// deploys it.
+func (r *restore) fillVolume(ctx context.Context, a Actor) {
+	c := r.c
+	rt, err := c.runtimeFor(r.to.env.ServerID)
+	if err != nil {
+		r.finish(ctx, err)
+		return
+	}
+	vol := volumeName(r.to, templateVolume)
+	if err := rt.EnsureVolume(ctx, vol, c.labels(r.to, 0)); err != nil {
+		r.finish(ctx, fmt.Errorf("create volume: %w", c.nodeErr(r.to.env.ServerID, err)))
+		return
+	}
+	mounts := []node.Mount{{Volume: vol, Path: r.t.mountPath}}
+	if err := r.run(ctx, r.to, r.t.image, backup.Source{}, mounts); err != nil {
+		r.finish(ctx, err)
+		return
+	}
+	if err := c.deployTemplate(ctx, a, r.to, r.deployed); err != nil {
+		r.finish(ctx, err)
+	}
+}
+
+// run runs the restore job for the new service on its server: target
+// is how it reaches the new database (Postgres), mounts its volume
+// (Redis).
+func (r *restore) run(ctx context.Context, to svcScope, image string, target backup.Source, mounts []node.Mount) error {
+	c := r.c
+	rt, err := c.runtimeFor(to.env.ServerID)
+	if err != nil {
+		return err
+	}
+	set, err := c.backupSettings(ctx)
+	if err != nil {
+		return err
+	}
+	repo, err := c.repoOf(ctx, set)
+	if err != nil {
+		return err
+	}
+	script, err := backup.RestoreScript(r.t.backup, r.t.mountPath)
+	if err != nil {
+		return err
+	}
+	spec := node.JobSpec{
+		Name:  fmt.Sprintf("dock_p%d_e%d_s%d_restore%d", to.project.ID, to.env.ID, to.svc.ID, r.row.ID),
+		Image: image, Labels: c.labels(to, 0), Env: backup.RestoreEnv(r.snapshot, target, repo), Script: script,
+		Network: networkName(to.envScope), Mounts: mounts,
+	}
+	_, err = c.runResticJob(ctx, to.env.ServerID, rt, repo, spec)
+	return err
+}
+
+// finish records a restore's outcome once.
+func (r *restore) finish(ctx context.Context, err error) {
+	c := r.c
+	c.releaseService(r.from.svc.ID) // before the row says finished, as in runBackup
+	if ctx.Err() != nil {
+		return // shutting down: the next start marks it failed
+	}
+	// The row is written last, as in runBackup.
+	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), SnapshotID: r.snapshot, FinishedAt: ptr(now()), ID: r.row.ID}
+	if err != nil {
+		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
+		c.audit(ctx, System, "backup.restore_failed", &r.from.project, &r.from.env, r.from.String(),
+			fmt.Sprintf("restore into %s failed: %v; %s is kept for a look, archive it when done", r.to.svc.Name, err, r.to.svc.Name))
+	} else {
+		c.audit(ctx, System, "backup.restored", &r.from.project, &r.from.env, r.from.String(),
+			fmt.Sprintf("restored snapshot %s into %s; point references at ${{%s.%s}} when it checks out", r.snapshot[:8], r.to.svc.Name, r.to.svc.Name, r.t.exports[0]))
+	}
+	if ferr := c.store.FinishBackup(ctx, fin); ferr != nil {
+		c.log.Error("record restore", "restore", r.row.ID, "err", ferr)
+	}
+}

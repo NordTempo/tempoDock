@@ -31,6 +31,43 @@ type AuditEvent struct {
 	DetailID      *int64
 }
 
+type Backup struct {
+	ID         int64
+	ServiceID  int64
+	Operation  string
+	Kind       string
+	Trigger    string
+	Status     string
+	Repository string
+	SnapshotID string
+	SizeBytes  int64
+	Pruned     bool
+	RestoredTo *int64
+	Error      string
+	CreatedBy  string
+	StartedAt  time.Time
+	FinishedAt *time.Time
+}
+
+type BackupSchedule struct {
+	ServiceID int64
+	Enabled   bool
+	Hour      *int64
+}
+
+type BackupSetting struct {
+	ID          int64
+	Repository  string
+	Credentials []byte
+	Password    []byte
+	KeepDaily   int64
+	KeepWeekly  int64
+	KeepMonthly int64
+	Hour        int64
+	UpdatedAt   time.Time
+	UpdatedBy   string
+}
+
 type Changeset struct {
 	ID           int64
 	ServiceID    int64
@@ -272,6 +309,7 @@ type Service struct {
 	ArchivedAt                *time.Time
 	Database                  string
 	DatabaseUrlVariable       string
+	Template                  string
 }
 
 type ServiceStat struct {

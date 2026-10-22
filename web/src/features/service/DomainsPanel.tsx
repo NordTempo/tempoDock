@@ -5,7 +5,7 @@ import {
   useRemoveDomain,
 } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
-import { useService } from "../../data/queries";
+import { listenPort, useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
 import { ago, since } from "../../ui/format";
 import {
@@ -21,7 +21,7 @@ import { domainState } from "../../ui/status";
 /** Add form, a card per domain that needs a human, and every domain. */
 export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service, domains } = useService(ref);
-  const port = service.port || 8080;
+  const port = listenPort(service);
   const waiting = domains.filter(domainNeedsAttention);
 
   return (

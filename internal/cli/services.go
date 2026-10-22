@@ -124,27 +124,58 @@ func (f *settingsFlags) update(fs *pflag.FlagSet) (apitypes.UpdateServiceRequest
 func newServiceCreateCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var settings settingsFlags
+	var template string
 	cmd := &cobra.Command{
 		Use:   "create <name>",
-		Short: "Create a service (without deploying it)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Create a service (without deploying it), or a database from a template",
+		Long: `Create a service. Nothing is deployed until you deploy it.
+
+With --template (postgres or redis) it is a database: a pinned image, a volume,
+generated credentials and small-server defaults, deployed right away and
+backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.`,
+		Example: `  dock service create api --image ghcr.io/acme/api:1.4
+  dock service create db --template postgres
+  dock service create cache --template redis`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, t, err := g.open(f, needEnvironment)
 			if err != nil {
 				return err
 			}
-			svc, err := send[apitypes.Service](cmd.Context(), s, http.MethodPost, t.envPath()+"/services", settings.create(args[0]))
+			req := settings.create(args[0])
+			req.Template = apitypes.Template(template)
+			svc, err := send[apitypes.Service](cmd.Context(), s, http.MethodPost, t.envPath()+"/services", req)
 			if err != nil {
 				return err
 			}
+			var exports []string
+			if template != "" {
+				tpls, err := get[[]apitypes.TemplateInfo](cmd.Context(), s, apiPrefix+"/templates")
+				if err == nil {
+					for _, tp := range tpls {
+						if tp.Name == req.Template {
+							exports = tp.Exports
+						}
+					}
+				}
+			}
 			return g.io.Print(svc, func() error {
-				g.io.Successf("Created service %s in %s/%s", svc.Name, svc.Project, svc.Environment)
+				if template == "" {
+					g.io.Successf("Created service %s in %s/%s", svc.Name, svc.Project, svc.Environment)
+					return nil
+				}
+				g.io.Successf("Created %s from the %s template in %s/%s; its first release is deploying", svc.Name, template, svc.Project, svc.Environment)
+				for _, e := range exports {
+					g.io.Detail(fmt.Sprintf("Other services use it with ${{%s.%s}}, e.g. `dock env set -s api %s='${{%s.%s}}'`", svc.Name, e, e, svc.Name, e))
+				}
+				g.io.Detail("Follow the deploy with `dock status`; backups run daily (`dock backup list -s " + svc.Name + "`).")
 				return nil
 			})
 		},
 	}
 	f.add(cmd, needEnvironment)
 	settings.add(cmd.Flags())
+	cmd.Flags().StringVar(&template, "template", "", "create a database from a template: postgres or redis (other settings are ignored)")
 	return cmd
 }
 

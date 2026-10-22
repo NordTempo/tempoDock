@@ -169,6 +169,8 @@ type Service struct {
 	// DataEngine is the detected database engine; the Data tab shows when
 	// it is set.
 	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres"`
+	// Template is the database template the service was created from.
+	Template Template `json:"template,omitempty" enum:"postgres,redis"`
 	// ActiveRelease is the number of the release serving traffic, if any.
 	ActiveRelease *int64        `json:"active_release,omitempty"`
 	Status        ServiceStatus `json:"status"`
@@ -188,18 +190,22 @@ type Service struct {
 	ArchiveNotes []string `json:"archive_notes,omitempty" doc:"Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)"`
 }
 
-// CreateServiceRequest creates a service. It doesn't deploy anything.
+// CreateServiceRequest creates a service. It doesn't deploy anything,
+// unless Template is set: a template service (ADR 0019) gets its image,
+// settings, volume and generated credentials from the template, ignores
+// the other settings here, and deploys right away.
 type CreateServiceRequest struct {
-	Name                      string  `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name, also the private hostname"`
-	Image                     string  `json:"image,omitempty"`
-	Port                      int     `json:"port,omitempty" minimum:"0" maximum:"65535"`
-	HealthCheckPath           string  `json:"health_check_path,omitempty"`
-	HealthCheckTimeoutSeconds int     `json:"health_check_timeout_seconds,omitempty" minimum:"0"`
-	StartCommand              string  `json:"start_command,omitempty"`
-	DockerfilePath            string  `json:"dockerfile_path,omitempty"`
-	BuildCommand              string  `json:"build_command,omitempty"`
-	MemoryMB                  int     `json:"memory_mb,omitempty" minimum:"0"`
-	CPUs                      float64 `json:"cpus,omitempty" minimum:"0"`
+	Name                      string   `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name, also the private hostname"`
+	Template                  Template `json:"template,omitempty" enum:"postgres,redis" doc:"Create a database from a template; other settings are ignored"`
+	Image                     string   `json:"image,omitempty"`
+	Port                      int      `json:"port,omitempty" minimum:"0" maximum:"65535"`
+	HealthCheckPath           string   `json:"health_check_path,omitempty"`
+	HealthCheckTimeoutSeconds int      `json:"health_check_timeout_seconds,omitempty" minimum:"0"`
+	StartCommand              string   `json:"start_command,omitempty"`
+	DockerfilePath            string   `json:"dockerfile_path,omitempty"`
+	BuildCommand              string   `json:"build_command,omitempty"`
+	MemoryMB                  int      `json:"memory_mb,omitempty" minimum:"0"`
+	CPUs                      float64  `json:"cpus,omitempty" minimum:"0"`
 }
 
 // UpdateServiceRequest stages settings changes. Only fields that are set
@@ -1006,6 +1012,8 @@ type ServiceOverview struct {
 	// last deploy shows without reading the release history.
 	LatestRelease *ReleaseSummary `json:"latest_release,omitempty"`
 	Domains       []Domain        `json:"domains"`
+	// Backup is the latest backup run of a stateful service, if any.
+	Backup *BackupRun `json:"backup,omitempty"`
 }
 
 // ReleaseSummary is the short form of a release.

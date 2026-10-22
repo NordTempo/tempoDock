@@ -25,18 +25,21 @@ const severity = (p: Problem) => {
       return 0;
     case "deploy_failed":
       return 1;
-    case "server_offline":
+    case "backup_failed":
       return 2;
+    case "server_offline":
+      return 3;
     case "domain":
-      return p.domain.status === "error" ? 3 : 4;
+      return p.domain.status === "error" ? 4 : 5;
     case "staged":
-      return 5;
+      return 6;
   }
 };
 
 /**
  * What needs a human on a project, derived from live state, worst first:
- * crashed services, failed latest releases, offline servers, domains
+ * crashed services, failed latest releases, failed latest backups,
+ * offline servers, domains
  * failing or waiting for DNS, and staged changes not applied yet. Deploys
  * in flight are not problems; the overview shows them on their own.
  */
@@ -51,6 +54,9 @@ export function useProblems(project: string): Problem[] {
     if (isFailing(service)) problems.push({ kind: "crashed", service });
     if (!service.deploying && release?.status === "failed") {
       problems.push({ kind: "deploy_failed", service, release });
+    }
+    if (service.backup?.status === "failed") {
+      problems.push({ kind: "backup_failed", service, backup: service.backup });
     }
     for (const domain of service.domains) {
       if (domainNeedsAttention(domain)) {

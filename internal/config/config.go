@@ -55,6 +55,14 @@ type Config struct {
 	Registry Registry `toml:"registry"`
 	Ingress  Ingress  `toml:"ingress"`
 	Hooks    Hooks    `toml:"hooks"`
+	Backup   Backup   `toml:"backup"`
+}
+
+// Backup configures backup jobs (ADR 0019). The repository, credentials,
+// retention and schedule are runtime settings (`dock backup configure`).
+type Backup struct {
+	// ResticImage provides the restic binary jobs use. Pin it by digest.
+	ResticImage string `toml:"restic_image"`
 }
 
 // PortRange is an inclusive range of TCP ports.
@@ -223,6 +231,9 @@ func Default() Config {
 		},
 		Ingress: Ingress{Mode: IngressDirect},
 		Hooks:   Hooks{Listen: "127.0.0.1:7072"},
+		Backup: Backup{
+			ResticImage: "restic/restic:0.18.1@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76",
+		},
 	}
 }
 

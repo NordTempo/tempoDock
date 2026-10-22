@@ -16,10 +16,12 @@ import type {
   ServerDetail,
   ServerStats,
   Service,
+  ServiceBackups,
   ServiceRef,
   ServiceStats,
   Session,
   StatsRange,
+  TemplateInfo,
 } from "./types";
 
 // Query keys are hierarchical so one invalidation covers a subtree:
@@ -51,6 +53,9 @@ export const keys = {
   volumes: (s: ServiceRef) => [...serviceKey(s), "volumes"],
   /** The GitHub source (push-to-deploy); release events refetch it. */
   git: (s: ServiceRef) => [...serviceKey(s), "git"],
+  /** Under the service, so backup.* audit events refetch it. */
+  backups: (s: ServiceRef) => [...serviceKey(s), "backups"],
+  templates: ["templates"],
   /** Covers every server's detail too. */
   servers: ["servers"],
   server: (name: string) => ["servers", name],
@@ -99,6 +104,11 @@ export const serviceRef = (s: Service): ServiceRef => ({
   environment: s.environment,
   service: s.name,
 });
+
+/** The port a service listens on: its setting, its template's, or 8080. */
+export const listenPort = (s: Service) =>
+  s.port ||
+  (s.template === "postgres" ? 5432 : s.template === "redis" ? 6379 : 8080);
 
 /**
  * Whether a service has the Data tab: a detected database engine, or the
@@ -194,6 +204,31 @@ export const queries = {
             { params: { path: servicePath(ref) } },
           ),
         ),
+    }),
+  /** A stateful service's backup schedule and latest runs. */
+  backups: (ref: ServiceRef) =>
+    queryOptions({
+      queryKey: keys.backups(ref),
+      queryFn: async (): Promise<ServiceBackups> => {
+        const b = await body(
+          api.GET(
+            "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups",
+            { params: { path: servicePath(ref) } },
+          ),
+        );
+        return { ...b, runs: b.runs ?? [] };
+      },
+    }),
+  /** The database templates; they only change with a dock release. */
+  templates: () =>
+    queryOptions({
+      queryKey: keys.templates,
+      queryFn: async (): Promise<TemplateInfo[]> =>
+        (await list(api.GET("/api/v1/templates"))).map((t) => ({
+          ...t,
+          exports: t.exports ?? [],
+        })),
+      staleTime: Number.POSITIVE_INFINITY,
     }),
   /** Staged changes; values are only included with reveal (admin). */
   changes: (env: EnvRef, reveal = false) =>
@@ -361,6 +396,8 @@ export const useRelease = (ref: ServiceRef, number: number) =>
   useSuspenseQuery(queries.release(ref, number)).data;
 export const useVolumes = (ref: ServiceRef) =>
   useSuspenseQuery(queries.volumes(ref)).data;
+export const useBackups = (ref: ServiceRef) =>
+  useSuspenseQuery(queries.backups(ref)).data;
 export const useChanges = (env: EnvRef) =>
   useSuspenseQuery(queries.changes(env)).data;
 export const useVariables = (env: EnvRef, service: string | null) =>

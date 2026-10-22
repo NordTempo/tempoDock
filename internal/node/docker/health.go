@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -106,7 +107,11 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 			if hc.Path != "" && cur.HostPort == 0 {
 				return errors.New("health check path is set but the container publishes no port")
 			}
-			lastErr = probe(ctx, cur, hc)
+			if hc.Path == "" && hc.Port != 0 {
+				lastErr = r.probeNetwork(ctx, st, hc.Port)
+			} else {
+				lastErr = probe(ctx, cur, hc)
+			}
 			if lastErr == nil {
 				return nil
 			}
@@ -267,6 +272,24 @@ func probeHTTP(ctx context.Context, target string) error {
 		return fmt.Errorf("GET %s returned %s", target, resp.Status)
 	}
 	return nil
+}
+
+// probeNetwork checks that something accepts TCP connections on port of the
+// container, on its environment network (as Dial reaches it). Unlike the
+// loopback probe there is no docker-proxy in between, so a connect is
+// enough.
+func (r *Runtime) probeNetwork(ctx context.Context, st container.InspectResponse, port int) error {
+	addr, err := r.envAddr(ctx, st, node.LabelsFrom(st.Config.Labels))
+	if err != nil {
+		return err
+	}
+	target := netip.AddrPortFrom(addr, uint16(port)).String()
+	d := net.Dialer{Timeout: probeTimeout}
+	conn, err := d.DialContext(ctx, "tcp", target)
+	if err != nil {
+		return fmt.Errorf("connect to port %d: %w", port, err)
+	}
+	return conn.Close()
 }
 
 func probeTCP(ctx context.Context, port int) error {

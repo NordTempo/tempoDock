@@ -25,6 +25,7 @@ import { Route as AppProjectEnvironmentIndexRouteImport } from './routes/_app.$p
 import { Route as AppProjectEnvironmentServiceRouteImport } from './routes/_app.$project.$environment.$service'
 import { Route as AppProjectEnvironmentServiceIndexRouteImport } from './routes/_app.$project.$environment.$service.index'
 import { Route as AppProjectEnvironmentServiceAuditRouteImport } from './routes/_app.$project.$environment.$service.audit'
+import { Route as AppProjectEnvironmentServiceBackupsRouteImport } from './routes/_app.$project.$environment.$service.backups'
 import { Route as AppProjectEnvironmentServiceDataRouteImport } from './routes/_app.$project.$environment.$service.data'
 import { Route as AppProjectEnvironmentServiceDomainsRouteImport } from './routes/_app.$project.$environment.$service.domains'
 import { Route as AppProjectEnvironmentServiceLogsRouteImport } from './routes/_app.$project.$environment.$service.logs'
@@ -117,6 +118,12 @@ const AppProjectEnvironmentServiceAuditRoute =
     path: '/audit',
     getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
+const AppProjectEnvironmentServiceBackupsRoute =
+  AppProjectEnvironmentServiceBackupsRouteImport.update({
+    id: '/backups',
+    path: '/backups',
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
+  } as any)
 const AppProjectEnvironmentServiceDataRoute =
   AppProjectEnvironmentServiceDataRouteImport.update({
     id: '/data',
@@ -181,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/$project/$environment/$service': typeof AppProjectEnvironmentServiceRouteWithChildren
   '/$project/$environment/': typeof AppProjectEnvironmentIndexRoute
   '/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/$project/$environment/$service/backups': typeof AppProjectEnvironmentServiceBackupsRoute
   '/$project/$environment/$service/data': typeof AppProjectEnvironmentServiceDataRoute
   '/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
   '/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
@@ -205,6 +213,7 @@ export interface FileRoutesByTo {
   '/$project': typeof AppProjectIndexRoute
   '/$project/$environment': typeof AppProjectEnvironmentIndexRoute
   '/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/$project/$environment/$service/backups': typeof AppProjectEnvironmentServiceBackupsRoute
   '/$project/$environment/$service/data': typeof AppProjectEnvironmentServiceDataRoute
   '/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
   '/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
@@ -232,6 +241,7 @@ export interface FileRoutesById {
   '/_app/$project/$environment/$service': typeof AppProjectEnvironmentServiceRouteWithChildren
   '/_app/$project/$environment/': typeof AppProjectEnvironmentIndexRoute
   '/_app/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/_app/$project/$environment/$service/backups': typeof AppProjectEnvironmentServiceBackupsRoute
   '/_app/$project/$environment/$service/data': typeof AppProjectEnvironmentServiceDataRoute
   '/_app/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
   '/_app/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
@@ -259,6 +269,7 @@ export interface FileRouteTypes {
     | '/$project/$environment/$service'
     | '/$project/$environment/'
     | '/$project/$environment/$service/audit'
+    | '/$project/$environment/$service/backups'
     | '/$project/$environment/$service/data'
     | '/$project/$environment/$service/domains'
     | '/$project/$environment/$service/logs'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/$project'
     | '/$project/$environment'
     | '/$project/$environment/$service/audit'
+    | '/$project/$environment/$service/backups'
     | '/$project/$environment/$service/data'
     | '/$project/$environment/$service/domains'
     | '/$project/$environment/$service/logs'
@@ -309,6 +321,7 @@ export interface FileRouteTypes {
     | '/_app/$project/$environment/$service'
     | '/_app/$project/$environment/'
     | '/_app/$project/$environment/$service/audit'
+    | '/_app/$project/$environment/$service/backups'
     | '/_app/$project/$environment/$service/data'
     | '/_app/$project/$environment/$service/domains'
     | '/_app/$project/$environment/$service/logs'
@@ -440,6 +453,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectEnvironmentServiceAuditRouteImport
       parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
+    '/_app/$project/$environment/$service/backups': {
+      id: '/_app/$project/$environment/$service/backups'
+      path: '/backups'
+      fullPath: '/$project/$environment/$service/backups'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceBackupsRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
+    }
     '/_app/$project/$environment/$service/data': {
       id: '/_app/$project/$environment/$service/data'
       path: '/data'
@@ -501,6 +521,7 @@ declare module '@tanstack/react-router' {
 
 interface AppProjectEnvironmentServiceRouteChildren {
   AppProjectEnvironmentServiceAuditRoute: typeof AppProjectEnvironmentServiceAuditRoute
+  AppProjectEnvironmentServiceBackupsRoute: typeof AppProjectEnvironmentServiceBackupsRoute
   AppProjectEnvironmentServiceDataRoute: typeof AppProjectEnvironmentServiceDataRoute
   AppProjectEnvironmentServiceDomainsRoute: typeof AppProjectEnvironmentServiceDomainsRoute
   AppProjectEnvironmentServiceLogsRoute: typeof AppProjectEnvironmentServiceLogsRoute
@@ -515,6 +536,8 @@ const AppProjectEnvironmentServiceRouteChildren: AppProjectEnvironmentServiceRou
   {
     AppProjectEnvironmentServiceAuditRoute:
       AppProjectEnvironmentServiceAuditRoute,
+    AppProjectEnvironmentServiceBackupsRoute:
+      AppProjectEnvironmentServiceBackupsRoute,
     AppProjectEnvironmentServiceDataRoute:
       AppProjectEnvironmentServiceDataRoute,
     AppProjectEnvironmentServiceDomainsRoute:

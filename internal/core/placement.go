@@ -333,6 +333,9 @@ func (o offlineRuntime) Events(context.Context) (<-chan node.ContainerEvent, err
 	return nil, o.err
 }
 func (o offlineRuntime) Dial(context.Context, node.DialRequest) (net.Conn, error) { return nil, o.err }
+func (o offlineRuntime) RunJob(context.Context, node.JobSpec) (node.JobResult, error) {
+	return node.JobResult{}, o.err
+}
 func (o offlineRuntime) Build(context.Context, node.BuildRequest) (string, error) { return "", o.err }
 func (o offlineRuntime) ApplyRoutes(context.Context, []node.Route) error          { return o.err }
 func (o offlineRuntime) CheckDomain(context.Context, string) (node.DomainCheck, error) {

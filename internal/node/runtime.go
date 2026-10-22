@@ -88,6 +88,39 @@ type Containers interface {
 	// bounds connecting; closing the returned conn ends it. A container
 	// that doesn't exist or isn't a service is ErrNotFound (wrapped).
 	Dial(ctx context.Context, req DialRequest) (net.Conn, error)
+
+	// RunJob runs a one-off container to completion and removes it (ADR
+	// 0019: backups and restores). It carries LabelRole RoleJob, so it is
+	// never listed or reported as an app. A non-zero exit is not an error:
+	// the result says how it ended. Cancelling ctx kills and removes it.
+	RunJob(ctx context.Context, spec JobSpec) (JobResult, error)
+}
+
+// RoleJob is the LabelRole value of RunJob's containers.
+const RoleJob = "job"
+
+// MaxJobOutput caps JobResult.Output: the tail of the job's output is kept.
+const MaxJobOutput = 256 << 10
+
+// JobSpec describes a one-off container.
+type JobSpec struct {
+	Name   string
+	Image  string
+	Labels Labels
+	Env    map[string]string
+	// Script runs as `/bin/sh -c Script`, replacing the image's entrypoint.
+	Script string
+	// Network is joined without aliases; empty means none.
+	Network   string
+	Mounts    []Mount
+	Resources Resources
+}
+
+// JobResult is how a job ended.
+type JobResult struct {
+	ExitCode int
+	// Output is the tail (at most MaxJobOutput bytes) of stdout and stderr.
+	Output string
 }
 
 // PullOptions are the optional settings of Containers.Pull.
@@ -279,8 +312,9 @@ type ContainerSpec struct {
 
 // Mount attaches a named volume at Path.
 type Mount struct {
-	Volume string
-	Path   string
+	Volume   string
+	Path     string
+	ReadOnly bool
 }
 
 // Resources are hard limits for a container. Zero means unlimited.
@@ -321,10 +355,15 @@ type Container struct {
 //   - No Path, container publishes a port: TCP connect succeeds.
 //   - Neither: the container stays running for Grace.
 //
+// Port (set without Path) instead probes that container port over TCP on
+// the container's environment network, for services that publish nothing
+// (database templates, ADR 0019).
+//
 // Interval is the steady probe interval; the first probes come sooner (the
 // Docker runtime backs off from 50 ms).
 type HealthCheck struct {
 	Path     string
+	Port     int
 	Timeout  time.Duration
 	Interval time.Duration
 	// Grace is how long a portless container must stay up to count as healthy.

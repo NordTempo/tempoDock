@@ -31,6 +31,15 @@ export type ReleaseEvent = Schemas["ReleaseEvent"];
 export type Domain = Schemas["Domain"];
 export type DnsRecord = Schemas["DNSRecord"];
 export type Volume = Schemas["Volume"];
+/** A database template: a service with a volume and credentials (ADR 0019). */
+export type TemplateInfo = Omit<Schemas["TemplateInfo"], "exports"> & {
+  exports: string[];
+};
+export type BackupRun = Schemas["BackupRun"];
+/** How, when and where a stateful service is backed up, with its runs. */
+export type ServiceBackups = Omit<Schemas["ServiceBackups"], "runs"> & {
+  runs: BackupRun[];
+};
 export type Variable = Schemas["Variable"];
 export type VariableChange = Schemas["VariableChange"];
 export type SettingChange = Schemas["SettingChange"];
@@ -119,6 +128,7 @@ export type LogLine = {
 export type Problem =
   | { kind: "crashed"; service: ServiceView }
   | { kind: "deploy_failed"; service: ServiceView; release: ReleaseSummary }
+  | { kind: "backup_failed"; service: ServiceView; backup: BackupRun }
   | { kind: "domain"; service: ServiceView; domain: Domain }
   | { kind: "staged"; environment: EnvironmentView }
   | { kind: "server_offline"; server: Server };

@@ -11,7 +11,7 @@ import (
 // Overview returns a project's environments and services with status,
 // releases, domains and staged-change counts in one call, for project pages.
 // It reads the whole project in a few queries (services, release heads,
-// volumes, domains, plus staged changes per environment), however many
+// volumes, domains, latest backups, plus staged changes per environment), however many
 // services it has.
 func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.ProjectOverview, error) {
 	p, err := c.projectFor(ctx, a, project, apitypes.ScopeRead, "reading a project")
@@ -40,6 +40,10 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 		return out, err
 	}
 	domains, err := c.store.ListProjectDomains(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+	backups, err := c.latestBackups(ctx, p.ID)
 	if err != nil {
 		return out, err
 	}
@@ -90,6 +94,10 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 				so.LatestRelease = summarize(*rh.latest)
 			}
 			so.Service = c.serviceOf(ss, link, pending, active, stateful[s.ID])
+			if b, ok := backups[s.ID]; ok {
+				run := toBackupRun(b, s.Name, nil)
+				so.Backup = &run
+			}
 			for _, d := range domainsBySvc[s.ID] {
 				so.Domains = append(so.Domains, c.toDomain(ss, d, domainsBySvc[s.ID], ing))
 			}

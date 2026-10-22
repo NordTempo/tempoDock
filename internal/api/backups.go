@@ -1,0 +1,75 @@
+package api
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/core"
+)
+
+// registerBackups registers database templates and backups (ADR 0019).
+func registerBackups(s *Server, a huma.API) {
+	tags := []string{"backups"}
+	authed(s, a, huma.Operation{
+		OperationID: "list-templates", Method: http.MethodGet, Path: Prefix + "/templates",
+		Summary: "List database templates", Tags: tags,
+		Description: "Create one with `template` in create-service.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.TemplateInfo], error) {
+		return reply(s.core.ListTemplates(ctx, actor), nil)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-backup-settings", Method: http.MethodGet, Path: Prefix + "/backup",
+		Summary: "Backup settings", Tags: tags,
+		Description: "The install's repository, retention and schedule. `reveal` adds the repository password (unlimited admin).",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Reveal bool `query:"reveal" doc:"Include the repository password"`
+	}) (*out[apitypes.BackupSettings], error) {
+		return reply(s.core.GetBackupSettings(ctx, actor, in.Reveal))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "configure-backups", Method: http.MethodPut, Path: Prefix + "/backup",
+		Summary: "Configure backups", Tags: tags,
+		Description: "Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Unlimited admin.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.ConfigureBackupRequest
+	}) (*out[apitypes.BackupSettings], error) {
+		return reply(s.core.ConfigureBackups(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-backups", Method: http.MethodGet, Path: servicePathT + "/backups",
+		Summary: "List a service's backups", Tags: tags,
+		Description: "How and when a stateful service is backed up, and its latest backups and restores.",
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.ServiceBackups], error) {
+		return reply(s.core.ServiceBackups(ctx, actor, in.ref()))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "run-backup", Method: http.MethodPost, Path: servicePathT + "/backups",
+		Summary: "Back up a service now", Tags: tags, DefaultStatus: http.StatusAccepted,
+		Description: "Starts a backup in the background and answers with it, running. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.BackupRun], error) {
+		return reply(s.core.RunBackup(ctx, actor, in.ref()))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "update-backup-schedule", Method: http.MethodPut, Path: servicePathT + "/backups/schedule",
+		Summary: "Change a service's backup schedule", Tags: tags,
+		Description: "Turn daily backups on or off, or set their hour. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Body apitypes.UpdateBackupScheduleRequest
+	}) (*out[apitypes.ServiceBackups], error) {
+		return reply(s.core.UpdateBackupSchedule(ctx, actor, in.ref(), in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "restore-backup", Method: http.MethodPost, Path: servicePathT + "/backups/restore",
+		Summary: "Restore a backup into a new service", Tags: tags, DefaultStatus: http.StatusAccepted,
+		Description: "Creates a new service from the template with the snapshot's data; the live service is never touched. Answers with the new service at once; the restore finishes in the background. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Body apitypes.RestoreBackupRequest
+	}) (*out[apitypes.RestoreResult], error) {
+		return reply(s.core.RestoreBackup(ctx, actor, in.ref(), in.Body))
+	})
+}

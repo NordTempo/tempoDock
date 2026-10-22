@@ -123,6 +123,12 @@ action, target, summary of the change, and timestamp. Visible in the UI and CLI.
 
 ## Backups (M5)
 
-- Scheduled off-box backups of volumes and the platform's SQLite file (restic to
-  S3-compatible storage).
-- Restore is tested, not assumed.
+- Every stateful service is backed up daily with restic
+  ([0019](decisions/0019-templates-and-backups.md)): template databases with
+  their own tool (`pg_dump`, Redis snapshots), other volumes file by file.
+- Off-box once an S3-compatible repository is configured; until then backups
+  stay on the server and say "not off-box" wherever they show.
+- Restores never overwrite a live database: they create a new service.
+- Restore is tested, not assumed: the integration suite backs up and restores
+  Postgres and Redis on real Docker.
+- Still to come: the platform's own SQLite file in the same repository.

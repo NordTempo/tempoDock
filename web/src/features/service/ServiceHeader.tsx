@@ -4,6 +4,7 @@ import { useDeploy, useRestart, useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   isDatabase,
+  listenPort,
   useChanges,
   useDeployBlock,
   useEnvironment,
@@ -30,6 +31,12 @@ const tabs = [
   { label: "Overview", to: "/$project/$environment/$service", key: "g o" },
   // Database services only (isDatabase). G B, "base": G D is Domains.
   { label: "Data", to: "/$project/$environment/$service/data", key: "g b" },
+  // Stateful services only. G K, "keep": G B is Data.
+  {
+    label: "Backups",
+    to: "/$project/$environment/$service/backups",
+    key: "g k",
+  },
   { label: "Logs", to: "/$project/$environment/$service/logs", key: "g l" },
   {
     label: "Metrics",
@@ -76,9 +83,11 @@ export function ServiceHeader({
   const { server } = useEnvironment(ref).environment;
   const navigate = useNavigate();
   const { service } = view;
-  const shown = isDatabase(service)
-    ? tabs
-    : tabs.filter((tab) => tab.label !== "Data");
+  const shown = tabs.filter(
+    (tab) =>
+      (tab.label !== "Data" || isDatabase(service)) &&
+      (tab.label !== "Backups" || service.stateful),
+  );
   useShortcuts(
     shown.map((tab) => ({
       key: tab.key,
@@ -106,7 +115,7 @@ export function ServiceHeader({
           {full && (
             <>
               {" "}
-              · <span className="font-mono">:{service.port || 8080}</span> ·{" "}
+              · <span className="font-mono">:{listenPort(service)}</span> ·{" "}
               <Link
                 to="/$project/$environment/$service/metrics"
                 params={ref}

@@ -406,7 +406,7 @@ func createOptions(spec node.ContainerSpec) client.ContainerCreateOptions {
 		SecurityOpt: []string{"no-new-privileges"},
 	}
 	for _, m := range spec.Mounts {
-		host.Mounts = append(host.Mounts, mount.Mount{Type: mount.TypeVolume, Source: m.Volume, Target: m.Path})
+		host.Mounts = append(host.Mounts, volumeMount(m))
 	}
 	if spec.Port > 0 {
 		port, _ := network.PortFrom(uint16(spec.Port), network.TCP)
@@ -420,13 +420,21 @@ func createOptions(spec node.ContainerSpec) client.ContainerCreateOptions {
 
 	opts := client.ContainerCreateOptions{Name: spec.Name, Config: cfg, HostConfig: host}
 	if spec.Network != "" {
-		opts.NetworkingConfig = &network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{
-				spec.Network: {Aliases: spec.Aliases},
-			},
-		}
+		opts.NetworkingConfig = networking(spec.Network, spec.Aliases)
 	}
 	return opts
+}
+
+// volumeMount mounts a named volume.
+func volumeMount(m node.Mount) mount.Mount {
+	return mount.Mount{Type: mount.TypeVolume, Source: m.Volume, Target: m.Path, ReadOnly: m.ReadOnly}
+}
+
+// networking joins one network with aliases.
+func networking(name string, aliases []string) *network.NetworkingConfig {
+	return &network.NetworkingConfig{
+		EndpointsConfig: map[string]*network.EndpointSettings{name: {Aliases: aliases}},
+	}
 }
 
 // envList renders env as sorted KEY=value pairs.

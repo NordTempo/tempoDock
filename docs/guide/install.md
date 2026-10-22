@@ -167,6 +167,7 @@ running).
 | `[buildkit] memory_mb` | `2048` | Hard memory cap for builds (no swap). Builds over it fail; apps are unaffected |
 | `[buildkit] cpus` | `1` | CPU cap for builds. Builds also get a quarter of the normal CPU weight |
 | `[buildkit] timeout_minutes` | `30` | A build running longer fails, on any builder (read by the control plane). A release's build log stops at 16 MB |
+| `[backup] restic_image` | `restic/restic:0.18.1@sha256:39d9…` | Where backup jobs get the restic binary, pinned by digest. The repository and retention are set with `dock backup configure` |
 | `[network] pool` | `10.213.0.0/16` | IPv4 range app networks get their addresses from, a /24 per environment. Keep it clear of your LAN and VPNs |
 | `[network] allow_private` | `[]` | Private CIDRs apps and builds may reach, e.g. `["192.168.10.20/32"]` for a NAS. See [App firewall](#app-firewall) |
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
@@ -536,8 +537,9 @@ Also worth keeping:
   demand, which is slow and counts against CA rate limits.
 - `/etc/dock/config.toml`.
 - App volumes. These are Docker volumes, not in `/var/lib/dock`; find their
-  names with `dock volume list --json` (`docker_name`). Back up databases with
-  their own tools (`pg_dump`). Scheduled off-box backups land in M5.
+  names with `dock volume list --json` (`docker_name`). Dock backs them up
+  daily with restic ([databases and backups](databases.md)); configure an S3
+  repository so those backups are off-box, and keep its password.
 
 Restore: install as usual, stop `dock`, put `dock.db` and `secret.key` back
 in `/var/lib/dock` (owner `dock`, mode 0600), start `dock`.

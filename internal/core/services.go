@@ -114,6 +114,21 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 	if req.Name == "shared" {
 		return apitypes.Service{}, invalid(`"shared" is reserved for environment variable references`)
 	}
+	if req.Template != apitypes.TemplateNone {
+		t, ok := templates[req.Template]
+		if !ok {
+			return apitypes.Service{}, invalid("unknown template %q; the templates are postgres and redis", req.Template)
+		}
+		ss, err := c.createFromTemplate(ctx, a, es, req.Name, t, templateOptions{})
+		if ss.svc.ID == 0 {
+			return apitypes.Service{}, err
+		}
+		svc, terr := c.toService(ctx, ss, apitypes.PendingChanges{})
+		if err != nil {
+			return svc, err
+		}
+		return svc, terr
+	}
 	set := apitypes.ServiceSettings{
 		Image: req.Image, Port: req.Port, HealthCheckPath: req.HealthCheckPath,
 		HealthCheckTimeoutSeconds: req.HealthCheckTimeoutSeconds, StartCommand: req.StartCommand,
@@ -413,6 +428,7 @@ func (c *Core) serviceOf(ss svcScope, link serverLink, pending apitypes.PendingC
 		EffectiveLimits: c.limitsOf(ss.svc.MemoryMb, ss.svc.Cpus),
 	}
 	s.DataEngine, _ = detectDatabase(ss.svc)
+	s.Template = apitypes.Template(ss.svc.Template)
 	if active != nil {
 		if u, ok := c.stats.serviceUsage(ss.svc.ID); ok {
 			s.Usage = &u

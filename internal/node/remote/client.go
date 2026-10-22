@@ -144,6 +144,23 @@ func (c *Client) ReleaseContainers(ctx context.Context, want node.Labels) ([]str
 	return r.IDs, err
 }
 
+// jobProtocol is the first node protocol that serves run-job.
+const jobProtocol = 2
+
+// RunJob implements node.Containers. It blocks on the node until the job
+// ends; a node too old to run jobs is an error saying so.
+func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
+	s, err := c.session(ctx)
+	if err != nil {
+		return node.JobResult{}, err
+	}
+	if s.hello.Protocol < jobProtocol {
+		return node.JobResult{}, fmt.Errorf("server %s runs dock %s, which can't run backup jobs; upgrade dock on it", s.name, s.hello.Version)
+	}
+	r, err := unaryCall[jobResult](ctx, c, opRunJob, toJobRequest(spec))
+	return node.JobResult{ExitCode: r.ExitCode, Output: r.Output}, err
+}
+
 // HealthCheck implements node.Containers. It blocks on the node, where the
 // container's port is reachable.
 func (c *Client) HealthCheck(ctx context.Context, ct node.Container, hc node.HealthCheck) error {

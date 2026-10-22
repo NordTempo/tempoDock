@@ -48,7 +48,8 @@ const (
 
 	// Protocol is the minor version, exchanged in hello. Within a major
 	// version, changes are additive only: new ops, new optional fields.
-	Protocol = 1
+	// 2 added run-job (ADR 0019) and the health check's port.
+	Protocol = 2
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -124,7 +125,8 @@ const (
 	opCheckDomain   = "check-domain"
 	opHostStats     = "host-stats"
 	opCtrStats      = "container-stats"
-	opDial          = "dial" // full duplex, raw bytes: see dial.go
+	opDial          = "dial"    // full duplex, raw bytes: see dial.go
+	opRunJob        = "run-job" // protocol 2
 	opRotate        = "rotate"
 	// Joining mode (join.go) only.
 	opJoin   = "join"
@@ -252,4 +254,18 @@ func or[T comparable](v, def T) T {
 		return def
 	}
 	return v
+}
+
+// trimJobOutput keeps the last maxLogChunk bytes of a job's output (on a
+// rune boundary), so its frame stays under maxMessage however much JSON
+// escaping grows it.
+func trimJobOutput(s string) string {
+	if len(s) <= maxLogChunk {
+		return s
+	}
+	i := len(s) - maxLogChunk
+	for i < len(s) && !utf8.RuneStart(s[i]) {
+		i++
+	}
+	return s[i:]
 }
