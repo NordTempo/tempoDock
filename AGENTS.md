@@ -54,6 +54,7 @@ Go version: `go.mod`. Node 24, pnpm. Run `make lint`, `go vet ./...`,
 cmd/dock/              entry point
 internal/apitypes/     the API's JSON contract; the CLI imports it, no server deps
 internal/api/          Huma handlers, auth, SSE streams, loopback endpoints
+internal/mcp/          the MCP endpoint for agents (ADR 0017): tools over core
 internal/core/         domain logic: projects, services, variables, releases,
                        deploy state machine, domains, permissions, audit, event bus
 internal/store/        SQLite: migrations/*.sql, queries/*.sql, sqlc output (*.sql.go)

@@ -24,6 +24,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0014](0014-node-protocol.md) | Node protocol: reverse HTTP/2 over pinned TLS | accepted |
 | [0015](0015-server-pools-and-placement.md) | Server pools, placement and the admin dashboard | accepted |
 | [0016](0016-database-panel.md) | Database panel: native data browsing, querying and editing | accepted |
+| [0017](0017-mcp-endpoint.md) | One MCP endpoint for the whole platform, data included | accepted |
 
 ## Template
 

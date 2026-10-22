@@ -19,6 +19,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/mcp"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
 
@@ -47,6 +48,9 @@ func New(c *core.Core, opts Options) http.Handler {
 	}
 	mux := http.NewServeMux()
 	newAPI(mux, &Server{core: c, opts: opts})
+	// The MCP endpoint (ADR 0017) speaks JSON-RPC, not REST, so it sits
+	// next to the Huma API rather than in its OpenAPI spec.
+	mux.Handle(Prefix+"/mcp", mcp.Handler(c, mcp.Options{Logger: opts.Logger}))
 	mux.Handle("/", uiHandler())
 	return guard(mux)
 }

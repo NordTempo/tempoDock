@@ -114,6 +114,16 @@
       "bytes_op": 61982,
       "allocs_op": 831
     },
+    "mcp.BenchmarkToolCall/tool=service_status": {
+      "ns_op": 129000,
+      "bytes_op": 42740,
+      "allocs_op": 903
+    },
+    "mcp.BenchmarkToolCall/tool=whoami": {
+      "ns_op": 31000,
+      "bytes_op": 15410,
+      "allocs_op": 232
+    },
     "node/caddy.BenchmarkRender/routes=500,tls=false": {
       "ns_op": 380209,
       "bytes_op": 462651,

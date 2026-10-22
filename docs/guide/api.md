@@ -10,7 +10,9 @@ daemon's `listen` address. Anything they do, you can do with `curl`.
 | `/api/v1/schemas/{Name}.json` | JSON Schema of one request or response body |
 | `/api/v1/health`, `/api/v1/version` | Daemon health and version |
 
-These need no auth; everything else does.
+These need no auth; everything else does. `/api/v1/mcp` is the MCP
+endpoint for agents (JSON-RPC, not in the spec; see
+[agents](agents.md#mcp)).
 
 The spec is also printed offline by `dock openapi` (hidden command).
 
