@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -12,90 +13,115 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
+// ActionResync is the Action of a synthetic node.ContainerEvent that
+// Client.Events sends when events may have been missed: after the server
+// reconnected, or the node's event stream restarted. Nothing else is set
+// on it. Core reconciles the server when it sees one; events after it are
+// from the new stream.
+const ActionResync = "dock.resync"
+
 // Client is a remote server's node.Runtime on the control plane. Calls go
 // over the server's current connection; while it has none they fail with
-// ErrOffline. Canceling a call's ctx cancels it on the node too.
+// ErrOffline (ErrIncompatible while its version is too old). Canceling a
+// call's ctx cancels it on the node too.
 type Client struct {
-	hub    *Hub
-	server string
+	hub *Hub
+	id  int64
 }
 
 var _ node.Runtime = (*Client)(nil)
 
 var errNoEnd = errors.New("response ended without an end frame")
 
-// Online reports whether the server is connected right now.
-func (c *Client) Online() bool { return c.hub.session(c.server) != nil }
+// Online reports whether the server is connected and compatible right now.
+func (c *Client) Online() bool {
+	s := c.hub.session(c.id)
+	return s != nil && s.status == StatusOnline
+}
 
+// session returns the server's session if calls can go to it.
 func (c *Client) session(ctx context.Context) (*session, error) {
-	if s := c.hub.session(c.server); s != nil {
-		return s, nil
+	s := c.hub.session(c.id)
+	switch {
+	case s == nil:
+		return nil, offline(ctx, c.hub.name(c.id), nil)
+	case s.status != StatusOnline:
+		return nil, fmt.Errorf("server %s: %w", s.name, ErrIncompatible)
 	}
-	return nil, offline(ctx, c.server, nil)
+	return s, nil
 }
 
 // Pull implements node.Containers. Progress arrives as log frames.
 func (c *Client) Pull(ctx context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
-	a := pullArgs{Ref: ref}
+	req := pullRequest{Ref: ref}
 	if len(opts) > 0 {
-		a.Opts = opts[0]
+		req.Token = opts[0].Token
 	}
-	return withLogsCall[string](ctx, c, opPull, a, nil, logs)
+	r, err := callWithLogs[imageIDResult](ctx, c, opPull, req, nil, logs)
+	return r.ImageID, err
 }
 
 // HasImage implements node.Containers.
 func (c *Client) HasImage(ctx context.Context, ref string) (bool, error) {
-	return unaryCall[bool](ctx, c, opHasImage, refArgs{ref})
+	r, err := unaryCall[hasImageResult](ctx, c, opHasImage, imageRequest{Ref: ref})
+	return r.Present, err
 }
 
 // EnsureNetwork implements node.Containers.
 func (c *Client) EnsureNetwork(ctx context.Context, name string, labels node.Labels) error {
-	_, err := unaryCall[struct{}](ctx, c, opEnsureNetwork, labeledArgs{name, labels})
+	_, err := unaryCall[empty](ctx, c, opEnsureNetwork, resourceRequest{Name: name, Labels: toWireLabels(labels)})
 	return err
 }
 
 // EnsureVolume implements node.Containers.
 func (c *Client) EnsureVolume(ctx context.Context, name string, labels node.Labels) error {
-	_, err := unaryCall[struct{}](ctx, c, opEnsureVolume, labeledArgs{name, labels})
+	_, err := unaryCall[empty](ctx, c, opEnsureVolume, resourceRequest{Name: name, Labels: toWireLabels(labels)})
 	return err
 }
 
 // Start implements node.Containers.
 func (c *Client) Start(ctx context.Context, spec node.ContainerSpec) (node.Container, error) {
-	return unaryCall[node.Container](ctx, c, opStart, spec)
+	r, err := unaryCall[containerResult](ctx, c, opStart, startRequest{Spec: toWireSpec(spec)})
+	return r.Container.node(), err
 }
 
 // Stop implements node.Containers.
 func (c *Client) Stop(ctx context.Context, id string, timeout time.Duration) error {
-	_, err := unaryCall[struct{}](ctx, c, opStop, stopArgs{id, timeout})
+	_, err := unaryCall[empty](ctx, c, opStop, stopRequest{ID: id, TimeoutMS: timeout.Milliseconds()})
 	return err
 }
 
 // Remove implements node.Containers.
 func (c *Client) Remove(ctx context.Context, id string) error {
-	_, err := unaryCall[struct{}](ctx, c, opRemove, idArgs{id})
+	_, err := unaryCall[empty](ctx, c, opRemove, containerRequest{ID: id})
 	return err
 }
 
 // Inspect implements node.Containers.
 func (c *Client) Inspect(ctx context.Context, id string) (node.Container, error) {
-	return unaryCall[node.Container](ctx, c, opInspect, idArgs{id})
+	r, err := unaryCall[containerResult](ctx, c, opInspect, containerRequest{ID: id})
+	return r.Container.node(), err
 }
 
 // List implements node.Containers.
 func (c *Client) List(ctx context.Context) ([]node.Container, error) {
-	return unaryCall[[]node.Container](ctx, c, opList, noArgs{})
+	r, err := unaryCall[containersResult](ctx, c, opList, empty{})
+	if err != nil {
+		return nil, err
+	}
+	return fromWireContainers(r.Containers), nil
 }
 
 // ReleaseContainers implements node.Containers.
 func (c *Client) ReleaseContainers(ctx context.Context, releaseID int64) ([]string, error) {
-	return unaryCall[[]string](ctx, c, opReleaseCtrs, releaseArgs{releaseID})
+	r, err := unaryCall[idsResult](ctx, c, opReleaseCtrs, releaseRequest{ReleaseID: releaseID})
+	return r.IDs, err
 }
 
 // HealthCheck implements node.Containers. It blocks on the node, where the
 // container's port is reachable.
 func (c *Client) HealthCheck(ctx context.Context, ct node.Container, hc node.HealthCheck) error {
-	_, err := unaryCall[struct{}](ctx, c, opHealthCheck, healthArgs{ct, hc})
+	_, err := unaryCall[empty](ctx, c, opHealthCheck, healthRequest{Container: toWireContainer(ct), Check: toWireHealthCheck(hc)})
 	return err
 }
 
@@ -106,30 +132,37 @@ func (c *Client) Logs(ctx context.Context, id string, opts node.LogOptions) (<-c
 	if err != nil {
 		return nil, err
 	}
-	return streamOn[node.LogLine](ctx, s, opLogs, logsArgs{id, opts})
+	req := logsRequest{ID: id, Follow: opts.Follow, Tail: opts.Tail, Since: opts.Since}
+	return streamOn(ctx, s, opLogs, req, wireLogLine.node)
 }
 
 // Events implements node.Containers. It follows the server across
 // reconnects, so the channel only closes when ctx ends. Events that happen
-// while the server is offline are lost; reconcile on reconnect instead.
+// while the server is offline are lost: whenever that may have happened,
+// the next subscription starts with an ActionResync event.
 func (c *Client) Events(ctx context.Context) (<-chan node.ContainerEvent, error) {
 	out := make(chan node.ContainerEvent, 64)
+	gap := !c.Online()
 	go func() {
 		defer close(out)
 		for ctx.Err() == nil {
-			s, err := c.hub.wait(ctx, c.server)
+			s, err := c.hub.wait(ctx, c.id)
 			if err != nil {
 				return
 			}
-			if ch, err := streamOn[node.ContainerEvent](ctx, s, opEvents, noArgs{}); err == nil {
+			if ch, err := streamOn(ctx, s, opEvents, empty{}, wireEvent.node); err == nil {
+				// The stream is open on the node: everything from here on
+				// arrives, so a reconcile now misses nothing.
+				if gap && !send(ctx, out, node.ContainerEvent{Action: ActionResync, Time: time.Now()}) {
+					return
+				}
 				for ev := range ch {
-					select {
-					case out <- ev:
-					case <-ctx.Done():
+					if !send(ctx, out, ev) {
 						return
 					}
 				}
 			}
+			gap = true
 			// Either the connection is going away (wait for the next one)
 			// or the node's own event stream failed (retry shortly).
 			select {
@@ -142,42 +175,61 @@ func (c *Client) Events(ctx context.Context) (<-chan node.ContainerEvent, error)
 	return out, nil
 }
 
+// send delivers v unless ctx ends first.
+func send[T any](ctx context.Context, ch chan<- T, v T) bool {
+	select {
+	case ch <- v:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 // Build implements node.Builder. The build context streams up while build
 // output streams back, on the same call.
 func (c *Client) Build(ctx context.Context, req node.BuildRequest) (string, error) {
-	args := buildArgs{
+	args := buildRequest{
 		Dockerfile: req.Dockerfile, BuildCommand: req.BuildCommand, StartCommand: req.StartCommand,
-		BuildArgs: req.BuildArgs, CacheScope: req.CacheScope, Tag: req.Tag, Push: req.Push,
+		BuildArgs: req.BuildArgs, CacheScope: req.CacheScope, Tag: req.Tag, Push: toWirePushTarget(req.Push),
 	}
-	return withLogsCall[string](ctx, c, opBuild, args, req.Source, req.Logs)
+	r, err := callWithLogs[imageIDResult](ctx, c, opBuild, args, req.Source, req.Logs)
+	return r.ImageID, err
 }
 
 // ApplyRoutes implements node.Proxy.
 func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route) error {
-	_, err := unaryCall[struct{}](ctx, c, opApplyRoutes, routesArgs{routes})
+	_, err := unaryCall[empty](ctx, c, opApplyRoutes, routesRequest{Routes: toWireRoutes(routes)})
 	return err
 }
 
 // CheckDomain implements node.Proxy.
 func (c *Client) CheckDomain(ctx context.Context, hostname string) (node.DomainCheck, error) {
-	return unaryCall[node.DomainCheck](ctx, c, opCheckDomain, nameArgs{hostname})
+	r, err := unaryCall[wireDomainCheck](ctx, c, opCheckDomain, domainRequest{Hostname: hostname})
+	return r.node(), err
 }
 
 // HostStats implements node.Stats.
 func (c *Client) HostStats(ctx context.Context) (node.HostStats, error) {
-	return unaryCall[node.HostStats](ctx, c, opHostStats, noArgs{})
+	r, err := unaryCall[wireHostStats](ctx, c, opHostStats, empty{})
+	return r.node(), err
 }
 
 // ContainerStats implements node.Stats. One call for all containers.
 func (c *Client) ContainerStats(ctx context.Context, ids []string) ([]node.ContainerStats, error) {
-	return unaryCall[[]node.ContainerStats](ctx, c, opCtrStats, idsArgs{ids})
+	r, err := unaryCall[containerStatsResult](ctx, c, opCtrStats, containerStatsRequest{IDs: ids})
+	if err != nil {
+		return nil, err
+	}
+	return fromWireContainerStats(r.Stats), nil
 }
 
 func unaryCall[R any](ctx context.Context, c *Client, op string, args any) (R, error) {
-	return withLogsCall[R](ctx, c, op, args, nil, nil)
+	return callWithLogs[R](ctx, c, op, args, nil, nil)
 }
 
-func withLogsCall[R any](ctx context.Context, c *Client, op string, args any, body io.Reader, logs io.Writer) (R, error) {
+// callWithLogs makes a call that may upload body and writes progress to
+// logs before its result.
+func callWithLogs[R any](ctx context.Context, c *Client, op string, args any, body io.Reader, logs io.Writer) (R, error) {
 	var r R
 	s, err := c.session(ctx)
 	if err != nil {
@@ -191,9 +243,9 @@ func withLogsCall[R any](ctx context.Context, c *Client, op string, args any, bo
 	return r, err
 }
 
-// streamOn opens a stream and forwards its items until it ends, the
-// connection drops or ctx ends.
-func streamOn[T any](ctx context.Context, s *session, op string, args any) (<-chan T, error) {
+// streamOn opens a stream and forwards its items, converted by conv, until
+// it ends, the connection drops or ctx ends.
+func streamOn[W, T any](ctx context.Context, s *session, op string, args any, conv func(W) T) (<-chan T, error) {
 	body, err := open(ctx, s, op, args, nil)
 	if err != nil {
 		return nil, err
@@ -202,16 +254,14 @@ func streamOn[T any](ctx context.Context, s *session, op string, args any) (<-ch
 	go func() {
 		defer close(ch)
 		_ = read(ctx, s, body, nil, func(raw json.RawMessage) error {
-			var v T
-			if err := json.Unmarshal(raw, &v); err != nil {
+			var w W
+			if err := json.Unmarshal(raw, &w); err != nil {
 				return err
 			}
-			select {
-			case ch <- v:
-				return nil
-			case <-ctx.Done():
+			if !send(ctx, ch, conv(w)) {
 				return ctx.Err()
 			}
+			return nil
 		}, nil)
 	}()
 	return ch, nil
@@ -258,14 +308,20 @@ func open(ctx context.Context, s *session, op string, args any, body io.Reader) 
 	}
 	resp, err := s.cc.RoundTrip(req)
 	if err != nil {
-		return nil, offline(ctx, s.server, err)
+		return nil, offline(ctx, s.name, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
-		var e Error
-		if err := json.NewDecoder(resp.Body).Decode(&e); err != nil {
-			return nil, offline(ctx, s.server, err)
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxMessage))
+		if err != nil {
+			return nil, offline(ctx, s.name, err)
 		}
+		var e Error
+		if json.Unmarshal(raw, &e) != nil || e.Code == "" {
+			// An op the node doesn't know (an older node) is a plain 404.
+			return nil, fmt.Errorf("server %s: %s: status %d", s.name, op, resp.StatusCode)
+		}
+		e.Message = truncate(e.Message, maxErrorMessage)
 		return nil, &e
 	}
 	return resp.Body, nil
@@ -274,14 +330,22 @@ func open(ctx context.Context, s *session, op string, args any, body io.Reader) 
 // read consumes response frames up to and including the end frame.
 func read(ctx context.Context, s *session, frames io.ReadCloser, onLog func(string), onItem func(json.RawMessage) error, result any) error {
 	defer func() { _ = frames.Close() }()
-	dec := json.NewDecoder(frames)
+	lr := newLineReader(frames)
 	for {
-		var f frame
-		if err := dec.Decode(&f); err != nil {
+		line, err := lr.next()
+		if errors.Is(err, errTooLarge) {
+			// A hostile or broken node; closing the body resets the call.
+			return fmt.Errorf("server %s: %w", s.name, err)
+		}
+		if err != nil {
 			if errors.Is(err, io.EOF) {
 				err = errNoEnd
 			}
-			return offline(ctx, s.server, err)
+			return offline(ctx, s.name, err)
+		}
+		var f frame
+		if err := json.Unmarshal(line, &f); err != nil {
+			return fmt.Errorf("server %s: bad frame: %w", s.name, err)
 		}
 		switch {
 		case f.End && f.Error != nil:

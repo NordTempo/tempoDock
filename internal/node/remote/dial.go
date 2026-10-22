@@ -52,18 +52,30 @@ func (c *Client) Dial(ctx context.Context, req node.DialRequest) (net.Conn, erro
 	}
 	if s.dials.Add(1) > maxDials {
 		s.dials.Add(-1)
-		return nil, fmt.Errorf("server %s: %w", c.server, errTooManyDials)
+		return nil, fmt.Errorf("server %s: %w", s.name, errTooManyDials)
 	}
-	// The call outlives ctx: it is canceled by Close, or by ctx while
-	// connecting.
+	remote := fmt.Sprintf("%s/%s:%d", s.name, shortID(req.ContainerID), req.Port)
+	lc, err := openConn(ctx, s, opDial, dialRequest{ContainerID: req.ContainerID, Port: req.Port}, remote, func() { s.dials.Add(-1) })
+	if err != nil {
+		s.dials.Add(-1)
+		return nil, err
+	}
+	return lc, nil
+}
+
+// openConn makes a raw-bytes call (Dial, the registry tunnel) and returns
+// it as a connection once the node answered 200. ctx only bounds the wait
+// for that answer; the call outlives it. release runs once the call has
+// ended, after a successful open.
+func openConn(ctx context.Context, s *session, op string, args any, remote string, release func()) (*linkConn, error) {
+	// The call is canceled by Close, or by ctx while connecting.
 	callCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	stop := context.AfterFunc(ctx, cancel)
 	up, upPeer := net.Pipe()
-	body, err := open(callCtx, s, opDial, req, upPeer)
+	body, err := open(callCtx, s, op, args, upPeer)
 	if !stop() || err != nil {
 		cancel()
 		_, _ = up.Close(), upPeer.Close()
-		s.dials.Add(-1)
 		if err == nil {
 			_ = body.Close()
 		}
@@ -74,15 +86,15 @@ func (c *Client) Dial(ctx context.Context, req node.DialRequest) (net.Conn, erro
 	}
 	down, downPeer := net.Pipe()
 	lc := &linkConn{
-		up: up, upPeer: upPeer, down: down, body: body, cancel: cancel, done: make(chan struct{}),
-		local:  linkAddr("control-plane"),
-		remote: linkAddr(fmt.Sprintf("%s/%s:%d", c.server, shortID(req.ContainerID), req.Port)),
+		up: up, upPeer: upPeer, down: down, body: body, cancel: cancel, release: release, done: make(chan struct{}),
+		local: linkAddr("control-plane"), remote: linkAddr(remote),
 	}
 	go lc.receive(s, downPeer)
 	return lc, nil
 }
 
-// linkConn is a connection to a container on a remote server. Two
+// linkConn is a raw-bytes call on the link as a net.Conn: a connection to
+// a container on a remote server (Dial), or a registry tunnel. Two
 // synchronous pipes connect it to the call: Write → up → upPeer → request
 // body, and response body → downPeer → down → Read. net.Pipe gives both
 // directions deadlines, which pgx relies on to cancel.
@@ -90,6 +102,7 @@ type linkConn struct {
 	up, upPeer, down net.Conn
 	body             io.ReadCloser // the response body
 	cancel           context.CancelFunc
+	release          func()
 	// done is closed when receive returns; err is why the response ended,
 	// if not cleanly, and is set before.
 	done chan struct{}
@@ -105,11 +118,11 @@ type linkConn struct {
 // call while the request body is open.
 func (c *linkConn) receive(s *session, downPeer net.Conn) {
 	defer close(c.done)
-	defer s.dials.Add(-1)
+	defer c.release()
 	_, err := io.Copy(downPeer, c.body)
 	_ = c.body.Close()
 	if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, context.Canceled) {
-		c.err = offline(context.Background(), s.server, err)
+		c.err = offline(context.Background(), s.name, err)
 	}
 	_ = downPeer.Close()
 	_ = c.upPeer.Close()
@@ -169,48 +182,54 @@ func shortID(id string) string { return id[:min(len(id), 12)] }
 // then copy both ways until either side is done.
 func serveDial(rt node.Runtime) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		a, up, err := readArgs[node.DialRequest](r)
+		a, up, err := readArgs[dialRequest](r)
 		if err != nil {
 			newResponder(w).fail(&Error{Code: codeBadRequest, Message: err.Error()})
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), dialTimeout)
-		conn, err := rt.Dial(ctx, a)
+		conn, err := rt.Dial(ctx, node.DialRequest{ContainerID: a.ContainerID, Port: a.Port})
 		cancel()
 		if err != nil {
 			newResponder(w).fail(wireError(err))
 			return
 		}
-		// The call's context ends when the control plane resets it, the
-		// link drops or the handler returns. Closing conn then unblocks
-		// both copies, even one stuck writing to a container that doesn't
-		// read.
-		stop := context.AfterFunc(r.Context(), func() { _ = conn.Close() })
-		defer func() { stop(); _ = conn.Close() }()
-		rc := http.NewResponseController(w)
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.WriteHeader(http.StatusOK)
-		if err := rc.Flush(); err != nil {
+		pipeCall(w, r, up, conn)
+	}
+}
+
+// pipeCall answers 200 and copies both ways between the call and conn
+// until either side is done: up (the rest of the request body) into conn,
+// conn into the response.
+func pipeCall(w http.ResponseWriter, r *http.Request, up io.Reader, conn net.Conn) {
+	// The call's context ends when the control plane resets it, the
+	// link drops or the handler returns. Closing conn then unblocks
+	// both copies, even one stuck writing to a peer that doesn't read.
+	stop := context.AfterFunc(r.Context(), func() { _ = conn.Close() })
+	defer func() { stop(); _ = conn.Close() }()
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(http.StatusOK)
+	if err := rc.Flush(); err != nil {
+		return
+	}
+
+	upDone := make(chan struct{})
+	go func() {
+		defer close(upDone)
+		_, err := io.Copy(conn, up)
+		if cw, ok := conn.(interface{ CloseWrite() error }); ok && err == nil {
+			_ = cw.CloseWrite() // the caller half-closed
 			return
 		}
-
-		upDone := make(chan struct{})
-		go func() {
-			defer close(upDone)
-			_, err := io.Copy(conn, up)
-			if cw, ok := conn.(interface{ CloseWrite() error }); ok && err == nil {
-				_ = cw.CloseWrite() // the caller half-closed
-				return
-			}
-			_ = conn.Close() // reset by the control plane, or the link dropped
-		}()
-		_, _ = io.Copy(flushWriter{w, rc}, conn)
-		// The container is done (or the call was reset): end the call. Closing
-		// the body stops the upload copy if it is still waiting for bytes.
-		_ = conn.Close()
-		_ = r.Body.Close()
-		<-upDone
-	}
+		_ = conn.Close() // reset by the control plane, or the link dropped
+	}()
+	_, _ = io.Copy(flushWriter{w, rc}, conn)
+	// conn's side is done (or the call was reset): end the call. Closing
+	// the body stops the upload copy if it is still waiting for bytes.
+	_ = conn.Close()
+	_ = r.Body.Close()
+	<-upDone
 }
 
 // flushWriter sends every write right away, so small replies (a query

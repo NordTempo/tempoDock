@@ -1,52 +1,99 @@
 // Package remote carries node.Runtime calls between the control plane and a
 // remote server, over one long-lived connection that the node dials out
-// (ADR 0014). Spike: nothing imports it yet.
+// (ADR 0014).
 //
 // Layers, bottom up:
 //
 //	TCP, dialed by the node
 //	TLS 1.3, both sides pinned by key fingerprint, ALPN "dock-node/1"
+//	  (or "dock-join/1" for the one connection that joins a node)
 //	HTTP/2 with the roles reversed: the control plane is the HTTP client,
 //	  the node serves (it never listens on the network)
-//	one POST per Runtime call; responses are NDJSON frames, except Dial,
-//	  whose bodies carry raw bytes both ways
+//	one POST per Runtime call; requests and responses are JSON lines of the
+//	  wire types in wire.go, except Dial, whose bodies carry raw bytes
 //
 // Everything below the frames is the standard library (crypto/tls and
 // net/http's HTTP/2), which the binary already links.
+//
+// The control plane runs a Hub (hub.go), which hands core a Client per
+// server (client.go). A server runs a Node (node.go) after joining once with
+// Join (join.go), and serves the control plane's registry on its own
+// loopback through the link (registry.go).
 package remote
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 const (
 	// ALPN carries the protocol's major version. A node and control plane
-	// without a common one fail the TLS handshake.
+	// without a common one fail the TLS handshake. When it becomes
+	// dock-node/2, the control plane keeps accepting dock-node/1 for one
+	// release cycle (acceptedALPN).
 	ALPN = "dock-node/1"
+	// joinALPN marks the one connection that joins a new node: an unknown
+	// key is allowed, and the control plane only asks for the join secret.
+	joinALPN = "dock-join/1"
+
 	// Protocol is the minor version, exchanged in hello. Within a major
-	// version, changes are additive only.
+	// version, changes are additive only: new ops, new optional fields.
 	Protocol = 1
+	// MinProtocol is the oldest minor version this control plane drives.
+	// Older nodes stay connected for hello only (StatusIncompatible).
+	MinProtocol = 1
 
 	// DefaultKeepAlive is how long a connection may be silent before an
 	// HTTP/2 ping checks it; an unanswered ping closes it after as long again.
 	DefaultKeepAlive = 15 * time.Second
 )
 
-// ErrOffline means the server isn't connected, or its connection dropped
-// while a call was in flight.
-var ErrOffline = errors.New("server is offline")
+// acceptedALPN are the major versions the control plane speaks, newest
+// first.
+var acceptedALPN = []string{ALPN}
 
-// Info is what a node reports about itself when it connects.
-type Info struct {
-	Version  string `json:"version"`
-	Protocol int    `json:"protocol"`
-}
+// Size limits. The control plane trusts nodes less than itself (ADR 0014,
+// compromised node), so it caps everything a node sends: no message makes
+// it buffer more than maxMessage. Streams (logs, events, build output) are
+// unbounded in total but flow through one bounded message at a time, and
+// Dial's raw bytes are bounded by HTTP/2 flow control.
+const (
+	// maxMessage caps one JSON line: request arguments, a response frame
+	// or an error body.
+	maxMessage = 1 << 20
+	// maxLogChunk is the largest progress chunk in one log frame; the node
+	// splits bigger writes. JSON escaping can grow it 6x, still well under
+	// maxMessage.
+	maxLogChunk = 64 << 10
+	// maxLogText truncates one container log line.
+	maxLogText = 64 << 10
+	// maxErrorMessage truncates error messages that cross the link.
+	maxErrorMessage = 4 << 10
+	// maxHeaderBytes caps HTTP/2 headers in both directions.
+	maxHeaderBytes = 64 << 10
+)
+
+var (
+	// ErrOffline means the server isn't connected, or its connection dropped
+	// while a call was in flight. Core maps it to server_offline.
+	ErrOffline = errors.New("server is offline")
+	// ErrIncompatible means the server is connected but speaks a protocol
+	// version this control plane no longer drives. Core maps it to
+	// version_incompatible.
+	ErrIncompatible = errors.New("server runs an incompatible version of dock; upgrade dock on it")
+	// errTooLarge is a message over maxMessage.
+	errTooLarge = fmt.Errorf("message over the %d byte limit", maxMessage)
+)
 
 // Operations, served at POST /v1/<op>.
 const (
@@ -70,47 +117,10 @@ const (
 	opHostStats     = "host-stats"
 	opCtrStats      = "container-stats"
 	opDial          = "dial" // full duplex, raw bytes: see dial.go
-)
-
-// Request bodies start with one line of JSON arguments. Build follows it
-// with the raw build context.
-type (
-	noArgs   struct{}
-	refArgs  struct{ Ref string }
-	pullArgs struct {
-		Ref  string
-		Opts node.PullOptions
-	}
-	nameArgs    struct{ Name string }
-	idArgs      struct{ ID string }
-	releaseArgs struct{ Release int64 }
-	idsArgs     struct{ IDs []string }
-	labeledArgs struct {
-		Name   string
-		Labels node.Labels
-	}
-	stopArgs struct {
-		ID      string
-		Timeout time.Duration
-	}
-	healthArgs struct {
-		Container node.Container
-		Check     node.HealthCheck
-	}
-	logsArgs struct {
-		ID   string
-		Opts node.LogOptions
-	}
-	buildArgs struct {
-		Dockerfile   string
-		BuildCommand string
-		StartCommand string
-		BuildArgs    map[string]string
-		CacheScope   string
-		Tag          string
-		Push         *node.PushTarget
-	}
-	routesArgs struct{ Routes []node.Route }
+	opRotate        = "rotate"
+	// Joining mode (join.go) only.
+	opJoin   = "join"
+	opJoined = "joined"
 )
 
 // frame is one line of a 200 response body. A response is any number of
@@ -168,10 +178,70 @@ func wireError(err error) *Error {
 	case errors.Is(err, context.DeadlineExceeded):
 		code = codeDeadline
 	}
-	return &Error{Code: code, Message: err.Error()}
+	return &Error{Code: code, Message: truncate(err.Error(), maxErrorMessage)}
+}
+
+// truncate cuts s to at most n bytes, on a rune boundary.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// lineReader reads JSON lines of at most maxMessage bytes, so a peer can't
+// make the reader buffer without bound.
+type lineReader struct {
+	br  *bufio.Reader
+	buf []byte
+}
+
+func newLineReader(r io.Reader) *lineReader {
+	return &lineReader{br: bufio.NewReaderSize(r, 16<<10)}
+}
+
+// next returns the next line without its newline. The slice is only valid
+// until the next call. A stream that ends cleanly between lines is io.EOF.
+func (r *lineReader) next() ([]byte, error) {
+	r.buf = r.buf[:0]
+	for {
+		chunk, err := r.br.ReadSlice('\n')
+		if len(r.buf)+len(chunk) > maxMessage {
+			return nil, errTooLarge
+		}
+		r.buf = append(r.buf, chunk...)
+		switch {
+		case err == nil:
+			return r.buf[:len(r.buf)-1], nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF) && len(r.buf) > 0:
+			return nil, io.ErrUnexpectedEOF
+		default:
+			return nil, err
+		}
+	}
 }
 
 // opaqueConn hides a *tls.Conn from net/http, so it speaks HTTP/2 with
 // prior knowledge on it instead of looking at the TLS state (our ALPN is
 // "dock-node/1", not "h2"). TLS is still there underneath.
 type opaqueConn struct{ net.Conn }
+
+// h2Only makes net/http speak HTTP/2 with prior knowledge and nothing else.
+func h2Only() *http.Protocols {
+	var p http.Protocols
+	p.SetUnencryptedHTTP2(true)
+	return &p
+}
+
+func or[T comparable](v, def T) T {
+	var zero T
+	if v == zero {
+		return def
+	}
+	return v
+}
