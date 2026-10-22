@@ -16,6 +16,11 @@ M0 to M2 are done and running on a homelab test server; M3 (multiple
 servers) and the database panel (M5) are in progress. See the
 [roadmap](docs/roadmap.md#status-2026-10-22).
 
+The database panel also ships on its own as **tempoBase** (`tempobase`), a
+small self-hosted server for browsing, querying and safely changing
+Postgres data, built from this repository and released with Dock
+([guide](docs/tempobase/README.md), [ADR 0024](docs/decisions/0024-tempobase-standalone.md)).
+
 ## Local development
 
 Needs Go (see `go.mod`), Node 24 and pnpm. Docker, Caddy and BuildKit are only
@@ -23,8 +28,10 @@ needed for integration tests and real deploys.
 
 ```sh
 make dev               # daemon on an in-memory fake runtime, API on 127.0.0.1:7070
-make web && make build # build the UI, then bin/dock with the UI embedded
+make web && make build # build both UIs, then bin/dock with its UI embedded
 make build-cli         # bin/dock-cli: the client alone (no daemon), 8.5 MB
+make build-tempobase   # bin/tempobase with its UI embedded
+make tempobase-deps    # tempobase links none of Dock's daemon packages
 make test              # unit tests
 make test-integration  # tests against the local Docker Engine and Caddy
 make lint
@@ -43,6 +50,7 @@ with `install-cli.sh` ([install guide](docs/guide/install.md#install)).
 | Doc | What it covers |
 |---|---|
 | [Guide](docs/guide/README.md) | Install, deploy, variables, domains, agents, API: how to use it |
+| [tempoBase guide](docs/tempobase/README.md) | Install and run the standalone Data panel: connections, people, agents, backups |
 | [Vision](docs/vision.md) | Who it's for, goals, non-goals, principles |
 | [Experience](docs/experience.md) | How the CLI and UI should feel, performance targets |
 | [CLI](docs/cli.md) | CLI conventions, `--json`, exit codes |
