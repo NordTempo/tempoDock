@@ -114,7 +114,7 @@ New package `internal/data` (engine-neutral types) and `internal/data/pg`
 | Streaming | SQL results go out as NDJSON: a header frame (columns, types), row frames of up to 500 rows, an end frame (row count, truncated, duration). Rows are encoded as they are read; memory is bounded by one batch. |
 | Caps | UI 10 000 rows per query, CLI default 1 000 and `--limit` up to 100 000, 64 MB per response, cells over 8 KB truncated (full value on request). Hitting a cap ends the stream with `truncated: true`. |
 | Cancel | Client disconnect cancels the context; pgx cancels the query on the server. |
-| Table pages | Keyset pagination: `ORDER BY` the primary key (or a sort column plus the key), cursor = last key values, `LIMIT 100`. No `OFFSET`. Tables without a primary key page by `ctid` and are read-only. Row counts are `pg_class.reltuples` estimates; exact count on request, under the statement timeout. |
+| Table pages | Keyset pagination: `ORDER BY` the primary key (or a sort column plus the key), cursor = last key values, `LIMIT 100`. No `OFFSET`. Tables without a primary key page by `ctid` and are read-only. Row counts are `pg_class.reltuples` estimates; exact count on request, under the statement timeout. Never-analysed tables (`reltuples = -1`) get a `COUNT(*)` with the catalog, the smallest 4 at most, 200 ms each; still unknown after that. |
 | Filters | Structured (`column op value`) and compiled to parameterised SQL. Free-form filtering is the SQL editor. |
 | Introspection | One catalog query per panel open (schemas, tables, columns, keys, foreign keys, indexes, sizes), cached in memory 60 s. Feeds the table list, FK navigation, editor autocomplete and the schema view. |
 
@@ -136,6 +136,14 @@ decision: policy, not hard-coded rules).
 | Environment kind | `production`, `non_production` |
 | Level | `none` < `schema` (tables, columns, relations; no rows) < `read` (browse, read-only SQL) < `propose` (draft changesets an admin approves) < `write` (commit one's own changesets) |
 | Sensitive columns | `masked` (never shown), `visible` (shown after an explicit, audited reveal) |
+
+Reveal: table pages mask sensitive columns for everyone, admins included,
+until the caller asks for a page with `reveal=true` (the grid's per-column
+Reveal, `dock db rows --reveal`). Only `visible` callers may (`masked` ones
+get 403 with the steps that decided it); the reveal is audited as
+`data.reveal` with the table and its sensitive columns, throttled like
+`data.browse`. SQL and changesets from `visible` callers aren't masked:
+every statement is already audited with its full text.
 
 A rule is (subject, kind, level, sensitive). Rules are set at three scopes:
 the **default**, a **project** and an **environment**. The most specific
@@ -233,10 +241,11 @@ Pending changesets expire after 7 days.
 ### Sensitive columns
 
 Admins mark columns sensitive; names like `password`, `*_hash`, `token`,
-`secret` are suggested on setup. Whether a subject sees them is the policy's
-`sensitive` setting (default: masked for everyone but admins). `visible`
-still shows them masked until an explicit reveal, which is audited (phase 4;
-until then `visible` shows them). Pages mask them in the engine; SQL runs as
+`secret` are suggested in the Schema tab (from column names, in the
+browser). Whether a subject sees them is the policy's `sensitive` setting
+(default: masked for everyone but admins). `visible` still shows them
+masked in pages until an explicit, audited reveal (section 4). Pages mask
+them in the engine; masked actors' SQL runs as
 `dock_reader_masked`, so it can't route around the marks. Its password is
 derived from `dock_reader`'s (HMAC), so it rotates with it. If its grants
 can't be synced, masked actors' SQL is refused rather than run on stale
@@ -253,7 +262,7 @@ into a detail row, so the main log stays scannable.
 | `data.browse` | First table page per actor and table, then at most every 10 min | Table, filter, sort |
 | `data.commit` | Each committed changeset | Generated SQL, rows affected per statement, approver for proposals |
 | `data.propose`, `data.approve`, `data.reject` | Changeset lifecycle | Changeset ID |
-| `data.reveal` | Masked values revealed | Table, columns |
+| `data.reveal` | A page with `reveal=true` per actor and table, then at most every 10 min | Table, columns |
 | `data.setup` | Roles created or rotated | |
 | `data.connect` | Raw tunnel opened and closed | Duration, bytes |
 | `data.policy` | A data policy or a token's data override changed | |

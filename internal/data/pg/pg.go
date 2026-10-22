@@ -48,6 +48,9 @@ type Engine struct {
 	schemaTTL   time.Duration
 	maxPerKey   int
 	maxConns    int
+	// countTimeout bounds each exact count of a never-analysed table
+	// (countUnanalysed).
+	countTimeout time.Duration
 }
 
 var _ data.Engine = (*Engine)(nil)
@@ -63,6 +66,8 @@ func New() *Engine {
 		schemaTTL:   data.SchemaTTL,
 		maxPerKey:   data.MaxConnsPerKey,
 		maxConns:    data.MaxConns,
+
+		countTimeout: exactCountTimeout,
 	}
 }
 

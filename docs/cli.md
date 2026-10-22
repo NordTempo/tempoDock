@@ -174,7 +174,7 @@ says which level was missing and the rule that decided it.
 | `db setup [--yes]` | Create or rotate Dock's roles (`dock_reader`, `dock_writer`) | admin |
 | `db settings [--database postgres\|none\|detect] [--url-variable NAME]` | Mark a service as a database, or name its connection URL variable. Immediate, never a release | deploy |
 | `db tables`, `db schema [TABLE]` (`describe`) | Tables; one table's (or every table's) columns, keys, indexes, constraints | level schema |
-| `db rows TABLE [-w col=op:value ...] [--order col\|-col] [-n N] [--after CURSOR] [--count]` | One keyset page; prints the next cursor on stderr. `--json` prints the page with `next` | level read |
+| `db rows TABLE [-w col=op:value ...] [--order col\|-col] [-n N] [--after CURSOR] [--count] [--reveal]` | One keyset page; prints the next cursor on stderr. Sensitive columns are masked; `--reveal` shows them if your access allows (audited). `--json` prints the page with `next` | level read |
 | `db query SQL\|-f FILE\|- [-n N] [--timeout D] [--csv]` | One read-only statement, streamed: a table, CSV, or NDJSON frames with `--json`. Default 1 000 rows, at most 100 000; timeout at most 60s | level read |
 | `db history [--before ID] [-n N]` | Your past queries here, newest first | level read |
 | `db saved list\|save NAME SQL\|run NAME\|delete NAME` | Your saved queries; `save` replaces one with the same name, `run` takes `query`'s flags | level read |

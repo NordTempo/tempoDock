@@ -226,7 +226,7 @@ func newDBTablesCmd(g *globals) *cobra.Command {
 		return g.io.Print(sc.Tables, func() error {
 			t := g.io.Table("table", "kind", "rows", "size", "key")
 			for _, tb := range sc.Tables {
-				t.Row(tb.Schema+"."+tb.Name, string(tb.Kind), estimate(tb.EstimatedRows), bytesize(tb.SizeBytes), dash(strings.Join(tb.PrimaryKey, ", ")))
+				t.Row(tb.Schema+"."+tb.Name, string(tb.Kind), tableRows(tb), bytesize(tb.SizeBytes), dash(strings.Join(tb.PrimaryKey, ", ")))
 			}
 			return t.Flush()
 		})
@@ -240,6 +240,15 @@ func estimate(n int64) string {
 		return "?"
 	}
 	return "~" + itoa(n)
+}
+
+// tableRows renders a table's row count: exact when the server counted a
+// never-analysed table, else the estimate.
+func tableRows(tb apitypes.DataTable) string {
+	if tb.ExactRows != nil {
+		return itoa(*tb.ExactRows)
+	}
+	return estimate(tb.EstimatedRows)
 }
 
 func newDBSchemaCmd(g *globals) *cobra.Command {
@@ -302,7 +311,7 @@ func findTable(sc apitypes.DataSchema, name string) (apitypes.DataTable, error) 
 
 // describeTable prints one table's structure.
 func describeTable(o *output.IO, tb apitypes.DataTable) error {
-	_, _ = fmt.Fprintf(o.Out, "%s.%s  %s  %s rows  %s\n", tb.Schema, tb.Name, tb.Kind, estimate(tb.EstimatedRows), bytesize(tb.SizeBytes))
+	_, _ = fmt.Fprintf(o.Out, "%s.%s  %s  %s rows  %s\n", tb.Schema, tb.Name, tb.Kind, tableRows(tb), bytesize(tb.SizeBytes))
 	if tb.Comment != "" {
 		_, _ = fmt.Fprintln(o.Out, tb.Comment)
 	}
@@ -394,15 +403,18 @@ func newDBRowsCmd(g *globals) *cobra.Command {
 	var filters []string
 	var order, after string
 	var limit int
-	var count bool
+	var count, reveal bool
 	cmd := dbCmd(g, &cobra.Command{
-		Use:   "rows <table> [--filter col=op:value ...] [--order col|-col] [--limit N] [--after CURSOR]",
+		Use:   "rows <table> [--filter col=op:value ...] [--order col|-col] [--limit N] [--after CURSOR] [--reveal]",
 		Short: "One page of a table's rows; prints the next cursor",
 		Long: `Print one keyset page of a table, sorted by --order (a column, -column for
 descending) and the primary key. Pass the printed cursor as --after for the
 next page. Filters are ANDed: column=value, column=op:value with op one of
 eq, ne, lt, lte, gt, gte, like, ilike, in (comma-separated values), or
 column=is_null / column=not_null.
+
+Sensitive columns show as (masked). If your access lets you see them,
+--reveal shows them; each reveal is audited (data.reveal).
 
 With --json, the page as the API returns it, including next.`,
 		Example: `  dock db rows orders --filter status=paid --filter total=gt:100 --order -created_at
@@ -432,6 +444,9 @@ With --json, the page as the API returns it, including next.`,
 		}
 		if count {
 			q.Set("count", "true")
+		}
+		if reveal {
+			q.Set("reveal", "true")
 		}
 		table := qualify(args[0])
 		page, err := get[apitypes.DataPage](ctx, s, data+"/tables/"+url.PathEscape(table)+"/rows?"+q.Encode())
@@ -473,6 +488,7 @@ With --json, the page as the API returns it, including next.`,
 	cmd.Flags().StringVar(&after, "after", "", "cursor of the previous page")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, fmt.Sprintf("rows per page (default %d, at most %d)", apitypes.DataPageLimit, apitypes.DataPageMaxLimit))
 	cmd.Flags().BoolVar(&count, "count", false, "count matching rows exactly")
+	cmd.Flags().BoolVar(&reveal, "reveal", false, "show sensitive columns (needs sensitive visible; audited)")
 	return cmd
 }
 
@@ -1453,8 +1469,9 @@ func newDBSensitiveCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "sensitive",
 		Short: "Columns whose values are masked (admin)",
-		Long: `Sensitive columns are masked for callers whose data access says masked
-(everyone but admins, by default).`,
+		Long: `Sensitive columns are masked in table pages. Callers whose data access
+says masked (everyone but admins, by default) never see them; callers with
+visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audited.`,
 	})
 	list := dbCmd(g, &cobra.Command{
 		Use:     "list",

@@ -57,7 +57,8 @@ dock db saved run open-orders
 ```
 
 - Pages are keyset pages (100 rows, at most 1 000), never `OFFSET`; the
-  cursor for the next one is printed on stderr. Row counts are estimates;
+  cursor for the next one is printed on stderr. Row counts are estimates
+  (`~N`); tables never analysed are counted exactly when small, else `?`.
   `--count` counts exactly.
 - Filters: `col=value`, `col=op:value` (`eq ne lt lte gt gte like ilike in`),
   `col=is_null`, `col=not_null`. Anything fancier is SQL.
@@ -161,12 +162,18 @@ dock db sensitive set users.password_hash users.email   # replaces the list
 dock db sensitive list
 ```
 
-Masked callers see `(masked)` and, until masking is enforced inside Postgres,
-can browse tables but not run free SQL.
+Table pages show sensitive columns as `(masked)`. Callers whose policy says
+`masked` never see them: their SQL runs as `dock_reader_masked`, which
+Postgres doesn't let select them. Callers with `visible` (admins always)
+reveal them per table, `dock db rows users --reveal` or Reveal in the Data
+tab, and each reveal is audited (`data.reveal`). Their SQL isn't masked;
+every statement is in the audit log anyway. The Schema tab suggests
+columns to mark from their names (email, password, token, phone, ...).
 
 ## Audit
 
-Every query, the first page of a table per person (then at most every
-10 minutes), every changeset step, setup and policy change go into the audit
-log (`dock audit --action data.`), with the SQL kept in the event's detail.
+Every query, the first page and the first reveal of a table per person (then
+at most every 10 minutes), every changeset step, setup and policy change go
+into the audit log (`dock audit --action data.`), with the SQL kept in the
+event's detail.
 Your query history is read from it.

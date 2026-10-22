@@ -271,6 +271,100 @@ func TestSchema(t *testing.T) {
 	}
 }
 
+// TestSchemaCountsUnanalysed: never-analysed tables get an exact count,
+// smallest first, at most maxExactCounts per catalog read and only when
+// it finishes within the count timeout. It uses its own database so the
+// shared one stays analysed.
+func TestSchemaCountsUnanalysed(t *testing.T) {
+	ctx := ctxT(t)
+	ownerConn, err := connect(ctx, target(0), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ownerConn.Close(ctx) }()
+	if err := simpleExec(ctx, ownerConn, "CREATE DATABASE counts"); err != nil {
+		t.Fatal(err)
+	}
+	tg := target(40)
+	tg.Database = "counts"
+	cn, err := connect(ctx, tg, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cn.Close(ctx) }()
+	// No autovacuum, so reltuples stays -1.
+	const create = "CREATE TABLE %s (id int) WITH (autovacuum_enabled = off); INSERT INTO %[1]s SELECT generate_series(1, %d)"
+	if err := simpleExec(ctx, cn, fmt.Sprintf(create, "a1", 1)+";"+fmt.Sprintf(create, "a2", 2)+";"+fmt.Sprintf(create, "big", 300_000)); err != nil {
+		t.Fatal(err)
+	}
+
+	schema := func(e *Engine) map[string]apitypes.DataTable {
+		t.Helper()
+		e.Forget(tg.ServiceID)
+		s, err := e.Schema(ctx, tg, data.Call{Actor: "test"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]apitypes.DataTable{}
+		for _, tb := range s.Tables {
+			if tb.EstimatedRows != -1 {
+				t.Fatalf("%s was analysed: %d", tb.Name, tb.EstimatedRows)
+			}
+			out[tb.Name] = tb
+		}
+		return out
+	}
+	exact := func(tb apitypes.DataTable) int64 {
+		if tb.ExactRows == nil {
+			return -1
+		}
+		return *tb.ExactRows
+	}
+
+	e := newEngine(t)
+	got := schema(e)
+	if exact(got["a1"]) != 1 || exact(got["a2"]) != 2 || exact(got["big"]) != 300_000 {
+		t.Fatalf("counts: a1 %d, a2 %d, big %d", exact(got["a1"]), exact(got["a2"]), exact(got["big"]))
+	}
+	// The read that counted still works: a page right after it.
+	if page, err := e.Page(ctx, tg, data.Call{}, apitypes.DataPageRequest{Table: "public.a2"}); err != nil || len(page.Rows) != 2 {
+		t.Fatalf("page after counting: %+v %v", page, err)
+	}
+
+	// A count over the timeout stays unknown, and the read goes on.
+	slow := newEngine(t)
+	slow.countTimeout = time.Millisecond
+	if got := schema(slow); exact(got["big"]) != -1 || len(got) != 3 {
+		t.Fatalf("with a 1 ms timeout: big %d", exact(got["big"]))
+	}
+	// A page whose read loads the catalog: the timed-out count's
+	// savepoint is gone and the page runs under its own timeout again.
+	slow.Forget(tg.ServiceID)
+	if page, err := slow.Page(ctx, tg, data.Call{}, apitypes.DataPageRequest{Table: "public.big", Limit: 1000, Count: true}); err != nil || len(page.Rows) != 1000 || page.ExactRows == nil {
+		t.Fatalf("page after a timed-out count: %v", err)
+	}
+
+	// Past maxExactCounts, the largest tables stay unknown.
+	if err := simpleExec(ctx, cn, fmt.Sprintf(create, "a3", 3)+";"+fmt.Sprintf(create, "a4", 4)); err != nil {
+		t.Fatal(err)
+	}
+	got = schema(e)
+	if exact(got["big"]) != -1 || exact(got["a4"]) != 4 || exact(got["a1"]) != 1 {
+		t.Fatalf("over the cap: a1 %d, a4 %d, big %d", exact(got["a1"]), exact(got["a4"]), exact(got["big"]))
+	}
+
+	// Analysed tables keep their estimate and get no count.
+	main, err := e.Schema(ctx, target(1), data.Call{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tb := range main.Tables {
+		if tb.Name == "items" && (tb.ExactRows != nil || tb.EstimatedRows != 250) {
+			t.Fatalf("analysed items: %+v", tb)
+		}
+	}
+}
+
 // allRows pages through a table and returns every row, decoded.
 func allRows(t *testing.T, e *Engine, req apitypes.DataPageRequest) [][]any {
 	t.Helper()

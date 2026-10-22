@@ -100,19 +100,37 @@ export function cellInput(cell: DataCell): string | null | undefined {
 export const tableName = (t: { schema: string; name: string }) =>
   `${t.schema}.${t.name}`;
 
-/** Row counts in lists: "830", "12k", "1.2M"; "?" when never analysed. */
-export function compactCount(n: number) {
+/**
+ * A row count: exact (counted) or Postgres' estimate; estimated -1 and no
+ * exact count means unknown (never analysed, too slow to count).
+ */
+export type RowCount = { estimated: number; exact?: number | null };
+
+/** Row counts in lists: "~12k" estimated, "830" exact, "?" unknown. */
+export function compactCount({ estimated, exact }: RowCount) {
+  const n = exact ?? estimated;
   if (n < 0) return "?";
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
+  const text =
+    n < 1000
+      ? String(n)
+      : n < 1_000_000
+        ? `${Math.round(n / 1000)}k`
+        : `${(n / 1_000_000).toFixed(1)}M`;
+  return exact == null ? `~${text}` : text;
 }
 
-/** "~12 431 rows", "not analysed". */
-export function estimate(n: number) {
-  if (n < 0) return "not analysed";
-  return `~${n.toLocaleString("en").replaceAll(",", " ")} ${n === 1 ? "row" : "rows"}`;
+/** "~12 431 rows" estimated, "830 rows" exact, "rows unknown". */
+export function rowCount({ estimated, exact }: RowCount) {
+  const n = exact ?? estimated;
+  if (n < 0) return "rows unknown";
+  return `${exact == null ? "~" : ""}${n.toLocaleString("en").replaceAll(",", " ")} ${n === 1 ? "row" : "rows"}`;
 }
+
+/** A table's row count from the schema. */
+export const tableRows = (t: DataTable): RowCount => ({
+  estimated: t.estimated_rows,
+  exact: t.exact_rows,
+});
 
 /** The row's primary key, column to value, or null if it can't be read. */
 export function rowKey(

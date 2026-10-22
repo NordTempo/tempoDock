@@ -56,7 +56,7 @@ const (
 	AuditDataPropose = "data.propose" // changeset created as a proposal
 	AuditDataApprove = "data.approve" // an admin committed someone else's changeset
 	AuditDataReject  = "data.reject"
-	AuditDataReveal  = "data.reveal" // sensitive values revealed
+	AuditDataReveal  = "data.reveal" // sensitive values revealed in a page; throttled like data.browse
 	AuditDataSetup   = "data.setup"  // Dock roles created or rotated
 	AuditDataConnect = "data.connect"
 	AuditDataPolicy  = "data.policy" // a data access policy or token override changed
@@ -146,8 +146,11 @@ const (
 	// callers' SQL runs as dock_reader_masked, which Postgres denies the
 	// sensitive columns, so selecting one is an error frame.
 	SensitiveMasked DataSensitivity = "masked"
-	// SensitiveVisible shows values. (An explicit, audited reveal step is
-	// planned; for now visible callers see them directly.)
+	// SensitiveVisible shows values after an explicit, audited reveal:
+	// table pages and references mask them like for masked callers unless
+	// the page request sets Reveal, which is audited as data.reveal. SQL
+	// and changesets aren't masked: each statement is audited with its
+	// full text.
 	SensitiveVisible DataSensitivity = "visible"
 )
 
@@ -349,10 +352,14 @@ type DataTable struct {
 	Kind   DataTableKind `json:"kind" enum:"table,partitioned_table,view,materialized_view,foreign_table"`
 	// EstimatedRows is Postgres' estimate (pg_class.reltuples); -1 when
 	// the table was never analysed.
-	EstimatedRows int64        `json:"estimated_rows"`
-	SizeBytes     int64        `json:"size_bytes"`
-	Comment       string       `json:"comment,omitempty"`
-	Columns       []DataColumn `json:"columns"`
+	EstimatedRows int64 `json:"estimated_rows"`
+	// ExactRows is set for a few never-analysed tables (the smallest),
+	// counted with COUNT(*) when the catalog is read if that finished
+	// within 200 ms. Unset while EstimatedRows is -1: unknown.
+	ExactRows *int64       `json:"exact_rows,omitempty"`
+	SizeBytes int64        `json:"size_bytes"`
+	Comment   string       `json:"comment,omitempty"`
+	Columns   []DataColumn `json:"columns"`
 	// PrimaryKey lists the key's columns in order. Empty means pages go by
 	// ctid and the table is read-only.
 	PrimaryKey  []string         `json:"primary_key"`
@@ -449,8 +456,8 @@ type DataFilter struct {
 
 // DataPageRequest asks for one keyset page of a table
 // (GET /data/tables/{table}/rows, table as "schema.name"). Over HTTP,
-// order, after, limit, count and full are query parameters and filter is
-// a JSON array of DataFilter.
+// order, after, limit, count, full and reveal are query parameters and
+// filter is a JSON array of DataFilter.
 type DataPageRequest struct {
 	// Table is "schema.name".
 	Table string `json:"table"`
@@ -470,6 +477,11 @@ type DataPageRequest struct {
 	// Full returns cells untruncated, for the row detail view. Only with
 	// limit 1.
 	Full bool `json:"full,omitempty"`
+	// Reveal shows the table's sensitive columns, which pages mask even
+	// for callers with sensitive visible. Only for those callers (others
+	// get forbidden); audited as data.reveal, at most every 10 min per
+	// caller and table.
+	Reveal bool `json:"reveal,omitempty"`
 }
 
 // DataResultColumn is one column of a page or query result.
@@ -490,7 +502,8 @@ type DataResultColumn struct {
 //     JSON text), arrays ({1,2}) and bytea (\x hex);
 //   - {"truncated": "<first DataCellMaxBytes bytes>", "bytes": <full size>}
 //     for a longer value (DataPageRequest.Full fetches all of it);
-//   - {"masked": true} for a sensitive column the caller can't see.
+//   - {"masked": true} for a sensitive column the caller can't see or
+//     hasn't revealed (DataPageRequest.Reveal).
 //
 // Values sent to the server (filters, keys, changesets) are strings in
 // Postgres text input format, or null; Postgres casts them to the column

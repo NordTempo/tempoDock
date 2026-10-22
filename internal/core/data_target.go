@@ -338,9 +338,13 @@ func (c *Core) loadSensitive(ctx context.Context, dt *dbTarget) error {
 	return nil
 }
 
-// call is the engine call context for the actor.
-func (dt *dbTarget) call(a Actor) data.Call {
-	return data.Call{Actor: a.Name, Masked: dt.perm.Sensitive != apitypes.SensitiveVisible, Sensitive: dt.sensitive}
+// call is the engine call context for the actor. Sensitive columns are
+// masked unless the actor may see them (sensitive visible) and reveals
+// them: explicitly for pages (DataPageRequest.Reveal, audited as
+// data.reveal), implicitly for SQL and changesets, whose every statement
+// is audited with its text.
+func (dt *dbTarget) call(a Actor, reveal bool) data.Call {
+	return data.Call{Actor: a.Name, Masked: !reveal || dt.perm.Sensitive != apitypes.SensitiveVisible, Sensitive: dt.sensitive}
 }
 
 // dataError maps an engine error to what the caller should do. Errors

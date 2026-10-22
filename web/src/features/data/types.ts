@@ -64,7 +64,11 @@ export type DataPageRequest = {
   limit?: number;
   count?: boolean;
   full?: boolean;
+  /** Show sensitive columns (sensitive visible only; audited). */
+  reveal?: boolean;
 };
+
+export type DataColumnRef = Schemas["DataColumnRef"];
 
 /** GET /data/tables/{table}/references (key goes over HTTP as JSON). */
 export type DataReferencesRequest = {

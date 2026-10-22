@@ -156,8 +156,15 @@ func TestIntegrationDataReads(t *testing.T) {
 	if _, err := h.c.DataRows(h.ctx, dev, db, apitypes.DataPageRequest{Table: "public.customers", After: page.Next, Limit: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if page, _ := h.c.DataRows(h.ctx, admin, db, apitypes.DataPageRequest{Table: "public.customers", Limit: 1}); string(page.Rows[0]) != `[1,"c1","c1@x.io","hash1"]` {
+	// Admins see sensitive values after a reveal.
+	if page, _ := h.c.DataRows(h.ctx, admin, db, apitypes.DataPageRequest{Table: "public.customers", Limit: 1}); string(page.Rows[0]) != `[1,"c1","c1@x.io",{"masked":true}]` {
 		t.Fatalf("admin page: %s", page.Rows[0])
+	}
+	if page, _ := h.c.DataRows(h.ctx, admin, db, apitypes.DataPageRequest{Table: "public.customers", Limit: 1, Reveal: true}); string(page.Rows[0]) != `[1,"c1","c1@x.io","hash1"]` {
+		t.Fatalf("admin page revealed: %s", page.Rows[0])
+	}
+	if h.auditCount(apitypes.AuditDataReveal) != 1 {
+		t.Fatal("reveal not audited")
 	}
 	if n := h.auditCount(apitypes.AuditDataBrowse); n != 2 {
 		t.Fatalf("browse events = %d, want one per actor and table", n)

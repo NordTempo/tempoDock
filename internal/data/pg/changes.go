@@ -60,7 +60,7 @@ func (s *sqlPair) val(v *string) {
 func (e *Engine) Render(ctx context.Context, t data.Target, changes []apitypes.DataChange) (string, error) {
 	var sql string
 	err := e.read(ctx, t, data.Call{}, apitypes.DataQueryTimeout, func(cn *conn) error {
-		cat, err := e.catalog(ctx, t, cn)
+		cat, err := e.catalog(ctx, t, cn, true)
 		if err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ func (e *Engine) Commit(ctx context.Context, t data.Target, c data.Call, changes
 		return res, err
 	}
 	defer e.release(cn)
-	cat, err := e.catalog(ctx, t, cn)
+	cat, err := e.catalog(ctx, t, cn, false)
 	if err != nil {
 		return res, err
 	}

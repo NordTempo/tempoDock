@@ -77,6 +77,7 @@ export const apiSource: DataSource = {
                 : undefined,
               count: req.count || undefined,
               full: req.full || undefined,
+              reveal: req.reveal || undefined,
             },
           },
           signal,
@@ -162,6 +163,13 @@ export const apiSource: DataSource = {
       api.POST(`${P}/changesets/{id}/reject` as const, {
         params: { path: { ...path(ref), id } },
         body: req,
+      }),
+    ),
+  setSensitive: (ref, columns) =>
+    body(
+      api.PUT(`${P}/sensitive-columns` as const, {
+        params: { path: path(ref) },
+        body: { columns },
       }),
     ),
 };

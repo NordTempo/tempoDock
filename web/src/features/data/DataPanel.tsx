@@ -218,8 +218,10 @@ export function DataPanel({
             <p className="text-mut">This database has no tables yet.</p>
           ) : view.tab === "schema" ? (
             <SchemaView
+              serviceRef={serviceRef}
               table={selected}
               tables={tables}
+              manage={access.manage}
               flags={flags}
               onOpen={openTable}
             />

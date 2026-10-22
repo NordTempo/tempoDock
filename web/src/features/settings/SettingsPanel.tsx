@@ -1,5 +1,8 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
+import { api, body } from "../../api/client";
+import type { components } from "../../api/schema";
 import {
   useArchiveService,
   useDiscardChanges,
@@ -7,13 +10,15 @@ import {
 } from "../../data/mutations";
 import {
   envPath,
+  keys,
   useChanges,
   useEnvironment,
   useIsAdmin,
   useService,
+  useSession,
   useVolumes,
 } from "../../data/queries";
-import type { ServiceRef, SettingChange } from "../../data/types";
+import type { Service, ServiceRef, SettingChange } from "../../data/types";
 import { Button, ErrorText, SectionHead } from "../../ui/kit";
 import { ApplyBox } from "../variables/ApplyBox";
 import {
@@ -123,6 +128,8 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
       <ApplyBox env={envPath(ref)} reveal={false} />
 
+      <DatabaseSettings serviceRef={ref} service={service} />
+
       <Archive serviceRef={ref} />
     </>
   );
@@ -223,6 +230,145 @@ function Editable({
       )}
       <ErrorText error={error ?? stage.error ?? discard.error} />
     </span>
+  );
+}
+
+type DatabaseSetting = Service["database"];
+type UpdateDatabaseSettings =
+  components["schemas"]["UpdateDatabaseSettingsRequest"];
+
+const databaseChoices: { value: DatabaseSetting; label: string }[] = [
+  { value: "", label: "detect" },
+  { value: "postgres", label: "postgres" },
+  { value: "none", label: "none" },
+];
+
+/** What detection decided, in words. */
+function detectedText(service: Service) {
+  if (service.database === "none") return "not a database: no Data tab";
+  if (service.database === "postgres") return "Postgres, set here";
+  return service.data_engine
+    ? "Postgres, detected from the image"
+    : "not detected from the image; choose postgres if it is one";
+}
+
+/**
+ * Dock-side database settings (ADR 0016 section 1): the detection override
+ * and the variable with the connection URL. They apply at once, never
+ * staged and never a release. Changing them needs scope deploy; others see
+ * them read-only.
+ */
+function DatabaseSettings({
+  serviceRef: ref,
+  service,
+}: {
+  serviceRef: ServiceRef;
+  service: Service;
+}) {
+  const scope = useSession()?.scope;
+  const canEdit = scope === "deploy" || scope === "admin";
+  const client = useQueryClient();
+  const save = useMutation({
+    mutationFn: (req: UpdateDatabaseSettings) =>
+      body(
+        api.PUT(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/database-settings",
+          { params: { path: ref }, body: req },
+        ),
+      ),
+    // The overview carries the service (and whether it has a Data tab).
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: keys.overview(ref.project) }),
+        client.invalidateQueries({ queryKey: keys.data(ref) }),
+      ]),
+  });
+  const [draft, setDraft] = useState<string | null>(null);
+  const urlVariable = service.database_url_variable;
+  const cli = [
+    `dock db settings --database ${service.database || "detect"}`,
+    urlVariable && `--url-variable ${urlVariable}`,
+    `-s ${ref.service} -e ${ref.environment}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <section aria-labelledby="database" className="border-t border-line pt-4">
+      <SectionHead id="database" aside="applies at once, no release">
+        Database
+      </SectionHead>
+      <dl className="grid max-w-[860px] grid-cols-[180px_minmax(0,1fr)] gap-x-4 gap-y-2">
+        <Item label="Detection">
+          <span className="inline-flex flex-wrap items-baseline gap-3">
+            {canEdit ? (
+              <span className="seg">
+                {databaseChoices.map((c) => (
+                  <button
+                    key={c.label}
+                    type="button"
+                    aria-pressed={service.database === c.value}
+                    disabled={save.isPending}
+                    onClick={() =>
+                      service.database !== c.value &&
+                      save.mutate({ database: c.value })
+                    }
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </span>
+            ) : (
+              <span className="font-mono">{service.database || "detect"}</span>
+            )}
+            <span className="text-mut">{detectedText(service)}</span>
+          </span>
+        </Item>
+        <Item label="URL variable">
+          {draft !== null ? (
+            <input
+              // biome-ignore lint/a11y/noAutofocus: opened by clicking the value
+              autoFocus
+              value={draft}
+              aria-label="Database URL variable"
+              placeholder="DATABASE_URL or api.DATABASE_URL"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter")
+                  save.mutate(
+                    { database_url_variable: draft.trim() },
+                    { onSuccess: () => setDraft(null) },
+                  );
+                if (e.key === "Escape") setDraft(null);
+              }}
+              onBlur={() => setDraft(null)}
+              className="field w-56 py-0.5 font-mono text-xs"
+            />
+          ) : (
+            <button
+              type="button"
+              title="Edit the database URL variable"
+              disabled={!canEdit}
+              onClick={() => setDraft(urlVariable)}
+              className="font-mono enabled:hover:underline"
+            >
+              {urlVariable || (
+                <span className="text-mut">
+                  default: DATABASE_URL, then POSTGRES_*
+                </span>
+              )}
+            </button>
+          )}
+        </Item>
+      </dl>
+      <p className="flex flex-wrap gap-x-4 text-xs text-mut">
+        <span>
+          The Data tab reads credentials from the active release's variables.
+        </span>
+        <span className="font-mono">{cli}</span>
+        <ErrorText error={save.error} />
+      </p>
+    </section>
   );
 }
 

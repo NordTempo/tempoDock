@@ -20,6 +20,7 @@ import type {
   DataChange,
   DataChangeset,
   DataChangesetRequest,
+  DataColumnRef,
   DataCommitRequest,
   DataFilter,
   DataHistoryEntry,
@@ -113,6 +114,11 @@ export type DataSource = {
     id: number,
     req: DataRejectRequest,
   ): Promise<DataChangeset>;
+  /** PUT /data/sensitive-columns (admin): replaces the list. */
+  setSensitive(
+    ref: ServiceRef,
+    columns: DataColumnRef[],
+  ): Promise<DataColumnRef[] | null>;
 };
 
 /** Provide with `<DataSourceContext value={source}>` around the panel. */
@@ -162,11 +168,15 @@ export function useDataSchema(ref: ServiceRef, enabled = true) {
   });
 }
 
-/** What a table view shows: one table, its sort and filters. */
+/**
+ * What a table view shows: one table, its sort and filters, and whether
+ * its sensitive columns are revealed (never in the URL).
+ */
 export type TableQuery = {
   table: string;
   order?: string;
   filters?: DataFilter[];
+  reveal?: boolean;
 };
 
 /**
@@ -182,6 +192,7 @@ export function useTableRows(ref: ServiceRef, q: TableQuery | null) {
       q?.table,
       q?.order ?? "",
       q?.filters ?? [],
+      !!q?.reveal,
     ],
     queryFn: ({ pageParam, signal }) => {
       if (!q) throw new Error("No table selected");
@@ -192,6 +203,7 @@ export function useTableRows(ref: ServiceRef, q: TableQuery | null) {
           order: q.order,
           filters: q.filters,
           after: pageParam || undefined,
+          reveal: q.reveal,
         },
         signal,
       );
@@ -322,6 +334,24 @@ export function useRejectChangeset(ref: ServiceRef) {
     mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
       source.rejectChangeset(ref, id, { reason }),
     onSettled,
+  });
+}
+
+/**
+ * PUT /data/sensitive-columns (admin): replaces the list. The schema shows
+ * the marks and pages mask by them, so both refetch.
+ */
+export function useSetSensitive(ref: ServiceRef) {
+  const source = useSource();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (columns: DataColumnRef[]) => source.setSensitive(ref, columns),
+    onSettled: () =>
+      Promise.all(
+        (["schema", "rows", "references"] as const).map((part) =>
+          client.invalidateQueries({ queryKey: [...dataKey(ref), part] }),
+        ),
+      ),
   });
 }
 
