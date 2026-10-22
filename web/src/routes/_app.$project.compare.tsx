@@ -51,7 +51,6 @@ export const Route = createFileRoute("/_app/$project/compare")({
     values: s.values === true ? true : undefined,
     promote: s.promote === true ? true : undefined,
   }),
-  staticData: { crumb: "Compare" },
   loader: async ({ context: { queryClient }, params }) => {
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),

@@ -12,7 +12,6 @@ export const Route = createFileRoute("/_app/$project/$environment/")({
     typeof search.service === "string" && search.service
       ? { service: search.service }
       : {},
-  staticData: { crumb: "Variables" },
   loader: async ({ context: { queryClient }, params }) => {
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),

@@ -1,9 +1,20 @@
-import { type ComponentProps, type ReactNode, useState } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { AuditEvent } from "../data/types";
 import { type GlyphChar, type State, toneText } from "./status";
 
-/** A status glyph. ◐ is a static CSS half circle, everything else text. */
+/**
+ * A status glyph. ● ○ ◐ are CSS dots (filled, ring, open ring; never
+ * animated), everything else text.
+ */
 export function Glyph({ char }: { char: GlyphChar }) {
+  if (char === "●") return <span className="dot" aria-hidden />;
+  if (char === "○") return <span className="ring" aria-hidden />;
   if (char === "◐") return <span className="pi" aria-hidden />;
   return <span aria-hidden>{char}</span>;
 }
@@ -38,7 +49,7 @@ export function Actor({
 }) {
   switch (kind) {
     case "token":
-      return <span className="font-mono text-prog">◇ {name}</span>;
+      return <span className="text-info">◇ {name}</span>;
     case "user":
       return <span>○ {name}</span>;
     case "system":
@@ -130,7 +141,7 @@ export function Check({
     >
       <input
         type="checkbox"
-        className="accent-white"
+        className="accent-fg"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
@@ -167,7 +178,7 @@ export function Confirm({
     <div
       role="alertdialog"
       aria-label={action}
-      className={`flex flex-wrap items-center gap-x-3 gap-y-2 border p-3 whitespace-normal ${danger ? "border-fail-edge" : "border-edge"}`}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border bg-panel px-3.5 py-3 whitespace-normal ${danger ? "border-fail-edge" : "border-edge"}`}
     >
       <span className="min-w-0 flex-[1_1_320px]">{children}</span>
       <span className="flex items-center gap-2">
@@ -184,7 +195,7 @@ export function Confirm({
           Cancel
         </Button>
       </span>
-      {cli && <code className="font-mono text-2xs text-mut">{cli}</code>}
+      {cli && <code className="font-mono text-2xs text-faint">{cli}</code>}
       <ErrorText error={error} />
     </div>
   );
@@ -195,10 +206,13 @@ export function ErrorText({ error }: { error: Error | null | undefined }) {
   return <span className="text-fail">{error.message}</span>;
 }
 
-/** The centered content column every page but the overview uses. */
+/**
+ * A page's content column under its PageBar: 24px 28px padding, left
+ * aligned, at most 1100px wide unless `width` says otherwise.
+ */
 export function Page({
-  width = "max-w-[1240px]",
-  gap = "gap-[22px]",
+  width = "max-w-[1100px]",
+  gap = "gap-7",
   children,
 }: {
   width?: string;
@@ -206,13 +220,54 @@ export function Page({
   children: ReactNode;
 }) {
   return (
-    <main className={`mx-auto flex w-full flex-1 flex-col p-5 ${width} ${gap}`}>
+    <div
+      className={`flex w-full flex-1 flex-col px-7 pt-6 pb-10 ${width} ${gap}`}
+    >
       {children}
-    </main>
+    </div>
   );
 }
 
-/** Page title with its context next to it and actions on the right. */
+/**
+ * The bar at the top of a page: an optional parent crumb ("blog /"), the
+ * title, what follows it (an environment switch, a status) and actions on
+ * the right. It sticks to the top while the page scrolls.
+ */
+export function PageBar({
+  parent,
+  title,
+  after,
+  actions,
+}: {
+  parent?: ReactNode;
+  title: ReactNode;
+  after?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="sticky top-0 z-10 flex min-h-[52px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-5 py-2.5">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5">
+        {parent && (
+          <>
+            <span className="text-mut">{parent}</span>
+            <span aria-hidden className="text-faint">
+              /
+            </span>
+          </>
+        )}
+        <h1 className="text-md font-semibold">{title}</h1>
+      </nav>
+      {after}
+      {actions && (
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {actions}
+        </div>
+      )}
+    </header>
+  );
+}
+
+/** Page title with a line of context under it and actions on the right. */
 export function TitleRow({
   title,
   context,
@@ -223,11 +278,13 @@ export function TitleRow({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <h1 className="text-xl font-semibold">{title}</h1>
-      {context && <span className="text-mut">{context}</span>}
+    <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <h1 className="text-xl font-semibold">{title}</h1>
+        {context && <p className="text-xs text-mut">{context}</p>}
+      </div>
       {actions && (
-        <div className="ml-auto flex flex-wrap items-start gap-2.5">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {actions}
         </div>
       )}
@@ -235,7 +292,7 @@ export function TitleRow({
   );
 }
 
-/** Section heading with a muted aside and optional right-aligned links. */
+/** Section heading with a faint aside and optional right-aligned links. */
 export function SectionHead({
   id,
   children,
@@ -248,12 +305,14 @@ export function SectionHead({
   right?: ReactNode;
 }) {
   return (
-    <div className="mb-1 flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
-      <h2 id={id} className="text-md font-semibold">
+    <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+      <h2 id={id} className="text-sm font-semibold">
         {children}
       </h2>
-      {aside && <span className="text-mut">{aside}</span>}
-      {right && <span className="ml-auto flex gap-4">{right}</span>}
+      {aside && <span className="text-xs text-faint">{aside}</span>}
+      {right && (
+        <span className="ml-auto flex gap-4 text-xs text-mut">{right}</span>
+      )}
     </div>
   );
 }
@@ -262,3 +321,81 @@ export function SectionHead({
 export function Scroll({ children }: { children: ReactNode }) {
   return <div className="overflow-x-auto">{children}</div>;
 }
+
+/** A bordered, rounded panel around a table or list; scrolls sideways. */
+export function Panel({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`panel ${className}`}>
+      <div className="overflow-x-auto">{children}</div>
+    </div>
+  );
+}
+
+/** A small popup menu anchored under its button; Escape or a click outside closes it. */
+export function Menu({
+  label,
+  button,
+  right,
+  up,
+  className = "",
+  children,
+}: {
+  label: string;
+  button: ReactNode;
+  /** Anchor to the right edge, for menus at the end of a bar. */
+  right?: boolean;
+  /** Open upwards, for menus at the bottom of the screen. */
+  up?: boolean;
+  className?: string;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onMouse = (event: MouseEvent) => {
+      const inside =
+        event.target instanceof Node && root.current?.contains(event.target);
+      if (!inside) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onMouse);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onMouse);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <span ref={root} className={`relative ${className}`}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center rounded-ctl"
+      >
+        {button}
+      </button>
+      {open && (
+        <div
+          className={`absolute ${up ? "bottom-full mb-1" : "top-full mt-1"} ${right ? "right-0" : "left-0"} z-30 flex min-w-44 flex-col rounded-ctl border border-edge bg-panel p-1 shadow-lg shadow-black/40`}
+        >
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** A row in a Menu. */
+export const menuItem =
+  "flex items-center gap-2 rounded-[4px] px-2.5 py-1.5 text-left text-sec no-underline hover:bg-sel hover:text-fg aria-[current=page]:font-medium aria-[current=page]:text-fg";
