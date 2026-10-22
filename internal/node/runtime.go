@@ -127,8 +127,8 @@ type HostStats struct {
 	MemoryAvailable uint64
 	// Load1 is the one-minute load average.
 	Load1 float64
-	// Disks are the filesystems of the data dir and Docker's root, once
-	// each when they are the same filesystem.
+	// Disks are the filesystems of Docker's data root (first) and dock's
+	// data dir, once each when they are the same filesystem.
 	Disks []Disk
 }
 

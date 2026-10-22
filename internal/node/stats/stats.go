@@ -23,8 +23,9 @@ type Options struct {
 	Proc string
 	// Cgroup is the cgroup v2 mount, default /sys/fs/cgroup.
 	Cgroup string
-	// Disks are the directories whose filesystems are reported: the data
-	// dir and Docker's root.
+	// Disks are the directories whose filesystems are reported, in order:
+	// Docker's data root first (what server disk usage means), then the
+	// data dir.
 	Disks []string
 }
 

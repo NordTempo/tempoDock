@@ -58,10 +58,17 @@ export type ProjectOverview = {
   environments: EnvironmentView[];
 };
 
-/** A server with what is placed on it and its latest sample. */
-export type ServerDetail = Omit<Schemas["ServerDetail"], "placements"> & {
+/** A server with its latest sample and what is placed on it. */
+export type ServerDetail = Omit<
+  Schemas["ServerDetail"],
+  "placements" | "services"
+> & {
   placements: Schemas["ServerPlacement"][];
+  services: ServerService[];
 };
+
+/** A service on a server page, with its latest usage. */
+export type ServerService = Schemas["ServerService"];
 
 export type ServerStats = Omit<Schemas["ServerStats"], "points"> & {
   points: Schemas["ServerStatsPoint"][];

@@ -421,6 +421,61 @@ func (q *Queries) ListProjectVolumes(ctx context.Context, projectID int64) ([]Vo
 	return items, nil
 }
 
+const listServerServices = `-- name: ListServerServices :many
+SELECT services.id, services.name, services.memory_mb, services.cpus,
+  projects.name AS project_name, environments.name AS environment_name,
+  releases.number AS active_release
+FROM environments
+JOIN projects ON projects.id = environments.project_id
+JOIN services ON services.environment_id = environments.id
+LEFT JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
+WHERE environments.server_id = +? AND projects.archived_at IS NULL AND services.archived_at IS NULL
+ORDER BY projects.name, environments.name, services.name
+`
+
+type ListServerServicesRow struct {
+	ID              int64
+	Name            string
+	MemoryMb        int64
+	Cpus            float64
+	ProjectName     string
+	EnvironmentName string
+	ActiveRelease   *int64
+}
+
+// The services of the environments on a server, with their active
+// release: the services table of a server page.
+func (q *Queries) ListServerServices(ctx context.Context, serverID int64) ([]ListServerServicesRow, error) {
+	rows, err := q.query(ctx, q.listServerServicesStmt, listServerServices, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListServerServicesRow
+	for rows.Next() {
+		var i ListServerServicesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.MemoryMb,
+			&i.Cpus,
+			&i.ProjectName,
+			&i.EnvironmentName,
+			&i.ActiveRelease,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServices = `-- name: ListServices :many
 SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE environment_id = ? ORDER BY name
 `

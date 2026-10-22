@@ -15,7 +15,9 @@ import (
 // online server and the containers of active releases (node.Stats reads
 // /proc and cgroup files, nothing else), stores a 1-minute point per server
 // and service in one transaction, and at each 10-minute boundary averages
-// the last ten into a 10-minute point and prunes old points. That tick is
+// the last ten into a 10-minute point and prunes old points. It then
+// publishes the samples as usage events, so clients patch what they show
+// (current numbers and open charts) instead of polling. That tick is
 // the daemon's only periodic work. While someone watches a server or a
 // service live, a second sampler runs every liveInterval, and stops as
 // soon as the last watcher leaves.
@@ -94,6 +96,10 @@ func (s *sampler) hostUsage(serverID int64, h node.HostStats, t time.Time) (u ap
 	for i, d := range h.Disks {
 		u.Disks[i] = apitypes.DiskUsage{Paths: d.Paths, UsedBytes: toInt64(d.Used), TotalBytes: toInt64(d.Total)}
 	}
+	// The node reports Docker's data root first (node.HostStats.Disks).
+	if len(u.Disks) > 0 {
+		u.DiskUsedBytes, u.DiskTotalBytes = u.Disks[0].UsedBytes, u.Disks[0].TotalBytes
+	}
 	if !ok || h.CPUTotal <= prev.CPUTotal || h.CPUBusy < prev.CPUBusy {
 		return u, false
 	}
@@ -131,15 +137,48 @@ type collector struct {
 	// downsampled is the end of the last 10-minute window written.
 	downsampled int64
 	// Reused between ticks.
-	ids       []string
-	serviceOf map[string]int64
-	servers   []store.AddServerStatsParams
-	services  []store.AddServiceStatsParams
-	latest    map[int64]apitypes.ServiceUsage
+	ids []string
+	// own are the indexes of one server's targets; targetOf maps their
+	// containers back.
+	own      []int
+	targetOf map[string]int
+	servers  []store.AddServerStatsParams
+	services []store.AddServiceStatsParams
+	latest   map[int64]apitypes.ServiceUsage
+	// events are the tick's usage events, published once its points are
+	// stored.
+	events []busEvent
+	// names are the targets' names by service, for the events; reloaded
+	// when the set of targets changes (names never do).
+	names map[int64]store.ListStatsNamesRow
 }
 
 func newCollector() *collector {
-	return &collector{sampler: newSampler(), serviceOf: map[string]int64{}, latest: map[int64]apitypes.ServiceUsage{}}
+	return &collector{
+		sampler: newSampler(), targetOf: map[string]int{}, latest: map[int64]apitypes.ServiceUsage{},
+		names: map[int64]store.ListStatsNamesRow{},
+	}
+}
+
+// loadNames makes sure names covers exactly the targets' services (one
+// per target, as a service has one active release).
+func (col *collector) loadNames(ctx context.Context, q *store.Queries, targets []store.ListStatsTargetsRow) error {
+	known := len(col.names) == len(targets)
+	for i := 0; known && i < len(targets); i++ {
+		_, known = col.names[targets[i].ServiceID]
+	}
+	if known {
+		return nil
+	}
+	rows, err := q.ListStatsNames(ctx)
+	if err != nil {
+		return err
+	}
+	clear(col.names)
+	for _, r := range rows {
+		col.names[r.ID] = r
+	}
+	return nil
 }
 
 // collectStats runs the minute tick until Core closes. The first sample is
@@ -166,7 +205,9 @@ func untilNextMinute(now time.Time) time.Duration {
 	return now.Truncate(time.Minute).Add(time.Minute).Sub(now)
 }
 
-// statsTick samples every online server and stores the minute's points.
+// statsTick samples every online server, stores the minute's points and
+// publishes them as usage events: one per server (admins only) and one per
+// environment with its services.
 func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	servers, err := c.store.ListServers(ctx)
 	if err != nil {
@@ -176,6 +217,10 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	targets, err := c.store.ListStatsTargets(ctx)
 	if err != nil {
 		c.log.Warn("stats: list containers", "err", err)
+		return
+	}
+	if err := col.loadNames(ctx, c.store.Queries, targets); err != nil {
+		c.log.Warn("stats: name containers", "err", err)
 		return
 	}
 	// A point covers the minute before the tick and is stamped with its start.
@@ -201,15 +246,19 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 			hosts[srv.ID] = u
 			col.servers = append(col.servers, store.AddServerStatsParams{
 				Res: statsMinute, At: at, ServerID: srv.ID, Cpu: hundredths(u.CPUPercent),
-				Memory: u.MemoryUsedBytes, Disk: diskUsed(u.Disks), Load1: hundredths(u.Load1),
+				Memory: u.MemoryUsedBytes, Disk: u.DiskUsedBytes, Load1: hundredths(u.Load1),
 			})
+			col.events = append(col.events, busEvent{serverStats: true, ev: apitypes.Event{
+				Type: apitypes.EventUsage, Time: now.UTC(), Usage: &apitypes.UsageUpdate{Server: srv.Name, Host: &u},
+			}})
 		}
-		col.ids = col.ids[:0]
-		clear(col.serviceOf)
-		for _, t := range targets {
+		col.ids, col.own = col.ids[:0], col.own[:0]
+		clear(col.targetOf)
+		for i, t := range targets {
 			if t.ServerID == srv.ID {
 				col.ids = append(col.ids, t.ContainerID)
-				col.serviceOf[t.ContainerID] = t.ServiceID
+				col.own = append(col.own, i)
+				col.targetOf[t.ContainerID] = i
 			}
 		}
 		if len(col.ids) == 0 {
@@ -225,16 +274,18 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 			if !ok {
 				continue
 			}
-			svc := col.serviceOf[cs.ID]
+			svc := targets[col.targetOf[cs.ID]].ServiceID
 			col.latest[svc] = u
 			col.services = append(col.services, store.AddServiceStatsParams{
 				Res: statsMinute, At: at, ServiceID: svc, Cpu: hundredths(u.CPUPercent),
 				Memory: u.MemoryBytes, IoRead: u.IOReadBytesPerSec, IoWrite: u.IOWriteBytesPerSec,
 			})
 		}
+		col.serviceEvents(srv.Name, targets, now)
 	}
 	col.sampler.endRound()
-	if err := c.storeStats(ctx, col, now.Unix(), memory); err != nil {
+	err = c.storeStats(ctx, col, now.Unix(), memory)
+	if err != nil {
 		c.log.Warn("stats: store", "err", err)
 	}
 	c.stats.mu.Lock()
@@ -246,6 +297,49 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 		c.stats.service[id] = u
 	}
 	c.stats.mu.Unlock()
+
+	// Stored samples are history points too; open charts append them.
+	var point *time.Time
+	if err == nil {
+		point = ptr(time.Unix(at, 0).UTC())
+	}
+	for _, e := range col.events {
+		e.ev.Usage.Point = point
+		c.bus.publish(e)
+	}
+	clear(col.events)
+	col.events = col.events[:0]
+}
+
+// serviceEvents adds one usage event per environment of a server with the
+// samples of its services. Targets are ordered by server and environment,
+// so own (this server's targets) has each environment's services together.
+func (col *collector) serviceEvents(server string, targets []store.ListStatsTargetsRow, now time.Time) {
+	var up *apitypes.UsageUpdate
+	var env int64
+	for n, i := range col.own {
+		t := targets[i]
+		u, ok := col.latest[t.ServiceID]
+		if !ok {
+			continue
+		}
+		if up == nil || env != t.EnvironmentID {
+			env = t.EnvironmentID
+			size := 1
+			for _, j := range col.own[n+1:] {
+				if targets[j].EnvironmentID != t.EnvironmentID {
+					break
+				}
+				size++
+			}
+			name := col.names[t.ServiceID]
+			up = &apitypes.UsageUpdate{Server: server, Services: make([]apitypes.ServiceUsageSample, 0, size)}
+			col.events = append(col.events, busEvent{projectID: t.ProjectID, envID: t.EnvironmentID, ev: apitypes.Event{
+				Type: apitypes.EventUsage, Time: now.UTC(), Project: name.ProjectName, Environment: name.EnvironmentName, Usage: up,
+			}})
+		}
+		up.Services = append(up.Services, apitypes.ServiceUsageSample{Service: col.names[t.ServiceID].ServiceName, Usage: u})
+	}
 }
 
 // storeStats writes a tick's points in one transaction. When a 10-minute
@@ -300,16 +394,6 @@ func (c *Core) storeStats(ctx context.Context, col *collector, now int64, memory
 }
 
 func hundredths(v float64) int64 { return int64(math.Round(v * 100)) }
-
-// diskUsed is what history keeps of a server's disks: bytes used on the
-// filesystems dock uses, together.
-func diskUsed(ds []apitypes.DiskUsage) int64 {
-	var n int64
-	for _, d := range ds {
-		n += d.UsedBytes
-	}
-	return n
-}
 
 // statsSpan maps a range to its resolution and start.
 func statsSpan(r apitypes.StatsRange, now time.Time) (res int64, since int64, err error) {

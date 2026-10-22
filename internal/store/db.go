@@ -342,6 +342,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listServerPlacementsStmt, err = db.PrepareContext(ctx, listServerPlacements); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServerPlacements: %w", err)
 	}
+	if q.listServerServicesStmt, err = db.PrepareContext(ctx, listServerServices); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServerServices: %w", err)
+	}
 	if q.listServerStatsStmt, err = db.PrepareContext(ctx, listServerStats); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServerStats: %w", err)
 	}
@@ -353,6 +356,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listServicesStmt, err = db.PrepareContext(ctx, listServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServices: %w", err)
+	}
+	if q.listStatsNamesStmt, err = db.PrepareContext(ctx, listStatsNames); err != nil {
+		return nil, fmt.Errorf("error preparing query ListStatsNames: %w", err)
 	}
 	if q.listStatsTargetsStmt, err = db.PrepareContext(ctx, listStatsTargets); err != nil {
 		return nil, fmt.Errorf("error preparing query ListStatsTargets: %w", err)
@@ -991,6 +997,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listServerPlacementsStmt: %w", cerr)
 		}
 	}
+	if q.listServerServicesStmt != nil {
+		if cerr := q.listServerServicesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServerServicesStmt: %w", cerr)
+		}
+	}
 	if q.listServerStatsStmt != nil {
 		if cerr := q.listServerStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServerStatsStmt: %w", cerr)
@@ -1009,6 +1020,11 @@ func (q *Queries) Close() error {
 	if q.listServicesStmt != nil {
 		if cerr := q.listServicesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServicesStmt: %w", cerr)
+		}
+	}
+	if q.listStatsNamesStmt != nil {
+		if cerr := q.listStatsNamesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listStatsNamesStmt: %w", cerr)
 		}
 	}
 	if q.listStatsTargetsStmt != nil {
@@ -1326,10 +1342,12 @@ type Queries struct {
 	listServerEnvironmentsStmt       *sql.Stmt
 	listServerLoadsStmt              *sql.Stmt
 	listServerPlacementsStmt         *sql.Stmt
+	listServerServicesStmt           *sql.Stmt
 	listServerStatsStmt              *sql.Stmt
 	listServersStmt                  *sql.Stmt
 	listServiceStatsStmt             *sql.Stmt
 	listServicesStmt                 *sql.Stmt
+	listStatsNamesStmt               *sql.Stmt
 	listStatsTargetsStmt             *sql.Stmt
 	listTokensStmt                   *sql.Stmt
 	listUsedHostPortsStmt            *sql.Stmt
@@ -1476,10 +1494,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listServerEnvironmentsStmt:       q.listServerEnvironmentsStmt,
 		listServerLoadsStmt:              q.listServerLoadsStmt,
 		listServerPlacementsStmt:         q.listServerPlacementsStmt,
+		listServerServicesStmt:           q.listServerServicesStmt,
 		listServerStatsStmt:              q.listServerStatsStmt,
 		listServersStmt:                  q.listServersStmt,
 		listServiceStatsStmt:             q.listServiceStatsStmt,
 		listServicesStmt:                 q.listServicesStmt,
+		listStatsNamesStmt:               q.listStatsNamesStmt,
 		listStatsTargetsStmt:             q.listStatsTargetsStmt,
 		listTokensStmt:                   q.listTokensStmt,
 		listUsedHostPortsStmt:            q.listUsedHostPortsStmt,

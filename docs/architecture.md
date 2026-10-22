@@ -201,16 +201,22 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
 - An in-process event bus feeds SSE streams to the UI and CLI.
 - The daemon subscribes to Docker's event stream instead of polling.
 - Resource statistics are the one periodic job. Once a minute the node
-  runtime reads `/proc` (host CPU, memory, load, disk of the data dir and
-  Docker's root) and each active container's cgroup v2 files (`cpu.stat`,
+  runtime reads `/proc` (host CPU, memory, load, disk of Docker's data
+  root, which is what "disk" means in the API and UI, and of the data dir
+  when it is on another filesystem) and each active container's cgroup
+  v2 files (`cpu.stat`,
   `memory.current` minus inactive file cache, `memory.max`, `io.stat`),
   found at `system.slice/docker-<id>.scope` or `docker/<id>` depending on
   Docker's cgroup driver. No Docker API calls. Core turns counters into
   rates and writes one point per server and service in one transaction;
   each 10-minute boundary averages the last ten points and prunes points
   older than 24 hours (1-minute) and 7 days (10-minute), all as range
-  queries on time-first keys. Watching a server or service live samples
-  every 3 seconds, and only while someone watches.
+  queries on time-first keys. It then publishes the samples on the event
+  bus as `usage` events, one per server (unlimited admins only) and one
+  per environment with its services, so open pages update their numbers
+  and append the new point to their charts without polling. Watching a
+  server or service live samples every 3 seconds, and only while someone
+  watches.
 - App logs are read from Docker (`local` log driver with rotation). We don't
   copy or store them.
 

@@ -2,18 +2,12 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { memo, useMemo } from "react";
 import { ApiError } from "../api/client";
-import {
-  queries,
-  serviceRef,
-  useIsAdmin,
-  useProjectTree,
-  useServer,
-} from "../data/queries";
+import { queries, useIsAdmin, useServer } from "../data/queries";
 import type {
   Server,
   ServerDetail,
+  ServerService,
   ServerUsage,
-  ServiceView,
   StatsRange,
 } from "../data/types";
 import { useServerSwitches } from "../features/servers/switches";
@@ -36,7 +30,7 @@ import {
   StateText,
   TitleRow,
 } from "../ui/kit";
-import { kindLabel, serviceState } from "../ui/status";
+import { containerState, kindLabel } from "../ui/status";
 
 // One server for admins: live usage, history, what is placed on it and the
 // services there by memory. /servers/homelab?range=24h
@@ -106,7 +100,7 @@ function AdminServer() {
       <StatusSentence detail={detail} />
 
       <section aria-label="Now" className="flex flex-col gap-2">
-        <Now usage={detail.usage} server={server} />
+        <Now usage={server.usage} server={server} />
         <LiveNote state={server.status === "online" ? live : "lost"} />
       </section>
 
@@ -131,7 +125,7 @@ function AdminServer() {
         <History
           name={name}
           range={range}
-          usage={detail.usage}
+          usage={server.usage}
           server={server}
         />
       </section>
@@ -154,7 +148,7 @@ function AdminServer() {
         <Placements detail={detail} />
       </section>
 
-      <Services name={name} />
+      <Services name={name} services={detail.services} />
     </Page>
   );
 }
@@ -194,24 +188,18 @@ function StatusSentence({ detail }: { detail: ServerDetail }) {
   );
 }
 
-function diskTotals(usage: ServerUsage | undefined) {
-  let used = 0;
-  let total = 0;
-  for (const d of usage?.disks ?? []) {
-    used += d.used_bytes;
-    total += d.total_bytes;
-  }
-  return { used, total };
-}
-
-/** The latest sample, live while the page is open. */
+/**
+ * The latest sample, live while the page is open. Disk is the filesystem
+ * holding Docker's data root; dock's data dir shows separately when it is
+ * on another one.
+ */
 function Now({ usage, server }: { usage?: ServerUsage; server: Server }) {
   if (!usage) {
     return (
       <p className="text-mut">No sample yet. One is taken every minute.</p>
     );
   }
-  const disk = diskTotals(usage);
+  const dataDir = usage.disks?.[1];
   return (
     <div className="flex flex-wrap gap-x-10 gap-y-3">
       <Stat
@@ -226,9 +214,20 @@ function Now({ usage, server }: { usage?: ServerUsage; server: Server }) {
       />
       <Stat
         label="Disk"
-        value={size(disk.used)}
-        of={disk.total ? `/ ${size(disk.total)}` : undefined}
+        value={size(usage.disk_used_bytes)}
+        of={
+          usage.disk_total_bytes
+            ? `/ ${size(usage.disk_total_bytes)}`
+            : undefined
+        }
       />
+      {dataDir && (
+        <Stat
+          label="Data dir disk"
+          value={size(dataDir.used_bytes)}
+          of={`/ ${size(dataDir.total_bytes)}`}
+        />
+      )}
       <Stat label="Load" value={usage.load1.toFixed(2)} of="1 min avg" />
     </div>
   );
@@ -246,11 +245,10 @@ function History({
   usage?: ServerUsage;
   server: Server;
 }) {
-  const { data: stats, dataUpdatedAt } = useSuspenseQuery({
-    ...queries.serverStats(name, range),
-    // A new point lands every minute; the query pauses with the tab.
-    refetchInterval: 60_000,
-  });
+  // Usage events append each new minute point (data/live.ts).
+  const { data: stats, dataUpdatedAt } = useSuspenseQuery(
+    queries.serverStats(name, range),
+  );
   const series = useMemo(() => {
     const of = (pick: (p: (typeof stats.points)[number]) => number): Point[] =>
       stats.points.map((p) => ({ t: Date.parse(p.time), v: pick(p) }));
@@ -263,7 +261,7 @@ function History({
   const to = dataUpdatedAt;
   const from = to - rangeMs[range];
   const memoryTotal = usage?.memory_total_bytes || server.memory_bytes;
-  const diskTotal = diskTotals(usage).total;
+  const diskTotal = usage?.disk_total_bytes;
   const common = { from, to, resolution: stats.resolution_seconds };
   return (
     <div className="mt-2 grid gap-x-8 gap-y-5 lg:grid-cols-3">
@@ -336,19 +334,22 @@ function Placements({ detail }: { detail: ServerDetail }) {
   );
 }
 
-const memoryOf = (s: ServiceView) => s.service.usage?.memory_bytes ?? -1;
+const memoryOf = (s: ServerService) => s.usage?.memory_bytes ?? -1;
 
-/** Every service on the server, the biggest memory users first. */
-function Services({ name }: { name: string }) {
-  const tree = useProjectTree();
+/**
+ * Every service on the server, the biggest memory users first (again
+ * after usage events patch them).
+ */
+function Services({
+  name,
+  services: all,
+}: {
+  name: string;
+  services: ServerService[];
+}) {
   const services = useMemo(
-    () =>
-      tree
-        .flatMap((p) => p.environments)
-        .filter((e) => e.environment.server === name)
-        .flatMap((e) => e.services)
-        .sort((a, b) => memoryOf(b) - memoryOf(a)),
-    [tree, name],
+    () => all.toSorted((a, b) => memoryOf(b) - memoryOf(a)),
+    [all],
   );
   return (
     <section aria-labelledby="services">
@@ -371,7 +372,10 @@ function Services({ name }: { name: string }) {
             </thead>
             <tbody>
               {services.map((s) => (
-                <ServiceRow key={s.service.id} view={s} />
+                <ServiceRow
+                  key={`${s.project}/${s.environment}/${s.name}`}
+                  service={s}
+                />
               ))}
             </tbody>
           </table>
@@ -381,8 +385,16 @@ function Services({ name }: { name: string }) {
   );
 }
 
-const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
-  const ref = serviceRef(view.service);
+const ServiceRow = memo(function ServiceRow({
+  service: s,
+}: {
+  service: ServerService;
+}) {
+  const ref = {
+    project: s.project,
+    environment: s.environment,
+    service: s.name,
+  };
   return (
     <tr>
       <td>
@@ -394,13 +406,13 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
         {ref.project}/{ref.environment}
       </td>
       <td>
-        <StateText state={serviceState(view)} />
+        <StateText state={containerState(s)} />
       </td>
       <td className="font-mono">
-        <MemoryUsage service={view.service} />
+        <MemoryUsage service={s} />
       </td>
       <td className="w-full font-mono">
-        <CpuUsage service={view.service} />
+        <CpuUsage service={s} />
       </td>
     </tr>
   );

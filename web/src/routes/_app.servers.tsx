@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { memo, type ReactNode } from "react";
 import { queries, useIsAdmin, useServers } from "../data/queries";
@@ -10,18 +9,14 @@ import { serverKinds } from "../ui/status";
 
 // Every server: status, what it accepts, how loaded it is. Admins switch
 // accepted kinds inline and open a server for statistics and placements.
+// Admins get each server's latest sample with the list; usage events keep
+// it current.
 export const Route = createFileRoute("/_app/servers")({
-  loader: async ({ context: { queryClient } }) => {
-    const [session, servers] = await Promise.all([
+  loader: ({ context: { queryClient } }) =>
+    Promise.all([
       queryClient.ensureQueryData(queries.session()),
       queryClient.ensureQueryData(queries.servers()),
-    ]);
-    // Live numbers come with each server's detail, which needs admin.
-    if (session?.scope === "admin") {
-      for (const s of servers)
-        queryClient.prefetchQuery(queries.server(s.name));
-    }
-  },
+    ]),
   component: Servers,
 });
 
@@ -112,16 +107,8 @@ const Row = memo(function Row({
   admin?: boolean;
 }) {
   const offline = s.status === "offline";
-  // Admins get the latest sample with the server's detail.
-  const usage = useQuery({ ...queries.server(s.name), enabled: !!admin }).data
-    ?.usage;
-  const disk = usage?.disks?.reduce(
-    (sum, d) => ({
-      used: sum.used + d.used_bytes,
-      total: sum.total + d.total_bytes,
-    }),
-    { used: 0, total: 0 },
-  );
+  // Only admins get the latest sample.
+  const usage = s.usage;
   const dash = <span className="text-faint">·</span>;
   return (
     <tr id={s.name} className={offline ? "bg-[#140808]" : undefined}>
@@ -200,10 +187,10 @@ const Row = memo(function Row({
         )}
       </td>
       <td className="py-2.5 font-mono">
-        {disk?.total ? (
+        {usage?.disk_total_bytes ? (
           <>
-            {size(disk.used)}
-            <span className="text-mut"> / {size(disk.total)}</span>
+            {size(usage.disk_used_bytes)}
+            <span className="text-mut"> / {size(usage.disk_total_bytes)}</span>
           </>
         ) : (
           dash

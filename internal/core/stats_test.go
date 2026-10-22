@@ -15,7 +15,7 @@ func TestSamplerRates(t *testing.T) {
 	t0 := time.Date(2031, 1, 1, 10, 0, 0, 0, time.UTC)
 	h := node.HostStats{CPUBusy: 1000, CPUTotal: 4000, CPUs: 4, MemoryTotal: 8 << 30, MemoryAvailable: 6 << 30,
 		Disks: []node.Disk{{Paths: []string{"/data"}, Total: 100, Used: 40}}}
-	if u, ok := s.hostUsage(1, h, t0); ok || u.MemoryUsedBytes != 2<<30 || u.Disks[0].UsedBytes != 40 {
+	if u, ok := s.hostUsage(1, h, t0); ok || u.MemoryUsedBytes != 2<<30 || u.Disks[0].UsedBytes != 40 || u.DiskUsedBytes != 40 || u.DiskTotalBytes != 100 {
 		t.Fatalf("first host sample = %+v, %v; want memory and disk but no CPU", u, ok)
 	}
 	h.CPUBusy, h.CPUTotal = 1300, 5000 // 300 of 1000 ticks busy
@@ -141,6 +141,123 @@ func TestStatsTickStoresDownsamplesAndPrunes(t *testing.T) {
 	tick(12, base.Add(7*24*time.Hour+10*time.Minute))
 	if ten, _ := h.store.ListServiceStats(h.ctx, store.ListServiceStatsParams{Res: statsTen, At: 0, ServiceID: svc}); len(ten) == 0 || ten[0].At == base.Unix() {
 		t.Fatalf("10-minute points after a week: %+v (the first window should be pruned)", ten)
+	}
+}
+
+// After a tick, each event stream gets the usage it may read: server
+// usage only for unlimited admins, an environment's services for whoever
+// can see the environment, with the stored point's time.
+func TestStatsTickPublishesUsage(t *testing.T) {
+	h := newHarness(t)
+	ref := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.deploy(ref, "app:1")
+	_, ctr := h.activeContainer(ref)
+
+	follow := func(a Actor) <-chan LiveEvent {
+		stream, err := h.c.Events(h.ctx, a, EventFilter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ready, out := make(chan struct{}), make(chan LiveEvent, 64)
+		ctx, cancel := context.WithCancel(h.ctx)
+		t.Cleanup(cancel)
+		go func() {
+			_ = stream(ctx, func() { close(ready) }, func(evs ...LiveEvent) error {
+				for _, ev := range evs {
+					out <- ev
+				}
+				return nil
+			})
+		}()
+		<-ready
+		return out
+	}
+	admin := follow(System)
+	reader := follow(Actor{Kind: "token", Name: "r", Scope: apitypes.ScopeRead})
+	limitedAdmin := follow(Actor{Kind: "token", Name: "blog", Scope: apitypes.ScopeAdmin, ProjectID: 99, ProjectName: "blog"})
+
+	base := time.Date(2031, 1, 1, 10, 0, 0, 0, time.UTC)
+	col := newCollector()
+	for i := range 2 {
+		at := base.Add(time.Duration(i) * time.Minute)
+		n := uint64(i + 1)
+		h.rt.SetHostStats(node.HostStats{CPUs: 4, CPUBusy: 50 * n, CPUTotal: 100 * n, MemoryTotal: 8 << 30, MemoryAvailable: 6 << 30})
+		h.rt.SetContainerStats(node.ContainerStats{ID: ctr, Time: at, CPUUsec: 30e6 * n, Memory: 64 << 20})
+		h.c.statsTick(h.ctx, col, at)
+	}
+	// Every stream sees this, so what came before it has been delivered.
+	h.c.bus.publish(busEvent{projectID: 99, ev: apitypes.Event{Type: apitypes.EventDrift, Message: "end"}})
+
+	// usage collects a stream's usage events from the test's ticks (the
+	// harness's own collector may publish too, at real times).
+	usage := func(ch <-chan LiveEvent) (hosts, envs []apitypes.Event) {
+		for {
+			select {
+			case ev := <-ch:
+				switch {
+				case ev.Type == apitypes.EventDrift && ev.Message == "end":
+					return hosts, envs
+				case ev.Type != apitypes.EventUsage || !ev.Time.Equal(base.Add(time.Minute)):
+				case ev.Usage.Host != nil:
+					hosts = append(hosts, ev.Event)
+				default:
+					envs = append(envs, ev.Event)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("no end event")
+			}
+		}
+	}
+	point := base // the second tick stores the minute that started at base
+	hosts, envs := usage(admin)
+	if len(hosts) != 1 || hosts[0].Usage.Server != h.c.local.Name || hosts[0].Usage.Host.CPUPercent != 50 || !hosts[0].Usage.Point.Equal(point) {
+		t.Fatalf("admin server usage = %+v", hosts)
+	}
+	if len(envs) != 1 {
+		t.Fatalf("admin environment usage = %+v", envs)
+	}
+	e := envs[0]
+	if e.Project != "shop" || e.Environment != "production" || len(e.Usage.Services) != 1 || e.Usage.Services[0].Service != "web" ||
+		e.Usage.Services[0].Usage.CPUPercent != 50 || e.Usage.Host != nil || !e.Usage.Point.Equal(point) {
+		t.Fatalf("environment usage = %+v %+v", e, e.Usage)
+	}
+	if hosts, envs := usage(reader); len(hosts) != 0 || len(envs) != 1 {
+		t.Fatalf("read token: %d server, %d environment usage events; want 0 and 1", len(hosts), len(envs))
+	}
+	if hosts, envs := usage(limitedAdmin); len(hosts) != 0 || len(envs) != 0 {
+		t.Fatalf("other project's admin token: %d server, %d environment usage events; want none", len(hosts), len(envs))
+	}
+}
+
+// The server list carries each server's latest sample for admins only;
+// the server page lists the services placed there with their usage.
+func TestServerUsageInListAndDetail(t *testing.T) {
+	h := newHarness(t)
+	ref := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.service("idle", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.deploy(ref, "app:1")
+	host := apitypes.ServerUsage{CPUs: 4, MemoryTotalBytes: 8 << 30}
+	svc := apitypes.ServiceUsage{MemoryBytes: 64 << 20}
+	h.c.stats.mu.Lock()
+	h.c.stats.server[h.c.local.ID] = host
+	h.c.stats.service[h.serviceID(ref)] = svc
+	h.c.stats.mu.Unlock()
+
+	if list, err := h.c.ListServers(h.ctx, System); err != nil || list[0].Usage == nil || list[0].Usage.CPUs != 4 {
+		t.Fatalf("admin list = %+v, %v", list, err)
+	}
+	if list, err := h.c.ListServers(h.ctx, Actor{Kind: "token", Name: "r", Scope: apitypes.ScopeRead}); err != nil || list[0].Usage != nil {
+		t.Fatalf("read token list = %+v, %v; want no usage", list, err)
+	}
+	d, err := h.c.GetServer(h.ctx, System, h.c.local.Name)
+	if err != nil || d.Server.Usage == nil || len(d.Services) != 2 {
+		t.Fatalf("detail = %+v, %v", d, err)
+	}
+	if s := d.Services[0]; s.Name != "web" || s.Project != "shop" || s.Usage == nil || *s.Usage != svc || s.ActiveRelease == nil || s.EffectiveMemoryMB == 0 {
+		t.Fatalf("first service = %+v; want web with its usage", s)
+	}
+	if s := d.Services[1]; s.Name != "idle" || s.Usage != nil || s.ActiveRelease != nil {
+		t.Fatalf("second service = %+v; want idle without usage", s)
 	}
 }
 

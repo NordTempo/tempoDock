@@ -116,11 +116,10 @@ function History({
   range: StatsRange;
   service: Service;
 }) {
-  const { data: stats, dataUpdatedAt } = useSuspenseQuery({
-    ...queries.serviceStats(ref, range),
-    // A new point lands every minute; the query pauses with the tab.
-    refetchInterval: 60_000,
-  });
+  // Usage events append each new minute point (data/live.ts).
+  const { data: stats, dataUpdatedAt } = useSuspenseQuery(
+    queries.serviceStats(ref, range),
+  );
   // CPU as a share of the limit, so 100% means the limit.
   const share = s.effective_cpus || 1;
   const series = useMemo(() => {

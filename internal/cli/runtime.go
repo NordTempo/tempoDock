@@ -56,7 +56,7 @@ func newRuntime(ctx context.Context, cfg config.Config, log *slog.Logger) (node.
 		b.Network = buildkitNetwork
 		builder = b
 	}
-	st := stats.New(stats.Options{Disks: []string{cfg.DataDir, dockerRoot()}})
+	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}})
 	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st}, nil
 }
 

@@ -170,7 +170,7 @@ export interface paths {
         };
         /**
          * Live events
-         * @description Release progress, build logs, service status, domain status and audit events the caller may see. The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.
+         * @description Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage: unlimited admins only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.
          *
          *     Server-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.
          */
@@ -869,7 +869,7 @@ export interface paths {
         };
         /**
          * List servers
-         * @description Status, version, accepted environment kinds and load of every server.
+         * @description Status, version, accepted environment kinds and load of every server. Unlimited admins also get each server's latest resource sample.
          */
         get: operations["list-servers"];
         put?: never;
@@ -889,7 +889,7 @@ export interface paths {
         };
         /**
          * Get a server
-         * @description The server, the projects and environments placed on it and its latest resource sample. Scope: admin, unlimited.
+         * @description The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Scope: admin, unlimited.
          */
         get: operations["get-server"];
         put?: never;
@@ -1387,7 +1387,8 @@ export interface components {
             /** Format: date-time */
             time: string;
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage";
+            usage?: components["schemas"]["UsageUpdate"];
         };
         Health: {
             /** @example ok */
@@ -1549,12 +1550,13 @@ export interface components {
             reserved_memory_bytes: number;
             /** @enum {string} */
             status: "online" | "offline";
+            usage?: components["schemas"]["ServerUsage"];
             version: string;
         };
         ServerDetail: {
             placements: components["schemas"]["ServerPlacement"][] | null;
             server: components["schemas"]["Server"];
-            usage?: components["schemas"]["ServerUsage"];
+            services: components["schemas"]["ServerService"][] | null;
         };
         ServerPlacement: {
             environments: string[] | null;
@@ -1563,6 +1565,21 @@ export interface components {
             /** @description Set by an admin rather than chosen automatically */
             pinned: boolean;
             project: string;
+        };
+        ServerService: {
+            /** Format: int64 */
+            active_release?: number;
+            cpus_from_default: boolean;
+            /** Format: double */
+            effective_cpus: number;
+            /** Format: int64 */
+            effective_memory_mb: number;
+            environment: string;
+            memory_from_default: boolean;
+            name: string;
+            project: string;
+            status: components["schemas"]["ServiceStatus"];
+            usage?: components["schemas"]["ServiceUsage"];
         };
         ServerStats: {
             current?: components["schemas"]["ServerUsage"];
@@ -1593,6 +1610,10 @@ export interface components {
             cpu_percent: number;
             /** Format: int64 */
             cpus: number;
+            /** Format: int64 */
+            disk_total_bytes: number;
+            /** Format: int64 */
+            disk_used_bytes: number;
             disks: components["schemas"]["DiskUsage"][] | null;
             /** Format: double */
             load1: number;
@@ -1715,6 +1736,10 @@ export interface components {
             /** Format: date-time */
             time: string;
         };
+        ServiceUsageSample: {
+            service: string;
+            usage: components["schemas"]["ServiceUsage"];
+        };
         SetVariablesRequest: {
             /** @description Also apply all staged changes in the environment */
             apply?: boolean;
@@ -1778,6 +1803,13 @@ export interface components {
             /** Format: int64 */
             port?: number;
             start_command?: string;
+        };
+        UsageUpdate: {
+            host?: components["schemas"]["ServerUsage"];
+            /** Format: date-time */
+            point?: string;
+            server: string;
+            services?: components["schemas"]["ServiceUsageSample"][] | null;
         };
         User: {
             /** Format: date-time */
@@ -2529,7 +2561,7 @@ export interface operations {
                     "text/event-stream": {
                         data: components["schemas"]["Event"];
                         /** @enum {string} */
-                        event: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "ready" | "end" | "error";
+                        event: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "ready" | "end" | "error";
                         id?: string;
                     }[];
                 };

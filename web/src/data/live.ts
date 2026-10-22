@@ -11,8 +11,13 @@ import type {
   LogLine,
   ProjectOverview,
   Release,
+  Server,
+  ServerDetail,
+  ServerStats,
   ServiceRef,
+  ServiceStats,
   ServiceView,
+  StatsRange,
 } from "./types";
 
 // Live updates from the daemon over Server-Sent Events. Nothing polls:
@@ -28,6 +33,7 @@ const busEvents = [
   "audit",
   "drift",
   "lagged",
+  "usage",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -129,11 +135,125 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Events were dropped: everything on screen may be stale.
       queryClient.invalidateQueries();
       return;
+    case "usage":
+      applyUsage(queryClient, event);
+      return;
     case "build_log":
       return; // not subscribed, see busEvents
     default:
       // A new event type in the API fails the build until handled here.
       event.type satisfies never;
+  }
+}
+
+/** The ranges with a point a minute, which usage events extend. */
+const minuteRanges = [
+  ["1h", 3_600_000],
+  ["24h", 86_400_000],
+] as const satisfies readonly (readonly [StatsRange, number])[];
+
+/**
+ * Appends a 1-minute point to cached history, dropping points that fell
+ * out of the range. A point the history already has (it was refetched
+ * after the tick) is left alone.
+ */
+function appendPoint<
+  P extends { time: string },
+  S extends { resolution_seconds: number; points: P[] },
+>(stats: S | undefined, rangeMs: number, point: P): S | undefined {
+  if (stats?.resolution_seconds !== 60) return stats;
+  const t = Date.parse(point.time);
+  const last = stats.points.at(-1);
+  if (last && Date.parse(last.time) >= t) return stats;
+  const from = t - rangeMs;
+  const keep = stats.points.findIndex((p) => Date.parse(p.time) > from);
+  const points = keep < 0 ? [] : stats.points.slice(keep);
+  return { ...stats, points: [...points, point] };
+}
+
+/**
+ * A minute's samples: the numbers on screen (overview, service pages,
+ * server list and page) and, when the tick stored them, a new point on
+ * open 1h and 24h charts. Only cached queries are touched.
+ */
+function applyUsage(queryClient: QueryClient, event: LiveEvent) {
+  const usage = event.usage;
+  if (!usage) return;
+  const { server, host, point } = usage;
+  if (host) {
+    queryClient.setQueryData<Server[]>(keys.servers, (list) =>
+      list?.map((s) => (s.name === server ? { ...s, usage: host } : s)),
+    );
+    queryClient.setQueryData<ServerDetail>(
+      keys.server(server),
+      (d) => d && { ...d, server: { ...d.server, usage: host } },
+    );
+    if (!point) return;
+    for (const [range, ms] of minuteRanges) {
+      queryClient.setQueryData<ServerStats>(
+        keys.serverStats(server, range),
+        (s) =>
+          appendPoint(s, ms, {
+            time: point,
+            cpu_percent: host.cpu_percent,
+            memory_used_bytes: host.memory_used_bytes,
+            disk_used_bytes: host.disk_used_bytes,
+            load1: host.load1,
+          }),
+      );
+    }
+    return;
+  }
+  const { project, environment } = event;
+  if (!project || !environment || !usage.services?.length) return;
+  const byName = new Map(usage.services.map((s) => [s.service, s.usage]));
+  queryClient.setQueryData<ProjectOverview>(
+    keys.overview(project),
+    (o) =>
+      o && {
+        ...o,
+        environments: o.environments.map((env) =>
+          env.environment.name === environment
+            ? {
+                ...env,
+                services: env.services.map((s) => {
+                  const u = byName.get(s.service.name);
+                  return u ? { ...s, service: { ...s.service, usage: u } } : s;
+                }),
+              }
+            : env,
+        ),
+      },
+  );
+  queryClient.setQueryData<ServerDetail>(
+    keys.server(server),
+    (d) =>
+      d && {
+        ...d,
+        services: d.services.map((s) => {
+          const u =
+            s.project === project && s.environment === environment
+              ? byName.get(s.name)
+              : undefined;
+          return u ? { ...s, usage: u } : s;
+        }),
+      },
+  );
+  if (!point) return;
+  for (const [service, u] of byName) {
+    for (const [range, ms] of minuteRanges) {
+      queryClient.setQueryData<ServiceStats>(
+        keys.serviceStats({ project, environment, service }, range),
+        (s) =>
+          appendPoint(s, ms, {
+            time: point,
+            cpu_percent: u.cpu_percent,
+            memory_bytes: u.memory_bytes,
+            io_read_bytes_per_sec: u.io_read_bytes_per_sec,
+            io_write_bytes_per_sec: u.io_write_bytes_per_sec,
+          }),
+      );
+    }
   }
 }
 

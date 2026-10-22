@@ -84,6 +84,8 @@ Everything periodic in the daemon and CLI:
 
 | What | Where | Interval | Runs only while | Cost |
 |---|---|---|---|---|
+| Statistics tick | `internal/core/stats.go` | 1 min, on the minute | always (ADR 0015) | a few file reads per server and container, one transaction, one `usage` event per server and per environment (`BenchmarkStatsTick50`) |
+| Live statistics | `internal/core/stats.go` | 3 s | someone watches a server or service live | the same reads for what is watched |
 | SSE heartbeat | `internal/api/streams.go` | 25 s | an SSE stream is open | one small write per stream |
 | Domain DNS/TLS checks | `internal/core/domains.go` | 5 s, backing off to 5 min | a domain is pending | a DNS lookup and TLS dial per domain |
 | Health check | `internal/node/docker/health.go` | 1 s (configurable) | a release is health checking | one inspect + HTTP/TCP probe |

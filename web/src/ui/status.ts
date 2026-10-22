@@ -85,7 +85,14 @@ export function serviceState(s: ServiceView): State {
   if (s.deploying) {
     return releaseStates[s.deploying.status];
   }
-  const { status, active_release } = s.service;
+  return containerState(s.service);
+}
+
+/** A service's container state, without deploys (as on server pages). */
+export function containerState({
+  status,
+  active_release,
+}: Pick<ServiceView["service"], "status" | "active_release">): State {
   if (isCrashLooping(status)) {
     return {
       tone: "fail",

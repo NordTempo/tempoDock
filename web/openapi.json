@@ -960,9 +960,13 @@
               "domain",
               "audit",
               "drift",
-              "lagged"
+              "lagged",
+              "usage"
             ],
             "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageUpdate"
           }
         },
         "required": [
@@ -1557,6 +1561,9 @@
             ],
             "type": "string"
           },
+          "usage": {
+            "$ref": "#/components/schemas/ServerUsage"
+          },
           "version": {
             "type": "string"
           }
@@ -1593,13 +1600,20 @@
           "server": {
             "$ref": "#/components/schemas/Server"
           },
-          "usage": {
-            "$ref": "#/components/schemas/ServerUsage"
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServerService"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
           "server",
-          "placements"
+          "placements",
+          "services"
         ],
         "type": "object"
       },
@@ -1635,6 +1649,55 @@
           "kind",
           "pinned",
           "environments"
+        ],
+        "type": "object"
+      },
+      "ServerService": {
+        "additionalProperties": false,
+        "properties": {
+          "active_release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cpus_from_default": {
+            "type": "boolean"
+          },
+          "effective_cpus": {
+            "format": "double",
+            "type": "number"
+          },
+          "effective_memory_mb": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "memory_from_default": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ServiceUsage"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "name",
+          "status",
+          "effective_memory_mb",
+          "effective_cpus",
+          "memory_from_default",
+          "cpus_from_default"
         ],
         "type": "object"
       },
@@ -1722,6 +1785,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "disk_total_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disk_used_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
           "disks": {
             "items": {
               "$ref": "#/components/schemas/DiskUsage"
@@ -1756,6 +1827,8 @@
           "memory_used_bytes",
           "memory_total_bytes",
           "load1",
+          "disk_used_bytes",
+          "disk_total_bytes",
           "disks"
         ],
         "type": "object"
@@ -1875,10 +1948,6 @@
           "database",
           "database_url_variable",
           "status",
-          "effective_memory_mb",
-          "effective_cpus",
-          "memory_from_default",
-          "cpus_from_default",
           "pending_changes",
           "created_at",
           "image",
@@ -1889,7 +1958,11 @@
           "dockerfile_path",
           "build_command",
           "memory_mb",
-          "cpus"
+          "cpus",
+          "effective_memory_mb",
+          "effective_cpus",
+          "memory_from_default",
+          "cpus_from_default"
         ],
         "type": "object"
       },
@@ -2082,6 +2155,22 @@
           "memory_limit_bytes",
           "io_read_bytes_per_sec",
           "io_write_bytes_per_sec"
+        ],
+        "type": "object"
+      },
+      "ServiceUsageSample": {
+        "additionalProperties": false,
+        "properties": {
+          "service": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ServiceUsage"
+          }
+        },
+        "required": [
+          "service",
+          "usage"
         ],
         "type": "object"
       },
@@ -2282,6 +2371,34 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UsageUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "$ref": "#/components/schemas/ServerUsage"
+          },
+          "point": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceUsageSample"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "server"
+        ],
         "type": "object"
       },
       "User": {
@@ -3414,7 +3531,7 @@
     },
     "/api/v1/events": {
       "get": {
-        "description": "Release progress, build logs, service status, domain status and audit events the caller may see. The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
+        "description": "Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage: unlimited admins only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
         "operationId": "events",
         "parameters": [
           {
@@ -3466,6 +3583,7 @@
                           "audit",
                           "drift",
                           "lagged",
+                          "usage",
                           "ready",
                           "end",
                           "error"
@@ -8880,7 +8998,7 @@
     },
     "/api/v1/servers": {
       "get": {
-        "description": "Status, version, accepted environment kinds and load of every server.",
+        "description": "Status, version, accepted environment kinds and load of every server. Unlimited admins also get each server's latest resource sample.",
         "operationId": "list-servers",
         "responses": {
           "200": {
@@ -8976,7 +9094,7 @@
     },
     "/api/v1/servers/{server}": {
       "get": {
-        "description": "The server, the projects and environments placed on it and its latest resource sample. Scope: admin, unlimited.",
+        "description": "The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Scope: admin, unlimited.",
         "operationId": "get-server",
         "parameters": [
           {

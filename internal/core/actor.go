@@ -80,6 +80,12 @@ func (a Actor) requireUnlimited(need apitypes.Scope, action string) error {
 	return nil
 }
 
+// readsServerStats reports whether the actor may read server-wide
+// statistics: unlimited admins, as requireUnlimited(ScopeAdmin) checks.
+func (a Actor) readsServerStats() bool {
+	return rank(a.Scope) >= rank(apitypes.ScopeAdmin) && !a.limited()
+}
+
 func (a Actor) limitName() string {
 	if a.EnvironmentID != 0 {
 		return fmt.Sprintf("environment %s/%s", a.ProjectName, a.EnvironmentName)
