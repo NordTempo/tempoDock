@@ -108,6 +108,11 @@ type Environment struct {
 	Kind       string
 }
 
+type Install struct {
+	ID        int64
+	InstallID string
+}
+
 type JoinToken struct {
 	ID                   int64
 	Hash                 string

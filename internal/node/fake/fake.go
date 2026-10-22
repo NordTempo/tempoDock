@@ -16,7 +16,6 @@ import (
 	"maps"
 	"net"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -460,13 +459,12 @@ func (r *Runtime) List(context.Context) ([]node.Container, error) {
 }
 
 // ReleaseContainers implements node.Containers.
-func (r *Runtime) ReleaseContainers(_ context.Context, releaseID int64) ([]string, error) {
+func (r *Runtime) ReleaseContainers(_ context.Context, want node.Labels) ([]string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	id := strconv.FormatInt(releaseID, 10)
 	var out []string
 	for _, cid := range slices.Sorted(maps.Keys(r.containers)) {
-		if r.containers[cid].Labels.Release == id {
+		if l := r.containers[cid].Labels; l.Release == want.Release && l.Matches(want) {
 			out = append(out, cid)
 		}
 	}

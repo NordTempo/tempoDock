@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -340,7 +341,12 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return containersResult{Containers: toWireContainers(cs)}, err
 	}))
 	h(opReleaseCtrs, unary(func(ctx context.Context, a releaseRequest) (idsResult, error) {
-		ids, err := rt.ReleaseContainers(ctx, a.ReleaseID)
+		var want node.Labels
+		if a.Labels != nil {
+			want = a.Labels.node()
+		}
+		want.Release = strconv.FormatInt(a.ReleaseID, 10)
+		ids, err := rt.ReleaseContainers(ctx, want)
 		return idsResult{IDs: ids}, err
 	}))
 	h(opHealthCheck, unary(func(ctx context.Context, a healthRequest) (empty, error) {

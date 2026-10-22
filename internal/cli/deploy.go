@@ -63,6 +63,11 @@ A service named with --service that doesn't exist yet is created first.`,
 			if err != nil {
 				return err
 			}
+			if src != nil {
+				if err := serverOffline(svc); err != nil {
+					return err
+				}
+			}
 			return g.startAndFollow(ctx, s, t, detach, func() (apitypes.Release, error) {
 				if src == nil {
 					g.io.Progressf("Deploying image %s to %s", image, t)
@@ -97,6 +102,21 @@ func (g *globals) ensureService(ctx context.Context, s *session, t target, expli
 	}
 	g.io.Progressf("Created service %s in %s/%s", svc.Name, svc.Project, svc.Environment)
 	return svc, nil
+}
+
+// serverOffline refuses a source deploy to a service whose server can't
+// be reached, before anything is packed or uploaded (the server would
+// refuse it only once the upload began): server_offline, exit 7.
+func serverOffline(svc apitypes.Service) error {
+	s := svc.Status
+	if !s.ServerOffline {
+		return nil
+	}
+	return &output.Error{
+		Exit: output.ExitUnreachable, Code: string(apitypes.CodeServerOffline),
+		Message: fmt.Sprintf("server %s is %s", s.Server, s.ServerStatus),
+		Hint:    "Nothing was uploaded. Deploy again once it is back; `dock server list` shows its status.",
+	}
 }
 
 // source is a directory to deploy, checked before anything is sent.

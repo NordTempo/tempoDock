@@ -227,3 +227,13 @@ scope, and `--yes` when not on a terminal.
 environment of the project, then hides it from `dock project list`
 (`--all` shows it). An archived project takes no new environments or
 services. It is refused while one of its services is deploying.
+
+Archiving works while a service's server is unreachable; the answer (and
+the audit log) says what was left:
+
+- **Offline server:** its containers are stopped and its routes removed
+  when it reconnects.
+- **Revoked server:** containers on revoked server homelab were left
+  running. Remove them on that machine (`docker ps --filter
+  label=dock.managed=true`), or join it again with `dock server add` and
+  they are removed when it connects.

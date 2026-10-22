@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -119,8 +120,13 @@ func (c *Client) List(ctx context.Context) ([]node.Container, error) {
 }
 
 // ReleaseContainers implements node.Containers.
-func (c *Client) ReleaseContainers(ctx context.Context, releaseID int64) ([]string, error) {
-	r, err := unaryCall[idsResult](ctx, c, opReleaseCtrs, releaseRequest{ReleaseID: releaseID})
+func (c *Client) ReleaseContainers(ctx context.Context, want node.Labels) ([]string, error) {
+	id, err := strconv.ParseInt(want.Release, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("release containers: invalid release %q", want.Release)
+	}
+	w := toWireLabels(want)
+	r, err := unaryCall[idsResult](ctx, c, opReleaseCtrs, releaseRequest{ReleaseID: id, Labels: &w})
 	return r.IDs, err
 }
 

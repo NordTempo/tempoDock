@@ -2189,6 +2189,8 @@ export interface components {
             server: string;
         };
         Project: {
+            /** @description Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there) */
+            archive_notes?: string[] | null;
             /** Format: date-time */
             archived_at?: string;
             /** Format: date-time */
@@ -2419,6 +2421,8 @@ export interface components {
         Service: {
             /** Format: int64 */
             active_release?: number;
+            /** @description Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there) */
+            archive_notes?: string[] | null;
             /** Format: date-time */
             archived_at?: string;
             build_command: string;
@@ -2503,6 +2507,15 @@ export interface components {
             oom_killed: boolean;
             /** Format: int64 */
             restart_count: number;
+            /** @description With server_offline: the server's name */
+            server?: string;
+            /** @description The service's server can't be reached: state is the last known one */
+            server_offline?: boolean;
+            /**
+             * @description With server_offline: the server's status
+             * @enum {string}
+             */
+            server_status?: "offline" | "incompatible" | "revoked";
             /** @enum {string} */
             state: "running" | "restarting" | "crashed" | "stopped" | "none";
             /** Format: date-time */

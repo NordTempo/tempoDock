@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -55,12 +57,27 @@ service in the environment.`,
 	return cmd
 }
 
-// serviceState is the service's state, or "archived".
+// serviceState is the service's state for a table cell, or "archived". On
+// a server that can't be reached it is the last known one, and says so.
 func serviceState(svc apitypes.Service) string {
-	if svc.ArchivedAt != nil {
+	switch {
+	case svc.ArchivedAt != nil:
 		return "archived"
+	case svc.Status.ServerOffline:
+		return string(svc.Status.State) + " (last known)"
 	}
 	return string(svc.Status.State)
+}
+
+// serverNote says a live service's server can't be reached, so its state
+// is the last known: "server t3node is offline: last known running".
+// Empty otherwise.
+func serverNote(svc apitypes.Service) string {
+	s := svc.Status
+	if !s.ServerOffline || svc.ArchivedAt != nil {
+		return ""
+	}
+	return fmt.Sprintf("server %s is %s: last known %s", s.Server, s.ServerStatus, s.State)
 }
 
 // oomNote says a service's container was killed for running out of
@@ -81,6 +98,10 @@ func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 	header := fmt.Sprintf("%s/%s on %s", e.Project, e.Name, e.Server)
 	if env.PendingChanges > 0 {
 		header += fmt.Sprintf(", %s (see `dock changes`)", plural(env.PendingChanges, "staged change"))
+	}
+	if i := slices.IndexFunc(env.Services, func(so apitypes.ServiceOverview) bool { return so.Service.Status.ServerOffline }); i >= 0 {
+		s := env.Services[i].Service.Status
+		header += fmt.Sprintf("; server %s is %s, states are the last known", s.Server, s.ServerStatus)
 	}
 	_, _ = fmt.Fprintln(g.io.Out, header)
 	if len(env.Services) == 0 {
@@ -112,7 +133,7 @@ func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 
 func printServiceStatus(g *globals, so apitypes.ServiceOverview) error {
 	svc := so.Service
-	state := serviceState(svc)
+	state := cmp.Or(serverNote(svc), serviceState(svc))
 	if svc.Status.RestartCount > 0 {
 		state += fmt.Sprintf(" (%d restarts)", svc.Status.RestartCount)
 	}

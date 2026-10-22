@@ -2364,6 +2364,16 @@
       "Project": {
         "additionalProperties": false,
         "properties": {
+          "archive_notes": {
+            "description": "Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "archived_at": {
             "format": "date-time",
             "type": "string"
@@ -3181,6 +3191,16 @@
             "format": "int64",
             "type": "integer"
           },
+          "archive_notes": {
+            "description": "Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "archived_at": {
             "format": "date-time",
             "type": "string"
@@ -3436,6 +3456,23 @@
           "restart_count": {
             "format": "int64",
             "type": "integer"
+          },
+          "server": {
+            "description": "With server_offline: the server's name",
+            "type": "string"
+          },
+          "server_offline": {
+            "description": "The service's server can't be reached: state is the last known one",
+            "type": "boolean"
+          },
+          "server_status": {
+            "description": "With server_offline: the server's status",
+            "enum": [
+              "offline",
+              "incompatible",
+              "revoked"
+            ],
+            "type": "string"
           },
           "state": {
             "enum": [

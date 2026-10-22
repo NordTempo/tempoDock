@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -76,9 +77,10 @@ func (c *Core) ListServices(ctx context.Context, a Actor, ref EnvRef) ([]apitype
 	for _, v := range vols {
 		stateful[v.ServiceID] = stateful[v.ServiceID] || !v.Pending
 	}
+	link := c.linkOf(ctx, es.env.ServerID)
 	out := make([]apitypes.Service, 0, len(rows))
 	for _, s := range rows {
-		out = append(out, c.serviceOf(svcScope{es, s}, pending, active[s.ID], stateful[s.ID]))
+		out = append(out, c.serviceOf(svcScope{es, s}, link, pending, active[s.ID], stateful[s.ID]))
 	}
 	return out, nil
 }
@@ -206,11 +208,19 @@ func (c *Core) ArchiveService(ctx context.Context, a Actor, ref ServiceRef) (api
 	if err != nil {
 		return apitypes.Service{}, err
 	}
+	var notes []string
 	if len(done) > 0 {
-		c.finishArchive(ctx, done)
-		c.audit(ctx, a, "service.archive", &ss.project, &ss.env, ss.String(), "archived service; volumes kept")
+		notes = c.finishArchive(ctx, done)
+		c.audit(ctx, a, "service.archive", &ss.project, &ss.env, ss.String(), archiveSummary("archived service; volumes kept", notes))
 	}
-	return c.toService(ctx, ss, apitypes.PendingChanges{})
+	svc, err := c.toService(ctx, ss, apitypes.PendingChanges{})
+	svc.ArchiveNotes = notes
+	return svc, err
+}
+
+// archiveSummary is an archive's audit summary with its notes.
+func archiveSummary(summary string, notes []string) string {
+	return strings.Join(append([]string{summary}, notes...), "; ")
 }
 
 // archivedService is a service archiveTx archived, with the release that
@@ -264,14 +274,36 @@ func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedServ
 // are stopped and removed in the background (up to stopTimeout each),
 // reported as release events. A release keeps its host port until its
 // container is gone; if the daemon stops first, recovery removes it.
-func (c *Core) finishArchive(ctx context.Context, done []archivedService) {
-	servers := map[int64]bool{}
+//
+// On a server that can't be reached nothing is tried: its releases are
+// superseded already, so the reconnect procedure removes their containers
+// and applies its routes (sweepRetired, reconnected). A revoked server
+// only gets there if it joins again. The notes it returns say so, one per
+// such server with containers to stop, for the archive's answer.
+func (c *Core) finishArchive(ctx context.Context, done []archivedService) []string {
+	links := map[int64]serverLink{}
+	stopping := map[int64]int{} // containers to stop, by server
 	for _, as := range done {
-		servers[as.env.ServerID] = true
+		id := as.env.ServerID
+		if _, ok := links[id]; !ok {
+			links[id] = c.linkOf(ctx, id)
+		}
+		if as.active != nil {
+			stopping[id]++
+		}
 	}
-	for id := range servers {
-		if err := c.applyRoutes(ctx, id); err != nil {
-			c.log.Error("apply routes after archive", "server", id, "err", err)
+	var notes []string
+	for _, id := range slices.Sorted(maps.Keys(links)) {
+		switch link := links[id]; {
+		case link.status == apitypes.ServerOnline:
+			if err := c.applyRoutes(ctx, id); err != nil {
+				c.log.Error("apply routes after archive", "server", id, "err", err)
+			}
+		case stopping[id] == 0:
+		case link.status == apitypes.ServerRevoked:
+			notes = append(notes, fmt.Sprintf("containers on revoked server %s were left running (%d); remove them on that machine, or join it again and they are removed", link.name, stopping[id]))
+		default:
+			notes = append(notes, fmt.Sprintf("server %s is %s: its containers (%d) are stopped when it reconnects", link.name, link.status, stopping[id]))
 		}
 	}
 	for _, as := range done {
@@ -280,12 +312,20 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) {
 			continue
 		}
 		c.publishRelease(ctx, as.svcScope, *as.active)
+		if link := links[as.env.ServerID]; link.status != apitypes.ServerOnline {
+			msg := fmt.Sprintf("Release %d stops when server %s reconnects: %s was archived", as.active.Number, link.name, as.svc.Name)
+			if link.status == apitypes.ServerRevoked {
+				msg = fmt.Sprintf("Release %d was left running on revoked server %s: %s was archived; remove its container there", as.active.Number, link.name, as.svc.Name)
+			}
+			c.releaseEvent(ctx, as.svcScope, *as.active, msg)
+			continue
+		}
 		c.wg.Add(1)
 		go func() {
 			defer c.wg.Done()
 			ctx, ss, rel := c.ctx, as.svcScope, *as.active
 			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopping release %d: %s was archived", rel.Number, ss.svc.Name))
-			if err := c.retire(ctx, ss.env.ServerID, rel.ID); err != nil {
+			if err := c.retire(ctx, ss, rel.ID); err != nil {
 				if ctx.Err() == nil {
 					c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Could not stop release %d (it keeps its port until it is removed): %v", rel.Number, err))
 				}
@@ -294,6 +334,7 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) {
 			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopped release %d; volumes are kept", rel.Number))
 		}()
 	}
+	return notes
 }
 
 // ListVolumes returns a service's volumes, including staged ones.
@@ -354,16 +395,17 @@ func (c *Core) toService(ctx context.Context, ss svcScope, pending apitypes.Pend
 		return apitypes.Service{}, err
 	}
 	stateful := slices.ContainsFunc(vols, func(v store.Volume) bool { return !v.Pending })
-	return c.serviceOf(ss, pending, active, stateful), nil
+	return c.serviceOf(ss, c.linkOf(ctx, ss.env.ServerID), pending, active, stateful), nil
 }
 
-// serviceOf builds a service from loaded state: its active release number
-// (nil if none) and whether it has an applied volume. toService loads that
-// for one service; Overview loads it for a whole project at once.
-func (c *Core) serviceOf(ss svcScope, pending apitypes.PendingChanges, active *int64, stateful bool) apitypes.Service {
+// serviceOf builds a service from loaded state: its server's link, its
+// active release number (nil if none) and whether it has an applied
+// volume. toService loads that for one service; Overview loads it for a
+// whole project at once.
+func (c *Core) serviceOf(ss svcScope, link serverLink, pending apitypes.PendingChanges, active *int64, stateful bool) apitypes.Service {
 	s := apitypes.Service{
 		ID: ss.svc.ID, Project: ss.project.Name, Environment: ss.env.Name, Name: ss.svc.Name,
-		ServiceSettings: settingsOf(ss.svc), Status: c.getStatus(ss.svc.ID),
+		ServiceSettings: settingsOf(ss.svc), Status: link.mark(c.getStatus(ss.svc.ID)),
 		ActiveRelease: active, Stateful: stateful,
 		Database: apitypes.DatabaseSetting(ss.svc.Database), DatabaseURLVariable: ss.svc.DatabaseUrlVariable,
 		CreatedAt: ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt,

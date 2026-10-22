@@ -14,7 +14,7 @@ import (
 // struct fails here until the wire type carries it.
 func TestWireRoundTrip(t *testing.T) {
 	at := time.Date(2026, 10, 22, 9, 30, 0, 123000000, time.UTC)
-	labels := node.Labels{Project: "1", Environment: "2", Service: "3", Release: "4"}
+	labels := node.Labels{ControlPlane: "cp", Project: "1", Environment: "2", Service: "3", Release: "4"}
 
 	check(t, node.ContainerSpec{
 		Name: "web-1", Image: "app:1", Labels: labels, Env: map[string]string{"A": "1"}, Cmd: "serve",

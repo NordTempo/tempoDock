@@ -117,8 +117,11 @@ type (
 	containersResult struct {
 		Containers []wireContainer `json:"containers"`
 	}
+	// releaseRequest asks for a release's containers. Labels narrows them
+	// (node.Labels.Matches); control planes before it sent only the ID.
 	releaseRequest struct {
-		ReleaseID int64 `json:"release_id"`
+		ReleaseID int64       `json:"release_id"`
+		Labels    *wireLabels `json:"labels,omitempty"`
 	}
 	idsResult struct {
 		IDs []string `json:"ids"`
@@ -180,18 +183,19 @@ func (w *wirePushTarget) node() *node.PushTarget {
 }
 
 type wireLabels struct {
-	Project     string `json:"project,omitempty"`
-	Environment string `json:"environment,omitempty"`
-	Service     string `json:"service,omitempty"`
-	Release     string `json:"release,omitempty"`
+	ControlPlane string `json:"control_plane,omitempty"`
+	Project      string `json:"project,omitempty"`
+	Environment  string `json:"environment,omitempty"`
+	Service      string `json:"service,omitempty"`
+	Release      string `json:"release,omitempty"`
 }
 
 func toWireLabels(l node.Labels) wireLabels {
-	return wireLabels{Project: l.Project, Environment: l.Environment, Service: l.Service, Release: l.Release}
+	return wireLabels{ControlPlane: l.ControlPlane, Project: l.Project, Environment: l.Environment, Service: l.Service, Release: l.Release}
 }
 
 func (w wireLabels) node() node.Labels {
-	return node.Labels{Project: w.Project, Environment: w.Environment, Service: w.Service, Release: w.Release}
+	return node.Labels{ControlPlane: w.ControlPlane, Project: w.Project, Environment: w.Environment, Service: w.Service, Release: w.Release}
 }
 
 type wireMount struct {

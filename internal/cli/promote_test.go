@@ -53,4 +53,15 @@ func TestPromote(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &detached); err != nil || len(detached.Promoted) != 1 || detached.Promoted[0].Release.Status.Done() {
 		t.Fatalf("--detach: %v %s", err, stdout)
 	}
+
+	// Nothing promoted: exit 4, with the skipped services still listed.
+	code, _, stderr = exec(t, "promote", "staging", "production", "-p", "shop", "-s", "worker")
+	if code != int(output.ExitNotFound) || !strings.Contains(stderr, "worker skipped") || !strings.Contains(stderr, "nothing was promoted") {
+		t.Fatalf("all skipped: exit %d\n%s", code, stderr)
+	}
+	code, stdout, _ = exec(t, "promote", "staging", "production", "-p", "shop", "-s", "worker", "--json")
+	var skipped apitypes.PromoteResult
+	if err := json.Unmarshal([]byte(stdout), &skipped); code != int(output.ExitNotFound) || err != nil || len(skipped.Skipped) != 1 {
+		t.Fatalf("all skipped --json: exit %d, %v %s", code, err, stdout)
+	}
 }

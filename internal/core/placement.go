@@ -296,7 +296,7 @@ func (o offlineRuntime) Inspect(context.Context, string) (node.Container, error)
 	return node.Container{}, o.err
 }
 func (o offlineRuntime) List(context.Context) ([]node.Container, error) { return nil, o.err }
-func (o offlineRuntime) ReleaseContainers(context.Context, int64) ([]string, error) {
+func (o offlineRuntime) ReleaseContainers(context.Context, node.Labels) ([]string, error) {
 	return nil, o.err
 }
 func (o offlineRuntime) HealthCheck(context.Context, node.Container, node.HealthCheck) error {

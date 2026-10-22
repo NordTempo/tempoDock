@@ -406,7 +406,7 @@ control plane is unreachable. Stopping or upgrading it never stops apps.
 
 | Command | What it does |
 |---|---|
-| `dock server revoke homelab` | Forgets its key and drops the link. It stays out until it joins again; its apps keep running, but nothing deploys there |
+| `dock server revoke homelab` | Forgets its key and drops the link. It stays out until it joins again; its apps keep running, but nothing deploys there. Archiving a project there leaves its containers running; remove them on that machine |
 | `dock server rotate-key homelab` | The online node switches to a new key |
 | `dock server remove homelab` | Only once no live project uses it; archive projects first. Archived projects' environments move to the control plane's server. Containers a revoked or offline server still runs stay there; remove them by hand |
 

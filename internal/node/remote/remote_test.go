@@ -81,7 +81,7 @@ func TestCalls(t *testing.T) {
 		Name: "web-1", Image: "app:1", Port: 8080, HostPort: 41000, Network: "env-1", Aliases: []string{"web"},
 		Env: map[string]string{"A": "1"}, Cmd: "serve", Mounts: []node.Mount{{Volume: "data", Path: "/data"}},
 		Resources: node.Resources{MemoryBytes: 256 << 20, NanoCPUs: 5e8},
-		Labels:    node.Labels{Project: "1", Environment: "2", Service: "3", Release: "7"},
+		Labels:    node.Labels{ControlPlane: "cp1", Project: "1", Environment: "2", Service: "3", Release: "7"},
 	}
 	ct, err := h.client.Start(ctx, spec)
 	if err != nil {
@@ -94,8 +94,13 @@ func TestCalls(t *testing.T) {
 	if err != nil || len(list) != 1 || list[0].ID != ct.ID || list[0].Labels.Release != "7" || list[0].HostPort == 0 {
 		t.Fatalf("list = %+v, %v", list, err)
 	}
-	if ids, err := h.client.ReleaseContainers(ctx, 7); err != nil || !slices.Equal(ids, []string{ct.ID}) {
+	if ids, err := h.client.ReleaseContainers(ctx, spec.Labels); err != nil || !slices.Equal(ids, []string{ct.ID}) {
 		t.Fatalf("release containers = %v, %v", ids, err)
+	}
+	other := spec.Labels
+	other.ControlPlane = "cp2"
+	if ids, err := h.client.ReleaseContainers(ctx, other); err != nil || len(ids) != 0 {
+		t.Fatalf("another control plane's release containers = %v, %v", ids, err)
 	}
 	if err := h.client.HealthCheck(ctx, ct, node.HealthCheck{Path: "/", Timeout: time.Second}); err != nil {
 		t.Fatal(err)

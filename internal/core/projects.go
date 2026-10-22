@@ -176,9 +176,11 @@ func (c *Core) ArchiveProject(ctx context.Context, a Actor, name string) (apityp
 	if err != nil || already {
 		return toProject(p), err
 	}
-	c.finishArchive(ctx, done)
-	c.audit(ctx, a, "project.archive", &p, nil, p.Name, fmt.Sprintf("archived project and its %d services; volumes kept", len(done)))
-	return toProject(p), nil
+	notes := c.finishArchive(ctx, done)
+	c.audit(ctx, a, "project.archive", &p, nil, p.Name, archiveSummary(fmt.Sprintf("archived project and its %d services; volumes kept", len(done)), notes))
+	out := toProject(p)
+	out.ArchiveNotes = notes
+	return out, nil
 }
 
 // notArchived refuses adding to an archived project.

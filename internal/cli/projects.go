@@ -98,6 +98,9 @@ func newProjectArchiveCmd(g *globals) *cobra.Command {
 			return g.io.Print(p, func() error {
 				g.io.Successf("Archived project %s. Its containers are stopping; volumes and release history are kept.", p.Name)
 				g.io.Progressf("It is hidden from `dock project list`; see it with --all.")
+				for _, n := range p.ArchiveNotes {
+					g.io.Warnf("%s", n)
+				}
 				return nil
 			})
 		},

@@ -61,9 +61,10 @@ type Containers interface {
 	// List returns all platform-managed containers, running or not.
 	List(ctx context.Context) ([]Container, error)
 	// ReleaseContainers returns the IDs of the managed containers labelled
-	// with a release, running or not: one filtered list, without inspecting
-	// every container like List.
-	ReleaseContainers(ctx context.Context, releaseID int64) ([]string, error)
+	// with want.Release whose labels match want (Labels.Matches), running
+	// or not: one filtered list, without inspecting every container like
+	// List.
+	ReleaseContainers(ctx context.Context, want Labels) ([]string, error)
 
 	// HealthCheck blocks until the container passes hc or hc.Timeout expires.
 	// It runs on the server that hosts the container, since published ports
@@ -182,6 +183,10 @@ const (
 	LabelEnvironment = "dock.env"
 	LabelService     = "dock.service"
 	LabelRelease     = "dock.release"
+	// LabelControlPlane is the install ID of the control plane that created
+	// the resource. Control planes ignore resources labelled for another
+	// one, so several can share a Docker host.
+	LabelControlPlane = "dock.control_plane"
 	// LabelRole marks platform infrastructure (e.g. the BuildKit container).
 	// Containers carrying it are not apps: Containers never lists, returns
 	// or streams events for them.
@@ -189,22 +194,26 @@ const (
 )
 
 // Labels identify what a container or volume belongs to. Values are IDs from
-// the platform DB, so renames never orphan resources.
+// the platform DB, so renames never orphan resources. ControlPlane names the
+// control plane whose DB they are from; resources created before it existed
+// have none.
 type Labels struct {
-	Project     string
-	Environment string
-	Service     string
-	Release     string
+	ControlPlane string
+	Project      string
+	Environment  string
+	Service      string
+	Release      string
 }
 
 // Map renders the labels as Docker labels, including LabelManaged.
 func (l Labels) Map() map[string]string {
 	m := map[string]string{LabelManaged: "true"}
 	for k, v := range map[string]string{
-		LabelProject:     l.Project,
-		LabelEnvironment: l.Environment,
-		LabelService:     l.Service,
-		LabelRelease:     l.Release,
+		LabelControlPlane: l.ControlPlane,
+		LabelProject:      l.Project,
+		LabelEnvironment:  l.Environment,
+		LabelService:      l.Service,
+		LabelRelease:      l.Release,
 	} {
 		if v != "" {
 			m[k] = v
@@ -219,17 +228,30 @@ func (l Labels) Map() map[string]string {
 // stay usable.
 func (l Labels) Conflicts(want Labels) bool {
 	differs := func(have, want string) bool { return have != "" && want != "" && have != want }
-	return differs(l.Project, want.Project) || differs(l.Environment, want.Environment) ||
-		differs(l.Service, want.Service) || differs(l.Release, want.Release)
+	return differs(l.ControlPlane, want.ControlPlane) || differs(l.Project, want.Project) ||
+		differs(l.Environment, want.Environment) || differs(l.Service, want.Service) || differs(l.Release, want.Release)
+}
+
+// Matches reports whether a resource labelled l is one that want describes:
+// every label set in want is the same on l. A resource without a control
+// plane label (created before it existed) matches only if everything else
+// does, so a control plane still finds its older containers but never one
+// labelled for another control plane.
+func (l Labels) Matches(want Labels) bool {
+	same := func(have, want string) bool { return want == "" || have == want }
+	return (l.ControlPlane == "" || same(l.ControlPlane, want.ControlPlane)) &&
+		same(l.Project, want.Project) && same(l.Environment, want.Environment) &&
+		same(l.Service, want.Service) && same(l.Release, want.Release)
 }
 
 // LabelsFrom reads platform labels back from a Docker label map.
 func LabelsFrom(m map[string]string) Labels {
 	return Labels{
-		Project:     m[LabelProject],
-		Environment: m[LabelEnvironment],
-		Service:     m[LabelService],
-		Release:     m[LabelRelease],
+		ControlPlane: m[LabelControlPlane],
+		Project:      m[LabelProject],
+		Environment:  m[LabelEnvironment],
+		Service:      m[LabelService],
+		Release:      m[LabelRelease],
 	}
 }
 

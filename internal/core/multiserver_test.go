@@ -170,6 +170,94 @@ func TestRemoteDeployAndOffline(t *testing.T) {
 	}
 }
 
+// While a service's server can't be reached, reads keep its last known
+// state and say which server is offline or revoked.
+func TestStatusOnOfflineServer(t *testing.T) {
+	p, _ := labPool(t)
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	p.deploy(web, "app:1")
+	status := func() apitypes.ServiceStatus {
+		t.Helper()
+		svc, err := p.c.GetService(p.ctx, System, web)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o, err := p.c.Overview(p.ctx, System, "shop")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range o.Environments {
+			for _, so := range e.Services {
+				if so.Service.ID == svc.ID && so.Service.Status != svc.Status {
+					t.Fatalf("overview status %+v, service status %+v", so.Service.Status, svc.Status)
+				}
+			}
+		}
+		s := svc.Status
+		s.UpdatedAt = nil
+		return s
+	}
+	if s := status(); s != (apitypes.ServiceStatus{State: apitypes.ServiceRunning}) {
+		t.Fatalf("online: %+v", s)
+	}
+
+	p.setOffline("homelab", true)
+	want := apitypes.ServiceStatus{State: apitypes.ServiceRunning, ServerOffline: true, Server: "homelab", ServerStatus: apitypes.ServerOffline}
+	if s := status(); s != want {
+		t.Fatalf("offline: %+v", s)
+	}
+	if _, err := p.c.RevokeServer(p.ctx, System, "homelab"); err != nil {
+		t.Fatal(err)
+	}
+	want.ServerStatus = apitypes.ServerRevoked
+	if s := status(); s != want {
+		t.Fatalf("revoked: %+v", s)
+	}
+}
+
+// Archiving on a server that can't be reached succeeds and says what was
+// left: an offline server's containers stop when it reconnects, a revoked
+// one's are left running.
+func TestArchiveOnUnreachableServer(t *testing.T) {
+	p, lab := labPool(t)
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	api := p.createService("staging", "api", apitypes.CreateServiceRequest{})
+	p.deploy(web, "app:1")
+	p.deploy(api, "app:1")
+	ss, err := p.c.loadService(p.ctx, web)
+	if err != nil {
+		t.Fatal(err)
+	}
+	webCtr := containerName(ss, 1)
+
+	p.setOffline("homelab", true)
+	svc, err := p.c.ArchiveService(p.ctx, System, web)
+	if err != nil || svc.ArchivedAt == nil {
+		t.Fatalf("archive: %+v, %v", svc, err)
+	}
+	if want := []string{"server homelab is offline: its containers (1) are stopped when it reconnects"}; !slices.Equal(svc.ArchiveNotes, want) {
+		t.Fatalf("notes = %q", svc.ArchiveNotes)
+	}
+	if !slices.Contains(lab.Running(), webCtr) {
+		t.Fatalf("running on homelab = %v", lab.Running())
+	}
+	p.setOffline("homelab", false)
+	p.c.NodeStatus(remote.State{ServerID: p.ids["homelab"], Server: "homelab", Status: remote.StatusOnline,
+		Hello: remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect}}})
+	waitOps(t, lab, "stop "+webCtr)
+
+	if _, err := p.c.RevokeServer(p.ctx, System, "homelab"); err != nil {
+		t.Fatal(err)
+	}
+	proj, err := p.c.ArchiveProject(p.ctx, System, "shop")
+	if err != nil || proj.ArchivedAt == nil {
+		t.Fatalf("archive project: %+v, %v", proj, err)
+	}
+	if len(proj.ArchiveNotes) != 1 || !strings.HasPrefix(proj.ArchiveNotes[0], "containers on revoked server homelab were left running (1)") {
+		t.Fatalf("notes = %q", proj.ArchiveNotes)
+	}
+}
+
 // When a server reconnects, its leftover containers of retired releases
 // are removed, statuses are read and routes applied again; afterwards its
 // container events reach service statuses.
@@ -185,7 +273,7 @@ func TestReconnectReconcilesServer(t *testing.T) {
 
 	p.setOffline("homelab", true)
 	p.c.NodeStatus(remote.State{ServerID: p.ids["homelab"], Server: "homelab", Status: remote.StatusOffline})
-	lab.AddContainer(node.Container{ID: "leftover", Name: "dock_leftover", Labels: labels(ss, r1.ID), State: node.StateRunning})
+	lab.AddContainer(node.Container{ID: "leftover", Name: "dock_leftover", Labels: p.c.labels(ss, r1.ID), State: node.StateRunning})
 	p.setOffline("homelab", false)
 	p.c.NodeStatus(remote.State{ServerID: p.ids["homelab"], Server: "homelab", Status: remote.StatusOnline,
 		Hello: remote.Hello{Version: "v9", Facts: remote.Facts{Ingress: remote.IngressDirect, DockerVersion: "28.0", MemoryTotal: 32 << 30}}})

@@ -404,6 +404,48 @@ func TestOwnRemovalsAreNotDrift(t *testing.T) {
 	}
 }
 
+// Containers labelled for another control plane on the same Docker host
+// are never removed or reported as drift, even with the same IDs in their
+// labels. This control plane's containers from before the label (all
+// other labels matching) are still its own.
+func TestOtherControlPlanesAreIgnored(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	r1 := h.deploy(web, "app:1")
+	r2 := h.deploy(web, "app:2")
+	if spec, _ := h.rt.Spec(h.ctr(web, 2)); spec.Labels.ControlPlane == "" || spec.Labels.ControlPlane != h.c.install {
+		t.Fatalf("container labels = %+v, install ID %q", spec.Labels, h.c.install)
+	}
+	ss, err := h.c.loadService(h.ctx, web)
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs := func(releaseID int64) node.Labels {
+		l := h.c.labels(ss, releaseID)
+		l.ControlPlane = "other"
+		return l
+	}
+	legacy := h.c.labels(ss, r1.ID)
+	legacy.ControlPlane = ""
+	for _, ct := range []node.Container{
+		{ID: "legacy", Name: "legacy", Labels: legacy},
+		{ID: "theirs-1", Name: "theirs-1", Labels: theirs(r1.ID)},
+		{ID: "theirs-2", Name: "theirs-2", Labels: theirs(r2.ID)},
+		{ID: "theirs-x", Name: "theirs-x", Labels: node.Labels{ControlPlane: "other", Project: "9", Environment: "9", Service: "9", Release: "999"}},
+	} {
+		ct.State = node.StateRunning
+		h.rt.AddContainer(ct)
+	}
+	h.restart() // removes leftovers of retired releases, reports drift
+	h.deploy(web, "app:3")
+	want := []string{h.ctr(web, 3), "theirs-1", "theirs-2", "theirs-x"}
+	slices.Sort(want)
+	h.waitRunning(want...)
+	if d := h.drift(); len(d) > 0 {
+		t.Fatalf("drift reported: %+v", d)
+	}
+}
+
 // Archiving answers without waiting for the container to stop: routes go
 // first, the container is stopped in the background, and its port is only
 // freed once it is gone.
