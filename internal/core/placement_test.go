@@ -2,12 +2,12 @@ package core
 
 import (
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -88,10 +88,9 @@ func TestPickServer(t *testing.T) {
 // ones that tests can take offline.
 type pool struct {
 	*harness
-	ids map[string]int64
-	mu  sync.Mutex
-	off map[int64]bool
-	rts map[int64]*fake.Runtime
+	ids   map[string]int64
+	nodes *fakeNodes
+	rts   map[int64]*fake.Runtime
 }
 
 type poolServer struct {
@@ -100,16 +99,16 @@ type poolServer struct {
 	memGiB        int64
 }
 
-// newPool starts a control plane whose local server is local, plus remote.
-func newPool(t *testing.T, local poolServer, remote ...poolServer) *pool {
+// newPool starts a control plane whose local server is local, plus remotes.
+func newPool(t *testing.T, local poolServer, remotes ...poolServer) *pool {
 	h := newHarness(t)
-	p := &pool{harness: h, ids: map[string]int64{}, off: map[int64]bool{}, rts: map[int64]*fake.Runtime{}}
+	p := &pool{harness: h, ids: map[string]int64{}, nodes: newFakeNodes(), rts: map[int64]*fake.Runtime{}}
 	// The local server reports its memory through the runtime; make the
 	// collector agree with what the test sets.
 	h.rt.SetHostStats(node.HostStats{CPUs: 4, MemoryTotal: uint64(local.memGiB * gib)})
 	p.ids[local.name] = h.c.local.ID
 	p.configure(h.c.local.ID, local)
-	for _, s := range remote {
+	for _, s := range remotes {
 		srv, err := h.store.CreateServer(h.ctx, store.CreateServerParams{Name: s.name})
 		if err != nil {
 			t.Fatal(err)
@@ -118,16 +117,10 @@ func newPool(t *testing.T, local poolServer, remote ...poolServer) *pool {
 		rt := fake.New()
 		rt.SetHostStats(node.HostStats{CPUs: 4, MemoryTotal: uint64(s.memGiB * gib)})
 		p.rts[srv.ID] = rt
+		p.nodes.add(srv.ID, rt, remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect}})
 		p.configure(srv.ID, s)
 	}
-	h.opts.Remote = func(id int64) node.Runtime {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		if rt, ok := p.rts[id]; ok && !p.off[id] {
-			return rt
-		}
-		return nil
-	}
+	h.nodes = p.nodes
 	h.restart()
 	return p
 }
@@ -142,11 +135,7 @@ func (p *pool) configure(id int64, s poolServer) {
 	}
 }
 
-func (p *pool) setOffline(name string, off bool) {
-	p.mu.Lock()
-	p.off[p.ids[name]] = off
-	p.mu.Unlock()
-}
+func (p *pool) setOffline(name string, off bool) { p.nodes.setOffline(p.ids[name], off) }
 
 func (p *pool) project(name string) {
 	p.t.Helper()

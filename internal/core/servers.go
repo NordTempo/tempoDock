@@ -3,11 +3,13 @@ package core
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -156,13 +158,13 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 // callers allowed to read server statistics.
 func (c *Core) toServer(r store.ListServerLoadsRow, usage bool) apitypes.Server {
 	s := r.Server
-	status := "offline"
-	if c.online(s.ID) {
-		status = "online"
-	}
+	ing := c.ingressOf(s)
 	out := apitypes.Server{
-		ID: s.ID, Name: s.Name, Builder: s.Builder, Local: s.Local, Status: status, Version: s.Version,
-		LastSeenAt: s.LastSeenAt, AcceptsProduction: s.AcceptsProduction, AcceptsNonProduction: s.AcceptsNonProduction,
+		ID: s.ID, Name: s.Name, Builder: s.Builder, Local: s.Local, Status: c.serverStatus(s), Version: s.Version,
+		LastSeenAt: s.LastSeenAt, ConnectedAt: s.ConnectedAt, DisconnectReason: s.DisconnectReason, RevokedAt: s.RevokedAt,
+		KeyFingerprint: deref(s.KeyFingerprint), Ingress: ing.mode, PublicIPs: ing.publicIPs, TunnelHostname: ing.tunnel,
+		DockerVersion: s.DockerVersion, BaseDomain: ing.baseDomain,
+		AcceptsProduction: s.AcceptsProduction, AcceptsNonProduction: s.AcceptsNonProduction,
 		DisabledForPlacement: s.DisabledForPlacement, MemoryBytes: s.MemoryBytes, ReservedMemoryBytes: r.ReservedMb << 20,
 		Projects: int(r.Projects), Environments: int(r.Environments),
 	}
@@ -172,4 +174,71 @@ func (c *Core) toServer(r store.ListServerLoadsRow, usage bool) apitypes.Server 
 		}
 	}
 	return out
+}
+
+// serverStatus is a server's link status: the local server is always
+// online, a revoked one revoked, others what the hub says.
+func (c *Core) serverStatus(s store.Server) apitypes.ServerStatus {
+	switch {
+	case s.Local:
+		return apitypes.ServerOnline
+	case s.RevokedAt != nil:
+		return apitypes.ServerRevoked
+	case c.nodes == nil:
+		return apitypes.ServerOffline
+	}
+	switch c.nodes.State(s.ID).Status {
+	case remote.StatusOnline:
+		return apitypes.ServerOnline
+	case remote.StatusIncompatible:
+		return apitypes.ServerIncompatible
+	}
+	return apitypes.ServerOffline
+}
+
+// serverIngress is how the public reaches a server (ADR 0013 and 0014
+// section 6).
+type serverIngress struct {
+	mode       apitypes.Ingress
+	publicIPs  []string
+	tunnel     string // CNAME target of its Cloudflare tunnel
+	baseDomain string
+	// plainHTTP: the local server serves apps over http:// only
+	// ([caddy] disable_tls in direct mode).
+	plainHTTP bool
+}
+
+// ingressOf returns a server's ingress. Remote servers report it in
+// hello. The local server reports nothing, so its facts come from the
+// config; its base domain and public IP are the config's until set on
+// the server (the database wins once set).
+func (c *Core) ingressOf(s store.Server) serverIngress {
+	ing := serverIngress{mode: apitypes.Ingress(s.Ingress), tunnel: s.TunnelHostname, baseDomain: s.BaseDomain, publicIPs: []string{}}
+	_ = json.Unmarshal([]byte(s.PublicIps), &ing.publicIPs)
+	if !s.Local {
+		return ing
+	}
+	ing.mode = apitypes.Ingress(c.cfg.Ingress.Mode)
+	if ing.mode == "" {
+		ing.mode = apitypes.IngressDirect
+	}
+	if ing.tunnel == "" {
+		ing.tunnel = c.cfg.Ingress.TunnelHostname
+	}
+	if ing.baseDomain == "" {
+		ing.baseDomain = strings.TrimPrefix(c.cfg.BaseDomain, "*.")
+	}
+	if len(ing.publicIPs) == 0 && c.cfg.PublicIP != "" && ing.mode == apitypes.IngressDirect {
+		ing.publicIPs = []string{c.cfg.PublicIP}
+	}
+	ing.plainHTTP = ing.mode == apitypes.IngressDirect && c.cfg.Caddy.DisableTLS
+	return ing
+}
+
+func deref[T any](p *T) T {
+	var zero T
+	if p == nil {
+		return zero
+	}
+	return *p
 }

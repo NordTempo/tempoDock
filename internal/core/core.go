@@ -44,11 +44,10 @@ type Options struct {
 	// Runtime is the local server's node runtime. It may be nil for
 	// commands that only touch the database (e.g. admin bootstrap).
 	Runtime node.Runtime
-	// Remote returns the runtime of another server while it is connected,
-	// nil while it isn't. Nil means there are no remote servers (until M3
-	// plugs in the node hub).
-	Remote func(serverID int64) node.Runtime
-	Logger *slog.Logger
+	// Registry is the platform registry; nil means none (see Registry).
+	// Remote servers are plugged in with SetNodes.
+	Registry Registry
+	Logger   *slog.Logger
 	// Data is the database panel engine (ADR 0016); nil uses Postgres
 	// (internal/data/pg).
 	Data data.Engine
@@ -62,15 +61,20 @@ type Core struct {
 	cfg    config.Config
 	store  *store.Store
 	box    *secrets.Box
-	rt     node.Runtime
-	remote func(serverID int64) node.Runtime
-	log    *slog.Logger
-	bus    *bus
-	local  store.Server
-	drain  time.Duration
+	rt    node.Runtime
+	nodes Nodes // nil: no remote servers
+	reg   Registry
+	log   *slog.Logger
+	bus   *bus
+	local store.Server
+	drain time.Duration
 
-	// buildSem allows one build at a time on this server.
-	buildSem chan struct{}
+	// servers is the per-server state of remote servers and builders
+	// (servers.go), by server ID.
+	serversMu sync.Mutex
+	servers   map[int64]*serverState
+	// images is registry and image upkeep (images.go).
+	images imageUpkeep
 	// domainKick wakes the domain checker.
 	domainKick chan struct{}
 	// checks holds each domain's latest DNS check, by domain ID. It is
@@ -131,11 +135,11 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		store:      o.Store,
 		box:        o.Secrets,
 		rt:         o.Runtime,
-		remote:     o.Remote,
+		reg:        o.Registry,
 		stats:      newStatsState(),
 		log:        o.Logger,
 		bus:        newBus(),
-		buildSem:   make(chan struct{}, 1),
+		servers:    map[int64]*serverState{},
 		domainKick: make(chan struct{}, 1),
 		checks:     map[int64]domainCheck{},
 		status:     map[int64]apitypes.ServiceStatus{},

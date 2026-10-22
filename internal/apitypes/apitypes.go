@@ -251,6 +251,10 @@ type Release struct {
 	FromRelease int64  `json:"from_release,omitempty"`
 	ImageRef    string `json:"image_ref"`
 	ImageID     string `json:"image_id"`
+	// ImageDigest is the image's manifest digest in the platform registry
+	// (sha256:...), which other servers pull and promotions carry; empty
+	// for images that were never pushed there.
+	ImageDigest string `json:"image_digest,omitempty"`
 	// Error and ErrorCode explain a failed release.
 	Error      string         `json:"error,omitempty"`
 	ErrorCode  ErrorCode      `json:"error_code,omitempty"`
@@ -645,16 +649,72 @@ type AuditEvent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Server is a machine running a node runtime.
+// ServerStatus is a server's link status (ADR 0014 section 5).
+type ServerStatus string
+
+// Server statuses. The local server is always online.
+const (
+	// ServerOnline: connected and compatible; deploys go through.
+	ServerOnline ServerStatus = "online"
+	// ServerOffline: not connected since LastSeenAt; deploys are rejected
+	// with server_offline.
+	ServerOffline ServerStatus = "offline"
+	// ServerIncompatible: connected, but its dock is too old for this
+	// control plane; nothing is deployed there until it is upgraded.
+	ServerIncompatible ServerStatus = "incompatible"
+	// ServerJoining: a join token was issued (`dock server add`) and the
+	// server hasn't joined with it yet.
+	ServerJoining ServerStatus = "joining"
+	// ServerRevoked: its key was revoked; it stays out until it joins
+	// again with a new token. Its environments stay.
+	ServerRevoked ServerStatus = "revoked"
+)
+
+// Ingress is how a server receives public traffic (ADR 0013).
+type Ingress string
+
+// Ingress modes.
+const (
+	// IngressDirect: a public IP; Caddy issues certificates.
+	IngressDirect Ingress = "direct"
+	// IngressCloudflareTunnel: cloudflared forwards from Cloudflare's
+	// edge, which terminates TLS. Custom domains are CNAMEs to
+	// TunnelHostname.
+	IngressCloudflareTunnel Ingress = "cloudflare_tunnel"
+)
+
+// Server is a machine running a node runtime. A server that is still
+// joining (a pending join token) has ID 0 and no facts yet.
 type Server struct {
-	ID      int64  `json:"id"`
-	Name    string `json:"name"`
-	Builder bool   `json:"builder"`
-	Local   bool   `json:"local" doc:"Runs the control plane"`
-	Status  string `json:"status" enum:"online,offline"`
-	// Version is the dock version the server runs.
+	ID      int64        `json:"id"`
+	Name    string       `json:"name"`
+	Builder bool         `json:"builder" doc:"Source builds may run here"`
+	Local   bool         `json:"local" doc:"Runs the control plane"`
+	Status  ServerStatus `json:"status" enum:"online,offline,incompatible,joining,revoked"`
+	// Version is the dock version the server runs (reported when it
+	// connects).
 	Version    string     `json:"version"`
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	// ConnectedAt is when its current (or last) link came up, and
+	// DisconnectReason why the last one ended.
+	ConnectedAt      *time.Time `json:"connected_at,omitempty"`
+	DisconnectReason string     `json:"disconnect_reason,omitempty"`
+	// RevokedAt is set while the server is revoked.
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	// JoinExpiresAt is when the join token of a joining server expires.
+	JoinExpiresAt *time.Time `json:"join_expires_at,omitempty"`
+	// KeyFingerprint is the server's pinned link key (public, not a
+	// secret); empty for the local server and revoked ones.
+	KeyFingerprint string `json:"key_fingerprint,omitempty"`
+	// Ingress, PublicIPs, TunnelHostname and DockerVersion are facts the
+	// server reports when it connects (read-only).
+	Ingress        Ingress  `json:"ingress" enum:"direct,cloudflare_tunnel"`
+	PublicIPs      []string `json:"public_ips" doc:"What DNS records point at (direct ingress)"`
+	TunnelHostname string   `json:"tunnel_hostname,omitempty" doc:"CNAME target of its Cloudflare tunnel"`
+	DockerVersion  string   `json:"docker_version,omitempty"`
+	// BaseDomain is the base of generated hostnames for environments on
+	// this server: <service>-<project>[-<env>].<base_domain>.
+	BaseDomain string `json:"base_domain"`
 	// AcceptsProduction and AcceptsNonProduction say which environment
 	// kinds may be placed here.
 	AcceptsProduction    bool `json:"accepts_production"`
@@ -686,12 +746,88 @@ type EffectiveLimits struct {
 	CPUsFromDefault   bool `json:"cpus_from_default"`
 }
 
-// UpdateServerRequest changes what may be placed on a server. Only fields
-// that are set change.
+// UpdateServerRequest changes a server's settings: what may be placed on
+// it, whether it builds, and its base domain. Only fields that are set
+// change.
 type UpdateServerRequest struct {
 	AcceptsProduction    *bool `json:"accepts_production,omitempty"`
 	AcceptsNonProduction *bool `json:"accepts_non_production,omitempty"`
 	DisabledForPlacement *bool `json:"disabled_for_placement,omitempty"`
+	Builder              *bool `json:"builder,omitempty"`
+	// BaseDomain is a domain like up.example.dev with a wildcard DNS
+	// record pointing at the server (or its tunnel); "" removes it.
+	BaseDomain *string `json:"base_domain,omitempty" maxLength:"253"`
+}
+
+// AddServerRequest starts adding a server (`dock server add`): it creates
+// a one-time join token for it.
+type AddServerRequest struct {
+	Name                 string `json:"name" minLength:"1" maxLength:"32"`
+	AcceptsProduction    bool   `json:"accepts_production"`
+	AcceptsNonProduction bool   `json:"accepts_non_production"`
+	Builder              bool   `json:"builder"`
+}
+
+// AddedServer is a new join token. Token is shown only this once; run
+// Command on the new server before ExpiresAt.
+type AddedServer struct {
+	Server    Server    `json:"server"`
+	Token     string    `json:"token"`
+	Command   string    `json:"command" doc:"Install command to run on the new server"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// PromoteRequest promotes the images running in one environment to
+// another of the same project (`dock promote staging production`).
+type PromoteRequest struct {
+	From string `json:"from" minLength:"1"`
+	To   string `json:"to" minLength:"1"`
+	// Services limits the promotion to these services; empty means every
+	// service with an active release in From.
+	Services []string `json:"services,omitempty"`
+}
+
+// PromoteResult lists what a promotion started and what it skipped.
+// Promoted releases deploy one at a time in the listed order; when one
+// fails, the ones after it fail without starting.
+type PromoteResult struct {
+	From     string            `json:"from"`
+	To       string            `json:"to"`
+	Promoted []PromotedService `json:"promoted"`
+	Skipped  []SkippedService  `json:"skipped"`
+}
+
+// PromotedService is one service's new release in the target environment.
+type PromotedService struct {
+	Service string `json:"service"`
+	// FromRelease is the number of the source environment's release that
+	// was promoted.
+	FromRelease int64   `json:"from_release"`
+	Release     Release `json:"release"`
+}
+
+// SkipReason says why a promotion skipped a service.
+type SkipReason string
+
+// Reasons a promotion skips a service.
+const (
+	// SkipMissingInTarget: the target environment has no service of that
+	// name. Promote never creates services.
+	SkipMissingInTarget SkipReason = "missing_in_target"
+	// SkipNoActiveRelease: nothing is running in the source environment.
+	SkipNoActiveRelease SkipReason = "no_active_release"
+	// SkipNoDigest: the image isn't in the registry and can't reach the
+	// target's server; redeploy it in the source environment first.
+	SkipNoDigest SkipReason = "no_digest"
+	// SkipDeployInProgress: the target service is deploying already.
+	SkipDeployInProgress SkipReason = "deploy_in_progress"
+)
+
+// SkippedService is a service a promotion left alone, and why.
+type SkippedService struct {
+	Service string     `json:"service"`
+	Reason  SkipReason `json:"reason" enum:"missing_in_target,no_active_release,no_digest,deploy_in_progress"`
+	Message string     `json:"message"`
 }
 
 // ServerDetail is one server (with its latest resource sample) and what
@@ -888,11 +1024,15 @@ const (
 	// EventUsage carries a minute's resource samples of a server or of an
 	// environment's services.
 	EventUsage EventType = "usage"
+	// EventServer carries a server whose status or facts changed: it
+	// connected, disconnected, joined, was revoked, changed or removed
+	// (Message "removed").
+	EventServer EventType = "server"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type          EventType      `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage"`
+	Type          EventType      `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,server"`
 	Time          time.Time      `json:"time"`
 	Project       string         `json:"project,omitempty"`
 	Environment   string         `json:"environment,omitempty"`
@@ -904,6 +1044,7 @@ type Event struct {
 	Domain        *Domain        `json:"domain,omitempty"`
 	Audit         *AuditEvent    `json:"audit,omitempty"`
 	Usage         *UsageUpdate   `json:"usage,omitempty"`
+	Server        *Server        `json:"server,omitempty"`
 	Message       string         `json:"message,omitempty"`
 }
 

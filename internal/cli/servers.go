@@ -41,7 +41,7 @@ func newServerListCmd(g *globals) *cobra.Command {
 			return g.io.Print(servers, func() error {
 				t := g.io.Table("name", "status", "version", "accepts", "memory reserved", "projects", "environments")
 				for _, sv := range servers {
-					t.Row(sv.Name, sv.Status, dash(sv.Version), accepts(sv), reserved(sv), strconv.Itoa(sv.Projects), strconv.Itoa(sv.Environments))
+					t.Row(sv.Name, string(sv.Status), dash(sv.Version), accepts(sv), reserved(sv), strconv.Itoa(sv.Projects), strconv.Itoa(sv.Environments))
 				}
 				return t.Flush()
 			})

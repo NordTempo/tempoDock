@@ -236,8 +236,10 @@ func (c *Core) connected(serverID int64) node.Runtime {
 	if serverID == c.local.ID {
 		return c.rt
 	}
-	if c.remote != nil {
-		return c.remote(serverID)
+	if c.nodes != nil {
+		if rt, ok := c.nodes.Runtime(serverID); ok {
+			return rt
+		}
 	}
 	return nil
 }

@@ -154,17 +154,18 @@ func (d *deployment) image(ctx context.Context) (string, error) {
 			return "", err
 		}
 		defer func() { _ = f.Close() }()
+		sem := d.c.buildLock(d.ss.env.ServerID)
 		select {
-		case d.c.buildSem <- struct{}{}:
+		case sem <- struct{}{}:
 		default:
 			d.event(ctx, "Waiting for another build on this server to finish")
 			select {
-			case d.c.buildSem <- struct{}{}:
+			case sem <- struct{}{}:
 			case <-ctx.Done():
 				return "", ctx.Err()
 			}
 		}
-		defer func() { <-d.c.buildSem }()
+		defer func() { <-sem }()
 		req := node.BuildRequest{
 			Source: f, Dockerfile: d.ss.svc.DockerfilePath, BuildCommand: d.ss.svc.BuildCommand,
 			StartCommand: d.cfg.Cmd, BuildArgs: d.cfg.Env, Tag: ref, Logs: d.log,

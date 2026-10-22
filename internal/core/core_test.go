@@ -30,6 +30,8 @@ type harness struct {
 	rt    *fake.Runtime
 	store *store.Store
 	opts  Options
+	// nodes, when set, are plugged in with SetNodes on every start.
+	nodes Nodes
 }
 
 func newHarness(t *testing.T) *harness {
@@ -63,6 +65,9 @@ func (h *harness) start() *Core {
 	c, err := New(h.ctx, h.opts)
 	if err != nil {
 		h.t.Fatal(err)
+	}
+	if h.nodes != nil {
+		c.SetNodes(h.nodes)
 	}
 	if err := c.Start(h.ctx); err != nil {
 		h.t.Fatal(err)
