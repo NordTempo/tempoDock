@@ -68,6 +68,12 @@ export const keys = {
     s.service,
     range,
   ],
+  // The database panel stays outside the project tree too: the data.*
+  // audit events its own reads cause mustn't refetch table pages. Live
+  // events refresh its parts selectively (./live.ts).
+  data: (s: ServiceRef) => ["data", s.project, s.environment, s.service],
+  /** Every scope's data access policy. */
+  dataPolicy: ["data-policy"],
   tokens: ["tokens"],
   users: ["users"],
   audit: (filter: AuditFilter) => ["audit", filter],
@@ -89,6 +95,13 @@ export const serviceRef = (s: Service): ServiceRef => ({
   environment: s.environment,
   service: s.name,
 });
+
+/**
+ * Whether a service has the Data tab: a detected database engine, or the
+ * database setting naming one (ADR 0016).
+ */
+export const isDatabase = (s: Service) =>
+  !!s.data_engine || (!!s.database && s.database !== "none");
 
 /** Drops archived services and turns the API's null lists into arrays. */
 function toOverview(

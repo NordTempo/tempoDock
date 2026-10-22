@@ -2,7 +2,7 @@ import { useReducer, useState } from "react";
 import type { ServiceRef } from "../../data/types";
 import { plural } from "../../ui/format";
 import { type TableQuery, useTableRows } from "./api";
-import { cellInput, estimate, rowKey, tableName, whereFlag } from "./cells";
+import { cellInput, estimate, filterFlag, rowKey, tableName } from "./cells";
 import { editsReducer, noEdits, rowId, toChanges } from "./edits";
 import { FilterBar } from "./FilterBar";
 import { Grid, type GridCol } from "./Grid";
@@ -101,7 +101,7 @@ export function TablesView({
     table.estimated_rows;
   const cli = [
     `dock db rows ${name}`,
-    ...filters.map(whereFlag).filter(Boolean),
+    ...filters.map(filterFlag).filter(Boolean),
     query.order && `--order ${query.order}`,
     flags,
   ]
@@ -195,7 +195,10 @@ export function TablesView({
           <ReviewPanel
             changes={changes}
             environment={serviceRef.environment}
-            confirmCommit={info.access.confirm_commit}
+            // A proposal writes nothing: its approver confirms instead.
+            confirmCommit={
+              info.access.confirm_commit && info.access.level !== "propose"
+            }
             propose={info.access.level === "propose"}
             actions={actions}
             flags={flags}

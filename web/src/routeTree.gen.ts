@@ -14,6 +14,7 @@ import { Route as CliLoginRouteImport } from './routes/cli-login'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
+import { Route as AppDataPolicyRouteImport } from './routes/_app.data-policy'
 import { Route as AppServersRouteImport } from './routes/_app.servers'
 import { Route as AppTokensRouteImport } from './routes/_app.tokens'
 import { Route as AppUsersRouteImport } from './routes/_app.users'
@@ -24,6 +25,7 @@ import { Route as AppProjectEnvironmentIndexRouteImport } from './routes/_app.$p
 import { Route as AppProjectEnvironmentServiceRouteImport } from './routes/_app.$project.$environment.$service'
 import { Route as AppProjectEnvironmentServiceIndexRouteImport } from './routes/_app.$project.$environment.$service.index'
 import { Route as AppProjectEnvironmentServiceAuditRouteImport } from './routes/_app.$project.$environment.$service.audit'
+import { Route as AppProjectEnvironmentServiceDataRouteImport } from './routes/_app.$project.$environment.$service.data'
 import { Route as AppProjectEnvironmentServiceDomainsRouteImport } from './routes/_app.$project.$environment.$service.domains'
 import { Route as AppProjectEnvironmentServiceLogsRouteImport } from './routes/_app.$project.$environment.$service.logs'
 import { Route as AppProjectEnvironmentServiceMetricsRouteImport } from './routes/_app.$project.$environment.$service.metrics'
@@ -54,6 +56,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppAuditRoute = AppAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDataPolicyRoute = AppDataPolicyRouteImport.update({
+  id: '/data-policy',
+  path: '/data-policy',
   getParentRoute: () => AppRoute,
 } as any)
 const AppServersRoute = AppServersRouteImport.update({
@@ -110,6 +117,12 @@ const AppProjectEnvironmentServiceAuditRoute =
     path: '/audit',
     getParentRoute: () => AppProjectEnvironmentServiceRoute,
   } as any)
+const AppProjectEnvironmentServiceDataRoute =
+  AppProjectEnvironmentServiceDataRouteImport.update({
+    id: '/data',
+    path: '/data',
+    getParentRoute: () => AppProjectEnvironmentServiceRoute,
+  } as any)
 const AppProjectEnvironmentServiceDomainsRoute =
   AppProjectEnvironmentServiceDomainsRouteImport.update({
     id: '/domains',
@@ -158,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/audit': typeof AppAuditRoute
+  '/data-policy': typeof AppDataPolicyRoute
   '/servers': typeof AppServersRoute
   '/tokens': typeof AppTokensRoute
   '/users': typeof AppUsersRoute
@@ -167,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/$project/$environment/$service': typeof AppProjectEnvironmentServiceRouteWithChildren
   '/$project/$environment/': typeof AppProjectEnvironmentIndexRoute
   '/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/$project/$environment/$service/data': typeof AppProjectEnvironmentServiceDataRoute
   '/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
   '/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
   '/$project/$environment/$service/metrics': typeof AppProjectEnvironmentServiceMetricsRoute
@@ -180,6 +195,7 @@ export interface FileRoutesByTo {
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/audit': typeof AppAuditRoute
+  '/data-policy': typeof AppDataPolicyRoute
   '/servers': typeof AppServersRoute
   '/tokens': typeof AppTokensRoute
   '/users': typeof AppUsersRoute
@@ -189,6 +205,7 @@ export interface FileRoutesByTo {
   '/$project': typeof AppProjectIndexRoute
   '/$project/$environment': typeof AppProjectEnvironmentIndexRoute
   '/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/$project/$environment/$service/data': typeof AppProjectEnvironmentServiceDataRoute
   '/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
   '/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
   '/$project/$environment/$service/metrics': typeof AppProjectEnvironmentServiceMetricsRoute
@@ -204,6 +221,7 @@ export interface FileRoutesById {
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/_app/audit': typeof AppAuditRoute
+  '/_app/data-policy': typeof AppDataPolicyRoute
   '/_app/servers': typeof AppServersRoute
   '/_app/tokens': typeof AppTokensRoute
   '/_app/users': typeof AppUsersRoute
@@ -214,6 +232,7 @@ export interface FileRoutesById {
   '/_app/$project/$environment/$service': typeof AppProjectEnvironmentServiceRouteWithChildren
   '/_app/$project/$environment/': typeof AppProjectEnvironmentIndexRoute
   '/_app/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
+  '/_app/$project/$environment/$service/data': typeof AppProjectEnvironmentServiceDataRoute
   '/_app/$project/$environment/$service/domains': typeof AppProjectEnvironmentServiceDomainsRoute
   '/_app/$project/$environment/$service/logs': typeof AppProjectEnvironmentServiceLogsRoute
   '/_app/$project/$environment/$service/metrics': typeof AppProjectEnvironmentServiceMetricsRoute
@@ -230,6 +249,7 @@ export interface FileRouteTypes {
     | '/cli-login'
     | '/login'
     | '/audit'
+    | '/data-policy'
     | '/servers'
     | '/tokens'
     | '/users'
@@ -239,6 +259,7 @@ export interface FileRouteTypes {
     | '/$project/$environment/$service'
     | '/$project/$environment/'
     | '/$project/$environment/$service/audit'
+    | '/$project/$environment/$service/data'
     | '/$project/$environment/$service/domains'
     | '/$project/$environment/$service/logs'
     | '/$project/$environment/$service/metrics'
@@ -252,6 +273,7 @@ export interface FileRouteTypes {
     | '/cli-login'
     | '/login'
     | '/audit'
+    | '/data-policy'
     | '/servers'
     | '/tokens'
     | '/users'
@@ -261,6 +283,7 @@ export interface FileRouteTypes {
     | '/$project'
     | '/$project/$environment'
     | '/$project/$environment/$service/audit'
+    | '/$project/$environment/$service/data'
     | '/$project/$environment/$service/domains'
     | '/$project/$environment/$service/logs'
     | '/$project/$environment/$service/metrics'
@@ -275,6 +298,7 @@ export interface FileRouteTypes {
     | '/cli-login'
     | '/login'
     | '/_app/audit'
+    | '/_app/data-policy'
     | '/_app/servers'
     | '/_app/tokens'
     | '/_app/users'
@@ -285,6 +309,7 @@ export interface FileRouteTypes {
     | '/_app/$project/$environment/$service'
     | '/_app/$project/$environment/'
     | '/_app/$project/$environment/$service/audit'
+    | '/_app/$project/$environment/$service/data'
     | '/_app/$project/$environment/$service/domains'
     | '/_app/$project/$environment/$service/logs'
     | '/_app/$project/$environment/$service/metrics'
@@ -336,6 +361,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/audit'
       preLoaderRoute: typeof AppAuditRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/data-policy': {
+      id: '/_app/data-policy'
+      path: '/data-policy'
+      fullPath: '/data-policy'
+      preLoaderRoute: typeof AppDataPolicyRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/servers': {
@@ -408,6 +440,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectEnvironmentServiceAuditRouteImport
       parentRoute: typeof AppProjectEnvironmentServiceRoute
     }
+    '/_app/$project/$environment/$service/data': {
+      id: '/_app/$project/$environment/$service/data'
+      path: '/data'
+      fullPath: '/$project/$environment/$service/data'
+      preLoaderRoute: typeof AppProjectEnvironmentServiceDataRouteImport
+      parentRoute: typeof AppProjectEnvironmentServiceRoute
+    }
     '/_app/$project/$environment/$service/domains': {
       id: '/_app/$project/$environment/$service/domains'
       path: '/domains'
@@ -462,6 +501,7 @@ declare module '@tanstack/react-router' {
 
 interface AppProjectEnvironmentServiceRouteChildren {
   AppProjectEnvironmentServiceAuditRoute: typeof AppProjectEnvironmentServiceAuditRoute
+  AppProjectEnvironmentServiceDataRoute: typeof AppProjectEnvironmentServiceDataRoute
   AppProjectEnvironmentServiceDomainsRoute: typeof AppProjectEnvironmentServiceDomainsRoute
   AppProjectEnvironmentServiceLogsRoute: typeof AppProjectEnvironmentServiceLogsRoute
   AppProjectEnvironmentServiceMetricsRoute: typeof AppProjectEnvironmentServiceMetricsRoute
@@ -475,6 +515,8 @@ const AppProjectEnvironmentServiceRouteChildren: AppProjectEnvironmentServiceRou
   {
     AppProjectEnvironmentServiceAuditRoute:
       AppProjectEnvironmentServiceAuditRoute,
+    AppProjectEnvironmentServiceDataRoute:
+      AppProjectEnvironmentServiceDataRoute,
     AppProjectEnvironmentServiceDomainsRoute:
       AppProjectEnvironmentServiceDomainsRoute,
     AppProjectEnvironmentServiceLogsRoute:
@@ -498,6 +540,7 @@ const AppProjectEnvironmentServiceRouteWithChildren =
 
 interface AppRouteChildren {
   AppAuditRoute: typeof AppAuditRoute
+  AppDataPolicyRoute: typeof AppDataPolicyRoute
   AppServersRoute: typeof AppServersRoute
   AppTokensRoute: typeof AppTokensRoute
   AppUsersRoute: typeof AppUsersRoute
@@ -512,6 +555,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAuditRoute: AppAuditRoute,
+  AppDataPolicyRoute: AppDataPolicyRoute,
   AppServersRoute: AppServersRoute,
   AppTokensRoute: AppTokensRoute,
   AppUsersRoute: AppUsersRoute,

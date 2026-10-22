@@ -155,6 +155,16 @@ export function filterText(f: DataFilter) {
   return `${f.column} ${opLabels[f.op]} ${value}`;
 }
 
-/** The CLI's --where for a filter, where it has one (equality only). */
-export const whereFlag = (f: DataFilter) =>
-  f.op === "eq" ? `--where ${f.column}=${f.value ?? ""}` : null;
+/** `dock db rows --filter` for a filter: col=value, col=op:value, col=is_null. */
+export function filterFlag(f: DataFilter) {
+  const rhs =
+    f.op === "is_null" || f.op === "not_null"
+      ? f.op
+      : f.op === "in"
+        ? `in:${(f.values ?? []).join(",")}`
+        : f.op === "eq"
+          ? (f.value ?? "")
+          : `${f.op}:${f.value ?? ""}`;
+  const arg = `${f.column}=${rhs}`;
+  return `--filter ${/^[\w.:,@=%+-]*$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`}`;
+}

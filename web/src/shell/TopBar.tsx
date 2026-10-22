@@ -59,7 +59,12 @@ export function TopBar() {
             [
               ["/servers", "Servers"],
               ["/tokens", "Tokens"],
-              ...(admin ? ([["/users", "Users"]] as const) : []),
+              ...(admin
+                ? ([
+                    ["/users", "Users"],
+                    ["/data-policy", "Data access"],
+                  ] as const)
+                : []),
               ["/audit", "Audit"],
             ] as const
           ).map(([to, label]) => (

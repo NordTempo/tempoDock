@@ -9,37 +9,43 @@ import {
   use,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { keys } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
+import type { EditActions } from "./ReviewPanel";
 import type {
+  DataChange,
   DataChangeset,
   DataChangesetRequest,
+  DataCommitRequest,
   DataFilter,
   DataHistoryEntry,
   DataInfo,
   DataPage,
   DataPageRequest,
+  DataPermission,
   DataQueryError,
   DataQueryFrame,
   DataQueryRequest,
   DataReferences,
   DataReferencesRequest,
+  DataRejectRequest,
   DataResultColumn,
   DataRow,
   DataSavedQuery,
   DataSchema,
   SaveDataQueryRequest,
 } from "./types";
+import { dataLimits } from "./types";
 
 // Data access for the database panel. Components only use the hooks below;
 // the hooks call a DataSource from context. Every method mirrors one
 // endpoint under /api/v1/projects/{p}/environments/{e}/services/{s} (ADR
-// 0016 section 8), so phase 3 wires the API by providing a DataSource built
-// on openapi-fetch (`api.GET(...)`) where the Data route renders the panel.
-// The dev demo provides the one in ./fixtures.ts.
+// 0016 section 8). The Data route provides the API's (./source.ts); tests
+// can provide their own.
 
 /** The data endpoints of one Dock daemon. */
 export type DataSource = {
@@ -80,7 +86,7 @@ export type DataSource = {
   history(ref: ServiceRef, before?: number): Promise<DataHistoryEntry[] | null>;
   /** GET /data/saved-queries */
   savedQueries(ref: ServiceRef): Promise<DataSavedQuery[] | null>;
-  /** PUT /data/saved-queries (new) or /data/saved-queries/{id} (replace). */
+  /** POST /data/saved-queries (new) or PUT /data/saved-queries/{id}. */
   saveQuery(
     ref: ServiceRef,
     body: SaveDataQueryRequest,
@@ -88,8 +94,25 @@ export type DataSource = {
   ): Promise<DataSavedQuery>;
   /** DELETE /data/saved-queries/{id} */
   deleteSavedQuery(ref: ServiceRef, id: number): Promise<void>;
-  /** POST /data/changesets: preview with dry_run, else stage a proposal. */
+  /** POST /data/changesets: preview with dry_run, else stage it as pending. */
   changeset(ref: ServiceRef, req: DataChangesetRequest): Promise<DataChangeset>;
+  /** GET /data/changesets: the changesets the caller may see, newest first. */
+  changesets(ref: ServiceRef): Promise<DataChangeset[] | null>;
+  /**
+   * POST /data/changesets/{id}/commit: one's own with level write, anyone's
+   * as an admin (approve). `confirm` names the environment on production.
+   */
+  commitChangeset(
+    ref: ServiceRef,
+    id: number,
+    req: DataCommitRequest,
+  ): Promise<DataChangeset>;
+  /** POST /data/changesets/{id}/reject (admin, or the author withdrawing). */
+  rejectChangeset(
+    ref: ServiceRef,
+    id: number,
+    req: DataRejectRequest,
+  ): Promise<DataChangeset>;
 };
 
 /** Provide with `<DataSourceContext value={source}>` around the panel. */
@@ -102,7 +125,7 @@ function useSource() {
   return source;
 }
 
-const dataKey = (ref: ServiceRef) => [...keys.service(ref), "data"];
+const dataKey = keys.data;
 
 /** GET /data. */
 export function useDataInfo(ref: ServiceRef) {
@@ -205,7 +228,11 @@ export function useQueryHistory(ref: ServiceRef) {
     queryKey: [...dataKey(ref), "history"],
     queryFn: ({ pageParam }) => source.history(ref, pageParam),
     initialPageParam: undefined as number | undefined,
-    getNextPageParam: (page) => page?.at(-1)?.audit_id,
+    // A short page is the last one.
+    getNextPageParam: (page) =>
+      page && page.length >= dataLimits.historyRows
+        ? page.at(-1)?.audit_id
+        : undefined,
   });
 }
 
@@ -241,13 +268,101 @@ export function useDeleteSavedQuery(ref: ServiceRef) {
   });
 }
 
-/** POST /data/changesets with dry_run: the SQL a commit would run. */
-export function usePreviewChangeset(ref: ServiceRef) {
+/** GET /data/changesets: pending proposals and recent decisions. */
+export function useChangesets(ref: ServiceRef, enabled: boolean) {
   const source = useSource();
-  return useMutation({
-    mutationFn: (changes: DataChangesetRequest["changes"]) =>
-      source.changeset(ref, { changes, dry_run: true }),
+  return useQuery({
+    queryKey: [...dataKey(ref), "changesets"],
+    queryFn: () => source.changesets(ref),
+    enabled,
   });
+}
+
+/** A commit that came back with conflicts, as an error naming them. */
+function conflictError(c: DataChangeset) {
+  const rows = (c.conflicts ?? []).map((x) => x.message).join("; ");
+  return new Error(
+    `Nothing was written: changeset ${c.id} conflicts with current data${rows ? `: ${rows}` : ""}. Reload the rows and edit again.`,
+  );
+}
+
+/** Throws when a commit reports conflicts instead of failing the request. */
+function committed(c: DataChangeset) {
+  if (c.status === "conflict") throw conflictError(c);
+  return c;
+}
+
+/** Refetches what a decided changeset changes: the list and the rows. */
+function useChangesetSettled(ref: ServiceRef) {
+  const client = useQueryClient();
+  return () =>
+    Promise.all(
+      (["changesets", "rows", "references"] as const).map((part) =>
+        client.invalidateQueries({ queryKey: [...dataKey(ref), part] }),
+      ),
+    );
+}
+
+/** POST /data/changesets/{id}/commit: approve (admin) or commit. */
+export function useCommitChangeset(ref: ServiceRef) {
+  const source = useSource();
+  const onSettled = useChangesetSettled(ref);
+  return useMutation({
+    mutationFn: async ({ id, confirm }: { id: number; confirm?: string }) =>
+      committed(await source.commitChangeset(ref, id, { confirm })),
+    onSettled,
+  });
+}
+
+/** POST /data/changesets/{id}/reject */
+export function useRejectChangeset(ref: ServiceRef) {
+  const source = useSource();
+  const onSettled = useChangesetSettled(ref);
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
+      source.rejectChangeset(ref, id, { reason }),
+    onSettled,
+  });
+}
+
+/**
+ * Staged edits to the API: the SQL comes from a dry run; a commit stages
+ * the changeset, then commits it with level write, or leaves it pending
+ * for an admin with level propose (`onProposed` then gets it).
+ */
+export function useEditActions(
+  ref: ServiceRef,
+  access: DataPermission | undefined,
+  onProposed: (changeset: DataChangeset) => void,
+): EditActions | undefined {
+  const source = useSource();
+  const client = useQueryClient();
+  const level = access?.level;
+  const proposed = useRef(onProposed);
+  proposed.current = onProposed;
+
+  return useMemo(() => {
+    if (level !== "propose" && level !== "write") return undefined;
+    const settle = () =>
+      client.invalidateQueries({ queryKey: [...dataKey(ref), "changesets"] });
+    return {
+      renderSql: async (changes: DataChange[]) =>
+        (await source.changeset(ref, { changes, dry_run: true })).sql,
+      commit: async (changes: DataChange[], confirm?: string) => {
+        const staged = await source.changeset(ref, { changes });
+        if (level === "propose") {
+          await settle();
+          proposed.current(staged);
+          return;
+        }
+        try {
+          committed(await source.commitChangeset(ref, staged.id, { confirm }));
+        } finally {
+          await settle();
+        }
+      },
+    };
+  }, [source, client, ref, level]);
 }
 
 /** A SQL query's result as its frames arrive. */

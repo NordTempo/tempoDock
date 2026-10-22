@@ -3,11 +3,18 @@ import { useState } from "react";
 import { useCreateToken, useRevokeToken } from "../data/mutations";
 import {
   queries,
+  useIsAdmin,
   useProjects,
   useProjectTree,
   useTokens,
 } from "../data/queries";
-import type { Scope, Token } from "../data/types";
+import type { Scope, Token, TokenDataAccess } from "../data/types";
+import {
+  TokenDataEditor,
+  TokenDataFields,
+  tokenDataFlags,
+  tokenDataText,
+} from "../features/data/TokenData";
 import { isoDay, plural, since } from "../ui/format";
 import {
   Actor,
@@ -86,6 +93,7 @@ function Tokens() {
                 <th>Scope</th>
                 <th>Limited to</th>
                 <th>Created by</th>
+                <th>Data</th>
                 <th>Last used</th>
                 <th>Expires</th>
                 <th />
@@ -108,72 +116,96 @@ function Tokens() {
 
 function TokenRow({ token }: { token: Token }) {
   const revoke = useRevokeToken();
+  const admin = useIsAdmin();
   const [confirming, setConfirming] = useState(false);
+  const [editingData, setEditingData] = useState(false);
   const expired =
     !!token.expires_at && Date.parse(token.expires_at) < Date.now();
   const dead = !!token.revoked_at || expired;
   return (
-    <tr className={dead ? "text-faint" : undefined}>
-      <td className={`py-2.5 font-mono ${dead ? "" : "text-prog"}`}>
-        ◇ {token.name}
-      </td>
-      <td className="py-2.5">{token.scope}</td>
-      <td className="py-2.5 font-mono">
-        {token.project ? (
-          `${token.project}${token.environment ? `/${token.environment}` : ""}`
-        ) : (
-          <span className="font-sans text-mut">all projects</span>
-        )}
-      </td>
-      <td className="py-2.5">
-        <Actor name={token.created_by} kind={actorKind(token.created_by)} />
-        {token.origin === "cli_login" && (
-          <span className="text-mut"> via dock login</span>
-        )}
-      </td>
-      <td className={`py-2.5 ${token.last_used_at ? "" : "text-mut"}`}>
-        {token.last_used_at ? `${since(token.last_used_at)} ago` : "never"}
-      </td>
-      <td className="py-2.5 font-mono">
-        {token.revoked_at ? (
-          <span className="font-sans">revoked</span>
-        ) : !token.expires_at ? (
-          <span className="font-sans text-mut">never</span>
-        ) : expired ? (
-          <span className="font-sans">expired</span>
-        ) : (
-          isoDay(token.expires_at)
-        )}
-      </td>
-      <td className="w-full py-1.5 text-right">
-        <span className="inline-flex items-center gap-3">
-          <Link to="/audit" search={{ actor: token.name }}>
-            Activity
-          </Link>
-          {!token.revoked_at &&
-            (confirming ? (
-              <>
-                <Button
-                  small
-                  danger
-                  disabled={revoke.isPending}
-                  onClick={() => revoke.mutate(token.id)}
-                >
-                  Revoke now
-                </Button>
-                <Button small onClick={() => setConfirming(false)}>
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <Button small onClick={() => setConfirming(true)}>
-                Revoke
+    <>
+      <tr className={dead ? "text-faint" : undefined}>
+        <td className={`py-2.5 font-mono ${dead ? "" : "text-prog"}`}>
+          ◇ {token.name}
+        </td>
+        <td className="py-2.5">{token.scope}</td>
+        <td className="py-2.5 font-mono">
+          {token.project ? (
+            `${token.project}${token.environment ? `/${token.environment}` : ""}`
+          ) : (
+            <span className="font-sans text-mut">all projects</span>
+          )}
+        </td>
+        <td className="py-2.5">
+          <Actor name={token.created_by} kind={actorKind(token.created_by)} />
+          {token.origin === "cli_login" && (
+            <span className="text-mut"> via dock login</span>
+          )}
+        </td>
+        <td
+          className={`py-2.5 font-mono text-xs ${token.data ? "" : "font-sans text-mut"}`}
+        >
+          {tokenDataText(token.data)}
+        </td>
+        <td className={`py-2.5 ${token.last_used_at ? "" : "text-mut"}`}>
+          {token.last_used_at ? `${since(token.last_used_at)} ago` : "never"}
+        </td>
+        <td className="py-2.5 font-mono">
+          {token.revoked_at ? (
+            <span className="font-sans">revoked</span>
+          ) : !token.expires_at ? (
+            <span className="font-sans text-mut">never</span>
+          ) : expired ? (
+            <span className="font-sans">expired</span>
+          ) : (
+            isoDay(token.expires_at)
+          )}
+        </td>
+        <td className="w-full py-1.5 text-right">
+          <span className="inline-flex items-center gap-3">
+            <Link to="/audit" search={{ actor: token.name }}>
+              Activity
+            </Link>
+            {admin && !dead && (
+              <Button small onClick={() => setEditingData((e) => !e)}>
+                Data access
               </Button>
-            ))}
-          <ErrorText error={revoke.error} />
-        </span>
-      </td>
-    </tr>
+            )}
+            {!token.revoked_at &&
+              (confirming ? (
+                <>
+                  <Button
+                    small
+                    danger
+                    disabled={revoke.isPending}
+                    onClick={() => revoke.mutate(token.id)}
+                  >
+                    Revoke now
+                  </Button>
+                  <Button small onClick={() => setConfirming(false)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button small onClick={() => setConfirming(true)}>
+                  Revoke
+                </Button>
+              ))}
+            <ErrorText error={revoke.error} />
+          </span>
+        </td>
+      </tr>
+      {editingData && (
+        <tr>
+          <td colSpan={8}>
+            <TokenDataEditor
+              token={token}
+              onDone={() => setEditingData(false)}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -210,6 +242,7 @@ function CreateToken({
   const [project, setProject] = useState("");
   const [environment, setEnvironment] = useState("");
   const [days, setDays] = useState(90);
+  const [data, setData] = useState<TokenDataAccess | null>(null);
   const environments =
     tree
       .find((p) => p.project.name === project)
@@ -218,6 +251,7 @@ function CreateToken({
     `dock token create ${name || "<name>"} --scope ${scope}`,
     project && `-p ${project}`,
     project && environment && `-e ${environment}`,
+    tokenDataFlags(data),
   ]
     .filter(Boolean)
     .join(" ");
@@ -241,6 +275,7 @@ function CreateToken({
               ...(project && { project }),
               ...(project && environment && { environment }),
               ...(days > 0 && { expires_in_days: days }),
+              ...(data && { data }),
             },
             {
               onSuccess: ({ token, secret }) => {
@@ -327,6 +362,7 @@ function CreateToken({
             </select>
           </label>
         </div>
+        <TokenDataFields value={data} onChange={setData} />
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"

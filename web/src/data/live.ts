@@ -273,6 +273,7 @@ function invalidateForAudit(
   if (kind === "project") invalidate(keys.projects);
   if (kind === "token") invalidate(keys.tokens);
   if (kind === "user") invalidate(keys.users);
+  if (kind === "data") return invalidateForData(queryClient, audit);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;
@@ -285,6 +286,43 @@ function invalidateForAudit(
       : keys.project(audit.project),
   );
   invalidate(keys.overview(audit.project));
+}
+
+// The parts of the database panel (keys.data(ref)[4]) each data.* action
+// changes. Browsing and reveals change nothing on screen.
+const dataParts: Partial<Record<string, readonly string[]>> = {
+  "data.query": ["history"],
+  "data.propose": ["changesets"],
+  "data.reject": ["changesets"],
+  "data.approve": ["changesets", "rows"],
+  "data.commit": ["changesets", "rows"],
+  "data.setup": ["info", "schema"],
+};
+
+/**
+ * Refreshes only what a data.* audit event changed, never whole table
+ * pages for a query: every SQL statement is audited.
+ */
+function invalidateForData(
+  queryClient: QueryClient,
+  audit: components["schemas"]["AuditEvent"],
+) {
+  if (audit.action === "data.policy") {
+    // A policy or a token's override changed: anyone's access may differ.
+    queryClient.invalidateQueries({ queryKey: keys.dataPolicy });
+    queryClient.invalidateQueries({ queryKey: keys.tokens });
+    queryClient.invalidateQueries({
+      queryKey: ["data"],
+      predicate: (q) => q.queryKey[4] === "info",
+    });
+    return;
+  }
+  const parts = dataParts[audit.action];
+  if (!parts || !audit.project || !audit.environment) return;
+  queryClient.invalidateQueries({
+    queryKey: ["data", audit.project, audit.environment],
+    predicate: (q) => parts.includes(String(q.queryKey[4])),
+  });
 }
 
 /** Keeps the cache live while the app shell is mounted. */

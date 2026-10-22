@@ -3,6 +3,7 @@ import { type ReactNode, useState } from "react";
 import { useDeploy, useRestart, useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
+  isDatabase,
   useChanges,
   useProjectOverview,
   useReleases,
@@ -24,6 +25,8 @@ import { CpuUsage, MemoryUsage } from "./Usage";
 
 const tabs = [
   { label: "Overview", to: "/$project/$environment/$service", key: "g o" },
+  // Database services only (isDatabase). G B, "base": G D is Domains.
+  { label: "Data", to: "/$project/$environment/$service/data", key: "g b" },
   { label: "Logs", to: "/$project/$environment/$service/logs", key: "g l" },
   {
     label: "Metrics",
@@ -69,8 +72,11 @@ export function ServiceHeader({
   const changes = useChanges(ref);
   const navigate = useNavigate();
   const { service } = view;
+  const shown = isDatabase(service)
+    ? tabs
+    : tabs.filter((tab) => tab.label !== "Data");
   useShortcuts(
-    tabs.map((tab) => ({
+    shown.map((tab) => ({
       key: tab.key,
       run: () => navigate({ to: tab.to, params: ref }),
     })),
@@ -119,7 +125,7 @@ export function ServiceHeader({
         aria-label="Service"
         className="tabs mt-2.5 flex flex-wrap gap-x-[22px] gap-y-1 border-b border-line"
       >
-        {tabs.map((tab) => (
+        {shown.map((tab) => (
           <Link
             key={tab.to}
             to={tab.to}

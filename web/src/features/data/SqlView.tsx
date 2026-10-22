@@ -242,8 +242,8 @@ function RunStatus({ run }: { run: QueryRun | null }) {
   if (!run) {
     return (
       <p className="text-mut">
-        Read-only, as dock_reader. One statement,{" "}
-        {dataLimits.queryRows.toLocaleString("en")} rows at most, 10 s timeout.
+        Read-only. One statement, {dataLimits.queryRows.toLocaleString("en")}{" "}
+        rows at most, 10 s timeout.
       </p>
     );
   }

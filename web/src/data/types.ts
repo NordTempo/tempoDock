@@ -29,6 +29,8 @@ export type Variable = Schemas["Variable"];
 export type VariableChange = Schemas["VariableChange"];
 export type SettingChange = Schemas["SettingChange"];
 export type Token = Schemas["Token"];
+/** A token's own database access, overriding the data policy (ADR 0016). */
+export type TokenDataAccess = NonNullable<Schemas["DataTokenAccess"]>;
 export type NewToken = Schemas["CreateTokenRequest"];
 export type NewUser = Schemas["CreateUserRequest"];
 export type User = Schemas["User"];

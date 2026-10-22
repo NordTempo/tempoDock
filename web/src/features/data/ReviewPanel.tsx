@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { plural } from "../../ui/format";
 import { Act, Button, ErrorText } from "../../ui/kit";
 import type { DataChange } from "./types";
 import { dataLimits } from "./types";
 
-/** How staged edits are turned into SQL and committed (phase 4 wires the API). */
+/** How staged edits are turned into SQL and committed (see useEditActions). */
 export type EditActions = {
   /** The transaction a commit would run (POST /data/changesets, dry_run). */
   renderSql: (changes: DataChange[]) => Promise<string>;
@@ -14,6 +14,74 @@ export type EditActions = {
    */
   commit: (changes: DataChange[], confirm?: string) => Promise<void>;
 };
+
+/** A changeset's rows: op, key, and old → new per edited column. */
+export function ChangeList({
+  changes,
+  onRestore,
+}: {
+  changes: readonly DataChange[];
+  /** Unstage one row (while reviewing staged edits). */
+  onRestore?: (key: Record<string, string>) => void;
+}) {
+  return (
+    <ul className="font-mono text-xs">
+      {changes.map((c, i) => {
+        const key = Object.values(c.key ?? {}).join(", ");
+        const values = c.op === "insert" ? c.new : c.op === "update" && c.new;
+        return (
+          <li
+            key={`${c.table}${c.op}${key || i}`}
+            className="flex gap-3 py-0.5"
+          >
+            <span
+              className={`w-12 ${c.op === "delete" ? "text-fail" : "text-warn"}`}
+            >
+              {c.op}
+            </span>
+            <span className="w-16 truncate text-mut" title={c.table}>
+              {key}
+            </span>
+            <span className="min-w-0 flex-1 truncate">
+              {Object.entries(values || {}).map(([column, value]) => (
+                <span key={column} className="mr-4">
+                  {column}:{" "}
+                  {c.op === "update" && (
+                    <>
+                      <span className="text-mut">
+                        {c.old?.[column] ?? "NULL"}
+                      </span>{" "}
+                      →{" "}
+                    </>
+                  )}
+                  {value ?? "NULL"}
+                </span>
+              ))}
+            </span>
+            {onRestore && c.key && (
+              <button
+                type="button"
+                className="lnk"
+                onClick={() => c.key && onRestore(c.key)}
+              >
+                undo
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Generated SQL, as the server rendered it. */
+export function SqlText({ children }: { children: ReactNode }) {
+  return (
+    <pre className="max-h-48 overflow-auto border-l-2 border-line py-1 pl-3 font-mono text-xs whitespace-pre-wrap text-[#d4d4d4]">
+      {children}
+    </pre>
+  );
+}
 
 /**
  * Staged changes before they're written: each change, the exact SQL from
@@ -93,45 +161,8 @@ export function ReviewPanel({
           {propose && ", an admin approves it"}
         </span>
       </div>
-      <ul className="font-mono text-xs">
-        {changes.map((c) => {
-          const key = Object.values(c.key ?? {}).join(", ");
-          return (
-            <li key={`${c.op}${key}`} className="flex gap-3 py-0.5">
-              <span
-                className={`w-12 ${c.op === "delete" ? "text-fail" : "text-warn"}`}
-              >
-                {c.op}
-              </span>
-              <span className="w-16 text-mut">{key}</span>
-              <span className="min-w-0 flex-1 truncate">
-                {c.op === "update" &&
-                  Object.entries(c.new ?? {}).map(([column, value]) => (
-                    <span key={column} className="mr-4">
-                      {column}:{" "}
-                      <span className="text-mut">
-                        {c.old?.[column] ?? "NULL"}
-                      </span>{" "}
-                      → {value ?? "NULL"}
-                    </span>
-                  ))}
-              </span>
-              {c.key && (
-                <button
-                  type="button"
-                  className="lnk"
-                  onClick={() => c.key && onRestore(c.key)}
-                >
-                  undo
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      <pre className="max-h-48 overflow-auto border-l-2 border-line py-1 pl-3 font-mono text-xs whitespace-pre-wrap text-[#d4d4d4]">
-        {sql.text ?? (sql.error ? "" : "Rendering SQL")}
-      </pre>
+      <ChangeList changes={changes} onRestore={onRestore} />
+      <SqlText>{sql.text ?? (sql.error ? "" : "Rendering SQL")}</SqlText>
       <ErrorText error={sql.error ?? null} />
       {tooMany && (
         <p className="text-fail">
@@ -156,7 +187,7 @@ export function ReviewPanel({
         )}
         <Act
           primary
-          cli={`dock db propose -f changes.json${propose ? "" : " --commit"}${
+          cli={`dock db apply -f changes.json${propose ? " --propose" : ""}${
             confirmCommit ? ` --confirm ${environment}` : ""
           } ${flags}`}
           disabled={!confirmed || tooMany || committing || !sql.text}

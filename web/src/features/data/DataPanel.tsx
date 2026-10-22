@@ -1,9 +1,14 @@
 import { lazy, type ReactNode, Suspense, useState } from "react";
 import type { ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
-import { useDataInfo, useDataSchema } from "./api";
+import {
+  useChangesets,
+  useDataInfo,
+  useDataSchema,
+  useEditActions,
+} from "./api";
+import { ChangesView } from "./ChangesView";
 import { tableName } from "./cells";
-import type { EditActions } from "./ReviewPanel";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
 import { TableList } from "./TableList";
@@ -13,21 +18,15 @@ import type { DataFilter, DataLevel, DataPermission } from "./types";
 // CodeMirror loads only when the SQL tab opens.
 const SqlView = lazy(() => import("./SqlView"));
 
-/** What the panel shows; phase 3 keeps it in the URL's search params. */
+/** What the panel shows; the Data route keeps it in the URL's search. */
 export type DataPanelView = {
-  tab: "tables" | "sql" | "schema";
+  tab: "tables" | "sql" | "schema" | "changes";
   /** "schema.name"; the first table when unset. */
   table?: string;
   /** A column, "-column" for descending. */
   order?: string;
   filters?: DataFilter[];
 };
-
-const tabs = [
-  { tab: "tables", label: "Tables", key: "t" },
-  { tab: "sql", label: "SQL", key: "q" },
-  { tab: "schema", label: "Schema", key: "s" },
-] as const;
 
 const ranks: Record<DataLevel, number> = {
   none: 0,
@@ -39,23 +38,30 @@ const ranks: Record<DataLevel, number> = {
 const atLeast = (level: DataLevel, wanted: DataLevel) =>
   ranks[level] >= ranks[wanted];
 
+/** What the caller's level allows, in the header's words. */
+const levelText: Record<DataLevel, string> = {
+  none: "no access",
+  schema: "schema only",
+  read: "read",
+  propose: "read, propose changes",
+  write: "read, write",
+};
+
 /**
- * The Data tab of a database service: header line (engine, mode, role,
- * access), Tables, SQL and Schema. Controlled: `view` and `onView` carry
- * everything that belongs in the URL. Edit mode is per mount, off by
- * default, never remembered; `edit` wires commits (phase 4).
+ * The Data tab of a database service: header line (engine, mode, role, the
+ * caller's access and why), Tables, SQL, Schema and Changes. Controlled:
+ * `view` and `onView` carry everything that belongs in the URL. Edit mode
+ * is per mount, off by default, never remembered.
  */
 export function DataPanel({
   serviceRef,
   view,
   onView,
-  edit,
   height = "h-[calc(100vh-240px)] min-h-[480px]",
 }: {
   serviceRef: ServiceRef;
   view: DataPanelView;
   onView: (next: DataPanelView) => void;
-  edit?: EditActions;
   /** Tailwind height classes for the panel. */
   height?: string;
 }) {
@@ -65,8 +71,28 @@ export function DataPanel({
     info.data?.status === "ready" && !!access && access.level !== "none";
   const schema = useDataSchema(serviceRef, ready);
   const [editing, setEditing] = useState(false);
+  const [why, setWhy] = useState(false);
   const flags = `-s ${serviceRef.service} -e ${serviceRef.environment}`;
-  const canEdit = !!edit && !!access && atLeast(access.level, "propose");
+  const edit = useEditActions(serviceRef, access, () => {
+    setEditing(false);
+    onView({ ...view, tab: "changes" });
+  });
+  const canEdit = !!edit;
+  const showChanges =
+    ready && (access.approve || atLeast(access.level, "propose"));
+  const changesets = useChangesets(serviceRef, showChanges);
+  const pending = (changesets.data ?? []).filter(
+    (c) => c.status === "pending",
+  ).length;
+
+  const tabs = [
+    { tab: "tables", label: "Tables", key: "t" },
+    { tab: "sql", label: "SQL", key: "q" },
+    { tab: "schema", label: "Schema", key: "s" },
+    ...(showChanges
+      ? [{ tab: "changes", label: "Changes", key: "c" } as const]
+      : []),
+  ] as const;
 
   useShortcuts([
     ...tabs.map((t) => ({
@@ -97,9 +123,12 @@ export function DataPanel({
   const selected = tables.find((t) => tableName(t) === view.table) ?? tables[0];
   const selectedName = selected && tableName(selected);
   const production = access.confirm_commit;
-  const masked =
-    access.sensitive === "masked" &&
-    tables.some((t) => (t.columns ?? []).some((c) => c.sensitive));
+  // Edit mode only applies to the Tables tab; it survives a look elsewhere.
+  const writing = editing && view.tab === "tables";
+  // Masked callers read through dock_reader_masked, which can't select
+  // sensitive columns: SQL on them comes back as an error frame.
+  const reader =
+    access.sensitive === "masked" ? "dock_reader_masked" : "dock_reader";
   const openTable = (table: string) =>
     onView({ ...view, table, filters: [], order: undefined });
 
@@ -114,24 +143,35 @@ export function DataPanel({
               aria-pressed={view.tab === t.tab}
               onClick={() => onView({ ...view, tab: t.tab })}
             >
-              {t.label} <kbd>{t.key.toUpperCase()}</kbd>
+              {t.label}
+              {t.tab === "changes" && pending > 0 && (
+                <span className="text-warn"> {pending}</span>
+              )}{" "}
+              <kbd>{t.key.toUpperCase()}</kbd>
             </button>
           ))}
         </nav>
-        <span
-          className="font-mono text-xs text-mut"
-          title={(access.why ?? []).map((s) => s.detail).join("\n")}
-        >
+        <span className="font-mono text-xs text-mut">
           {info.data.engine} {info.data.server_version} ·{" "}
-          {editing ? (
+          {writing ? (
             <span className="text-warn">
               editing{production && ` ${serviceRef.environment}`}
             </span>
           ) : (
             <span className="text-white">read-only</span>
           )}{" "}
-          as {editing ? "dock_writer" : "dock_reader"} · access {access.level}
+          as {writing ? "dock_writer" : reader} · you:{" "}
+          <span className="text-white">{levelText[access.level]}</span>
           {access.sensitive === "masked" && ", sensitive masked"}
+          {access.approve && ", approve"}{" "}
+          <button
+            type="button"
+            className="lnk"
+            aria-expanded={why}
+            onClick={() => setWhy((w) => !w)}
+          >
+            why
+          </button>
           {info.data.used_by?.length
             ? ` · used by ${info.data.used_by.join(", ")}`
             : ""}
@@ -147,20 +187,18 @@ export function DataPanel({
           </button>
         )}
       </div>
+      {why && <Why access={access} />}
 
       {schema.error ? (
         <p className="text-fail">{schema.error.message}</p>
       ) : !schema.data ? (
         <p className="text-mut">Reading the catalog</p>
+      ) : view.tab === "changes" && showChanges ? (
+        <ChangesView serviceRef={serviceRef} access={access} flags={flags} />
       ) : view.tab === "sql" ? (
         !atLeast(access.level, "read") ? (
           <Limited access={access}>
             Your access is schema: tables and columns, no rows or SQL.
-          </Limited>
-        ) : masked ? (
-          <Limited access={access}>
-            This database has sensitive columns you see masked, so free SQL is
-            off until masking is enforced in Postgres. Browse tables instead.
           </Limited>
         ) : (
           <Suspense fallback={<p className="text-mut">Loading the editor</p>}>

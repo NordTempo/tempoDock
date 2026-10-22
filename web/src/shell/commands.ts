@@ -7,6 +7,7 @@ import {
   useRollback,
 } from "../data/mutations";
 import {
+  isDatabase,
   queries,
   serviceRef,
   useIsAdmin,
@@ -34,6 +35,8 @@ export type Command = {
 };
 
 const serviceTabs = [
+  // Database services only (isDatabase).
+  ["data", "Data", "g b"],
   ["logs", "Logs", "g l"],
   ["metrics", "Metrics", "g m"],
   ["releases", "Releases", "g r"],
@@ -203,6 +206,7 @@ export function useCommands(): Command[] {
           run: open,
         });
         for (const [tab, title, keys] of serviceTabs) {
+          if (tab === "data" && !isDatabase(svc.service)) continue;
           add({
             id: `go:${id}:${tab}`,
             group: "Go to",
@@ -224,7 +228,12 @@ export function useCommands(): Command[] {
   const org = [
     ["Servers", "/servers", "dock server list"],
     ["Tokens", "/tokens", "dock token list"],
-    ...(admin ? ([["Users", "/users", "dock user list"]] as const) : []),
+    ...(admin
+      ? ([
+          ["Users", "/users", "dock user list"],
+          ["Data access policy", "/data-policy", "dock db policy show"],
+        ] as const)
+      : []),
     ["Audit log", "/audit", "dock audit"],
   ] as const;
   for (const [label, to, cli] of org) {

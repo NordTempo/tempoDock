@@ -49,7 +49,7 @@ export function SchemaView({
           {!table.editable && ", read-only"}
         </span>
         <span className="ml-auto font-mono text-2xs text-mut">
-          dock db describe {name} {flags}
+          dock db schema {name} {flags}
         </span>
       </div>
       {table.comment && <p className="text-mut">{table.comment}</p>}
