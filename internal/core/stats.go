@@ -17,8 +17,9 @@ import (
 // and service in one transaction, and at each 10-minute boundary averages
 // the last ten into a 10-minute point and prunes old points. It then
 // publishes the samples as usage events, so clients patch what they show
-// (current numbers and open charts) instead of polling. That tick is
-// the daemon's only periodic work. While someone watches a server or a
+// (current numbers and open charts) instead of polling, and hands them to
+// the alert engine and retention (ADR 0020). That tick is the daemon's
+// only always-on periodic work. While someone watches a server or a
 // service live, a second sampler runs every liveInterval, and stops as
 // soon as the last watcher leaves.
 
@@ -314,6 +315,10 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	}
 	clear(col.events)
 	col.events = col.events[:0]
+
+	// Alerts and retention ride on the tick (ADR 0020).
+	c.alertTick(ctx, now, servers, hosts)
+	c.retentionTick(ctx, now, servers, hosts)
 }
 
 // serviceEvents adds one usage event per environment of a server with the

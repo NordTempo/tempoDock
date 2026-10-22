@@ -1045,11 +1045,14 @@ const (
 	// connected, disconnected, joined, was revoked, changed or removed
 	// (Message "removed").
 	EventServer EventType = "server"
+	// EventAlert carries an alert that opened, changed or resolved (ADR
+	// 0020). Only unlimited admins get it.
+	EventAlert EventType = "alert"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type          EventType      `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,server"`
+	Type          EventType      `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,server,alert"`
 	Time          time.Time      `json:"time"`
 	Project       string         `json:"project,omitempty"`
 	Environment   string         `json:"environment,omitempty"`
@@ -1062,6 +1065,7 @@ type Event struct {
 	Audit         *AuditEvent    `json:"audit,omitempty"`
 	Usage         *UsageUpdate   `json:"usage,omitempty"`
 	Server        *Server        `json:"server,omitempty"`
+	Alert         *Alert         `json:"alert,omitempty"`
 	Message       string         `json:"message,omitempty"`
 }
 

@@ -119,7 +119,7 @@ INSERT INTO releases (service_id, number, source, image_ref, image_id, image_dig
 VALUES (?1, ?2, 'promote', ?3, ?4, ?5,
     ?6, CAST(?7 AS INTEGER), ?8, ?9,
     ?10, ?11)
-RETURNING id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id, commit_sha, commit_message, commit_author
+RETURNING id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id, commit_sha, commit_message, commit_author, history_trimmed
 `
 
 type CreatePromotedReleaseParams struct {
@@ -178,6 +178,7 @@ func (q *Queries) CreatePromotedRelease(ctx context.Context, arg CreatePromotedR
 		&i.CommitSha,
 		&i.CommitMessage,
 		&i.CommitAuthor,
+		&i.HistoryTrimmed,
 	)
 	return i, err
 }
@@ -349,7 +350,7 @@ func (q *Queries) ListPendingJoinTokens(ctx context.Context, now time.Time) ([]J
 }
 
 const listPromotableReleases = `-- name: ListPromotableReleases :many
-SELECT services.name AS service_name, releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author
+SELECT services.name AS service_name, releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author, releases.history_trimmed
 FROM services JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
 WHERE services.environment_id = +?1 AND services.archived_at IS NULL
 ORDER BY services.name
@@ -396,6 +397,7 @@ func (q *Queries) ListPromotableReleases(ctx context.Context, environmentID int6
 			&i.Release.CommitSha,
 			&i.Release.CommitMessage,
 			&i.Release.CommitAuthor,
+			&i.Release.HistoryTrimmed,
 		); err != nil {
 			return nil, err
 		}
