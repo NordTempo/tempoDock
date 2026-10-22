@@ -12,11 +12,14 @@ import (
 )
 
 // Assets index.html loads up front: the entry script, the chunks Vite
-// modulepreloads, and stylesheets.
+// modulepreloads, stylesheets, and preloaded fonts; plus the fonts those
+// stylesheets declare (fontURLRe).
 var (
-	entryRe      = regexp.MustCompile(`<script[^>]*type="module"[^>]*src="([^"]+)"`)
-	preloadRe    = regexp.MustCompile(`<link[^>]*rel="modulepreload"[^>]*href="([^"]+)"`)
-	stylesheetRe = regexp.MustCompile(`<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"`)
+	entryRe       = regexp.MustCompile(`<script[^>]*type="module"[^>]*src="([^"]+)"`)
+	preloadRe     = regexp.MustCompile(`<link[^>]*rel="modulepreload"[^>]*href="([^"]+)"`)
+	stylesheetRe  = regexp.MustCompile(`<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"`)
+	fontPreloadRe = regexp.MustCompile(`<link[^>]*rel="preload"[^>]*href="([^"]+\.(?:woff2?|ttf|otf))"`)
+	fontURLRe     = regexp.MustCompile(`url\(\s*["']?([^"')?#]+\.(?:woff2?|ttf|otf))`)
 )
 
 // checkUI measures what a first page load downloads: initial JS and CSS
@@ -28,6 +31,7 @@ func checkUI(o options, t *table) error {
 	}
 	t.within("UI initial JS (gzip)", fmt.Sprintf("%s (%d files)", kb(a.js), a.jsFiles), "≤ "+kb(initialJSBudget), a.js <= initialJSBudget)
 	t.within("UI initial CSS (gzip)", kb(a.css), "≤ "+kb(cssBudget), a.css <= cssBudget)
+	t.within("UI initial fonts", fmt.Sprintf("%s (%d files)", kb(a.fonts), a.fontFiles), "≤ "+kb(initialFontsBudget), a.fonts <= initialFontsBudget)
 
 	var fonts, allJS int64
 	var fontFiles, jsFiles int
@@ -61,14 +65,19 @@ func checkUI(o options, t *table) error {
 	return nil
 }
 
-// assets is what a first page load of one built UI downloads, gzipped.
+// assets is what a first page load of one built UI downloads: JS and CSS
+// gzipped, fonts as shipped.
 type assets struct {
-	js      int64 // entry script and modulepreloads
-	jsFiles int
-	css     int64 // stylesheets
+	js        int64 // entry script and modulepreloads
+	jsFiles   int
+	css       int64 // stylesheets
+	fonts     int64 // preloaded or declared by the stylesheets
+	fontFiles int
 }
 
-// initialAssets sums the files dist/index.html loads up front.
+// initialAssets sums the files dist/index.html loads up front. Fonts count
+// once each, whether preloaded or declared in an initial stylesheet (an
+// upper bound: a browser fetches a declared font only when text uses it).
 func initialAssets(dist string) (assets, error) {
 	index, err := os.ReadFile(filepath.Join(dist, "index.html"))
 	if err != nil {
@@ -101,7 +110,40 @@ func initialAssets(dist string) (assets, error) {
 	if err != nil {
 		return assets{}, err
 	}
-	return assets{js: entry + preload, jsFiles: entries + preloads, css: css}, nil
+	a := assets{js: entry + preload, jsFiles: entries + preloads, css: css}
+
+	// Font URLs starting with / are from the dist root; others from the file
+	// that names them.
+	fonts := map[string]bool{}
+	add := func(from, ref string) {
+		if strings.HasPrefix(ref, "/") {
+			fonts[filepath.Join(dist, ref)] = true
+		} else {
+			fonts[filepath.Join(from, ref)] = true
+		}
+	}
+	for _, m := range fontPreloadRe.FindAllSubmatch(index, -1) {
+		add(dist, string(m[1]))
+	}
+	for _, m := range stylesheetRe.FindAllSubmatch(index, -1) {
+		sheet := filepath.Join(dist, strings.TrimPrefix(string(m[1]), "/"))
+		b, err := os.ReadFile(sheet)
+		if err != nil {
+			return assets{}, err
+		}
+		for _, f := range fontURLRe.FindAllSubmatch(b, -1) {
+			add(filepath.Dir(sheet), string(f[1]))
+		}
+	}
+	for p := range fonts {
+		st, err := os.Stat(p)
+		if err != nil {
+			return assets{}, err
+		}
+		a.fonts += st.Size()
+		a.fontFiles++
+	}
+	return a, nil
 }
 
 func gzipSize(path string) (int64, error) {

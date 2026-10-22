@@ -37,7 +37,10 @@ const (
 	initialJSBudget        = 200 << 10 // gzipped
 	cssBudget              = 30 << 10  // gzipped
 	fontsBudget            = 150 << 10 // woff2, already compressed
-	binaryGrowthLimit      = 0.10
+	// Fonts a first load can fetch: style A's Inter and JetBrains Mono,
+	// Latin subsets (docs/design/README.md).
+	initialFontsBudget = 100 << 10
+	binaryGrowthLimit  = 0.10
 )
 
 type options struct {

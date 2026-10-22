@@ -92,6 +92,7 @@ func checkTempobaseUI(o options, t *table) error {
 	}
 	t.within(name, fmt.Sprintf("%s (%d files)", kb(a.js), a.jsFiles), "≤ "+kb(tempobaseInitialJS), a.js <= tempobaseInitialJS)
 	t.within("tempobase UI initial CSS (gzip)", kb(a.css), "≤ "+kb(cssBudget), a.css <= cssBudget)
+	t.within("tempobase UI initial fonts", fmt.Sprintf("%s (%d files)", kb(a.fonts), a.fontFiles), "≤ "+kb(initialFontsBudget), a.fonts <= initialFontsBudget)
 	return nil
 }
 

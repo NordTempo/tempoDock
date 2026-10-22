@@ -22,7 +22,8 @@ headroom below them.
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 116 KB |
 | UI initial JS as the daemon serves it | ≤ 200 KB on the wire, cacheable | 113 KB, then 0 (immutable) |
 | UI initial CSS (gzip) | ≤ 30 KB | 4.6 KB |
-| UI fonts (all font files) | ≤ 150 KB | 0 |
+| UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 64 KB (Inter and JetBrains Mono, Latin subsets) |
+| UI fonts (all font files) | ≤ 150 KB | 64 KB |
 | Binary size | ≤ baseline + 10% | 32.1 MB |
 | Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 15% (+2) | see `scripts/perf/baseline.json` |
 
@@ -49,6 +50,7 @@ tick or event stream, so its budgets are tighter. Checks `tempobase-binary`,
 | Postgres connections 65 s after use (`-tempobase-pg URL`, CI's `postgres:17`) | 0 | not built yet |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 120 KB | not built yet (expected ~90 KB) |
 | UI initial CSS (gzip, Dock's `index.css`) | ≤ 30 KB | not built yet |
+| UI initial fonts (as Dock's; style G itself uses system fonts) | ≤ 100 KB | not built yet |
 | Imports (`make tempobase-deps`, CI) | no `core`, `api`, `store`, `node`, `mcp`, `cli`, Docker, BuildKit or gRPC | passes (skipped until `cmd/tempobase` exists) |
 
 tempoBase runs with `GOMEMLIMIT=48MiB`, as its image and
@@ -220,7 +222,11 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 - **SSE patches, not refetch storms.** Live events patch the query cache
   (`web/src/data/live.ts`); never invalidate broad query keys per event, and
   never poll.
-- **Fonts** are woff2 and subset.
+- **Fonts** are woff2 and subset, self-hosted, `font-display: swap`, and
+  loaded by the shell CSS, not by route chunks
+  ([design](design/README.md#fonts-and-performance)). The "UI initial
+  fonts" row counts every font the initial CSS declares or `index.html`
+  preloads.
 - **Serve assets compressed and cached** (`internal/api/ui.go`). Text
   files go out gzip-compressed (each compressed once, on its first
   request, and kept), hashed files under `/assets/` with `Cache-Control:
