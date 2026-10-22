@@ -55,3 +55,46 @@ func TestNetworkInvalid(t *testing.T) {
 		}
 	}
 }
+
+func TestLinkSections(t *testing.T) {
+	cfg, err := load(t, `data_dir = "/tmp"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Node.Listen != "" || cfg.Registry.Enabled || cfg.Ingress.Mode != IngressDirect {
+		t.Errorf("node %+v, registry %+v, ingress %+v: want today's single-server defaults", cfg.Node, cfg.Registry, cfg.Ingress)
+	}
+
+	cfg, err = load(t, `
+[node]
+listen = "100.64.0.10:7443"
+
+[registry]
+enabled = true
+public_name = "registry.example.dev"
+
+[ingress]
+mode = "cloudflare_tunnel"
+tunnel_hostname = "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Ingress.Mode != IngressCloudflareTunnel || cfg.Registry.Listen != "127.0.0.1:5000" || cfg.Node.Listen != "100.64.0.10:7443" {
+		t.Errorf("got ingress %+v, registry %+v, node %+v", cfg.Ingress, cfg.Registry, cfg.Node)
+	}
+}
+
+func TestLinkSectionsInvalid(t *testing.T) {
+	for _, toml := range []string{
+		`node.listen = "7443"`,                                           // no host part
+		`node.control_plane = "cp.example.dev:http"`,                     // port not numeric
+		`registry.enabled = true`,                                        // no public_name
+		`ingress.mode = "tunnel"`,                                        // unknown mode
+		"ingress.mode = \"cloudflare_tunnel\"\ncaddy.disable_tls = true", // apps would show http:// URLs
+	} {
+		if _, err := load(t, toml); err == nil {
+			t.Errorf("%s: accepted", toml)
+		}
+	}
+}

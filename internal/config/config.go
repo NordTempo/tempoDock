@@ -1,4 +1,5 @@
-// Package config loads the daemon's configuration (`dock serve`).
+// Package config loads the daemon's configuration (`dock serve` on the
+// control plane, `dock node` on other servers).
 //
 // Config lives in a TOML file (default /etc/dock/config.toml). Every field
 // has a default, so a missing file means "all defaults". Nothing here is
@@ -9,9 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -45,6 +48,9 @@ type Config struct {
 	BuildKit BuildKit `toml:"buildkit"`
 	Network  Network  `toml:"network"`
 	Defaults Defaults `toml:"defaults"`
+	Node     Node     `toml:"node"`
+	Registry Registry `toml:"registry"`
+	Ingress  Ingress  `toml:"ingress"`
 }
 
 // PortRange is an inclusive range of TCP ports.
@@ -62,7 +68,9 @@ type Caddy struct {
 	// ACMEEmail is passed to the certificate authority. Optional.
 	ACMEEmail string `toml:"acme_email"`
 	// DisableTLS serves every route over plain HTTP. For local development
-	// and private-only setups.
+	// and private-only setups in direct ingress mode. Tunnel servers leave it
+	// off: Caddy is plain HTTP there anyway, and apps are https:// at
+	// Cloudflare's edge.
 	DisableTLS bool `toml:"disable_tls"`
 }
 
@@ -99,6 +107,62 @@ type Defaults struct {
 	KeepReleases int `toml:"keep_releases"`
 }
 
+// Node configures the link between the control plane and other servers
+// (ADR 0014). One binary plays either side: `dock serve` reads Listen,
+// `dock node` reads ControlPlane and the files in DataDir (NodeKeyPath,
+// NodeStatePath).
+type Node struct {
+	// Listen is where the control plane accepts node connections, e.g.
+	// "100.64.0.10:7443" (a Tailscale IP). Empty disables the node port:
+	// the control plane then only runs apps on its own server.
+	Listen string `toml:"listen"`
+	// ControlPlane overrides the address `dock node` dials ("host:port").
+	// Empty uses the address from the join token, kept in NodeStatePath.
+	// Set it when the control plane moves; its key stays pinned, so no
+	// re-join is needed.
+	ControlPlane string `toml:"control_plane"`
+}
+
+// Registry configures the image registry on the control plane (ADR 0014
+// section 4): CNCF Distribution in the `dock-registry` container, which
+// install.sh sets up when Enabled.
+type Registry struct {
+	// Enabled runs the registry on this server. Control plane only.
+	Enabled bool `toml:"enabled"`
+	// Listen is the host address the registry container is published on.
+	Listen string `toml:"listen"`
+	// StorageDir holds the registry's blobs and manifests on the host.
+	StorageDir string `toml:"storage_dir"`
+	// PublicName is the registry's host[:port] as nodes reach it, and the
+	// prefix of every image name (<public_name>/<project>/<service>).
+	// Required when Enabled.
+	PublicName string `toml:"public_name"`
+}
+
+// IngressMode is how public traffic reaches a server's Caddy (ADR 0013).
+type IngressMode string
+
+const (
+	// IngressDirect is a public IP with ports 80 and 443 open; Caddy issues
+	// certificates.
+	IngressDirect IngressMode = "direct"
+	// IngressCloudflareTunnel is cloudflared dialing out to Cloudflare and
+	// forwarding to Caddy in plain HTTP on 127.0.0.1:<[caddy] http_port>;
+	// Cloudflare's edge terminates TLS.
+	IngressCloudflareTunnel IngressMode = "cloudflare_tunnel"
+)
+
+// Ingress describes how the public reaches this server. On a node these
+// are facts it reports to the control plane in hello. Generated hostnames
+// use the top-level BaseDomain.
+type Ingress struct {
+	// Mode is direct or cloudflare_tunnel.
+	Mode IngressMode `toml:"mode"`
+	// TunnelHostname is "<tunnel-id>.cfargotunnel.com", the CNAME target
+	// for hostnames served through the tunnel. Tunnel mode only.
+	TunnelHostname string `toml:"tunnel_hostname"`
+}
+
 // Default returns the configuration used when no file overrides it.
 func Default() Config {
 	return Config{
@@ -127,6 +191,11 @@ func Default() Config {
 			HealthCheckTimeout: 60,
 			KeepReleases:       5,
 		},
+		Registry: Registry{
+			Listen:     "127.0.0.1:5000",
+			StorageDir: "/var/lib/dock-registry",
+		},
+		Ingress: Ingress{Mode: IngressDirect},
 	}
 }
 
@@ -143,10 +212,61 @@ func Load(path string) (Config, error) {
 	if err := toml.Unmarshal(b, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if err := cfg.Network.validate(); err != nil {
+	if err := cfg.validate(); err != nil {
 		return cfg, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// validate checks the rules beyond what the field types enforce, and
+// normalizes [network].
+func (c *Config) validate() error {
+	if err := c.Network.validate(); err != nil {
+		return err
+	}
+	if err := checkHostPort("[node] listen", c.Node.Listen); err != nil {
+		return err
+	}
+	if err := checkHostPort("[node] control_plane", c.Node.ControlPlane); err != nil {
+		return err
+	}
+	if c.Registry.Enabled {
+		if c.Registry.Listen == "" || c.Registry.StorageDir == "" || c.Registry.PublicName == "" {
+			return errors.New("[registry] enabled needs listen, storage_dir and public_name (the registry's host[:port] as nodes reach it)")
+		}
+		if err := checkHostPort("[registry] listen", c.Registry.Listen); err != nil {
+			return err
+		}
+	}
+	switch c.Ingress.Mode {
+	case "":
+		c.Ingress.Mode = IngressDirect
+	case IngressDirect:
+	case IngressCloudflareTunnel:
+		if c.Caddy.DisableTLS {
+			return errors.New("[ingress] mode cloudflare_tunnel serves apps over https:// at Cloudflare's edge; set [caddy] disable_tls = false (Caddy is plain HTTP on 127.0.0.1 either way)")
+		}
+	default:
+		return fmt.Errorf("[ingress] mode %q must be %q or %q", c.Ingress.Mode, IngressDirect, IngressCloudflareTunnel)
+	}
+	return nil
+}
+
+// checkHostPort accepts "" (unset) or "host:port" with a port in 1-65535.
+func checkHostPort(field, addr string) error {
+	if addr == "" {
+		return nil
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err == nil {
+		if n, perr := strconv.Atoi(port); perr != nil || n < 1 || n > 65535 {
+			err = fmt.Errorf("bad port %q", port)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("%s %q must be host:port, e.g. \"100.64.0.10:7443\": %w", field, addr, err)
+	}
+	return nil
 }
 
 func (n *Network) validate() error {
@@ -162,6 +282,19 @@ func (n *Network) validate() error {
 
 // DBPath is the SQLite file inside DataDir.
 func (c Config) DBPath() string { return filepath.Join(c.DataDir, "dock.db") }
+
+// LinkKeyPath is the control plane's Ed25519 key for the node link,
+// created by the first `dock serve`.
+func (c Config) LinkKeyPath() string { return filepath.Join(c.DataDir, "link.key") }
+
+// NodeKeyPath is a node's Ed25519 key, created by `dock node join`.
+func (c Config) NodeKeyPath() string { return filepath.Join(c.DataDir, "node.key") }
+
+// NodeStatePath is a node's link state, written by `dock node join`: the
+// control plane's address and pinned fingerprints. It lives in DataDir, not
+// /etc/dock, because `dock node` rewrites the pins (`trust`) and its unit
+// may only write DataDir. install.sh takes its presence to mean "joined".
+func (c Config) NodeStatePath() string { return filepath.Join(c.DataDir, "node.toml") }
 
 // KeyPath is the AES key for secrets at rest. It lives outside the DB so a
 // leaked DB file alone doesn't reveal secrets.
