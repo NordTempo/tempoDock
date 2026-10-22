@@ -242,6 +242,23 @@ func TestBackupFailureIsRecorded(t *testing.T) {
 	if evs, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: "backup.failed"}); len(evs) != 1 {
 		t.Error("no backup.failed audit event")
 	}
+	if open, _ := h.c.ListAlerts(h.ctx, System, false, 0, 0); len(open) != 1 || open[0].Kind != apitypes.AlertBackupFailed {
+		t.Fatalf("open alerts after a failed backup = %+v", open)
+	}
+
+	// The next successful backup resolves the alert.
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		if strings.Contains(spec.Name, "_backup") {
+			return node.JobResult{Output: resticOutput("cccc3333cccc", 1024, "cccc3333cccc")}, nil
+		}
+		return node.JobResult{}, nil
+	})
+	if run := h.runBackup(db); run.Status != apitypes.BackupSucceeded {
+		t.Fatalf("second run = %+v", run)
+	}
+	if open, _ := h.c.ListAlerts(h.ctx, System, false, 0, 0); len(open) != 0 {
+		t.Fatalf("open alerts after a successful backup = %+v", open)
+	}
 }
 
 func TestVolumeBackupWarnsAndCantRestore(t *testing.T) {

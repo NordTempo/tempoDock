@@ -208,6 +208,18 @@ func deployFailed(project, env, service string, number int64, reason string) ale
 	}
 }
 
+// backupFailed is the alert for a service's latest backup failing. The
+// next successful backup resolves it.
+func backupFailed(project, env, service string, id int64, reason string) alertSignal {
+	svc := serviceKey(project, env, service)
+	return alertSignal{
+		Key: "backup:" + svc, Kind: apitypes.AlertBackupFailed, Severity: apitypes.SeverityWarning,
+		Title:   "Backup of " + svc + " failed",
+		Message: fmt.Sprintf("Backup %d failed: %s.", id, reason),
+		Project: project, Environment: env, Service: service,
+	}
+}
+
 // domainError is the alert for a domain in error.
 func domainError(project, env, service, hostname, reason string) alertSignal {
 	return alertSignal{

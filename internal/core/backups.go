@@ -410,7 +410,7 @@ func (c *Core) startBackup(ctx context.Context, a Actor, ss svcScope, trigger st
 
 // runBackup runs a recorded backup to the end and records the outcome:
 // the job, then retention's result (snapshots it removed are marked
-// pruned). Failures are audited and show on the overview. The claim on
+// pruned). Failures are audited, raise an alert and show on the overview. The claim on
 // the service ends with the job, before the row says so, so whoever sees
 // it finished can start the next run.
 func (c *Core) runBackup(ctx context.Context, ss svcScope, row store.Backup) {
@@ -426,7 +426,9 @@ func (c *Core) runBackup(ctx context.Context, ss svcScope, row store.Backup) {
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
 		c.audit(ctx, System, "backup.failed", &ss.project, &ss.env, ss.String(), fmt.Sprintf("backup %d failed: %v", row.ID, err))
+		c.signalAlert(ctx, backupFailed(ss.project.Name, ss.env.Name, ss.svc.Name, row.ID, err.Error()))
 	} else {
+		c.signalAlert(ctx, alertSignal{Key: "backup:" + serviceKey(ss.project.Name, ss.env.Name, ss.svc.Name), Resolve: true})
 		fin.SnapshotID, fin.SizeBytes = res.SnapshotID, res.Bytes
 		if res.Kept != nil {
 			c.markPruned(ctx, ss.svc.ID, row.Repository, res.Kept)

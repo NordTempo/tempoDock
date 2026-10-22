@@ -48,6 +48,7 @@ const derived = new Set([
   "crash_loop",
   "domain_error",
   "server_offline",
+  "backup_failed",
 ]);
 
 /**
