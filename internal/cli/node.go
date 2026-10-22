@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -151,10 +152,11 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 // Docker and /proc are asked once; what can't be read is left empty.
 func nodeFacts(ctx context.Context, cfg config.Config) remote.Facts {
 	f := remote.Facts{
-		Ingress:   remote.Ingress(cfg.Ingress.Mode),
-		PublicIPs: publicIPs(cfg),
-		Builder:   cfg.BuildKit.Enabled,
-		PlainHTTP: cfg.Caddy.DisableTLS && cfg.Ingress.Mode == config.IngressDirect,
+		Ingress:    remote.Ingress(cfg.Ingress.Mode),
+		PublicIPs:  publicIPs(cfg),
+		Builder:    cfg.BuildKit.Enabled,
+		PlainHTTP:  cfg.Caddy.DisableTLS && cfg.Ingress.Mode == config.IngressDirect,
+		BaseDomain: strings.TrimPrefix(cfg.BaseDomain, "*."),
 	}
 	if cfg.Ingress.Mode == config.IngressCloudflareTunnel {
 		f.TunnelHostname = cfg.Ingress.TunnelHostname

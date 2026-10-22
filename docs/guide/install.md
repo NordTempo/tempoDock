@@ -340,8 +340,9 @@ else.
    `dock-node.service`. The node reports its ingress mode, public IP or
    tunnel hostname, Docker version and memory every time it connects.
 
-4. **Check** that it's online, and set its base domain for generated
-   hostnames:
+4. **Check** that it's online. A `BASE_DOMAIN` given to the node's
+   install becomes its base domain for generated hostnames when it joins;
+   otherwise set one (this also changes it later):
 
    ```sh
    dock server list

@@ -375,7 +375,7 @@ func TestServerLifecycle(t *testing.T) {
 	ns := p.c.NodeStore()
 	fp := "sha256:" + strings.Repeat("ef", 32)
 	srv, err := ns.Join(p.ctx, remote.JoinRequest{SecretHash: tok.SecretHash(), Fingerprint: fp,
-		Hello: remote.Hello{Version: "v1", Facts: remote.Facts{Ingress: remote.IngressCloudflareTunnel, TunnelHostname: "abc.cfargotunnel.com"}}})
+		Hello: remote.Hello{Version: "v1", Facts: remote.Facts{Ingress: remote.IngressCloudflareTunnel, TunnelHostname: "abc.cfargotunnel.com", BaseDomain: "apps.example.dev"}}})
 	if err != nil || srv.Name != "lab2" {
 		t.Fatalf("join: %+v, %v", srv, err)
 	}
@@ -386,7 +386,8 @@ func TestServerLifecycle(t *testing.T) {
 		t.Fatalf("node key: %+v %v %v", key, ok, err)
 	}
 	got, err := p.c.GetServer(p.ctx, System, "lab2")
-	if err != nil || got.Server.Ingress != apitypes.IngressCloudflareTunnel || got.Server.TunnelHostname != "abc.cfargotunnel.com" || !got.Server.Builder {
+	if err != nil || got.Server.Ingress != apitypes.IngressCloudflareTunnel || got.Server.TunnelHostname != "abc.cfargotunnel.com" || !got.Server.Builder ||
+		got.Server.BaseDomain != "apps.example.dev" {
 		t.Fatalf("lab2: %+v, %v", got.Server, err)
 	}
 
