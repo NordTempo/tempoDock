@@ -61,65 +61,30 @@ func startCaddyWith(t *testing.T, mod func(*Options)) *testCaddy {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
-	ports := freePorts(t, 2)
-	opts := Options{
-		AdminSocket: filepath.Join(dir, "admin.sock"),
-		HTTPPort:    ports[0],
-		HTTPSPort:   ports[1],
-		PublicIPs:   []string{"127.0.0.1"},
-		internalCA:  true,
-		gracePeriod: testGracePeriod,
-	}
-	mod(&opts)
-	boot, err := BootstrapConfig(opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfgPath := filepath.Join(dir, "caddy.json")
-	if err := os.WriteFile(cfgPath, boot, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	cmd := exec.Command(bin, "run", "--config", cfgPath)
-	cmd.Env = append(os.Environ(),
-		"HOME="+dir,
-		"XDG_DATA_HOME="+filepath.Join(dir, "data"),
-		"XDG_CONFIG_HOME="+filepath.Join(dir, "config"),
-	)
-	logs, err := os.Create(filepath.Join(dir, "caddy.log"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd.Stdout, cmd.Stderr = logs, logs
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Signal(os.Interrupt)
-		kill := time.AfterFunc(testGracePeriod+5*time.Second, func() {
-			t.Errorf("caddy did not exit within the grace period")
-			_ = cmd.Process.Kill()
-		})
-		_ = cmd.Wait()
-		kill.Stop()
-		_ = logs.Close()
-		if t.Failed() {
-			b, _ := os.ReadFile(logs.Name())
-			t.Logf("caddy log:\n%s", b)
+	// Another process can take a picked port before Caddy binds it (the
+	// suite runs next to other tests); Caddy then exits on its initial
+	// config, and we start it again with new ports.
+	var opts Options
+	var cmd *exec.Cmd
+	for attempt := 1; ; attempt++ {
+		ports := freePorts(t, 2)
+		opts = Options{
+			AdminSocket: filepath.Join(dir, "admin.sock"),
+			HTTPPort:    ports[0],
+			HTTPSPort:   ports[1],
+			PublicIPs:   []string{"127.0.0.1"},
+			internalCA:  true,
+			gracePeriod: testGracePeriod,
 		}
-	})
-
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		c, err := net.Dial("unix", opts.AdminSocket)
-		if err == nil {
-			_ = c.Close()
+		mod(&opts)
+		var portTaken bool
+		cmd, portTaken = runCaddy(t, bin, dir, opts)
+		if !portTaken {
 			break
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("caddy admin socket never came up: %v", err)
+		if attempt == 3 {
+			t.Fatal("caddy: its ports were taken three times")
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 
 	p, err := New(opts)
@@ -550,4 +515,81 @@ func TestIntegrationIdleRSS(t *testing.T) {
 			t.Logf("caddy idle RSS with %d routes: %s", len(routes), strings.Join(strings.Fields(line)[1:], " "))
 		}
 	}
+}
+
+// runCaddy writes opts as Caddy's config in dir and runs Caddy until its
+// admin socket and HTTP port answer. portTaken reports that Caddy exited
+// because one of its ports was in use; the caller retries with new ones.
+func runCaddy(t *testing.T, bin, dir string, opts Options) (cmd *exec.Cmd, portTaken bool) {
+	t.Helper()
+	boot, err := BootstrapConfig(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "caddy.json")
+	if err := os.WriteFile(cfgPath, boot, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command(bin, "run", "--config", cfgPath)
+	cmd.Env = append(os.Environ(),
+		"HOME="+dir,
+		"XDG_DATA_HOME="+filepath.Join(dir, "data"),
+		"XDG_CONFIG_HOME="+filepath.Join(dir, "config"),
+	)
+	logPath := filepath.Join(dir, "caddy.log")
+	logs, err := os.Create(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logs.Close() }()
+	cmd.Stdout, cmd.Stderr = logs, logs
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+
+	up := func() bool {
+		for _, dial := range [][2]string{{"unix", opts.AdminSocket}, {"tcp", fmt.Sprintf("127.0.0.1:%d", opts.HTTPPort)}} {
+			c, err := net.Dial(dial[0], dial[1])
+			if err != nil {
+				return false
+			}
+			_ = c.Close()
+		}
+		return true
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for !up() {
+		select {
+		case <-exited:
+			b, _ := os.ReadFile(logPath)
+			if strings.Contains(string(b), "address already in use") {
+				return nil, true
+			}
+			t.Fatalf("caddy exited at start:\n%s", b)
+		case <-time.After(20 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			_ = cmd.Process.Kill()
+			<-exited
+			b, _ := os.ReadFile(logPath)
+			t.Fatalf("caddy never came up:\n%s", b)
+		}
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Signal(os.Interrupt)
+		select {
+		case <-exited:
+		case <-time.After(testGracePeriod + 5*time.Second):
+			t.Errorf("caddy did not exit within the grace period")
+			_ = cmd.Process.Kill()
+			<-exited
+		}
+		if t.Failed() {
+			b, _ := os.ReadFile(logPath)
+			t.Logf("caddy log:\n%s", b)
+		}
+	})
+	return cmd, false
 }
