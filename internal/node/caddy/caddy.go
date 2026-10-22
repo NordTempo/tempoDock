@@ -176,6 +176,10 @@ func New(opts Options) (*Proxy, error) {
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 					return d.DialContext(ctx, "unix", opts.AdminSocket)
 				},
+				// Every /load replaces Caddy's admin server, so a kept-alive
+				// connection belongs to a server that is shutting down and
+				// may drop the next request on it. A Unix dial is cheap.
+				DisableKeepAlives: true,
 			},
 			// A load waits for the new config to start and the old one to
 			// stop, which can take a moment; never hang forever.
@@ -202,16 +206,14 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 
 // load POSTs cfg to Caddy's /load endpoint, which validates it and swaps
 // it in atomically.
+//
+// A load whose connection dropped may or may not have been applied; admin
+// sends it again, and Caddy answers a config identical to the running one
+// with 200 without reloading. So a 200 on any attempt means cfg is running.
 func (p *Proxy) load(ctx context.Context, cfg []byte) error {
-	// The host is ignored; the transport always dials the admin socket.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://caddy/load", bytes.NewReader(cfg))
+	resp, err := p.admin(ctx, http.MethodPost, "/load", cfg)
 	if err != nil {
 		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("caddy: reach admin socket %s: %w", p.opts.AdminSocket, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
@@ -225,4 +227,42 @@ func (p *Proxy) load(ctx context.Context, cfg []byte) error {
 		return fmt.Errorf("caddy rejected the config: %s", e.Error)
 	}
 	return fmt.Errorf("caddy rejected the config: %s: %s", resp.Status, bytes.TrimSpace(body))
+}
+
+// adminRetryWaits are the pauses before each resend of an admin request
+// that failed in transport: four resends over 1.5 s. Every /load replaces
+// Caddy's admin server, and a connection the old server accepted just
+// before shutting down is closed unanswered (EOF); a restarting Caddy
+// refuses connections for a moment. Both clear well within that.
+var adminRetryWaits = []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond, 800 * time.Millisecond}
+
+// admin sends a request to Caddy's admin socket (the URL host is ignored)
+// and returns Caddy's response, whatever its status. Callers only send
+// idempotent requests (GETs, and POST /load, which replaces the whole
+// config), so it resends on transport errors, but never on an HTTP
+// response: a 4xx or 5xx is Caddy's answer. A cancelled or timed-out
+// request is not resent either.
+func (p *Proxy) admin(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, method, "http://caddy"+path, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := p.client.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+		ne, isNet := errors.AsType[net.Error](err)
+		if attempt == len(adminRetryWaits) || errors.Is(err, context.Canceled) || isNet && ne.Timeout() {
+			return nil, fmt.Errorf("caddy: reach admin socket %s: %w", p.opts.AdminSocket, err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("caddy: reach admin socket %s: %w", p.opts.AdminSocket, err)
+		case <-time.After(adminRetryWaits[attempt]):
+		}
+	}
 }
