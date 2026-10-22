@@ -61,17 +61,17 @@ type roleSpec struct {
 // re-running it is safe. Setup then drops the service's cached
 // connections and schema.
 func (e *Engine) Setup(ctx context.Context, t data.Target, owner, reader, writer data.Credentials) (data.ServerInfo, error) {
-	specs, err := dockRoles(reader, writer, t.ReaderMasked)
+	specs, err := roleSpecs(e.roles, reader, writer, t.ReaderMasked)
 	if err != nil {
 		return data.ServerInfo{}, err
 	}
-	pg, info, err := ownerConn(ctx, t, owner)
+	pg, info, err := e.ownerConn(ctx, t, owner)
 	if err != nil {
 		return info, err
 	}
 	defer func() { _ = pg.Close(context.Background()) }()
 
-	existing, err := existingRoles(ctx, pg)
+	existing, err := existingRoles(ctx, pg, e.roles)
 	if err != nil {
 		return info, fmt.Errorf("read roles: %w", err)
 	}
@@ -79,7 +79,7 @@ func (e *Engine) Setup(ctx context.Context, t data.Target, owner, reader, writer
 	if err != nil {
 		return info, fmt.Errorf("read schemas: %w", err)
 	}
-	stmts := append(setupSQL(specs, existing, t.Database), grantsSQL(schemas)...)
+	stmts := append(setupSQL(specs, existing, t.Database), grantsSQL(e.roles, schemas)...)
 	err = pgx.BeginFunc(ctx, pg, func(tx pgx.Tx) error {
 		for _, s := range stmts {
 			if _, err := tx.Exec(ctx, s); err != nil {
@@ -97,11 +97,11 @@ func (e *Engine) Setup(ctx context.Context, t data.Target, owner, reader, writer
 
 // ownerConn logs in as the owner (setup only, never cached) and checks the
 // server version.
-func ownerConn(ctx context.Context, t data.Target, owner data.Credentials) (*pgx.Conn, data.ServerInfo, error) {
+func (e *Engine) ownerConn(ctx context.Context, t data.Target, owner data.Credentials) (*pgx.Conn, data.ServerInfo, error) {
 	if owner.User == "" || t.Dial == nil {
 		return nil, data.ServerInfo{}, fmt.Errorf("%w: no owner credentials", data.ErrLoginFailed)
 	}
-	pg, err := connect(ctx, t, owner)
+	pg, err := e.connect(ctx, t, owner)
 	if err != nil {
 		return nil, data.ServerInfo{}, loginError(ctx, err, data.ErrLoginFailed)
 	}
@@ -131,12 +131,12 @@ func ownerConn(ctx context.Context, t data.Target, owner data.Credentials) (*pgx
 // default privileges). The owner's fresh catalog replaces the cached one,
 // so the returned hash matches what Schema reports.
 func (e *Engine) SyncGrants(ctx context.Context, t data.Target, owner data.Credentials, sensitive []apitypes.DataColumnRef) (string, error) {
-	pg, _, err := ownerConn(ctx, t, owner)
+	pg, _, err := e.ownerConn(ctx, t, owner)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = pg.Close(context.Background()) }()
-	existing, err := existingRoles(ctx, pg)
+	existing, err := existingRoles(ctx, pg, e.roles)
 	if err != nil {
 		return "", fmt.Errorf("read roles: %w", err)
 	}
@@ -153,11 +153,11 @@ func (e *Engine) SyncGrants(ctx context.Context, t data.Target, owner data.Crede
 		return "", err
 	}
 	schema := markSensitive(cat, markSet(sensitive))
-	stmts := membershipSQL(existing)
-	stmts = append(stmts, grantsSQL(schemas)...)
-	stmts = append(stmts, maskedGrantsSQL(schema.Tables)...)
+	stmts := membershipSQL(e.roles, existing)
+	stmts = append(stmts, grantsSQL(e.roles, schemas)...)
+	stmts = append(stmts, maskedGrantsSQL(e.roles, schema.Tables)...)
 	if err := simpleExec(ctx, pg, "BEGIN;\n"+strings.Join(stmts, ";\n")+";\nCOMMIT"); err != nil {
-		return "", fmt.Errorf("grant Dock's roles their privileges as %s: %w", owner.User, err)
+		return "", fmt.Errorf("grant %s, %s and %s their privileges as %s: %w", e.roles.Reader, e.roles.Writer, e.roles.ReaderMasked, owner.User, err)
 	}
 	e.mu.Lock()
 	if !e.closed {
@@ -189,9 +189,9 @@ func userSchemas(ctx context.Context, pg *pgx.Conn) ([]string, error) {
 // on schemas, relations and sequences the owner creates later, so an app
 // migrating as the owner needs no sync. dock_reader_masked gets nothing
 // here (maskedGrantsSQL).
-func grantsSQL(schemas []string) []string {
-	r := pgx.Identifier{string(data.RoleReader)}.Sanitize()
-	w := pgx.Identifier{string(data.RoleWriter)}.Sanitize()
+func grantsSQL(roles data.Roles, schemas []string) []string {
+	r := pgx.Identifier{string(roles.Reader)}.Sanitize()
+	w := pgx.Identifier{string(roles.Writer)}.Sanitize()
 	out := make([]string, 0, 5*len(schemas)+5)
 	for _, name := range schemas {
 		s := pgx.Identifier{name}.Sanitize()
@@ -210,11 +210,10 @@ func grantsSQL(schemas []string) []string {
 		"ALTER DEFAULT PRIVILEGES GRANT USAGE, SELECT ON SEQUENCES TO "+w)
 }
 
-// membershipSQL revokes every role membership the existing Dock roles
-// hold.
-func membershipSQL(existing map[string]existingRole) []string {
+// membershipSQL revokes every role membership the existing roles hold.
+func membershipSQL(roles data.Roles, existing map[string]existingRole) []string {
 	var out []string
-	for _, name := range []data.Role{data.RoleReader, data.RoleWriter, data.RoleReaderMasked} {
+	for _, name := range []data.Role{roles.Reader, roles.Writer, roles.ReaderMasked} {
 		for _, m := range existing[string(name)].MemberOf {
 			out = append(out, "REVOKE "+pgx.Identifier{m}.Sanitize()+" FROM "+pgx.Identifier{string(name)}.Sanitize())
 		}
@@ -224,8 +223,8 @@ func membershipSQL(existing map[string]existingRole) []string {
 
 // maskedGrantsSQL renders the masked reader's statements for tables with
 // their sensitive columns marked.
-func maskedGrantsSQL(tables []apitypes.DataTable) []string {
-	role := pgx.Identifier{string(data.RoleReaderMasked)}.Sanitize()
+func maskedGrantsSQL(roles data.Roles, tables []apitypes.DataTable) []string {
+	role := pgx.Identifier{string(roles.ReaderMasked)}.Sanitize()
 	var out []string
 	var schema string
 	for _, t := range tables {
@@ -247,9 +246,9 @@ func maskedGrantsSQL(tables []apitypes.DataTable) []string {
 	return out
 }
 
-// dockRoles describes the roles setup creates, with SCRAM verifiers of the
-// new passwords; the masked reader only when masked has a user.
-func dockRoles(reader, writer, masked data.Credentials) ([]roleSpec, error) {
+// roleSpecs describes the roles setup creates, with SCRAM verifiers of
+// the new passwords; the masked reader only when masked has a user.
+func roleSpecs(roles data.Roles, reader, writer, masked data.Credentials) ([]roleSpec, error) {
 	rv, err := scramVerifier(reader.Password)
 	if err != nil {
 		return nil, fmt.Errorf("reader password: %w", err)
@@ -264,12 +263,12 @@ func dockRoles(reader, writer, masked data.Credentials) ([]roleSpec, error) {
 	}
 	specs := []roleSpec{
 		{
-			name:     data.RoleReader,
+			name:     roles.Reader,
 			verifier: rv,
 			settings: readSettings,
 		},
 		{
-			name:     data.RoleWriter,
+			name:     roles.Writer,
 			verifier: wv,
 			settings: [][2]string{
 				{"statement_timeout", fmt.Sprint(data.WriteStatementTimeout.Milliseconds())},
@@ -282,13 +281,13 @@ func dockRoles(reader, writer, masked data.Credentials) ([]roleSpec, error) {
 		if err != nil {
 			return nil, fmt.Errorf("masked reader password: %w", err)
 		}
-		specs = append(specs, roleSpec{name: data.RoleReaderMasked, verifier: mv, settings: readSettings})
+		specs = append(specs, roleSpec{name: roles.ReaderMasked, verifier: mv, settings: readSettings})
 	}
 	return specs, nil
 }
 
-// existingRoles reads the Dock roles that already exist.
-func existingRoles(ctx context.Context, pg *pgx.Conn) (map[string]existingRole, error) {
+// existingRoles reads which of the roles already exist.
+func existingRoles(ctx context.Context, pg *pgx.Conn, roles data.Roles) (map[string]existingRole, error) {
 	rows, err := pg.Query(ctx, `
 SELECT r.rolname,
        r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls,
@@ -297,7 +296,7 @@ FROM pg_roles r
 LEFT JOIN pg_auth_members m ON m.member = r.oid
 LEFT JOIN pg_roles g ON g.oid = m.roleid
 WHERE r.rolname = ANY($1)
-GROUP BY 1, 2`, []string{string(data.RoleReader), string(data.RoleWriter), string(data.RoleReaderMasked)})
+GROUP BY 1, 2`, []string{string(roles.Reader), string(roles.Writer), string(roles.ReaderMasked)})
 	if err != nil {
 		return nil, err
 	}

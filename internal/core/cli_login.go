@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -53,10 +54,10 @@ const (
 // the channels that wake waiting CLIs.
 type cliLogins struct {
 	// starts limits logins started per client IP.
-	starts *limiter
+	starts *httpkit.Limiter
 	// fails counts wrong user codes per user and per IP; once spent, code
 	// lookups are refused until it refills (a lockout of minutes).
-	fails *limiter
+	fails *httpkit.Limiter
 	// wait is cliWait; tests shorten it.
 	wait time.Duration
 
@@ -73,8 +74,8 @@ type cliWaiter struct {
 
 func newCLILogins() *cliLogins {
 	return &cliLogins{
-		starts:  newLimiter(10, 30*time.Second),
-		fails:   newLimiter(5, 2*time.Minute),
+		starts:  httpkit.NewLimiter(10, 30*time.Second),
+		fails:   httpkit.NewLimiter(5, 2*time.Minute),
 		wait:    cliWait,
 		waiters: map[int64]*cliWaiter{},
 	}
@@ -110,14 +111,6 @@ func (w *cliLogins) notify(id int64) {
 	}
 }
 
-// exhausted reports whether key has no attempt left, without spending one.
-func (l *limiter) exhausted(key string, t time.Time) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	b, ok := l.buckets[key]
-	return ok && b.tokens+float64(t.Sub(b.last))/float64(l.every) < 1
-}
-
 var (
 	errCLILoginExpired = errf(apitypes.CodeExpired, "this login expired or was already used; run `dock login` again")
 	errCLILoginDenied  = errf(apitypes.CodeDenied, "the login was denied in the browser")
@@ -128,7 +121,7 @@ var (
 // in, since only it knows the server's address.
 func (c *Core) StartCLILogin(ctx context.Context, req apitypes.CLILoginStartRequest, clientIP string) (apitypes.CLILoginStart, error) {
 	t := now()
-	if !c.cliLogins.starts.allow("ip:"+clientIP, t) {
+	if !c.cliLogins.starts.Allow("ip:"+clientIP, t) {
 		return apitypes.CLILoginStart{}, errf(apitypes.CodeRateLimited, "too many logins started from %s; wait a minute and try again", clientIP)
 	}
 	if err := c.store.DeleteExpiredCLILogins(ctx, t); err != nil {
@@ -329,7 +322,7 @@ func (c *Core) cliLoginFor(ctx context.Context, a Actor, userCode, clientIP stri
 	t := now()
 	keys := []string{"user:" + strconv.FormatInt(a.UserID, 10), "ip:" + clientIP}
 	for _, k := range keys {
-		if c.cliLogins.fails.exhausted(k, t) {
+		if c.cliLogins.fails.Exhausted(k, t) {
 			return store.CliLogin{}, errf(apitypes.CodeRateLimited, "too many wrong login codes; wait a few minutes and try again")
 		}
 	}
@@ -341,7 +334,7 @@ func (c *Core) cliLoginFor(ctx context.Context, a Actor, userCode, clientIP stri
 	}
 	if !ok || store.IsNotFound(err) {
 		for _, k := range keys {
-			c.cliLogins.fails.allow(k, t)
+			c.cliLogins.fails.Allow(k, t)
 		}
 		c.log.Warn("cli login: wrong code", "user", a.Email, "ip", clientIP)
 		return store.CliLogin{}, notFound("no login with this code; check it against your terminal, or run `dock login` again")

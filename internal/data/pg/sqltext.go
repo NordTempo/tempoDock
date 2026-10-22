@@ -418,11 +418,11 @@ func arrayLiteral(values []string) string {
 	return b.String()
 }
 
-// appName is application_name for an actor: "dock:<actor>", limited to
-// printable ASCII without quotes so it can sit in a SET statement, at most
-// 63 bytes (Postgres' limit).
-func appName(actor string) string {
-	b := []byte("dock:" + actor)
+// appName is application_name for an actor: "<app>:<actor>" ("dock:ada"),
+// limited to printable ASCII without quotes so it can sit in a SET
+// statement, at most 63 bytes (Postgres' limit).
+func appName(app, actor string) string {
+	b := []byte(app + ":" + actor)
 	for i, c := range b {
 		if c < 0x20 || c > 0x7e || c == '\'' || c == '\\' {
 			b[i] = '_'

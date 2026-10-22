@@ -1,20 +1,16 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
-	"reflect"
-	"sync"
-	"time"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/datapanel/datahttp"
 )
 
 // Database panel endpoints (ADR 0016): everything under
@@ -60,19 +56,8 @@ func (s *Server) dataAPI() dataCore {
 
 const dataPathT = servicePathT + "/data"
 
-// sqlBodyBytes caps request bodies that carry SQL: the SQL limit with room
-// for JSON escaping.
-const sqlBodyBytes = 2*apitypes.DataSQLMaxBytes + 64<<10
-
-// changesetBodyBytes caps a changeset request: up to 500 rows of values.
-const changesetBodyBytes = 16 << 20
-
-// dataErrors are the statuses data operations answer with besides 200:
-// 503 when the database isn't running or can't be reached.
-var dataErrors = []int{
-	http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound,
-	http.StatusConflict, http.StatusServiceUnavailable,
-}
+// dataErrors are the data operations' error statuses (datahttp.Errors).
+var dataErrors = datahttp.Errors
 
 // TablePath addresses one table of a database service, as "schema.name".
 type TablePath struct {
@@ -92,34 +77,21 @@ type SavedQueryPath struct {
 	ID int64 `path:"id" doc:"Saved query ID"`
 }
 
-// created answers with 201, or 200 for a dry run.
-type created[T any] struct {
-	Status int
-	Body   T
-}
-
-// badRequest is a validation problem about a request parameter.
-func badRequest(location, msg string) error {
-	return &apitypes.Error{
-		Status: http.StatusBadRequest, Title: http.StatusText(http.StatusBadRequest), Code: apitypes.CodeValidation,
-		Detail: msg, Errors: []apitypes.ErrorDetail{{Message: msg, Location: location}},
-	}
-}
-
 func registerData(s *Server, a huma.API) {
 	tags := []string{"data"}
-	data := func(op huma.Operation) huma.Operation {
+	// dataOp adds the shared summary and description (with Dock's own
+	// sentences after it) to a data operation.
+	dataOp := func(op huma.Operation, more ...string) huma.Operation {
 		op.Tags = tags
 		op.Errors = dataErrors
+		op.Summary, op.Description = datahttp.Describe(op.OperationID, data.DockRoles, core.DataWords)
+		op.Description += strings.Join(more, "")
 		return op
 	}
 
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data", Method: http.MethodGet, Path: dataPathT,
-		Summary: "Database panel state",
-		Description: "Engine, version, status (ready, setup_needed, unsupported, unreachable, not_running) and the caller's data access with the steps that decided it. " +
-			"Services that aren't databases are 404.",
-	}), func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.DataInfo], error) {
+	}, " Services that aren't databases are 404."), func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.DataInfo], error) {
 		return reply(s.dataAPI().DataInfo(ctx, actor, in.ref()))
 	})
 	authed(s, a, huma.Operation{
@@ -132,25 +104,18 @@ func registerData(s *Server, a huma.API) {
 	}) (*out[apitypes.Service], error) {
 		return reply(s.dataAPI().UpdateDatabaseSettings(ctx, actor, in.ref(), in.Body))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "setup-data", Method: http.MethodPost, Path: dataPathT + "/setup",
-		Summary:     "Set up data access",
-		Description: "Creates (or rotates) Dock's least-privilege roles dock_reader and dock_writer in the database, using the owner's credentials. Writes to the user's database. Admin.",
 	}), func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.DataInfo], error) {
 		return reply(s.dataAPI().SetupData(ctx, actor, in.ref()))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-schema", Method: http.MethodGet, Path: dataPathT + "/schema",
-		Summary:     "Database schema",
-		Description: "Tables, columns, keys, foreign keys, indexes and constraints, from one catalog query cached for 60 s. Level schema.",
 	}), func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.DataSchema], error) {
 		return reply(s.dataAPI().DataSchema(ctx, actor, in.ref()))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-rows", Method: http.MethodGet, Path: dataPathT + "/tables/{table}/rows",
-		Summary: "One page of a table",
-		Description: "A keyset page: sorted by `order` and the primary key, starting after the `after` cursor. Pass the page's `next` as `after` for the following page. " +
-			"Sensitive columns are masked unless `reveal` is set by a caller with sensitive visible. Level read.",
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		TablePath
 		Order  string `query:"order" doc:"Column to sort by, -column for descending; default the primary key"`
@@ -162,33 +127,29 @@ func registerData(s *Server, a huma.API) {
 		Reveal bool   `query:"reveal" doc:"Show the table's sensitive columns instead of masking them. Needs sensitive visible (403 otherwise); audited as data.reveal"`
 	}) (*out[apitypes.DataPage], error) {
 		req := apitypes.DataPageRequest{Table: in.Table, Order: in.Order, After: in.After, Limit: in.Limit, Count: in.Count, Full: in.Full, Reveal: in.Reveal}
-		if in.Filter != "" {
-			if err := json.Unmarshal([]byte(in.Filter), &req.Filters); err != nil {
-				return nil, badRequest("query.filter", "filter must be a JSON array of {column, op, value}: "+err.Error())
-			}
+		var err error
+		if req.Filters, err = datahttp.ParseFilters(in.Filter); err != nil {
+			return nil, err
 		}
 		return reply(s.dataAPI().DataRows(ctx, actor, in.ref(), req))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-references", Method: http.MethodGet, Path: dataPathT + "/tables/{table}/references",
-		Summary:     "Rows referencing a row",
-		Description: "For each incoming foreign key, the first rows that reference the row with primary key `key`, and filters that open them. Level read.",
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		TablePath
 		Key   string `query:"key" required:"true" doc:"The row's primary key as a JSON object, column to value, e.g. {\"id\":\"42\"}"`
 		Limit int    `query:"limit" minimum:"0" maximum:"100" doc:"Rows per foreign key; 0 means 10"`
 	}) (*out[[]apitypes.DataReferences], error) {
 		req := apitypes.DataReferencesRequest{Table: in.Table, Limit: in.Limit}
-		if err := json.Unmarshal([]byte(in.Key), &req.Key); err != nil || len(req.Key) == 0 {
-			return nil, badRequest("query.key", `key must be a JSON object of primary key columns to values, e.g. {"id":"42"}`)
+		var err error
+		if req.Key, err = datahttp.ParseKey(in.Key); err != nil {
+			return nil, err
 		}
 		return reply(s.dataAPI().DataReferences(ctx, actor, in.ref(), req))
 	})
 	registerDataQuery(s, a)
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-history", Method: http.MethodGet, Path: dataPathT + "/history",
-		Summary:     "Your query history",
-		Description: "The caller's own queries on this database (their data.query audit events), newest first. Page back with `before`, the last entry's audit_id.",
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Before int64 `query:"before" minimum:"0" doc:"Only entries with a smaller audit_id"`
@@ -197,55 +158,51 @@ func registerData(s *Server, a huma.API) {
 		return reply(s.dataAPI().DataHistory(ctx, actor, in.ref(), in.Before, in.Limit))
 	})
 
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "list-saved-queries", Method: http.MethodGet, Path: dataPathT + "/saved-queries",
-		Summary: "Your saved queries", Description: "Per user and service.",
 	}), func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[[]apitypes.DataSavedQuery], error) {
 		return reply(s.dataAPI().ListSavedQueries(ctx, actor, in.ref()))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "create-saved-query", Method: http.MethodPost, Path: dataPathT + "/saved-queries",
-		Summary: "Save a query", DefaultStatus: http.StatusCreated, MaxBodyBytes: sqlBodyBytes,
+		DefaultStatus: http.StatusCreated, MaxBodyBytes: datahttp.SQLBodyBytes,
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Body apitypes.SaveDataQueryRequest
 	}) (*out[apitypes.DataSavedQuery], error) {
 		return reply(s.dataAPI().SaveDataQuery(ctx, actor, in.ref(), 0, in.Body))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "update-saved-query", Method: http.MethodPut, Path: dataPathT + "/saved-queries/{id}",
-		Summary: "Replace a saved query", MaxBodyBytes: sqlBodyBytes,
+		MaxBodyBytes: datahttp.SQLBodyBytes,
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		SavedQueryPath
 		Body apitypes.SaveDataQueryRequest
 	}) (*out[apitypes.DataSavedQuery], error) {
 		return reply(s.dataAPI().SaveDataQuery(ctx, actor, in.ref(), in.ID, in.Body))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "delete-saved-query", Method: http.MethodDelete, Path: dataPathT + "/saved-queries/{id}",
-		Summary: "Delete a saved query", DefaultStatus: http.StatusNoContent,
+		DefaultStatus: http.StatusNoContent,
 	}), func(ctx context.Context, actor core.Actor, in *SavedQueryPath) (*struct{}, error) {
 		return nil, s.dataAPI().DeleteSavedQuery(ctx, actor, in.ref(), in.ID)
 	})
 
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "list-changesets", Method: http.MethodGet, Path: dataPathT + "/changesets",
-		Summary: "List changesets", Description: "Newest first. Level schema.",
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Status apitypes.DataChangesetStatus `query:"status" enum:"pending,committed,rejected,expired,conflict" doc:"Only changesets with this status"`
 	}) (*out[[]apitypes.DataChangeset], error) {
 		return reply(s.dataAPI().ListDataChangesets(ctx, actor, in.ref(), in.Status))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "create-changeset", Method: http.MethodPost, Path: dataPathT + "/changesets",
-		Summary: "Preview or propose a changeset", MaxBodyBytes: changesetBodyBytes,
-		Description: "With `dry_run`, validates the changes and renders the SQL without storing anything (200, status preview). Otherwise stores the changeset as pending (201); " +
-			"nothing is written until it is committed. Level propose.",
+		MaxBodyBytes: datahttp.ChangesetBodyBytes,
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Body apitypes.DataChangesetRequest
-	}) (*created[apitypes.DataChangeset], error) {
+	}) (*datahttp.Created[apitypes.DataChangeset], error) {
 		cs, err := s.dataAPI().CreateDataChangeset(ctx, actor, in.ref(), in.Body)
 		if err != nil {
 			return nil, err
@@ -254,19 +211,15 @@ func registerData(s *Server, a huma.API) {
 		if in.Body.DryRun {
 			status = http.StatusOK
 		}
-		return &created[apitypes.DataChangeset]{Status: status, Body: cs}, nil
+		return &datahttp.Created[apitypes.DataChangeset]{Status: status, Body: cs}, nil
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-changeset", Method: http.MethodGet, Path: dataPathT + "/changesets/{id}",
-		Summary: "Get a changeset",
 	}), func(ctx context.Context, actor core.Actor, in *ChangesetPath) (*out[apitypes.DataChangeset], error) {
 		return reply(s.dataAPI().GetDataChangeset(ctx, actor, in.ref(), in.ID))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "commit-changeset", Method: http.MethodPost, Path: dataPathT + "/changesets/{id}/commit",
-		Summary: "Commit a changeset",
-		Description: "Revalidates the pending changeset against current data and commits it in one transaction. Rows that changed meanwhile fail it as a whole (409, status conflict). " +
-			"One's own with level write; anyone's (approving) as admin. Production needs `confirm` set to the environment's name.",
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		ChangesetPath
 		Body *apitypes.DataCommitRequest
@@ -277,9 +230,8 @@ func registerData(s *Server, a huma.API) {
 		}
 		return reply(s.dataAPI().CommitDataChangeset(ctx, actor, in.ref(), in.ID, req))
 	})
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "reject-changeset", Method: http.MethodPost, Path: dataPathT + "/changesets/{id}/reject",
-		Summary: "Reject a changeset", Description: "Admins, or the author withdrawing it.",
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		ChangesetPath
 		Body *apitypes.DataRejectRequest
@@ -291,9 +243,8 @@ func registerData(s *Server, a huma.API) {
 		return reply(s.dataAPI().RejectDataChangeset(ctx, actor, in.ref(), in.ID, req))
 	})
 
-	authed(s, a, data(huma.Operation{
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "set-sensitive-columns", Method: http.MethodPut, Path: dataPathT + "/sensitive-columns",
-		Summary: "Set sensitive columns", Description: "Replaces the database's sensitive columns. Admin.",
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Body apitypes.SetSensitiveColumnsRequest
@@ -380,27 +331,14 @@ func registerDataPolicy(s *Server, a huma.API) {
 	})
 }
 
-// ndjsonWriteTimeout bounds each write of a query stream, so a client that
-// stops reading can't hold a database connection.
-const ndjsonWriteTimeout = 15 * time.Second
-
-const queryDoc = "\n\nThe response is NDJSON (`application/x-ndjson`): one DataQueryFrame per line. A `header` frame (columns), `rows` frames of up to 500 rows, " +
-	"then exactly one `end` frame (row count, truncated, duration) or `error` frame (what the database reported, possibly after rows). " +
-	"Permission and validation errors are normal problem responses before any frame. Closing the connection cancels the query."
-
 // registerDataQuery registers POST /data/query, which streams NDJSON frames.
 func registerDataQuery(s *Server, a huma.API) {
-	frame := a.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[apitypes.DataQueryFrame](), true, "")
 	op := huma.Operation{
 		OperationID: "data-query", Method: http.MethodPost, Path: dataPathT + "/query",
-		Summary: "Run a read-only SQL statement", Tags: []string{"data"}, Errors: dataErrors, MaxBodyBytes: sqlBodyBytes,
-		Description: "Runs one statement as dock_reader in a READ ONLY transaction; several statements in one string are refused. " +
-			"Results are capped by `limit` (default 10 000, at most 100 000) and 64 MB, cells over 8 KB are truncated. Level read; masked callers' SQL runs as dock_reader_masked, which can't select sensitive columns." + queryDoc,
-		Responses: map[string]*huma.Response{"200": {
-			Description: "NDJSON stream of DataQueryFrame, one per line",
-			Content:     map[string]*huma.MediaType{"application/x-ndjson": {Schema: frame}},
-		}},
+		Tags: []string{"data"}, Errors: dataErrors, MaxBodyBytes: datahttp.SQLBodyBytes,
+		Responses: datahttp.QueryResponses(a),
 	}
+	op.Summary, op.Description = datahttp.Describe(op.OperationID, data.DockRoles, core.DataWords)
 	authed(s, a, op, func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Body apitypes.DataQueryRequest
@@ -410,108 +348,7 @@ func registerDataQuery(s *Server, a huma.API) {
 			return nil, err
 		}
 		return &huma.StreamResponse{Body: func(hctx huma.Context) {
-			s.streamFrames(hctx, stream)
+			datahttp.StreamFrames(hctx, stream, s.problem)
 		}}, nil
 	})
-}
-
-// streamFrames writes a query stream as NDJSON. A stream that fails before
-// its first frame answers with a problem response; one that fails later
-// ends with an error frame. Client disconnects cancel the stream's context.
-func (s *Server) streamFrames(hctx huma.Context, stream core.Stream[apitypes.DataQueryFrame]) {
-	w := &ndjsonWriter{hctx: hctx}
-	ctx, cancel := context.WithCancel(hctx.Context())
-	defer cancel()
-	err := stream(ctx, func() { _ = w.write() }, w.write)
-	switch {
-	case err != nil && !w.started():
-		w.problem(s.problem(err))
-	case err != nil && ctx.Err() == nil:
-		msg := err.Error()
-		if ae, ok := errors.AsType[*apitypes.Error](s.problem(err)); ok {
-			msg = ae.Detail
-		}
-		_ = w.write(apitypes.DataQueryFrame{Type: apitypes.FrameError, Error: &apitypes.DataQueryError{Message: msg}})
-	default:
-		if w.write() == nil {
-			w.clearDeadline()
-		}
-	}
-}
-
-// ndjsonWriter writes NDJSON frames. Headers go out with the first write,
-// so a stream that fails before it starts can still answer with a problem.
-// Each write is one batch of lines and one flush, under a write deadline.
-type ndjsonWriter struct {
-	mu   sync.Mutex
-	hctx huma.Context
-	rc   *http.ResponseController
-	out  io.Writer // nil until started
-	buf  bytes.Buffer
-}
-
-func (w *ndjsonWriter) started() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.out != nil
-}
-
-// write starts the response if needed, then writes frames as lines with
-// one flush (just the headers when there are none).
-func (w *ndjsonWriter) write(frames ...apitypes.DataQueryFrame) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.out == nil {
-		w.hctx.SetHeader("Content-Type", "application/x-ndjson")
-		w.hctx.SetHeader("X-Accel-Buffering", "no")
-		w.hctx.SetStatus(http.StatusOK)
-		w.out = w.hctx.BodyWriter()
-		if rw, ok := w.out.(http.ResponseWriter); ok {
-			w.rc = http.NewResponseController(rw)
-		}
-	}
-	w.buf.Reset()
-	enc := json.NewEncoder(&w.buf)
-	for _, f := range frames {
-		if err := enc.Encode(f); err != nil { // Encode ends each frame with \n
-			return err
-		}
-	}
-	if w.rc != nil {
-		if err := w.rc.SetWriteDeadline(time.Now().Add(ndjsonWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
-			return err
-		}
-	}
-	if w.buf.Len() > 0 {
-		if _, err := w.out.Write(w.buf.Bytes()); err != nil {
-			return err
-		}
-	}
-	if w.rc != nil {
-		if err := w.rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
-			return err
-		}
-	}
-	return nil
-}
-
-// clearDeadline lifts the write deadline after a clean end, so it doesn't
-// cut off a later response on the same connection.
-func (w *ndjsonWriter) clearDeadline() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.rc != nil {
-		_ = w.rc.SetWriteDeadline(time.Time{})
-	}
-}
-
-// problem answers a stream that failed before it started.
-func (w *ndjsonWriter) problem(err error) {
-	ae, ok := errors.AsType[*apitypes.Error](err)
-	if !ok {
-		ae = &apitypes.Error{Status: http.StatusInternalServerError, Title: "Internal Server Error", Code: apitypes.CodeInternal, Detail: err.Error()}
-	}
-	w.hctx.SetHeader("Content-Type", "application/problem+json")
-	w.hctx.SetStatus(ae.Status)
-	_ = json.NewEncoder(w.hctx.BodyWriter()).Encode(ae)
 }

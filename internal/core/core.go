@@ -21,6 +21,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -108,7 +109,7 @@ type Core struct {
 
 	// loginLimit throttles password attempts per client IP and per email;
 	// bcryptSem caps concurrent password checks (each is ~50ms of CPU).
-	loginLimit *limiter
+	loginLimit *httpkit.Limiter
 	bcryptSem  chan struct{}
 
 	// stats holds the latest resource samples and the live samplers.
@@ -120,11 +121,10 @@ type Core struct {
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
 
-	// data is the database panel engine; browse throttles data.browse
-	// audit events.
-	data     data.Engine
-	browse   browseLog
-	deciding decisions
+	// data is the database panel's engine and panel the shared panel
+	// over it, with Dock as its host (data_host.go).
+	data  data.Engine
+	panel *dataPanel
 	// tunnels are the open `dock connect` tunnels (data_connect.go).
 	tunnels tunnelSet
 
@@ -173,7 +173,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		status:     map[int64]apitypes.ServiceStatus{},
 		removing:   map[string]bool{},
 		uploads:    map[int64]bool{},
-		loginLimit: newLimiter(5, 10*time.Second),
+		loginLimit: httpkit.NewLimiter(5, 10*time.Second),
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),
 		backups:    newBackupState(),
@@ -182,8 +182,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		git:        newGitState(o.GitHubAPI),
 	}
 	if c.data == nil {
-		c.data = pg.New()
+		c.data = pg.New(pg.Options{})
 	}
+	c.panel = newDataPanel(c)
 	if o.CutoverDrain > 0 {
 		c.drain = o.CutoverDrain
 	}
@@ -327,7 +328,7 @@ func (c *Core) Close() {
 	c.git.mu.Unlock()
 	c.serversMu.Unlock()
 	c.wg.Wait()
-	c.data.Close()
+	c.panel.Close()
 }
 
 func now() time.Time { return time.Now().UTC() }

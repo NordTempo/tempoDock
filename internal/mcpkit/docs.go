@@ -1,4 +1,4 @@
-package mcp
+package mcpkit
 
 import (
 	"bufio"
@@ -6,17 +6,21 @@ import (
 	"io/fs"
 	"regexp"
 	"strings"
-
-	"github.com/NordTempo/tempoDock/docs/guide"
 )
 
-// Docs resources: every user guide page as dock://docs/<page>, so an agent
-// can learn the platform (and explain it to the user) from the server it
-// talks to, matching that server's version. The guide's README is
-// dock://docs/index. Pages are embedded in the binary (docs/guide), not
+// Docs are a host's user guide as resources: every page as <URI><page>,
+// so an agent can learn the product (and explain it to the user) from the
+// server it talks to, matching that server's version. The guide's
+// README.md is <URI>index. Pages are read from the embedded FS, not
 // copied.
-
-const docsURI = "dock://docs/"
+type Docs struct {
+	// FS holds the guide's *.md pages at its root.
+	FS fs.FS
+	// URI prefixes page names: "dock://docs/".
+	URI string
+	// IndexDescription describes the README.md page.
+	IndexDescription string
+}
 
 // doc is a guide page as resources/list shows it.
 type doc struct {
@@ -28,45 +32,49 @@ type doc struct {
 	file        string
 }
 
-// loadDocs lists the guide's pages, with titles from their first heading
-// and descriptions from the guide index's table.
-func loadDocs() []doc {
-	files, err := fs.Glob(guide.Pages, "*.md")
+// load lists the guide's pages, with titles from their first heading and
+// descriptions from the guide index's table.
+func (d Docs) load() []doc {
+	if d.FS == nil {
+		return []doc{}
+	}
+	files, err := fs.Glob(d.FS, "*.md")
 	if err != nil {
 		panic(err) // a constant pattern
 	}
-	index, _ := fs.ReadFile(guide.Pages, "README.md")
+	index, _ := fs.ReadFile(d.FS, "README.md")
 	about := describe(index)
 	out := make([]doc, 0, len(files))
 	for _, file := range files {
 		name := strings.TrimSuffix(file, ".md")
 		desc := about[name]
 		if name == "README" {
-			name, desc = "index", "Index of the Tempo Dock guide and the words it uses (project, environment, service, release, ...)."
+			name, desc = "index", d.IndexDescription
 		}
-		b, _ := fs.ReadFile(guide.Pages, file)
-		out = append(out, doc{URI: docsURI + name, Name: name, Title: heading(b, name), Description: desc, MIMEType: "text/markdown", file: file})
+		b, _ := fs.ReadFile(d.FS, file)
+		out = append(out, doc{URI: d.URI + name, Name: name, Title: heading(b, name), Description: desc, MIMEType: "text/markdown", file: file})
 	}
 	return out
 }
 
-// readDoc answers resources/read.
-func readDoc(docs []doc, uri string) (any, error) {
-	for _, d := range docs {
-		if d.URI != uri {
+// read answers resources/read.
+func (d Docs) read(docs []doc, uri string) (any, error) {
+	for _, page := range docs {
+		if page.URI != uri {
 			continue
 		}
-		b, err := fs.ReadFile(guide.Pages, d.file)
+		b, err := fs.ReadFile(d.FS, page.file)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"contents": []map[string]string{{"uri": uri, "mimeType": d.MIMEType, "text": string(b)}}}, nil
+		return map[string]any{"contents": []map[string]string{{"uri": uri, "mimeType": page.MIMEType, "text": string(b)}}}, nil
 	}
 	return nil, &rpcError{codeNoResource, "resource " + uri + " not found; resources/list shows the guide's pages"}
 }
 
 // describe reads each page's one-line description from the guide index's
-// table rows: | [Title](page.md) | For |.
+// table rows: | [Title](page.md) | For |. It runs once, on the first
+// request, so the pattern isn't compiled at start-up.
 func describe(index []byte) map[string]string {
 	row := regexp.MustCompile(`^\| \[[^\]]+\]\(([a-z0-9-]+)\.md\) \| (.+) \|$`)
 	out := map[string]string{}

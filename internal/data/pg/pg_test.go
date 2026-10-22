@@ -110,10 +110,10 @@ func TestLiterals(t *testing.T) {
 	if got := quoteLiteral(`a\'b`); got != `E'a\\''b'` {
 		t.Errorf("escaped literal: %s", got)
 	}
-	if got := appName("bo'b\\ é"); got != "dock:bo_b_ __" {
+	if got := appName("dock", "bo'b\\ é"); got != "dock:bo_b_ __" {
 		t.Errorf("app name: %q", got)
 	}
-	if got := len(appName(strings.Repeat("x", 100))); got != 63 {
+	if got := len(appName("dock", strings.Repeat("x", 100))); got != 63 {
 		t.Errorf("app name length %d", got)
 	}
 }

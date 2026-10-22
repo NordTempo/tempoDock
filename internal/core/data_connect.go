@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -72,7 +73,7 @@ func (c *Core) connectAccess(ctx context.Context, a Actor, ref ServiceRef, confi
 	if !perm.Level.Includes(apitypes.LevelWrite) || perm.Sensitive != apitypes.SensitiveVisible {
 		return ss, perm, errf(apitypes.CodeForbidden,
 			"a tunnel is raw access to %s, so it needs data access level write with sensitive visible; you have %s, sensitive %s (%s)",
-			ss, perm.Level, perm.Sensitive, whyWords(perm))
+			ss, perm.Level, perm.Sensitive, datapanel.Why(perm))
 	}
 	if ss.env.Kind == string(apitypes.KindProduction) && confirm != ss.env.Name {
 		return ss, perm, invalid("%s is production: confirm with the environment's name (%s) to connect", ss.envScope, ss.env.Name)
@@ -174,7 +175,7 @@ func (c *Core) OpenTunnel(ctx context.Context, a Actor, ref ServiceRef, req Tunn
 	if err != nil {
 		return nil, err
 	}
-	t := &Tunnel{c: c, a: a, ss: ss, key: actorKey(a), port: target.port, from: req.From}
+	t := &Tunnel{c: c, a: a, ss: ss, key: datapanel.ActorKey(panelActor(a)), port: target.port, from: req.From}
 	if err := c.tunnels.reserve(t.key); err != nil {
 		return nil, err
 	}

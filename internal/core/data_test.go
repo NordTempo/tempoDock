@@ -7,11 +7,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -185,7 +185,7 @@ func TestPermissionWhy(t *testing.T) {
 	if len(got.Why) != len(want) || got.Why[0] != want[0] || got.Why[1] != want[1] {
 		t.Fatalf("why = %+v", got.Why)
 	}
-	err := requireLevel(got, apitypes.LevelRead, "reading rows")
+	err := datapanel.RequireLevel(got, apitypes.LevelRead, "reading rows")
 	if CodeOf(err) != apitypes.CodeForbidden || !strings.Contains(err.Error(), "needs data access level read; you have none") || !strings.Contains(err.Error(), "capped by the token's scope read") {
 		t.Fatalf("error: %v", err)
 	}
@@ -447,42 +447,10 @@ func TestDataInfoWithoutAccess(t *testing.T) {
 	}
 }
 
-func TestBrowseThrottle(t *testing.T) {
-	var b browseLog
-	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	const browse = apitypes.AuditDataBrowse
-	k := browseKey{browse, "user:1", 1, "public.orders"}
-	if !b.due(k, at) || b.due(k, at.Add(time.Minute)) || !b.due(browseKey{browse, "user:1", 1, "public.items"}, at) || !b.due(browseKey{browse, "user:2", 1, "public.orders"}, at) {
-		t.Fatal("first browse per actor and table is audited, repeats are not")
-	}
-	if !b.due(browseKey{apitypes.AuditDataReveal, "user:1", 1, "public.orders"}, at) {
-		t.Fatal("a reveal is throttled apart from browsing")
-	}
-	if !b.due(k, at.Add(browseInterval)) {
-		t.Fatal("audited again after the interval")
-	}
-	for i := range browseLogMax + 10 {
-		b.due(browseKey{browse, "user:1", int64(i), "t"}, at.Add(time.Duration(i)*time.Hour))
-	}
-	if len(b.last) > browseLogMax {
-		t.Fatalf("throttle holds %d entries", len(b.last))
-	}
-}
-
-func TestCutSQL(t *testing.T) {
-	long := strings.Repeat("é", apitypes.AuditSQLMaxBytes)
-	got := cutSQL(long)
-	if len(got) > apitypes.AuditSQLMaxBytes || !strings.HasPrefix(long, got) || len(got) < apitypes.AuditSQLMaxBytes-1 {
-		t.Fatalf("cut to %d bytes", len(got))
-	}
-	if sqlSummary("SELECT *\n  FROM orders") != "SELECT * FROM orders" {
-		t.Fatal(sqlSummary("SELECT *\n  FROM orders"))
-	}
-}
-
 // pageEngine is a data.Engine that records how Page was called and which
-// services were forgotten. Only Page, SyncGrants, Redact, Forget and Close
-// are implemented; Page returns next as its cursor.
+// services were forgotten. Only Page, Schema, Query, SyncGrants, Redact,
+// Forget and Close are implemented; Page returns next as its cursor,
+// Schema an empty schema and Query no rows.
 type pageEngine struct {
 	data.Engine
 	mu     sync.Mutex
@@ -500,11 +468,19 @@ func (e *pageEngine) Page(_ context.Context, _ data.Target, c data.Call, req api
 	return apitypes.DataPage{Next: e.next}, nil
 }
 
+func (e *pageEngine) Schema(context.Context, data.Target, data.Call, []apitypes.DataColumnRef) (apitypes.DataSchema, error) {
+	return apitypes.DataSchema{}, nil
+}
+
+func (e *pageEngine) Query(context.Context, data.Target, data.Call, apitypes.DataQueryRequest, func(apitypes.DataQueryFrame) error) (data.QueryStats, error) {
+	return data.QueryStats{Outcome: apitypes.OutcomeOK}, nil
+}
+
 func (e *pageEngine) SyncGrants(context.Context, data.Target, data.Credentials, []apitypes.DataColumnRef) (string, error) {
 	return "synced", nil
 }
 
-func (e *pageEngine) Redact(sql string) string { return pg.New().Redact(sql) }
+func (e *pageEngine) Redact(sql string) string { return pg.New(pg.Options{}).Redact(sql) }
 
 func (e *pageEngine) Forget(id int64) {
 	e.mu.Lock()
@@ -599,13 +575,20 @@ func TestDataCursorsSealed(t *testing.T) {
 // details need data access level read, and masked callers get others'
 // SQL with its values redacted.
 func TestDataAuditPrivacy(t *testing.T) {
-	h, _, db, ss := fakeDatabase(t)
+	h, _, db, _ := fakeDatabase(t)
 	admin := h.user("admin@x", apitypes.ScopeAdmin)
 	dev := h.user("dev@x", apitypes.ScopeDeploy)
 	viewer := h.user("viewer@x", apitypes.ScopeRead)
 	const sql = "SELECT * FROM customers WHERE email = 'a@b.c'"
-	h.c.auditQuery(h.ctx, admin, ss, sql, data.QueryStats{Outcome: apitypes.OutcomeOK}, nil)
-	h.c.auditQuery(h.ctx, dev, ss, sql, data.QueryStats{Outcome: apitypes.OutcomeOK}, nil)
+	for _, a := range []Actor{admin, dev} {
+		stream, err := h.c.DataQuery(h.ctx, a, db, apitypes.DataQueryRequest{SQL: sql})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := stream(h.ctx, func() {}, func(...apitypes.DataQueryFrame) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := h.c.DataRows(h.ctx, dev, db, apitypes.DataPageRequest{Table: "public.customers", Filters: []apitypes.DataFilter{
 		{Column: "email", Op: apitypes.FilterEq, Value: "a@b.c"}, {Column: "id", Op: apitypes.FilterIn, Values: []string{"7", "8"}},
 	}}); err != nil {
@@ -648,32 +631,6 @@ func TestDataAuditPrivacy(t *testing.T) {
 		if err != nil || d.SQL != c.want {
 			t.Errorf("%s reads detail %d: %q %v", c.a.Name, c.id, d.SQL, err)
 		}
-	}
-}
-
-// TestChangesetMasked: a changeset touching a sensitive column shows
-// masked callers no value of it, in its changes, conflicts or SQL.
-func TestChangesetMasked(t *testing.T) {
-	h, _, _, _ := fakeDatabase(t)
-	s := func(v string) *string { return &v }
-	changes := `[{"op":"update","table":"public.customers","key":{"id":"1"},"old":{"email":"old@x.io","name":"a"},"new":{"email":"new@x.io","name":"b"}}]`
-	cs := store.Changeset{ID: 1, Status: "conflict", Changes: changes, Conflicts: `[{"change":0,"reason":"changed","current":{"email":"cur@x.io","name":"c"},"message":"m"}]`,
-		Sql: "UPDATE customers SET email = 'new@x.io', name = 'b' WHERE id = '1' AND email = 'old@x.io' AND name = 'a'"}
-	dt := &dbTarget{perm: apitypes.DataPermission{Sensitive: apitypes.SensitiveMasked}, sensitive: []apitypes.DataColumnRef{{Schema: "public", Table: "customers", Column: "email"}}}
-	out, err := h.c.changesetFor(dt, cs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ch := out.Changes[0]
-	if _, ok := ch.New["email"]; ok || len(ch.Old) != 1 || *ch.New["name"] != *s("b") || len(out.Conflicts[0].Current) != 1 {
-		t.Fatalf("masked changes: %+v %+v", ch, out.Conflicts)
-	}
-	if strings.Contains(out.SQL, "@") || !strings.HasPrefix(out.SQL, "UPDATE customers SET email = ?") {
-		t.Fatalf("masked SQL: %s", out.SQL)
-	}
-	dt.perm.Sensitive = apitypes.SensitiveVisible
-	if out, _ := h.c.changesetFor(dt, cs); out.SQL != cs.Sql || *out.Changes[0].New["email"] != "new@x.io" {
-		t.Fatalf("visible: %+v", out)
 	}
 }
 

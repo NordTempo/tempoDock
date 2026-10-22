@@ -1,4 +1,4 @@
-package mcp
+package mcpkit
 
 import (
 	"context"
@@ -6,13 +6,13 @@ import (
 	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
-	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 )
 
-// Data tools (ADR 0016): the database panel for agents. Core checks the
-// data access policy on every call and audits queries, browsing and
-// changesets; these tools add tighter caps, since results go into a
-// model's context.
+// Data tools (ADR 0016, 0024): the database panel for agents, the same in
+// Dock and tempoBase. The host's operations check the data access policy
+// on every call and audit queries, browsing and changesets; these tools
+// add tighter caps, since results go into a model's context.
 
 const (
 	// defaultQueryRows and maxQueryRows cap data_query results.
@@ -83,90 +83,93 @@ func capRows(rows []apitypes.DataRow) ([]apitypes.DataRow, bool) {
 	return rows, false
 }
 
-// addDataTools registers the database tools.
-func (h *handler) addDataTools() {
-	addTool(h, "data_status", "Database status",
+// DataTools registers the data tools (data_status, data_schema,
+// data_rows, data_query, propose_data_changes) over a host's panel
+// operations. L is the host's locator input (Dock's service, tempoBase's
+// connection), whose properties every data tool takes; locate resolves it
+// to the host's database reference for the caller, and name says how
+// messages name that database.
+func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error), name func(R) string) {
+	addLocatedTool(s, "data_status", "Database status",
 		"A database service's state (ready, setup_needed, not_running, ...) and your data access: level (none, schema, read, propose, write), whether sensitive columns are masked for you, and the policy steps that decided it. "+
 			"Call it before other data tools. Access comes from the data access policy an admin sets; if it is too low, report that instead of working around it.",
-		readOnly, func(ctx context.Context, c *call, in ServiceInput) (reply, error) {
-			ref, err := c.service(in)
+		ReadOnly, func(ctx context.Context, c *Call[A], loc L, _ struct{}) (Reply, error) {
+			ref, err := locate(c, loc)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
-			info, err := h.core.DataInfo(ctx, c.actor, ref)
+			info, err := ops.DataInfo(ctx, c.Actor, ref)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
 			why := make([]string, len(info.Access.Why))
 			for i, w := range info.Access.Why {
 				why[i] = w.Detail
 			}
-			summary := fmt.Sprintf("%s: %s %s, your access %s (sensitive columns %s)", ref, info.Engine, info.Status, info.Access.Level, info.Access.Sensitive)
+			summary := fmt.Sprintf("%s: %s %s, your access %s (sensitive columns %s)", name(ref), info.Engine, info.Status, info.Access.Level, info.Access.Sensitive)
 			if info.Reason != "" {
 				summary += "; " + info.Reason
 			}
 			if len(why) > 0 {
 				summary += ". Why: " + strings.Join(why, "; ")
 			}
-			return reply{summary + ".", info}, nil
+			return Reply{Summary: summary + ".", Data: info}, nil
 		})
 
-	addTool(h, "data_schema", "Database schema",
+	addLocatedTool(s, "data_schema", "Database schema",
 		"A database's tables with columns (name, type, not null, sensitive), primary keys and foreign keys. Pass table for one table with its indexes and constraints. "+
 			"Needs data access level schema.",
-		readOnly, func(ctx context.Context, c *call, in struct {
-			ServiceInput
+		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
 			Table string `json:"table,omitempty" doc:"One table as schema.name (or name for public), with its indexes and constraints."`
-		}) (reply, error) {
-			ref, err := c.service(in.ServiceInput)
+		}) (Reply, error) {
+			ref, err := locate(c, loc)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
-			sch, err := h.core.DataSchema(ctx, c.actor, ref)
+			sch, err := ops.DataSchema(ctx, c.Actor, ref)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
 			if in.Table != "" {
-				name := in.Table
-				if !strings.Contains(name, ".") {
-					name = "public." + name
+				table := in.Table
+				if !strings.Contains(table, ".") {
+					table = "public." + table
 				}
 				for _, t := range sch.Tables {
-					if t.Schema+"."+t.Name == name {
-						return reply{fmt.Sprintf("Table %s: %d columns, about %d rows.", name, len(t.Columns), t.EstimatedRows), t}, nil
+					if t.Schema+"."+t.Name == table {
+						return Reply{Summary: fmt.Sprintf("Table %s: %d columns, about %d rows.", table, len(t.Columns), t.EstimatedRows), Data: t}, nil
 					}
 				}
-				return reply{}, errf(apitypes.CodeNotFound, "table %s not found in %s; data_schema without table lists them", name, ref)
+				return Reply{}, datapanel.Errorf(apitypes.CodeNotFound, "table %s not found in %s; data_schema without table lists them", table, name(ref))
 			}
 			out := make([]tableView, len(sch.Tables))
 			for i, t := range sch.Tables {
 				out[i] = viewTable(t)
 			}
-			return reply{fmt.Sprintf("%d tables in %s.", len(out), ref), out}, nil
+			return Reply{Summary: fmt.Sprintf("%d tables in %s.", len(out), name(ref)), Data: out}, nil
 		})
 
-	addTool(h, "data_rows", "Table rows",
+	addLocatedTool(s, "data_rows", "Table rows",
 		"One page of a table, in primary key order (or order), filtered by column conditions. Sensitive columns are masked. Pass the result's next as after for the following page. "+
 			"Needs data access level read; audited.",
-		readOnly, func(ctx context.Context, c *call, in struct {
-			ServiceInput
+		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
 			Table   string                `json:"table" doc:"Table as schema.name, e.g. public.orders."`
 			Filters []apitypes.DataFilter `json:"filters,omitempty" doc:"Conditions, ANDed: {column, op, value} with op eq, ne, lt, lte, gt, gte, like, ilike, in (values), is_null, not_null."`
 			Order   string                `json:"order,omitempty" doc:"Column to sort by, -column for descending. Default: the primary key."`
 			After   string                `json:"after,omitempty" doc:"The previous page's next cursor."`
 			Limit   int                   `json:"limit,omitempty" doc:"Rows per page. Default 50, at most 200."`
-		}) (reply, error) {
-			ref, err := c.service(in.ServiceInput)
+		}) (Reply, error) {
+			ref, err := locate(c, loc)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
-			n, err := limit("limit", in.Limit, defaultPageRows, maxPageRows)
+			n, err := Limit("limit", in.Limit, defaultPageRows, maxPageRows)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
-			page, err := h.core.DataRows(ctx, c.actor, ref, apitypes.DataPageRequest{Table: in.Table, Filters: in.Filters, Order: in.Order, After: in.After, Limit: n})
+			page, err := ops.DataRows(ctx, c.Actor, ref, apitypes.DataPageRequest{Table: in.Table, Filters: in.Filters, Order: in.Order, After: in.After, Limit: n})
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
 			var cut bool
 			if page.Rows, cut = capRows(page.Rows); cut {
@@ -179,29 +182,28 @@ func (h *handler) addDataTools() {
 			case page.Next != "":
 				summary += "; more with after"
 			}
-			return reply{summary + ".", page}, nil
+			return Reply{Summary: summary + ".", Data: page}, nil
 		})
 
-	addTool(h, "data_query", "Run read-only SQL",
+	addLocatedTool(s, "data_query", "Run read-only SQL",
 		"Run one read-only SQL statement (SELECT, EXPLAIN, ...) in a read-only transaction as a least-privilege role; writes are impossible here, use propose_data_changes. "+
 			"Rows come as JSON arrays in column order. Cells over 8 KB are cut. Needs data access level read; every statement is audited with its SQL.",
-		readOnly, func(ctx context.Context, c *call, in struct {
-			ServiceInput
+		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
 			SQL            string `json:"sql" doc:"One SQL statement."`
 			Limit          int    `json:"limit,omitempty" doc:"Row cap. Default 100, at most 1000. Rows past it are dropped and the result is marked truncated."`
 			TimeoutSeconds int    `json:"timeout_seconds,omitempty" doc:"Statement timeout. Default 10, at most 60."`
-		}) (reply, error) {
-			ref, err := c.service(in.ServiceInput)
+		}) (Reply, error) {
+			ref, err := locate(c, loc)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
-			n, err := limit("limit", in.Limit, defaultQueryRows, maxQueryRows)
+			n, err := Limit("limit", in.Limit, defaultQueryRows, maxQueryRows)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
-			stream, err := h.core.DataQuery(ctx, c.actor, ref, apitypes.DataQueryRequest{SQL: in.SQL, Limit: n, TimeoutSeconds: in.TimeoutSeconds})
+			stream, err := ops.DataQuery(ctx, c.Actor, ref, apitypes.DataQueryRequest{SQL: in.SQL, Limit: n, TimeoutSeconds: in.TimeoutSeconds})
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
 			res := queryResult{Rows: []apitypes.DataRow{}}
 			size := 0
@@ -228,61 +230,60 @@ func (h *handler) addDataTools() {
 				return nil
 			})
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
 			if res.Error != nil {
-				return reply{}, errf(apitypes.CodeValidation, "the database reported: %s", queryError(res.Error))
+				return Reply{}, Invalid("the database reported: %s", queryError(res.Error))
 			}
 			summary := fmt.Sprintf("%d rows", len(res.Rows))
 			if res.Truncated {
 				summary += " (truncated: more rows than the limit or 512 KB)"
 			}
-			return reply{summary + ".", res}, nil
+			return Reply{Summary: summary + ".", Data: res}, nil
 		})
 
-	addTool(h, "propose_data_changes", "Propose data changes",
+	addLocatedTool(s, "propose_data_changes", "Propose data changes",
 		"Change rows: inserts, updates and deletes by primary key, as one changeset applied in one transaction. dry_run returns the exact SQL without storing anything. "+
 			"Otherwise the changeset is stored as pending for an admin to review and approve (needs level propose); with commit it is also committed right away, only if your level is write and the environment is not production. "+
 			"Tokens never write production: there it always waits for approval. Updates must carry the old values you saw; a row changed since fails the whole changeset. At most 500 rows.",
-		destructive, func(ctx context.Context, c *call, in struct {
-			ServiceInput
+		Destructive, func(ctx context.Context, c *Call[A], loc L, in struct {
 			Changes []apitypes.DataChange `json:"changes" doc:"Row changes: {op: insert|update|delete, table: schema.name, key: primary key values (update, delete), old: the values you read (update), new: values to set or insert}. Values are strings in Postgres text format, or null."`
 			Message string                `json:"message" doc:"Why, for the reviewer."`
 			DryRun  bool                  `json:"dry_run,omitempty" doc:"Only render the SQL; store nothing."`
 			Commit  bool                  `json:"commit,omitempty" doc:"Commit at once if your access is write on a non-production environment; otherwise it stays pending."`
-		}) (reply, error) {
-			ref, err := c.service(in.ServiceInput)
+		}) (Reply, error) {
+			ref, err := locate(c, loc)
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
 			if strings.TrimSpace(in.Message) == "" {
-				return reply{}, invalid("pass message: why these changes are needed, for the reviewer")
+				return Reply{}, Invalid("pass message: why these changes are needed, for the reviewer")
 			}
-			cs, err := h.core.CreateDataChangeset(ctx, c.actor, ref, apitypes.DataChangesetRequest{Changes: in.Changes, Message: in.Message, DryRun: in.DryRun})
+			cs, err := ops.CreateDataChangeset(ctx, c.Actor, ref, apitypes.DataChangesetRequest{Changes: in.Changes, Message: in.Message, DryRun: in.DryRun})
 			if err != nil {
-				return reply{}, err
+				return Reply{}, err
 			}
 			switch {
 			case in.DryRun:
-				return reply{fmt.Sprintf("Preview of %d changes; nothing stored.", len(cs.Changes)), cs}, nil
+				return Reply{Summary: fmt.Sprintf("Preview of %d changes; nothing stored.", len(cs.Changes)), Data: cs}, nil
 			case !in.Commit:
-				return reply{fmt.Sprintf("Changeset %d proposed: pending until an admin approves it.", cs.ID), cs}, nil
+				return Reply{Summary: fmt.Sprintf("Changeset %d proposed: pending until an admin approves it.", cs.ID), Data: cs}, nil
 			case cs.ConfirmCommit:
-				return reply{fmt.Sprintf("Changeset %d proposed, not committed: %s/%s is production, so an admin must approve it.", cs.ID, ref.Project, ref.Environment), cs}, nil
+				return Reply{Summary: fmt.Sprintf("Changeset %d proposed, not committed: %s is production, so an admin must approve it.", cs.ID, name(ref)), Data: cs}, nil
 			}
-			done, err := h.core.CommitDataChangeset(ctx, c.actor, ref, cs.ID, apitypes.DataCommitRequest{})
+			done, err := ops.CommitDataChangeset(ctx, c.Actor, ref, cs.ID, apitypes.DataCommitRequest{})
 			if err == nil {
-				return reply{fmt.Sprintf("Changeset %d committed: %v rows affected.", done.ID, done.RowsAffected), done}, nil
+				return Reply{Summary: fmt.Sprintf("Changeset %d committed: %v rows affected.", done.ID, done.RowsAffected), Data: done}, nil
 			}
 			// The changeset exists either way; say what happened to it.
-			if cur, gerr := h.core.GetDataChangeset(ctx, c.actor, ref, cs.ID); gerr == nil {
+			if cur, gerr := ops.GetDataChangeset(ctx, c.Actor, ref, cs.ID); gerr == nil {
 				cs = cur
 			}
-			code := core.CodeOf(err)
+			code := datapanel.CodeOf(err)
 			if code == apitypes.CodeInternal {
-				return reply{}, err
+				return Reply{}, err
 			}
-			return reply{fmt.Sprintf("Changeset %d is %s; the commit failed: %s: %v", cs.ID, cs.Status, code, err), map[string]any{
+			return Reply{Summary: fmt.Sprintf("Changeset %d is %s; the commit failed: %s: %v", cs.ID, cs.Status, code, err), Data: map[string]any{
 				"changeset": cs, "commit_error": map[string]any{"code": code, "message": err.Error()},
 			}}, nil
 		})

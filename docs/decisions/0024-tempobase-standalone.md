@@ -730,6 +730,24 @@ Done when Dock's tests pass unchanged (moved unit tests aside), `make
 perf` shows no regression for Dock, and `datapanel` has its own tests
 with a fake host.
 
+As built (2026-10-22), beyond the sketch above:
+
+- `datapanel.Words` also carries `SetupAction`, `ConfirmWhat` and
+  `Database` (setup reasons, the commit confirm message, API docs).
+- `Host.SavedQueryOwner` may return the host's own error instead of 0,
+  so Dock keeps "log in with `dock login`". Dock finds a `dock login`
+  token's user by the token's ID.
+- Core checks `Manage` before `Setup` and `SetSensitiveColumns` to keep
+  Dock's admin messages; the Panel checks it again with a neutral one.
+- Two messages name the database instead of the environment: the commit
+  confirm error ("shop/production/db is production: confirm with the
+  environment's name (production)") and `propose_data_changes`' refused
+  commit on production.
+- `mcpkit.Options[A]` takes the server info, instructions,
+  `Authenticate`, the 401 realm and message, `Tools` (registered on the
+  first request), `Docs{FS, URI, IndexDescription}` and error `Hints`.
+  Dock's tools/list and initialize are byte-identical to before.
+
 ### B. The tempobase server
 
 Owns: `cmd/tempobase/**`, `internal/tempobase/**` (host, auth, users,

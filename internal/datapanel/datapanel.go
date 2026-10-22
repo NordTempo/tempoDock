@@ -13,10 +13,6 @@
 //
 // The package must not import a host's packages (core, api, store, node,
 // tempobase): tempoBase's binary links it without Dock's daemon.
-//
-// Status: scaffolding. The types and interfaces below are the boundary
-// ADR 0024 pins down; the Panel and the policy functions move here from
-// internal/core in workstream A.
 package datapanel
 
 import (
@@ -96,6 +92,16 @@ type Words struct {
 	// LoginFailedHint follows an owner login failure: Dock points at
 	// database_url_variable, tempoBase at the connection's URL.
 	LoginFailedHint string
+	// SetupAction is how an admin sets up, in "Not set up. <SetupAction>
+	// to create Dock's roles in the database.": "Set up data access
+	// (`dock db setup`)".
+	SetupAction string
+	// ConfirmWhat is what a production commit confirms with: "the
+	// environment's name", "the connection's name".
+	ConfirmWhat string
+	// Database is what a database is to the host, in API docs ("per user
+	// and service"): "service", "connection".
+	Database string
 }
 
 // Options configure a Panel.
@@ -234,7 +240,8 @@ type Host[D any] interface {
 
 	// SavedQueryOwner is the user whose saved queries the actor uses: the
 	// user, or the user a token acts for; 0 when there is none (agent
-	// tokens), which the Panel refuses with a message.
+	// tokens), which the Panel refuses with a generic message. A host may
+	// return its own error instead, saying how its callers get a user.
 	SavedQueryOwner(ctx context.Context, a Actor) (int64, error)
 	// SavedQueries lists a user's saved queries for the database, by name.
 	SavedQueries(ctx context.Context, id, user int64) ([]apitypes.DataSavedQuery, error)

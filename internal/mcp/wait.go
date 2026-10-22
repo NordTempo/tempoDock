@@ -11,6 +11,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/mcpkit"
 )
 
 // Waiting for releases. Tools that start releases (deploy, redeploy,
@@ -37,7 +38,7 @@ func (w WaitInput) duration() (time.Duration, error) {
 	}
 	d := time.Duration(*w.WaitSeconds) * time.Second
 	if d < 0 || d > maxWait {
-		return 0, invalid("wait_seconds must be between 0 and %d", int(maxWait.Seconds()))
+		return 0, mcpkit.Invalid("wait_seconds must be between 0 and %d", int(maxWait.Seconds()))
 	}
 	return d, nil
 }
@@ -72,7 +73,7 @@ func (h *handler) waitReleases(ctx context.Context, c *call, rels []apitypes.Rel
 	}
 	out := make([]releaseView, 0, len(rels))
 	for _, r := range rels {
-		v, err := h.releaseDetails(ctx, c.actor, core.ServiceRef{Project: env.Project, Environment: env.Environment, Service: r.Service}, r.Number, failureLogLines)
+		v, err := h.releaseDetails(ctx, c.Actor, core.ServiceRef{Project: env.Project, Environment: env.Environment, Service: r.Service}, r.Number, failureLogLines)
 		if err != nil {
 			return nil, err
 		}
@@ -90,7 +91,7 @@ func (h *handler) waitReleases(ctx context.Context, c *call, rels []apitypes.Rel
 func (h *handler) follow(ctx context.Context, c *call, env core.EnvRef, pending map[releaseKey]bool, wait time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
-	stream, err := h.core.Events(ctx, c.actor, core.EventFilter{Project: env.Project, Environment: env.Environment})
+	stream, err := h.core.Events(ctx, c.Actor, core.EventFilter{Project: env.Project, Environment: env.Environment})
 	if err != nil {
 		return err
 	}
@@ -99,14 +100,14 @@ func (h *handler) follow(ctx context.Context, c *call, env core.EnvRef, pending 
 	step := func(k releaseKey, ev apitypes.ReleaseEvent) {
 		if ev.Seq > sent[k] {
 			sent[k] = ev.Seq
-			c.notify(fmt.Sprintf("%s #%d: %s", k.service, k.number, ev.Message))
+			c.Notify(fmt.Sprintf("%s #%d: %s", k.service, k.number, ev.Message))
 		}
 	}
 	// refresh reads every pending release, sends its steps not sent yet
 	// and drops the finished ones.
 	refresh := func() bool {
 		for k := range pending {
-			r, err := h.core.GetRelease(ctx, c.actor, core.ServiceRef{Project: env.Project, Environment: env.Environment, Service: k.service}, k.number)
+			r, err := h.core.GetRelease(ctx, c.Actor, core.ServiceRef{Project: env.Project, Environment: env.Environment, Service: k.service}, k.number)
 			if err != nil {
 				if ctx.Err() == nil {
 					readErr = err
@@ -139,7 +140,7 @@ func (h *handler) follow(ctx context.Context, c *call, env core.EnvRef, pending 
 			case ev.Release != nil && pending[releaseKey{ev.Service, ev.Release.Number}]:
 				if ev.Release.Status.Done() {
 					delete(pending, releaseKey{ev.Service, ev.Release.Number})
-					c.notify(describeRelease(*ev.Release))
+					c.Notify(describeRelease(*ev.Release))
 				}
 			case ev.ReleaseEvent != nil && pending[releaseKey{ev.Service, ev.ReleaseEvent.ReleaseNumber}]:
 				step(releaseKey{ev.Service, ev.ReleaseEvent.ReleaseNumber}, *ev.ReleaseEvent)

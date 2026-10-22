@@ -2493,7 +2493,7 @@ export interface components {
             /** @enum {string} */
             level: "none" | "schema" | "read" | "propose" | "write";
             /** @enum {string} */
-            policy?: "built_in" | "default" | "project" | "environment";
+            policy?: "built_in" | "default" | "project" | "environment" | "connection";
             /** @enum {string} */
             sensitive: "masked" | "visible";
             /** @enum {string} */
@@ -2502,16 +2502,17 @@ export interface components {
             subject?: "role:read" | "role:deploy" | "tokens";
         };
         DataPolicy: {
+            connection?: string;
             effective: components["schemas"]["DataPolicyRule"][] | null;
             environment?: string;
             project?: string;
             rules: components["schemas"]["DataPolicyRule"][] | null;
             /** @enum {string} */
-            scope: "default" | "project" | "environment";
+            scope: "default" | "project" | "environment" | "connection";
         };
         DataPolicyRule: {
             /** @enum {string} */
-            readonly from?: "built_in" | "default" | "project" | "environment";
+            readonly from?: "built_in" | "default" | "project" | "environment" | "connection";
             /** @enum {string} */
             kind: "production" | "non_production";
             /** @enum {string} */

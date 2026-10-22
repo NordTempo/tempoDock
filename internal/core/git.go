@@ -16,6 +16,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -44,7 +45,7 @@ type gitState struct {
 	mu      sync.Mutex
 	workers map[int64]*gitWorker // by service ID, while one runs
 	// limit throttles webhook deliveries per hook.
-	limit  *limiter
+	limit  *httpkit.Limiter
 	github githubClient
 	// statusMu guards statusTail: per service, the last commit status
 	// post queued. Each post waits for the one before it, so GitHub sees
@@ -70,7 +71,7 @@ func newGitState(api string) gitState {
 		statusTail: map[int64]chan struct{}{},
 		// GitHub sends one delivery per push; bursts beyond this are
 		// either a flood or a stolen URL.
-		limit:  newLimiter(30, 2*time.Second),
+		limit:  httpkit.NewLimiter(30, 2*time.Second),
 		github: newGitHubClient(api),
 	}
 }
