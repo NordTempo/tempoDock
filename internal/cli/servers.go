@@ -334,7 +334,14 @@ already on the server stay where they are.`,
 				return err
 			}
 			return g.io.Print(sv, func() error {
-				g.io.Successf("Server %s accepts %s", sv.Name, accepts(sv))
+				builds, base := "doesn't build", "no base domain"
+				if sv.Builder {
+					builds = "builds images"
+				}
+				if sv.BaseDomain != "" {
+					base = "base domain " + sv.BaseDomain
+				}
+				g.io.Successf("Server %s accepts %s; %s; %s", sv.Name, accepts(sv), builds, base)
 				return nil
 			})
 		},
