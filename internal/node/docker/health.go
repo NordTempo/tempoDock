@@ -65,9 +65,15 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 	// which Docker resets once the restart policy brings the container back.
 	// OOM events are kept for the same reason: Docker clears OOMKilled when
 	// the container starts again, often before the die can be inspected.
+	// They are read from the container's start on: an app that exits at
+	// once can die and be restarted before this subscribes.
 	evCtx, stopEvents := context.WithCancel(ctx)
 	defer stopEvents()
-	sub := r.cli.Events(evCtx, client.EventsListOptions{Filters: client.Filters{}.
+	var since string
+	if !c.StartedAt.IsZero() {
+		since = fmt.Sprintf("%d.%09d", c.StartedAt.Unix(), c.StartedAt.Nanosecond())
+	}
+	sub := r.cli.Events(evCtx, client.EventsListOptions{Since: since, Filters: client.Filters{}.
 		Add("type", "container").
 		Add("container", c.ID).
 		Add("event", "die", "oom")})
@@ -87,9 +93,12 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 		} else {
 			if err := crashed(st, c.RestartCount, oom); err != nil {
 				// Restarted between two checks: the restart's events may
-				// not be read yet, and an oom one says why it died.
-				if errors.Is(err, errRestarted) && evs != nil && awaitOOM(ctx, evs) {
-					return errExited(oomExitCode, true, memoryLimit(st))
+				// not be read yet. Its die carries the exit code (inspect
+				// shows the new run), and an oom one says why it died.
+				if errors.Is(err, errRestarted) && evs != nil {
+					if code, died, oom := awaitDie(ctx, evs, oom); died || oom {
+						return errExited(code, oom, memoryLimit(st))
+					}
 				}
 				return err
 			}
@@ -159,6 +168,32 @@ func awaitOOM(ctx context.Context, evs <-chan events.Message) bool {
 			return false
 		}
 	}
+}
+
+// awaitDie waits briefly for the die event of a restart that inspect saw
+// first and returns its exit code. oom says an oom event was already seen;
+// one arriving now counts too.
+func awaitDie(ctx context.Context, evs <-chan events.Message, oom bool) (code int, died, oomSeen bool) {
+	t := time.NewTimer(500 * time.Millisecond)
+	defer t.Stop()
+	// A die with oomExitCode waits on for its oom event, as awaitOOM does.
+	for !died || (!oom && code == oomExitCode) {
+		select {
+		case ev := <-evs:
+			switch ev.Action {
+			case "oom":
+				oom = true
+			case "die":
+				code, _ = strconv.Atoi(ev.Actor.Attributes["exitCode"])
+				died = true
+			}
+		case <-t.C:
+			return code, died, oom
+		case <-ctx.Done():
+			return code, died, oom
+		}
+	}
+	return code, died, oom
 }
 
 // memoryLimit is a container's memory limit in bytes (0: none or unknown).
