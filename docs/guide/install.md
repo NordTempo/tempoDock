@@ -93,8 +93,10 @@ that installs the matching CLI when they differ. `dock login` warns too.
 
 ### install.sh options
 
-`--node` installs a [node](#add-a-server) instead of a control plane. The
-rest are environment variables. `PUBLIC_IP`, `LISTEN`, `BASE_DOMAIN` and
+`--node` installs a [node](#add-a-server) instead of a control plane.
+`--restore ARCHIVE` (with `--old-server-becomes-node`) installs a control
+plane from a backup: see [Moving the control plane](#moving-the-control-plane).
+The rest are environment variables. `PUBLIC_IP`, `LISTEN`, `BASE_DOMAIN` and
 `DISABLE_TLS` are only used when `/etc/dock/config.toml` doesn't exist yet;
 the others also change an existing config, touching only their own keys.
 
@@ -131,7 +133,7 @@ the others also change an existing config, touching only their own keys.
 | Registry (control plane, `REGISTRY=1`) | `dock-registry` container, `registry:3.1.2` pinned by digest, Docker restart policy `unless-stopped`. See [Registry](#registry) |
 | Proxy unit | `dock-caddy.service`: `caddy run --resume` as `dock-caddy`, only binds 80/443. No Docker access |
 | Firewall unit | `dock-firewall.service`: runs `dock admin firewall apply` as root whenever Docker starts. See [App firewall](#app-firewall) |
-| Daemon data | `/var/lib/dock` (0700): `dock.db`, `secret.key`, `builds/`, `uploads/` |
+| Daemon data | `/var/lib/dock` (0700): `dock.db`, `secret.key`, `link.key` (what nodes trust), `registry.key`, `builds/`, `uploads/` |
 | Caddy data | `/var/lib/dock-caddy`: certificates and the last loaded config |
 | Caddy admin socket | `/run/dock-caddy/admin.sock` (dock-caddy:dock-caddy, 0660: only the daemon can change routing) |
 | Kernel setting | `/etc/sysctl.d/90-dock.conf`: `net.ipv4.tcp_migrate_req = 1`, so Caddy reloads hand queued connections over instead of resetting them |
@@ -177,7 +179,7 @@ running).
 | `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
 | `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
 | `[node] listen` | empty | Control plane: where nodes connect, e.g. `100.64.0.10:7443` on Tailscale. Join tokens carry it, so it must be an address nodes can dial, not `0.0.0.0`. Empty: no nodes |
-| `[node] control_plane` | empty | Node: overrides the control plane address from the join token (`host:port`), for when the control plane moves. Its key stays pinned |
+| `[node] control_plane` | empty | Node: overrides the control plane address in `node.toml` (`host:port`). Its key stays pinned. When the control plane moves, `dock node set-control-plane` is the usual way |
 | `[registry] enabled` | `false` | Control plane: run the image registry |
 | `[registry] listen` | `127.0.0.1:5000` | Control plane: host address the `dock-registry` container is published on. Node: where `dock node` serves the registry over the link. Image references use it on every server |
 | `[registry] storage_dir` | `/var/lib/dock-registry` | Registry blobs and manifests |
@@ -499,7 +501,8 @@ sudo install -m 0755 ./dock-linux-amd64 /usr/local/bin/dock && sudo systemctl re
 Then install the matching CLI on laptops and in CI ([The CLI](#the-cli));
 `dock version` shows whether they are in step.
 
-- Database migrations run on start and only go forward. Back up first.
+- Database migrations run on start and only go forward. Back up first:
+  `sudo dock admin backup` ([Backups](#backups)).
 - A deploy running during the restart is marked `failed`; the previous
   release keeps serving. Deploy again afterwards.
 - To upgrade Caddy, re-run with `CADDY_VERSION=x.y.z`, then
@@ -520,38 +523,196 @@ Then install the matching CLI on laptops and in CI ([The CLI](#the-cli));
 
 ## Backups
 
-Back up `/var/lib/dock`. **You need both files**:
-
-| File | Holds | Without it |
-|---|---|---|
-| `dock.db` | Projects, services, releases, domains, tokens, audit log, encrypted variable values | Nothing to restore |
-| `secret.key` | The AES-256 key for variable values and release configs | Every secret and release config in `dock.db` is unreadable. No recovery |
-
-Store them separately if you can: the key is kept outside the DB so a leaked
-DB file alone reveals no secrets.
-
-The DB is SQLite in WAL mode, so copy it while the daemon is stopped
-(stopping it is always safe for apps):
+The control plane backs itself up every day at the install's backup hour
+(default 03:00), into the same restic repository as the databases
+([ADR 0021](../decisions/0021-control-plane-backup-and-move.md)). Out of
+the box that repository is a Docker volume on this server, not off-box:
+configure an S3 repository ([databases and backups](databases.md#where-backups-go))
+and keep its password outside the platform.
 
 ```sh
-sudo systemctl stop dock
-sudo tar -czf /root/dock-$(date +%F).tgz -C /var/lib dock dock-caddy
-sudo systemctl start dock
+dock backup status                   # control plane: succeeded 5h ago (snapshot 4cf53263, 2.1 MB), next Thu 03:00
+dock backup run --control-plane      # now (admin)
 ```
 
-Or online, if `sqlite3` is installed:
-`sqlite3 /var/lib/dock/dock.db ".backup /root/dock.db"` plus a copy of
-`secret.key`.
+For a file in hand (before an upgrade, or to [move](#moving-the-control-plane)),
+on the control plane, as root or the `dock` user. It is safe while dock
+runs: the database is copied with SQLite's `VACUUM INTO`, never the live
+file.
 
-Also worth keeping:
+```sh
+sudo dock admin backup                               # ./dock-backup-<host>-<time>.tar.gz
+sudo dock admin backup -o /root/dock.tar.gz --include-registry
+ssh server 'sudo dock admin backup -o -' > dock.tar.gz
+```
 
-- `/var/lib/dock-caddy`: certificates. Without it they are re-issued on
-  demand, which is slow and counts against CA rate limits.
-- `/etc/dock/config.toml`.
-- App volumes. These are Docker volumes, not in `/var/lib/dock`; find their
-  names with `dock volume list --json` (`docker_name`). Dock backs them up
-  daily with restic ([databases and backups](databases.md)); configure an S3
-  repository so those backups are off-box, and keep its password.
+| In the archive | Holds |
+|---|---|
+| `dock.db` | Projects, services, releases, domains, users, tokens, audit log, sealed variable values and credentials |
+| `secret.key` | The AES-256 key that opens every sealed value. Without it the database's secrets are lost for good |
+| `link.key` | The control plane's identity: what nodes pin |
+| `registry.key` | Signs registry tokens |
+| `builds/` | Build logs and saved container output |
+| `config.toml` | `/etc/dock/config.toml` |
+| `registry/` | Only with `--include-registry` (root): the image registry's storage, so rollbacks and promotions of old releases work right after a move. Otherwise their images are built or pushed again |
 
-Restore: install as usual, stop `dock`, put `dock.db` and `secret.key` back
-in `/var/lib/dock` (owner `dock`, mode 0600), start `dock`.
+**The archive holds every secret of the platform.** It is created 0600 and
+never overwrites a file; keep it that way, store it encrypted, and delete
+copies you no longer need.
+
+Not in it:
+
+- App volumes: backed up per service ([databases and backups](databases.md)).
+- `/var/lib/dock-caddy`: certificates, issued again on demand (slow, and it
+  counts against CA rate limits with many domains).
+- The Cloudflare Tunnel token: in `/etc/dock/cloudflared.env` and the
+  Cloudflare dashboard.
+
+To get the latest control plane backup out of the repository, for example
+after losing the server (the S3 keys and the repository password in the
+environment; `read -rs RESTIC_PASSWORD` keeps them out of shell history):
+
+```sh
+docker run --rm -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+  restic/restic:0.18.1 dump --tag dock-control-plane latest /dock-control-plane.tar > dock.tar
+chmod 600 dock.tar
+```
+
+From a local repository, on the server holding it: `-v dock_backups_<id>:/repo -e
+RESTIC_REPOSITORY=/repo` instead (`docker volume ls --filter name=dock_backups_`).
+Restore it as in [Moving the control plane](#moving-the-control-plane).
+
+## Moving the control plane
+
+A move takes the control plane's state to another server with the same
+identity: same link key, so nodes keep trusting it and never re-join; same
+install ID, users, tokens, secrets and history. There are two shapes:
+
+| | The old server becomes a node | The new server replaces the old one |
+|---|---|---|
+| When | Only the control plane moves; apps stay (the homelab hands over to a VPS and keeps running staging) | The old server is gone, or everything moves to a bigger server |
+| Apps on the old server | Keep running there, untouched; it joins as a node under its name | Are expected on the new server: redeploy them, restore databases from their backups |
+| `install.sh` | `--restore ARCHIVE --old-server-becomes-node` | `--restore ARCHIVE` |
+
+The new server runs the same dock release or a newer one. The restore keeps
+the old `config.toml` except what describes the machine (API and node
+addresses, public IP, ingress, BuildKit size, app network, registry
+address and storage), which is set as for a new install from the same
+variables (`LISTEN`, `NODE_LISTEN`, `PUBLIC_IP`, `CLOUDFLARE_TUNNEL_TOKEN`,
+...). The base domain and `DISABLE_TLS` carry over only when replacing,
+unless given. The old file stays in `/etc/dock/config.from-backup.toml` for
+reference. Without `NODE_LISTEN`, nodes are taken on this server's
+Tailscale address with the old port, if the old control plane took any.
+
+### The old server becomes a node
+
+1. **New server:** install Docker, join the tailnet and copy the release
+   over, as in [Install](#install). Don't run `install.sh` yet.
+2. **Old server:** stop the daemon and take the last backup. `--move` needs
+   the daemon stopped, so nothing changes after the backup, then retires
+   this control plane: `dock serve` refuses to start here again. Apps,
+   Caddy and the tunnel keep serving; nodes keep their apps running while
+   they have no control plane.
+
+   ```sh
+   sudo systemctl stop dock
+   sudo dock admin backup --move --include-registry -o /root/dock-move.tar.gz
+   sudo systemctl disable dock
+   ```
+
+   Leave out `--include-registry` without a registry.
+3. **Copy the archive** over SSH only, keeping it owner-only:
+
+   ```sh
+   ssh old 'sudo cat /root/dock-move.tar.gz' | ssh new 'sudo sh -c "umask 077; cat > /root/dock-move.tar.gz"'
+   ```
+
+4. **New server:** install from it. Nodes need an address here, and the old
+   server joins as one:
+
+   ```sh
+   sudo DOCK_BINARY=./dock NODE_LISTEN="$(tailscale ip -4):7443" \
+     ./deploy/install.sh --restore /root/dock-move.tar.gz --old-server-becomes-node
+   ```
+
+   Add `PUBLIC_IP`, `BASE_DOMAIN` or `CLOUDFLARE_TUNNEL_TOKEN` as for a new
+   install. The old server's environments stay placed on it; this server
+   registers as a new server that accepts both kinds of environment.
+5. **Laptops and CI:** the API moved, the tokens didn't. Log in again at
+   the new address and check:
+
+   ```sh
+   dock login http://100.64.0.20:7070
+   dock server list            # the old server: revoked (waiting to join); this one: online
+   ```
+
+6. **The old server joins.** Add it under its old name (the command wants
+   a kind, but a server joining again keeps the kinds and builder setting
+   it had), then run the printed command on it:
+
+   ```sh
+   dock server add dock-lab --non-production
+   # on the old server:
+   sudo DOCK_BINARY=./dock NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
+   ```
+
+   `install.sh` sees the retired control plane: it removes `dock.service`
+   and the `dock-registry` container, moves the old data dir to
+   `/var/lib/dock-retired-<time>`, and joins. The containers already there
+   are taken over as they are: no app restarts. Its Cloudflare Tunnel, if
+   it has one, stays as it is.
+7. **Other nodes:** point each at the new address; they reconnect within
+   30 seconds, no restart or new join:
+
+   ```sh
+   sudo dock node set-control-plane 100.64.0.20:7443
+   ```
+
+8. **Settle:** decide which kinds go where (`dock server update`), move
+   DNS for anything that pointed at the old server itself (the
+   `[hooks] public_host`, the UI's name), and check `dock backup status`.
+   Then delete `/var/lib/dock-retired-*` on the old server and every copy
+   of the archive: they hold every secret.
+
+### The new server replaces the old one
+
+As above, with these differences:
+
+- Step 2 only if the old server still runs; otherwise take the latest
+  control plane backup from the repository ([Backups](#backups)). Never
+  start the old server's dock again: wipe it, or run `sudo dock admin
+  backup --move` on it first thing.
+- Step 4 without `--old-server-becomes-node` (and `NODE_LISTEN` only if
+  there are nodes).
+- Step 6 is replaced by bringing the apps back. `dock status` shows the
+  services of the old server stopped, with a drift note. Redeploy them
+  (`dock deploy`, or Deploy in the UI). Don't redeploy a database to get
+  its data back: its volume here is new and empty. Restore its latest
+  backup into a new service (`dock backup restore`, [databases](databases.md#restore))
+  and point references at it.
+- DNS: point app domains, the wildcard of the base domain and the hooks
+  host at the new public IP. Certificates are issued again on demand.
+
+### With a Cloudflare Tunnel
+
+The node link never goes through Cloudflare: nodes dial the control
+plane's node port over Tailscale wherever its apps are served
+([ADR 0013](../decisions/0013-homelab-ingress-cloudflare-tunnel.md)).
+
+| Old server | New server | What to do |
+|---|---|---|
+| Tunnel, becomes a node | Anything | Nothing for the tunnel: the old server keeps it and serves its apps as before. The new server gets its own ingress and base domain |
+| Tunnel, replaced | Tunnel | Use the same tunnel: pass its token as `CLOUDFLARE_TUNNEL_TOKEN` in step 4 (from the old `/etc/dock/cloudflared.env` or the dashboard). Stop the old connector first (`sudo systemctl disable --now dock-cloudflared`), or Cloudflare splits traffic between both. DNS stays as it is |
+| Tunnel, replaced | Direct | `install.sh` warns. Replace the tunnel CNAMEs (`*.<zone>` and custom domains) with A records for the new public IP, and delete the tunnel |
+| Direct, replaced | Tunnel | Set up the tunnel as in [Cloudflare Tunnel](#cloudflare-tunnel) and pass its token; point DNS at it |
+
+### If something goes wrong
+
+- `install.sh --restore` fails before dock starts: fix the cause and run
+  the same command again; a restore cut short leaves no database behind.
+- To call off a move before restoring anywhere: on the old server, delete
+  `/var/lib/dock/MOVED` and `sudo systemctl enable --now dock`. Nodes and
+  apps pick up where they were.
+- A node logs `control plane key ... does not match the pinned`: the
+  address reaches a different control plane (a fresh install rather than a
+  restore). Point it at the restored one.
