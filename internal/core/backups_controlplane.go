@@ -162,7 +162,7 @@ func (c *Core) controlPlaneJob(ctx context.Context, row store.ControlPlaneBackup
 	}
 	res, err := backup.ParseBackup(out)
 	if err != nil {
-		return res, fmt.Errorf("%w: %s", err, backup.ErrorText(out))
+		return res, fmt.Errorf("%w%s", err, withOutput(out))
 	}
 	return res, nil
 }
