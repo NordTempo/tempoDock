@@ -52,6 +52,7 @@ func TestErrorMapping(t *testing.T) {
 		{"conflict", 409, "application/problem+json", `{"detail":"a deploy is already running"}`, output.ExitConflict, "", "already running"},
 		{"proxy html", 502, "text/html", `<html>bad gateway</html>`, output.ExitUnreachable, "", "Bad Gateway"},
 		{"upgrade", 426, "text/plain", `CLI too old`, output.ExitIncompatible, "", "CLI too old"},
+		{"server offline", 503, "application/problem+json", `{"detail":"server homelab is offline","code":"server_offline"}`, output.ExitUnreachable, "server_offline", "homelab is offline"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,6 +71,9 @@ func TestErrorMapping(t *testing.T) {
 			}
 			if e.Exit != tt.exit || e.Code != tt.code || !strings.Contains(e.Error(), tt.msg) {
 				t.Errorf("got exit=%d code=%q msg=%q", e.Exit, e.Code, e.Error())
+			}
+			if tt.code == "server_offline" && !strings.Contains(e.Hint, "dock server list") {
+				t.Errorf("hint = %q, want the server_offline one", e.Hint)
 			}
 			if _, ok := errors.AsType[*Problem](err); !ok {
 				t.Error("the Problem should be reachable with errors.As")
