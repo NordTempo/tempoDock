@@ -302,12 +302,21 @@ func TestArchiveReleasesImages(t *testing.T) {
 	if !slices.Equal(digests, []string{apiRel.ImageDigest}) || len(ids) != 1 {
 		t.Fatalf("after archiving web: digests %v (web %s, api %s), image IDs %v", digests, webRel.ImageDigest, apiRel.ImageDigest, ids)
 	}
+	// The archive prunes the registry, keeping only api's image. A deploy's
+	// own background prune can take the hourly slot first; then prune again
+	// (anything from now on keeps only api).
 	deadline := time.Now().Add(5 * time.Second)
 	for !slices.Contains(reg.Ops(), "prune keep="+apiRel.ImageDigest) {
 		if time.Now().After(deadline) {
 			t.Fatalf("registry ops: %v", reg.Ops())
 		}
-		time.Sleep(2 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
+		p.c.images.mu.Lock()
+		if !p.c.images.pruning {
+			p.c.images.lastPrune = time.Time{}
+		}
+		p.c.images.mu.Unlock()
+		p.c.maybePruneRegistry()
 	}
 }
 
