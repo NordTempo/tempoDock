@@ -1,57 +1,56 @@
 import { useState } from "react";
-import type { ServiceRef } from "../../data/types";
 import { ago, plural, until } from "../../ui/format";
-import { Act, Actor, ErrorText } from "../../ui/kit";
-import { useChangesets, useCommitChangeset, useRejectChangeset } from "./api";
-import { ChangeList, SqlText } from "./ReviewPanel";
+import {
+  useChangesets,
+  useCli,
+  useCommitChangeset,
+  useDataSource,
+  useRejectChangeset,
+} from "./api";
+import { Act, ErrorText, Head, Who } from "./kit";
+import { ChangeList, ConfirmName, SqlText } from "./ReviewPanel";
 import type { DataChangeset, DataPermission } from "./types";
 
 const statusText: Record<DataChangeset["status"], [string, string]> = {
-  preview: ["", "text-mut"],
-  pending: ["▲ pending", "text-warn"],
-  committed: ["✓ committed", "text-ok"],
-  rejected: ["– rejected", "text-mut"],
-  expired: ["– expired", "text-mut"],
-  conflict: ["✕ conflict", "text-fail"],
+  preview: ["preview", "text-(--g-mut)"],
+  pending: ["pending", "text-(--g-warn)"],
+  committed: ["committed", "text-(--g-ok)"],
+  rejected: ["rejected", "text-(--g-mut)"],
+  expired: ["expired", "text-(--g-mut)"],
+  conflict: ["conflict", "text-(--g-fail)"],
 };
 
 /**
- * The Changes tab: changesets the caller may see, pending first, each with
- * its rows and exact SQL. Admins approve (commit) or reject pending ones;
- * proposers follow what happened to theirs.
+ * The Changes tab: changesets the caller may see, pending first, and the
+ * selected one with its rows and exact SQL. Admins approve (commit) or
+ * reject pending ones; proposers follow what happened to theirs.
  */
-export function ChangesView({
-  serviceRef,
-  access,
-  flags,
-}: {
-  serviceRef: ServiceRef;
-  access: DataPermission;
-  flags: string;
-}) {
-  const list = useChangesets(serviceRef, true);
+export function ChangesView({ access }: { access: DataPermission }) {
+  const list = useChangesets(true);
   const [selected, setSelected] = useState<number | null>(null);
   const all = list.data ?? [];
   const pending = all.filter((c) => c.status === "pending");
   const shown = [...pending, ...all.filter((c) => c.status !== "pending")];
   const current = shown.find((c) => c.id === selected) ?? shown[0];
 
-  if (list.error) return <p className="text-fail">{list.error.message}</p>;
-  if (!list.data) return <p className="text-mut">Loading changesets</p>;
+  if (list.error)
+    return <p className="p-5 text-(--g-fail)">{list.error.message}</p>;
+  if (!list.data)
+    return <p className="p-5 text-(--g-mut)">Loading changesets</p>;
   if (!shown.length) {
     return (
-      <p className="py-2 text-mut">
+      <p className="p-5 text-(--g-mut)">
         No changesets yet.{" "}
         {access.approve
-          ? "Proposals from people and tokens with level propose show up here for you to approve."
+          ? "Proposals from people and agents show up here for you to approve."
           : "Edit a table to propose one."}
       </p>
     );
   }
 
   return (
-    <div className="flex min-h-0 flex-1 gap-5">
-      <ul className="flex w-[300px] shrink-0 flex-col overflow-y-auto text-xs">
+    <div className="flex min-h-0 flex-1">
+      <ul className="flex w-[320px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-(--g-line) p-2">
         {shown.slice(0, 200).map((c) => {
           const [label, tone] = statusText[c.status];
           return (
@@ -60,17 +59,18 @@ export function ChangesView({
                 type="button"
                 aria-current={c.id === current?.id}
                 onClick={() => setSelected(c.id)}
-                className={`flex w-full flex-col py-1.5 text-left hover:text-white ${
-                  c.id === current?.id ? "text-white" : "text-[#d4d4d4]"
-                }`}
+                className="g-item flex-col items-stretch gap-0.5 py-2"
               >
-                <span className="flex gap-2">
-                  <span className="font-mono">#{c.id}</span>
-                  <span className={tone}>{label}</span>
-                  <span className="ml-auto text-mut">{ago(c.created_at)}</span>
+                <span className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-(--g-mut)">
+                    #{c.id}
+                  </span>
+                  <span className="truncate text-(--g-text)">{c.author}</span>
+                  <span className={`ml-auto text-xs ${tone}`}>{label}</span>
                 </span>
-                <span className="truncate text-mut">
-                  {c.author} · {plural(c.changes?.length ?? 0, "change")}
+                <span className="truncate text-xs text-(--g-mut)">
+                  {plural(c.changes?.length ?? 0, "change")} ·{" "}
+                  {ago(c.created_at)}
                   {c.message && ` · ${c.message}`}
                 </span>
               </button>
@@ -81,10 +81,8 @@ export function ChangesView({
       {current && (
         <Changeset
           key={current.id}
-          serviceRef={serviceRef}
           changeset={current}
           approve={access.approve}
-          flags={flags}
         />
       )}
     </div>
@@ -93,22 +91,19 @@ export function ChangesView({
 
 /** One changeset: who, when, its rows and SQL, and the admin's decision. */
 function Changeset({
-  serviceRef,
   changeset: c,
   approve,
-  flags,
 }: {
-  serviceRef: ServiceRef;
   changeset: DataChangeset;
   approve: boolean;
-  flags: string;
 }) {
-  const commit = useCommitChangeset(serviceRef);
-  const reject = useRejectChangeset(serviceRef);
+  const commit = useCommitChangeset();
+  const reject = useRejectChangeset();
+  const { confirmName: env } = useDataSource();
+  const cli = useCli();
   const [confirm, setConfirm] = useState("");
   const [reason, setReason] = useState("");
   const [label, tone] = statusText[c.status];
-  const env = serviceRef.environment;
   const confirmed = !c.confirm_commit || confirm === env;
   const busy = commit.isPending || reject.isPending;
   const decide = approve && c.status === "pending";
@@ -116,90 +111,99 @@ function Changeset({
   return (
     <section
       aria-label={`Changeset ${c.id}`}
-      className="flex min-w-0 flex-1 flex-col gap-2.5 overflow-y-auto"
+      className="flex min-w-0 flex-1 flex-col overflow-y-auto"
     >
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="text-md font-semibold">Changeset {c.id}</h2>
-        <span className={tone}>{label}</span>
-        <span className="text-mut">
-          by <Actor name={c.author} kind={c.author_kind} />, {ago(c.created_at)}
-          {c.status === "pending" &&
-            c.expires_at &&
-            `, expires in ${until(c.expires_at)}`}
-          {c.decided_by &&
-            c.decided_at &&
-            `, decided by ${c.decided_by} ${ago(c.decided_at)}`}
-        </span>
-      </div>
-      {c.message && <p>{c.message}</p>}
-      {c.reason && <p className="text-mut">Reason: {c.reason}</p>}
-      <ChangeList changes={c.changes ?? []} />
-      <SqlText>{c.sql}</SqlText>
-      {c.rows_affected && (
-        <p className="font-mono text-xs text-mut">
-          rows affected per statement: {c.rows_affected.join(", ")}
-        </p>
-      )}
-      {(c.conflicts ?? []).length > 0 && (
-        <ul className="font-mono text-xs text-fail">
-          {c.conflicts?.map((x) => (
-            <li key={`${x.change}${x.reason}`}>
-              ✕ change {x.change + 1}: {x.message}
-            </li>
-          ))}
-        </ul>
-      )}
-      {c.status === "pending" && !approve && (
-        <p className="text-mut">Waiting for an admin to approve or reject.</p>
-      )}
-      {decide && (
-        <div className="flex flex-wrap items-start gap-2.5">
-          {c.confirm_commit && (
-            <label className="flex items-center gap-2 self-center">
-              <span>
-                Type <b className="font-mono text-warn">{env}</b> to commit
-              </span>
-              <input
-                className="field w-36 py-1 font-mono"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                aria-label="Environment name"
-              />
-            </label>
+      <Head title={`Changeset ${c.id}`}>
+        <span className={`text-xs ${tone}`}>{label}</span>
+      </Head>
+      <div className="flex max-w-[736px] flex-col gap-3 px-5 py-4">
+        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-(--g-mut)">
+          <Who name={c.author} kind={c.author_kind} />
+          <span>{ago(c.created_at)}</span>
+          {c.status === "pending" && c.expires_at && (
+            <span>· expires in {until(c.expires_at)}</span>
           )}
-          <Act
-            primary
-            cli={`dock db changes commit ${c.id}${c.confirm_commit ? ` --confirm ${env}` : ""} ${flags}`}
-            disabled={!confirmed || busy}
-            onClick={() =>
-              commit.mutate({
-                id: c.id,
-                confirm: c.confirm_commit ? confirm : undefined,
-              })
-            }
-          >
-            Approve and commit
-          </Act>
-          <input
-            className="field w-56 py-1"
-            placeholder="Reason (optional)"
-            aria-label="Reject reason"
-            maxLength={1000}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-          <Act
-            cli={`dock db changes reject ${c.id} ${flags}`}
-            disabled={busy}
-            onClick={() =>
-              reject.mutate({ id: c.id, reason: reason.trim() || undefined })
-            }
-          >
-            Reject
-          </Act>
-        </div>
-      )}
-      <ErrorText error={commit.error ?? reject.error} />
+          {c.decided_by && c.decided_at && (
+            <span>
+              · decided by {c.decided_by} {ago(c.decided_at)}
+            </span>
+          )}
+        </p>
+        {c.message && <p>{c.message}</p>}
+        {c.reason && <p className="text-(--g-dim)">Reason: {c.reason}</p>}
+        <ChangeList changes={c.changes ?? []} />
+        <SqlText>{c.sql}</SqlText>
+        {c.rows_affected && (
+          <p className="text-xs text-(--g-mut)">
+            Rows affected per statement: {c.rows_affected.join(", ")}
+          </p>
+        )}
+        {(c.conflicts ?? []).length > 0 && (
+          <ul className="font-mono text-xs text-(--g-fail)">
+            {c.conflicts?.map((x) => (
+              <li key={`${x.change}${x.reason}`}>
+                Change {x.change + 1}: {x.message}
+              </li>
+            ))}
+          </ul>
+        )}
+        {c.status === "pending" && !approve && (
+          <p className="text-(--g-mut)">
+            Waiting for an admin to approve or reject.
+          </p>
+        )}
+        {decide && (
+          <div className="flex flex-col gap-2.5 pt-2">
+            {c.confirm_commit && (
+              <div className="max-w-[320px]">
+                <ConfirmName
+                  verb="commit"
+                  value={confirm}
+                  onChange={setConfirm}
+                />
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Act
+                primary
+                cli={cli(
+                  `dock db changes commit ${c.id}${c.confirm_commit ? ` --confirm ${env}` : ""}`,
+                )}
+                disabled={!confirmed || busy}
+                onClick={() =>
+                  commit.mutate({
+                    id: c.id,
+                    confirm: c.confirm_commit ? confirm : undefined,
+                  })
+                }
+              >
+                Approve and commit
+              </Act>
+              <input
+                className="g-field w-56"
+                placeholder="Reason (optional)"
+                aria-label="Reject reason"
+                maxLength={1000}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+              <Act
+                cli={cli(`dock db changes reject ${c.id}`)}
+                disabled={busy}
+                onClick={() =>
+                  reject.mutate({
+                    id: c.id,
+                    reason: reason.trim() || undefined,
+                  })
+                }
+              >
+                Reject
+              </Act>
+            </div>
+          </div>
+        )}
+        <ErrorText error={commit.error ?? reject.error} />
+      </div>
     </section>
   );
 }

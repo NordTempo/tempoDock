@@ -21,55 +21,71 @@ import type { DataCell, DataResultColumn, DataRow } from "./types";
 // bundle. Used for table pages and SQL results; it lives in the lazy Data
 // chunk only.
 
-const mono = '"JetBrains Mono", "Inter", ui-monospace, monospace';
+// Style G (./g.css): the canvas needs literal colors, so translucent
+// tints are pre-blended onto the panel's #0a0a0a.
+const sans =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+const mono = 'ui-monospace, "SF Mono", Menlo, monospace';
 
-// The v2 palette (src/index.css @theme), as Glide wants it.
 const theme: Partial<Theme> = {
-  accentColor: "#60a5fa",
-  accentFg: "#000",
-  accentLight: "rgba(96, 165, 250, 0.14)",
-  textDark: "#fff",
-  textMedium: "#8c8c8c",
-  textLight: "#6e6e6e",
-  textBubble: "#fff",
-  bgIconHeader: "#8c8c8c",
-  fgIconHeader: "#000",
-  textHeader: "#8c8c8c",
-  textHeaderSelected: "#000",
-  bgCell: "#000",
-  bgCellMedium: "#0a0a0a",
-  bgHeader: "#000",
-  bgHeaderHasFocus: "#161616",
-  bgHeaderHovered: "#0a0a0a",
-  bgBubble: "#161616",
-  bgBubbleSelected: "#262626",
-  bgSearchResult: "#161000",
-  borderColor: "#161616",
-  horizontalBorderColor: "#161616",
-  headerBottomBorderColor: "#262626",
-  drilldownBorder: "#262626",
-  linkColor: "#60a5fa",
-  cellHorizontalPadding: 10,
-  cellVerticalPadding: 3,
+  accentColor: "#346bf1",
+  accentFg: "#fff",
+  accentLight: "rgba(52, 107, 241, 0.12)",
+  textDark: "#f5f5f5",
+  textMedium: "#a3a3a3",
+  textLight: "#8a8a8a",
+  textBubble: "#f5f5f5",
+  bgIconHeader: "#8a8a8a",
+  fgIconHeader: "#0a0a0a",
+  textHeader: "#8a8a8a",
+  textHeaderSelected: "#f5f5f5",
+  bgCell: "#0a0a0a",
+  bgCellMedium: "#0f0f0f",
+  bgHeader: "#0a0a0a",
+  bgHeaderHasFocus: "#141414",
+  bgHeaderHovered: "#121212",
+  bgBubble: "#191a1d",
+  bgBubbleSelected: "#232428",
+  bgSearchResult: "#2b1f0a",
+  borderColor: "#0a0a0a",
+  horizontalBorderColor: "#141414",
+  headerBottomBorderColor: "#1b1b1b",
+  drilldownBorder: "#1b1b1b",
+  linkColor: "#7da2ff",
+  cellHorizontalPadding: 8,
+  cellVerticalPadding: 4,
   headerFontStyle: "500 12px",
-  baseFontStyle: "12px",
+  baseFontStyle: "13px",
   markerFontStyle: "11px",
-  editorFontSize: "12px",
-  fontFamily: mono,
+  editorFontSize: "13px",
+  fontFamily: sans,
   lineHeight: 1.4,
-  roundingRadius: 0,
+  roundingRadius: 6,
 };
 
-// Per kind of cell: quiet for NULL and masked values, blue for links.
+// Ids, numbers, times and raw values in mono and quieter, as G1 shows them.
+const monoCell: Partial<Theme> = { fontFamily: mono, baseFontStyle: "12px" };
+const quietMono: Partial<Theme> = { ...monoCell, textDark: "#8a8a8a" };
 const kindTheme: Partial<Record<CellKind, Partial<Theme>>> = {
-  null: { textDark: "#6e6e6e" },
-  masked: { textDark: "#6e6e6e" },
-  truncated: { textDark: "#bdbdbd" },
-  bytea: { textDark: "#8c8c8c" },
+  null: { ...monoCell, textDark: "#525252" },
+  masked: { ...monoCell, textDark: "#525252" },
+  truncated: { textDark: "#a3a3a3" },
+  bytea: quietMono,
+  json: monoCell,
 };
-const linkTheme: Partial<Theme> = { textDark: "#60a5fa" };
-const stagedTheme: Partial<Theme> = { bgCell: "#161000", textDark: "#fbbf24" };
-const deletedTheme: Partial<Theme> = { bgCell: "#1a0a0a", textDark: "#6e6e6e" };
+const timeTypes = new Set([
+  "timestamp",
+  "timestamptz",
+  "date",
+  "time",
+  "timetz",
+  "interval",
+  "uuid",
+]);
+const linkTheme: Partial<Theme> = { textDark: "#7da2ff" };
+const stagedTheme: Partial<Theme> = { bgCell: "#2b1f0a", textDark: "#fde68a" };
+const deletedTheme: Partial<Theme> = { bgCell: "#221414", textDark: "#8a8a8a" };
+const selectedTheme: Partial<Theme> = { bgCell: "#0f1626" };
 
 /** A grid column: a result column plus what the table knows about it. */
 export type GridCol = DataResultColumn & {
@@ -102,7 +118,7 @@ const renderers = [textCellRenderer, markerCellRenderer] as NonNullable<
 // Required by the core editor; no image cells here, so it stays idle.
 const imageWindowLoader = new ImageWindowLoaderImpl();
 
-/** Width from the header and the first rows: monospace, so characters × a constant. */
+/** Width from the header and the first rows: characters × a constant. */
 function columnWidth(
   title: string,
   typeName: string,
@@ -113,7 +129,7 @@ function columnWidth(
   for (const row of rows.slice(0, 50)) {
     chars = Math.max(chars, cellText(row[i] ?? null, typeName).length);
   }
-  return Math.round(Math.min(Math.max(chars * 7.6 + 24, 64), 320));
+  return Math.round(Math.min(Math.max(chars * 7.4 + 24, 64), 320));
 }
 
 const noSelection: GridSelection = {
@@ -124,6 +140,7 @@ const noSelection: GridSelection = {
 export function Grid({
   columns,
   rows,
+  selected,
   staged,
   deleted,
   onSelectRow,
@@ -135,6 +152,8 @@ export function Grid({
 }: {
   columns: GridCol[];
   rows: readonly DataRow[];
+  /** The row whose details are open, highlighted. */
+  selected?: number | null;
   /** The staged value of a cell, if it was edited. */
   staged?: (row: number, column: string) => string | null | undefined;
   /** Rows staged for deletion. */
@@ -202,12 +221,21 @@ export function Grid({
       contentAlign: kind === "number" ? "right" : "left",
       cursor: link ? "pointer" : undefined,
       themeOverride:
-        edit !== undefined ? stagedTheme : link ? linkTheme : kindTheme[kind],
+        edit !== undefined
+          ? stagedTheme
+          : link
+            ? linkTheme
+            : (kindTheme[kind] ??
+              (kind === "number"
+                ? monoCell
+                : timeTypes.has(column.type_name)
+                  ? quietMono
+                  : undefined)),
     };
   };
 
   // Never taller than the rows, so short results don't trail empty lines.
-  const maxHeight = 28 + rows.length * 26 + 14;
+  const maxHeight = 32 + rows.length * 34 + 14;
 
   return (
     <div className="h-full" style={{ maxHeight }}>
@@ -220,9 +248,9 @@ export function Grid({
         theme={theme}
         width="100%"
         height="100%"
-        rowHeight={26}
-        headerHeight={28}
-        rowMarkers={onSelectRow ? "clickable-number" : "number"}
+        rowHeight={34}
+        headerHeight={32}
+        rowMarkers="none"
         rowSelect="single"
         rowSelectionMode="auto"
         gridSelection={selection}
@@ -230,10 +258,12 @@ export function Grid({
           setSelection(next);
           onSelectRow?.(next.current?.cell[1] ?? next.rows.first() ?? null);
         }}
-        getRowThemeOverride={
-          deleted
-            ? (row) => (deleted(row) ? deletedTheme : undefined)
-            : undefined
+        getRowThemeOverride={(row) =>
+          deleted?.(row)
+            ? deletedTheme
+            : row === selected
+              ? selectedTheme
+              : undefined
         }
         onHeaderClicked={
           onSort

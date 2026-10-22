@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { PolicyScope } from "../features/data/dockPolicy";
 import { PolicyPage } from "../features/data/PolicyPage";
-import type { PolicyScope } from "../features/data/policy";
 
 const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 

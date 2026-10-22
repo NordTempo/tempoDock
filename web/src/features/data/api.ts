@@ -13,8 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { keys } from "../../data/queries";
-import type { ServiceRef } from "../../data/types";
+import type { PolicyRule } from "./policy";
 import type { EditActions } from "./ReviewPanel";
 import type {
   DataChange,
@@ -38,36 +37,33 @@ import type {
   DataRow,
   DataSavedQuery,
   DataSchema,
+  DataSubject,
   SaveDataQueryRequest,
 } from "./types";
 import { dataLimits } from "./types";
 
 // Data access for the database panel. Components only use the hooks below;
-// the hooks call a DataSource from context. Every method mirrors one
-// endpoint under /api/v1/projects/{p}/environments/{e}/services/{s} (ADR
-// 0016 section 8). The Data route provides the API's (./source.ts); tests
-// can provide their own.
+// the hooks call the DataSource from context, which is bound to one
+// database: a Dock service (./source.ts) or a tempoBase connection
+// (web/tempobase/src/data/source.ts). Every method mirrors one endpoint
+// under that database's /data (ADR 0016 section 8, ADR 0024 section 3);
+// both hosts send the same types.
 
-/** The data endpoints of one Dock daemon. */
-export type DataSource = {
+/** The data endpoints of one database. */
+export type DataEndpoints = {
   /** GET /data: engine, status and the caller's access. */
-  info(ref: ServiceRef): Promise<DataInfo>;
-  /** POST /data/setup (admin): create or rotate dock_reader and dock_writer. */
-  setup(ref: ServiceRef): Promise<DataInfo>;
+  info(): Promise<DataInfo>;
+  /** POST /data/setup (admin): create or rotate the panel's roles. */
+  setup(): Promise<DataInfo>;
   /** GET /data/schema: the introspection result. */
-  schema(ref: ServiceRef): Promise<DataSchema>;
+  schema(): Promise<DataSchema>;
   /**
    * GET /data/tables/{table}/rows?order=&after=&limit=&filter=<JSON
    * DataFilter[]>: one keyset page.
    */
-  rows(
-    ref: ServiceRef,
-    req: DataPageRequest,
-    signal: AbortSignal,
-  ): Promise<DataPage>;
+  rows(req: DataPageRequest, signal: AbortSignal): Promise<DataPage>;
   /** GET /data/tables/{table}/references?key=<JSON>&limit=: incoming FK rows. */
   references(
-    ref: ServiceRef,
     req: DataReferencesRequest,
     signal: AbortSignal,
   ): Promise<DataReferences[] | null>;
@@ -76,96 +72,130 @@ export type DataSource = {
    * error). Aborting the signal cancels the query on the server.
    */
   query(
-    ref: ServiceRef,
     req: DataQueryRequest,
     signal: AbortSignal,
   ): AsyncIterable<DataQueryFrame>;
-  /**
-   * GET /data/history?before=<audit_id>: the caller's past queries, newest
-   * first. Not in the ADR's endpoint table yet; the Surface track names it.
-   */
-  history(ref: ServiceRef, before?: number): Promise<DataHistoryEntry[] | null>;
+  /** GET /data/history?before=<audit_id>: the caller's past queries, newest first. */
+  history(before?: number): Promise<DataHistoryEntry[] | null>;
   /** GET /data/saved-queries */
-  savedQueries(ref: ServiceRef): Promise<DataSavedQuery[] | null>;
+  savedQueries(): Promise<DataSavedQuery[] | null>;
   /** POST /data/saved-queries (new) or PUT /data/saved-queries/{id}. */
-  saveQuery(
-    ref: ServiceRef,
-    body: SaveDataQueryRequest,
-    id?: number,
-  ): Promise<DataSavedQuery>;
+  saveQuery(body: SaveDataQueryRequest, id?: number): Promise<DataSavedQuery>;
   /** DELETE /data/saved-queries/{id} */
-  deleteSavedQuery(ref: ServiceRef, id: number): Promise<void>;
+  deleteSavedQuery(id: number): Promise<void>;
   /** POST /data/changesets: preview with dry_run, else stage it as pending. */
-  changeset(ref: ServiceRef, req: DataChangesetRequest): Promise<DataChangeset>;
+  changeset(req: DataChangesetRequest): Promise<DataChangeset>;
   /** GET /data/changesets: the changesets the caller may see, newest first. */
-  changesets(ref: ServiceRef): Promise<DataChangeset[] | null>;
+  changesets(): Promise<DataChangeset[] | null>;
   /**
    * POST /data/changesets/{id}/commit: one's own with level write, anyone's
-   * as an admin (approve). `confirm` names the environment on production.
+   * as an admin (approve). `confirm` is the source's `confirmName` on
+   * production.
    */
-  commitChangeset(
-    ref: ServiceRef,
-    id: number,
-    req: DataCommitRequest,
-  ): Promise<DataChangeset>;
+  commitChangeset(id: number, req: DataCommitRequest): Promise<DataChangeset>;
   /** POST /data/changesets/{id}/reject (admin, or the author withdrawing). */
-  rejectChangeset(
-    ref: ServiceRef,
-    id: number,
-    req: DataRejectRequest,
-  ): Promise<DataChangeset>;
+  rejectChangeset(id: number, req: DataRejectRequest): Promise<DataChangeset>;
   /** PUT /data/sensitive-columns (admin): replaces the list. */
-  setSensitive(
-    ref: ServiceRef,
-    columns: DataColumnRef[],
-  ): Promise<DataColumnRef[] | null>;
+  setSensitive(columns: DataColumnRef[]): Promise<DataColumnRef[] | null>;
+};
+
+/** The panel's database roles, as messages name them. */
+export type DataRoles = { reader: string; writer: string; masked: string };
+
+/** What the panel says about its host where Dock and tempoBase differ. */
+export type DataWords = {
+  /** Who holds the roles and their passwords: "Dock". */
+  product: string;
+  /** What setup creates the roles with: "the owner credentials from ...". */
+  owner: string;
+  /** What a production commit confirms the name of: "Environment". */
+  target: string;
+  /** Status unreachable, when the server gives no reason. */
+  unreachable: string;
+  /** Status not_running. */
+  notRunning: string;
+};
+
+/**
+ * One database's endpoints and how to talk about it: its query key prefix,
+ * CLI flags for command hints (absent: no hints), the role names, the name
+ * a production commit confirms, and the effective policy where it lives.
+ */
+export type DataSource = DataEndpoints & {
+  key: readonly unknown[];
+  cli?: string;
+  roles: DataRoles;
+  confirmName: string;
+  words: DataWords;
+  /** The policy's subjects in the host's words ("read users", "viewers"). */
+  subjectNames: Record<DataSubject, string>;
+  /** The effective policy for this database (the sensitive columns note). */
+  policy: {
+    queryKey: readonly unknown[];
+    queryFn: () => Promise<{ effective: readonly PolicyRule[] | null }>;
+  };
 };
 
 /** Provide with `<DataSourceContext value={source}>` around the panel. */
 export const DataSourceContext = createContext<DataSource | null>(null);
 
-function useSource() {
+/** The bound source from context. */
+export function useDataSource() {
   const source = use(DataSourceContext);
   if (!source)
     throw new Error("The data panel needs a DataSourceContext provider");
   return source;
 }
 
-const dataKey = keys.data;
+/**
+ * A CLI command hint with the database's flags appended, or undefined
+ * where the host has no CLI.
+ */
+export function useCli() {
+  const { cli } = useDataSource();
+  return (command: string) =>
+    cli === undefined ? undefined : `${command} ${cli}`;
+}
 
 /** GET /data. */
-export function useDataInfo(ref: ServiceRef) {
-  const source = useSource();
+export function useDataInfo() {
+  const source = useDataSource();
   return useQuery({
-    queryKey: [...dataKey(ref), "info"],
-    queryFn: () => source.info(ref),
+    queryKey: [...source.key, "info"],
+    queryFn: () => source.info(),
   });
 }
 
 /** POST /data/setup; the result replaces the panel's info. */
-export function useDataSetup(ref: ServiceRef) {
-  const source = useSource();
+export function useDataSetup() {
+  const source = useDataSource();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => source.setup(ref),
+    mutationFn: () => source.setup(),
     onSuccess: (info) => {
-      client.setQueryData([...dataKey(ref), "info"], info);
+      client.setQueryData([...source.key, "info"], info);
       return client.invalidateQueries({
-        queryKey: [...dataKey(ref), "schema"],
+        queryKey: [...source.key, "schema"],
       });
     },
   });
 }
 
 /** GET /data/schema. The server caches the catalog for 60 s, so do we. */
-export function useDataSchema(ref: ServiceRef, enabled = true) {
-  const source = useSource();
+export function useDataSchema(enabled = true) {
+  const source = useDataSource();
   return useQuery({
-    queryKey: [...dataKey(ref), "schema"],
-    queryFn: () => source.schema(ref),
+    queryKey: [...source.key, "schema"],
+    queryFn: () => source.schema(),
     staleTime: 60_000,
     enabled,
   });
+}
+
+/** The effective policy where the database lives. */
+export function useDataPolicy() {
+  const { policy } = useDataSource();
+  return useQuery({ queryKey: [...policy.queryKey], queryFn: policy.queryFn });
 }
 
 /**
@@ -183,11 +213,11 @@ export type TableQuery = {
  * GET /data/tables/{table}/rows, as keyset pages: fetchNextPage loads the
  * page after the last one's `next` cursor.
  */
-export function useTableRows(ref: ServiceRef, q: TableQuery | null) {
-  const source = useSource();
+export function useTableRows(q: TableQuery | null) {
+  const source = useDataSource();
   return useInfiniteQuery({
     queryKey: [
-      ...dataKey(ref),
+      ...source.key,
       "rows",
       q?.table,
       q?.order ?? "",
@@ -197,7 +227,6 @@ export function useTableRows(ref: ServiceRef, q: TableQuery | null) {
     queryFn: ({ pageParam, signal }) => {
       if (!q) throw new Error("No table selected");
       return source.rows(
-        ref,
         {
           table: q.table,
           order: q.order,
@@ -218,27 +247,26 @@ export function useTableRows(ref: ServiceRef, q: TableQuery | null) {
 
 /** GET /data/tables/{table}/references for one row (null: none selected). */
 export function useReferences(
-  ref: ServiceRef,
   table: string,
   key: Record<string, string> | null,
 ) {
-  const source = useSource();
+  const source = useDataSource();
   return useQuery({
-    queryKey: [...dataKey(ref), "references", table, key],
+    queryKey: [...source.key, "references", table, key],
     queryFn: ({ signal }) => {
       if (!key) throw new Error("No row selected");
-      return source.references(ref, { table, key }, signal);
+      return source.references({ table, key }, signal);
     },
     enabled: !!key,
   });
 }
 
 /** GET /data/history, paged back by audit ID. */
-export function useQueryHistory(ref: ServiceRef) {
-  const source = useSource();
+export function useQueryHistory() {
+  const source = useDataSource();
   return useInfiniteQuery({
-    queryKey: [...dataKey(ref), "history"],
-    queryFn: ({ pageParam }) => source.history(ref, pageParam),
+    queryKey: [...source.key, "history"],
+    queryFn: ({ pageParam }) => source.history(pageParam),
     initialPageParam: undefined as number | undefined,
     // A short page is the last one.
     getNextPageParam: (page) =>
@@ -249,43 +277,43 @@ export function useQueryHistory(ref: ServiceRef) {
 }
 
 /** GET /data/saved-queries */
-export function useSavedQueries(ref: ServiceRef) {
-  const source = useSource();
+export function useSavedQueries() {
+  const source = useDataSource();
   return useQuery({
-    queryKey: [...dataKey(ref), "saved"],
-    queryFn: () => source.savedQueries(ref),
+    queryKey: [...source.key, "saved"],
+    queryFn: () => source.savedQueries(),
   });
 }
 
 /** PUT /data/saved-queries[/{id}] */
-export function useSaveQuery(ref: ServiceRef) {
-  const source = useSource();
+export function useSaveQuery() {
+  const source = useDataSource();
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: SaveDataQueryRequest & { id?: number }) =>
-      source.saveQuery(ref, body, id),
+      source.saveQuery(body, id),
     onSuccess: () =>
-      client.invalidateQueries({ queryKey: [...dataKey(ref), "saved"] }),
+      client.invalidateQueries({ queryKey: [...source.key, "saved"] }),
   });
 }
 
 /** DELETE /data/saved-queries/{id} */
-export function useDeleteSavedQuery(ref: ServiceRef) {
-  const source = useSource();
+export function useDeleteSavedQuery() {
+  const source = useDataSource();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => source.deleteSavedQuery(ref, id),
+    mutationFn: (id: number) => source.deleteSavedQuery(id),
     onSuccess: () =>
-      client.invalidateQueries({ queryKey: [...dataKey(ref), "saved"] }),
+      client.invalidateQueries({ queryKey: [...source.key, "saved"] }),
   });
 }
 
 /** GET /data/changesets: pending proposals and recent decisions. */
-export function useChangesets(ref: ServiceRef, enabled: boolean) {
-  const source = useSource();
+export function useChangesets(enabled: boolean) {
+  const source = useDataSource();
   return useQuery({
-    queryKey: [...dataKey(ref), "changesets"],
-    queryFn: () => source.changesets(ref),
+    queryKey: [...source.key, "changesets"],
+    queryFn: () => source.changesets(),
     enabled,
   });
 }
@@ -305,34 +333,35 @@ function committed(c: DataChangeset) {
 }
 
 /** Refetches what a decided changeset changes: the list and the rows. */
-function useChangesetSettled(ref: ServiceRef) {
+function useChangesetSettled() {
+  const source = useDataSource();
   const client = useQueryClient();
   return () =>
     Promise.all(
       (["changesets", "rows", "references"] as const).map((part) =>
-        client.invalidateQueries({ queryKey: [...dataKey(ref), part] }),
+        client.invalidateQueries({ queryKey: [...source.key, part] }),
       ),
     );
 }
 
 /** POST /data/changesets/{id}/commit: approve (admin) or commit. */
-export function useCommitChangeset(ref: ServiceRef) {
-  const source = useSource();
-  const onSettled = useChangesetSettled(ref);
+export function useCommitChangeset() {
+  const source = useDataSource();
+  const onSettled = useChangesetSettled();
   return useMutation({
     mutationFn: async ({ id, confirm }: { id: number; confirm?: string }) =>
-      committed(await source.commitChangeset(ref, id, { confirm })),
+      committed(await source.commitChangeset(id, { confirm })),
     onSettled,
   });
 }
 
 /** POST /data/changesets/{id}/reject */
-export function useRejectChangeset(ref: ServiceRef) {
-  const source = useSource();
-  const onSettled = useChangesetSettled(ref);
+export function useRejectChangeset() {
+  const source = useDataSource();
+  const onSettled = useChangesetSettled();
   return useMutation({
     mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
-      source.rejectChangeset(ref, id, { reason }),
+      source.rejectChangeset(id, { reason }),
     onSettled,
   });
 }
@@ -341,15 +370,15 @@ export function useRejectChangeset(ref: ServiceRef) {
  * PUT /data/sensitive-columns (admin): replaces the list. The schema shows
  * the marks and pages mask by them, so both refetch.
  */
-export function useSetSensitive(ref: ServiceRef) {
-  const source = useSource();
+export function useSetSensitive() {
+  const source = useDataSource();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (columns: DataColumnRef[]) => source.setSensitive(ref, columns),
+    mutationFn: (columns: DataColumnRef[]) => source.setSensitive(columns),
     onSettled: () =>
       Promise.all(
         (["schema", "rows", "references"] as const).map((part) =>
-          client.invalidateQueries({ queryKey: [...dataKey(ref), part] }),
+          client.invalidateQueries({ queryKey: [...source.key, part] }),
         ),
       ),
   });
@@ -361,11 +390,10 @@ export function useSetSensitive(ref: ServiceRef) {
  * for an admin with level propose (`onProposed` then gets it).
  */
 export function useEditActions(
-  ref: ServiceRef,
   access: DataPermission | undefined,
   onProposed: (changeset: DataChangeset) => void,
 ): EditActions | undefined {
-  const source = useSource();
+  const source = useDataSource();
   const client = useQueryClient();
   const level = access?.level;
   const proposed = useRef(onProposed);
@@ -374,25 +402,25 @@ export function useEditActions(
   return useMemo(() => {
     if (level !== "propose" && level !== "write") return undefined;
     const settle = () =>
-      client.invalidateQueries({ queryKey: [...dataKey(ref), "changesets"] });
+      client.invalidateQueries({ queryKey: [...source.key, "changesets"] });
     return {
       renderSql: async (changes: DataChange[]) =>
-        (await source.changeset(ref, { changes, dry_run: true })).sql,
+        (await source.changeset({ changes, dry_run: true })).sql,
       commit: async (changes: DataChange[], confirm?: string) => {
-        const staged = await source.changeset(ref, { changes });
+        const staged = await source.changeset({ changes });
         if (level === "propose") {
           await settle();
           proposed.current(staged);
           return;
         }
         try {
-          committed(await source.commitChangeset(ref, staged.id, { confirm }));
+          committed(await source.commitChangeset(staged.id, { confirm }));
         } finally {
           await settle();
         }
       },
     };
-  }, [source, client, ref, level]);
+  }, [source, client, level]);
 }
 
 /** A SQL query's result as its frames arrive. */
@@ -413,8 +441,8 @@ export type QueryRun = {
  * running), `cancel` stops it. Rows append per frame (up to 500 each). A
  * finished query refreshes the history, which the server records.
  */
-export function useQueryRunner(ref: ServiceRef) {
-  const source = useSource();
+export function useQueryRunner() {
+  const source = useDataSource();
   const client = useQueryClient();
   const [result, setResult] = useState<QueryRun | null>(null);
   const controller = useRef<AbortController | null>(null);
@@ -433,7 +461,7 @@ export function useQueryRunner(ref: ServiceRef) {
       };
       update({});
       try {
-        for await (const frame of source.query(ref, { sql }, abort.signal)) {
+        for await (const frame of source.query({ sql }, abort.signal)) {
           switch (frame.type) {
             case "header":
               update({ columns: frame.columns ?? [] });
@@ -457,10 +485,10 @@ export function useQueryRunner(ref: ServiceRef) {
         });
       }
       if (!abort.signal.aborted) {
-        client.invalidateQueries({ queryKey: [...dataKey(ref), "history"] });
+        client.invalidateQueries({ queryKey: [...source.key, "history"] });
       }
     },
-    [source, client, ref],
+    [source, client],
   );
 
   const cancel = useCallback(() => {

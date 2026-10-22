@@ -22,51 +22,56 @@ import type { DataTable } from "./types";
 // The SQL editor: CodeMirror 6 with the Postgres dialect, completion from
 // the schema, and Mod-Enter to run. Lives in the lazy SQL chunk only.
 
-const mono = '"JetBrains Mono", "Inter", ui-monospace, monospace';
+// Style G (G3): the panel's mono stack and colours.
+const mono = "ui-monospace, 'SF Mono', Menlo, monospace";
 
 const theme = EditorView.theme(
   {
     "&": {
-      backgroundColor: "#000",
-      color: "#fff",
+      backgroundColor: "#0a0a0a",
+      color: "#d4d4d4",
       fontSize: "13px",
       height: "100%",
     },
     "&.cm-focused": { outline: "none" },
-    ".cm-scroller": { fontFamily: mono, lineHeight: "1.6" },
-    ".cm-content": { caretColor: "#fff", padding: "8px 0" },
+    ".cm-scroller": { fontFamily: mono, lineHeight: "22px" },
+    ".cm-content": { caretColor: "#f5f5f5", padding: "12px 0" },
     ".cm-gutters": {
-      backgroundColor: "#000",
-      color: "#4a4a4a",
+      backgroundColor: "#0a0a0a",
+      color: "#525252",
       border: "none",
+      paddingLeft: "12px",
     },
-    ".cm-cursor": { borderLeftColor: "#fff" },
+    ".cm-cursor": { borderLeftColor: "#f5f5f5" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
       {
-        backgroundColor: "#1f3a5f",
+        backgroundColor: "rgba(52, 107, 241, 0.3)",
       },
-    ".cm-placeholder": { color: "#6e6e6e" },
+    ".cm-placeholder": { color: "#525252" },
     ".cm-tooltip": {
-      backgroundColor: "#0a0a0a",
-      border: "1px solid #3a3a3a",
-      color: "#fff",
+      backgroundColor: "#191a1d",
+      border: "1px solid rgba(255, 255, 255, 0.08)",
+      borderRadius: "8px",
+      color: "#f5f5f5",
+      overflow: "hidden",
     },
     ".cm-tooltip-autocomplete > ul": { fontFamily: mono, fontSize: "12px" },
     ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
-      backgroundColor: "#1a1a1a",
-      color: "#fff",
+      backgroundColor: "rgba(52, 107, 241, 0.16)",
+      color: "#f5f5f5",
     },
-    ".cm-completionDetail": { color: "#8c8c8c" },
+    ".cm-completionDetail": { color: "#8a8a8a" },
   },
   { dark: true },
 );
 
-// Quiet highlighting: keywords blue, literals light gray, comments faint.
+// Quiet highlighting: keywords blue, strings amber, comments faint.
 const highlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#60a5fa" },
-  { tag: [tags.string, tags.number, tags.bool, tags.null], color: "#bdbdbd" },
-  { tag: tags.comment, color: "#6e6e6e", fontStyle: "italic" },
-  { tag: [tags.operator, tags.punctuation], color: "#8c8c8c" },
+  { tag: tags.keyword, color: "#9cb8ff" },
+  { tag: tags.string, color: "#e5c07b" },
+  { tag: [tags.number, tags.bool, tags.null], color: "#d4d4d4" },
+  { tag: tags.comment, color: "#525252", fontStyle: "italic" },
+  { tag: [tags.operator, tags.punctuation], color: "#8a8a8a" },
   { tag: tags.typeName, color: "#d4d4d4" },
 ]);
 

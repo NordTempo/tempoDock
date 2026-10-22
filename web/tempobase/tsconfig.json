@@ -1,0 +1,6 @@
+{
+  // tempoBase's entry is its own program: each app registers its own
+  // router type with TanStack Router, so the two can't share one.
+  "extends": "../tsconfig.json",
+  "include": ["src", "../vite.tempobase.config.ts"]
+}

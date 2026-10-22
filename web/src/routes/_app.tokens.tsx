@@ -8,13 +8,15 @@ import {
   useProjectTree,
   useTokens,
 } from "../data/queries";
-import type { Scope, Token, TokenDataAccess } from "../data/types";
+import type { Scope, Token } from "../data/types";
+import { useSaveTokenData } from "../features/data/dockPolicy";
 import {
   TokenDataEditor,
   TokenDataFields,
   tokenDataFlags,
   tokenDataText,
 } from "../features/data/TokenData";
+import type { DataTokenAccess } from "../features/data/types";
 import { isoDay, plural, since } from "../ui/format";
 import {
   Actor,
@@ -119,6 +121,7 @@ function TokenRow({ token }: { token: Token }) {
   const admin = useIsAdmin();
   const [confirming, setConfirming] = useState(false);
   const [editingData, setEditingData] = useState(false);
+  const saveData = useSaveTokenData();
   const expired =
     !!token.expires_at && Date.parse(token.expires_at) < Date.now();
   const dead = !!token.revoked_at || expired;
@@ -197,7 +200,14 @@ function TokenRow({ token }: { token: Token }) {
         <tr>
           <td colSpan={8}>
             <TokenDataEditor
-              token={token}
+              data={token.data}
+              cap={tokenCap}
+              cli={(data) =>
+                data
+                  ? `dock token update ${token.id} ${tokenDataFlags(data)}`
+                  : `dock token update ${token.id} --data-clear`
+              }
+              onSave={(data) => saveData(token.id, data)}
               onDone={() => setEditingData(false)}
             />
           </td>
@@ -206,6 +216,10 @@ function TokenRow({ token }: { token: Token }) {
     </>
   );
 }
+
+/** What caps a token's own data access in Dock. */
+const tokenCap =
+  "never more than a user with its scope, or than its creator has. On production, write acts as propose.";
 
 const scopes: Array<{ scope: Scope; note: string }> = [
   { scope: "read", note: "see status, releases, logs" },
@@ -240,7 +254,7 @@ function CreateToken({
   const [project, setProject] = useState("");
   const [environment, setEnvironment] = useState("");
   const [days, setDays] = useState(90);
-  const [data, setData] = useState<TokenDataAccess | null>(null);
+  const [data, setData] = useState<DataTokenAccess>(null);
   const environments =
     tree
       .find((p) => p.project.name === project)
@@ -362,7 +376,7 @@ function CreateToken({
             </select>
           </label>
         </div>
-        <TokenDataFields value={data} onChange={setData} />
+        <TokenDataFields value={data} onChange={setData} cap={tokenCap} />
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"

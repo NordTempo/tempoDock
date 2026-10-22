@@ -83,8 +83,12 @@ export function Button({
   );
 }
 
-/** An action button with its `dock` CLI equivalent shown on hover. */
-export function Act({ cli, ...props }: ButtonProps & { cli: string }) {
+/**
+ * An action button with its `dock` CLI equivalent shown on hover; a plain
+ * button where there is no CLI (tempoBase).
+ */
+export function Act({ cli, ...props }: ButtonProps & { cli?: string }) {
+  if (cli === undefined) return <Button {...props} />;
   return (
     <span className="act">
       <Button {...props} />

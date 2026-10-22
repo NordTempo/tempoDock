@@ -11,8 +11,8 @@ const kindMark: Partial<Record<DataTable["kind"], string>> = {
 };
 
 /**
- * The schema sidebar: tables grouped by schema with row counts, and a
- * filter (`/`). `selected` and `onSelect` use "schema.name".
+ * The table list: tables grouped by schema with row counts, and a filter
+ * (`/`). In the panel's left column in Dock, in the sidebar in tempoBase. `selected` and `onSelect` use "schema.name".
  */
 export function TableList({
   tables,
@@ -42,8 +42,9 @@ export function TableList({
     <nav aria-label="Tables" className="flex min-h-0 flex-col gap-2">
       <input
         ref={input}
-        className="field py-1 font-mono text-xs"
+        className="g-field h-8"
         placeholder="Find table  /"
+        aria-label="Find table"
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
         onKeyDown={(e) => {
@@ -56,11 +57,13 @@ export function TableList({
           }
         }}
       />
-      <div className="min-h-0 overflow-y-auto font-mono text-xs">
+      <div className="min-h-0 overflow-y-auto">
         {[...schemas].map(([schema, list]) => (
           <section key={schema} className="mb-2">
-            <h3 className="py-0.5 text-mut">{schema}</h3>
-            <ul>
+            {schemas.size > 1 || schema !== "public" ? (
+              <h3 className="g-label px-2.5 pt-1.5 pb-1">{schema}</h3>
+            ) : null}
+            <ul className="flex flex-col gap-px">
               {list.map((t) => {
                 const name = tableName(t);
                 return (
@@ -70,17 +73,15 @@ export function TableList({
                       aria-current={name === selected ? "true" : undefined}
                       onClick={() => onSelect(name)}
                       title={t.comment || name}
-                      className={`flex w-full items-baseline gap-2 py-0.5 pl-2.5 text-left hover:bg-hover ${
-                        name === selected
-                          ? "bg-sel text-white"
-                          : "text-[#d4d4d4]"
-                      }`}
+                      className="g-item"
                     >
                       <span className="truncate">{t.name}</span>
                       {kindMark[t.kind] && (
-                        <span className="text-faint">{kindMark[t.kind]}</span>
+                        <span className="text-2xs text-(--g-faint)">
+                          {kindMark[t.kind]}
+                        </span>
                       )}
-                      <span className="ml-auto pr-1.5 text-faint">
+                      <span className="ml-auto text-2xs text-(--g-mut)">
                         {compactCount(tableRows(t))}
                       </span>
                     </button>
@@ -90,7 +91,9 @@ export function TableList({
             </ul>
           </section>
         ))}
-        {!shown.length && <p className="text-mut">No table matches.</p>}
+        {!shown.length && (
+          <p className="px-2.5 text-(--g-mut)">No table matches.</p>
+        )}
       </div>
     </nav>
   );

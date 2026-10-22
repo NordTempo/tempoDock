@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import type { ServiceRef } from "../../data/types";
-import { Scroll } from "../../ui/kit";
+import { useCli } from "./api";
 import { byteSize, rowCount, tableName, tableRows } from "./cells";
+import { Head, Scroll } from "./kit";
 import { SensitiveSection, useSensitiveMarks } from "./SensitiveColumns";
 import type { DataTable } from "./types";
 
@@ -20,23 +20,20 @@ const kindLabel: Record<DataTable["kind"], string> = {
  * sensitive columns here.
  */
 export function SchemaView({
-  serviceRef,
   table,
   tables,
   manage,
-  flags,
   onOpen,
 }: {
-  serviceRef: ServiceRef;
   table: DataTable;
   tables: readonly DataTable[];
   /** The caller may mark sensitive columns (admins). */
   manage: boolean;
-  flags: string;
   /** Show another table's structure. */
   onOpen: (table: string) => void;
 }) {
-  const marks = useSensitiveMarks(serviceRef, tables);
+  const marks = useSensitiveMarks(tables);
+  const cli = useCli();
   const name = tableName(table);
   const pk = table.primary_key ?? [];
   const fks = table.foreign_keys ?? [];
@@ -49,148 +46,158 @@ export function SchemaView({
     fks.find((fk) => fk.columns?.includes(column));
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto">
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h2 className="font-mono text-md font-semibold">{name}</h2>
-        <span className="text-mut">
-          {kindLabel[table.kind]}, {rowCount(tableRows(table))}
-          {table.size_bytes > 0 && `, ${byteSize(table.size_bytes)}`}
-          {!table.editable && ", read-only"}
+    <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <Head
+        crumb={table.schema}
+        title={table.name}
+        actions={
+          <span className="font-mono text-2xs text-(--g-mut)">
+            {cli(`dock db schema ${name}`)}
+          </span>
+        }
+      >
+        <span className="text-xs text-(--g-mut)">
+          {kindLabel[table.kind]} · {rowCount(tableRows(table))}
+          {table.size_bytes > 0 && ` · ${byteSize(table.size_bytes)}`}
+          {!table.editable && " · read only"}
         </span>
-        <span className="ml-auto font-mono text-2xs text-mut">
-          dock db schema {name} {flags}
-        </span>
-      </div>
-      {table.comment && <p className="text-mut">{table.comment}</p>}
+      </Head>
+      <div className="flex flex-col gap-6 px-3 py-3">
+        {table.comment && (
+          <p className="px-2 text-(--g-dim)">{table.comment}</p>
+        )}
 
-      <Scroll>
-        <table className="font-mono text-xs">
-          <thead>
-            <tr>
-              <th>column</th>
-              <th>type</th>
-              <th>null</th>
-              <th>default</th>
-              <th>notes</th>
-              {manage && <th>sensitive</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {(table.columns ?? []).map((c) => {
-              const fk = fkOf(c.name);
-              const notes = [
-                pk.includes(c.name) && "primary key",
-                c.generated && "generated",
-                c.sensitive && "sensitive",
-                c.comment,
-              ].filter(Boolean);
-              return (
-                <tr key={c.name}>
-                  <td className={pk.includes(c.name) ? "font-semibold" : ""}>
-                    {c.name}
-                  </td>
-                  <td className="text-[#d4d4d4]">{c.type}</td>
-                  <td className="text-mut">
-                    {c.nullable ? "null" : "not null"}
-                  </td>
-                  <td className="max-w-64 truncate text-mut" title={c.default}>
-                    {c.default}
-                  </td>
-                  <td className="text-mut">
-                    {fk && (
-                      <button
-                        type="button"
-                        className="mr-3 text-prog hover:underline"
-                        onClick={() =>
-                          onOpen(`${fk.ref_schema}.${fk.ref_table}`)
-                        }
-                      >
-                        → {fk.ref_table}.{(fk.ref_columns ?? []).join(", ")}
-                      </button>
-                    )}
-                    {notes.join(", ")}
-                  </td>
-                  {manage && (
-                    <td>
-                      <button
-                        type="button"
-                        className="lnk"
-                        disabled={marks.pending}
-                        onClick={() =>
-                          marks.toggle(
-                            {
-                              schema: table.schema,
-                              table: table.name,
-                              column: c.name,
-                            },
-                            !c.sensitive,
-                          )
-                        }
-                      >
-                        {c.sensitive ? "Unmark" : "Mark"}
-                      </button>
+        <Scroll>
+          <table className="g-table">
+            <thead>
+              <tr>
+                <th>column</th>
+                <th>type</th>
+                <th>null</th>
+                <th>default</th>
+                <th>notes</th>
+                {manage && <th>sensitive</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {(table.columns ?? []).map((c) => {
+                const fk = fkOf(c.name);
+                const notes = [
+                  pk.includes(c.name) && "primary key",
+                  c.generated && "generated",
+                  c.sensitive && "sensitive",
+                  c.comment,
+                ].filter(Boolean);
+                return (
+                  <tr key={c.name}>
+                    <td className={pk.includes(c.name) ? "font-semibold" : ""}>
+                      {c.name}
                     </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Scroll>
-      {manage && (
-        <SensitiveSection
-          serviceRef={serviceRef}
-          tables={tables}
-          marks={marks}
-          flags={flags}
-        />
-      )}
+                    <td className="font-mono text-xs text-(--g-dim)">
+                      {c.type}
+                    </td>
+                    <td className="text-xs text-(--g-mut)">
+                      {c.nullable ? "null" : "not null"}
+                    </td>
+                    <td
+                      className="max-w-64 truncate font-mono text-xs text-(--g-mut)"
+                      title={c.default}
+                    >
+                      {c.default}
+                    </td>
+                    <td className="text-xs text-(--g-mut)">
+                      {fk && (
+                        <button
+                          type="button"
+                          className="g-lnk mr-3"
+                          onClick={() =>
+                            onOpen(`${fk.ref_schema}.${fk.ref_table}`)
+                          }
+                        >
+                          → {fk.ref_table}.{(fk.ref_columns ?? []).join(", ")}
+                        </button>
+                      )}
+                      {notes.join(", ")}
+                    </td>
+                    {manage && (
+                      <td>
+                        <button
+                          type="button"
+                          className="g-lnk"
+                          disabled={marks.pending}
+                          onClick={() =>
+                            marks.toggle(
+                              {
+                                schema: table.schema,
+                                table: table.name,
+                                column: c.name,
+                              },
+                              !c.sensitive,
+                            )
+                          }
+                        >
+                          {c.sensitive ? "Unmark" : "Mark"}
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Scroll>
+        {manage && <SensitiveSection tables={tables} marks={marks} />}
 
-      <Section title="Foreign keys" empty="No foreign keys." items={fks}>
-        {(fk) => (
-          <li key={fk.name}>
-            ({(fk.columns ?? []).join(", ")}) →{" "}
-            <Open name={`${fk.ref_schema}.${fk.ref_table}`} onOpen={onOpen} /> (
-            {(fk.ref_columns ?? []).join(", ")}){" "}
-            <span className="text-faint">{fk.name}</span>
-          </li>
-        )}
-      </Section>
-      <Section
-        title="Referenced by"
-        empty="Nothing references this table."
-        items={incoming}
-      >
-        {({ from, fk }) => (
-          <li key={`${tableName(from)}${fk.name}`}>
-            <Open name={tableName(from)} onOpen={onOpen} /> (
-            {(fk.columns ?? []).join(", ")}) → (
-            {(fk.ref_columns ?? []).join(", ")}){" "}
-            <span className="text-faint">{fk.name}</span>
-          </li>
-        )}
-      </Section>
-      <Section title="Indexes" empty="No indexes." items={table.indexes ?? []}>
-        {(ix) => (
-          <li key={ix.name}>
-            <span className="text-[#d4d4d4]">{ix.name}</span>
-            {ix.primary ? " primary" : ix.unique ? " unique" : ""}
-            <div className="text-mut">{ix.definition}</div>
-          </li>
-        )}
-      </Section>
-      <Section
-        title="Constraints"
-        empty="No check, unique or exclusion constraints."
-        items={table.constraints ?? []}
-      >
-        {(c) => (
-          <li key={c.name}>
-            <span className="text-[#d4d4d4]">{c.name}</span> {c.kind}
-            <div className="text-mut">{c.definition}</div>
-          </li>
-        )}
-      </Section>
+        <Section title="Foreign keys" empty="No foreign keys." items={fks}>
+          {(fk) => (
+            <li key={fk.name}>
+              ({(fk.columns ?? []).join(", ")}) →{" "}
+              <Open name={`${fk.ref_schema}.${fk.ref_table}`} onOpen={onOpen} />{" "}
+              ({(fk.ref_columns ?? []).join(", ")}){" "}
+              <span className="text-(--g-faint)">{fk.name}</span>
+            </li>
+          )}
+        </Section>
+        <Section
+          title="Referenced by"
+          empty="Nothing references this table."
+          items={incoming}
+        >
+          {({ from, fk }) => (
+            <li key={`${tableName(from)}${fk.name}`}>
+              <Open name={tableName(from)} onOpen={onOpen} /> (
+              {(fk.columns ?? []).join(", ")}) → (
+              {(fk.ref_columns ?? []).join(", ")}){" "}
+              <span className="text-(--g-faint)">{fk.name}</span>
+            </li>
+          )}
+        </Section>
+        <Section
+          title="Indexes"
+          empty="No indexes."
+          items={table.indexes ?? []}
+        >
+          {(ix) => (
+            <li key={ix.name}>
+              <span className="text-(--g-code)">{ix.name}</span>
+              {ix.primary ? " primary" : ix.unique ? " unique" : ""}
+              <div className="text-(--g-mut)">{ix.definition}</div>
+            </li>
+          )}
+        </Section>
+        <Section
+          title="Constraints"
+          empty="No check, unique or exclusion constraints."
+          items={table.constraints ?? []}
+        >
+          {(c) => (
+            <li key={c.name}>
+              <span className="text-(--g-code)">{c.name}</span> {c.kind}
+              <div className="text-(--g-mut)">{c.definition}</div>
+            </li>
+          )}
+        </Section>
+      </div>
     </div>
   );
 }
@@ -203,11 +210,7 @@ function Open({
   onOpen: (table: string) => void;
 }) {
   return (
-    <button
-      type="button"
-      className="text-prog hover:underline"
-      onClick={() => onOpen(name)}
-    >
+    <button type="button" className="g-lnk" onClick={() => onOpen(name)}>
       {name}
     </button>
   );
@@ -225,14 +228,14 @@ function Section<T>({
   children: (item: T) => ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-1">
-      <h3 className="text-sm font-semibold">{title}</h3>
+    <section className="flex flex-col gap-1.5 px-2">
+      <h3 className="text-[13px] font-semibold">{title}</h3>
       {items.length ? (
-        <ul className="flex flex-col gap-1 font-mono text-xs">
+        <ul className="flex flex-col gap-1.5 font-mono text-xs">
           {items.map(children)}
         </ul>
       ) : (
-        <p className="text-xs text-mut">{empty}</p>
+        <p className="text-xs text-(--g-mut)">{empty}</p>
       )}
     </section>
   );
