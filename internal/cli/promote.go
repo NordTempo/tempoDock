@@ -2,11 +2,13 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
 // newPromoteCmd is `dock promote <from> <to>` (ADR 0014 section 4): the
@@ -25,8 +27,9 @@ is rebuilt. Services deploy one at a time and stop at the first failure;
 the ones already promoted stay. Services that don't exist in <to> are
 skipped and listed.
 
-Follows progress like deploy unless --detach. Exit 6 when a release fails.
-Needs deploy on <to>.`,
+Follows progress like deploy unless --detach. Exit 6 when a release fails,
+exit 4 when nothing was promoted (every service skipped; the result, with
+--json too, still lists them). Needs deploy on <to>.`,
 		Example: `  dock promote staging production
   dock promote staging production -s web -s worker`,
 		Args: cobra.ExactArgs(2),
@@ -73,12 +76,10 @@ Needs deploy on <to>.`,
 
 // finishPromote prints what a promotion did: each release, then the
 // skipped services. The first failed release makes it a deploy_failed
-// error; the releases after it failed without starting.
+// error; the releases after it failed without starting. Nothing promoted
+// at all (every service skipped) is a not_found error, after the result.
 func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.PromoteResult) error {
 	err := g.io.Print(res, func() error {
-		if len(res.Promoted) == 0 {
-			g.io.Warnf("Nothing was promoted from %s to %s.", res.From, res.To)
-		}
 		for _, p := range res.Promoted {
 			r := p.Release
 			switch r.Status {
@@ -97,6 +98,13 @@ func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.Pr
 	})
 	if err != nil {
 		return err
+	}
+	if len(res.Promoted) == 0 {
+		return &output.Error{
+			Exit:    output.ExitNotFound,
+			Message: fmt.Sprintf("nothing was promoted from %s to %s", res.From, res.To),
+			Hint:    "Each skipped service above says why. Promote never creates services; `dock service create` makes one in " + res.To + ".",
+		}
 	}
 	for _, p := range res.Promoted {
 		if err := releaseFailure(ctx, s, p.Release); err != nil {

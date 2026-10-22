@@ -41,7 +41,7 @@ Stable; never renumbered.
 | 1 | `error` | Anything not covered below |
 | 2 | `usage` | Bad flags, arguments or input. Nothing was done |
 | 3 | `auth` | No server configured, no token, or the token lacks permission |
-| 4 | `not_found` | The project, service, context, link, ... doesn't exist |
+| 4 | `not_found` | The project, service, context, link, ... doesn't exist, or `promote` found nothing to promote |
 | 5 | `conflict` | Already exists, or another operation (e.g. a deploy) holds the lock |
 | 6 | `deploy_failed` | Build or health check failed. Traffic was not switched |
 | 7 | `unreachable` | Could not reach the server (or its proxy answered 502/503/504), or the server an environment is placed on is offline (`server_offline`) |
@@ -138,7 +138,7 @@ keeps the linked service, so it means "this service, in staging".
 | `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions end; the CLI's token stays valid |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails. When the environment's server is offline or revoked, a source deploy stops before packing anything (`server_offline`, exit 7) |
-| `promote FROM TO [-s service...] [-d]` | Deploy the images serving in environment FROM to TO (same project), by digest, with TO's own variables and settings; nothing is rebuilt. One service at a time, stopping at the first failure. Services missing in TO (or with nothing running in FROM) are skipped and listed. Needs deploy on TO. Exit 6 when a release fails |
+| `promote FROM TO [-s service...] [-d]` | Deploy the images serving in environment FROM to TO (same project), by digest, with TO's own variables and settings; nothing is rebuilt. One service at a time, stopping at the first failure. Services missing in TO (or with nothing running in FROM) are skipped and listed. Needs deploy on TO. Exit 6 when a release fails, exit 4 when nothing was promoted (every service skipped; the skipped list is still printed, and with `--json` the result still goes to stdout) |
 | `status [-a]` | The service's state, releases, domains and staged changes; `-a` (or no service) for the whole environment. On a server that is offline or revoked the state is the last known one and says so ("server t3node is offline: last known running"; `server_offline`, `server` and `server_status` in the JSON status) |
 | `logs [-f] [-n N] [--since] [-r N] [--build]` | Service output, or a build log |
 | `releases`, `release list\|show N` | Release history and one release with its events |
