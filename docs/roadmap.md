@@ -3,6 +3,16 @@
 Each milestone ends with something usable on a real server. Later milestones
 are deliberately vaguer; we refine them as we learn.
 
+## Status (2026-10-22)
+
+| Milestone | State |
+|---|---|
+| M0 | Done. Measurements in [experience](experience.md); budgets enforced by `make perf`. |
+| M1 | Done on the homelab test VM: source and image deploys, health-gated cutover with zero failed requests, rollback, domains, staged variables, `dock.toml`, browser `dock login`. Waiting on a real NordTempo app. |
+| M2 | Done: projects, environments, services, references, private networking, users and scoped tokens, audit, the v2 web UI with full CLI parity. |
+| M3 | In progress: placement and server pools ([0015](decisions/0015-server-pools-and-placement.md)), statistics and the admin dashboard landed; the node protocol is designed and spiked ([0014](decisions/0014-node-protocol.md)). Next: join, remote runtime, registry, promote. |
+| M5 | In progress: the native database panel ([0016](decisions/0016-database-panel.md)). |
+
 ## Where we start
 
 **M0 → M1 on the homelab.** Prove the stack's footprint, then build the
@@ -81,6 +91,9 @@ doesn't affect production.
 - Clone an environment. Export a project's config.
 
 ## M5: Data
+
+- Database panel: browse, query and edit data with configurable access
+  policy for people and agents ([ADR 0016](decisions/0016-database-panel.md)).
 
 - Volumes in the UI.
 - Scheduled off-box backups and tested restore.

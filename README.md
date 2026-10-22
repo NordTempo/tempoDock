@@ -12,9 +12,9 @@ deliberately kept possible (see [vision](docs/vision.md)).
 
 ## Status
 
-M0 and M1 in progress (see [roadmap](docs/roadmap.md)). Deploys from source or
-image, health-gated cutover, rollback, staged variables and domains work end
-to end against real Docker, BuildKit and Caddy.
+M0 to M2 are done and running on a homelab test server; M3 (multiple
+servers) and the database panel (M5) are in progress. See the
+[roadmap](docs/roadmap.md#status-2026-10-22).
 
 ## Local development
 
