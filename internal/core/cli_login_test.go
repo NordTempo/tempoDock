@@ -73,8 +73,15 @@ func TestCLILoginApprovedTokenIsReturnedOnce(t *testing.T) {
 	}
 
 	a, err := h.c.AuthenticateToken(h.ctx, r.res.Token)
-	if err != nil || a.Scope != apitypes.ScopeDeploy || a.Name != "cli: laptop[31m" {
+	if err != nil || a.Scope != apitypes.ScopeDeploy || a.Name != "cli: laptop[31m" || a.Email != "ada@example.com" {
 		t.Fatalf("token actor = %+v, %v", a, err)
+	}
+	// The token acts for ada when she changes her password (dock me
+	// password); it gets no session.
+	if secret, _, err := h.c.ChangePassword(h.ctx, a, apitypes.ChangePasswordRequest{
+		CurrentPassword: "a long enough password", NewPassword: "another long password",
+	}, "203.0.113.1"); err != nil || secret != "" {
+		t.Fatalf("change password with the CLI token: %q, %v", secret, err)
 	}
 	tokens, _ := h.c.ListTokens(h.ctx, System)
 	last := tokens[len(tokens)-1]

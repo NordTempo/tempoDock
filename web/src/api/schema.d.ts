@@ -228,7 +228,7 @@ export interface paths {
         put?: never;
         /**
          * Change your password
-         * @description Users only. Ends all your sessions and sets a fresh session cookie.
+         * @description Users, from a UI session or a `dock login` token (API tokens have no password). Ends all your sessions; a session caller gets a fresh session cookie.
          */
         post: operations["change-password"];
         delete?: never;

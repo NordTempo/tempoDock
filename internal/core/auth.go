@@ -72,6 +72,11 @@ func (c *Core) AuthenticateToken(ctx context.Context, secret string) (Actor, err
 		}
 	}
 	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope)}
+	// A `dock login` token acts for the user who approved it, which lets
+	// them change their password from the CLI.
+	if t.Origin == "cli_login" {
+		a.Email = t.CreatedBy
+	}
 	if t.ProjectID != nil {
 		p, err := c.store.GetProject(ctx, *t.ProjectID)
 		if err != nil {
@@ -175,11 +180,13 @@ func (c *Core) newSession(ctx context.Context, u store.User) (secret string, exp
 	return secret, expires, nil
 }
 
-// ChangePassword changes the calling user's own password. Every session of
-// theirs ends; the returned one replaces the caller's.
+// ChangePassword changes the calling user's own password, from a UI
+// session or a `dock login` token. Every session of theirs ends; for a
+// session caller the returned one replaces it (a token caller gets none,
+// and its token stays valid).
 func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangePasswordRequest, clientIP string) (secret string, expires time.Time, err error) {
-	if a.Kind != "user" {
-		return "", time.Time{}, invalid("only users have passwords; tokens can't change them")
+	if a.Email == "" {
+		return "", time.Time{}, invalid("only users have passwords; API tokens can't change them. Log in with `dock login` to change yours from the CLI")
 	}
 	if !c.loginLimit.allow("email:"+strings.ToLower(a.Email), now()) {
 		return "", time.Time{}, errf(apitypes.CodeRateLimited, "too many password attempts; wait a minute and try again")
@@ -208,8 +215,10 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	if secret, expires, err = c.newSession(ctx, u); err != nil {
-		return "", time.Time{}, err
+	if a.Kind == "user" {
+		if secret, expires, err = c.newSession(ctx, u); err != nil {
+			return "", time.Time{}, err
+		}
 	}
 	c.audit(ctx, a, "user.password", nil, nil, u.Email, "changed own password; other sessions ended")
 	return secret, expires, nil
