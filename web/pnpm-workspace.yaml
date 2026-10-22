@@ -1,5 +1,9 @@
 # openapi-typescript declares typescript ^5.x but works with 6.x, the last
 # release with the JS compiler API it needs (TypeScript 7 is native-only).
+# Glide Data Grid 6.0.3 (the data panel's grid) declares React ^18 but runs
+# on 19.
 peerDependencyRules:
   allowedVersions:
     openapi-typescript>typescript: '6'
+    '@glideapps/glide-data-grid>react': '19'
+    '@glideapps/glide-data-grid>react-dom': '19'
