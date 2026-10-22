@@ -142,8 +142,8 @@ type DataSensitivity string
 // Sensitive-column visibility.
 const (
 	// SensitiveMasked shows {"masked": true} and never the value. Masked
-	// callers' SQL runs as dock_reader_masked, which Postgres denies the
-	// sensitive columns, so selecting one is an error frame.
+	// callers' SQL runs as the panel's masked read-only role, which
+	// Postgres denies the sensitive columns, so selecting one is an error frame.
 	SensitiveMasked DataSensitivity = "masked"
 	// SensitiveVisible shows values after an explicit, audited reveal:
 	// table pages and references mask them like for masked callers unless
@@ -194,14 +194,17 @@ type DataPolicyRule struct {
 	Sensitive DataSensitivity `json:"sensitive" enum:"masked,visible"`
 	// From says which policy the rule comes from. Only set in
 	// DataPolicy.Effective.
-	From DataPolicyScope `json:"from,omitempty" enum:"built_in,default,project,environment" readOnly:"true"`
+	From DataPolicyScope `json:"from,omitempty" enum:"built_in,default,project,environment,connection" readOnly:"true"`
 }
 
 // DataPolicy is the data access policy at one scope.
 type DataPolicy struct {
-	Scope       DataPolicyScope `json:"scope" enum:"default,project,environment"`
+	Scope       DataPolicyScope `json:"scope" enum:"default,project,environment,connection"`
 	Project     string          `json:"project,omitempty"`
 	Environment string          `json:"environment,omitempty"`
+	// Connection names tempoBase's connection for scope connection; Dock
+	// never sets it.
+	Connection string `json:"connection,omitempty"`
 	// Rules are the rules set at this scope; anything not covered is
 	// inherited.
 	Rules []DataPolicyRule `json:"rules"`
@@ -261,8 +264,8 @@ type DataPermission struct {
 	// Manage: may set up data access, mark sensitive columns and change
 	// the policy (admins).
 	Manage bool `json:"manage"`
-	// ConfirmCommit: the environment is production, so commits must send
-	// its name as confirm.
+	// ConfirmCommit: the environment or connection is production, so
+	// commits must send its name as confirm.
 	ConfirmCommit bool `json:"confirm_commit"`
 	// Why lists the steps that decided Level and Sensitive, in order.
 	Why []DataPermissionStep `json:"why"`
@@ -272,7 +275,7 @@ type DataPermission struct {
 type DataPermissionStep struct {
 	Source DataPermissionSource `json:"source" enum:"admin,policy,token,cap,production"`
 	// Policy and Subject name the rule, for policy steps.
-	Policy    DataPolicyScope `json:"policy,omitempty" enum:"built_in,default,project,environment"`
+	Policy    DataPolicyScope `json:"policy,omitempty" enum:"built_in,default,project,environment,connection"`
 	Subject   DataSubject     `json:"subject,omitempty" enum:"role:read,role:deploy,tokens"`
 	Level     DataLevel       `json:"level" enum:"none,schema,read,propose,write"`
 	Sensitive DataSensitivity `json:"sensitive" enum:"masked,visible"`
@@ -549,7 +552,7 @@ type DataReferences struct {
 }
 
 // DataQueryRequest runs one read-only SQL statement (POST /data/query) as
-// dock_reader in a READ ONLY transaction. Several statements in one string
+// the panel's read-only role in a READ ONLY transaction. Several statements in one string
 // are rejected. The response is NDJSON (application/x-ndjson) of
 // DataQueryFrame.
 type DataQueryRequest struct {
@@ -677,7 +680,7 @@ type DataChangeset struct {
 	// nothing was written.
 	Conflicts []DataConflict `json:"conflicts,omitempty"`
 	// ConfirmCommit: production, so a commit must confirm the
-	// environment's name.
+	// environment's or connection's name.
 	ConfirmCommit bool       `json:"confirm_commit"`
 	CreatedAt     time.Time  `json:"created_at"`
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
@@ -716,7 +719,8 @@ type DataConflict struct {
 // (POST /data/changesets/{id}/commit). It is revalidated against current
 // data first. Committing someone else's changeset is approving it (admins).
 type DataCommitRequest struct {
-	// Confirm is the environment's name; required on production.
+	// Confirm is the environment's or connection's name; required on
+	// production.
 	Confirm string `json:"confirm,omitempty"`
 }
 
