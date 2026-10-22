@@ -276,7 +276,7 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 	token := tok.String()
 	return apitypes.AddedServer{
 		Server: srv, Token: token, ExpiresAt: row.ExpiresAt,
-		Command: "sudo DOCK_BINARY=./bin/dock NODE_JOIN_TOKEN=" + token + " ./deploy/install.sh --node",
+		Command: "sudo DOCK_BINARY=./dock NODE_JOIN_TOKEN=" + token + " ./deploy/install.sh --node",
 	}, nil
 }
 
