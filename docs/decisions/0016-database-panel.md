@@ -137,6 +137,14 @@ decision: policy, not hard-coded rules).
 | Level | `none` < `schema` (tables, columns, relations; no rows) < `read` (browse, read-only SQL) < `propose` (draft changesets an admin approves) < `write` (commit one's own changesets) |
 | Sensitive columns | `masked` (never shown), `visible` (shown after an explicit, audited reveal) |
 
+Reveal: table pages mask sensitive columns for everyone, admins included,
+until the caller asks for a page with `reveal=true` (the grid's per-column
+Reveal, `dock db rows --reveal`). Only `visible` callers may (`masked` ones
+get 403 with the steps that decided it); the reveal is audited as
+`data.reveal` with the table and its sensitive columns, throttled like
+`data.browse`. SQL and changesets from `visible` callers aren't masked:
+every statement is already audited with its full text.
+
 A rule is (subject, kind, level, sensitive). Rules are set at three scopes:
 the **default**, a **project** and an **environment**. The most specific
 rule wins per subject and kind: environment, project, default, then the
@@ -233,10 +241,11 @@ Pending changesets expire after 7 days.
 ### Sensitive columns
 
 Admins mark columns sensitive; names like `password`, `*_hash`, `token`,
-`secret` are suggested on setup. Whether a subject sees them is the policy's
-`sensitive` setting (default: masked for everyone but admins). `visible`
-still shows them masked until an explicit reveal, which is audited (phase 4;
-until then `visible` shows them). Pages mask them in the engine; SQL runs as
+`secret` are suggested in the Schema tab (from column names, in the
+browser). Whether a subject sees them is the policy's `sensitive` setting
+(default: masked for everyone but admins). `visible` still shows them
+masked in pages until an explicit, audited reveal (section 4). Pages mask
+them in the engine; masked actors' SQL runs as
 `dock_reader_masked`, so it can't route around the marks. Its password is
 derived from `dock_reader`'s (HMAC), so it rotates with it. If its grants
 can't be synced, masked actors' SQL is refused rather than run on stale
@@ -253,7 +262,7 @@ into a detail row, so the main log stays scannable.
 | `data.browse` | First table page per actor and table, then at most every 10 min | Table, filter, sort |
 | `data.commit` | Each committed changeset | Generated SQL, rows affected per statement, approver for proposals |
 | `data.propose`, `data.approve`, `data.reject` | Changeset lifecycle | Changeset ID |
-| `data.reveal` | Masked values revealed | Table, columns |
+| `data.reveal` | A page with `reveal=true` per actor and table, then at most every 10 min | Table, columns |
 | `data.setup` | Roles created or rotated | |
 | `data.connect` | Raw tunnel opened and closed | Duration, bytes |
 | `data.policy` | A data policy or a token's data override changed | |

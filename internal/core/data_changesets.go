@@ -311,7 +311,7 @@ func (c *Core) CommitDataChangeset(ctx context.Context, a Actor, ref ServiceRef,
 	defer c.deciding.done(id)
 
 	decidedAt := now()
-	res, err := c.data.Commit(ctx, dt.t, dt.call(a), changes)
+	res, err := c.data.Commit(ctx, dt.t, dt.call(a, true), changes)
 	if err != nil {
 		return apitypes.DataChangeset{}, dataError(dt, err)
 	}

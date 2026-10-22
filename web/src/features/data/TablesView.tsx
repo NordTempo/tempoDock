@@ -1,4 +1,4 @@
-import { useReducer, useState } from "react";
+import { useMemo, useReducer, useState } from "react";
 import type { ServiceRef } from "../../data/types";
 import { plural } from "../../ui/format";
 import { type TableQuery, useTableRows } from "./api";
@@ -12,9 +12,10 @@ import type { DataFilter, DataInfo, DataTable } from "./types";
 
 /**
  * One table's rows: keyset pages loaded as the grid scrolls, filters and
- * sort, FK links, the selected row's drawer, and (in edit mode) staged
- * cell edits and deletes with their review. Mount with key={table} so
- * staged edits never carry over to another table.
+ * sort, FK links, the selected row's drawer, per-column reveal of
+ * sensitive columns, and (in edit mode) staged cell edits and deletes with
+ * their review. Mount with key={table} so staged edits and reveals never
+ * carry over to another table.
  */
 export function TablesView({
   serviceRef,
@@ -37,14 +38,50 @@ export function TablesView({
   /** Show another table, or this one filtered or sorted differently. */
   onQuery: (next: TableQuery) => void;
 }) {
-  const rows = useTableRows(serviceRef, query);
+  // Revealed sensitive columns, for callers who may see them. Like edit
+  // mode it's per mount and never remembered.
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const rows = useTableRows(serviceRef, {
+    ...query,
+    reveal: revealed.size > 0,
+  });
   const [edits, dispatch] = useReducer(editsReducer, noEdits);
   const [selected, setSelected] = useState<number | null>(null);
 
   const pages = rows.data?.pages ?? [];
   const columns = pages[0]?.columns ?? [];
   const names = columns.map((c) => c.name);
-  const data = pages.flatMap((p) => p.rows ?? []);
+  const sensitive = (table.columns ?? [])
+    .filter((c) => c.sensitive)
+    .map((c) => c.name);
+  const canReveal = info.access.sensitive === "visible";
+  // A reveal fetches all of the table's sensitive values; the columns not
+  // revealed yet stay masked on screen.
+  const data = useMemo(() => {
+    const all = (rows.data?.pages ?? []).flatMap((p) => p.rows ?? []);
+    const cols = rows.data?.pages[0]?.columns ?? [];
+    const hide = cols.flatMap((c, i) =>
+      revealed.size > 0 &&
+      !revealed.has(c.name) &&
+      table.columns?.some((t) => t.name === c.name && t.sensitive)
+        ? [i]
+        : [],
+    );
+    if (!hide.length) return all;
+    return all.map((r) => {
+      const masked = r.slice();
+      for (const i of hide) masked[i] = { masked: true };
+      return masked;
+    });
+  }, [rows.data, revealed, table]);
+  const toggleReveal = (column: string) =>
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(column)) next.add(column);
+      return next;
+    });
   const name = tableName(table);
   const filters = query.filters ?? [];
   const meta = new Map((table.columns ?? []).map((c) => [c.name, c]));
@@ -105,6 +142,7 @@ export function TablesView({
     `dock db rows ${name}`,
     ...filters.map(filterFlag).filter(Boolean),
     query.order && `--order ${query.order}`,
+    revealed.size > 0 && "--reveal",
     flags,
   ]
     .filter(Boolean)
@@ -133,6 +171,33 @@ export function TablesView({
           }
           onOrder={(order) => onQuery({ ...query, order })}
         />
+        {sensitive.length > 0 && (
+          <p className="flex flex-wrap gap-x-3 font-mono text-2xs text-mut">
+            <span>sensitive</span>
+            {sensitive.map((c) => (
+              <span key={c}>
+                <span className="text-[#d4d4d4]">{c}</span>{" "}
+                {canReveal ? (
+                  <button
+                    type="button"
+                    className="lnk"
+                    aria-pressed={revealed.has(c)}
+                    onClick={() => toggleReveal(c)}
+                  >
+                    {revealed.has(c) ? "Hide" : "Reveal"}
+                  </button>
+                ) : (
+                  "masked"
+                )}
+              </span>
+            ))}
+            <span>
+              {canReveal
+                ? "· each reveal is audited (data.reveal)"
+                : "· your access masks them"}
+            </span>
+          </p>
+        )}
         <div className="relative min-h-[300px] flex-1 border-t border-line">
           {rows.error ? (
             <p className="pt-3 text-fail">{rows.error.message}</p>

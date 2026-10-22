@@ -64,6 +64,8 @@ export type DataPageRequest = {
   limit?: number;
   count?: boolean;
   full?: boolean;
+  /** Show sensitive columns (sensitive visible only; audited). */
+  reveal?: boolean;
 };
 
 /** GET /data/tables/{table}/references (key goes over HTTP as JSON). */

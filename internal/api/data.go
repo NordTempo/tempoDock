@@ -148,8 +148,9 @@ func registerData(s *Server, a huma.API) {
 	})
 	authed(s, a, data(huma.Operation{
 		OperationID: "get-data-rows", Method: http.MethodGet, Path: dataPathT + "/tables/{table}/rows",
-		Summary:     "One page of a table",
-		Description: "A keyset page: sorted by `order` and the primary key, starting after the `after` cursor. Pass the page's `next` as `after` for the following page. Level read.",
+		Summary: "One page of a table",
+		Description: "A keyset page: sorted by `order` and the primary key, starting after the `after` cursor. Pass the page's `next` as `after` for the following page. " +
+			"Sensitive columns are masked unless `reveal` is set by a caller with sensitive visible. Level read.",
 	}), func(ctx context.Context, actor core.Actor, in *struct {
 		TablePath
 		Order  string `query:"order" doc:"Column to sort by, -column for descending; default the primary key"`
@@ -158,8 +159,9 @@ func registerData(s *Server, a huma.API) {
 		Filter string `query:"filter" doc:"JSON array of DataFilter, ANDed, e.g. [{\"column\":\"status\",\"op\":\"eq\",\"value\":\"paid\"}]"`
 		Count  bool   `query:"count" doc:"Also count the matching rows exactly (under the statement timeout)"`
 		Full   bool   `query:"full" doc:"Untruncated cells; only with limit 1"`
+		Reveal bool   `query:"reveal" doc:"Show the table's sensitive columns instead of masking them. Needs sensitive visible (403 otherwise); audited as data.reveal"`
 	}) (*out[apitypes.DataPage], error) {
-		req := apitypes.DataPageRequest{Table: in.Table, Order: in.Order, After: in.After, Limit: in.Limit, Count: in.Count, Full: in.Full}
+		req := apitypes.DataPageRequest{Table: in.Table, Order: in.Order, After: in.After, Limit: in.Limit, Count: in.Count, Full: in.Full, Reveal: in.Reveal}
 		if in.Filter != "" {
 			if err := json.Unmarshal([]byte(in.Filter), &req.Filters); err != nil {
 				return nil, badRequest("query.filter", "filter must be a JSON array of {column, op, value}: "+err.Error())
@@ -393,7 +395,7 @@ func registerDataQuery(s *Server, a huma.API) {
 		OperationID: "data-query", Method: http.MethodPost, Path: dataPathT + "/query",
 		Summary: "Run a read-only SQL statement", Tags: []string{"data"}, Errors: dataErrors, MaxBodyBytes: sqlBodyBytes,
 		Description: "Runs one statement as dock_reader in a READ ONLY transaction; several statements in one string are refused. " +
-			"Results are capped by `limit` (default 10 000, at most 100 000) and 64 MB, cells over 8 KB are truncated. Level read; masked callers can't run SQL until masking is enforced in the database." + queryDoc,
+			"Results are capped by `limit` (default 10 000, at most 100 000) and 64 MB, cells over 8 KB are truncated. Level read; masked callers' SQL runs as dock_reader_masked, which can't select sensitive columns." + queryDoc,
 		Responses: map[string]*huma.Response{"200": {
 			Description: "NDJSON stream of DataQueryFrame, one per line",
 			Content:     map[string]*huma.MediaType{"application/x-ndjson": {Schema: frame}},

@@ -705,7 +705,7 @@ export interface paths {
         put?: never;
         /**
          * Run a read-only SQL statement
-         * @description Runs one statement as dock_reader in a READ ONLY transaction; several statements in one string are refused. Results are capped by `limit` (default 10 000, at most 100 000) and 64 MB, cells over 8 KB are truncated. Level read; masked callers can't run SQL until masking is enforced in the database.
+         * @description Runs one statement as dock_reader in a READ ONLY transaction; several statements in one string are refused. Results are capped by `limit` (default 10 000, at most 100 000) and 64 MB, cells over 8 KB are truncated. Level read; masked callers' SQL runs as dock_reader_masked, which can't select sensitive columns.
          *
          *     The response is NDJSON (`application/x-ndjson`): one DataQueryFrame per line. A `header` frame (columns), `rows` frames of up to 500 rows, then exactly one `end` frame (row count, truncated, duration) or `error` frame (what the database reported, possibly after rows). Permission and validation errors are normal problem responses before any frame. Closing the connection cancels the query.
          */
@@ -844,7 +844,7 @@ export interface paths {
         };
         /**
          * One page of a table
-         * @description A keyset page: sorted by `order` and the primary key, starting after the `after` cursor. Pass the page's `next` as `after` for the following page. Level read.
+         * @description A keyset page: sorted by `order` and the primary key, starting after the `after` cursor. Pass the page's `next` as `after` for the following page. Sensitive columns are masked unless `reveal` is set by a caller with sensitive visible. Level read.
          */
         get: operations["get-data-rows"];
         put?: never;
@@ -7148,6 +7148,8 @@ export interface operations {
                 count?: boolean;
                 /** @description Untruncated cells; only with limit 1 */
                 full?: boolean;
+                /** @description Show the table's sensitive columns instead of masking them. Needs sensitive visible (403 otherwise); audited as data.reveal */
+                reveal?: boolean;
             };
             header?: never;
             path: {

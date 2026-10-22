@@ -15,21 +15,25 @@ import (
 
 // browseInterval is how often one actor's browsing of one table is
 // audited (data.browse): the first page, then at most once per interval.
+// Reveals (data.reveal) are throttled the same way.
 const browseInterval = 10 * time.Minute
 
 // browseLogMax bounds the browse throttle's memory: past it, entries older
 // than browseInterval are dropped when the next one is added.
 const browseLogMax = 1024
 
-// browseLog remembers when each actor last had a data.browse event per
-// table, in memory only: after a restart the next page is audited again.
-// No timer: old entries are swept when the map grows.
+// browseLog remembers when each actor last had a data.browse or
+// data.reveal event per table, in memory only: after a restart the next
+// page is audited again. No timer: old entries are swept when the map
+// grows.
 type browseLog struct {
 	mu   sync.Mutex
 	last map[browseKey]time.Time
 }
 
 type browseKey struct {
+	// action is the audit action, AuditDataBrowse or AuditDataReveal.
+	action  string
 	actor   string
 	service int64
 	table   string
@@ -149,7 +153,7 @@ func (c *Core) auditQuery(ctx context.Context, a Actor, ss svcScope, sql string,
 // auditBrowse records reading a table page (data.browse), at most once per
 // actor and table every browseInterval.
 func (c *Core) auditBrowse(ctx context.Context, a Actor, ss svcScope, req apitypes.DataPageRequest) {
-	if !c.browse.due(browseKey{actorKey(a), ss.svc.ID, req.Table}, time.Now()) {
+	if !c.browse.due(browseKey{apitypes.AuditDataBrowse, actorKey(a), ss.svc.ID, req.Table}, time.Now()) {
 		return
 	}
 	summary := "browsed " + req.Table
@@ -168,6 +172,23 @@ func (c *Core) auditBrowse(ctx context.Context, a Actor, ss svcScope, req apityp
 		summary += " order: " + req.Order
 	}
 	c.audit(ctx, a, apitypes.AuditDataBrowse, &ss.project, &ss.env, ss.String(), summary)
+}
+
+// auditReveal records a page that revealed a table's sensitive columns
+// (data.reveal), at most once per actor and table every browseInterval.
+// A table without sensitive columns reveals nothing and isn't audited.
+func (c *Core) auditReveal(ctx context.Context, a Actor, dt *dbTarget, table string) {
+	var cols []string
+	for _, s := range dt.sensitive {
+		if s.Schema+"."+s.Table == table {
+			cols = append(cols, s.Column)
+		}
+	}
+	if len(cols) == 0 || !c.browse.due(browseKey{apitypes.AuditDataReveal, actorKey(a), dt.ss.svc.ID, table}, time.Now()) {
+		return
+	}
+	c.audit(ctx, a, apitypes.AuditDataReveal, &dt.ss.project, &dt.ss.env, dt.ss.String(),
+		fmt.Sprintf("revealed %s: %s", table, strings.Join(cols, ", ")))
 }
 
 // GetAuditDetail returns an audit event's detail by its ID

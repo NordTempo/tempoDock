@@ -77,6 +77,7 @@ export const apiSource: DataSource = {
                 : undefined,
               count: req.count || undefined,
               full: req.full || undefined,
+              reveal: req.reveal || undefined,
             },
           },
           signal,

@@ -162,11 +162,15 @@ export function useDataSchema(ref: ServiceRef, enabled = true) {
   });
 }
 
-/** What a table view shows: one table, its sort and filters. */
+/**
+ * What a table view shows: one table, its sort and filters, and whether
+ * its sensitive columns are revealed (never in the URL).
+ */
 export type TableQuery = {
   table: string;
   order?: string;
   filters?: DataFilter[];
+  reveal?: boolean;
 };
 
 /**
@@ -182,6 +186,7 @@ export function useTableRows(ref: ServiceRef, q: TableQuery | null) {
       q?.table,
       q?.order ?? "",
       q?.filters ?? [],
+      !!q?.reveal,
     ],
     queryFn: ({ pageParam, signal }) => {
       if (!q) throw new Error("No table selected");
@@ -192,6 +197,7 @@ export function useTableRows(ref: ServiceRef, q: TableQuery | null) {
           order: q.order,
           filters: q.filters,
           after: pageParam || undefined,
+          reveal: q.reveal,
         },
         signal,
       );

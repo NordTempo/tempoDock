@@ -1,12 +1,15 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -444,15 +447,19 @@ func TestDataInfoWithoutAccess(t *testing.T) {
 func TestBrowseThrottle(t *testing.T) {
 	var b browseLog
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	k := browseKey{"user:1", 1, "public.orders"}
-	if !b.due(k, at) || b.due(k, at.Add(time.Minute)) || !b.due(browseKey{"user:1", 1, "public.items"}, at) || !b.due(browseKey{"user:2", 1, "public.orders"}, at) {
+	const browse = apitypes.AuditDataBrowse
+	k := browseKey{browse, "user:1", 1, "public.orders"}
+	if !b.due(k, at) || b.due(k, at.Add(time.Minute)) || !b.due(browseKey{browse, "user:1", 1, "public.items"}, at) || !b.due(browseKey{browse, "user:2", 1, "public.orders"}, at) {
 		t.Fatal("first browse per actor and table is audited, repeats are not")
+	}
+	if !b.due(browseKey{apitypes.AuditDataReveal, "user:1", 1, "public.orders"}, at) {
+		t.Fatal("a reveal is throttled apart from browsing")
 	}
 	if !b.due(k, at.Add(browseInterval)) {
 		t.Fatal("audited again after the interval")
 	}
 	for i := range browseLogMax + 10 {
-		b.due(browseKey{"user:1", int64(i), "t"}, at.Add(time.Duration(i)*time.Hour))
+		b.due(browseKey{browse, "user:1", int64(i), "t"}, at.Add(time.Duration(i)*time.Hour))
 	}
 	if len(b.last) > browseLogMax {
 		t.Fatalf("throttle holds %d entries", len(b.last))
@@ -467,5 +474,124 @@ func TestCutSQL(t *testing.T) {
 	}
 	if sqlSummary("SELECT *\n  FROM orders") != "SELECT * FROM orders" {
 		t.Fatal(sqlSummary("SELECT *\n  FROM orders"))
+	}
+}
+
+// pageEngine is a data.Engine that records how Page was called. Only Page,
+// SyncMasked, Forget and Close are implemented.
+type pageEngine struct {
+	data.Engine
+	mu    sync.Mutex
+	calls []data.Call
+}
+
+func (e *pageEngine) Page(_ context.Context, _ data.Target, c data.Call, _ apitypes.DataPageRequest) (apitypes.DataPage, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.calls = append(e.calls, c)
+	return apitypes.DataPage{}, nil
+}
+
+func (e *pageEngine) SyncMasked(context.Context, data.Target, data.Credentials, []apitypes.DataColumnRef) (string, error) {
+	return "synced", nil
+}
+
+func (e *pageEngine) Forget(int64) {}
+func (e *pageEngine) Close()       {}
+
+// last returns the call of the last Page and how many there were.
+func (e *pageEngine) last() (data.Call, int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.calls) == 0 {
+		return data.Call{}, 0
+	}
+	return e.calls[len(e.calls)-1], len(e.calls)
+}
+
+// TestDataReveal: pages mask sensitive columns even for callers with
+// sensitive visible until they reveal them; a reveal is audited (once per
+// caller and table per interval), and masked callers can't reveal.
+func TestDataReveal(t *testing.T) {
+	h := newHarness(t)
+	eng := &pageEngine{}
+	h.opts.Data = eng
+	h.restart()
+	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
+	h.deploy(db, "postgres:17")
+	ss, _ := h.c.loadService(h.ctx, db)
+	sealed, _ := h.c.box.Seal([]byte("pw"))
+	if _, err := h.c.store.UpsertDataAccess(h.ctx, store.UpsertDataAccessParams{
+		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: sealed, WriterSecret: sealed, SetUpAt: now(), SetUpBy: "admin@x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	admin := h.user("admin@x", apitypes.ScopeAdmin)
+	dev := h.user("dev@x", apitypes.ScopeDeploy)
+	viewer := h.user("viewer@x", apitypes.ScopeRead)
+	if _, err := h.c.SetDataPolicy(h.ctx, admin, EnvRef{}, apitypes.UpdateDataPolicyRequest{Rules: []apitypes.DataPolicyRule{
+		{Subject: apitypes.SubjectDeployUsers, Kind: apitypes.KindProduction, Level: apitypes.LevelRead, Sensitive: apitypes.SensitiveVisible},
+		{Subject: apitypes.SubjectReadUsers, Kind: apitypes.KindProduction, Level: apitypes.LevelRead, Sensitive: apitypes.SensitiveMasked},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetSensitiveColumns(h.ctx, admin, db, apitypes.SetSensitiveColumnsRequest{Columns: []apitypes.DataColumnRef{
+		{Schema: "public", Table: "customers", Column: "email"}, {Schema: "public", Table: "customers", Column: "password_hash"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	rows := func(a Actor, table string, reveal bool) error {
+		_, err := h.c.DataRows(h.ctx, a, db, apitypes.DataPageRequest{Table: table, Reveal: reveal})
+		return err
+	}
+	reveals := func() []apitypes.AuditEvent {
+		evs, err := h.c.ListAudit(h.ctx, System, AuditFilter{Action: apitypes.AuditDataReveal})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return evs
+	}
+
+	for _, a := range []Actor{admin, dev} {
+		if err := rows(a, "public.customers", false); err != nil {
+			t.Fatal(err)
+		}
+		if call, _ := eng.last(); !call.Masked {
+			t.Fatalf("%s's page without reveal is unmasked", a.Name)
+		}
+	}
+	if len(reveals()) != 0 {
+		t.Fatal("pages without reveal are audited as reveals")
+	}
+
+	if err := rows(dev, "public.customers", true); err != nil {
+		t.Fatal(err)
+	}
+	if call, _ := eng.last(); call.Masked {
+		t.Fatal("revealed page is masked")
+	}
+	evs := reveals()
+	if len(evs) != 1 || evs[0].Actor != "dev@x" || evs[0].Summary != "revealed public.customers: email, password_hash" {
+		t.Fatalf("reveal audit: %+v", evs)
+	}
+	// Throttled like browsing; a table without sensitive columns reveals
+	// nothing to audit.
+	if err := rows(dev, "public.customers", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := rows(dev, "public.orders", true); err != nil {
+		t.Fatal(err)
+	}
+	if call, _ := eng.last(); call.Masked || len(reveals()) != 1 {
+		t.Fatalf("repeat reveal: masked %v, %d events", call.Masked, len(reveals()))
+	}
+
+	_, before := eng.last()
+	err := rows(viewer, "public.customers", true)
+	if CodeOf(err) != apitypes.CodeForbidden || !strings.Contains(err.Error(), "needs sensitive visible") || !strings.Contains(err.Error(), "role:read gets read on production, sensitive masked") {
+		t.Fatalf("masked caller reveals: %v", err)
+	}
+	if _, after := eng.last(); after != before || len(reveals()) != 1 {
+		t.Fatal("a refused reveal read the table or was audited")
 	}
 }

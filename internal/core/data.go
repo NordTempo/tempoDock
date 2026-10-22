@@ -246,13 +246,15 @@ func (c *Core) DataSchema(ctx context.Context, a Actor, ref ServiceRef) (apitype
 	if err != nil {
 		return apitypes.DataSchema{}, err
 	}
-	s, err := c.data.Schema(ctx, dt.t, dt.call(a), dt.sensitive)
+	s, err := c.data.Schema(ctx, dt.t, dt.call(a, false), dt.sensitive)
 	return s, dataError(dt, err)
 }
 
-// DataRows returns one keyset page of a table. Needs level read; masked
-// callers see sensitive columns masked. The first page per caller and
-// table, then at most every 10 minutes, is audited as data.browse.
+// DataRows returns one keyset page of a table. Needs level read.
+// Sensitive columns are masked unless the request reveals them, which
+// needs sensitive visible and is audited as data.reveal before the values
+// go out. The first page per caller and table, then at most every 10
+// minutes, is audited as data.browse; reveals are throttled the same way.
 func (c *Core) DataRows(ctx context.Context, a Actor, ref ServiceRef, req apitypes.DataPageRequest) (apitypes.DataPage, error) {
 	switch {
 	case req.Limit < 0 || req.Limit > apitypes.DataPageMaxLimit:
@@ -267,11 +269,17 @@ func (c *Core) DataRows(ctx context.Context, a Actor, ref ServiceRef, req apityp
 	if err != nil {
 		return apitypes.DataPage{}, err
 	}
-	page, err := c.data.Page(ctx, dt.t, dt.call(a), req)
+	if req.Reveal && dt.perm.Sensitive != apitypes.SensitiveVisible {
+		return apitypes.DataPage{}, errf(apitypes.CodeForbidden, "revealing sensitive columns needs sensitive visible; yours are masked (%s)", whyWords(dt.perm))
+	}
+	page, err := c.data.Page(ctx, dt.t, dt.call(a, req.Reveal), req)
 	if err != nil {
 		return page, dataError(dt, err)
 	}
 	c.auditBrowse(ctx, a, dt.ss, req)
+	if req.Reveal {
+		c.auditReveal(ctx, a, dt, req.Table)
+	}
 	return page, nil
 }
 
@@ -287,7 +295,7 @@ func (c *Core) DataReferences(ctx context.Context, a Actor, ref ServiceRef, req 
 	if err != nil {
 		return nil, err
 	}
-	refs, err := c.data.References(ctx, dt.t, dt.call(a), req)
+	refs, err := c.data.References(ctx, dt.t, dt.call(a, false), req)
 	if err != nil {
 		return nil, dataError(dt, err)
 	}
@@ -316,7 +324,7 @@ func (c *Core) DataQuery(ctx context.Context, a Actor, ref ServiceRef, req apity
 	if err != nil {
 		return nil, err
 	}
-	call := dt.call(a)
+	call := dt.call(a, true)
 	if call.Masked {
 		s, err := c.data.Schema(ctx, dt.t, call, dt.sensitive)
 		if err != nil {
