@@ -146,7 +146,7 @@ const UserRow = memo(function UserRow({
     : "They have no open sessions.";
   const tokens =
     u.tokens > 0
-      ? `The ${plural(u.tokens, "token")} they created keep working until revoked on Tokens.`
+      ? "Their dock login tokens are revoked; tokens they created by hand keep working until revoked on Tokens."
       : "They have no tokens.";
 
   const confirms: Record<Exclude<Asking, null>, ReactNode> = {
@@ -203,7 +203,8 @@ const UserRow = memo(function UserRow({
       >
         Reset the password of <b className="font-semibold">{u.email}</b>?{" "}
         <span className="text-mut">
-          A new one is generated and shown once. {sessions}
+          A new one is generated and shown once. {sessions} Their dock login
+          tokens are revoked.
         </span>
       </Confirm>
     ),

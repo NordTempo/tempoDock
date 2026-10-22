@@ -456,6 +456,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.revokeTokenStmt, err = db.PrepareContext(ctx, revokeToken); err != nil {
 		return nil, fmt.Errorf("error preparing query RevokeToken: %w", err)
 	}
+	if q.revokeUserLoginTokensStmt, err = db.PrepareContext(ctx, revokeUserLoginTokens); err != nil {
+		return nil, fmt.Errorf("error preparing query RevokeUserLoginTokens: %w", err)
+	}
 	if q.saveQueryStmt, err = db.PrepareContext(ctx, saveQuery); err != nil {
 		return nil, fmt.Errorf("error preparing query SaveQuery: %w", err)
 	}
@@ -1268,6 +1271,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing revokeTokenStmt: %w", cerr)
 		}
 	}
+	if q.revokeUserLoginTokensStmt != nil {
+		if cerr := q.revokeUserLoginTokensStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing revokeUserLoginTokensStmt: %w", cerr)
+		}
+	}
 	if q.saveQueryStmt != nil {
 		if cerr := q.saveQueryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing saveQueryStmt: %w", cerr)
@@ -1596,6 +1604,7 @@ type Queries struct {
 	restoreVariableStmt                *sql.Stmt
 	revokeServerStmt                   *sql.Stmt
 	revokeTokenStmt                    *sql.Stmt
+	revokeUserLoginTokensStmt          *sql.Stmt
 	saveQueryStmt                      *sql.Stmt
 	setDataMaskedSyncedHashStmt        *sql.Stmt
 	setEnvironmentApplyErrorStmt       *sql.Stmt
@@ -1775,6 +1784,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		restoreVariableStmt:                q.restoreVariableStmt,
 		revokeServerStmt:                   q.revokeServerStmt,
 		revokeTokenStmt:                    q.revokeTokenStmt,
+		revokeUserLoginTokensStmt:          q.revokeUserLoginTokensStmt,
 		saveQueryStmt:                      q.saveQueryStmt,
 		setDataMaskedSyncedHashStmt:        q.setDataMaskedSyncedHashStmt,
 		setEnvironmentApplyErrorStmt:       q.setEnvironmentApplyErrorStmt,

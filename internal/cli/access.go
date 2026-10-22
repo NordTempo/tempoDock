@@ -366,7 +366,7 @@ func newUserCmd(g *globals) *cobra.Command {
 	create.Flags().StringVar(&req.Password, "password", "", "password (prompted for on a terminal)")
 
 	cmd.AddCommand(list, create,
-		newUserStateCmd(g, "disable", "Disable a user: they can't log in and their sessions end", "disable", "Disabled"),
+		newUserStateCmd(g, "disable", "Disable a user: they can't log in, their sessions and dock login tokens end", "disable", "Disabled"),
 		newUserStateCmd(g, "enable", "Let a disabled user log in again", "enable", "Enabled"),
 		newUserDeleteCmd(g), newUserResetPasswordCmd(g))
 	return cmd
@@ -416,7 +416,7 @@ func newUserDeleteCmd(g *globals) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "delete <email|id>",
-		Short: "Delete a user; their audit history and tokens stay",
+		Short: "Delete a user; their dock login tokens end, audit history and other tokens stay",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()
@@ -454,7 +454,7 @@ func newUserResetPasswordCmd(g *globals) *cobra.Command {
 	var password string
 	cmd := &cobra.Command{
 		Use:   "reset-password <email|id> [--password <new>]",
-		Short: "Set a user's password, or generate one; their sessions end",
+		Short: "Set a user's password, or generate one; their sessions and dock login tokens end",
 		Long: `Reset another user's password. Without --password a password is generated
 and printed once. Change your own with ` + "`dock me password`" + `.`,
 		Args: cobra.ExactArgs(1),

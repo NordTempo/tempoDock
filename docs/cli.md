@@ -88,12 +88,19 @@ to create or paste:
 1. The CLI prints a link and a code like `BCDF-GHJK` and opens the link
    (not over SSH or without a display; `--no-browser` only prints it, which
    also works without a terminal).
-2. In the browser, sign in if needed, check the code matches the terminal
-   and approve. The page shows the CLI's host, OS and IP: deny a login you
-   didn't start.
+2. In the browser, sign in if needed and type the code from the terminal.
+   The link never contains the code, so a link someone else sends you
+   can't approve their login. The page then shows the CLI's host, OS and
+   IP: deny a login you didn't start. A few wrong codes lock code entry
+   for a few minutes.
 3. The CLI gets its own token: named `cli: <hostname>`, your role as
    scope, valid for 90 days, listed on the Tokens page as from `dock login`.
-   Links expire after 10 minutes; Ctrl-C cancels.
+   Codes expire after 10 minutes; Ctrl-C cancels.
+
+The token acts for you, so it is only as good as your account: it stops
+working when you are disabled or deleted, never has more access than your
+current role, and changing or resetting your password revokes it (except
+the token that changed it with `dock me password`).
 
 `dock logout` revokes a token from a browser login on the server, and
 logging in again replaces (and revokes) it. A denied or expired login exits
@@ -136,7 +143,7 @@ keeps the linked service, so it means "this service, in staging".
 | `logout` | Remove the context's token; revoke it on the server if it came from a browser login |
 | `whoami` | Who the token belongs to and its scope |
 | `mcp [--show-token] [--name N]` | Print the MCP client config for the context's server ([agents](guide/agents.md#mcp)): the endpoint URL, a `claude mcp add` command and an `mcp.json` entry. The token is `${DOCK_TOKEN}` unless `--show-token` |
-| `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions end; the CLI's token stays valid |
+| `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions and other browser-login tokens end; the CLI's own token stays valid |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails. When the environment's server is offline or revoked, a source deploy stops before packing anything (`server_offline`, exit 7) |
 | `promote FROM TO [-s service...] [-d]` | Deploy the images serving in environment FROM to TO (same project), by digest, with TO's own variables and settings; nothing is rebuilt. One service at a time, stopping at the first failure. Services missing in TO (or with nothing running in FROM) are skipped and listed. Needs deploy on TO. Exit 6 when a release fails, exit 4 when nothing was promoted (every service skipped; the skipped list is still printed, and with `--json` the result still goes to stdout) |
@@ -159,7 +166,7 @@ keeps the linked service, so it means "this service, in staging".
 | `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement] [--builder\|--no-builder] [--base-domain D]` | Admin: what the server accepts, whether it builds, and the base domain of generated hostnames (`""` removes it) |
 | `server revoke NAME`, `server rotate-key NAME`, `server remove NAME` | Admin: forget a server's key and drop its link (it must join again; its apps keep running); have an online server switch to a new key; remove a server no live project uses (archived projects' environments move to the control plane's server) |
 | `token list\|create NAME --scope\|update ID\|revoke ID` | Tokens (admin). `create` and `update` take `--data-production`, `--data-non-production` (`none`, `schema`, `read`, `propose`, `write`) and `--data-sensitive` (`masked`, `visible`): the token's own database access instead of the data policy's tokens rule; `update --data-clear` removes it |
-| `user list\|create\|disable\|enable\|delete\|reset-password` | Users (admin). Users are named by email or id. `list` shows status, live sessions and usable tokens; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions (your own: `me password`) |
+| `user list\|create\|disable\|enable\|delete\|reset-password` | Users (admin). Users are named by email or id. `list` shows status, live sessions and usable tokens; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions and browser-login tokens (your own: `me password`). `disable` and `delete` end them too; tokens the user created by hand stay |
 | `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
 | `serve`, `admin bootstrap\|caddy-config\|registry-config --out DIR\|firewall apply\|remove` | Server side, run on the server with `--config`: the control plane daemon, the first admin token, Caddy's initial config (works before a node joins), the image registry's `config.yml` and `jwks.json` (deterministic for a given key), and the app firewall (root; installed as `dock-firewall.service`) |
 | `node`, `node join TOKEN` | On a server that joins a control plane, with `--config`: the node daemon (`dock-node.service`: the link, the registry proxy on `127.0.0.1:5000`, Caddy's `ask`; no API, UI or database), and joining once with a token from `server add` (writes `node.key` and `node.toml` into the data dir, prints the assigned server name). `install.sh --node` runs both |

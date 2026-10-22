@@ -8,7 +8,7 @@ Your app needs a `Dockerfile` at the repo root, or be something
 listen on `$PORT` (default `8080`).
 
 ```sh
-# 1. Log in: opens the browser, where you sign in and approve the code
+# 1. Log in: opens the browser, where you sign in, type the code and approve
 #    (saved as a context in ~/.config/dock/config.json)
 dock login http://100.64.0.10:7070
 

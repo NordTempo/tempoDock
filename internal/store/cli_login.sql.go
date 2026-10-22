@@ -67,9 +67,9 @@ func (q *Queries) CreateCLILogin(ctx context.Context, arg CreateCLILoginParams) 
 }
 
 const createCLILoginToken = `-- name: CreateCLILoginToken :one
-INSERT INTO tokens (name, hash, scope, created_by, expires_at, origin)
-VALUES (?, ?, ?, ?, ?, 'cli_login')
-RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive
+INSERT INTO tokens (name, hash, scope, created_by, user_id, expires_at, origin)
+VALUES (?, ?, ?, ?, ?, ?, 'cli_login')
+RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id
 `
 
 type CreateCLILoginTokenParams struct {
@@ -77,6 +77,7 @@ type CreateCLILoginTokenParams struct {
 	Hash      string
 	Scope     string
 	CreatedBy string
+	UserID    *int64
 	ExpiresAt *time.Time
 }
 
@@ -86,6 +87,7 @@ func (q *Queries) CreateCLILoginToken(ctx context.Context, arg CreateCLILoginTok
 		arg.Hash,
 		arg.Scope,
 		arg.CreatedBy,
+		arg.UserID,
 		arg.ExpiresAt,
 	)
 	var i Token
@@ -105,6 +107,7 @@ func (q *Queries) CreateCLILoginToken(ctx context.Context, arg CreateCLILoginTok
 		&i.DataProduction,
 		&i.DataNonProduction,
 		&i.DataSensitive,
+		&i.UserID,
 	)
 	return i, err
 }

@@ -138,7 +138,7 @@ func registerAuth(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "change-password", Method: http.MethodPost, Path: Prefix + "/me/password",
-		Summary: "Change your password", Description: "Users, from a UI session or a `dock login` token (API tokens have no password). Ends all your sessions; a session caller gets a fresh session cookie.",
+		Summary: "Change your password", Description: "Users, from a UI session or a `dock login` token (API tokens have no password). Ends all your sessions and revokes your other `dock login` tokens; a session caller gets a fresh session cookie, a token caller keeps its token.",
 		Tags: []string{"auth"}, DefaultStatus: http.StatusNoContent,
 		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusTooManyRequests},
 	}, func(ctx context.Context, actor core.Actor, in *passwordInput) (*passwordOutput, error) {

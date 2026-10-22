@@ -56,7 +56,8 @@ whichever binary you have.
 The last lines of output print the API address and the first admin token
 (shown once). `install.sh` also creates an admin user `admin@localhost` for
 the UI and prints its generated password to stderr, once. Log in from your
-laptop, then sign in as that user in the browser it opens and approve:
+laptop, then sign in as that user in the browser it opens, type the code
+from the terminal and approve:
 
 ```sh
 dock login http://100.64.0.10:7070

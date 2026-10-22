@@ -19,7 +19,7 @@ func TestCLILoginFlow(t *testing.T) {
 	resp, body := f.do("", "POST", "/api/v1/auth/cli", apitypes.CLILoginStartRequest{ClientName: "dock CLI", Hostname: "laptop", OS: "linux/amd64"})
 	var start apitypes.CLILoginStart
 	_ = json.Unmarshal(body, &start)
-	if resp.StatusCode != 201 || start.DeviceCode == "" || start.VerificationURL != f.srv.URL+"/cli-login?code="+start.UserCode {
+	if resp.StatusCode != 201 || start.DeviceCode == "" || start.VerificationURL != f.srv.URL+"/cli-login" {
 		t.Fatalf("start: %d %s", resp.StatusCode, body)
 	}
 

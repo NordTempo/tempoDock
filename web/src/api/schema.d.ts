@@ -55,7 +55,7 @@ export interface paths {
         put?: never;
         /**
          * Start a browser login for the CLI
-         * @description Returns a user code and the page where a signed-in user approves it, plus the device code the CLI waits with. Expires in 10 minutes. Rate limited per client IP.
+         * @description Returns a user code and the page where a signed-in user types it in and approves it, plus the device code the CLI waits with. The page URL never contains the code. Expires in 10 minutes. Rate limited per client IP.
          */
         post: operations["start-cli-login"];
         delete?: never;
@@ -272,7 +272,7 @@ export interface paths {
         put?: never;
         /**
          * Change your password
-         * @description Users, from a UI session or a `dock login` token (API tokens have no password). Ends all your sessions; a session caller gets a fresh session cookie.
+         * @description Users, from a UI session or a `dock login` token (API tokens have no password). Ends all your sessions and revokes your other `dock login` tokens; a session caller gets a fresh session cookie, a token caller keeps its token.
          */
         post: operations["change-password"];
         delete?: never;
@@ -1492,7 +1492,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a user
-         * @description Ends their sessions. Their audit history and the tokens they created stay. Scope: admin, unlimited.
+         * @description Ends their sessions and revokes their `dock login` tokens. Their audit history and the tokens they created by hand stay. Scope: admin, unlimited.
          */
         delete: operations["delete-user"];
         options?: never;
@@ -1511,7 +1511,7 @@ export interface paths {
         put?: never;
         /**
          * Disable a user
-         * @description The user can't log in and their sessions end now. Tokens they created keep working until revoked. Scope: admin, unlimited.
+         * @description The user can't log in, their sessions end and their `dock login` tokens are revoked now. Tokens they created by hand keep working until revoked. Scope: admin, unlimited.
          */
         post: operations["disable-user"];
         delete?: never;
@@ -1551,7 +1551,7 @@ export interface paths {
         put?: never;
         /**
          * Reset a user's password
-         * @description Sets the given password, or generates one and returns it once. The user's sessions end. Not for your own account (use change-password). Scope: admin, unlimited.
+         * @description Sets the given password, or generates one and returns it once. The user's sessions end and their `dock login` tokens are revoked. Not for your own account (use change-password). Scope: admin, unlimited.
          */
         post: operations["reset-password"];
         delete?: never;
@@ -1684,7 +1684,10 @@ export interface components {
             expires_at: string;
             /** @example BCDF-GHJK */
             user_code: string;
-            /** @example https://dock.example.com/cli-login?code=BCDF-GHJK */
+            /**
+             * @description The approval page. It never carries the user code: the user types it there
+             * @example https://dock.example.com/cli-login
+             */
             verification_url: string;
         };
         CLILoginStartRequest: {

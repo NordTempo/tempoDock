@@ -39,7 +39,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 const createToken = `-- name: CreateToken :one
 INSERT INTO tokens (name, hash, scope, project_id, environment_id, created_by, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive
+RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id
 `
 
 type CreateTokenParams struct {
@@ -79,6 +79,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		&i.DataProduction,
 		&i.DataNonProduction,
 		&i.DataSensitive,
+		&i.UserID,
 	)
 	return i, err
 }
@@ -180,7 +181,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 }
 
 const getToken = `-- name: GetToken :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive FROM tokens WHERE id = +?
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id FROM tokens WHERE id = +?
 `
 
 func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
@@ -202,33 +203,49 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
 		&i.DataProduction,
 		&i.DataNonProduction,
 		&i.DataSensitive,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const getTokenByHash = `-- name: GetTokenByHash :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive FROM tokens WHERE hash = +?
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, users.email AS user_email, users.role AS user_role, users.disabled_at AS user_disabled_at
+FROM tokens LEFT JOIN users ON users.id = tokens.user_id
+WHERE tokens.hash = +?
 `
 
-func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (Token, error) {
+type GetTokenByHashRow struct {
+	Token          Token
+	UserEmail      *string
+	UserRole       *string
+	UserDisabledAt *time.Time
+}
+
+// GetTokenByHash also returns the user a `dock login` token acts for, in
+// the same query, since authentication checks them on every request.
+func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHashRow, error) {
 	row := q.queryRow(ctx, q.getTokenByHashStmt, getTokenByHash, hash)
-	var i Token
+	var i GetTokenByHashRow
 	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Hash,
-		&i.Scope,
-		&i.ProjectID,
-		&i.EnvironmentID,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.ExpiresAt,
-		&i.LastUsedAt,
-		&i.RevokedAt,
-		&i.Origin,
-		&i.DataProduction,
-		&i.DataNonProduction,
-		&i.DataSensitive,
+		&i.Token.ID,
+		&i.Token.Name,
+		&i.Token.Hash,
+		&i.Token.Scope,
+		&i.Token.ProjectID,
+		&i.Token.EnvironmentID,
+		&i.Token.CreatedBy,
+		&i.Token.CreatedAt,
+		&i.Token.ExpiresAt,
+		&i.Token.LastUsedAt,
+		&i.Token.RevokedAt,
+		&i.Token.Origin,
+		&i.Token.DataProduction,
+		&i.Token.DataNonProduction,
+		&i.Token.DataSensitive,
+		&i.Token.UserID,
+		&i.UserEmail,
+		&i.UserRole,
+		&i.UserDisabledAt,
 	)
 	return i, err
 }
@@ -272,7 +289,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const listTokens = `-- name: ListTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive FROM tokens ORDER BY id
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id FROM tokens ORDER BY id
 `
 
 func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
@@ -300,6 +317,7 @@ func (q *Queries) ListTokens(ctx context.Context) ([]Token, error) {
 			&i.DataProduction,
 			&i.DataNonProduction,
 			&i.DataSensitive,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -375,6 +393,27 @@ type RevokeTokenParams struct {
 func (q *Queries) RevokeToken(ctx context.Context, arg RevokeTokenParams) error {
 	_, err := q.exec(ctx, q.revokeTokenStmt, revokeToken, arg.RevokedAt, arg.ID)
 	return err
+}
+
+const revokeUserLoginTokens = `-- name: RevokeUserLoginTokens :execrows
+UPDATE tokens SET revoked_at = +?1
+WHERE user_id = +?2 AND origin = 'cli_login' AND revoked_at IS NULL AND id != +?3
+`
+
+type RevokeUserLoginTokensParams struct {
+	Now    *time.Time
+	UserID *int64
+	Keep   int64
+}
+
+// RevokeUserLoginTokens revokes the `dock login` tokens acting for a user,
+// except token keep (0: none).
+func (q *Queries) RevokeUserLoginTokens(ctx context.Context, arg RevokeUserLoginTokensParams) (int64, error) {
+	result, err := q.exec(ctx, q.revokeUserLoginTokensStmt, revokeUserLoginTokens, arg.Now, arg.UserID, arg.Keep)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setUserDisabled = `-- name: SetUserDisabled :exec

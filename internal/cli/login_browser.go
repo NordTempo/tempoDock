@@ -17,9 +17,9 @@ import (
 )
 
 // browserLogin logs in through the browser (see internal/core/cli_login.go):
-// it starts a login on server, shows the link and code, opens the browser
-// when it can and waits for a user to approve. The result carries the new
-// token, its scope and who approved it.
+// it starts a login on server, shows the link and the code to type there,
+// opens the browser when it can and waits for a user to approve. The
+// result carries the new token, its scope and who approved it.
 func (g *globals) browserLogin(ctx context.Context, server string, open bool) (apitypes.CLILoginWait, error) {
 	api, err := apiclient.New(server, "")
 	if err != nil {
@@ -36,9 +36,9 @@ func (g *globals) browserLogin(ctx context.Context, server string, open bool) (a
 		return apitypes.CLILoginWait{}, &output.Error{Exit: output.ExitIncompatible, Message: fmt.Sprintf("the server sent an invalid login link %q", start.VerificationURL)}
 	}
 
-	// The link is the one thing to act on, so it shows even with --json
+	// The link and code are what to act on, so they show even with --json
 	// (on stderr; stdout stays one JSON value).
-	_, _ = fmt.Fprintf(g.io.Err, "Open this link to log in, and check the code matches:\n\n  %s\n\n  code  %s\n\n", page, start.UserCode)
+	_, _ = fmt.Fprintf(g.io.Err, "Open %s and enter the code %s\n\n", page, start.UserCode)
 	if open && canOpenBrowser() && openBrowser(page.String()) == nil {
 		g.io.Progressf("Opened your browser")
 	}

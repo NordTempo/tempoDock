@@ -279,6 +279,7 @@ type Token struct {
 	DataProduction    *string
 	DataNonProduction *string
 	DataSensitive     *string
+	UserID            *int64
 }
 
 type User struct {

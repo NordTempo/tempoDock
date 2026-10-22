@@ -31,8 +31,12 @@ INSERT INTO tokens (name, hash, scope, project_id, environment_id, created_by, e
 VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
+-- GetTokenByHash also returns the user a `dock login` token acts for, in
+-- the same query, since authentication checks them on every request.
 -- name: GetTokenByHash :one
-SELECT * FROM tokens WHERE hash = +?;
+SELECT sqlc.embed(tokens), users.email AS user_email, users.role AS user_role, users.disabled_at AS user_disabled_at
+FROM tokens LEFT JOIN users ON users.id = tokens.user_id
+WHERE tokens.hash = +?;
 
 -- name: GetToken :one
 SELECT * FROM tokens WHERE id = +?;
@@ -45,6 +49,12 @@ UPDATE tokens SET last_used_at = ? WHERE id = +?;
 
 -- name: RevokeToken :exec
 UPDATE tokens SET revoked_at = ? WHERE id = +? AND revoked_at IS NULL;
+
+-- RevokeUserLoginTokens revokes the `dock login` tokens acting for a user,
+-- except token keep (0: none).
+-- name: RevokeUserLoginTokens :execrows
+UPDATE tokens SET revoked_at = +sqlc.arg(now)
+WHERE user_id = +sqlc.arg(user_id) AND origin = 'cli_login' AND revoked_at IS NULL AND id != +sqlc.arg(keep);
 
 -- name: SetUserDisabled :exec
 UPDATE users SET disabled_at = ? WHERE id = +?;

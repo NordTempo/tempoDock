@@ -40,9 +40,11 @@ context is named after the server's host unless --name is given; without a
 URL, log in again to the current context's server.
 
 On a terminal, login happens in the browser: the CLI prints a link and a
-code and opens the link. Sign in there, check the code matches and approve.
-The CLI then gets its own token, with your role as scope, valid for 90
-days; ` + "`dock logout`" + ` revokes it. --no-browser only prints the link, for when
+code and opens the link. Sign in there, type the code and approve. The CLI
+then gets its own token, with your role as scope, valid for 90 days. It
+acts for you: it ends when you are disabled or deleted or your password
+changes, and never has more access than your current role. ` + "`dock logout`" + `
+revokes it. --no-browser only prints the link, for when
 the browser is on another machine; it also works without a terminal.
 
 Agents, CI and scripts use API tokens instead: pipe one in with

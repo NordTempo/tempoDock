@@ -20,10 +20,15 @@ import (
 //
 //  1. The CLI starts a login (StartCLILogin) and gets a secret device code
 //     plus a short user code and the page to approve it on.
-//  2. A signed-in user opens the page, checks the user code matches the
-//     terminal and approves or denies it (DecideCLILogin).
+//  2. A signed-in user opens the page, types the user code from their
+//     terminal (CLILogin) and approves or denies it (DecideCLILogin). The
+//     page link never carries the code: anyone who can reach the API can
+//     start a login, and a link that only needs a click to approve would
+//     let them phish a signed-in admin for a token.
 //  3. The CLI long-polls WaitCLILogin with its device code. Approval wakes
 //     it at once; it then gets a new API token of the user's, exactly once.
+//     The token stays tied to that user (tokens.user_id): see
+//     AuthenticateToken.
 //
 // Logins live in the cli_logins table for at most cliLoginTTL. Only the
 // device code's hash is stored, and no token exists until the CLI collects
@@ -259,7 +264,7 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 			return errCLILoginExpired
 		}
 		tok, err = q.CreateCLILoginToken(ctx, store.CreateCLILoginTokenParams{
-			Name: cliTokenName(l.Hostname), Hash: hash, Scope: u.Role, CreatedBy: u.Email, ExpiresAt: ptr(now().Add(cliTokenTTL)),
+			Name: cliTokenName(l.Hostname), Hash: hash, Scope: u.Role, CreatedBy: u.Email, UserID: &u.ID, ExpiresAt: ptr(now().Add(cliTokenTTL)),
 		})
 		return err
 	})

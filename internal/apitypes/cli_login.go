@@ -10,11 +10,12 @@ type CLILoginStartRequest struct {
 	OS         string `json:"os" maxLength:"64" example:"darwin/arm64"`
 }
 
-// CLILoginStart is a pending browser login. The user opens VerificationURL
-// and approves UserCode; the CLI collects its token with DeviceCode.
+// CLILoginStart is a pending browser login. The user opens VerificationURL,
+// types UserCode there and approves; the CLI collects its token with
+// DeviceCode.
 type CLILoginStart struct {
 	UserCode        string    `json:"user_code" example:"BCDF-GHJK"`
-	VerificationURL string    `json:"verification_url" example:"https://dock.example.com/cli-login?code=BCDF-GHJK"`
+	VerificationURL string    `json:"verification_url" example:"https://dock.example.com/cli-login" doc:"The approval page. It never carries the user code: the user types it there"`
 	DeviceCode      string    `json:"device_code" doc:"Secret: only the CLI that started the login may know it"`
 	ExpiresAt       time.Time `json:"expires_at"`
 }

@@ -23,6 +23,6 @@ DELETE FROM cli_logins WHERE id = +? AND status = +?;
 DELETE FROM cli_logins WHERE expires_at < +?;
 
 -- name: CreateCLILoginToken :one
-INSERT INTO tokens (name, hash, scope, created_by, expires_at, origin)
-VALUES (?, ?, ?, ?, ?, 'cli_login')
+INSERT INTO tokens (name, hash, scope, created_by, user_id, expires_at, origin)
+VALUES (?, ?, ?, ?, ?, ?, 'cli_login')
 RETURNING *;

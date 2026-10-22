@@ -32,8 +32,8 @@ func newMePasswordCmd(g *globals) *cobra.Command {
 		Short: "Change your password",
 		Long: `Change your own password: the current one, then the new one twice (at
 least 12 characters). Works with the token from a browser ` + "`dock login`" + `,
-which acts for you; API tokens have no password. All your UI sessions end;
-this CLI's token stays valid.
+which acts for you; API tokens have no password. All your UI sessions and
+other ` + "`dock login`" + ` tokens end; this CLI's token stays valid.
 
 --password-stdin reads two lines instead: the current password, then the
 new one.`,
@@ -56,7 +56,7 @@ new one.`,
 				Changed bool `json:"changed"`
 			}{true}
 			return g.io.Print(v, func() error {
-				g.io.Successf("Changed your password; your UI sessions ended")
+				g.io.Successf("Changed your password; your UI sessions and other dock login tokens ended")
 				return nil
 			})
 		},

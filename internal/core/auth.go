@@ -55,27 +55,35 @@ func (c *Core) AuthenticateToken(ctx context.Context, secret string) (Actor, err
 	if !strings.HasPrefix(secret, tokenPrefix) {
 		return Actor{}, errUnauthenticated
 	}
-	t, err := c.store.GetTokenByHash(ctx, hashSecret(secret))
+	row, err := c.store.GetTokenByHash(ctx, hashSecret(secret))
 	if store.IsNotFound(err) {
 		return Actor{}, errUnauthenticated
 	}
 	if err != nil {
 		return Actor{}, err
 	}
-	n := now()
+	t, n := row.Token, now()
 	if t.RevokedAt != nil || (t.ExpiresAt != nil && n.After(*t.ExpiresAt)) {
 		return Actor{}, errUnauthenticated
+	}
+	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope)}
+	// A `dock login` token acts for the user who approved it, so it is only
+	// as good as that user now: gone or disabled refuses it, and a lowered
+	// role lowers it. Acting for them lets them change their password from
+	// the CLI.
+	if t.Origin == "cli_login" {
+		if row.UserEmail == nil || row.UserRole == nil || row.UserDisabledAt != nil {
+			return Actor{}, errUnauthenticated
+		}
+		a.Email = *row.UserEmail
+		if role := apitypes.Scope(*row.UserRole); rank(role) < rank(a.Scope) {
+			a.Scope = role
+		}
 	}
 	if t.LastUsedAt == nil || n.Sub(*t.LastUsedAt) > tokenTouchInterval {
 		if err := c.store.TouchToken(ctx, store.TouchTokenParams{LastUsedAt: &n, ID: t.ID}); err != nil {
 			c.log.Warn("touch token", "err", err)
 		}
-	}
-	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope)}
-	// A `dock login` token acts for the user who approved it, which lets
-	// them change their password from the CLI.
-	if t.Origin == "cli_login" {
-		a.Email = t.CreatedBy
 	}
 	if t.ProjectID != nil {
 		p, err := c.store.GetProject(ctx, *t.ProjectID)
@@ -181,9 +189,10 @@ func (c *Core) newSession(ctx context.Context, u store.User) (secret string, exp
 }
 
 // ChangePassword changes the calling user's own password, from a UI
-// session or a `dock login` token. Every session of theirs ends; for a
-// session caller the returned one replaces it (a token caller gets none,
-// and its token stays valid).
+// session or a `dock login` token. Every session and `dock login` token of
+// theirs ends, except the caller's: a session caller gets the returned
+// session in its place, a token caller keeps its token (it just proved the
+// password).
 func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangePasswordRequest, clientIP string) (secret string, expires time.Time, err error) {
 	if a.Email == "" {
 		return "", time.Time{}, invalid("only users have passwords; API tokens can't change them. Log in with `dock login` to change yours from the CLI")
@@ -206,11 +215,13 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	if err != nil {
 		return "", time.Time{}, err
 	}
+	var revoked int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: string(hash), ID: u.ID}); err != nil {
 			return err
 		}
-		return q.DeleteUserSessions(ctx, u.ID)
+		revoked, err = endUserAccess(ctx, q, u.ID, a.TokenID)
+		return err
 	})
 	if err != nil {
 		return "", time.Time{}, err
@@ -220,13 +231,13 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 			return "", time.Time{}, err
 		}
 	}
-	c.audit(ctx, a, "user.password", nil, nil, u.Email, "changed own password; other sessions ended")
+	c.audit(ctx, a, "user.password", nil, nil, u.Email, "changed own password; other sessions ended"+revokedNote(revoked))
 	return secret, expires, nil
 }
 
-// SetUserDisabled disables (ending their sessions) or re-enables a user.
-// Tokens they created are separate credentials and keep working until
-// revoked.
+// SetUserDisabled disables a user, ending their sessions and revoking
+// their `dock login` tokens, or re-enables them. Tokens they created by
+// hand are separate credentials and keep working until revoked.
 func (c *Core) SetUserDisabled(ctx context.Context, a Actor, id int64, disabled bool) (apitypes.User, error) {
 	var at *time.Time
 	verb, summary := "enable", "enabled user %s"
@@ -237,29 +248,34 @@ func (c *Core) SetUserDisabled(ctx context.Context, a Actor, id int64, disabled 
 	if err != nil {
 		return apitypes.User{}, err
 	}
+	var revoked int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if err := q.SetUserDisabled(ctx, store.SetUserDisabledParams{DisabledAt: at, ID: u.ID}); err != nil {
+		if err := q.SetUserDisabled(ctx, store.SetUserDisabledParams{DisabledAt: at, ID: u.ID}); err != nil || !disabled {
 			return err
 		}
-		return q.DeleteUserSessions(ctx, u.ID)
+		revoked, err = endUserAccess(ctx, q, u.ID, 0)
+		return err
 	})
 	if err != nil {
 		return apitypes.User{}, err
 	}
 	u.DisabledAt = at
-	c.audit(ctx, a, "user."+verb, nil, nil, u.Email, fmt.Sprintf(summary, u.Email))
+	c.audit(ctx, a, "user."+verb, nil, nil, u.Email, fmt.Sprintf(summary, u.Email)+revokedNote(revoked))
 	return toUser(u), nil
 }
 
-// DeleteUser deletes a user and their sessions. Their audit history and the
-// tokens they created stay.
+// DeleteUser deletes a user and their sessions, and revokes their `dock
+// login` tokens. Their audit history and the tokens they created by hand
+// stay.
 func (c *Core) DeleteUser(ctx context.Context, a Actor, id int64) error {
 	u, err := c.otherUser(ctx, a, id, "delete")
 	if err != nil {
 		return err
 	}
+	var revoked int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if err := q.DeleteUserSessions(ctx, u.ID); err != nil {
+		var err error
+		if revoked, err = endUserAccess(ctx, q, u.ID, 0); err != nil {
 			return err
 		}
 		return q.DeleteUser(ctx, u.ID)
@@ -267,7 +283,7 @@ func (c *Core) DeleteUser(ctx context.Context, a Actor, id int64) error {
 	if err != nil {
 		return err
 	}
-	c.audit(ctx, a, "user.delete", nil, nil, u.Email, "deleted user "+u.Email)
+	c.audit(ctx, a, "user.delete", nil, nil, u.Email, "deleted user "+u.Email+revokedNote(revoked))
 	return nil
 }
 
@@ -284,6 +300,28 @@ func (c *Core) otherUser(ctx context.Context, a Actor, id int64, verb string) (s
 		return u, notFound("user %d not found", id)
 	}
 	return u, err
+}
+
+// endUserAccess ends a user's sessions and revokes their `dock login`
+// tokens except token keep (0: none), in transaction q. It returns how many
+// tokens it revoked.
+func endUserAccess(ctx context.Context, q *store.Queries, userID, keep int64) (int64, error) {
+	if err := q.DeleteUserSessions(ctx, userID); err != nil {
+		return 0, err
+	}
+	return q.RevokeUserLoginTokens(ctx, store.RevokeUserLoginTokensParams{Now: ptr(now()), UserID: &userID, Keep: keep})
+}
+
+// revokedNote tells the audit log how many `dock login` tokens a user
+// change revoked.
+func revokedNote(n int64) string {
+	switch n {
+	case 0:
+		return ""
+	case 1:
+		return "; revoked their dock login token"
+	}
+	return fmt.Sprintf("; revoked their %d dock login tokens", n)
 }
 
 // Logout ends a session. Unknown sessions are ignored.
@@ -416,7 +454,8 @@ func (c *Core) ListUsers(ctx context.Context, a Actor) ([]apitypes.User, error) 
 }
 
 // ResetPassword sets another user's password, generating one when the
-// request has none, and ends their sessions. Admins change their own
+// request has none, ends their sessions and revokes their `dock login`
+// tokens. Admins change their own
 // password with ChangePassword, which asks for the current one.
 func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitypes.ResetPasswordRequest) (apitypes.ResetPasswordResult, error) {
 	u, err := c.otherUser(ctx, a, id, "reset the password of")
@@ -436,16 +475,18 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	if err != nil {
 		return out, err
 	}
+	var revoked int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: string(hash), ID: u.ID}); err != nil {
 			return err
 		}
-		return q.DeleteUserSessions(ctx, u.ID)
+		revoked, err = endUserAccess(ctx, q, u.ID, 0)
+		return err
 	})
 	if err != nil {
 		return out, err
 	}
-	c.audit(ctx, a, "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions")
+	c.audit(ctx, a, "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions"+revokedNote(revoked))
 	out.User = toUser(u)
 	return out, nil
 }

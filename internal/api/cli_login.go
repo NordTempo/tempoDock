@@ -61,15 +61,19 @@ func registerCLILogin(s *Server, a huma.API) {
 	public(a, huma.Operation{
 		OperationID: "start-cli-login", Method: http.MethodPost, Path: Prefix + "/auth/cli",
 		Summary: "Start a browser login for the CLI",
-		Description: "Returns a user code and the page where a signed-in user approves it, plus the device code the CLI " +
-			"waits with. Expires in 10 minutes. Rate limited per client IP.",
+		Description: "Returns a user code and the page where a signed-in user types it in and approves it, plus the " +
+			"device code the CLI waits with. The page URL never contains the code. Expires in 10 minutes. Rate " +
+			"limited per client IP.",
 		Tags: tags, DefaultStatus: http.StatusCreated, Errors: []int{http.StatusBadRequest, http.StatusTooManyRequests},
 	}, func(ctx context.Context, in *cliStartInput) (*out[apitypes.CLILoginStart], error) {
 		res, err := s.core.StartCLILogin(ctx, in.Body, in.client.ip)
 		if err != nil {
 			return nil, s.problem(err)
 		}
-		page := url.URL{Scheme: "http", Host: in.host, Path: "/cli-login", RawQuery: url.Values{"code": {res.UserCode}}.Encode()}
+		// The page asks for the code rather than carrying it: a link with the
+		// code in it would let anyone who can start a login phish a signed-in
+		// user into approving it with one click.
+		page := url.URL{Scheme: "http", Host: in.host, Path: "/cli-login"}
 		if in.client.secure {
 			page.Scheme = "https"
 		}

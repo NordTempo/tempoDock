@@ -195,3 +195,95 @@ func TestUserCodes(t *testing.T) {
 		}
 	}
 }
+
+// cliToken runs a browser login approved by a and returns the token.
+func (h *harness) cliToken(a Actor) string {
+	h.t.Helper()
+	s := h.startCLILogin()
+	if err := h.c.DecideCLILogin(h.ctx, a, s.UserCode, "203.0.113.1", true); err != nil {
+		h.t.Fatal(err)
+	}
+	res, err := h.c.WaitCLILogin(h.ctx, s.DeviceCode)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return res.Token
+}
+
+// A `dock login` token is only as good as its user now: it follows their
+// role, and disabling, deleting or a new password ends it. Hand-made
+// tokens are separate credentials and stay.
+func TestCLILoginTokenFollowsItsUser(t *testing.T) {
+	h := newHarness(t)
+	ada := h.cliUser("ada@example.com", apitypes.ScopeAdmin)
+	authAs := func(secret string) (Actor, error) { return h.c.AuthenticateToken(h.ctx, secret) }
+	refused := func(what, secret string) {
+		t.Helper()
+		if _, err := authAs(secret); CodeOf(err) != apitypes.CodeUnauthorized {
+			t.Fatalf("%s: token still works: %v", what, err)
+		}
+	}
+	sql := func(q string, args ...any) {
+		t.Helper()
+		if _, err := h.store.DB.ExecContext(h.ctx, q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Scope is capped at the user's current role, and checked without
+	// waiting for a revocation.
+	tok := h.cliToken(ada)
+	sql("UPDATE users SET role = 'read' WHERE id = ?", ada.UserID)
+	if a, err := authAs(tok); err != nil || a.Scope != apitypes.ScopeRead {
+		t.Fatalf("after demotion to read: %+v, %v", a, err)
+	}
+	sql("UPDATE users SET role = 'admin', disabled_at = ? WHERE id = ?", now(), ada.UserID)
+	refused("user disabled behind core's back", tok)
+	sql("UPDATE users SET disabled_at = NULL WHERE id = ?", ada.UserID)
+
+	// Disabling revokes: enabling again doesn't bring the token back.
+	manual, err := h.c.CreateToken(h.ctx, ada, apitypes.CreateTokenRequest{Name: "ci", Scope: apitypes.ScopeDeploy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetUserDisabled(h.ctx, System, ada.UserID, true); err != nil {
+		t.Fatal(err)
+	}
+	refused("disabled", tok)
+	if _, err := h.c.SetUserDisabled(h.ctx, System, ada.UserID, false); err != nil {
+		t.Fatal(err)
+	}
+	refused("disabled and enabled again", tok)
+	if _, err := authAs(manual.Secret); err != nil {
+		t.Fatalf("hand-made token after disable: %v", err)
+	}
+
+	// Her own password change keeps the calling token and ends the others.
+	mine, other := h.cliToken(ada), h.cliToken(ada)
+	caller, err := authAs(mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.c.ChangePassword(h.ctx, caller, apitypes.ChangePasswordRequest{
+		CurrentPassword: "a long enough password", NewPassword: "another long password",
+	}, "203.0.113.1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authAs(mine); err != nil {
+		t.Fatalf("calling token after its own password change: %v", err)
+	}
+	refused("own password changed", other)
+	if _, err := h.c.ResetPassword(h.ctx, System, ada.UserID, apitypes.ResetPasswordRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	refused("password reset by an admin", mine)
+
+	// Deleting revokes, even if the email comes back as a new user.
+	tok = h.cliToken(ada)
+	if err := h.c.DeleteUser(h.ctx, System, ada.UserID); err != nil {
+		t.Fatal(err)
+	}
+	refused("deleted", tok)
+	h.cliUser("ada@example.com", apitypes.ScopeAdmin)
+	refused("deleted, email reused", tok)
+}

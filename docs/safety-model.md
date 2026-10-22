@@ -19,6 +19,19 @@ access goes through the daemon's API, which enforces permissions.
 - Tokens are stored hashed, have a name, and can expire.
 - Users have a role that maps to the same scopes. In v1 that's mostly "admin",
   but the check is the same code path tokens use.
+- **Two kinds of token, two lifetimes.** A token from `dock login` acts for
+  the user who approved it: every request checks that user, so it stops
+  working the moment they are disabled or deleted, and its scope is capped
+  at their *current* role. Disabling, deleting or changing or resetting
+  their password also revokes it for good. A token created by hand (Tokens
+  page, `dock token create`, bootstrap) belongs to no user: it keeps its
+  scope and keeps working after whoever created it is disabled, deleted or
+  demoted, until it expires or is revoked. When someone leaves, revoke the
+  tokens they created as well as disabling them.
+- `dock login` approval needs the code from the terminal typed into the
+  page; the link carries no code. Anyone who can reach the API can start a
+  login, so a link that approved with one click would let them phish a
+  signed-in admin for a token. Wrong codes lock code entry for minutes.
 - Secret values are hidden from `read` and `deploy` in the API, UI, logs and
   events. That protects against accidental exposure, not against a `deploy`
   token on purpose: it can ship code that prints its own environment. Treat

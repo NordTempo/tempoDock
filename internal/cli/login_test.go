@@ -32,7 +32,7 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-var printedCode = regexp.MustCompile(`code  ([A-Z]{4}-[A-Z]{4})`)
+var printedCode = regexp.MustCompile(`enter the code ([A-Z]{4}-[A-Z]{4})`)
 
 // browserLogin runs `dock login --no-browser` against srv, lets decide act
 // on the code it prints, and returns the exit code, stdout and stderr.
@@ -82,7 +82,7 @@ func TestBrowserLogin(t *testing.T) {
 	}
 
 	code, stdout, stderr := browserLogin(t, srv, func(c string) error { return srv.core.DecideCLILogin(ctx, ada, c, "127.0.0.1", true) })
-	if code != 0 || !strings.Contains(stdout, "Logged in as ada@example.com (deploy) on "+srv.url) || !strings.Contains(stderr, srv.url+"/cli-login?code=") {
+	if code != 0 || !strings.Contains(stdout, "Logged in as ada@example.com (deploy) on "+srv.url) || !strings.Contains(stderr, "Open "+srv.url+"/cli-login and enter the code ") {
 		t.Fatalf("approved login: exit %d\n%s\n%s", code, stdout, stderr)
 	}
 	if me := ok[apitypes.Me](t, "whoami"); me.Kind != "token" || me.Scope != apitypes.ScopeDeploy || !strings.HasPrefix(me.Name, "cli: ") {

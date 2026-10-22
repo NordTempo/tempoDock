@@ -57,7 +57,7 @@ func registerAdmin(s *Server, a huma.API) {
 	userIDOp(huma.Operation{
 		OperationID: "disable-user", Method: http.MethodPost, Path: Prefix + "/users/{id}/disable",
 		Summary: "Disable a user", Tags: tags,
-		Description: "The user can't log in and their sessions end now. Tokens they created keep working until revoked. Scope: admin, unlimited.",
+		Description: "The user can't log in, their sessions end and their `dock login` tokens are revoked now. Tokens they created by hand keep working until revoked. Scope: admin, unlimited.",
 	}, true)
 	userIDOp(huma.Operation{
 		OperationID: "enable-user", Method: http.MethodPost, Path: Prefix + "/users/{id}/enable",
@@ -66,7 +66,7 @@ func registerAdmin(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "reset-password", Method: http.MethodPost, Path: Prefix + "/users/{id}/reset-password",
 		Summary: "Reset a user's password", Tags: tags,
-		Description: "Sets the given password, or generates one and returns it once. The user's sessions end. Not for your own account (use change-password). Scope: admin, unlimited.",
+		Description: "Sets the given password, or generates one and returns it once. The user's sessions end and their `dock login` tokens are revoked. Not for your own account (use change-password). Scope: admin, unlimited.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ID   int64 `path:"id"`
 		Body *apitypes.ResetPasswordRequest
@@ -79,7 +79,7 @@ func registerAdmin(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "delete-user", Method: http.MethodDelete, Path: Prefix + "/users/{id}",
-		Summary: "Delete a user", Description: "Ends their sessions. Their audit history and the tokens they created stay. Scope: admin, unlimited.",
+		Summary: "Delete a user", Description: "Ends their sessions and revokes their `dock login` tokens. Their audit history and the tokens they created by hand stay. Scope: admin, unlimited.",
 		Tags: tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ID int64 `path:"id"`
