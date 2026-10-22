@@ -127,7 +127,7 @@ export function LogsPane({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
-        <fieldset aria-label="Source" className="seg font-mono text-xs">
+        <fieldset aria-label="Source" className="seg font-mono text-2xs">
           {tabs.map((tab) => (
             <button
               key={tab.n}
@@ -152,8 +152,8 @@ export function LogsPane({
             build
           </button>
         </fieldset>
-        <label className="flex flex-[1_1_220px] items-center gap-1.5">
-          <span className="text-mut">Filter</span>
+        <label className="flex flex-[1_1_200px] items-center gap-1.5">
+          <span className="sr-only">Filter</span>
           <input
             ref={input}
             value={filter.query}
@@ -161,21 +161,23 @@ export function LogsPane({
             onKeyDown={(e) => {
               if (e.key === "Escape") e.currentTarget.blur();
             }}
-            placeholder="text or /regex/"
-            className="field min-w-0 flex-1 py-[5px] font-mono"
+            placeholder="Filter: text or /regex/"
+            className="field min-w-0 flex-1 py-1 font-mono text-xs"
           />
         </label>
-        <label className="flex items-center gap-1.5">
+        <label className="flex items-center gap-1.5 text-xs text-sec">
           <input
             type="checkbox"
+            className="accent-fg"
             checked={filter.errors}
             onChange={(e) => onFilter({ ...filter, errors: e.target.checked })}
           />
           Errors only
         </label>
-        <label className="flex items-center gap-1.5">
+        <label className="flex items-center gap-1.5 text-xs text-sec">
           <input
             type="checkbox"
+            className="accent-fg"
             checked={filter.follow}
             onChange={(e) => onFilter({ ...filter, follow: e.target.checked })}
           />
@@ -186,7 +188,7 @@ export function LogsPane({
         ref={box}
         role="log"
         aria-label={`${filter.build ? "build" : `r${release}`} logs`}
-        className={`overflow-auto border border-line py-2.5 font-mono text-xs leading-[1.7] ${height}`}
+        className={`overflow-auto rounded-panel border border-line bg-side py-2.5 font-mono text-xs leading-[1.7] ${height}`}
       >
         {stream.error &&
           (deploying && release === deploying.number && !filter.build ? (
@@ -211,7 +213,9 @@ export function LogsPane({
           <LogRow key={line.key} line={line} />
         ))}
         {stream.live && shown.length > 0 && filter.follow && (
-          <div className="px-3.5 text-mut"> following</div>
+          <div className="px-3.5 text-faint">
+            <span className="text-ok">●</span> following
+          </div>
         )}
       </div>
     </div>
@@ -224,7 +228,7 @@ export const LogRow = memo(function LogRow({ line }: { line: LogLine }) {
   const parts = line.text.split(/\b(WARN(?:ING)?|ERROR|FATAL|PANIC)\b/);
   return (
     <div className={`px-3.5 whitespace-pre ${error ? "bg-fail-bg" : ""}`}>
-      {line.time && <span className="text-mut">{clockSec(line.time)} </span>}
+      {line.time && <span className="text-faint">{clockSec(line.time)} </span>}
       {parts.map((part, i) =>
         i % 2 === 1 ? (
           <span

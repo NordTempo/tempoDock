@@ -59,12 +59,16 @@ export function EnvSwitch({
     <Menu label={`Environment: ${environment}`} button={pill}>
       {(close) =>
         others.map((e) => {
+          const twin = e.services.find((s) => s.service.name === service);
           const dot = (
-            <span className={toneText[envTone(e.services)]}>
+            <span
+              className={
+                toneText[twin ? serviceState(twin).tone : envTone(e.services)]
+              }
+            >
               <span className="dot" />
             </span>
           );
-          const twin = e.services.find((s) => s.service.name === service);
           return service && twin ? (
             <Link
               key={e.environment.id}

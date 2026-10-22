@@ -8,7 +8,7 @@ import {
 import { useBackups, useCanDeploy } from "../../data/queries";
 import type { BackupRun, ServiceBackups, ServiceRef } from "../../data/types";
 import { ago, clock, day, size, until } from "../../ui/format";
-import { Act, Button, Check, ErrorText, Scroll, StateText } from "../../ui/kit";
+import { Act, Button, Check, ErrorText, Panel, StateText } from "../../ui/kit";
 import type { State } from "../../ui/status";
 import { backupHow, exportOf, hourLabel } from "./backups";
 
@@ -27,7 +27,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
   return (
     <>
-      <dl className="grid max-w-[960px] grid-cols-[120px_minmax(0,1fr)] gap-x-4 gap-y-2">
+      <dl className="props max-w-[960px] grid-cols-[120px_minmax(0,1fr)]">
         <Item label="How">
           {backupHow[backups.kind]}
           {backups.warning && (
@@ -101,7 +101,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-mut">{label}</dt>
+      <dt>{label}</dt>
       <dd>{children}</dd>
     </>
   );
@@ -181,7 +181,7 @@ function Runs({
     return <p className="py-2 text-mut">No backups yet.</p>;
   }
   return (
-    <Scroll>
+    <Panel>
       <table>
         <thead>
           <tr>
@@ -219,7 +219,7 @@ function Runs({
           ))}
         </tbody>
       </table>
-    </Scroll>
+    </Panel>
   );
 }
 

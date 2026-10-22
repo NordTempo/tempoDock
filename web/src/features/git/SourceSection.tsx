@@ -82,7 +82,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   const conn = source.data?.connection;
   return (
-    <section aria-labelledby="source" className="border-t border-line pt-4">
+    <section aria-labelledby="source" className="flex flex-col">
       <SectionHead id="source" aside="deploy on every push to a GitHub branch">
         Source
       </SectionHead>
@@ -103,7 +103,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         )
       ) : (
         <>
-          <dl className="grid max-w-[860px] grid-cols-[180px_minmax(0,1fr)] gap-x-4 gap-y-2">
+          <dl className="props max-w-[860px]">
             <Item label="Repository">
               <a
                 href={`https://github.com/${conn.repo}/tree/${conn.branch}${conn.dir ? `/${conn.dir}` : ""}`}
@@ -231,7 +231,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-mut">{label}</dt>
+      <dt>{label}</dt>
       <dd>{children}</dd>
     </>
   );
@@ -295,7 +295,7 @@ function ConnectForm({
       onSubmit={submit}
       onKeyDown={(e) => e.key === "Escape" && onCancel?.()}
     >
-      <dl className="grid grid-cols-[180px_minmax(0,1fr)] gap-x-4 gap-y-2">
+      <dl className="props">
         <Item label="Repository">
           {input("Repository", repo, setRepo, "owner/repo")}
         </Item>
@@ -368,7 +368,7 @@ function WebhookSetup({
   return (
     <div
       role="alert"
-      className="mt-2 flex max-w-[860px] flex-col gap-2 border border-edge p-3"
+      className="mt-2 flex max-w-[860px] flex-col gap-2 rounded-panel border border-line bg-panel p-3"
     >
       <span>
         On GitHub, open{" "}
@@ -381,7 +381,7 @@ function WebhookSetup({
         </a>{" "}
         and set:
       </span>
-      <dl className="grid grid-cols-[180px_minmax(0,1fr)] gap-x-4 gap-y-1">
+      <dl className="props">
         <Item label="Payload URL">
           {conn.webhook_url ? (
             <span className="inline-flex flex-wrap items-baseline gap-2">

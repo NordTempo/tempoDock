@@ -62,7 +62,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
   return (
     <>
-      <dl className="grid max-w-[860px] grid-cols-[180px_minmax(0,1fr)] gap-x-4 gap-y-2">
+      <dl className="props max-w-[860px]">
         <Item label="Image">{field("image")}</Item>
         <Item label="Port">
           {field("port")}
@@ -143,7 +143,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-mut">{label}</dt>
+      <dt>{label}</dt>
       <dd>{children}</dd>
     </>
   );
@@ -204,7 +204,7 @@ function Editable({
           setError(null);
           setDraft(editText(key, change ? change.new : value));
         }}
-        className={`font-mono hover:underline ${change ? "bg-stage-bg px-1" : ""}`}
+        className={`-mx-1 rounded-[4px] px-1 text-left font-mono break-all hover:bg-panel ${change ? "bg-stage-bg" : ""}`}
       >
         {change ? (
           <>
@@ -299,11 +299,11 @@ function DatabaseSettings({
     .join(" ");
 
   return (
-    <section aria-labelledby="database" className="border-t border-line pt-4">
+    <section aria-labelledby="database" className="flex flex-col">
       <SectionHead id="database" aside="applies at once, no release">
         Database
       </SectionHead>
-      <dl className="grid max-w-[860px] grid-cols-[180px_minmax(0,1fr)] gap-x-4 gap-y-2">
+      <dl className="props max-w-[860px]">
         <Item label="Detection">
           <span className="inline-flex flex-wrap items-baseline gap-3">
             {canEdit ? (
@@ -384,7 +384,7 @@ function Archive({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const [confirming, setConfirming] = useState(false);
   if (!isAdmin) return null;
   return (
-    <section aria-labelledby="archive" className="border-t border-line pt-4">
+    <section aria-labelledby="archive" className="flex flex-col">
       <SectionHead id="archive">Archive {ref.service}</SectionHead>
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-mut">

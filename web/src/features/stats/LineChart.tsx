@@ -102,7 +102,7 @@ export const LineChart = memo(function LineChart({
         <span className="font-medium">{title}</span>
         {stats.last && (
           <span className="text-xs text-mut tabular-nums">
-            now <span className="text-white">{format(stats.last.v)}</span> · avg{" "}
+            now <span className="text-fg">{format(stats.last.v)}</span> · avg{" "}
             {format(stats.avg ?? 0)} · peak {format(stats.peak?.v ?? 0)}
           </span>
         )}
@@ -160,11 +160,11 @@ export const LineChart = memo(function LineChart({
             className="absolute inset-0 size-full overflow-visible"
             aria-hidden
           >
-            <path d={area} fill="#fff" fillOpacity={0.07} />
+            <path d={area} fill="currentColor" fillOpacity={0.07} />
             <path
               d={line}
               fill="none"
-              stroke="#fff"
+              stroke="currentColor"
               strokeWidth={1.5}
               strokeLinejoin="round"
               strokeLinecap="round"
@@ -184,7 +184,7 @@ export const LineChart = memo(function LineChart({
               />
               <Dot x={xOf(point.t) / W} y={yOf(point.v) / H} />
               <div
-                className="absolute -top-1 z-10 border border-line bg-black px-1.5 py-0.5 text-xs whitespace-nowrap tabular-nums"
+                className="absolute -top-1 z-10 rounded-ctl border border-edge bg-panel px-1.5 py-0.5 text-xs whitespace-nowrap tabular-nums"
                 style={
                   xOf(point.t) / W > 0.6
                     ? {
