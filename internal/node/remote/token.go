@@ -74,9 +74,9 @@ func newJoinToken(controlPlane string, addrs []string) (JoinToken, error) {
 	return t, nil
 }
 
-// ParseJoinToken decodes a token from `dock server join`.
+// ParseJoinToken decodes a token from `dock server add`.
 func ParseJoinToken(s string) (JoinToken, error) {
-	invalid := errors.New("invalid join token: copy the whole `dock node join` command printed by `dock server join`")
+	invalid := errors.New("invalid join token: copy the whole `dock node join` command printed by `dock server add`")
 	rest, ok := strings.CutPrefix(strings.TrimSpace(s), joinTokenPrefix)
 	if !ok {
 		return JoinToken{}, invalid

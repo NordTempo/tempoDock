@@ -66,7 +66,7 @@ type CreateJoinTokenParams struct {
 // to indexed columns are written `= +?` (docs/performance.md, the
 // re-prepare pitfall). Server rows themselves are read with GetServer,
 // GetServerByName, ListServers and ListServerLoads (projects.sql).
-// Records a join token for `dock server join`; the secret itself is only
+// Records a join token for `dock server add`; the secret itself is only
 // ever shown once, to the admin.
 func (q *Queries) CreateJoinToken(ctx context.Context, arg CreateJoinTokenParams) (JoinToken, error) {
 	row := q.queryRow(ctx, q.createJoinTokenStmt, createJoinToken,

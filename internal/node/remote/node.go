@@ -60,7 +60,7 @@ type Node struct {
 // Errors that keep a node out until someone acts. Run logs them and keeps
 // retrying at the slowest backoff.
 var (
-	errKeyRejected = errors.New("the control plane rejected this node's key: the server was revoked or removed; join again with a new token from `dock server join`")
+	errKeyRejected = errors.New("the control plane rejected this node's key: the server was revoked or removed; join again with a new token from `dock server add`")
 	errVersion     = fmt.Errorf("the control plane doesn't speak %s: upgrade dock, the control plane first", ALPN)
 )
 

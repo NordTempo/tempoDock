@@ -70,7 +70,7 @@ type JoinRequest struct {
 // ErrJoinRejected is what Store.Join returns (wrapped, with details) for a
 // token that doesn't exist, expired or was used. The node shows the
 // message.
-var ErrJoinRejected = errors.New("join token is invalid, expired or already used; create a new one with `dock server join`")
+var ErrJoinRejected = errors.New("join token is invalid, expired or already used; create a new one with `dock server add`")
 
 // Store is the hub's view of the servers and join_tokens tables. Core
 // implements it; every method is called with a bounded ctx.
