@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -301,11 +302,20 @@ func boolCount(b bool) int {
 	return 0
 }
 
+// count is "1 service" or "2 services".
+func count(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return strconv.Itoa(n) + " " + word + "s"
+}
+
 // cloneSummary is a clone's audit line.
 func cloneSummary(src envScope, r apitypes.CloneResult, server string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "cloned %s into a %s environment on server %s: %d services, %d variables, %d volumes",
-		src.env.Name, kindWords(r.Environment.Kind), server, len(r.Services), r.Variables, r.Volumes)
+	fmt.Fprintf(&b, "cloned %s into a %s environment on server %s: %s, %s, %s",
+		src.env.Name, kindWords(r.Environment.Kind), server,
+		count(len(r.Services), "service"), count(r.Variables, "variable"), count(r.Volumes, "volume"))
 	if len(r.Generated) > 0 {
 		fmt.Fprintf(&b, "; set anew: %s", joinNames(r.Generated))
 	}
