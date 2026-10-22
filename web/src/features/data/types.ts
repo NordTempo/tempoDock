@@ -68,6 +68,8 @@ export type DataPageRequest = {
   reveal?: boolean;
 };
 
+export type DataColumnRef = Schemas["DataColumnRef"];
+
 /** GET /data/tables/{table}/references (key goes over HTTP as JSON). */
 export type DataReferencesRequest = {
   table: string;

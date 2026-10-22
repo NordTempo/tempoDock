@@ -165,4 +165,11 @@ export const apiSource: DataSource = {
         body: req,
       }),
     ),
+  setSensitive: (ref, columns) =>
+    body(
+      api.PUT(`${P}/sensitive-columns` as const, {
+        params: { path: path(ref) },
+        body: { columns },
+      }),
+    ),
 };

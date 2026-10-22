@@ -20,6 +20,7 @@ import type {
   DataChange,
   DataChangeset,
   DataChangesetRequest,
+  DataColumnRef,
   DataCommitRequest,
   DataFilter,
   DataHistoryEntry,
@@ -113,6 +114,11 @@ export type DataSource = {
     id: number,
     req: DataRejectRequest,
   ): Promise<DataChangeset>;
+  /** PUT /data/sensitive-columns (admin): replaces the list. */
+  setSensitive(
+    ref: ServiceRef,
+    columns: DataColumnRef[],
+  ): Promise<DataColumnRef[] | null>;
 };
 
 /** Provide with `<DataSourceContext value={source}>` around the panel. */
@@ -328,6 +334,24 @@ export function useRejectChangeset(ref: ServiceRef) {
     mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
       source.rejectChangeset(ref, id, { reason }),
     onSettled,
+  });
+}
+
+/**
+ * PUT /data/sensitive-columns (admin): replaces the list. The schema shows
+ * the marks and pages mask by them, so both refetch.
+ */
+export function useSetSensitive(ref: ServiceRef) {
+  const source = useSource();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (columns: DataColumnRef[]) => source.setSensitive(ref, columns),
+    onSettled: () =>
+      Promise.all(
+        (["schema", "rows", "references"] as const).map((part) =>
+          client.invalidateQueries({ queryKey: [...dataKey(ref), part] }),
+        ),
+      ),
   });
 }
 

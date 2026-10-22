@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import type { ServiceRef } from "../../data/types";
 import { Scroll } from "../../ui/kit";
 import { byteSize, rowCount, tableName, tableRows } from "./cells";
+import { SensitiveSection, useSensitiveMarks } from "./SensitiveColumns";
 import type { DataTable } from "./types";
 
 const kindLabel: Record<DataTable["kind"], string> = {
@@ -14,20 +16,27 @@ const kindLabel: Record<DataTable["kind"], string> = {
 /**
  * One table's structure: columns with keys, foreign keys both ways,
  * indexes and constraints. `tables` is the whole schema, for the
- * tables that reference this one.
+ * tables that reference this one. Admins (`manage`) also mark and unmark
+ * sensitive columns here.
  */
 export function SchemaView({
+  serviceRef,
   table,
   tables,
+  manage,
   flags,
   onOpen,
 }: {
+  serviceRef: ServiceRef;
   table: DataTable;
   tables: readonly DataTable[];
+  /** The caller may mark sensitive columns (admins). */
+  manage: boolean;
   flags: string;
   /** Show another table's structure. */
   onOpen: (table: string) => void;
 }) {
+  const marks = useSensitiveMarks(serviceRef, tables);
   const name = tableName(table);
   const pk = table.primary_key ?? [];
   const fks = table.foreign_keys ?? [];
@@ -63,6 +72,7 @@ export function SchemaView({
               <th>null</th>
               <th>default</th>
               <th>notes</th>
+              {manage && <th>sensitive</th>}
             </tr>
           </thead>
           <tbody>
@@ -100,12 +110,41 @@ export function SchemaView({
                     )}
                     {notes.join(", ")}
                   </td>
+                  {manage && (
+                    <td>
+                      <button
+                        type="button"
+                        className="lnk"
+                        disabled={marks.pending}
+                        onClick={() =>
+                          marks.toggle(
+                            {
+                              schema: table.schema,
+                              table: table.name,
+                              column: c.name,
+                            },
+                            !c.sensitive,
+                          )
+                        }
+                      >
+                        {c.sensitive ? "Unmark" : "Mark"}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </Scroll>
+      {manage && (
+        <SensitiveSection
+          serviceRef={serviceRef}
+          tables={tables}
+          marks={marks}
+          flags={flags}
+        />
+      )}
 
       <Section title="Foreign keys" empty="No foreign keys." items={fks}>
         {(fk) => (
