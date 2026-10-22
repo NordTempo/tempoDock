@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 
@@ -19,9 +20,11 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/datapanel"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/tempobase"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 	"github.com/NordTempo/tempoDock/internal/version"
+	tbweb "github.com/NordTempo/tempoDock/web/tempobase"
 )
 
 // Prefix is the base path of every API operation.
@@ -47,9 +50,16 @@ func New(app *tempobase.App, opts Options) http.Handler {
 	}
 	mux := http.NewServeMux()
 	newAPI(mux, &server{app: app, cfg: app.Config(), opts: opts})
-	mux.Handle("/", uiHandler())
-	return guard(mux)
+	dist, _ := fs.Sub(tbweb.Dist, "dist")
+	mux.Handle("/", httpkit.UIHandler(dist, placeholderPage))
+	return httpkit.Guard(mux, nil)
 }
+
+// placeholderPage is served instead of the UI when the binary was built
+// without web/tempobase/dist.
+const placeholderPage = `<!doctype html><meta charset="utf-8"><title>tempoBase</title>
+<body style="background:#000;color:#fff;font:14px ui-monospace,monospace;padding:2rem">
+tempoBase is running. The web UI has not been built into this binary.`
 
 // Spec returns the OpenAPI document (JSON) without a running server.
 func Spec() ([]byte, error) {

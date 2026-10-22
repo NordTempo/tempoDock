@@ -94,7 +94,7 @@ func TestPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pol.Scope != policyConnection || len(pol.Rules) != 1 || len(pol.Effective) != 3 {
+	if pol.Scope != apitypes.PolicyConnection || len(pol.Rules) != 1 || len(pol.Effective) != 3 {
 		t.Fatalf("policy %+v", pol)
 	}
 	if got := h.names(viewer); !equal(got, []string{"billing"}) {

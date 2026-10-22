@@ -365,7 +365,8 @@
               "built_in",
               "default",
               "project",
-              "environment"
+              "environment",
+              "connection"
             ],
             "type": "string"
           },
@@ -406,6 +407,9 @@
       "DataPolicy": {
         "additionalProperties": false,
         "properties": {
+          "connection": {
+            "type": "string"
+          },
           "effective": {
             "items": {
               "$ref": "#/components/schemas/DataPolicyRule"
@@ -434,7 +438,8 @@
             "enum": [
               "default",
               "project",
-              "environment"
+              "environment",
+              "connection"
             ],
             "type": "string"
           }
@@ -454,7 +459,8 @@
               "built_in",
               "default",
               "project",
-              "environment"
+              "environment",
+              "connection"
             ],
             "readOnly": true,
             "type": "string"

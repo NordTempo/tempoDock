@@ -145,7 +145,7 @@ var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password"
 func (a *App) allow(keys ...string) error {
 	t := a.now()
 	for _, k := range keys {
-		if !a.loginLimit.allow(k, t) {
+		if !a.loginLimit.Allow(k, t) {
 			return errf(apitypes.CodeRateLimited, "too many attempts; wait a minute and try again")
 		}
 	}
