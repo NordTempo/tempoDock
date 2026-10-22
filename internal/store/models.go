@@ -139,6 +139,20 @@ type CliLogin struct {
 	UserID     *int64
 }
 
+type ControlPlaneBackup struct {
+	ID          int64
+	Trigger     string
+	Status      string
+	Repository  string
+	SnapshotID  string
+	SizeBytes   int64
+	Error       string
+	CreatedBy   string
+	StartedAt   time.Time
+	FinishedAt  *time.Time
+	ScheduledAt *time.Time
+}
+
 type DataAccess struct {
 	ServiceID        int64
 	Engine           string
