@@ -44,6 +44,12 @@ const testGracePeriod = 2 * time.Second
 
 func startCaddy(t *testing.T, askURL string, disableTLS bool) *testCaddy {
 	t.Helper()
+	return startCaddyWith(t, func(o *Options) { o.AskURL, o.DisableTLS = askURL, disableTLS })
+}
+
+// startCaddyWith starts Caddy with the test defaults changed by mod.
+func startCaddyWith(t *testing.T, mod func(*Options)) *testCaddy {
+	t.Helper()
 	bin, err := exec.LookPath("caddy")
 	if err != nil {
 		t.Skip("caddy binary not on PATH")
@@ -59,12 +65,11 @@ func startCaddy(t *testing.T, askURL string, disableTLS bool) *testCaddy {
 		AdminSocket: filepath.Join(dir, "admin.sock"),
 		HTTPPort:    freePort(t),
 		HTTPSPort:   freePort(t),
-		DisableTLS:  disableTLS,
-		AskURL:      askURL,
 		PublicIPs:   []string{"127.0.0.1"},
 		internalCA:  true,
 		gracePeriod: testGracePeriod,
 	}
+	mod(&opts)
 	boot, err := BootstrapConfig(opts)
 	if err != nil {
 		t.Fatal(err)

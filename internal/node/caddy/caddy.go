@@ -1,12 +1,22 @@
 // Package caddy implements node.Proxy on top of a Caddy process.
 //
-// Caddy runs as its own systemd service. The daemon is the only thing that
+// Caddy runs as its own systemd service. The node is the only thing that
 // configures it: it renders the complete config from the routing table and
 // POSTs it to Caddy's admin API on a Unix socket. Caddy validates the config
 // and swaps it in atomically, or rejects it and keeps the old one.
 //
-// Certificates are issued on demand, the first time a hostname is requested
-// over HTTPS, and only after the daemon's `ask` endpoint approves it.
+// The ingress mode decides how public traffic arrives (ADR 0013):
+//
+//   - direct: Caddy listens on ports 80 and 443 of the public IP and issues
+//     certificates on demand, the first time a hostname is requested over
+//     HTTPS, and only after the `ask` endpoint approves it. On a node that
+//     endpoint is AskHandler, which answers from the last applied routes.
+//   - cloudflare_tunnel: cloudflared dials out to Cloudflare and forwards to
+//     Caddy on 127.0.0.1 in plain HTTP. Cloudflare's edge terminates TLS,
+//     and Caddy trusts forwarding headers from loopback only.
+//
+// Every response carries a Dock-Server header with the server's marker, so
+// CheckDomain on a tunnel server can tell that a public request reached it.
 //
 // Reloads are close to, but not exactly, lossless: a request on a brand-new
 // connection that races a reload can be dropped, and an HTTP/2 connection
@@ -25,46 +35,113 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
+// Ingress is how public traffic reaches a server's Caddy (ADR 0013).
+type Ingress string
+
+const (
+	// IngressDirect serves the public IP on HTTPPort and HTTPSPort with
+	// on-demand certificates. The zero Ingress means direct.
+	IngressDirect Ingress = "direct"
+	// IngressCloudflareTunnel serves plain HTTP on 127.0.0.1:HTTPPort to the
+	// local cloudflared, which carries traffic from Cloudflare's edge.
+	IngressCloudflareTunnel Ingress = "cloudflare_tunnel"
+)
+
+// MarkerHeader is the response header carrying Options.ServerMarker.
+const MarkerHeader = "Dock-Server"
+
 // Options configure the rendered Caddy config and how to reach Caddy.
 type Options struct {
 	// AdminSocket is the path of Caddy's admin Unix socket.
 	AdminSocket string
-	HTTPPort    int
-	HTTPSPort   int
+	// Ingress is direct (the default) or cloudflare_tunnel.
+	Ingress Ingress
+	// HTTPPort is the plain HTTP port. In tunnel mode it is the only port,
+	// bound on 127.0.0.1, and cloudflared forwards to
+	// http://127.0.0.1:<HTTPPort>.
+	HTTPPort int
+	// HTTPSPort is the TLS port. Direct mode only.
+	HTTPSPort int
 	// ACMEEmail is given to the certificate authority. Optional.
 	ACMEEmail string
-	// DisableTLS serves every route over plain HTTP on HTTPPort.
+	// DisableTLS serves every route over plain HTTP on HTTPPort. Direct mode
+	// only (development); tunnel mode is always plain HTTP.
 	DisableTLS bool
-	// AskURL is the daemon endpoint Caddy asks before issuing a certificate,
-	// e.g. http://127.0.0.1:7071/internal/caddy/ask. Required unless
-	// DisableTLS is set.
+	// AskURL is the endpoint Caddy asks before issuing a certificate, e.g.
+	// http://127.0.0.1:7071/internal/caddy/ask. Required in direct mode
+	// unless DisableTLS is set.
 	AskURL string
 	// PublicIPs are the addresses DNS records should point at, used by
-	// CheckDomain.
+	// CheckDomain in direct mode.
 	PublicIPs []string
+	// ServerMarker is a token unique to this server (not a secret), sent on
+	// every response as the Dock-Server header. Letters, digits, '.', '_'
+	// and '-', at most 128 characters. Required in tunnel mode, where
+	// CheckDomain looks for it; optional in direct mode.
+	ServerMarker string
+	// TunnelHostname is the CNAME target of the server's tunnel,
+	// <tunnel-id>.cfargotunnel.com. Optional; tunnel-mode CheckDomain names
+	// it in its instructions.
+	TunnelHostname string
 
 	// internalCA makes Caddy issue certificates from its own local CA
 	// instead of ACME. Tests only, so they never contact a real CA.
 	internalCA bool
 	// gracePeriod overrides defaultGracePeriod. Tests only.
 	gracePeriod time.Duration
+	// tunnelListenHost, when set, replaces the tunnel-mode listen host
+	// (127.0.0.1). Tests only, to reach Caddy from a non-loopback address.
+	tunnelListenHost string
 }
+
+// tunnel reports whether the server is in cloudflare_tunnel mode.
+func (o Options) tunnel() bool { return o.Ingress == IngressCloudflareTunnel }
+
+// plainHTTP reports whether Caddy serves plain HTTP only, with no
+// certificates of its own.
+func (o Options) plainHTTP() bool { return o.DisableTLS || o.tunnel() }
 
 func (o Options) validate() error {
 	switch {
 	case o.AdminSocket == "":
 		return errors.New("caddy: admin socket path is required")
-	case o.HTTPPort <= 0 || o.HTTPSPort <= 0:
-		return errors.New("caddy: HTTP and HTTPS ports are required")
+	case o.Ingress != "" && o.Ingress != IngressDirect && !o.tunnel():
+		return fmt.Errorf("caddy: unknown ingress %q; use direct or cloudflare_tunnel", o.Ingress)
+	case o.HTTPPort <= 0:
+		return errors.New("caddy: an HTTP port is required")
+	case o.ServerMarker != "" && !validMarker(o.ServerMarker):
+		return fmt.Errorf("caddy: server marker %q may only use letters, digits, '.', '_' and '-' (at most 128)", o.ServerMarker)
+	case o.tunnel() && o.ServerMarker == "":
+		return errors.New("caddy: a server marker is required in cloudflare_tunnel mode")
+	case o.tunnel():
+		return nil
+	case o.HTTPSPort <= 0:
+		return errors.New("caddy: an HTTPS port is required in direct mode")
 	case !o.DisableTLS && o.AskURL == "":
 		return errors.New("caddy: an ask URL is required when TLS is enabled")
 	}
 	return nil
+}
+
+// validMarker keeps the marker a plain header value: no spaces, and no "{"
+// that Caddy would expand as a placeholder.
+func validMarker(m string) bool {
+	if len(m) > 128 {
+		return false
+	}
+	for _, c := range m {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '.' && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // Proxy drives one Caddy process through its admin socket.
@@ -72,9 +149,15 @@ type Proxy struct {
 	opts   Options
 	client *http.Client
 
+	// hosts are the hostnames of the last applied routes, for AskHandler.
+	// nil until the first ApplyRoutes or read of Caddy's running config.
+	hosts  atomic.Pointer[hostSet]
+	seedMu sync.Mutex // one read of Caddy's running config at a time
+
 	// Overridable in tests.
-	lookupIP func(ctx context.Context, host string) ([]net.IPAddr, error)
-	rootCAs  *x509.CertPool // nil means the system roots
+	lookupIP   func(ctx context.Context, host string) ([]net.IPAddr, error)
+	rootCAs    *x509.CertPool // nil means the system roots
+	dialPublic func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 var _ node.Proxy = (*Proxy)(nil)
@@ -98,7 +181,8 @@ func New(opts Options) (*Proxy, error) {
 			// stop, which can take a moment; never hang forever.
 			Timeout: time.Minute,
 		},
-		lookupIP: net.DefaultResolver.LookupIPAddr,
+		lookupIP:   net.DefaultResolver.LookupIPAddr,
+		dialPublic: d.DialContext,
 	}, nil
 }
 
@@ -109,7 +193,11 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 	if err != nil {
 		return err
 	}
-	return p.load(ctx, cfg)
+	if err := p.load(ctx, cfg); err != nil {
+		return err
+	}
+	p.hosts.Store(routeHosts(routes))
+	return nil
 }
 
 // load POSTs cfg to Caddy's /load endpoint, which validates it and swaps

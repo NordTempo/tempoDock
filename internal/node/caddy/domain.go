@@ -19,15 +19,25 @@ import (
 // handshake for a hostname triggers issuance, which can take several seconds.
 const certCheckTimeout = 30 * time.Second
 
-// CheckDomain resolves hostname and compares it with the server's public
-// IPs. When TLS is enabled and DNS points here, it also handshakes with the
-// local Caddy using hostname as SNI and verifies the certificate against
-// the system roots. That handshake is what triggers on-demand issuance, so
-// it is skipped while DNS is wrong to avoid burning CA rate limits.
+// CheckDomain reports whether hostname reaches this server and has a valid
+// certificate.
+//
+// In direct mode it resolves hostname and compares it with the server's
+// public IPs. When TLS is enabled and DNS points here, it also handshakes
+// with the local Caddy using hostname as SNI and verifies the certificate
+// against the system roots. That handshake is what triggers on-demand
+// issuance, so it is skipped while DNS is wrong to avoid burning CA rate
+// limits.
+//
+// In tunnel mode it requests https://<hostname>/ through Cloudflare; see
+// checkTunnel.
 //
 // Problems are reported in DomainCheck.Error; the returned error is only
 // set when ctx ends.
 func (p *Proxy) CheckDomain(ctx context.Context, hostname string) (node.DomainCheck, error) {
+	if p.opts.tunnel() {
+		return p.checkTunnel(ctx, hostname)
+	}
 	dc := node.DomainCheck{ExpectedIPs: p.opts.PublicIPs}
 
 	addrs, err := p.lookupIP(ctx, hostname)
