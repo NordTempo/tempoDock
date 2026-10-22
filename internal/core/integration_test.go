@@ -34,6 +34,18 @@ func (noProxy) CheckDomain(context.Context, string) (node.DomainCheck, error) {
 	return node.DomainCheck{}, nil
 }
 
+// noStats keeps the minute statistics tick from sampling (and from calling
+// a nil Stats) during these tests.
+type noStats struct{}
+
+func (noStats) HostStats(context.Context) (node.HostStats, error) {
+	return node.HostStats{}, errors.New("no stats in this test")
+}
+
+func (noStats) ContainerStats(context.Context, []string) ([]node.ContainerStats, error) {
+	return nil, nil
+}
+
 type noBuilder struct{}
 
 func (noBuilder) Build(context.Context, node.BuildRequest) (string, error) {
@@ -64,7 +76,7 @@ func dockerHarness(t *testing.T) *Core {
 	cfg.DataDir = dir
 	base := 40000 + rand.IntN(200)*100
 	cfg.HostPorts = config.PortRange{Min: base, Max: base + 99}
-	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}}, Logger: slog.New(slog.DiscardHandler)})
+	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}, Stats: noStats{}}, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -38,7 +38,7 @@ func (c *Core) listServiceAudit(ctx context.Context, a Actor, f AuditFilter) ([]
 	for _, r := range rows {
 		out = append(out, apitypes.AuditEvent{
 			ID: r.ID, Actor: r.Actor, ActorKind: r.ActorKind, Action: r.Action, Project: es.project.Name,
-			Environment: es.env.Name, Target: r.Target, Summary: r.Summary, CreatedAt: r.CreatedAt,
+			Environment: es.env.Name, Target: r.Target, Summary: r.Summary, DetailID: r.DetailID, CreatedAt: r.CreatedAt,
 		})
 	}
 	return out, nil

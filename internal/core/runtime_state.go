@@ -90,6 +90,13 @@ func (c *Core) watchRuntime(events <-chan node.ContainerEvent) {
 }
 
 func (c *Core) onContainerEvent(ctx context.Context, ev node.ContainerEvent) {
+	if ev.Action == "die" || ev.Action == "destroy" {
+		// A database's container went away (redeploy, archive, crash):
+		// drop the panel's connections to it.
+		if id, err := strconv.ParseInt(ev.Labels.Service, 10, 64); err == nil {
+			c.data.Forget(id)
+		}
+	}
 	if c.ownRemoval(ev) {
 		return // the daemon is stopping it: not a crash, not drift
 	}

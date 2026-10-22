@@ -19,6 +19,8 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/data/pg"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -47,6 +49,9 @@ type Options struct {
 	// plugs in the node hub).
 	Remote func(serverID int64) node.Runtime
 	Logger *slog.Logger
+	// Data is the database panel engine (ADR 0016); nil uses Postgres
+	// (internal/data/pg).
+	Data data.Engine
 	// CutoverDrain overrides DefaultCutoverDrain when positive (tests use
 	// a tiny value).
 	CutoverDrain time.Duration
@@ -95,6 +100,12 @@ type Core struct {
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
 
+	// data is the database panel engine; browse throttles data.browse
+	// audit events.
+	data     data.Engine
+	browse   browseLog
+	deciding decisions
+
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
 	uploads   map[int64]bool
@@ -134,6 +145,10 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),
 		drain:      DefaultCutoverDrain,
+		data:       o.Data,
+	}
+	if c.data == nil {
+		c.data = pg.New()
 	}
 	if o.CutoverDrain > 0 {
 		c.drain = o.CutoverDrain
@@ -221,11 +236,13 @@ func (c *Core) clearTempFiles() {
 
 // Close abandons in-flight deploys and waits for background work to finish.
 // It never stops or waits on app containers: the next Start's recovery
-// fails abandoned releases and removes their containers.
+// fails abandoned releases and removes their containers. Database panel
+// connections are closed.
 func (c *Core) Close() {
 	c.closeStats()
 	c.cancel()
 	c.wg.Wait()
+	c.data.Close()
 }
 
 func now() time.Time { return time.Now().UTC() }

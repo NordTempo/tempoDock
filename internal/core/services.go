@@ -354,10 +354,12 @@ func (c *Core) serviceOf(ss svcScope, pending apitypes.PendingChanges, active *i
 		ID: ss.svc.ID, Project: ss.project.Name, Environment: ss.env.Name, Name: ss.svc.Name,
 		ServiceSettings: settingsOf(ss.svc), Status: c.getStatus(ss.svc.ID),
 		ActiveRelease: active, Stateful: stateful,
+		Database: apitypes.DatabaseSetting(ss.svc.Database), DatabaseURLVariable: ss.svc.DatabaseUrlVariable,
 		CreatedAt: ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt,
 		PendingChanges:  pending.CountFor(ss.svc.Name),
 		EffectiveLimits: c.limitsOf(ss.svc.MemoryMb, ss.svc.Cpus),
 	}
+	s.DataEngine, _ = detectDatabase(ss.svc)
 	if active != nil {
 		if u, ok := c.stats.serviceUsage(ss.svc.ID); ok {
 			s.Usage = &u
