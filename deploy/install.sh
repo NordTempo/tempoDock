@@ -63,9 +63,11 @@ cleanup() { rm -rf ${staged:+"$staged"} ${download_dir:+"$download_dir"}; }
 trap cleanup EXIT
 
 # github CURL-ARGS... runs curl against the GitHub API, with GITHUB_TOKEN if set.
+# The token goes to curl as a config on stdin (printf is a builtin), never in
+# its arguments, which any user could read in the process list.
 github() {
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" "$@"
+    printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl -K - -fsSL "$@"
   else
     curl -fsSL "$@"
   fi
@@ -501,7 +503,8 @@ if [[ "$node_mode" == true ]]; then
     # A new join replaces this node's key and control plane pins.
     systemctl stop dock-node.service 2>/dev/null || true
     install -d -m 0700 -o dock -g dock /var/lib/dock
-    /usr/local/bin/dock node join --config "$CONF" "$NODE_JOIN_TOKEN" \
+    # On stdin, not as an argument: argv is visible to every user.
+    printf '%s\n' "$NODE_JOIN_TOKEN" | /usr/local/bin/dock node join --config "$CONF" --token-file - \
       || die "joining failed; get a new token with \`dock server add <name>\` if this one expired"
     # join ran as root; the node daemon runs as dock.
     chown -R dock:dock /var/lib/dock

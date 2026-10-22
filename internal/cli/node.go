@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -51,22 +52,31 @@ policy and keep serving.`,
 }
 
 // newNodeJoinCmd is `dock node join <token>`: install.sh --node runs it
-// once, as root, before starting dock-node.service.
+// once, as root, before starting dock-node.service, with the token on
+// stdin (--token-file -) so it never shows in the process list.
 func newNodeJoinCmd(configPath *string) *cobra.Command {
-	return &cobra.Command{
-		Use:   "join <token>",
+	var tokenFile string
+	cmd := &cobra.Command{
+		Use:   "join [<token>]",
 		Short: "Join this server to a control plane with a token from `dock server add`",
 		Long: `Join this server to the control plane named in the token. It creates this
 server's key in the data dir and pins the control plane's key (node.key
 and node.toml), then prints the server name the control plane assigned.
-A new join replaces an earlier one. Tokens work once, for an hour.`,
-		Args: cobra.ExactArgs(1),
+A new join replaces an earlier one. Tokens work once, for an hour.
+
+Pass the token with --token-file (a path, or - for stdin) to keep it off
+the command line, where other users of this machine could see it.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			token, err := joinToken(cmd.InOrStdin(), args, tokenFile)
+			if err != nil {
+				return err
+			}
 			cfg, err := config.Load(*configPath)
 			if err != nil {
 				return err
 			}
-			link, err := remote.Join(cmd.Context(), args[0], cfg.DataDir, nodeFacts(cmd.Context(), cfg))
+			link, err := remote.Join(cmd.Context(), token, cfg.DataDir, nodeFacts(cmd.Context(), cfg))
 			if err != nil {
 				return err
 			}
@@ -74,6 +84,39 @@ A new join replaces an earlier one. Tokens work once, for an hour.`,
 			return err
 		},
 	}
+	cmd.Flags().StringVar(&tokenFile, "token-file", "", "read the join token from this file (- for stdin)")
+	return cmd
+}
+
+// joinToken is the token given as the argument or in --token-file (path
+// or - for stdin), exactly one of them.
+func joinToken(stdin io.Reader, args []string, file string) (string, error) {
+	switch {
+	case len(args) == 1 && file != "":
+		return "", usageError("give the token either as an argument or with --token-file, not both", "Prefer --token-file - with the token on stdin.")
+	case len(args) == 1:
+		return args[0], nil
+	case file == "":
+		return "", usageError("no join token given", "Pass it on stdin with --token-file -, or get one with `dock server add <name>` on the control plane.")
+	}
+	r := stdin
+	if file != "-" {
+		f, err := os.Open(file)
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = f.Close() }()
+		r = f
+	}
+	b, err := io.ReadAll(io.LimitReader(r, 4<<10))
+	if err != nil {
+		return "", fmt.Errorf("read the join token: %w", err)
+	}
+	token := strings.TrimSpace(string(b))
+	if token == "" {
+		return "", usageError("the join token is empty", "Get one with `dock server add <name>` on the control plane.")
+	}
+	return token, nil
 }
 
 // runNode runs the node daemon until ctx ends: the link to the control
