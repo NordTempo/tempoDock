@@ -5,7 +5,7 @@ import { useProblems } from "../../data/problems";
 import { serviceRef, useChanges } from "../../data/queries";
 import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
-import { ago, plural, since } from "../../ui/format";
+import { plural, since } from "../../ui/format";
 import { Button, ErrorText, Glyph } from "../../ui/kit";
 import {
   failurePhrase,
@@ -186,6 +186,8 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
     case "backup_failed": {
       const ref = serviceRef(p.service.service);
       const at = p.backup.finished_at ?? p.backup.started_at;
+      // Trailing punctuation would clash with the sentence's own period.
+      const error = p.backup.error?.replace(/[\s:.]+$/, "");
       return (
         <Row
           n={key}
@@ -205,10 +207,10 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
             </Link>
           }
         >
-          Backup of {ref.service} failed {ago(at)}
-          {p.backup.error && (
+          The latest backup failed
+          {error && (
             <>
-              : <span className="font-mono">{p.backup.error}</span>
+              : <span className="font-mono">{error}</span>
             </>
           )}
           .

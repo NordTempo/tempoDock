@@ -40,11 +40,17 @@ export function AddDatabase({
           >
             {created.name}
           </Link>
-          , deploying. Other services use{" "}
-          <code className="font-mono">{created.reference}</code>
+          , deploying.
+          {created.reference && (
+            <>
+              {" "}
+              Other services use{" "}
+              <code className="font-mono">{created.reference}</code>
+            </>
+          )}
         </span>
-        <CopyButton text={created.reference} />
-        <Button small onClick={onClose}>
+        {created.reference && <CopyButton text={created.reference} />}
+        <Button small autoFocus onClick={onClose}>
           Done
         </Button>
       </p>
@@ -73,7 +79,7 @@ export function AddDatabase({
     >
       <select
         aria-label="Template"
-        className="field py-[5px]"
+        className="field py-[3px]"
         value={chosen}
         onChange={(e) => {
           const t = templates.data?.find((t) => t.name === e.target.value);
@@ -94,7 +100,7 @@ export function AddDatabase({
         onChange={(e) => setName(e.target.value)}
         pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?"
         title="Lower-case letters, digits and dashes"
-        className="field w-[180px] py-[5px] font-mono"
+        className="field w-[180px] py-[3px] font-mono"
       />
       <button
         type="submit"
@@ -113,6 +119,10 @@ export function AddDatabase({
           credentials, daily backups.
         </span>
       )}
+      <code className="font-mono text-2xs text-mut">
+        dock service create {service.trim() || "<name>"} --template {chosen} -e{" "}
+        {env.environment}
+      </code>
       <ErrorText error={templates.error ?? create.error} />
     </form>
   );

@@ -78,9 +78,8 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             className="font-mono"
           >
             {restored}
-          </Link>
-          . It continues in the background; nothing uses it yet. When it checks
-          out, point references at{" "}
+          </Link>{" "}
+          in the background. Nothing uses it until references point at{" "}
           <code className="font-mono">
             {"${{"}
             {restored}.{exportOf(backups.kind)}
@@ -148,9 +147,7 @@ function Schedule({
               ))}
             </select>
           </label>
-          {schedule.default_hour && (
-            <span className="text-mut">install default</span>
-          )}
+          {schedule.default_hour && <span className="text-mut">default</span>}
           {schedule.next_at && (
             <span className="text-mut">next in {until(schedule.next_at)}</span>
           )}

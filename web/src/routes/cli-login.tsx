@@ -79,7 +79,7 @@ function CliLogin() {
           </p>
         ) : (
           <p>
-            <span className="text-fail">✗</span> Denied. The CLI was not signed
+            <span className="text-fail">✕</span> Denied. The CLI was not signed
             in. You can close this tab.
           </p>
         )}
@@ -106,24 +106,24 @@ function CliLogin() {
   } else {
     found = (
       <dl className="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1.5">
-        <Field label="client">
+        <Field label="Client">
           {l.client_name} on <span className="font-mono">{l.hostname}</span>{" "}
           <span className="text-mut">{l.os}</span>
         </Field>
-        <Field label="from">
+        <Field label="From">
           <span className="font-mono">{l.ip}</span>
         </Field>
-        <Field label="requested">
+        <Field label="Requested">
           {clock(l.created_at)}{" "}
           <span className="text-mut">
             {ago(l.created_at)}, code expires {clock(l.expires_at)}
           </span>
         </Field>
-        <Field label="access">
+        <Field label="Access">
           <b className="font-semibold">{l.scope}</b>{" "}
           <span className="text-mut">same as you, {session?.name}</span>
         </Field>
-        <Field label="token">
+        <Field label="Token">
           <span className="font-mono">{l.token_name}</span>{" "}
           <span className="text-mut">expires in {l.token_days} days</span>
         </Field>
@@ -150,7 +150,11 @@ function CliLogin() {
           className="field px-3 py-2.5 font-mono text-[22px] uppercase tracking-[0.12em]"
         />
       </label>
-      {found}
+      {/* Always rendered, so screen readers announce what the lookup finds;
+          the negative margin cancels the page gap while it is empty. */}
+      <div aria-live="polite" className="-mt-[22px]">
+        {found && <div className="pt-[22px]">{found}</div>}
+      </div>
       <div className="flex flex-wrap items-center gap-2.5">
         <button
           type="button"
