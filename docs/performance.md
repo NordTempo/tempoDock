@@ -97,7 +97,6 @@ Everything periodic in the daemon and CLI:
 | BuildKit readiness | `internal/node/build/buildkitd.go` | 250 ms | BuildKit is starting for a build | one gRPC call |
 | Node event stream retry | `internal/node/remote/client.go` | 1 s | a node's event stream failed | one reconnect |
 | Node reconnect | `internal/node/remote/node.go` | jittered backoff | a node lost its control plane | one dial |
-| Stats collector | `internal/core` stats | 1 min (3 s while someone watches live) | always (the one deliberate tick) | a few cgroup/proc file reads + one SQLite transaction (~2.4 ms for 50 containers) |
 | Data connection idle close | `internal/data/pg` | once, 60 s after last use | a database connection is open | one timer per connection |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
