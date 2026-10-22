@@ -58,20 +58,25 @@ type Options struct {
 	// (https://api.github.com) for push-to-deploy; tests point it at a
 	// fake.
 	GitHubAPI string
+	// ConfigPath is the daemon config file, archived by the control
+	// plane's own backup (ADR 0021); empty leaves it out.
+	ConfigPath string
 }
 
 // Core is the control plane.
 type Core struct {
-	cfg   config.Config
-	store *store.Store
-	box   *secrets.Box
-	rt    node.Runtime
-	nodes Nodes // nil: no remote servers
-	reg   Registry
-	log   *slog.Logger
-	bus   *bus
-	local store.Server
-	drain time.Duration
+	cfg config.Config
+	// configPath is Options.ConfigPath.
+	configPath string
+	store      *store.Store
+	box        *secrets.Box
+	rt         node.Runtime
+	nodes      Nodes // nil: no remote servers
+	reg        Registry
+	log        *slog.Logger
+	bus        *bus
+	local      store.Server
+	drain      time.Duration
 	// install is this control plane's install ID, the dock.control_plane
 	// label on everything it creates (see labels and foreign).
 	install string
@@ -152,6 +157,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	}
 	c := &Core{
 		cfg:        o.Config,
+		configPath: o.ConfigPath,
 		store:      o.Store,
 		box:        o.Secrets,
 		rt:         o.Runtime,
@@ -196,16 +202,7 @@ func (c *Core) registerLocalServer(ctx context.Context) error {
 	now := time.Now().UTC()
 	srv, err := c.store.GetLocalServer(ctx)
 	if store.IsNotFound(err) {
-		name, _ := os.Hostname()
-		if name == "" {
-			name = "local"
-		}
-		// The first server takes every kind of environment. Once a
-		// second one joins, an admin decides which kinds go where.
-		srv, err = c.store.CreateServer(ctx, store.CreateServerParams{
-			Name: name, AcceptsProduction: true, AcceptsNonProduction: true,
-			Builder: c.cfg.BuildKit.Enabled, Local: true, LastSeenAt: &now, Version: version.Version,
-		})
+		srv, err = c.createLocalServer(ctx, now)
 	} else if err == nil {
 		srv, err = c.store.TouchLocalServer(ctx, store.TouchLocalServerParams{
 			Builder: c.cfg.BuildKit.Enabled, LastSeenAt: &now, Version: version.Version, ID: srv.ID,
@@ -216,6 +213,29 @@ func (c *Core) registerLocalServer(ctx context.Context) error {
 	}
 	c.local = srv
 	return nil
+}
+
+// createLocalServer registers this server, named after its host. The
+// first server takes every kind of environment; once a second one joins,
+// an admin decides which kinds go where. A control plane restored next to
+// its old server (ADR 0021) can find the name taken by that server, now
+// waiting to join as a node: then it is "<host>-2", and so on.
+func (c *Core) createLocalServer(ctx context.Context, now time.Time) (store.Server, error) {
+	name, _ := os.Hostname()
+	if name == "" {
+		name = "local"
+	}
+	params := store.CreateServerParams{
+		Name: name, AcceptsProduction: true, AcceptsNonProduction: true,
+		Builder: c.cfg.BuildKit.Enabled, Local: true, LastSeenAt: &now, Version: version.Version,
+	}
+	for i := 2; ; i++ {
+		srv, err := c.store.CreateServer(ctx, params)
+		if !store.IsUnique(err) || i > 9 {
+			return srv, err
+		}
+		params.Name = fmt.Sprintf("%s-%d", name, i)
+	}
 }
 
 // Start recovers from a crash or restart (failing interrupted deploys),

@@ -472,6 +472,9 @@
       "BackupSettings": {
         "additionalProperties": false,
         "properties": {
+          "control_plane": {
+            "$ref": "#/components/schemas/ControlPlaneBackup"
+          },
           "has_credentials": {
             "type": "boolean"
           },
@@ -523,7 +526,8 @@
           "keep_monthly",
           "hour",
           "time_zone",
-          "restic_image"
+          "restic_image",
+          "control_plane"
         ],
         "type": "object"
       },
@@ -881,6 +885,76 @@
           "port",
           "confirm",
           "access"
+        ],
+        "type": "object"
+      },
+      "ControlPlaneBackup": {
+        "additionalProperties": false,
+        "properties": {
+          "latest": {
+            "$ref": "#/components/schemas/ControlPlaneBackupRun"
+          },
+          "next_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ControlPlaneBackupRun": {
+        "additionalProperties": false,
+        "properties": {
+          "created_by": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "off_box": {
+            "type": "boolean"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "snapshot": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "schedule",
+              "manual"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger",
+          "status",
+          "size_bytes",
+          "repository",
+          "off_box",
+          "created_by",
+          "started_at"
         ],
         "type": "object"
       },
@@ -6853,6 +6927,96 @@
           }
         ],
         "summary": "Configure backups",
+        "tags": [
+          "backups"
+        ]
+      }
+    },
+    "/api/v1/backup/control-plane": {
+      "post": {
+        "description": "Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Unlimited admin.",
+        "operationId": "run-control-plane-backup",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneBackupRun"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Back up the control plane now",
         "tags": [
           "backups"
         ]

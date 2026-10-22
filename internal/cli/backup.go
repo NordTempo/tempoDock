@@ -133,13 +133,23 @@ func snapshotID(id string) string { return id[:min(8, len(id))] }
 
 func newBackupRunCmd(g *globals) *cobra.Command {
 	var f targetFlags
-	var detach bool
+	var detach, controlPlane bool
 	cmd := &cobra.Command{
 		Use:   "run [service]",
-		Short: "Back up a service now",
-		Long:  "Back up a service now and wait for it (--detach returns at once).",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Back up a service, or the control plane, now",
+		Long: `Back up a service now and wait for it (--detach returns at once).
+
+--control-plane backs up the control plane itself (its database, keys and
+config) into the repository instead, as it does daily (admin). For a file
+to move the control plane with, run ` + "`dock admin backup`" + ` on its server.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if controlPlane {
+				if len(args) > 0 || f.service != "" {
+					return usageError("--control-plane backs up the control plane, not a service", "Leave out the service.")
+				}
+				return runControlPlaneBackup(cmd.Context(), g, detach)
+			}
 			serviceArg(&f, args)
 			s, t, err := g.open(f, needService)
 			if err != nil {
@@ -168,7 +178,52 @@ func newBackupRunCmd(g *globals) *cobra.Command {
 	}
 	f.add(cmd, needService)
 	cmd.Flags().BoolVar(&detach, "detach", false, "return once the backup started")
+	cmd.Flags().BoolVar(&controlPlane, "control-plane", false, "back up the control plane instead of a service (admin)")
 	return cmd
+}
+
+// runControlPlaneBackup is `dock backup run --control-plane`: start the
+// control plane's backup and, unless detach, poll the backup settings
+// until it finished. A failed run is an error.
+func runControlPlaneBackup(ctx context.Context, g *globals, detach bool) error {
+	s, err := g.connect()
+	if err != nil {
+		return err
+	}
+	run, err := send[apitypes.ControlPlaneBackupRun](ctx, s, http.MethodPost, apiPrefix+"/backup/control-plane", nil)
+	if err != nil {
+		return err
+	}
+	if !detach {
+		g.io.Progressf("Backing up the control plane...")
+		tick := time.NewTicker(backupPoll)
+		defer tick.Stop()
+		for run.Status == apitypes.BackupRunning {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-tick.C:
+			}
+			set, err := get[apitypes.BackupSettings](ctx, s, apiPrefix+"/backup")
+			if err != nil {
+				return err
+			}
+			if l := set.ControlPlane.Latest; l != nil && l.StartedAt.Equal(run.StartedAt) {
+				run = *l
+			}
+		}
+		if run.Status == apitypes.BackupFailed {
+			return &output.Error{Exit: output.ExitError, Message: "the control plane backup failed: " + run.Error}
+		}
+	}
+	return g.io.Print(run, func() error {
+		if run.Status == apitypes.BackupRunning {
+			g.io.Successf("Started a control plane backup; see it with `dock backup status`")
+			return nil
+		}
+		g.io.Successf("Backed up the control plane: snapshot %s, %s, to %s", snapshotID(run.Snapshot), bytesize(run.SizeBytes), run.Repository)
+		return nil
+	})
 }
 
 // waitRun polls a service's backups until run id finished. A failed run
@@ -333,16 +388,36 @@ func printBackupSettings(g *globals, set apitypes.BackupSettings) error {
 		"schedule", fmt.Sprintf("daily at %02d:00 %s", set.Hour, set.TimeZone),
 		"restic", set.ResticImage,
 	}
+	kv = append(kv, "control plane", controlPlaneText(set.ControlPlane))
 	if set.Password != "" {
 		kv = append(kv, "password", set.Password)
 	}
 	if err := g.io.Fields(kv...); err != nil {
 		return err
 	}
+	if l := set.ControlPlane.Latest; l != nil && l.Status == apitypes.BackupFailed {
+		g.io.Warnf("The latest control plane backup failed: %s", l.Error)
+	}
 	if !set.OffBox {
 		g.io.Warnf("Backups are not off-box: losing a server loses its backups. Configure S3 with `dock backup configure --repository s3:...`.")
 	}
 	return nil
+}
+
+// controlPlaneText is the control plane backup's line in `dock backup
+// status`: its latest run and the next.
+func controlPlaneText(cp apitypes.ControlPlaneBackup) string {
+	out := "no backup yet"
+	if l := cp.Latest; l != nil {
+		out = fmt.Sprintf("%s %s", l.Status, ago(l.StartedAt))
+		if l.Status == apitypes.BackupSucceeded {
+			out += fmt.Sprintf(" (snapshot %s, %s)", snapshotID(l.Snapshot), bytesize(l.SizeBytes))
+		}
+	}
+	if cp.NextAt != nil {
+		out += ", next " + cp.NextAt.Local().Format("Mon 15:04")
+	}
+	return out
 }
 
 func newBackupConfigureCmd(g *globals) *cobra.Command {

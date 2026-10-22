@@ -39,6 +39,13 @@ func registerBackups(s *Server, a huma.API) {
 		return reply(s.core.ConfigureBackups(ctx, actor, in.Body))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "run-control-plane-backup", Method: http.MethodPost, Path: Prefix + "/backup/control-plane",
+		Summary: "Back up the control plane now", Tags: tags, DefaultStatus: http.StatusAccepted,
+		Description: "Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Unlimited admin.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.ControlPlaneBackupRun], error) {
+		return reply(s.core.RunControlPlaneBackup(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "list-backups", Method: http.MethodGet, Path: servicePathT + "/backups",
 		Summary: "List a service's backups", Tags: tags,
 		Description: "How and when a stateful service is backed up, and its latest backups and restores.",

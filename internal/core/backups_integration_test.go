@@ -3,9 +3,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +16,9 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/backup"
+	"github.com/NordTempo/tempoDock/internal/cpbackup"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // Templates, backups and restores on the real Docker runtime: create a
@@ -87,6 +93,59 @@ func TestIntegrationTemplateBackupRestore(t *testing.T) {
 	}
 	if out := execIn(t, c, restoredCache, "redis-cli", "-a", newPw, "--no-auth-warning", "GET", "greeting"); out != "hello" {
 		t.Errorf("restored Redis: %q", out)
+	}
+}
+
+// The control plane backs itself up into the local restic repository on
+// the real Docker runtime, and the snapshot is the archive: its manifest
+// reads back with restic dump.
+func TestIntegrationControlPlaneBackup(t *testing.T) {
+	var install string
+	t.Cleanup(func() { removeInstallVolumes(t, install) })
+	c := dockerHarness(t)
+	install = c.install
+	ctx := context.Background()
+	if err := os.WriteFile(filepath.Join(c.cfg.DataDir, cpbackup.SecretKeyFile), bytes.Repeat([]byte{7}, 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.RunControlPlaneBackup(ctx, System); err != nil {
+		t.Fatal(err)
+	}
+	var run apitypes.ControlPlaneBackupRun
+	for deadline := time.Now().Add(5 * time.Minute); ; time.Sleep(200 * time.Millisecond) {
+		set, err := c.GetBackupSettings(ctx, System, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l := set.ControlPlane.Latest; l != nil && l.Status != apitypes.BackupRunning {
+			run = *l
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("control plane backup still running")
+		}
+	}
+	if run.Status != apitypes.BackupSucceeded || run.Snapshot == "" || run.SizeBytes == 0 {
+		t.Fatalf("run = %+v", run)
+	}
+	set, err := c.backupSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := c.repoOf(ctx, set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.runResticJob(ctx, c.local.ID, c.rt, repo, node.JobSpec{
+		Name: fmt.Sprintf("dock_it_cp_dump_%d", time.Now().UnixNano()), Image: c.cfg.Backup.ResticImage,
+		Labels: node.Labels{ControlPlane: c.install}, Env: repo.Env(),
+		Script: backup.BinDir + "/restic dump --tag " + backup.ControlPlaneTag + " latest /" + backup.ControlPlaneFile + " | tar -xOf - " + cpbackup.ManifestName,
+	})
+	if err != nil {
+		t.Fatalf("dump: %v: %s", err, out)
+	}
+	if !strings.Contains(out, `"install_id": "`+c.install+`"`) {
+		t.Fatalf("manifest from the snapshot: %s", out)
 	}
 }
 

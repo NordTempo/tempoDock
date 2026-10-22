@@ -48,6 +48,9 @@ type backupState struct {
 	// restic holds the servers whose restic volume was filled since the
 	// daemon started.
 	restic map[int64]bool
+	// controlPlane is set while the control plane's own backup runs
+	// (backups_controlplane.go).
+	controlPlane bool
 }
 
 func newBackupState() backupState {
@@ -157,6 +160,9 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 		return apitypes.BackupSettings{}, err
 	}
 	out := c.toBackupSettings(s)
+	if out.ControlPlane, err = c.controlPlaneBackups(ctx); err != nil {
+		return out, err
+	}
 	if reveal {
 		repo, err := c.repoOf(ctx, s)
 		if err != nil {
@@ -273,7 +279,8 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 	c.kickBackups()
 	out := c.toBackupSettings(s)
 	out.Password = password
-	return out, nil
+	out.ControlPlane, err = c.controlPlaneBackups(ctx)
+	return out, err
 }
 
 // backupKindOf says how a service is backed up: with its template's tool,
@@ -683,11 +690,16 @@ func (c *Core) ensureImage(ctx context.Context, serverID int64, rt node.Runtime,
 	return nil
 }
 
-// failInterruptedBackups marks runs a restart cut short as failed.
+// failInterruptedBackups marks runs a restart cut short as failed, the
+// control plane's own backup included.
 func (c *Core) failInterruptedBackups(ctx context.Context) error {
-	n, err := c.store.FailRunningBackups(ctx, store.FailRunningBackupsParams{
-		Error: "the daemon restarted while this was running; run it again", FinishedAt: ptr(now()),
-	})
+	const msg = "the daemon restarted while this was running; run it again"
+	n, err := c.store.FailRunningBackups(ctx, store.FailRunningBackupsParams{Error: msg, FinishedAt: ptr(now())})
+	if err != nil {
+		return err
+	}
+	cp, err := c.store.FailRunningControlPlaneBackup(ctx, store.FailRunningControlPlaneBackupParams{Error: msg, FinishedAt: ptr(now())})
+	n += cp
 	if n > 0 {
 		c.log.Warn("backups interrupted by a restart marked failed", "count", n)
 	}
