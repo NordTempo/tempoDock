@@ -648,7 +648,9 @@ else
     setup_registry
   fi
   say "==> admin token"
-  token="$(runuser -u dock -- /usr/local/bin/dock admin bootstrap --config "$CONF" || true)"
+  # Prints nothing (and succeeds) when an admin already exists.
+  token="$(runuser -u dock -- /usr/local/bin/dock admin bootstrap --config "$CONF")" ||
+    die "creating the first admin failed (see above); dock itself is installed and running"
 fi
 
 say ""

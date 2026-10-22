@@ -166,3 +166,26 @@ func TestMigrationLoneServerAcceptsBoth(t *testing.T) {
 		t.Fatalf("server = %+v, %v", srv, err)
 	}
 }
+
+// Processes opening one database at once during an upgrade (a new daemon
+// starting while install.sh runs dock admin commands) all migrate it
+// without applying a migration twice.
+func TestConcurrentOpenMigratesOnce(t *testing.T) {
+	path := openBefore(t, "_token_user.sql", "PRAGMA journal_mode = WAL")
+	const n = 4
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			s, err := Open(context.Background(), path)
+			if err == nil {
+				err = s.Close()
+			}
+			errs <- err
+		}()
+	}
+	for range n {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}

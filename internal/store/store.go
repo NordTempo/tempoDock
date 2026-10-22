@@ -95,7 +95,10 @@ func IsUnique(err error) bool {
 func IsNotFound(err error) bool { return errors.Is(err, sql.ErrNoRows) }
 
 // migrate applies migrations/NNNN_*.sql files newer than PRAGMA user_version,
-// each in its own transaction.
+// each in its own transaction. Several processes may migrate one file at
+// once (install.sh runs dock admin commands while a new daemon starts): each
+// transaction takes the write lock first (_txlock=immediate) and re-reads
+// the version under it, so a migration another process applied is skipped.
 func migrate(ctx context.Context, db *sql.DB) error {
 	var current int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
@@ -123,6 +126,14 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
+		}
+		if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("read schema version: %w", err)
+		}
+		if version <= current {
+			_ = tx.Rollback()
+			continue
 		}
 		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
 			_ = tx.Rollback()
