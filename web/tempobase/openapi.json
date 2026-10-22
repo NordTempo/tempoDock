@@ -2155,10 +2155,12 @@
         "operationId": "get-audit-detail",
         "parameters": [
           {
+            "description": "The event's detail_id",
             "in": "path",
             "name": "id",
             "required": true,
             "schema": {
+              "description": "The event's detail_id",
               "format": "int64",
               "type": "integer"
             }
@@ -2977,6 +2979,18 @@
       "patch": {
         "description": "Admin only. A new URL or production flag applies at once; if the URL names another database, set up data access there.",
         "operationId": "update-connection",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3318,6 +3332,18 @@
       "put": {
         "description": "Admin only. Rules may only name the connection's kind (production or non_production).",
         "operationId": "set-connection-data-policy",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3429,6 +3455,16 @@
         "description": "Newest first. Level schema.",
         "operationId": "list-changesets",
         "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
           {
             "description": "Only changesets with this status",
             "explode": false,
@@ -3561,6 +3597,18 @@
       "post": {
         "description": "With `dry_run`, validates the changes and renders the SQL without storing anything (200, status preview). Otherwise stores the changeset as pending (201); nothing is written until it is committed. Level propose.",
         "operationId": "create-changeset",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3681,6 +3729,16 @@
       "get": {
         "operationId": "get-changeset",
         "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
           {
             "description": "Changeset ID",
             "in": "path",
@@ -3803,6 +3861,29 @@
       "post": {
         "description": "Revalidates the pending changeset against current data and commits it in one transaction. Rows that changed meanwhile fail it as a whole (409, status conflict). One's own with level write; anyone's (approving) as admin. Production needs `confirm` set to the connection's name.",
         "operationId": "commit-changeset",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Changeset ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Changeset ID",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3922,6 +4003,29 @@
       "post": {
         "description": "Admins, or the author withdrawing it.",
         "operationId": "reject-changeset",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Changeset ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Changeset ID",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4042,6 +4146,16 @@
         "description": "The caller's own queries on this database (their data.query audit events), newest first. Page back with `before`, the last entry's audit_id.",
         "operationId": "get-data-history",
         "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
           {
             "description": "Only entries with a smaller audit_id",
             "explode": false,
@@ -4183,6 +4297,18 @@
       "post": {
         "description": "Runs one statement as tempobase_reader in a READ ONLY transaction; several statements in one string are refused. Results are capped by `limit` (default 10 000, at most 100 000) and 64 MB, cells over 8 KB are truncated. Level read; masked callers' SQL runs as tempobase_reader_masked, which can't select sensitive columns.\n\nThe response is NDJSON (`application/x-ndjson`): one DataQueryFrame per line. A `header` frame (columns), `rows` frames of up to 500 rows, then exactly one `end` frame (row count, truncated, duration) or `error` frame (what the database reported, possibly after rows). Permission and validation errors are normal problem responses before any frame. Closing the connection cancels the query.",
         "operationId": "data-query",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4428,6 +4554,18 @@
       },
       "post": {
         "operationId": "create-saved-query",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4549,6 +4687,16 @@
         "operationId": "delete-saved-query",
         "parameters": [
           {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
+          {
             "description": "Saved query ID",
             "in": "path",
             "name": "id",
@@ -4660,6 +4808,29 @@
       },
       "put": {
         "operationId": "update-saved-query",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Saved query ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Saved query ID",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4902,6 +5073,18 @@
       "put": {
         "description": "Replaces the database's sensitive columns. Admin.",
         "operationId": "set-sensitive-columns",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5152,6 +5335,29 @@
         "operationId": "get-data-references",
         "parameters": [
           {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Table as schema.name",
+            "in": "path",
+            "name": "table",
+            "required": true,
+            "schema": {
+              "description": "Table as schema.name",
+              "examples": [
+                "public.orders"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "description": "The row's primary key as a JSON object, column to value, e.g. {\"id\":\"42\"}",
             "explode": false,
             "in": "query",
@@ -5293,6 +5499,29 @@
         "description": "A keyset page: sorted by `order` and the primary key, starting after the `after` cursor. Pass the page's `next` as `after` for the following page. Sensitive columns are masked unless `reveal` is set by a caller with sensitive visible. Level read.",
         "operationId": "get-data-rows",
         "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Table as schema.name",
+            "in": "path",
+            "name": "table",
+            "required": true,
+            "schema": {
+              "description": "Table as schema.name",
+              "examples": [
+                "public.orders"
+              ],
+              "type": "string"
+            }
+          },
           {
             "description": "Column to sort by, -column for descending; default the primary key",
             "explode": false,
@@ -6085,6 +6314,18 @@
       "post": {
         "description": "An invite creates the person with a name and password; a reset link sets a new password and ends their other sessions. Either signs them in (session cookie). Links work once.",
         "operationId": "use-link",
+        "parameters": [
+          {
+            "description": "The code from the link's fragment",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "The code from the link's fragment",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6807,6 +7048,17 @@
       "patch": {
         "description": "Its owner or an admin. `data: null` follows the policy's tokens rule again.",
         "operationId": "update-token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -7115,6 +7367,17 @@
       "patch": {
         "description": "Admin only, not on yourself. Disabling ends their sessions and tokens at once. The last admin stays an admin.",
         "operationId": "update-user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

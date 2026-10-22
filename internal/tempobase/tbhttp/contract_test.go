@@ -108,13 +108,18 @@ func (s *spec) ops(match func(path string) bool) map[string]bool {
 	return out
 }
 
-// shape is what the client sees of an operation: its non-path
-// parameters, request body and responses, with every $ref resolved.
+// locators are the path parameters that name the database: Dock's
+// project, environment and service, tempoBase's connection.
+var locators = map[string]bool{"project": true, "environment": true, "service": true, "connection": true}
+
+// shape is what the client sees of an operation: its parameters but the
+// locators, request body and responses, with every $ref resolved.
 func (s *spec) shape(op map[string]any, requestOnly bool) map[string]any {
 	var params []any
 	list, _ := op["parameters"].([]any)
 	for _, p := range list {
-		if p.(map[string]any)["in"] != "path" {
+		p := p.(map[string]any)
+		if p["in"] != "path" || !locators[p["name"].(string)] {
 			params = append(params, p)
 		}
 	}
@@ -199,4 +204,31 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// Every {param} in a tempoBase path is a declared path parameter: Huma
+// silently drops the fields of unexported embedded input types, which
+// leaves the handler with an empty value.
+func TestPathParametersDeclared(t *testing.T) {
+	tb := loadSpec(t, tbhttp.Spec)
+	for id, path := range tb.paths {
+		var declared []string
+		list, _ := tb.byID[id]["parameters"].([]any)
+		for _, p := range list {
+			if p := p.(map[string]any); p["in"] == "path" {
+				declared = append(declared, p["name"].(string))
+			}
+		}
+		var want []string
+		for part := range strings.SplitSeq(path, "/") {
+			if name, ok := strings.CutPrefix(part, "{"); ok {
+				want = append(want, strings.TrimSuffix(name, "}"))
+			}
+		}
+		slices.Sort(declared)
+		slices.Sort(want)
+		if !slices.Equal(declared, want) {
+			t.Errorf("%s %s declares path parameters %v", id, path, declared)
+		}
+	}
 }

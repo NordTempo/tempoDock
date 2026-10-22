@@ -228,7 +228,7 @@ type AuditEvent struct {
 	Target     string `json:"target"`
 	Summary    string `json:"summary"`
 	// DetailID is set for events with a detail, the SQL of data.query and
-	// data.commit events (GET /audit/{id}/detail).
+	// data.commit events (GET /audit/{detail_id}/detail).
 	DetailID  *int64    `json:"detail_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }

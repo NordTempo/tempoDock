@@ -20,21 +20,21 @@ import (
 
 const dataPathT = Prefix + "/connections/{connection}/data"
 
-// tablePath addresses one table of a connection, as "schema.name".
-type tablePath struct {
-	connPath
+// TablePath addresses one table of a connection, as "schema.name".
+type TablePath struct {
+	ConnPath
 	Table string `path:"table" example:"public.orders" doc:"Table as schema.name"`
 }
 
-// changesetPath addresses one changeset.
-type changesetPath struct {
-	connPath
+// ChangesetPath addresses one changeset.
+type ChangesetPath struct {
+	ConnPath
 	ID int64 `path:"id" doc:"Changeset ID"`
 }
 
-// savedQueryPath addresses one saved query.
-type savedQueryPath struct {
-	connPath
+// SavedQueryPath addresses one saved query.
+type SavedQueryPath struct {
+	ConnPath
 	ID int64 `path:"id" doc:"Saved query ID"`
 }
 
@@ -50,23 +50,23 @@ func dataOp(op huma.Operation) huma.Operation {
 func registerData(s *server, a huma.API) {
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data", Method: http.MethodGet, Path: dataPathT,
-	}), func(ctx context.Context, act tempobase.Actor, in *connPath) (*out[apitypes.DataInfo], error) {
+	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[apitypes.DataInfo], error) {
 		return reply(s.app.DataInfo(ctx, act, in.Connection))
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "setup-data", Method: http.MethodPost, Path: dataPathT + "/setup",
-	}), func(ctx context.Context, act tempobase.Actor, in *connPath) (*out[apitypes.DataInfo], error) {
+	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[apitypes.DataInfo], error) {
 		return reply(s.app.SetupData(ctx, act, in.Connection))
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-schema", Method: http.MethodGet, Path: dataPathT + "/schema",
-	}), func(ctx context.Context, act tempobase.Actor, in *connPath) (*out[apitypes.DataSchema], error) {
+	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[apitypes.DataSchema], error) {
 		return reply(s.app.DataSchema(ctx, act, in.Connection))
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-rows", Method: http.MethodGet, Path: dataPathT + "/tables/{table}/rows",
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		tablePath
+		TablePath
 		Order  string `query:"order" doc:"Column to sort by, -column for descending; default the primary key"`
 		After  string `query:"after" doc:"The previous page's next cursor"`
 		Limit  int    `query:"limit" minimum:"0" maximum:"1000" doc:"Rows per page; 0 means 100"`
@@ -85,7 +85,7 @@ func registerData(s *server, a huma.API) {
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-references", Method: http.MethodGet, Path: dataPathT + "/tables/{table}/references",
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		tablePath
+		TablePath
 		Key   string `query:"key" required:"true" doc:"The row's primary key as a JSON object, column to value, e.g. {\"id\":\"42\"}"`
 		Limit int    `query:"limit" minimum:"0" maximum:"100" doc:"Rows per foreign key; 0 means 10"`
 	}) (*out[[]apitypes.DataReferences], error) {
@@ -100,7 +100,7 @@ func registerData(s *server, a huma.API) {
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-history", Method: http.MethodGet, Path: dataPathT + "/history",
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		connPath
+		ConnPath
 		Before int64 `query:"before" minimum:"0" doc:"Only entries with a smaller audit_id"`
 		Limit  int   `query:"limit" default:"50" minimum:"1" maximum:"200"`
 	}) (*out[[]apitypes.DataHistoryEntry], error) {
@@ -109,14 +109,14 @@ func registerData(s *server, a huma.API) {
 
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "list-saved-queries", Method: http.MethodGet, Path: dataPathT + "/saved-queries",
-	}), func(ctx context.Context, act tempobase.Actor, in *connPath) (*out[[]apitypes.DataSavedQuery], error) {
+	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[[]apitypes.DataSavedQuery], error) {
 		return reply(s.app.ListSavedQueries(ctx, act, in.Connection))
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "create-saved-query", Method: http.MethodPost, Path: dataPathT + "/saved-queries",
 		DefaultStatus: http.StatusCreated, MaxBodyBytes: datahttp.SQLBodyBytes,
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		connPath
+		ConnPath
 		Body apitypes.SaveDataQueryRequest
 	}) (*out[apitypes.DataSavedQuery], error) {
 		return reply(s.app.SaveDataQuery(ctx, act, in.Connection, 0, in.Body))
@@ -125,7 +125,7 @@ func registerData(s *server, a huma.API) {
 		OperationID: "update-saved-query", Method: http.MethodPut, Path: dataPathT + "/saved-queries/{id}",
 		MaxBodyBytes: datahttp.SQLBodyBytes,
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		savedQueryPath
+		SavedQueryPath
 		Body apitypes.SaveDataQueryRequest
 	}) (*out[apitypes.DataSavedQuery], error) {
 		return reply(s.app.SaveDataQuery(ctx, act, in.Connection, in.ID, in.Body))
@@ -133,14 +133,14 @@ func registerData(s *server, a huma.API) {
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "delete-saved-query", Method: http.MethodDelete, Path: dataPathT + "/saved-queries/{id}",
 		DefaultStatus: http.StatusNoContent,
-	}), func(ctx context.Context, act tempobase.Actor, in *savedQueryPath) (*empty, error) {
+	}), func(ctx context.Context, act tempobase.Actor, in *SavedQueryPath) (*empty, error) {
 		return nil, s.app.DeleteSavedQuery(ctx, act, in.Connection, in.ID)
 	})
 
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "list-changesets", Method: http.MethodGet, Path: dataPathT + "/changesets",
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		connPath
+		ConnPath
 		Status apitypes.DataChangesetStatus `query:"status" enum:"pending,committed,rejected,expired,conflict" doc:"Only changesets with this status"`
 	}) (*out[[]apitypes.DataChangeset], error) {
 		return reply(s.app.ListDataChangesets(ctx, act, in.Connection, in.Status))
@@ -149,7 +149,7 @@ func registerData(s *server, a huma.API) {
 		OperationID: "create-changeset", Method: http.MethodPost, Path: dataPathT + "/changesets",
 		MaxBodyBytes: datahttp.ChangesetBodyBytes,
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		connPath
+		ConnPath
 		Body apitypes.DataChangesetRequest
 	}) (*datahttp.Created[apitypes.DataChangeset], error) {
 		cs, err := s.app.CreateDataChangeset(ctx, act, in.Connection, in.Body)
@@ -164,13 +164,13 @@ func registerData(s *server, a huma.API) {
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-changeset", Method: http.MethodGet, Path: dataPathT + "/changesets/{id}",
-	}), func(ctx context.Context, act tempobase.Actor, in *changesetPath) (*out[apitypes.DataChangeset], error) {
+	}), func(ctx context.Context, act tempobase.Actor, in *ChangesetPath) (*out[apitypes.DataChangeset], error) {
 		return reply(s.app.GetDataChangeset(ctx, act, in.Connection, in.ID))
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "commit-changeset", Method: http.MethodPost, Path: dataPathT + "/changesets/{id}/commit",
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		changesetPath
+		ChangesetPath
 		Body *apitypes.DataCommitRequest
 	}) (*out[apitypes.DataChangeset], error) {
 		var req apitypes.DataCommitRequest
@@ -182,7 +182,7 @@ func registerData(s *server, a huma.API) {
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "reject-changeset", Method: http.MethodPost, Path: dataPathT + "/changesets/{id}/reject",
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		changesetPath
+		ChangesetPath
 		Body *apitypes.DataRejectRequest
 	}) (*out[apitypes.DataChangeset], error) {
 		var req apitypes.DataRejectRequest
@@ -195,7 +195,7 @@ func registerData(s *server, a huma.API) {
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "set-sensitive-columns", Method: http.MethodPut, Path: dataPathT + "/sensitive-columns",
 	}), func(ctx context.Context, act tempobase.Actor, in *struct {
-		connPath
+		ConnPath
 		Body apitypes.SetSensitiveColumnsRequest
 	}) (*out[[]apitypes.DataColumnRef], error) {
 		return reply(s.app.SetSensitiveColumns(ctx, act, in.Connection, in.Body))
@@ -210,7 +210,7 @@ func registerDataQuery(s *server, a huma.API) {
 		MaxBodyBytes: datahttp.SQLBodyBytes, Responses: datahttp.QueryResponses(a),
 	})
 	authed(s, a, op, func(ctx context.Context, act tempobase.Actor, in *struct {
-		connPath
+		ConnPath
 		Body apitypes.DataQueryRequest
 	}) (*huma.StreamResponse, error) {
 		stream, err := s.app.DataQuery(ctx, act, in.Connection, in.Body)

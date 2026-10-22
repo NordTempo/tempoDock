@@ -164,17 +164,16 @@ func (a *App) ListAudit(ctx context.Context, act Actor, f AuditQuery) ([]tbtypes
 	return out, nil
 }
 
-// GetAuditDetail returns the SQL of audit event id, a data.query or
-// data.commit.
-// Admin only, like the log; admins see sensitive values, so nothing is
-// redacted.
+// GetAuditDetail returns an audit event's detail by its detail_id: the
+// SQL of a data.query or data.commit. Admin only, like the log; admins
+// see sensitive values, so nothing is redacted.
 func (a *App) GetAuditDetail(ctx context.Context, act Actor, id int64) (apitypes.AuditDetail, error) {
 	if err := act.requireAdmin("reading the audit log"); err != nil {
 		return apitypes.AuditDetail{}, err
 	}
-	d, err := a.store.GetEventAuditDetail(ctx, id)
+	d, err := a.store.GetAuditDetail(ctx, id)
 	if tbstore.IsNotFound(err) {
-		return apitypes.AuditDetail{}, notFound("audit event %d has no detail", id)
+		return apitypes.AuditDetail{}, notFound("audit detail %d not found; it may have passed the retention", id)
 	}
 	if err != nil {
 		return apitypes.AuditDetail{}, err

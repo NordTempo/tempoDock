@@ -149,12 +149,13 @@ func (s *server) signIn(ctx context.Context, secret string, expires time.Time, a
 	return &signedIn{SetCookie: clientFrom(ctx).sessionCookie(secret, expires), Body: me}, nil
 }
 
-type codePath struct {
+// CodePath is a link's code in a path.
+type CodePath struct {
 	Code string `path:"code" doc:"The code from the link's fragment"`
 }
 
 type useLinkInput struct {
-	codePath
+	CodePath
 	Body tbtypes.UseLinkRequest
 }
 
@@ -211,7 +212,7 @@ func registerAuth(s *server, a huma.API) {
 		OperationID: "get-link", Method: http.MethodGet, Path: Prefix + "/links/{code}",
 		Summary: "What an invite or reset link is for", Tags: []string{"auth"},
 		Errors: []int{http.StatusNotFound, http.StatusGone},
-	}, func(ctx context.Context, in *codePath) (*out[tbtypes.LinkInfo], error) {
+	}, func(ctx context.Context, in *CodePath) (*out[tbtypes.LinkInfo], error) {
 		return reply(s.app.LinkInfo(ctx, in.Code))
 	})
 	public(s, a, huma.Operation{

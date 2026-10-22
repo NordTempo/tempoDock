@@ -11,17 +11,18 @@ import (
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 )
 
-type idPath struct {
+// IDPath is a numeric ID in a path.
+type IDPath struct {
 	ID int64 `path:"id"`
 }
 
 type updateUserInput struct {
-	idPath
+	IDPath
 	Body tbtypes.UpdateUserRequest
 }
 
 type updateTokenInput struct {
-	idPath
+	IDPath
 	Body apitypes.UpdateTokenRequest
 }
 
@@ -45,7 +46,7 @@ func registerPeople(s *server, a huma.API) {
 		Summary:     "Delete a person",
 		Description: "Admin only, not yourself or the last admin. Their sessions, tokens and saved queries go with them; their audit history stays.",
 		Tags:        []string{"people"}, DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, act tempobase.Actor, in *idPath) (*empty, error) {
+	}, func(ctx context.Context, act tempobase.Actor, in *IDPath) (*empty, error) {
 		return nil, s.app.DeleteUser(ctx, act, in.ID)
 	})
 	authed(s, a, huma.Operation{
@@ -53,7 +54,7 @@ func registerPeople(s *server, a huma.API) {
 		Summary:     "Create a password reset link",
 		Description: "Admin only. Copy the url to the person; it works once, for 24 hours, and replaces their earlier reset links.",
 		Tags:        []string{"people"},
-	}, func(ctx context.Context, act tempobase.Actor, in *idPath) (*out[tbtypes.Link], error) {
+	}, func(ctx context.Context, act tempobase.Actor, in *IDPath) (*out[tbtypes.Link], error) {
 		return reply(s.app.ResetLink(ctx, act, in.ID, clientFrom(ctx).base))
 	})
 	authed(s, a, huma.Operation{
@@ -73,7 +74,7 @@ func registerPeople(s *server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "delete-invite", Method: http.MethodDelete, Path: Prefix + "/invites/{id}",
 		Summary: "Withdraw an invite", Description: "Admin only.", Tags: []string{"people"}, DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, act tempobase.Actor, in *idPath) (*empty, error) {
+	}, func(ctx context.Context, act tempobase.Actor, in *IDPath) (*empty, error) {
 		return nil, s.app.DeleteInvite(ctx, act, in.ID)
 	})
 }
@@ -105,7 +106,7 @@ func registerTokens(s *server, a huma.API) {
 		OperationID: "revoke-token", Method: http.MethodDelete, Path: Prefix + "/tokens/{id}",
 		Summary: "Revoke a token", Description: "Its owner or an admin. It stops working at once.",
 		Tags: []string{"tokens"}, DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, act tempobase.Actor, in *idPath) (*empty, error) {
+	}, func(ctx context.Context, act tempobase.Actor, in *IDPath) (*empty, error) {
 		return nil, s.app.RevokeToken(ctx, act, in.ID)
 	})
 }

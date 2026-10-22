@@ -72,15 +72,13 @@ func (q *Queries) AddAuditEvent(ctx context.Context, arg AddAuditEventParams) er
 	return err
 }
 
-const getEventAuditDetail = `-- name: GetEventAuditDetail :one
-SELECT audit_details.id, audit_details.sql, audit_details."rows", audit_details.duration_ms, audit_details.outcome FROM audit_events
-JOIN audit_details ON audit_details.id = audit_events.detail_id
-WHERE audit_events.id = +?
+const getAuditDetail = `-- name: GetAuditDetail :one
+SELECT id, sql, "rows", duration_ms, outcome FROM audit_details WHERE id = +?
 `
 
-// The detail of audit event id; no row when it has none.
-func (q *Queries) GetEventAuditDetail(ctx context.Context, id int64) (AuditDetail, error) {
-	row := q.queryRow(ctx, q.getEventAuditDetailStmt, getEventAuditDetail, id)
+// An audit event's detail by its detail_id.
+func (q *Queries) GetAuditDetail(ctx context.Context, id int64) (AuditDetail, error) {
+	row := q.queryRow(ctx, q.getAuditDetailStmt, getAuditDetail, id)
 	var i AuditDetail
 	err := row.Scan(
 		&i.ID,

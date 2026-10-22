@@ -10,11 +10,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 INSERT INTO audit_details (sql, rows, duration_ms, outcome) VALUES (?, ?, ?, ?)
 RETURNING id;
 
--- name: GetEventAuditDetail :one
--- The detail of audit event id; no row when it has none.
-SELECT audit_details.* FROM audit_events
-JOIN audit_details ON audit_details.id = audit_events.detail_id
-WHERE audit_events.id = +?;
+-- name: GetAuditDetail :one
+-- An audit event's detail by its detail_id.
+SELECT * FROM audit_details WHERE id = +?;
 
 -- name: ListAuditEvents :many
 SELECT * FROM audit_events
