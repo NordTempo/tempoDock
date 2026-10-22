@@ -147,7 +147,17 @@ type outcome struct {
 }
 
 // serveOnce dials, serves the connection until it ends and reports how.
+// Each attempt reads the addresses in StateFile again (one small file, only
+// when dialing), so `dock node set-control-plane` takes effect without a
+// restart.
 func (n *Node) serveOnce(ctx context.Context) outcome {
+	if n.Addr == "" {
+		if l, err := LoadLink(n.DataDir); err == nil {
+			n.mu.Lock()
+			n.link.Addrs = l.Addrs
+			n.mu.Unlock()
+		}
+	}
 	n.mu.Lock()
 	link, id, usingNext := n.link, n.id, n.next != nil
 	if usingNext {

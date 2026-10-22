@@ -15,8 +15,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/api"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/cpbackup"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/registry"
 	"github.com/NordTempo/tempoDock/internal/secrets"
@@ -35,7 +37,7 @@ func newServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return serve(cmd.Context(), cfg)
+			return serve(cmd.Context(), cfg, configPath)
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
@@ -62,8 +64,10 @@ func openState(ctx context.Context, cfg config.Config) (*store.Store, *secrets.B
 
 // serve runs the control plane until ctx ends: the API and UI, the
 // loopback-only internal endpoints and, with [node] listen set, the port
-// nodes connect to.
-func serve(ctx context.Context, cfg config.Config) error {
+// nodes connect to. It holds the data dir's lock while it runs, and
+// refuses to start a control plane that moved to another server (ADR
+// 0021). configPath is archived by the control plane's own backups.
+func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := checkLoopback(cfg.InternalListen); err != nil {
 		return err
@@ -71,6 +75,20 @@ func serve(ctx context.Context, cfg config.Config) error {
 	if err := checkNodeListen(cfg.Node.Listen); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		return err
+	}
+	if err := cpbackup.CheckMoved(cfg.DataDir); err != nil {
+		return &output.Error{Exit: output.ExitMoved, Err: err}
+	}
+	unlock, err := cpbackup.Lock(cfg.DataDir)
+	if errors.Is(err, cpbackup.ErrLocked) {
+		return fmt.Errorf("another dock serve is running with data dir %s", cfg.DataDir)
+	}
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	st, box, err := openState(ctx, cfg)
 	if err != nil {
 		return err
@@ -86,7 +104,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	opts := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log}
+	opts := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log, ConfigPath: configPath}
 	var signer *registry.Signer
 	if cfg.Registry.Enabled {
 		if signer, err = registrySigner(cfg); err != nil {

@@ -18,6 +18,7 @@ const (
 	ExitDeployFailed ExitCode = 6 // build or health check failed; traffic was not switched
 	ExitUnreachable  ExitCode = 7 // could not reach the server
 	ExitIncompatible ExitCode = 8 // CLI and server versions don't work together
+	ExitMoved        ExitCode = 9 // dock serve: this control plane moved to another server (ADR 0021); systemd doesn't restart it
 )
 
 var exitNames = map[ExitCode]string{
@@ -30,6 +31,7 @@ var exitNames = map[ExitCode]string{
 	ExitDeployFailed: "deploy_failed",
 	ExitUnreachable:  "unreachable",
 	ExitIncompatible: "incompatible",
+	ExitMoved:        "moved",
 }
 
 // String is the code's stable machine name, e.g. "not_found".
