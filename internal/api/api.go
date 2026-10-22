@@ -11,10 +11,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io/fs"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -22,7 +20,6 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/version"
-	"github.com/NordTempo/tempoDock/web"
 )
 
 // Prefix is the base path of every API operation.
@@ -224,35 +221,3 @@ func registerSystem(s *Server, a huma.API) {
 		return reply(apitypes.Version{Version: version.Version, APIVersion: apitypes.APIVersion, MaxUploadBytes: s.opts.MaxUploadBytes}, nil)
 	})
 }
-
-// uiHandler serves the embedded SPA: real files when they exist, index.html
-// for client-side routes, and a placeholder when the UI hasn't been built.
-func uiHandler() http.Handler {
-	dist, _ := fs.Sub(web.Dist, "dist")
-	files := http.FileServerFS(dist)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			http.NotFound(w, r)
-			return
-		}
-		index, err := fs.ReadFile(dist, "index.html")
-		if err != nil {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write([]byte(placeholderPage))
-			return
-		}
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		if path != "" {
-			if _, err := fs.Stat(dist, path); err == nil {
-				files.ServeHTTP(w, r)
-				return
-			}
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(index)
-	})
-}
-
-const placeholderPage = `<!doctype html><meta charset="utf-8"><title>Tempo Dock</title>
-<body style="background:#000;color:#fff;font:14px ui-monospace,monospace;padding:2rem">
-Tempo Dock is running. The web UI has not been built into this binary.`

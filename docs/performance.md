@@ -20,6 +20,7 @@ headroom below them.
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 4.5-5 ms |
 | API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.3-12 ms; with a staged change, overview and changes 18-31 ms (waived, see below) |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 116 KB |
+| UI initial JS as the daemon serves it | ≤ 200 KB on the wire, cacheable | 113 KB, then 0 (immutable) |
 | UI initial CSS (gzip) | ≤ 30 KB | 4.6 KB |
 | UI fonts (all font files) | ≤ 150 KB | 0 |
 | Binary size | ≤ baseline + 10% | 32.1 MB |
@@ -188,11 +189,11 @@ Everything periodic in the daemon and CLI:
   (`web/src/data/live.ts`); never invalidate broad query keys per event, and
   never poll.
 - **Fonts** are woff2 and subset.
-- **Serve assets compressed and cached.** Hashed files under `/assets/`
-  should go out gzip-compressed with `Cache-Control: public,
-  max-age=31536000, immutable`, and `index.html` with `no-cache`. Not done
-  yet: today every page load downloads the raw JS again (the "UI initial JS
-  as served" row of `make perf`).
+- **Serve assets compressed and cached** (`internal/api/ui.go`). Text
+  files go out gzip-compressed (each compressed once, on its first
+  request, and kept), hashed files under `/assets/` with `Cache-Control:
+  public, max-age=31536000, immutable`, and `index.html` with `no-cache`
+  and an ETag. The "UI initial JS as served" row of `make perf` checks it.
 
 ## Reviewer checklist
 
