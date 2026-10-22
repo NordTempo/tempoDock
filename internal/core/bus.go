@@ -21,27 +21,26 @@ type busEvent struct {
 
 // LiveEvent is an event as delivered to subscribers. Every subscriber that
 // receives an event shares one LiveEvent, so its JSON is encoded once
-// however many clients it is streamed to.
-type LiveEvent struct {
-	apitypes.Event
-	enc *encodedEvent
-}
+// however many clients it is streamed to. It is one pointer, so a
+// subscription's buffer of subscriptionBuffer events costs 2 KB, not 40.
+type LiveEvent struct{ *liveEvent }
 
-type encodedEvent struct {
+type liveEvent struct {
+	apitypes.Event
 	once sync.Once
 	json []byte
 	err  error
 }
 
 func newLiveEvent(ev apitypes.Event) LiveEvent {
-	return LiveEvent{Event: ev, enc: &encodedEvent{}}
+	return LiveEvent{&liveEvent{Event: ev}}
 }
 
 // JSON returns the event encoded as JSON, encoding it on first use. The
 // bytes are shared by every subscriber; don't modify them.
 func (e LiveEvent) JSON() ([]byte, error) {
-	e.enc.once.Do(func() { e.enc.json, e.enc.err = json.Marshal(e.Event) })
-	return e.enc.json, e.enc.err
+	e.once.Do(func() { e.json, e.err = json.Marshal(e.Event) })
+	return e.json, e.err
 }
 
 // bus is an in-process pub/sub for live events. Publishing never blocks: a

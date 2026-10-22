@@ -54,6 +54,10 @@ type Containers interface {
 	Inspect(ctx context.Context, id string) (Container, error)
 	// List returns all platform-managed containers, running or not.
 	List(ctx context.Context) ([]Container, error)
+	// ReleaseContainers returns the IDs of the managed containers labelled
+	// with a release, running or not: one filtered list, without inspecting
+	// every container like List.
+	ReleaseContainers(ctx context.Context, releaseID int64) ([]string, error)
 
 	// HealthCheck blocks until the container passes hc or hc.Timeout expires.
 	// It runs on the server that hosts the container, since published ports
@@ -280,6 +284,9 @@ type Container struct {
 //   - Path set: HTTP GET http://127.0.0.1:HostPort{Path} returns 2xx/3xx.
 //   - No Path, container publishes a port: TCP connect succeeds.
 //   - Neither: the container stays running for Grace.
+//
+// Interval is the steady probe interval; the first probes come sooner (the
+// Docker runtime backs off from 50 ms).
 type HealthCheck struct {
 	Path     string
 	Timeout  time.Duration

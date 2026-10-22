@@ -66,7 +66,7 @@ func (q *Queries) AddServiceStats(ctx context.Context, arg AddServiceStatsParams
 const downsampleServerStats = `-- name: DownsampleServerStats :exec
 INSERT OR REPLACE INTO server_stats (res, at, server_id, cpu, memory, disk, load1)
 SELECT 600, ?1, m.server_id, CAST(avg(m.cpu) AS INTEGER), CAST(avg(m.memory) AS INTEGER), max(m.disk), CAST(avg(m.load1) AS INTEGER)
-FROM server_stats AS m WHERE m.res = 60 AND m.at >= ?1 AND m.at < ?2
+FROM server_stats AS m WHERE m.res = 60 AND m.at >= +?1 AND m.at < +?2
 GROUP BY m.server_id
 `
 
@@ -85,7 +85,7 @@ func (q *Queries) DownsampleServerStats(ctx context.Context, arg DownsampleServe
 const downsampleServiceStats = `-- name: DownsampleServiceStats :exec
 INSERT OR REPLACE INTO service_stats (res, at, service_id, cpu, memory, io_read, io_write)
 SELECT 600, ?1, m.service_id, CAST(avg(m.cpu) AS INTEGER), CAST(avg(m.memory) AS INTEGER), CAST(avg(m.io_read) AS INTEGER), CAST(avg(m.io_write) AS INTEGER)
-FROM service_stats AS m WHERE m.res = 60 AND m.at >= ?1 AND m.at < ?2
+FROM service_stats AS m WHERE m.res = 60 AND m.at >= +?1 AND m.at < +?2
 GROUP BY m.service_id
 `
 
@@ -101,7 +101,7 @@ func (q *Queries) DownsampleServiceStats(ctx context.Context, arg DownsampleServ
 
 const listServerStats = `-- name: ListServerStats :many
 SELECT at, cpu, memory, disk, load1 FROM server_stats
-WHERE res = ? AND at >= ? AND server_id = ? ORDER BY at
+WHERE res = +? AND at >= +? AND server_id = +? ORDER BY at
 `
 
 type ListServerStatsParams struct {
@@ -149,7 +149,7 @@ func (q *Queries) ListServerStats(ctx context.Context, arg ListServerStatsParams
 
 const listServiceStats = `-- name: ListServiceStats :many
 SELECT at, cpu, memory, io_read, io_write FROM service_stats
-WHERE res = ? AND at >= ? AND service_id = ? ORDER BY at
+WHERE res = +? AND at >= +? AND service_id = +? ORDER BY at
 `
 
 type ListServiceStatsParams struct {
@@ -293,7 +293,7 @@ func (q *Queries) ListStatsTargets(ctx context.Context) ([]ListStatsTargetsRow, 
 }
 
 const pruneServerStats = `-- name: PruneServerStats :exec
-DELETE FROM server_stats WHERE res = ? AND at < ?
+DELETE FROM server_stats WHERE res = +? AND at < +?
 `
 
 type PruneServerStatsParams struct {
@@ -307,7 +307,7 @@ func (q *Queries) PruneServerStats(ctx context.Context, arg PruneServerStatsPara
 }
 
 const pruneServiceStats = `-- name: PruneServiceStats :exec
-DELETE FROM service_stats WHERE res = ? AND at < ?
+DELETE FROM service_stats WHERE res = +? AND at < +?
 `
 
 type PruneServiceStatsParams struct {

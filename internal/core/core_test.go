@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"path/filepath"
 	"reflect"
@@ -640,12 +642,22 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 		_, _ = tw.Write([]byte(body))
 	}
 	_ = tw.Close()
+	size := buf.Len()
 
 	rel, err := h.c.DeploySource(h.ctx, System, web, &buf, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := h.wait(web, rel.Number)
+	// dock.toml is read on the way to disk; the build still gets it all.
+	logs, err := h.c.BuildLog(h.ctx, System, web, rel.Number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := io.ReadAll(logs); !strings.Contains(string(b), fmt.Sprintf("Received %d bytes", size)) {
+		t.Fatalf("build log: %s", b)
+	}
+	_ = logs.Close()
 	if r.Status != apitypes.ReleaseActive || r.Config.Port != 3000 || r.Config.StartCommand != "node server.js" {
 		t.Fatalf("release: %+v", r)
 	}

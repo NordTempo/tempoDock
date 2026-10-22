@@ -11,7 +11,7 @@ import (
 )
 
 const applyVariable = `-- name: ApplyVariable :exec
-UPDATE variables SET value = pending_value, pending = '', pending_value = NULL WHERE id = ?
+UPDATE variables SET value = pending_value, pending = '', pending_value = NULL WHERE id = +?
 `
 
 func (q *Queries) ApplyVariable(ctx context.Context, id int64) error {
@@ -20,7 +20,7 @@ func (q *Queries) ApplyVariable(ctx context.Context, id int64) error {
 }
 
 const applyVolume = `-- name: ApplyVolume :exec
-UPDATE volumes SET pending = 0 WHERE id = ?
+UPDATE volumes SET pending = 0 WHERE id = +?
 `
 
 func (q *Queries) ApplyVolume(ctx context.Context, id int64) error {
@@ -29,7 +29,7 @@ func (q *Queries) ApplyVolume(ctx context.Context, id int64) error {
 }
 
 const archiveService = `-- name: ArchiveService :exec
-UPDATE services SET archived_at = ? WHERE id = ?
+UPDATE services SET archived_at = ? WHERE id = +?
 `
 
 type ArchiveServiceParams struct {
@@ -134,7 +134,7 @@ func (q *Queries) CreateVolume(ctx context.Context, arg CreateVolumeParams) (Vol
 }
 
 const deleteVariable = `-- name: DeleteVariable :exec
-DELETE FROM variables WHERE id = ?
+DELETE FROM variables WHERE id = +?
 `
 
 func (q *Queries) DeleteVariable(ctx context.Context, id int64) error {
@@ -143,7 +143,7 @@ func (q *Queries) DeleteVariable(ctx context.Context, id int64) error {
 }
 
 const deleteVolume = `-- name: DeleteVolume :exec
-DELETE FROM volumes WHERE id = ? AND pending = 1
+DELETE FROM volumes WHERE id = +? AND pending = 1
 `
 
 // Only for discarding staged (never created) volumes.
@@ -153,7 +153,7 @@ func (q *Queries) DeleteVolume(ctx context.Context, id int64) error {
 }
 
 const getService = `-- name: GetService :one
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE id = ?
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE id = +?
 `
 
 func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
@@ -182,7 +182,7 @@ func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
 }
 
 const getServiceByName = `-- name: GetServiceByName :one
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE environment_id = ? AND name = ?
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE environment_id = +? AND name = +?
 `
 
 type GetServiceByNameParams struct {
@@ -217,9 +217,9 @@ func (q *Queries) GetServiceByName(ctx context.Context, arg GetServiceByNamePara
 
 const getVariable = `-- name: GetVariable :one
 SELECT id, environment_id, service_id, "key", value, pending, pending_value, updated_at FROM variables
-WHERE environment_id = ?1
+WHERE environment_id = +?1
   AND coalesce(service_id, 0) = coalesce(?2, 0)
-  AND key = ?3
+  AND key = +?3
 `
 
 type GetVariableParams struct {
@@ -296,7 +296,7 @@ func (q *Queries) InsertVariable(ctx context.Context, arg InsertVariableParams) 
 const listEnvironmentVolumes = `-- name: ListEnvironmentVolumes :many
 SELECT volumes.id, volumes.service_id, volumes.name, volumes.docker_name, volumes.mount_path, volumes.pending, volumes.created_at FROM volumes
 JOIN services ON services.id = volumes.service_id
-WHERE services.environment_id = ?
+WHERE services.environment_id = +?
 ORDER BY volumes.service_id, volumes.name
 `
 
@@ -335,7 +335,7 @@ func (q *Queries) ListEnvironmentVolumes(ctx context.Context, environmentID int6
 const listProjectServices = `-- name: ListProjectServices :many
 SELECT services.id, services.environment_id, services.name, services.image, services.port, services.health_check_path, services.health_check_timeout_seconds, services.start_command, services.dockerfile_path, services.build_command, services.memory_mb, services.cpus, services.pending_settings, services.created_at, services.archived_at, services."database", services.database_url_variable FROM services
 JOIN environments ON environments.id = services.environment_id
-WHERE environments.project_id = ?
+WHERE environments.project_id = +?
 ORDER BY services.environment_id, services.name
 `
 
@@ -385,7 +385,7 @@ const listProjectVolumes = `-- name: ListProjectVolumes :many
 SELECT volumes.id, volumes.service_id, volumes.name, volumes.docker_name, volumes.mount_path, volumes.pending, volumes.created_at FROM volumes
 JOIN services ON services.id = volumes.service_id
 JOIN environments ON environments.id = services.environment_id
-WHERE environments.project_id = ?
+WHERE environments.project_id = +?
 ORDER BY volumes.service_id, volumes.name
 `
 
@@ -477,7 +477,7 @@ func (q *Queries) ListServerServices(ctx context.Context, serverID int64) ([]Lis
 }
 
 const listServices = `-- name: ListServices :many
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE environment_id = ? ORDER BY name
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable FROM services WHERE environment_id = +? ORDER BY name
 `
 
 func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Service, error) {
@@ -522,7 +522,7 @@ func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Serv
 }
 
 const listVariables = `-- name: ListVariables :many
-SELECT id, environment_id, service_id, "key", value, pending, pending_value, updated_at FROM variables WHERE environment_id = ? ORDER BY coalesce(service_id, 0), key
+SELECT id, environment_id, service_id, "key", value, pending, pending_value, updated_at FROM variables WHERE environment_id = +? ORDER BY coalesce(service_id, 0), key
 `
 
 // All variables of an environment: shared ones (service_id NULL) and every
@@ -560,7 +560,7 @@ func (q *Queries) ListVariables(ctx context.Context, environmentID int64) ([]Var
 }
 
 const listVolumes = `-- name: ListVolumes :many
-SELECT id, service_id, name, docker_name, mount_path, pending, created_at FROM volumes WHERE service_id = ? ORDER BY name
+SELECT id, service_id, name, docker_name, mount_path, pending, created_at FROM volumes WHERE service_id = +? ORDER BY name
 `
 
 func (q *Queries) ListVolumes(ctx context.Context, serviceID int64) ([]Volume, error) {
@@ -595,7 +595,7 @@ func (q *Queries) ListVolumes(ctx context.Context, serviceID int64) ([]Volume, e
 }
 
 const restoreVariable = `-- name: RestoreVariable :exec
-UPDATE variables SET value = ?, pending = ?, pending_value = ?, updated_at = ? WHERE id = ?
+UPDATE variables SET value = ?, pending = ?, pending_value = ?, updated_at = ? WHERE id = +?
 `
 
 type RestoreVariableParams struct {
@@ -620,7 +620,7 @@ func (q *Queries) RestoreVariable(ctx context.Context, arg RestoreVariableParams
 }
 
 const setEnvironmentApplyError = `-- name: SetEnvironmentApplyError :exec
-UPDATE environments SET apply_error = ? WHERE id = ?
+UPDATE environments SET apply_error = ? WHERE id = +?
 `
 
 type SetEnvironmentApplyErrorParams struct {
@@ -634,7 +634,7 @@ func (q *Queries) SetEnvironmentApplyError(ctx context.Context, arg SetEnvironme
 }
 
 const setPendingSettings = `-- name: SetPendingSettings :exec
-UPDATE services SET pending_settings = ? WHERE id = ?
+UPDATE services SET pending_settings = ? WHERE id = +?
 `
 
 type SetPendingSettingsParams struct {
@@ -648,7 +648,7 @@ func (q *Queries) SetPendingSettings(ctx context.Context, arg SetPendingSettings
 }
 
 const setVariablePending = `-- name: SetVariablePending :exec
-UPDATE variables SET pending = ?, pending_value = ?, updated_at = ? WHERE id = ?
+UPDATE variables SET pending = ?, pending_value = ?, updated_at = ? WHERE id = +?
 `
 
 type SetVariablePendingParams struct {
@@ -669,7 +669,7 @@ func (q *Queries) SetVariablePending(ctx context.Context, arg SetVariablePending
 }
 
 const unapplyVolume = `-- name: UnapplyVolume :exec
-UPDATE volumes SET pending = 1 WHERE id = ? AND pending = 0
+UPDATE volumes SET pending = 1 WHERE id = +? AND pending = 0
 `
 
 // Stages an applied volume again (its release failed). Never deletes it.
@@ -682,7 +682,7 @@ const updateService = `-- name: UpdateService :one
 UPDATE services SET
     image = ?, port = ?, health_check_path = ?, health_check_timeout_seconds = ?,
     start_command = ?, dockerfile_path = ?, build_command = ?, memory_mb = ?, cpus = ?
-WHERE id = ?
+WHERE id = +?
 RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable
 `
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,18 @@ func TestPull(t *testing.T) {
 	}
 	if ok, err := e.HasImage(context.Background(), ref); !ok || err != nil {
 		t.Errorf("HasImage = %v, %v", ok, err)
+	}
+	// A digest-pinned ref that is on the server isn't pulled again.
+	img, err := e.cli.ImageInspect(context.Background(), ref)
+	if err != nil || len(img.RepoDigests) == 0 {
+		t.Fatalf("inspect %s: %v, digests %v", ref, err, img.RepoDigests)
+	}
+	out.Reset()
+	if pinned, err := e.Pull(ctxTimeout(t, time.Minute), img.RepoDigests[0], &out); err != nil || pinned != id {
+		t.Errorf("Pull(%s) = %q, %v; want %q", img.RepoDigests[0], pinned, err, id)
+	}
+	if !strings.Contains(out.String(), "already on the server") {
+		t.Errorf("digest pull output = %q, want no pull", out.String())
 	}
 	if ok, err := e.HasImage(context.Background(), "dock-test/does-not-exist:nope"); ok || err != nil {
 		t.Errorf("HasImage(missing) = %v, %v", ok, err)
@@ -471,6 +484,25 @@ func TestLogs(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("follow channel did not close after cancel")
+	}
+}
+
+// ReleaseContainers finds a release's containers by label, stopped ones too.
+func TestReleaseContainers(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	rel := time.Now().UnixNano() // unique on a shared Docker host
+	start := func(name string, release int64) node.Container {
+		return e.start(node.ContainerSpec{Name: e.name(name), Image: shellImage, Cmd: "sleep 300",
+			Labels: node.Labels{Project: "p", Environment: "e", Service: "s", Release: strconv.FormatInt(release, 10)}})
+	}
+	mine, other := start("mine", rel), start("other", rel+1)
+	if err := e.Stop(ctx, mine.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := e.ReleaseContainers(ctx, rel)
+	if err != nil || len(ids) != 1 || ids[0] != mine.ID {
+		t.Fatalf("ReleaseContainers = %v, %v; want [%s] (not %s)", ids, err, mine.ID, other.ID)
 	}
 }
 

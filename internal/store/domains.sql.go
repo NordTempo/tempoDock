@@ -42,7 +42,7 @@ func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Dom
 }
 
 const deleteDomain = `-- name: DeleteDomain :exec
-DELETE FROM domains WHERE id = ?
+DELETE FROM domains WHERE id = +?
 `
 
 func (q *Queries) DeleteDomain(ctx context.Context, id int64) error {
@@ -51,7 +51,7 @@ func (q *Queries) DeleteDomain(ctx context.Context, id int64) error {
 }
 
 const getDomainByHostname = `-- name: GetDomainByHostname :one
-SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at FROM domains WHERE hostname = ?
+SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at FROM domains WHERE hostname = +?
 `
 
 func (q *Queries) GetDomainByHostname(ctx context.Context, hostname string) (Domain, error) {
@@ -71,7 +71,7 @@ func (q *Queries) GetDomainByHostname(ctx context.Context, hostname string) (Dom
 }
 
 const hostnameExists = `-- name: HostnameExists :one
-SELECT EXISTS (SELECT 1 FROM domains WHERE hostname = ?)
+SELECT EXISTS (SELECT 1 FROM domains WHERE hostname = +?)
 `
 
 func (q *Queries) HostnameExists(ctx context.Context, hostname string) (bool, error) {
@@ -82,11 +82,50 @@ func (q *Queries) HostnameExists(ctx context.Context, hostname string) (bool, er
 }
 
 const listDomainsByService = `-- name: ListDomainsByService :many
-SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at FROM domains WHERE service_id = ? ORDER BY id
+SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at FROM domains WHERE service_id = +? ORDER BY id
 `
 
 func (q *Queries) ListDomainsByService(ctx context.Context, serviceID int64) ([]Domain, error) {
 	rows, err := q.query(ctx, q.listDomainsByServiceStmt, listDomainsByService, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Domain
+	for rows.Next() {
+		var i Domain
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hostname,
+			&i.ServiceID,
+			&i.Generated,
+			&i.RedirectTo,
+			&i.Status,
+			&i.StatusReason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEnvironmentDomains = `-- name: ListEnvironmentDomains :many
+SELECT domains.id, domains.hostname, domains.service_id, domains."generated", domains.redirect_to, domains.status, domains.status_reason, domains.created_at FROM domains
+JOIN services ON services.id = domains.service_id
+WHERE services.environment_id = +?
+`
+
+// Every domain of every service in an environment, in no particular order.
+func (q *Queries) ListEnvironmentDomains(ctx context.Context, environmentID int64) ([]Domain, error) {
+	rows, err := q.query(ctx, q.listEnvironmentDomainsStmt, listEnvironmentDomains, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +196,7 @@ const listProjectDomains = `-- name: ListProjectDomains :many
 SELECT domains.id, domains.hostname, domains.service_id, domains."generated", domains.redirect_to, domains.status, domains.status_reason, domains.created_at FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
-WHERE environments.project_id = ?
+WHERE environments.project_id = +?
 ORDER BY domains.service_id, domains.id
 `
 
@@ -201,7 +240,7 @@ SELECT domains.hostname, domains.redirect_to, domains.service_id,
 FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
-WHERE environments.server_id = ? AND services.archived_at IS NULL
+WHERE environments.server_id = +? AND services.archived_at IS NULL
 ORDER BY domains.service_id, domains.id
 `
 
@@ -243,7 +282,7 @@ func (q *Queries) ListRoutableDomains(ctx context.Context, serverID int64) ([]Li
 }
 
 const updateDomainStatus = `-- name: UpdateDomainStatus :exec
-UPDATE domains SET status = ?, status_reason = ? WHERE id = ?
+UPDATE domains SET status = ?, status_reason = ? WHERE id = +?
 `
 
 type UpdateDomainStatusParams struct {

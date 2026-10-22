@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -78,8 +79,8 @@ func checkDaemon(o options, t *table) error {
 	return d.servedUI(t)
 }
 
-// servedUI reports what a browser downloads for the initial JS as the
-// daemon serves it (compression) and whether it may cache it.
+// servedUI checks what a browser downloads for the initial JS as the
+// daemon serves it (compressed) and that it may cache it.
 func (d *daemon) servedUI(t *table) error {
 	// Go's transport would decompress transparently and hide the size.
 	client := &http.Client{Transport: &http.Transport{DisableCompression: true}, Timeout: 10 * time.Second}
@@ -94,9 +95,18 @@ func (d *daemon) servedUI(t *table) error {
 		b, err := io.ReadAll(resp.Body)
 		return resp.Header, b, err
 	}
-	_, index, err := get("/")
+	h, index, err := get("/")
 	if err != nil {
 		return err
+	}
+	if h.Get("Content-Encoding") == "gzip" {
+		zr, err := gzip.NewReader(bytes.NewReader(index))
+		if err != nil {
+			return err
+		}
+		if index, err = io.ReadAll(zr); err != nil {
+			return err
+		}
 	}
 	var wire int64
 	cacheable := true
@@ -119,7 +129,8 @@ func (d *daemon) servedUI(t *table) error {
 	if !cacheable {
 		cache = "no cache headers: downloaded on every load"
 	}
-	t.add("UI initial JS as served", fmt.Sprintf("%s on the wire, %s", kb(wire), cache), "", info)
+	t.within("UI initial JS as served", fmt.Sprintf("%s on the wire, %s", kb(wire), cache),
+		"≤ "+kb(initialJSBudget)+", cacheable", wire <= initialJSBudget && cacheable)
 	return nil
 }
 

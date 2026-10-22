@@ -25,11 +25,26 @@ const (
 	probeTimeout    = 5 * time.Second
 	// tcpSettle is how long a TCP probe waits for the connection to be
 	// closed by docker-proxy, which accepts on the host port even when
-	// nothing listens inside the container.
-	tcpSettle = 300 * time.Millisecond
+	// nothing listens inside the container. It closes within a millisecond
+	// (0.1-0.4 ms measured), so 50 ms leaves wide headroom.
+	tcpSettle = 50 * time.Millisecond
 )
 
-// HealthCheck waits until c passes hc (see node.HealthCheck). It fails fast
+// probeBackoff are the waits between the first probes: most apps listen
+// within a few hundred milliseconds of starting, and every deploy waits
+// for the probe that sees it. After these, probes run every interval.
+var probeBackoff = [...]time.Duration{50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond}
+
+// probeDelay is the wait after the n-th (zero-based) failed probe.
+func probeDelay(n int, interval time.Duration) time.Duration {
+	if n < len(probeBackoff) {
+		return min(probeBackoff[n], interval)
+	}
+	return interval
+}
+
+// HealthCheck waits until c passes hc (see node.HealthCheck). It probes at
+// once, then backs off from 50 ms to hc.Interval (probeBackoff). It fails fast
 // if the container exits or restarts while being checked; c.RestartCount is
 // the baseline for detecting restarts. The container's state is checked
 // before anything else, so an app that exits right away is reported as
@@ -59,11 +74,11 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 	evs, evErrs := sub.Messages, sub.Err
 	oom := false
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 
 	var lastErr error
-	for {
+	for attempt := 0; ; attempt++ {
 		st, err := r.inspect(ctx, c.ID)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -87,6 +102,7 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 				return nil
 			}
 		}
+		timer.Reset(probeDelay(attempt, interval))
 
 		select {
 		case <-ctx.Done():
@@ -117,7 +133,7 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 				slog.Debug("health check event stream failed", "container", c.ID, "err", err)
 			}
 			evs, evErrs = nil, nil
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }

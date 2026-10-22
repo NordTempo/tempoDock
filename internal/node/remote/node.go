@@ -135,6 +135,9 @@ func Handler(rt node.Runtime) http.Handler {
 	h(opRemove, unary(func(ctx context.Context, a idArgs) (struct{}, error) { return struct{}{}, rt.Remove(ctx, a.ID) }))
 	h(opInspect, unary(func(ctx context.Context, a idArgs) (node.Container, error) { return rt.Inspect(ctx, a.ID) }))
 	h(opList, unary(func(ctx context.Context, _ noArgs) ([]node.Container, error) { return rt.List(ctx) }))
+	h(opReleaseCtrs, unary(func(ctx context.Context, a releaseArgs) ([]string, error) {
+		return rt.ReleaseContainers(ctx, a.Release)
+	}))
 	h(opHealthCheck, unary(func(ctx context.Context, a healthArgs) (struct{}, error) {
 		return struct{}{}, rt.HealthCheck(ctx, a.Container, a.Check)
 	}))

@@ -18,8 +18,9 @@ headroom below them.
 | Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00-0.03/s; 1.0-2.1/s with 20 streams |
 | Daemon memory with 20 SSE clients | ≤ 30 MB | 14-17 MB |
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 4.5-5 ms |
-| API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.3-12 ms; with a staged change, overview and changes 18-31 ms (waived, see below) |
+| API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.4-6 ms; with a staged change, overview 6-8 ms and changes 3-4.5 ms |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 116 KB |
+| UI initial JS as the daemon serves it | ≤ 200 KB on the wire, cacheable | 113 KB, then 0 (immutable) |
 | UI initial CSS (gzip) | ≤ 30 KB | 4.6 KB |
 | UI fonts (all font files) | ≤ 150 KB | 0 |
 | Binary size | ≤ baseline + 10% | 32.1 MB |
@@ -63,9 +64,7 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   Add one only for a pre-existing problem that has an owner, and remove it
   with the fix (`make perf` says when a waived check passes).
 
-Current waivers: the project overview and pending-changes diff with a
-staged change resolve every service's variables with one domain query per
-service, on top of the re-prepare pitfall below.
+There are no waivers at the moment.
 
 ## Idle means idle
 
@@ -91,7 +90,7 @@ Everything periodic in the daemon and CLI:
 | Live statistics | `internal/core/stats.go` | 3 s | someone watches a server or service live | the same reads for what is watched |
 | SSE heartbeat | `internal/api/streams.go` | 25 s | an SSE stream is open | one small write per stream |
 | Domain DNS/TLS checks | `internal/core/domains.go` | 5 s, backing off to 5 min | a domain is pending | a DNS lookup and TLS dial per domain |
-| Health check | `internal/node/docker/health.go` | 1 s (configurable) | a release is health checking | one inspect + HTTP/TCP probe |
+| Health check | `internal/node/docker/health.go` | at once, then 50, 100, 200, 400 ms, then 1 s | a release is health checking | one inspect + HTTP/TCP probe |
 | Cutover drain | `internal/core/deploy.go` | once, 12 s after a cutover | a release was replaced | one timer |
 | Docker event stream reconnect | `internal/node/docker/events.go` | backoff | the stream failed | one reconnect |
 | BuildKit readiness | `internal/node/build/buildkitd.go` | 250 ms | BuildKit is starting for a build | one gRPC call |
@@ -166,6 +165,10 @@ Everything periodic in the daemon and CLI:
 - Don't load config, open the database or dial the network for commands
   that don't need it (`--help`, `context list`, `version`).
 - Commands print as they go; follow streams instead of polling.
+- The client-only build (`make build-cli`, tag `dockcli`, 8.5 MB against
+  34 MB) must not pull in the daemon: code that needs `core`, `api`,
+  `store` or `node/*` goes in `internal/cli` files tagged `//go:build
+  !dockcli` (see `server_cmds.go`).
 
 ## UI
 
@@ -184,11 +187,11 @@ Everything periodic in the daemon and CLI:
   (`web/src/data/live.ts`); never invalidate broad query keys per event, and
   never poll.
 - **Fonts** are woff2 and subset.
-- **Serve assets compressed and cached.** Hashed files under `/assets/`
-  should go out gzip-compressed with `Cache-Control: public,
-  max-age=31536000, immutable`, and `index.html` with `no-cache`. Not done
-  yet: today every page load downloads the raw JS again (the "UI initial JS
-  as served" row of `make perf`).
+- **Serve assets compressed and cached** (`internal/api/ui.go`). Text
+  files go out gzip-compressed (each compressed once, on its first
+  request, and kept), hashed files under `/assets/` with `Cache-Control:
+  public, max-age=31536000, immutable`, and `index.html` with `no-cache`
+  and an ETag. The "UI initial JS as served" row of `make perf` checks it.
 
 ## Reviewer checklist
 

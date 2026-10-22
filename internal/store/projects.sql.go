@@ -11,7 +11,7 @@ import (
 )
 
 const archiveProject = `-- name: ArchiveProject :exec
-UPDATE projects SET archived_at = ? WHERE id = ? AND archived_at IS NULL
+UPDATE projects SET archived_at = ? WHERE id = +? AND archived_at IS NULL
 `
 
 type ArchiveProjectParams struct {
@@ -25,7 +25,7 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 }
 
 const countKindEnvironments = `-- name: CountKindEnvironments :one
-SELECT count(*) FROM environments WHERE project_id = ? AND kind = ?
+SELECT count(*) FROM environments WHERE project_id = +? AND kind = +?
 `
 
 type CountKindEnvironmentsParams struct {
@@ -133,7 +133,7 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 }
 
 const getEnvironment = `-- name: GetEnvironment :one
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE id = ?
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE id = +?
 `
 
 func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, error) {
@@ -153,7 +153,7 @@ func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, er
 }
 
 const getEnvironmentByName = `-- name: GetEnvironmentByName :one
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE project_id = ? AND name = ?
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE project_id = +? AND name = +?
 `
 
 type GetEnvironmentByNameParams struct {
@@ -202,7 +202,7 @@ func (q *Queries) GetLocalServer(ctx context.Context) (Server, error) {
 }
 
 const getPlacement = `-- name: GetPlacement :one
-SELECT project_id, kind, server_id, pinned, created_at FROM project_placements WHERE project_id = ? AND kind = ?
+SELECT project_id, kind, server_id, pinned, created_at FROM project_placements WHERE project_id = +? AND kind = +?
 `
 
 type GetPlacementParams struct {
@@ -224,7 +224,7 @@ func (q *Queries) GetPlacement(ctx context.Context, arg GetPlacementParams) (Pro
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, created_at, archived_at FROM projects WHERE id = ?
+SELECT id, name, created_at, archived_at FROM projects WHERE id = +?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
@@ -240,7 +240,7 @@ func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
 }
 
 const getProjectByName = `-- name: GetProjectByName :one
-SELECT id, name, created_at, archived_at FROM projects WHERE name = ?
+SELECT id, name, created_at, archived_at FROM projects WHERE name = +?
 `
 
 func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, error) {
@@ -256,7 +256,7 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 }
 
 const getServer = `-- name: GetServer :one
-SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version FROM servers WHERE id = ?
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version FROM servers WHERE id = +?
 `
 
 func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
@@ -280,7 +280,7 @@ func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
 }
 
 const getServerByName = `-- name: GetServerByName :one
-SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version FROM servers WHERE name = ?
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version FROM servers WHERE name = +?
 `
 
 func (q *Queries) GetServerByName(ctx context.Context, name string) (Server, error) {
@@ -304,7 +304,7 @@ func (q *Queries) GetServerByName(ctx context.Context, name string) (Server, err
 }
 
 const listEnvironments = `-- name: ListEnvironments :many
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE project_id = ? ORDER BY name
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE project_id = +? ORDER BY name
 `
 
 func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Environment, error) {
@@ -340,7 +340,7 @@ func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Envi
 }
 
 const listPlacements = `-- name: ListPlacements :many
-SELECT project_id, kind, server_id, pinned, created_at FROM project_placements WHERE project_id = ? ORDER BY kind
+SELECT project_id, kind, server_id, pinned, created_at FROM project_placements WHERE project_id = +? ORDER BY kind
 `
 
 func (q *Queries) ListPlacements(ctx context.Context, projectID int64) ([]ProjectPlacement, error) {
@@ -407,7 +407,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 const listServerEnvironments = `-- name: ListServerEnvironments :many
 SELECT environments.project_id, environments.name, environments.kind
 FROM environments JOIN projects ON projects.id = environments.project_id
-WHERE environments.server_id = ? AND projects.archived_at IS NULL
+WHERE environments.server_id = +? AND projects.archived_at IS NULL
 ORDER BY environments.project_id, environments.name
 `
 
@@ -505,7 +505,7 @@ func (q *Queries) ListServerLoads(ctx context.Context, defaultMemoryMb interface
 const listServerPlacements = `-- name: ListServerPlacements :many
 SELECT project_placements.project_id, project_placements.kind, project_placements.server_id, project_placements.pinned, project_placements.created_at, projects.name AS project_name
 FROM project_placements JOIN projects ON projects.id = project_placements.project_id
-WHERE project_placements.server_id = ? AND projects.archived_at IS NULL
+WHERE project_placements.server_id = +? AND projects.archived_at IS NULL
 ORDER BY projects.name, project_placements.kind
 `
 
@@ -585,7 +585,7 @@ func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
 }
 
 const setServerMemory = `-- name: SetServerMemory :exec
-UPDATE servers SET memory_bytes = ? WHERE id = ? AND memory_bytes != ?
+UPDATE servers SET memory_bytes = ? WHERE id = +? AND memory_bytes != +?
 `
 
 type SetServerMemoryParams struct {
@@ -600,7 +600,7 @@ func (q *Queries) SetServerMemory(ctx context.Context, arg SetServerMemoryParams
 }
 
 const touchLocalServer = `-- name: TouchLocalServer :one
-UPDATE servers SET builder = ?, status = 'online', last_seen_at = ?, version = ? WHERE id = ?
+UPDATE servers SET builder = ?, status = 'online', last_seen_at = ?, version = ? WHERE id = +?
 RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version
 `
 
@@ -638,7 +638,7 @@ func (q *Queries) TouchLocalServer(ctx context.Context, arg TouchLocalServerPara
 
 const updateServerPlacement = `-- name: UpdateServerPlacement :one
 UPDATE servers SET accepts_production = ?, accepts_non_production = ?, disabled_for_placement = ?
-WHERE id = ?
+WHERE id = +?
 RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version
 `
 

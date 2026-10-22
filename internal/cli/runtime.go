@@ -1,3 +1,5 @@
+//go:build !dockcli
+
 package cli
 
 import (

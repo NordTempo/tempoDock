@@ -124,24 +124,28 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 		})
 		defer sub.close()
 		ready()
+		// sent is the number of lines sent; pos is how far the file is read.
 		sent := 0
+		var pos logCursor
 		catchUp := func() error {
-			lines, err := readLines(c.buildLogPath(rel.ID))
-			if err != nil {
-				return err
-			}
-			if sent >= len(lines) {
+			return pos.read(c.buildLogPath(rel.ID), func(first int, lines []string) error {
+				// Skip lines already sent live.
+				if skip := sent - first; skip > 0 {
+					if skip >= len(lines) {
+						return nil
+					}
+					first, lines = sent, lines[skip:]
+				}
+				batch := make([]apitypes.BuildLogLine, len(lines))
+				for i, l := range lines {
+					batch[i] = apitypes.BuildLogLine{ReleaseNumber: number, Seq: first + i, Text: l}
+				}
+				if err := send(batch...); err != nil {
+					return err
+				}
+				sent = first + len(lines)
 				return nil
-			}
-			batch := make([]apitypes.BuildLogLine, 0, len(lines)-sent)
-			for seq := sent; seq < len(lines); seq++ {
-				batch = append(batch, apitypes.BuildLogLine{ReleaseNumber: number, Seq: seq, Text: lines[seq]})
-			}
-			if err := send(batch...); err != nil {
-				return err
-			}
-			sent = len(lines)
-			return nil
+			})
 		}
 		if err := catchUp(); err != nil {
 			return err
@@ -176,24 +180,65 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 	}, nil
 }
 
-// readLines returns the complete (newline-terminated) lines of a file.
-func readLines(path string) ([]string, error) {
+// Build log catch-up batches hold at most logBatchLines lines and about
+// logBatchBytes bytes (a batch ends with the line that reaches it), so
+// following even a huge log takes a bounded amount of memory.
+const (
+	logBatchLines = 1000
+	logBatchBytes = 64 << 10
+)
+
+// logCursor is a position in a build log: the byte offset and the number
+// of the next line to read.
+type logCursor struct {
+	offset int64
+	line   int
+}
+
+// read calls fn with the complete (newline-terminated) lines of the file
+// at path from the cursor on, in batches (logBatchLines, logBatchBytes),
+// along with the number of each batch's first line. The cursor moves past
+// every batch fn accepts. A partial last line is still being written and
+// is left for the next read. A missing file has no lines yet.
+func (cur *logCursor) read(path string, fn func(first int, lines []string) error) error {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = f.Close() }()
-	var lines []string
-	r := bufio.NewReader(f)
+	if _, err := f.Seek(cur.offset, io.SeekStart); err != nil {
+		return err
+	}
+	r := bufio.NewReaderSize(f, logBatchBytes)
+	lines := make([]string, 0, logBatchLines)
+	var size int64
+	flush := func() error {
+		if len(lines) == 0 {
+			return nil
+		}
+		if err := fn(cur.line, lines); err != nil {
+			return err
+		}
+		cur.offset += size
+		cur.line += len(lines)
+		lines, size = lines[:0], 0
+		return nil
+	}
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil {
-			return lines, nil // EOF; a partial last line is still being written
+			return flush() // EOF, possibly after a partial line
 		}
-		lines = append(lines, strings.TrimSuffix(line, "\n"))
+		lines = append(lines, line[:len(line)-1])
+		size += int64(len(line))
+		if len(lines) == logBatchLines || size >= logBatchBytes {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
 	}
 }
 
@@ -217,15 +262,11 @@ func (c *Core) containerLogPath(releaseID int64) string {
 // still explain why it failed. Best effort.
 func (c *Core) saveContainerLogs(ctx context.Context, serverID, releaseID int64) {
 	rt := c.runtime(serverID)
-	ctrs, err := rt.List(ctx)
-	if err != nil {
+	ids, err := rt.ReleaseContainers(ctx, releaseID)
+	if err != nil || len(ids) == 0 {
 		return
 	}
-	cs := ofRelease(ctrs, releaseID)
-	if len(cs) == 0 {
-		return
-	}
-	lines, err := rt.Logs(ctx, cs[0].ID, node.LogOptions{Tail: savedLogLines})
+	lines, err := rt.Logs(ctx, ids[0], node.LogOptions{Tail: savedLogLines})
 	if err != nil {
 		c.log.Warn("save container logs", "release", releaseID, "err", err)
 		return
@@ -308,11 +349,32 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 			return err
 		}
 		ready()
+		// Lines queued behind the first go out in the same write.
+		batch := make([]apitypes.LogLine, 0, logSendBatch)
 		for l := range lines {
-			if err := send(apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text}); err != nil {
+			batch = append(batch[:0], apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text})
+			open := true
+		drain:
+			for open && len(batch) < logSendBatch {
+				select {
+				case l, ok := <-lines:
+					if open = ok; ok {
+						batch = append(batch, apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text})
+					}
+				default:
+					break drain
+				}
+			}
+			if err := send(batch...); err != nil {
 				return err
+			}
+			if !open {
+				return nil
 			}
 		}
 		return nil
 	}, nil
 }
+
+// logSendBatch is the most service log lines sent in one write.
+const logSendBatch = 256

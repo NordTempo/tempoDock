@@ -61,7 +61,7 @@ func (c *Core) DiscardChanges(ctx context.Context, a Actor, ref EnvRef, sel apit
 			summary = s
 			return err
 		}
-		before, err := c.pendingChanges(ctx, q, es, false)
+		before, _, _, err := c.stagedChanges(ctx, q, es, false)
 		if err != nil || before.Count == 0 {
 			return err
 		}
@@ -445,19 +445,22 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 	return out, nil
 }
 
-// pendingChanges builds the diff of an environment's staged changes.
-func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope, reveal bool) (apitypes.PendingChanges, error) {
+// stagedChanges lists an environment's staged changes and counts them,
+// without what they would affect (pendingChanges adds that, which needs
+// every service's variables resolved twice). It also returns the
+// services (by name) and variables it loaded.
+func (c *Core) stagedChanges(ctx context.Context, q *store.Queries, es envScope, reveal bool) (apitypes.PendingChanges, []store.Service, []store.Variable, error) {
 	out := apitypes.PendingChanges{
 		Project: es.project.Name, Environment: es.env.Name,
 		Variables: []apitypes.VariableChange{}, Settings: []apitypes.SettingChange{}, Volumes: []apitypes.VolumeAddition{},
 	}
 	svcs, err := q.ListServices(ctx, es.env.ID)
 	if err != nil {
-		return out, err
+		return out, nil, nil, err
 	}
 	vols, err := q.ListEnvironmentVolumes(ctx, es.env.ID)
 	if err != nil {
-		return out, err
+		return out, nil, nil, err
 	}
 	staged := map[int64][]store.Volume{}
 	for _, v := range vols {
@@ -470,7 +473,7 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 		svcNames[s.ID] = s.Name
 		next, err := pendingSettings(s)
 		if err != nil {
-			return out, err
+			return out, nil, nil, err
 		}
 		if next != nil {
 			out.Settings = append(out.Settings, settingChanges(s.Name, settingsOf(s), *next)...)
@@ -481,7 +484,7 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 	}
 	vars, err := q.ListVariables(ctx, es.env.ID)
 	if err != nil {
-		return out, err
+		return out, nil, nil, err
 	}
 	for _, v := range vars {
 		if v.Pending == "" {
@@ -493,18 +496,25 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 		}
 		if reveal {
 			if vc.Old, err = c.openValue(v.Value); err != nil {
-				return out, err
+				return out, nil, nil, err
 			}
 			if vc.New, err = c.openValue(v.PendingValue); err != nil {
-				return out, err
+				return out, nil, nil, err
 			}
 		}
 		out.Variables = append(out.Variables, vc)
 	}
 	out.Count = len(out.Variables) + len(out.Settings) + len(out.Volumes)
 	out.Affected = []string{}
-	if out.Count == 0 {
-		return out, nil
+	return out, svcs, vars, nil
+}
+
+// pendingChanges builds the diff of an environment's staged changes,
+// including the services applying them would affect.
+func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope, reveal bool) (apitypes.PendingChanges, error) {
+	out, svcs, vars, err := c.stagedChanges(ctx, q, es, reveal)
+	if err != nil || out.Count == 0 {
+		return out, err
 	}
 	env, err := q.GetEnvironment(ctx, es.env.ID) // es may predate an apply
 	if err != nil {
@@ -523,11 +533,16 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 	for _, v := range out.Volumes {
 		own[v.Service] = true
 	}
-	live, _, err := c.resolveEnvs(ctx, q, es, false)
+	// Loaded once, resolved as it is and as it would be.
+	ev, err := loadEnvVars(ctx, q, es, svcs, vars)
 	if err != nil {
 		return out, err
 	}
-	next, broken, err := c.resolveEnvs(ctx, q, es, true)
+	live, _, err := c.resolveLoaded(ev, false)
+	if err != nil {
+		return out, err
+	}
+	next, broken, err := c.resolveLoaded(ev, true)
 	if err != nil {
 		return out, err
 	}

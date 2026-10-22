@@ -63,7 +63,7 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 			continue
 		}
 		es := envScope{p, e}
-		pending, err := c.pendingChanges(ctx, c.store.Queries, es, false)
+		pending, _, _, err := c.stagedChanges(ctx, c.store.Queries, es, false)
 		if err != nil {
 			return out, err
 		}
@@ -169,16 +169,26 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 		params.EnvironmentID = &a.EnvironmentID
 	}
 	if f.Action != "" {
-		prefix := f.Action + "%"
-		params.ActionPrefix = &prefix
+		params.ActionFrom, params.ActionTo = prefixRange(f.Action)
 	}
 	var rows []store.ListAuditEventsRow
-	if projectID != nil {
-		// A separate query, so SQLite reads the project's events through
-		// audit_events_project instead of scanning the whole log.
-		prows, err := c.store.ListProjectAuditEvents(ctx, store.ListProjectAuditEventsParams{
-			ProjectID: projectID, BeforeID: params.BeforeID, EnvironmentID: params.EnvironmentID,
-			ActionPrefix: params.ActionPrefix, MaxRows: params.MaxRows,
+	switch {
+	case projectID == nil && params.EnvironmentID == nil && params.ActionFrom != nil:
+		// Through audit_events_action, however rare the action.
+		arows, err := c.store.ListAuditEventsByAction(ctx, store.ListAuditEventsByActionParams{
+			ActionFrom: *params.ActionFrom, ActionTo: *params.ActionTo, BeforeID: params.BeforeID, MaxRows: params.MaxRows,
+		})
+		if err != nil {
+			return nil, err
+		}
+		rows = make([]store.ListAuditEventsRow, len(arows))
+		for i, r := range arows {
+			rows[i] = store.ListAuditEventsRow(r)
+		}
+	case projectID != nil && params.ActionFrom != nil:
+		prows, err := c.store.ListProjectAuditEventsByAction(ctx, store.ListProjectAuditEventsByActionParams{
+			ProjectID: projectID, ActionFrom: *params.ActionFrom, ActionTo: *params.ActionTo,
+			BeforeID: params.BeforeID, EnvironmentID: params.EnvironmentID, MaxRows: params.MaxRows,
 		})
 		if err != nil {
 			return nil, err
@@ -187,7 +197,21 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 		for i, r := range prows {
 			rows[i] = store.ListAuditEventsRow(r)
 		}
-	} else {
+	case projectID != nil:
+		// A separate query, so SQLite reads the project's events through
+		// audit_events_project instead of scanning the whole log.
+		prows, err := c.store.ListProjectAuditEvents(ctx, store.ListProjectAuditEventsParams{
+			ProjectID: projectID, BeforeID: params.BeforeID, EnvironmentID: params.EnvironmentID,
+			ActionFrom: params.ActionFrom, ActionTo: params.ActionTo, MaxRows: params.MaxRows,
+		})
+		if err != nil {
+			return nil, err
+		}
+		rows = make([]store.ListAuditEventsRow, len(prows))
+		for i, r := range prows {
+			rows[i] = store.ListAuditEventsRow(r)
+		}
+	default:
 		var err error
 		if rows, err = c.store.ListAuditEvents(ctx, params); err != nil {
 			return nil, err

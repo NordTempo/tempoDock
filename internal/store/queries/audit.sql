@@ -6,19 +6,39 @@ RETURNING *;
 -- name: ListAuditEvents :many
 -- Newest first, with project and environment names. Nil filters match
 -- everything; only events with IDs below before_id are returned (pass
--- math.MaxInt64 for the newest). Use ListProjectAuditEvents to filter by
--- project: an optional project filter here would keep SQLite from using
--- the audit_events_project index.
+-- math.MaxInt64 for the newest). An action prefix is the range
+-- [action_from, action_to) (see core.prefixRange): LIKE would make SQLite
+-- re-prepare the statement on every call. Use ListProjectAuditEvents to
+-- filter by project: an optional project filter here would keep SQLite from
+-- using the audit_events_project index; and ListAuditEventsByAction to
+-- filter by action alone.
 SELECT sqlc.embed(audit_events),
        coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
 LEFT JOIN environments ON environments.id = audit_events.environment_id
-WHERE audit_events.id < sqlc.arg(before_id)
-  AND (audit_events.environment_id = sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
-  AND (audit_events.action LIKE sqlc.narg(action_prefix) OR sqlc.narg(action_prefix) IS NULL)
+WHERE audit_events.id < +sqlc.arg(before_id)
+  AND (audit_events.environment_id = +sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
+  AND ((audit_events.action >= +sqlc.narg(action_from) AND audit_events.action < +sqlc.narg(action_to)) OR sqlc.narg(action_from) IS NULL)
 ORDER BY audit_events.id DESC
-LIMIT sqlc.arg(max_rows);
+LIMIT +sqlc.arg(max_rows);
+
+-- name: ListAuditEventsByAction :many
+-- ListAuditEvents for actions in [action_from, action_to), without other
+-- filters. The page's IDs come from the covering audit_events_action
+-- index, so a rare action doesn't walk the whole log.
+SELECT sqlc.embed(audit_events),
+       coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
+FROM audit_events
+LEFT JOIN projects ON projects.id = audit_events.project_id
+LEFT JOIN environments ON environments.id = audit_events.environment_id
+WHERE audit_events.id IN (
+    SELECT page.id FROM audit_events AS page
+    WHERE page.action >= +sqlc.arg(action_from) AND page.action < +sqlc.arg(action_to)
+      AND page.id < +sqlc.arg(before_id)
+    ORDER BY page.id DESC
+    LIMIT +sqlc.arg(max_rows))
+ORDER BY audit_events.id DESC;
 
 -- name: ListProjectAuditEvents :many
 -- ListAuditEvents for one project, read through audit_events_project.
@@ -27,9 +47,29 @@ SELECT sqlc.embed(audit_events),
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
 LEFT JOIN environments ON environments.id = audit_events.environment_id
-WHERE audit_events.project_id = sqlc.arg(project_id)
-  AND audit_events.id < sqlc.arg(before_id)
-  AND (audit_events.environment_id = sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
-  AND (audit_events.action LIKE sqlc.narg(action_prefix) OR sqlc.narg(action_prefix) IS NULL)
+WHERE audit_events.project_id = +sqlc.arg(project_id)
+  AND audit_events.id < +sqlc.arg(before_id)
+  AND (audit_events.environment_id = +sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
+  AND ((audit_events.action >= +sqlc.narg(action_from) AND audit_events.action < +sqlc.narg(action_to)) OR sqlc.narg(action_from) IS NULL)
 ORDER BY audit_events.id DESC
-LIMIT sqlc.arg(max_rows);
+LIMIT +sqlc.arg(max_rows);
+
+-- name: ListProjectAuditEventsByAction :many
+-- ListProjectAuditEvents for actions in [action_from, action_to). The
+-- page's IDs come from the covering audit_events_project_action index;
+-- the unary plus on page.id keeps SQLite from walking the project's
+-- history through audit_events_project instead.
+SELECT sqlc.embed(audit_events),
+       coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
+FROM audit_events
+LEFT JOIN projects ON projects.id = audit_events.project_id
+LEFT JOIN environments ON environments.id = audit_events.environment_id
+WHERE audit_events.id IN (
+    SELECT page.id FROM audit_events AS page
+    WHERE page.project_id = +sqlc.arg(project_id)
+      AND page.action >= +sqlc.arg(action_from) AND page.action < +sqlc.arg(action_to)
+      AND +page.id < +sqlc.arg(before_id)
+      AND (page.environment_id = +sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
+    ORDER BY page.id DESC
+    LIMIT +sqlc.arg(max_rows))
+ORDER BY audit_events.id DESC;

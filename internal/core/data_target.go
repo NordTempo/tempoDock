@@ -149,7 +149,11 @@ func (c *Core) variableValue(ctx context.Context, ss svcScope, own map[string]st
 	if err != nil {
 		return "", err
 	}
-	r, err := c.envResolver(ctx, c.store.Queries, ss.envScope, svcs, 0, false)
+	ev, err := loadEnvVars(ctx, c.store.Queries, ss.envScope, svcs, nil)
+	if err != nil {
+		return "", err
+	}
+	r, err := c.envResolver(ev, 0, false)
 	if err != nil {
 		return "", err
 	}

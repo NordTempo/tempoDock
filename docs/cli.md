@@ -186,3 +186,23 @@ says which level was missing and the rule that decided it.
 Filters (`-w`, `--filter`): `col=value` (equals), `col=op:value` with `eq`,
 `ne`, `lt`, `lte`, `gt`, `gte`, `like`, `ilike`, `in` (comma-separated), or
 `col=is_null` / `col=not_null`. Values are Postgres text input.
+
+## CLI-only build
+
+The release binary `dock` is the CLI, the daemon and the node runtime. A
+laptop or CI runner only needs the client: `make build-cli` builds it with
+the `dockcli` build tag, which leaves out `serve`, `admin` and `openapi` and
+with them Docker, BuildKit, Caddy, SQLite and the API server.
+
+```sh
+make build-cli   # bin/dock-cli for this machine, plus bin/dock-cli-<os>-<arch>
+                 # for darwin/arm64, darwin/amd64, linux/amd64 and linux/arm64
+```
+
+| | `dock` | `dock-cli` |
+|---|---|---|
+| Size | 34 MB | 8.5 MB |
+| `dock context list` | 5.1 ms, 28 MB RSS | 1.8 ms, 11 MB RSS |
+| Package init | 2.9 ms | 0.3 ms |
+
+Every other command behaves the same in both.

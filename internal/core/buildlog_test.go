@@ -1,0 +1,94 @@
+package core
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The writer splits overlong lines, and the file and the published lines
+// agree on every line.
+func TestLogWriterSplitsLongLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "build.log")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var emitted []string
+	w := &logWriter{f: f, emit: func(seq int, line string) {
+		if seq != len(emitted) {
+			t.Errorf("seq %d, want %d", seq, len(emitted))
+		}
+		emitted = append(emitted, line)
+	}}
+	long := strings.Repeat("x", maxLogLine+10)
+	for _, chunk := range []string{"one\ntw", "o\n", long[:100], long[100:], "\nlast"} {
+		if n, err := w.Write([]byte(chunk)); n != len(chunk) || err != nil {
+			t.Fatalf("Write = %d, %v", n, err)
+		}
+	}
+	w.Close()
+
+	want := []string{"one", "two", long[:maxLogLine], long[maxLogLine:], "last"}
+	if !slices.Equal(emitted, want) {
+		t.Errorf("emitted %d lines, want %d", len(emitted), len(want))
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n"); !slices.Equal(got, want) {
+		t.Errorf("file has %d lines, want %d", len(got), len(want))
+	}
+}
+
+// A cursor reads complete lines in bounded batches, leaves a partial last
+// line for later, and resumes where it stopped.
+func TestLogCursorBatches(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "build.log")
+	var pos logCursor
+	read := func() (firsts []int, lines []string) {
+		t.Helper()
+		err := pos.read(path, func(first int, batch []string) error {
+			if len(batch) > logBatchLines {
+				t.Errorf("batch of %d lines", len(batch))
+			}
+			firsts = append(firsts, first)
+			lines = append(lines, batch...)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return firsts, lines
+	}
+	if _, lines := read(); lines != nil {
+		t.Fatalf("missing file: %v", lines)
+	}
+
+	var b strings.Builder
+	for i := range 2500 {
+		b.WriteString(strings.Repeat("y", i%7) + "\n")
+	}
+	b.WriteString("partial")
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	firsts, lines := read()
+	if !slices.Equal(firsts, []int{0, 1000, 2000}) || len(lines) != 2500 || lines[6] != "yyyyyy" {
+		t.Fatalf("firsts %v, %d lines", firsts, len(lines))
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(" now done\nnext\n")
+	_ = f.Close()
+	firsts, lines = read()
+	if !slices.Equal(firsts, []int{2500}) || !slices.Equal(lines, []string{"partial now done", "next"}) {
+		t.Fatalf("resumed: firsts %v, lines %q", firsts, lines)
+	}
+}

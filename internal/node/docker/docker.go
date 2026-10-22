@@ -91,10 +91,19 @@ func (e notFoundError) Is(target error) bool {
 
 // Pull pulls ref, writing one readable line per status change to logs.
 // Errors are Docker's own, without a "pull <ref>" prefix: callers say what
-// they were pulling.
+// they were pulling. A digest-pinned ref (name@sha256:...) that is already
+// on the server is immutable, so it is not pulled again: that saves the
+// registry round trips (1.5-2 s) of every redeploy. Tags are always pulled,
+// since they may have moved.
 func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer) (string, error) {
 	if logs == nil {
 		logs = io.Discard
+	}
+	if strings.Contains(ref, "@sha256:") {
+		if img, err := r.cli.ImageInspect(ctx, ref); err == nil {
+			_, _ = fmt.Fprintln(logs, "Image is already on the server")
+			return img.ID, nil
+		}
 	}
 	resp, err := r.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {
@@ -504,6 +513,21 @@ func (r *Runtime) List(ctx context.Context) ([]node.Container, error) {
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+// ReleaseContainers returns the IDs of a release's containers: one list
+// call filtered by label.
+func (r *Runtime) ReleaseContainers(ctx context.Context, releaseID int64) ([]string, error) {
+	f := managedFilter().Add("label", node.LabelRelease+"="+strconv.FormatInt(releaseID, 10))
+	res, err := r.cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	ids := make([]string, 0, len(res.Items))
+	for _, s := range res.Items {
+		ids = append(ids, s.ID)
+	}
+	return ids, nil
 }
 
 // inspect fetches a container, treating unmanaged ones as not found.

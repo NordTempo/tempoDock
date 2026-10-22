@@ -11,20 +11,21 @@ import (
 
 const listAuditEventsByTarget = `-- name: ListAuditEventsByTarget :many
 SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id FROM audit_events
-WHERE project_id = ?1
-  AND environment_id = ?2
-  AND target = ?3
-  AND (action LIKE ?4 OR ?4 IS NULL)
-  AND (id < ?5 OR ?5 IS NULL)
+WHERE project_id = +?1
+  AND environment_id = +?2
+  AND target = +?3
+  AND ((action >= +?4 AND action < +?5) OR ?4 IS NULL)
+  AND (id < +?6 OR ?6 IS NULL)
 ORDER BY id DESC
-LIMIT ?6
+LIMIT +?7
 `
 
 type ListAuditEventsByTargetParams struct {
 	ProjectID     *int64
 	EnvironmentID *int64
 	Target        string
-	ActionPrefix  *string
+	ActionFrom    *string
+	ActionTo      *string
 	BeforeID      *int64
 	MaxRows       int64
 }
@@ -37,7 +38,8 @@ func (q *Queries) ListAuditEventsByTarget(ctx context.Context, arg ListAuditEven
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.Target,
-		arg.ActionPrefix,
+		arg.ActionFrom,
+		arg.ActionTo,
 		arg.BeforeID,
 		arg.MaxRows,
 	)

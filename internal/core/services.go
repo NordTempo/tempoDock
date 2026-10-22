@@ -53,21 +53,32 @@ func (c *Core) ListServices(ctx context.Context, a Actor, ref EnvRef) ([]apitype
 	if err != nil {
 		return nil, err
 	}
-	rows, err := c.store.ListServices(ctx, es.env.ID)
+	// A fixed number of queries however many services there are, like
+	// Overview: staged changes (with the services), active releases and
+	// volumes.
+	pending, rows, _, err := c.stagedChanges(ctx, c.store.Queries, es, false)
 	if err != nil {
 		return nil, err
 	}
-	pending, err := c.pendingChanges(ctx, c.store.Queries, es, false)
+	actives, err := c.store.ListEnvironmentActiveReleases(ctx, es.env.ID)
 	if err != nil {
 		return nil, err
+	}
+	active := make(map[int64]*int64, len(actives))
+	for _, r := range actives {
+		active[r.ServiceID] = &r.Number
+	}
+	vols, err := c.store.ListEnvironmentVolumes(ctx, es.env.ID)
+	if err != nil {
+		return nil, err
+	}
+	stateful := map[int64]bool{}
+	for _, v := range vols {
+		stateful[v.ServiceID] = stateful[v.ServiceID] || !v.Pending
 	}
 	out := make([]apitypes.Service, 0, len(rows))
 	for _, s := range rows {
-		svc, err := c.toService(ctx, svcScope{es, s}, pending)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, svc)
+		out = append(out, c.serviceOf(svcScope{es, s}, pending, active[s.ID], stateful[s.ID]))
 	}
 	return out, nil
 }
@@ -78,7 +89,7 @@ func (c *Core) GetService(ctx context.Context, a Actor, ref ServiceRef) (apitype
 	if err != nil {
 		return apitypes.Service{}, err
 	}
-	pending, err := c.pendingChanges(ctx, c.store.Queries, ss.envScope, false)
+	pending, _, _, err := c.stagedChanges(ctx, c.store.Queries, ss.envScope, false)
 	if err != nil {
 		return apitypes.Service{}, err
 	}
