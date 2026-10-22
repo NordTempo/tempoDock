@@ -1,152 +1,178 @@
 {
   "about": "Recorded by `make perf-baseline` (scripts/perf). Commit it with the change that moved the numbers; see docs/performance.md.",
   "go": "go1.27.3",
-  "binary_bytes": 33636512,
-  "calibration_ns": 292914.4642010431,
+  "binary_bytes": 35127456,
+  "calibration_ns": 295588.433982684,
   "benchmarks": {
     "api.BenchmarkSSEWrite/batch=1": {
-      "ns_op": 131.4,
+      "ns_op": 143.6,
       "bytes_op": 56,
       "allocs_op": 2
     },
     "api.BenchmarkSSEWrite/batch=16": {
-      "ns_op": 319.1,
+      "ns_op": 360.1,
       "bytes_op": 56,
       "allocs_op": 2
     },
     "core.BenchmarkBusFanOut/subscribers=1": {
-      "ns_op": 1706,
-      "bytes_op": 1120,
+      "ns_op": 1579,
+      "bytes_op": 1112,
       "allocs_op": 5
     },
     "core.BenchmarkBusFanOut/subscribers=100": {
-      "ns_op": 16557,
-      "bytes_op": 16979,
+      "ns_op": 5847,
+      "bytes_op": 1906,
       "allocs_op": 104
     },
     "core.BenchmarkBusFanOut/subscribers=20": {
-      "ns_op": 4334,
-      "bytes_op": 4166,
+      "ns_op": 2413,
+      "bytes_op": 1265,
       "allocs_op": 24
     },
+    "core.BenchmarkCoreReads/Changes/services=20,staged": {
+      "ns_op": 565791,
+      "bytes_op": 406556,
+      "allocs_op": 6213
+    },
     "core.BenchmarkCoreReads/GetRelease": {
-      "ns_op": 58262,
-      "bytes_op": 15750,
-      "allocs_op": 346
+      "ns_op": 44440,
+      "bytes_op": 16082,
+      "allocs_op": 354
+    },
+    "core.BenchmarkCoreReads/ListAudit/action,limit=100": {
+      "ns_op": 70910,
+      "bytes_op": 34200,
+      "allocs_op": 522
+    },
+    "core.BenchmarkCoreReads/ListAudit/action=common,limit=100": {
+      "ns_op": 901624,
+      "bytes_op": 148274,
+      "allocs_op": 2464
     },
     "core.BenchmarkCoreReads/ListAudit/all,limit=100": {
-      "ns_op": 245384,
-      "bytes_op": 128192,
-      "allocs_op": 2454
+      "ns_op": 213234,
+      "bytes_op": 129865,
+      "allocs_op": 2457
+    },
+    "core.BenchmarkCoreReads/ListAudit/project,action,limit=100": {
+      "ns_op": 67126,
+      "bytes_op": 35632,
+      "allocs_op": 564
     },
     "core.BenchmarkCoreReads/ListAudit/project,limit=100": {
-      "ns_op": 298393,
-      "bytes_op": 148008,
-      "allocs_op": 2496
+      "ns_op": 266122,
+      "bytes_op": 149665,
+      "allocs_op": 2499
     },
     "core.BenchmarkCoreReads/ListAudit/service,limit=100": {
-      "ns_op": 786487,
-      "bytes_op": 119248,
-      "allocs_op": 2128
+      "ns_op": 219070,
+      "bytes_op": 121153,
+      "allocs_op": 2135
     },
     "core.BenchmarkCoreReads/ListReleases/limit=100": {
-      "ns_op": 836374,
-      "bytes_op": 549631,
-      "allocs_op": 5115
+      "ns_op": 779082,
+      "bytes_op": 549982,
+      "allocs_op": 5123
     },
     "core.BenchmarkCoreReads/ListReleases/limit=20": {
-      "ns_op": 205264,
-      "bytes_op": 118577,
-      "allocs_op": 1188
+      "ns_op": 167878,
+      "bytes_op": 118870,
+      "allocs_op": 1196
     },
     "core.BenchmarkCoreReads/ListServices/services=20": {
-      "ns_op": 754985,
-      "bytes_op": 213576,
-      "allocs_op": 3795
+      "ns_op": 185274,
+      "bytes_op": 100640,
+      "allocs_op": 1382
     },
     "core.BenchmarkCoreReads/ListVariables/services=20": {
-      "ns_op": 199250,
-      "bytes_op": 97600,
-      "allocs_op": 1236
+      "ns_op": 169171,
+      "bytes_op": 102097,
+      "allocs_op": 1244
     },
     "core.BenchmarkCoreReads/Overview/services=60": {
-      "ns_op": 1578228,
-      "bytes_op": 711252,
-      "allocs_op": 8453
+      "ns_op": 1186627,
+      "bytes_op": 753724,
+      "allocs_op": 8546
     },
     "core.BenchmarkCoreReads/Overview/services=60,parallel=8": {
-      "ns_op": 1071199,
-      "bytes_op": 711283,
-      "allocs_op": 8453
+      "ns_op": 506563,
+      "bytes_op": 753751,
+      "allocs_op": 8546
     },
     "core.BenchmarkCoreReads/Overview/services=60,staged": {
-      "ns_op": 3168108,
-      "bytes_op": 1245043,
-      "allocs_op": 17321
+      "ns_op": 1116892,
+      "bytes_op": 753940,
+      "allocs_op": 8552
     },
     "core.BenchmarkCoreReads/ResolveVariables/services=20": {
-      "ns_op": 733118,
-      "bytes_op": 261022,
-      "allocs_op": 4399
+      "ns_op": 376032,
+      "bytes_op": 250482,
+      "allocs_op": 3718
+    },
+    "core.BenchmarkStatsTick50": {
+      "ns_op": 224681,
+      "bytes_op": 61982,
+      "allocs_op": 831
     },
     "node/caddy.BenchmarkRender/routes=500,tls=false": {
-      "ns_op": 413042,
-      "bytes_op": 463244,
+      "ns_op": 380209,
+      "bytes_op": 462651,
       "allocs_op": 2360
     },
     "node/caddy.BenchmarkRender/routes=500,tls=true": {
-      "ns_op": 437484,
-      "bytes_op": 496439,
+      "ns_op": 413355,
+      "bytes_op": 499559,
       "allocs_op": 2385
     },
     "pack.BenchmarkWrite": {
-      "ns_op": 9333098,
-      "bytes_op": 2920071,
-      "allocs_op": 8297
+      "ns_op": 8277921,
+      "bytes_op": 2983394,
+      "allocs_op": 8298
+    },
+    "pack.BenchmarkWritePipe": {
+      "ns_op": 9144382,
+      "bytes_op": 2986726,
+      "allocs_op": 8307
     },
     "repoconfig.BenchmarkFromTar": {
-      "ns_op": 312796,
-      "bytes_op": 85476,
+      "ns_op": 294766,
+      "bytes_op": 85460,
       "allocs_op": 2635
     },
     "repoconfig.BenchmarkParse": {
-      "ns_op": 1317,
+      "ns_op": 1291,
       "bytes_op": 768,
       "allocs_op": 15
     },
     "store.BenchmarkPreparedQuery/param": {
-      "ns_op": 39199,
-      "bytes_op": 6016,
-      "allocs_op": 228
+      "ns_op": 41449,
+      "bytes_op": 6208,
+      "allocs_op": 232
     },
     "store.BenchmarkPreparedQuery/param,parallel=8": {
-      "ns_op": 17436,
-      "bytes_op": 6015,
-      "allocs_op": 228
+      "ns_op": 35114,
+      "bytes_op": 6207,
+      "allocs_op": 232
     },
     "store.BenchmarkPreparedQuery/plus-param": {
-      "ns_op": 28832,
-      "bytes_op": 6016,
-      "allocs_op": 228
+      "ns_op": 27990,
+      "bytes_op": 6208,
+      "allocs_op": 232
     },
     "store.BenchmarkPreparedQuery/plus-param,parallel=8": {
-      "ns_op": 7417,
-      "bytes_op": 6015,
-      "allocs_op": 228
+      "ns_op": 11936,
+      "bytes_op": 6208,
+      "allocs_op": 232
     },
     "store.BenchmarkPreparedQuery/sqlc": {
-      "ns_op": 51719,
-      "bytes_op": 21984,
-      "allocs_op": 256
+      "ns_op": 42175,
+      "bytes_op": 26368,
+      "allocs_op": 260
     },
     "store.BenchmarkPreparedQuery/sqlc,parallel=8": {
-      "ns_op": 30370,
-      "bytes_op": 21984,
-      "allocs_op": 256
+      "ns_op": 22336,
+      "bytes_op": 26368,
+      "allocs_op": 260
     }
-  },
-  "waivers": {
-    "API p95 GET /projects/big/overview (staged change)": "18-31 ms on an 8-core Ryzen. With a staged change the overview resolves every service's variables twice per environment (one ListDomainsByService query per service, internal/core/releases.go envResolver), and every `col = ?` query is re-prepared on each call, whose parser mallocs serialize on modernc's global libc lock under concurrency. Fix both (docs/performance.md, SQLite) and remove this waiver.",
-    "API p95 GET /projects/big/environments/production/changes (staged change)": "10-28 ms: the same variable resolution and re-prepare cost as the staged overview. Remove with that waiver."
   }
 }

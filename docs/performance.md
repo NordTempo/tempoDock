@@ -18,7 +18,7 @@ headroom below them.
 | Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00-0.03/s; 1.0-2.1/s with 20 streams |
 | Daemon memory with 20 SSE clients | ≤ 30 MB | 14-17 MB |
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 4.5-5 ms |
-| API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.3-12 ms; with a staged change, overview and changes 18-31 ms (waived, see below) |
+| API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.4-6 ms; with a staged change, overview 6-8 ms and changes 3-4.5 ms |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 116 KB |
 | UI initial JS as the daemon serves it | ≤ 200 KB on the wire, cacheable | 113 KB, then 0 (immutable) |
 | UI initial CSS (gzip) | ≤ 30 KB | 4.6 KB |
@@ -64,9 +64,7 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   Add one only for a pre-existing problem that has an owner, and remove it
   with the fix (`make perf` says when a waived check passes).
 
-Current waivers: the project overview and pending-changes diff with a
-staged change resolve every service's variables with one domain query per
-service, on top of the re-prepare pitfall below.
+There are no waivers at the moment.
 
 ## Idle means idle
 
