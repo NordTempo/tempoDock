@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
@@ -37,7 +38,7 @@ type apps struct {
 
 type httpApp struct {
 	HTTPPort  int `json:"http_port"`
-	HTTPSPort int `json:"https_port"`
+	HTTPSPort int `json:"https_port,omitempty"`
 	// GracePeriod is a Go duration string; see defaultGracePeriod.
 	GracePeriod string            `json:"grace_period"`
 	Servers     map[string]server `json:"servers"`
@@ -50,7 +51,22 @@ type server struct {
 	// means "any SNI, certificates from the tls app".
 	TLSConnectionPolicies []struct{}     `json:"tls_connection_policies,omitempty"`
 	AutomaticHTTPS        automaticHTTPS `json:"automatic_https"`
+	// TrustedProxies are the peers whose X-Forwarded-* headers Caddy keeps
+	// and extends instead of replacing.
+	TrustedProxies *ipRanges `json:"trusted_proxies,omitempty"`
+	// ClientIPHeaders are read, first present wins, for the client IP of
+	// requests from a trusted proxy (logs and matchers).
+	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
 }
+
+// ipRanges is Caddy's static IP source module.
+type ipRanges struct {
+	Source string   `json:"source"`
+	Ranges []string `json:"ranges"`
+}
+
+// loopback is where cloudflared connects from on a tunnel server.
+var loopback = []string{"127.0.0.1/32", "::1/128"}
 
 // automaticHTTPS is always disabled: we render redirects and TLS explicitly,
 // and certificates come from the on-demand automation policy.
@@ -68,13 +84,16 @@ type match struct {
 	Host []string `json:"host"`
 }
 
-// handler covers the two handlers we use: reverse_proxy and static_response.
+// handler covers the handlers we use: reverse_proxy, static_response and
+// headers.
 type handler struct {
 	Handler    string              `json:"handler"`
 	Upstreams  []upstream          `json:"upstreams,omitempty"`
 	StatusCode int                 `json:"status_code,omitempty"`
 	Headers    map[string][]string `json:"headers,omitempty"`
 	Body       string              `json:"body,omitempty"`
+	// Response edits response headers (headers handler).
+	Response *headerOps `json:"response,omitempty"`
 	// StreamCloseDelay keeps upgraded connections (websockets) open across
 	// config reloads, so deploying one app doesn't disconnect every other
 	// app's websockets.
@@ -83,6 +102,13 @@ type handler struct {
 
 type upstream struct {
 	Dial string `json:"dial"`
+}
+
+type headerOps struct {
+	Set map[string][]string `json:"set"`
+	// Deferred applies the change when the response is written, so it
+	// overrides the same header from an upstream.
+	Deferred bool `json:"deferred"`
 }
 
 type tlsApp struct {
@@ -163,10 +189,13 @@ func BootstrapConfig(opts Options) ([]byte, error) {
 // Render builds the complete Caddy JSON config for routes. It is a pure
 // function; the same input always gives the same output.
 //
-// With TLS enabled there are two servers: "https" serves routes with
+// In direct mode with TLS there are two servers: "https" serves routes with
 // on-demand certificates, and "http" redirects known hostnames to HTTPS.
-// With TLS disabled a single "http" server serves routes. Both end with a
-// catch-all 404 page.
+// With TLS disabled a single "http" server serves routes. In tunnel mode a
+// single "http" server on 127.0.0.1 serves routes, trusts forwarding
+// headers from loopback only, and redirects to https:// because the public
+// side is Cloudflare's edge. Every server starts by setting the marker
+// header (when there is one) and ends with a catch-all 404 page.
 //
 // Hostnames must be lower-case ASCII (punycode for IDNs) and unique across
 // routes.
@@ -178,12 +207,19 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		return nil, err
 	}
 
+	// scheme and port are what clients use, for redirects.
 	scheme, port := "https", opts.HTTPSPort
-	if opts.DisableTLS {
+	switch {
+	case opts.tunnel():
+		port = 443
+	case opts.DisableTLS:
 		scheme, port = "http", opts.HTTPPort
 	}
 
 	var main []route
+	if opts.ServerMarker != "" {
+		main = append(main, markerRoute(opts.ServerMarker))
+	}
 	var hostnames []string
 	for _, r := range routes {
 		hostnames = append(hostnames, r.Hostnames...)
@@ -213,18 +249,26 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		}},
 	}
 
-	if opts.DisableTLS {
-		cfg.Apps.HTTP.Servers = map[string]server{
-			"http": {
-				Listen:         []string{listenAddr(opts.HTTPPort)},
-				Routes:         main,
-				AutomaticHTTPS: automaticHTTPS{Disable: true},
-			},
+	if opts.plainHTTP() {
+		srv := server{
+			Listen:         []string{listenAddr(opts.HTTPPort)},
+			Routes:         main,
+			AutomaticHTTPS: automaticHTTPS{Disable: true},
 		}
+		if opts.tunnel() {
+			// Only the local cloudflared connects; nothing is public.
+			srv.Listen = []string{net.JoinHostPort(cmp.Or(opts.tunnelListenHost, "127.0.0.1"), strconv.Itoa(opts.HTTPPort))}
+			srv.TrustedProxies = &ipRanges{Source: "static", Ranges: loopback}
+			srv.ClientIPHeaders = []string{"CF-Connecting-IP", "X-Forwarded-For"}
+		}
+		cfg.Apps.HTTP.Servers = map[string]server{"http": srv}
 		return json.Marshal(cfg)
 	}
 
 	var plain []route
+	if opts.ServerMarker != "" {
+		plain = append(plain, markerRoute(opts.ServerMarker))
+	}
 	if len(hostnames) > 0 {
 		plain = append(plain, route{
 			Match:    []match{{Host: hostnames}},
@@ -266,6 +310,15 @@ func redirect(location string) handler {
 		StatusCode: 308,
 		Headers:    map[string][]string{"Location": {location}},
 	}
+}
+
+// markerRoute sets the marker header on every response of a server. It has
+// no matcher and isn't terminal, so the routes after it still run.
+func markerRoute(marker string) route {
+	return route{Handle: []handler{{
+		Handler:  "headers",
+		Response: &headerOps{Set: map[string][]string{MarkerHeader: {marker}}, Deferred: true},
+	}}}
 }
 
 func notFoundRoute() route {

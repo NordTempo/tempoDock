@@ -125,6 +125,55 @@ func TestRenderWithoutTLS(t *testing.T) {
 	assertNotFound(t, srv.Routes[2])
 }
 
+func TestRenderTunnel(t *testing.T) {
+	opts := Options{AdminSocket: "/run/dock/caddy-admin.sock", Ingress: IngressCloudflareTunnel, HTTPPort: 80, ServerMarker: "srv-1"}
+	cfg := render(t, opts, []node.Route{
+		{Hostnames: []string{"web-shop-staging.up.example.dev"}, Upstream: "127.0.0.1:9000"},
+		{Hostnames: []string{"www.shop.example.com"}, RedirectTo: "shop.example.com"},
+	})
+
+	if cfg.Apps.TLS != nil || len(cfg.Apps.HTTP.Servers) != 1 {
+		t.Fatalf("want a single plain HTTP server and no tls app, got %d servers, tls=%v", len(cfg.Apps.HTTP.Servers), cfg.Apps.TLS)
+	}
+	srv := cfg.Apps.HTTP.Servers["http"]
+	if len(srv.Listen) != 1 || srv.Listen[0] != "127.0.0.1:80" || len(srv.TLSConnectionPolicies) != 0 {
+		t.Errorf("listen=%v tls policies=%d, want plain HTTP on loopback only", srv.Listen, len(srv.TLSConnectionPolicies))
+	}
+	if tp := srv.TrustedProxies; tp == nil || tp.Source != "static" || strings.Join(tp.Ranges, ",") != "127.0.0.1/32,::1/128" {
+		t.Errorf("trusted_proxies = %+v, want loopback only", tp)
+	}
+	if got := strings.Join(srv.ClientIPHeaders, ","); got != "CF-Connecting-IP,X-Forwarded-For" {
+		t.Errorf("client_ip_headers = %s", got)
+	}
+	if len(srv.Routes) != 4 {
+		t.Fatalf("%d routes, want marker + 2 + catch-all", len(srv.Routes))
+	}
+	assertMarker(t, srv.Routes[0], "srv-1")
+	if h := srv.Routes[1].Handle[0]; h.Handler != "reverse_proxy" || h.Upstreams[0].Dial != "127.0.0.1:9000" {
+		t.Errorf("proxy handler = %+v", h)
+	}
+	// The public side is Cloudflare's HTTPS edge, not Caddy's port.
+	if loc := srv.Routes[2].Handle[0].Headers["Location"][0]; loc != "https://shop.example.com{http.request.uri}" {
+		t.Errorf("redirect Location = %q", loc)
+	}
+	assertNotFound(t, srv.Routes[3])
+}
+
+func TestRenderMarkerDirect(t *testing.T) {
+	opts := testOptions()
+	opts.ServerMarker = "srv-2"
+	cfg := render(t, opts, []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1"}})
+	for name, srv := range cfg.Apps.HTTP.Servers {
+		assertMarker(t, srv.Routes[0], "srv-2")
+		if srv.TrustedProxies != nil || srv.Listen[0][0] != ':' {
+			t.Errorf("%s server: direct mode listens publicly and trusts no proxies, got %v %+v", name, srv.Listen, srv.TrustedProxies)
+		}
+	}
+	if cfg.Apps.HTTP.Servers["https"].Routes[1].Match[0].Host[0] != "a.com" {
+		t.Error("routes must follow the marker route")
+	}
+}
+
 func TestBootstrapConfig(t *testing.T) {
 	b, err := BootstrapConfig(testOptions())
 	if err != nil {
@@ -160,6 +209,9 @@ func TestRenderRejectsBadInput(t *testing.T) {
 		"bad redirect":       {routes: []node.Route{{Hostnames: []string{"a.com"}, RedirectTo: "b.com/{uri}"}}},
 		"missing ask URL":    {opts: func(o *Options) { o.AskURL = "" }},
 		"missing socket":     {opts: func(o *Options) { o.AdminSocket = "" }},
+		"unknown ingress":    {opts: func(o *Options) { o.Ingress = "tailscale" }},
+		"tunnel, no marker":  {opts: func(o *Options) { o.Ingress = IngressCloudflareTunnel }},
+		"marker placeholder": {opts: func(o *Options) { o.ServerMarker = "{env.HOME}" }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			opts := testOptions()
@@ -176,6 +228,15 @@ func TestRenderRejectsBadInput(t *testing.T) {
 func TestNotFoundPage(t *testing.T) {
 	if !strings.Contains(notFoundPage, "background:#000") || !strings.Contains(notFoundPage, "color:#fff") || strings.Contains(notFoundPage, "—") {
 		t.Error("404 page should be white on true black with no em dashes")
+	}
+}
+
+func assertMarker(t *testing.T, r route, marker string) {
+	t.Helper()
+	h := r.Handle[0]
+	if len(r.Match) != 0 || r.Terminal || h.Handler != "headers" || h.Response == nil || !h.Response.Deferred ||
+		len(h.Response.Set[MarkerHeader]) != 1 || h.Response.Set[MarkerHeader][0] != marker {
+		t.Errorf("marker route = %+v %+v, want a deferred, non-terminal %s: %s for every request", r, h.Response, MarkerHeader, marker)
 	}
 }
 
