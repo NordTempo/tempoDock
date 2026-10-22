@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"net/netip"
 	"path/filepath"
 	"testing"
@@ -74,7 +75,7 @@ func dockerHarness(t *testing.T) *Core {
 	}
 	cfg := config.Default()
 	cfg.DataDir = dir
-	base := 40000 + rand.IntN(200)*100
+	base := freePortRange(t)
 	cfg.HostPorts = config.PortRange{Min: base, Max: base + 99}
 	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}, Stats: noStats{}}, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
@@ -277,4 +278,28 @@ func TestIntegrationOwnRemovalsAreNotDrift(t *testing.T) {
 			break
 		}
 	}
+}
+
+// freePortRange picks 100 host ports below Linux's ephemeral range (32768+),
+// where outgoing connections can't take them, and checks the first ones are
+// free right now.
+func freePortRange(t *testing.T) int {
+	t.Helper()
+	for range 50 {
+		base := 21000 + rand.IntN(110)*100
+		free := true
+		for p := base; p < base+20 && free; p++ {
+			l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+			if err != nil {
+				free = false
+				continue
+			}
+			_ = l.Close()
+		}
+		if free {
+			return base
+		}
+	}
+	t.Fatal("no free host port range")
+	return 0
 }
