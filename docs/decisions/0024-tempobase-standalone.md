@@ -628,7 +628,7 @@ when `bin/tempobase` exists; `make perf` builds it):
 
 | What | Budget | Expected |
 |---|---|---|
-| Binary (linux/amd64, UI embedded) | ≤ 20 MB, then baseline + 10% (`tempobase_binary_bytes` in `baseline.json`) | 14-17 MB |
+| Binary (linux/amd64, UI embedded) | ≤ 20 MB, then baseline + 10% (`tempobase_binary_bytes` in `baseline.json`) | 19.9 MB (section 8, B as built) |
 | Idle anonymous RSS, after start, a login and a connection list | ≤ 20 MB | ~10 MB |
 | Idle CPU, 30 s window | ≤ 1 clock tick | 0 |
 | Idle wake-ups | ≤ 0.1/s | ~0.01/s (Go's forced GC) |
@@ -763,7 +763,7 @@ follow A.1 to A.4, MCP follows A.5. An integration test
 masking, propose and commit through HTTP; the contract test checks the
 shared schemas.
 
-As built (first half, before A lands):
+As built (2026-10-22):
 
 - The first migration has more indexes than section 2 lists: one for
   every foreign key a delete cascades through (`links`, `sessions`,
@@ -774,14 +774,24 @@ As built (first half, before A lands):
   but the small, whole-table lists (users, tokens, connections, rules).
 - `Connection` carries `custom_ca` (the CA itself never comes back).
   Audit also records `user.password_failed` and `link.delete`.
-- Until A's packages land, `internal/tempobase/pending_*.go` and
-  `tbhttp/pending_httpkit.go` hold stand-ins with the ADR's signatures
-  (the policy's `Decide` and helpers, the login limiter, guard and UI
-  handler, the owner check behind "Test"); each says what replaces it.
-  Connection changes call `Panel.Forget` once the Panel exists.
-- Measured: binary 18.4 MB stripped without the UI, idle anonymous RSS
-  8.3 MB after setup, a sign-in and a connection list, 0 CPU ticks and 0
-  context switches in 30 s.
+- `GET /audit/{id}/detail` takes the event's `detail_id`, as Dock's
+  does, not the event's ID.
+- The data operations have Dock's operation IDs. Besides the schemas,
+  the contract test compares their query parameters, the policy
+  operations, the audit detail and the token update request, and checks
+  every `{param}` in tempoBase's paths is declared.
+- The MCP endpoint is `internal/tempobase/tbmcp`. Token authentication
+  also returns the token's connection names, so `/me` and the tools'
+  default connection need no extra query.
+- The binary measures 19.9 MB stripped with its UI (`make
+  build-tempobase` after `pnpm build:tempobase`; 18.9 MB without it),
+  just under its 20 MB budget. Most of it is the pure-Go SQLite (2 MB of
+  code and its tables), Huma (1.3 MB) and pgx (1.1 MB, with
+  `golang.org/x/text` for SCRAM); tempoBase's own packages have nothing
+  worth trimming. When it grows, embedding the UI pre-gzipped (1 MB raw,
+  about 0.3 MB compressed) is the first lever, before raising the budget.
+- Measured idle: anonymous RSS 8.3 MB after setup, a sign-in and a
+  connection list, 0 CPU ticks and 0 context switches in 30 s.
 
 ### C. Web
 

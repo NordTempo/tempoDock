@@ -42,7 +42,7 @@ tick or event stream, so its budgets are tighter. Checks `tempobase-binary`,
 
 | What | Budget | Measured |
 |---|---|---|
-| Binary (linux/amd64, UI embedded) | ≤ 20 MB, and baseline + 10% once recorded (`tempobase_binary_bytes`) | not built yet (expected 14-17 MB) |
+| Binary (linux/amd64, UI embedded) | ≤ 20 MB, and baseline + 10% once recorded (`tempobase_binary_bytes`) | 19.9 MB |
 | Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | not built yet (target 10 MB) |
 | Idle CPU | ≤ 1 clock tick in 30 s | not built yet |
 | Idle wake-ups | ≤ 0.1/s | not built yet (Go's forced GC is ~0.01/s) |

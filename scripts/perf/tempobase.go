@@ -19,7 +19,10 @@ import (
 )
 
 // tempoBase's budgets (ADR 0024 section 5): smaller than Dock's, since it
-// has no runtime, statistics tick or event stream.
+// has no runtime, statistics tick or event stream. The binary measured
+// 19.9 MB with its UI, close to its budget: the pure-Go SQLite is 2 MB of
+// code, Huma 1.3 MB, pgx 1.1 MB, the UI 1 MB uncompressed. Embedding the
+// UI pre-gzipped would win back about 0.7 MB.
 const (
 	tempobaseBinaryBudget   = 20 << 20
 	tempobaseAnonBudget     = 20 << 20
