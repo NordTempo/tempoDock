@@ -117,7 +117,11 @@ func TestDeployFlow(t *testing.T) {
 	ok[apitypes.Project](t, "project", "create", "shop")
 
 	// The first deploy names the service, which creates it.
-	rel := ok[apitypes.Release](t, "deploy", "-p", "shop", "-e", "production", "-s", "web")
+	code, stdout, stderr = exec(t, "deploy", "-p", "shop", "-e", "production", "-s", "web")
+	if code != 0 || !strings.Contains(stderr, "Uploading ") || !strings.Contains(stderr, "Uploaded ") {
+		t.Fatalf("deploy: exit %d\n%s%s", code, stdout, stderr)
+	}
+	rel := ok[apitypes.Release](t, "release", "show", "1", "-p", "shop", "-e", "production", "-s", "web")
 	if rel.Number != 1 || rel.Status != apitypes.ReleaseActive || rel.Source != apitypes.SourceUpload || len(rel.Events) == 0 {
 		t.Fatalf("deploy = %+v", rel)
 	}

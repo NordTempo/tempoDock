@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -156,6 +157,13 @@ var errUploadEnded = errors.New("upload ended")
 
 // upload packs src and streams it to the server while packing: the
 // tarball is never held in memory or written to disk.
+//
+// The request asks before sending (Expect: 100-continue), and "Uploading"
+// is printed when the body is first read: the server checks a deploy
+// before it reads the upload, so one it refuses (no builder may build it,
+// a deploy already running) sends nothing and doesn't say it uploaded.
+// A server or proxy that never answers the question gets the body after
+// a second anyway (the transport's ExpectContinueTimeout).
 func (g *globals) upload(ctx context.Context, s *session, t target, src *source, svc apitypes.Service) (apitypes.Release, error) {
 	opts := pack.Options{Dockerfile: svc.DockerfilePath}
 	if src.repo != nil && src.repo.Build.Dockerfile != "" {
@@ -165,7 +173,6 @@ func (g *globals) upload(ctx context.Context, s *session, t target, src *source,
 	if len(src.notes) > 0 {
 		using = " (using " + strings.Join(src.notes, ", ") + ")"
 	}
-	g.io.Progressf("Uploading %s to %s%s", filepath.Base(src.dir)+"/", t, using)
 
 	pr, pw := io.Pipe()
 	sent := &countingWriter{w: pw}
@@ -180,14 +187,19 @@ func (g *globals) upload(ctx context.Context, s *session, t target, src *source,
 		done <- packed{st, err}
 	}()
 
-	req, err := s.api.NewRequest(ctx, http.MethodPost, t.servicePath()+"/releases/source", pr)
+	body := &firstRead{r: pr, fn: func() {
+		g.io.Progressf("Uploading %s to %s%s", filepath.Base(src.dir)+"/", t, using)
+	}}
+	req, err := s.api.NewRequest(ctx, http.MethodPost, t.servicePath()+"/releases/source", body)
 	if err != nil {
 		_ = pr.CloseWithError(errUploadEnded)
 		<-done
 		return apitypes.Release{}, err
 	}
 	req.Header.Set("Content-Type", "application/gzip")
+	req.Header.Set("Expect", "100-continue")
 	resp, err := s.api.Do(req)
+	body.once.Do(func() {}) // waits for the progress line; none from here on
 	_ = pr.CloseWithError(errUploadEnded)
 	p := <-done
 	if p.err != nil && !errors.Is(p.err, errUploadEnded) {
@@ -206,6 +218,18 @@ func (g *globals) upload(ctx context.Context, s *session, t target, src *source,
 	}
 	g.io.Progressf("Uploaded %s, %s (%s compressed)", plural(p.stats.Files, "file"), bytesize(p.stats.Bytes), bytesize(sent.n))
 	return rel, nil
+}
+
+// firstRead calls fn when r is first read, from the reading goroutine.
+type firstRead struct {
+	r    io.Reader
+	fn   func()
+	once sync.Once
+}
+
+func (f *firstRead) Read(p []byte) (int, error) {
+	f.once.Do(f.fn)
+	return f.r.Read(p)
 }
 
 // countingWriter counts the bytes written through it.
