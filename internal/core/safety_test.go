@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -161,9 +162,40 @@ func TestImageRefValidation(t *testing.T) {
 		"localhost/app": false, "localhost:5000/app": false, "registry.localhost/app": false,
 		"127.0.0.1:5000/app": false, "10.1.2.3/app": false, "192.168.1.5:5000/app": false, "172.16.0.1/app": false,
 		"169.254.169.254/app": false, "[::1]:5000/app": false, "[fd00::1]/app": false, "0.0.0.0/app": false,
+		// Tailscale addresses, and the platform registry under any address.
+		"100.100.1.2:5000/app": false, "100.64.0.1/app": false, "100.128.0.1/app": true,
+		"registry.example.org/dock/p1_e2_s3@sha256:abc": false, "Registry.Example.Org/x": false,
 	} {
-		if err := validateImageRef(ref); (err == nil) != ok {
+		if err := validateImageRef(ref, "registry.example.org"); (err == nil) != ok {
 			t.Errorf("validateImageRef(%q) err = %v, want ok %v", ref, err, ok)
+		}
+	}
+}
+
+// Containers of no active release are reported in one drift entry per
+// reconcile, naming a few: a server can't flood the audit log by listing
+// many.
+func TestStrayContainersAreOneDriftEntry(t *testing.T) {
+	h := newHarness(t)
+	for i := range 15 {
+		h.rt.AddContainer(node.Container{ID: fmt.Sprintf("stray%02d", i), Name: fmt.Sprintf("s%d", i), State: node.StateRunning, Labels: node.Labels{Release: "999"}})
+	}
+	h.restart()
+	d := h.drift()
+	if len(d) != 1 || !strings.Contains(d[0].Summary, "15 containers are not part of any active release") || !strings.Contains(d[0].Summary, "and 5 more") {
+		t.Fatalf("drift: %+v", d)
+	}
+}
+
+// Pull tokens are only minted for the deploying project's repositories.
+func TestPullAllowed(t *testing.T) {
+	ss := svcScope{envScope{store.Project{ID: 12}, store.Environment{ID: 3}}, store.Service{ID: 4}}
+	for repo, ok := range map[string]bool{
+		"dock/p12_e3_s4": true, "dock/p12_e9_s7": true, // its own, a promotion's source
+		"dock/p1_e3_s4": false, "dock/p123_e3_s4": false, "dock/p12": false, "other/p12_e3_s4": false,
+	} {
+		if pullAllowed(ss, repo) != ok {
+			t.Errorf("pullAllowed(%q) = %v", repo, !ok)
 		}
 	}
 }

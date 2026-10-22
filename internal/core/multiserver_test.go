@@ -304,6 +304,7 @@ func TestBuildOnBuilderPushesAndPulls(t *testing.T) {
 	p, lab := labPool(t)
 	reg := &fakeRegistry{pruned: 1}
 	p.withRegistry(reg)
+	p.acceptProduction("homelab") // it may build production's images
 	web := ServiceRef{"shop", "production", "web"}
 	p.createService("production", "web", apitypes.CreateServiceRequest{})
 
@@ -348,11 +349,90 @@ func TestBuildOnBuilderPushesAndPulls(t *testing.T) {
 func TestBuildNeedsOnlineBuilder(t *testing.T) {
 	p, _ := labPool(t)
 	p.withRegistry(&fakeRegistry{})
+	p.acceptProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	p.setOffline("homelab", true)
 	_, err := p.c.DeploySource(p.ctx, System, web, strings.NewReader("x"), 1<<20)
 	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "builders: homelab") {
 		t.Fatalf("deploy without a builder: %v", err)
+	}
+}
+
+// acceptProduction lets a server take production environments too.
+func (p *pool) acceptProduction(name string) {
+	p.t.Helper()
+	if _, err := p.store.UpdateServerPlacement(p.ctx, store.UpdateServerPlacementParams{AcceptsProduction: true, AcceptsNonProduction: true, ID: p.ids[name]}); err != nil {
+		p.t.Fatal(err)
+	}
+}
+
+// A production build never goes to a builder that doesn't accept
+// production: the build gets the environment's secrets. Staging still
+// builds there.
+func TestProductionBuildsOnlyOnProductionServers(t *testing.T) {
+	p, lab := labPool(t)
+	p.withRegistry(&fakeRegistry{})
+	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
+	_, err := p.c.DeploySource(p.ctx, System, web, strings.NewReader("x"), 1<<20)
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "production builds only run on servers that accept production") {
+		t.Fatalf("production build on a non-production builder: %v", err)
+	}
+	if hasOp(lab.Ops(), "build") {
+		t.Fatalf("homelab built: %v", lab.Ops())
+	}
+	if r := p.deploySource(p.createService("staging", "web", apitypes.CreateServiceRequest{})); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("staging build: %s (%s)", r.Status, r.Error)
+	}
+}
+
+// A revoked server gets no calls even while its link looks alive (a node
+// that finished hello just as it was revoked): deploys are refused.
+func TestRevokedServerGetsNoCalls(t *testing.T) {
+	p, lab := labPool(t)
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	if _, err := p.c.RevokeServer(p.ctx, System, "homelab"); err != nil {
+		t.Fatal(err)
+	}
+	p.setOffline("homelab", false) // the hub still has a link
+	_, err := p.c.DeployImage(p.ctx, System, web, apitypes.DeployImageRequest{Image: "app:1"})
+	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("deploy to a revoked server: %v", err)
+	}
+	p.restart() // and after a restart
+	if _, err := p.c.DeployImage(p.ctx, System, web, apitypes.DeployImageRequest{Image: "app:1"}); CodeOf(err) != apitypes.CodeServerOffline {
+		t.Fatalf("deploy to a revoked server after restart: %v", err)
+	}
+	if hasOp(lab.Ops(), "pull") || hasOp(lab.Ops(), "start") {
+		t.Fatalf("revoked server got calls: %v", lab.Ops())
+	}
+}
+
+// A node rotating its key can't claim a key another server already has.
+func TestRotationRejectsTakenKeys(t *testing.T) {
+	h := newHarness(t)
+	key := func(b string) string { return "sha256:" + strings.Repeat(b, 32) }
+	servers := map[string]int64{}
+	for name, k := range map[string]string{"a": key("aa"), "b": key("bb")} {
+		srv, err := h.store.RegisterNodeServer(h.ctx, store.RegisterNodeServerParams{Name: name, KeyFingerprint: k})
+		if err != nil {
+			t.Fatal(err)
+		}
+		servers[name] = srv.ID
+	}
+	ns := h.c.NodeStore()
+	for _, taken := range []string{key("bb"), key("aa")} { // another server's key, its own
+		if err := ns.SetNextKey(h.ctx, servers["a"], taken); err == nil || !strings.Contains(err.Error(), "already belongs to server") {
+			t.Fatalf("rotate a to %s: %v", taken, err)
+		}
+	}
+	if err := ns.SetNextKey(h.ctx, servers["a"], key("cc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.SetNextKey(h.ctx, servers["b"], key("cc")); err == nil {
+		t.Fatal("b took a's next key")
+	}
+	if k, ok, err := ns.NodeKey(h.ctx, key("bb")); err != nil || !ok || k.ID != servers["b"] {
+		t.Fatalf("b's key = %+v, %v, %v", k, ok, err)
 	}
 }
 

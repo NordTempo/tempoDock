@@ -470,7 +470,7 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 			if params.ImageRef == "" {
 				return invalid("no image given and service %s has no image setting", ss)
 			}
-			if err := validateImageRef(params.ImageRef); err != nil {
+			if err := validateImageRef(params.ImageRef, c.registryHost()); err != nil {
 				return err
 			}
 			// The image setting follows image deploys, so deploying the
@@ -605,7 +605,7 @@ func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body i
 	if _, err := c.runtimeFor(srv.ID); err != nil {
 		return apitypes.Release{}, err
 	}
-	if _, _, err := c.builderFor(ctx, srv); err != nil {
+	if _, _, err := c.builderFor(ctx, srv, apitypes.EnvironmentKind(ss.env.Kind)); err != nil {
 		return apitypes.Release{}, err
 	}
 	done, err := c.beginUpload(ss)

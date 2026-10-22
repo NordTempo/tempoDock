@@ -44,6 +44,40 @@ func TestLogWriterSplitsLongLines(t *testing.T) {
 	}
 }
 
+// Past its limit a log ends with one marker line (after finishing a
+// partial line) and drops the rest; the build isn't told.
+func TestLogWriterStopsAtLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "build.log")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var emitted []string
+	w := &logWriter{f: f, limit: 1 << 20, emit: func(_ int, line string) { emitted = append(emitted, line) }}
+	line := strings.Repeat("x", 1023) + "\n"
+	for range 1023 {
+		_, _ = w.Write([]byte(line))
+	}
+	partial := "part" + strings.Repeat("y", 1020) // reaches the limit
+	for _, chunk := range []string{partial[:4], partial[4:], "more\n", "and more\n"} {
+		if n, err := w.Write([]byte(chunk)); n != len(chunk) || err != nil {
+			t.Fatalf("Write = %d, %v", n, err)
+		}
+	}
+	w.Close()
+	marker := "[build log truncated at 1 MB; the rest of the output was dropped]"
+	if len(emitted) != 1025 || emitted[1023] != partial || emitted[1024] != marker {
+		t.Fatalf("emitted %d lines, ending %.40q", len(emitted), emitted[len(emitted)-2:])
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(b), "\n"+partial+"\n"+marker+"\n") || len(b) > 1<<20+100 {
+		t.Fatalf("file of %d bytes ends %q", len(b), b[len(b)-90:])
+	}
+}
+
 // A cursor reads complete lines in bounded batches, leaves a partial last
 // line for later, and resumes where it stopped.
 func TestLogCursorBatches(t *testing.T) {

@@ -38,6 +38,25 @@ type serverState struct {
 	// again when the server is back (a stateful recreate cut short while
 	// it was unreachable), by service ID.
 	ensure map[int64]bool
+	// revoked is set from RevokeServer (and Start, for servers revoked
+	// before) until the server joins again. A revoked server gets no
+	// calls whatever the hub says (connected).
+	revoked bool
+}
+
+// setRevoked records whether a server is revoked.
+func (c *Core) setRevoked(serverID int64, on bool) {
+	c.serversMu.Lock()
+	defer c.serversMu.Unlock()
+	c.stateLocked(serverID).revoked = on
+}
+
+// isRevoked reports whether a server is revoked.
+func (c *Core) isRevoked(serverID int64) bool {
+	c.serversMu.Lock()
+	defer c.serversMu.Unlock()
+	st := c.servers[serverID]
+	return st != nil && st.revoked
 }
 
 // stateLocked returns a server's state, creating it; serversMu is held.
@@ -133,6 +152,9 @@ func (s nodeStore) Join(ctx context.Context, req remote.JoinRequest) (remote.Ser
 		if err != nil {
 			return err
 		}
+		if err := keyUnused(ctx, q, req.Fingerprint); err != nil {
+			return fmt.Errorf("%w: %w", remote.ErrJoinRejected, err)
+		}
 		srv, err = q.RegisterNodeServer(ctx, store.RegisterNodeServerParams{
 			Name: tok.ServerName, AcceptsProduction: tok.AcceptsProduction, AcceptsNonProduction: tok.AcceptsNonProduction,
 			Builder: tok.Builder, KeyFingerprint: req.Fingerprint,
@@ -156,6 +178,7 @@ func (s nodeStore) Join(ctx context.Context, req remote.JoinRequest) (remote.Ser
 	if err != nil {
 		return remote.Server{}, err
 	}
+	c.setRevoked(srv.ID, false) // a revoked server re-joins under its name
 	c.audit(ctx, System, "server.join", nil, nil, "server "+srv.Name,
 		fmt.Sprintf("server %s joined from %s with a token from %s (dock %s, key %s)", srv.Name, req.RemoteAddr, tok.CreatedBy, req.Hello.Version, req.Fingerprint))
 	c.publishServer(ctx, srv.ID)
@@ -176,13 +199,34 @@ func joinBaseDomain(srv store.Server, h remote.Hello) string {
 	return base
 }
 
-// SetNextKey implements remote.Store.
+// SetNextKey implements remote.Store. The node only names its new key
+// (it proves owning it when it reconnects), so a fingerprint that is
+// already any server's key or next key is refused: otherwise a node could
+// claim another server's key and have that server's connections taken
+// for its own.
 func (s nodeStore) SetNextKey(ctx context.Context, serverID int64, fingerprint string) error {
-	n, err := s.c.store.SetServerNextKey(ctx, store.SetServerNextKeyParams{Fingerprint: fingerprint, ID: serverID})
-	if err == nil && n == 0 {
-		err = errors.New("the server was revoked or removed during the key rotation")
+	return s.c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := keyUnused(ctx, q, fingerprint); err != nil {
+			return err
+		}
+		n, err := q.SetServerNextKey(ctx, store.SetServerNextKeyParams{Fingerprint: fingerprint, ID: serverID})
+		if err == nil && n == 0 {
+			err = errors.New("the server was revoked or removed during the key rotation")
+		}
+		return err
+	})
+}
+
+// keyUnused fails if fingerprint is a server's key or next key.
+func keyUnused(ctx context.Context, q *store.Queries, fingerprint string) error {
+	srv, err := q.GetServerByFingerprint(ctx, fingerprint)
+	switch {
+	case store.IsNotFound(err):
+		return nil
+	case err != nil:
+		return err
 	}
-	return err
+	return fmt.Errorf("key %s already belongs to server %s", fingerprint, srv.Name)
 }
 
 // PromoteKey implements remote.Store.
@@ -221,8 +265,8 @@ func helloParams(serverID int64, h remote.Hello, t time.Time) store.SetServerHel
 // link coming up (with its hello facts) or going down, publishes the
 // change, and on every connect has the server's watcher reconcile it.
 func (c *Core) NodeStatus(s remote.State) {
-	if c.ctx.Err() != nil {
-		return
+	if c.ctx.Err() != nil || s.Status != remote.StatusOffline && c.isRevoked(s.ServerID) {
+		return // a revoked server is never online
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, nodeStatusTimeout)
 	defer cancel()

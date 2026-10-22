@@ -423,3 +423,24 @@ Tailscale" for nodes.
 - `dock admin caddy-config` must work before a node has joined: in tunnel
   mode the server marker is filled in on first connect (derived from the
   node key fingerprint), not at install time.
+
+## Amendment (2026-10-22): hardening against a compromised node
+
+A security review of the multi-server code found gaps between the
+[compromised node](#compromised-node) table and the code. Decided by the
+agent; each has a focused test.
+
+| Gap | Now |
+|---|---|
+| A revoke during a node's hello (up to 10 s) found no session to close; the node registered afterwards and was online | The hub looks the key up again when registering, under the lock `Disconnect` takes. Core also refuses calls to a revoked server whatever the hub says. |
+| A production build could run on any builder, which gets the environment's variables as build args and secrets | Production builds only run on builders that accept production environments. With none, the deploy fails and says to make a production server a builder or deploy a CI image. Non-production builds go to any builder. |
+| A 1 MiB answer could decode into 300k containers; one drift audit row per stray container; a node could send `dock.resync` events to force reconciles | Lists in answers are capped at 10,000 items; stray containers are one drift entry per reconcile; resync events from the wire are dropped (only the client's own reconnect signal counts). |
+| Node calls had no deadline, so one hung node stalled the domain and stats loops for every server | Control calls time out after 30 s (Stop and HealthCheck after their own timeout plus 30 s, Pull after 30 min, Build per `[buildkit] timeout_minutes`, default 30). Logs and Events streams stay open; keepalive catches dead links. The domain and stats loops ask servers at once, each with its own time budget. |
+| Build and pull output was unbounded | A release's log stops at 16 MB with a marker line; the build goes on. |
+| Key rotation accepted any fingerprint the node named, including another server's key | A fingerprint that is any server's key or next key is refused (also on join). |
+| Pull tokens were minted for any repository in the registry, and users could name registry images | Tokens only for the deploying project's repositories (its own, and promotion sources, which need read access). Image references under the registry host, or at a CGNAT/Tailscale address (100.64.0.0/10), are refused. |
+| `GITHUB_TOKEN` and the join token were in process arguments | curl reads the header from a config on stdin; `dock node join --token-file -` reads the token from stdin. |
+
+Still open: `dock server add` prints the install command with the join
+token in an environment assignment on `sudo`'s command line. The token
+works once and only for an hour, and the window ends when the node joins.

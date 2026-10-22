@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -141,7 +142,7 @@ type collector struct {
 	// downsampled is the end of the last 10-minute window written.
 	downsampled int64
 	// Reused between ticks.
-	ids []string
+	samples []serverSample
 	// own are the indexes of one server's targets; targetOf maps their
 	// containers back.
 	own      []int
@@ -155,6 +156,56 @@ type collector struct {
 	// names are the targets' names by service, for the events; reloaded
 	// when the set of targets changes (names never do).
 	names map[int64]store.ListStatsNamesRow
+}
+
+// serverSample is what one server answered in a tick.
+type serverSample struct {
+	srv      store.Server
+	rt       node.Runtime
+	ids      []string // its targets' containers
+	host     node.HostStats
+	hostErr  error
+	stats    []node.ContainerStats
+	statsErr error
+}
+
+// statsServerTimeout bounds sampling one server, so a server that doesn't
+// answer can't delay the others' points (fanOut).
+const statsServerTimeout = 15 * time.Second
+
+// liveServerTimeout is statsServerTimeout for live samples, which a
+// watcher wants every few seconds.
+const liveServerTimeout = 5 * time.Second
+
+// sample asks every server for its numbers at once (fanOut) and keeps
+// the answers in col.samples.
+func (c *Core) sample(ctx context.Context, col *collector, servers []store.Server, targets []store.ListStatsTargetsRow) {
+	n := 0
+	for _, srv := range servers {
+		rt := c.connected(srv.ID)
+		if rt == nil {
+			continue
+		}
+		if n == len(col.samples) {
+			col.samples = append(col.samples, serverSample{})
+		}
+		s := &col.samples[n]
+		*s = serverSample{srv: srv, rt: rt, ids: s.ids[:0]}
+		for _, t := range targets {
+			if t.ServerID == srv.ID {
+				s.ids = append(s.ids, t.ContainerID)
+			}
+		}
+		n++
+	}
+	col.samples = col.samples[:n]
+	fanOut(ctx, n, statsServerTimeout, func(ctx context.Context, i int) {
+		s := &col.samples[i]
+		s.host, s.hostErr = s.rt.HostStats(ctx)
+		if len(s.ids) > 0 {
+			s.stats, s.statsErr = s.rt.ContainerStats(ctx, s.ids)
+		}
+	})
 }
 
 func newCollector() *collector {
@@ -234,14 +285,12 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	clear(col.latest)
 	hosts := map[int64]apitypes.ServerUsage{}
 	var memory []store.SetServerMemoryParams
-	for _, srv := range servers {
-		rt := c.connected(srv.ID)
-		if rt == nil {
-			continue
-		}
-		h, err := rt.HostStats(ctx)
-		if err != nil {
-			c.log.Warn("stats: sample server", "server", srv.Name, "err", err)
+	c.sample(ctx, col, servers, targets)
+	for i := range col.samples {
+		s := &col.samples[i]
+		srv, h := s.srv, s.host
+		if s.hostErr != nil {
+			c.log.Warn("stats: sample server", "server", srv.Name, "err", s.hostErr)
 			continue
 		}
 		if mem := toInt64(h.MemoryTotal); mem != srv.MemoryBytes {
@@ -257,29 +306,31 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 				Type: apitypes.EventUsage, Time: now.UTC(), Usage: &apitypes.UsageUpdate{Server: srv.Name, Host: &u},
 			}})
 		}
-		col.ids, col.own = col.ids[:0], col.own[:0]
+		col.own = col.own[:0]
 		clear(col.targetOf)
 		for i, t := range targets {
 			if t.ServerID == srv.ID {
-				col.ids = append(col.ids, t.ContainerID)
 				col.own = append(col.own, i)
 				col.targetOf[t.ContainerID] = i
 			}
 		}
-		if len(col.ids) == 0 {
+		if len(s.ids) == 0 {
 			continue
 		}
-		samples, err := rt.ContainerStats(ctx, col.ids)
-		if err != nil {
-			c.log.Warn("stats: sample containers", "server", srv.Name, "err", err)
+		if s.statsErr != nil {
+			c.log.Warn("stats: sample containers", "server", srv.Name, "err", s.statsErr)
 			continue
 		}
-		for _, cs := range samples {
+		for _, cs := range s.stats {
+			t, asked := col.targetOf[cs.ID]
+			if !asked {
+				continue // not one of this server's containers: ignore it
+			}
 			u, ok := col.sampler.containerUsage(cs)
 			if !ok {
 				continue
 			}
-			svc := targets[col.targetOf[cs.ID]].ServiceID
+			svc := targets[t].ServiceID
 			col.latest[svc] = u
 			col.services = append(col.services, store.AddServiceStatsParams{
 				Res: statsMinute, At: at, ServiceID: svc, Cpu: hundredths(u.CPUPercent),
@@ -561,15 +612,21 @@ func (c *Core) liveRound(ctx context.Context, smp *sampler) {
 	c.stats.mu.Unlock()
 
 	type need struct {
+		id   int64
+		rt   node.Runtime
 		host bool
 		ids  []string
+		// What the server answered.
+		h      node.HostStats
+		hostOK bool
+		stats  []node.ContainerStats
 	}
 	servers := map[int64]*need{}
 	containerOf := map[int64]string{} // by service
 	for _, w := range ws {
 		n := servers[w.server]
 		if n == nil {
-			n = &need{}
+			n = &need{id: w.server}
 			servers[w.server] = n
 		}
 		if w.service == 0 {
@@ -587,30 +644,38 @@ func (c *Core) liveRound(ctx context.Context, smp *sampler) {
 		containerOf[w.service] = rel.ContainerID
 		n.ids = append(n.ids, rel.ContainerID)
 	}
+	online := make([]*need, 0, len(servers))
+	for _, n := range servers {
+		if n.rt = c.connected(n.id); n.rt != nil {
+			online = append(online, n)
+		}
+	}
+	fanOut(ctx, len(online), liveServerTimeout, func(ctx context.Context, i int) {
+		n := online[i]
+		if n.host {
+			var err error
+			n.h, err = n.rt.HostStats(ctx)
+			n.hostOK = err == nil
+		}
+		if len(n.ids) > 0 {
+			n.stats, _ = n.rt.ContainerStats(ctx, n.ids)
+		}
+	})
 	hosts := map[int64]apitypes.ServerUsage{}
 	ctrs := map[string]apitypes.ServiceUsage{}
 	now := time.Now()
-	for id, n := range servers {
-		rt := c.connected(id)
-		if rt == nil {
-			continue
-		}
-		if n.host {
-			if h, err := rt.HostStats(ctx); err == nil {
-				if u, ok := smp.hostUsage(id, h, now); ok {
-					hosts[id] = u
-				}
+	for _, n := range online {
+		if n.hostOK {
+			if u, ok := smp.hostUsage(n.id, n.h, now); ok {
+				hosts[n.id] = u
 			}
 		}
-		if len(n.ids) > 0 {
-			samples, err := rt.ContainerStats(ctx, n.ids)
-			if err != nil {
-				continue
+		for _, cs := range n.stats {
+			if !slices.Contains(n.ids, cs.ID) {
+				continue // a server only answers for its own containers
 			}
-			for _, cs := range samples {
-				if u, ok := smp.containerUsage(cs); ok {
-					ctrs[cs.ID] = u
-				}
+			if u, ok := smp.containerUsage(cs); ok {
+				ctrs[cs.ID] = u
 			}
 		}
 	}

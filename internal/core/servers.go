@@ -338,8 +338,11 @@ func (c *Core) RevokeServer(ctx context.Context, a Actor, name string) (apitypes
 		return apitypes.Server{}, err
 	}
 	if srv.RevokedAt == nil {
+		// Before the key goes: from here on no call reaches the server.
+		c.setRevoked(srv.ID, true)
 		t := now()
 		if _, err := c.store.RevokeServer(ctx, store.RevokeServerParams{Now: &t, ID: srv.ID}); err != nil {
+			c.setRevoked(srv.ID, false)
 			return apitypes.Server{}, err
 		}
 		if c.nodes != nil {

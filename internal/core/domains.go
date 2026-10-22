@@ -2,8 +2,8 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -303,6 +303,9 @@ func (c *Core) kickDomains() {
 const (
 	domainCheckMin = 5 * time.Second
 	domainCheckMax = 5 * time.Minute
+	// domainServerTimeout bounds one round of a server's checks; the
+	// ones it didn't reach run in the next round.
+	domainServerTimeout = time.Minute
 )
 
 // checkDomains moves domains through waiting_for_dns → issuing_certificate
@@ -316,6 +319,10 @@ func (c *Core) checkDomains() {
 		// HTTPS handshake asked Caddy to issue a certificate.
 		dnsOK time.Time
 	}
+	type check struct {
+		d store.Domain
+		b *backoff
+	}
 	state := map[int64]*backoff{}
 	for {
 		pending, err := c.store.ListPendingDomains(c.ctx)
@@ -323,7 +330,9 @@ func (c *Core) checkDomains() {
 			c.log.Error("list pending domains", "err", err)
 		}
 		seen := map[int64]bool{}
-		var wake time.Time
+		// Due checks by server, each server's in turn and the servers at
+		// once (fanOut): one that doesn't answer delays only its own.
+		byServer := map[int64][]check{}
 		for _, d := range pending {
 			seen[d.ID] = true
 			b := state[d.ID]
@@ -332,11 +341,24 @@ func (c *Core) checkDomains() {
 				state[d.ID] = b
 			}
 			if !time.Now().Before(b.next) {
-				c.checkDomain(c.ctx, d, &b.dnsOK)
-				b.next = time.Now().Add(b.delay)
-				b.delay = min(b.delay*2, domainCheckMax)
+				var server int64
+				if ss, err := c.scopeOf(c.ctx, d.ServiceID); err == nil {
+					server = ss.env.ServerID
+				}
+				byServer[server] = append(byServer[server], check{d, b})
 			}
-			if wake.IsZero() || b.next.Before(wake) {
+		}
+		groups := slices.Collect(maps.Values(byServer))
+		fanOut(c.ctx, len(groups), domainServerTimeout, func(ctx context.Context, i int) {
+			for _, ch := range groups[i] {
+				c.checkDomain(ctx, ch.d, &ch.b.dnsOK)
+				ch.b.next = time.Now().Add(ch.b.delay)
+				ch.b.delay = min(ch.b.delay*2, domainCheckMax)
+			}
+		})
+		var wake time.Time
+		for _, d := range pending {
+			if b := state[d.ID]; wake.IsZero() || b.next.Before(wake) {
 				wake = b.next
 			}
 		}
@@ -391,7 +413,7 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 	status := apitypes.DomainStatus(d.Status)
 	var reason string
 	switch {
-	case errors.Is(err, context.Canceled):
+	case ctx.Err() != nil: // shutting down, or the round's time is up
 		return
 	case err != nil:
 		reason = "could not check: " + c.nodeErr(ss.env.ServerID, err).Error()

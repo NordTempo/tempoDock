@@ -1,8 +1,11 @@
 package core
 
 import (
+	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -81,6 +84,26 @@ func TestPickServer(t *testing.T) {
 				t.Fatalf("picked %q, %v; want %q", got.server.Name, err, tc.want)
 			}
 		})
+	}
+}
+
+// One server that doesn't answer costs fanOut its timeout and holds up no
+// other server's call.
+func TestFanOutIsolatesHungServers(t *testing.T) {
+	var fast atomic.Int64
+	start := time.Now()
+	fanOut(context.Background(), 3, 100*time.Millisecond, func(ctx context.Context, i int) {
+		if i == 0 {
+			<-ctx.Done() // hung
+			return
+		}
+		fast.Store(int64(time.Since(start)))
+	})
+	if d := time.Since(start); d < 100*time.Millisecond || d > 5*time.Second {
+		t.Fatalf("fanOut took %v", d)
+	}
+	if d := time.Duration(fast.Load()); d == 0 || d >= 100*time.Millisecond {
+		t.Fatalf("the other servers answered after %v", d)
 	}
 }
 
