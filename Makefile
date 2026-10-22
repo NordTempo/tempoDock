@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build build-cli web test test-integration lint generate dev perf perf-baseline
+.PHONY: build build-cli release-local web test test-integration lint generate dev perf perf-baseline
 
 ## build: the single static binary (UI embedded if web/dist is built)
 build:
@@ -16,6 +16,12 @@ build-cli:
 		echo "bin/dock-cli-$${p%/*}-$${p#*/}"; \
 		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} go build -tags dockcli -trimpath -ldflags '$(LDFLAGS)' -o bin/dock-cli-$${p%/*}-$${p#*/} ./cmd/dock || exit 1; \
 	done
+
+## release-local: every release artifact into dist/ without publishing
+## anything (scripts/release/build.sh): make release-local VERSION=v0.0.0-dev.
+## The release workflow runs this on a v* tag and uploads dist/.
+release-local: web
+	scripts/release/build.sh $(VERSION)
 
 ## web: build the UI into web/dist
 web:

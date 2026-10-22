@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release workflow runs every check before it publishes.
+  workflow_call:
 
 # A newer push supersedes a running one: only the latest commit is checked.
 concurrency:
