@@ -38,6 +38,11 @@ type Containers interface {
 	// An image a container uses is never removed (an error). A ref that
 	// isn't there is ErrNotFound (wrapped).
 	RemoveImage(ctx context.Context, ref string) error
+	// PruneImages removes dangling images (no tag left) that no container
+	// uses and whose ID isn't in keep: the images of releases a rollback
+	// may still need, which images pulled by digest look like. Images in
+	// use are skipped, never forced.
+	PruneImages(ctx context.Context, keep []string) (PruneResult, error)
 
 	// EnsureNetwork creates the bridge network, labelled with labels'
 	// project and environment, if it doesn't exist. An existing network
@@ -111,6 +116,16 @@ type Builder interface {
 	// Build builds req.Source and tags the result as req.Tag. Build output
 	// is written to req.Logs. Returns the image ID (sha256:...).
 	Build(ctx context.Context, req BuildRequest) (string, error)
+	// PruneBuildCache removes build cache, least recently used first, until
+	// at most keepBytes are left. A server that doesn't build, or whose
+	// BuildKit isn't running, has nothing to prune.
+	PruneBuildCache(ctx context.Context, keepBytes int64) (PruneResult, error)
+}
+
+// PruneResult is what a prune removed.
+type PruneResult struct {
+	Removed        int
+	ReclaimedBytes int64
 }
 
 // Proxy owns the server's public HTTP(S) routing.

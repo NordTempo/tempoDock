@@ -154,6 +154,16 @@ type (
 	containerStatsRequest struct {
 		IDs []string `json:"ids"`
 	}
+	pruneImagesRequest struct {
+		Keep []string `json:"keep"`
+	}
+	pruneCacheRequest struct {
+		KeepBytes int64 `json:"keep_bytes"`
+	}
+	pruneResult struct {
+		Removed        int   `json:"removed"`
+		ReclaimedBytes int64 `json:"reclaimed_bytes"`
+	}
 	containerStatsResult struct {
 		Stats []wireContainerStats `json:"stats"`
 	}

@@ -101,6 +101,8 @@ const (
 	opPull          = "pull"
 	opHasImage      = "has-image"
 	opRemoveImage   = "remove-image"
+	opPruneImages   = "prune-images"
+	opPruneCache    = "prune-build-cache"
 	opEnsureNetwork = "ensure-network"
 	opEnsureVolume  = "ensure-volume"
 	opStart         = "start"

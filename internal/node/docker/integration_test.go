@@ -3,10 +3,13 @@
 package docker
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -606,5 +609,60 @@ func assertInvisibleContainer(t *testing.T, e *testEnv, ctx context.Context, nam
 	}
 	if st, _ := e.cli.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{}); !st.Container.State.Running {
 		t.Error("unmanaged container was stopped")
+	}
+}
+
+// importDangling imports a one-file image without a tag and returns its ID.
+func (e *testEnv) importDangling(content string) string {
+	e.t.Helper()
+	ctx := context.Background()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	_ = tw.WriteHeader(&tar.Header{Name: "x", Mode: 0o644, Size: int64(len(content))})
+	_, _ = tw.Write([]byte(content))
+	_ = tw.Close()
+	res, err := e.cli.ImageImport(ctx, client.ImageImportSource{Source: &buf, SourceName: "-"}, "", client.ImageImportOptions{})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	out, _ := io.ReadAll(res)
+	_ = res.Close()
+	var status struct{ Status string }
+	if err := json.Unmarshal(bytes.TrimSpace(out), &status); err != nil || !strings.HasPrefix(status.Status, "sha256:") {
+		e.t.Fatalf("import: %s (%v)", out, err)
+	}
+	e.t.Cleanup(func() { _, _ = e.cli.ImageRemove(context.Background(), status.Status, client.ImageRemoveOptions{}) })
+	return status.Status
+}
+
+// PruneImages removes dangling images except the kept ones. Every other
+// dangling image on the host is kept too, so the test only touches its own.
+func TestPruneImages(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	gone := e.importDangling(e.prefix + "-gone")
+	kept := e.importDangling(e.prefix + "-kept")
+	list, err := e.cli.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("dangling", "true")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keep []string
+	for _, img := range list.Items {
+		if img.ID != gone {
+			keep = append(keep, img.ID)
+		}
+	}
+	if !slices.Contains(keep, kept) || len(keep) == len(list.Items) {
+		t.Fatalf("dangling images %v should hold both imports", list.Items)
+	}
+	res, err := e.PruneImages(ctx, keep)
+	if err != nil || res.Removed != 1 {
+		t.Fatalf("PruneImages = %+v, %v", res, err)
+	}
+	if _, err := e.cli.ImageInspect(ctx, gone); !cerrdefs.IsNotFound(err) {
+		t.Errorf("pruned image still there: %v", err)
+	}
+	if _, err := e.cli.ImageInspect(ctx, kept); err != nil {
+		t.Errorf("kept image: %v", err)
 	}
 }

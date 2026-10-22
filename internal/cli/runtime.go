@@ -130,3 +130,8 @@ type notBuilder struct{}
 func (notBuilder) Build(context.Context, node.BuildRequest) (string, error) {
 	return "", errors.New("this server doesn't build images ([buildkit] enabled = false); deploy a prebuilt image with --image instead")
 }
+
+// PruneBuildCache implements node.Builder: there is no build cache.
+func (notBuilder) PruneBuildCache(context.Context, int64) (node.PruneResult, error) {
+	return node.PruneResult{}, nil
+}

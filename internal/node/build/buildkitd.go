@@ -143,6 +143,43 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 	return nil
 }
 
+// PruneBuildCache implements node.Builder with BuildKit's prune API: cache
+// records go, least recently used first, until the cache is down to
+// keepBytes (MaxUsedSpace) and never below it (ReservedSpace). Records a
+// running build uses stay. A BuildKit container that isn't running isn't
+// started for it: nothing has been built since it stopped.
+func (b *Builder) PruneBuildCache(ctx context.Context, keepBytes int64) (node.PruneResult, error) {
+	inspect, err := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{})
+	if cerrdefs.IsNotFound(err) || (err == nil && !inspect.Container.State.Running) {
+		return node.PruneResult{}, nil
+	}
+	if err != nil {
+		return node.PruneResult{}, fmt.Errorf("inspect %s: %w", b.name, err)
+	}
+	bk, err := b.connect(ctx)
+	if err != nil {
+		return node.PruneResult{}, err
+	}
+	defer func() { _ = bk.Close() }()
+	var out node.PruneResult
+	ch := make(chan bkclient.UsageInfo)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for u := range ch {
+			out.Removed++
+			out.ReclaimedBytes += u.Size
+		}
+	}()
+	err = bk.Prune(ctx, ch, bkclient.WithKeepOpt(0, keepBytes, keepBytes, 0))
+	close(ch)
+	<-done
+	if err != nil {
+		return out, fmt.Errorf("prune build cache: %w", err)
+	}
+	return out, nil
+}
+
 // cgroupLimitsScript prints the container's cgroup v2 memory.max and
 // memory.swap.max, or "unknown" for each one that doesn't exist (cgroup v1,
 // or swap accounting off).

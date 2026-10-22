@@ -74,6 +74,13 @@ func (c *Client) RemoveImage(ctx context.Context, ref string) error {
 	return err
 }
 
+// PruneImages implements node.Containers. A node older than the
+// operation answers with an error, so it is simply not pruned.
+func (c *Client) PruneImages(ctx context.Context, keep []string) (node.PruneResult, error) {
+	r, err := unaryCall[pruneResult](ctx, c, opPruneImages, pruneImagesRequest{Keep: keep})
+	return node.PruneResult(r), err
+}
+
 // EnsureNetwork implements node.Containers.
 func (c *Client) EnsureNetwork(ctx context.Context, name string, labels node.Labels) error {
 	_, err := unaryCall[empty](ctx, c, opEnsureNetwork, resourceRequest{Name: name, Labels: toWireLabels(labels)})
@@ -218,6 +225,12 @@ func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 func (c *Client) CheckDomain(ctx context.Context, hostname string) (node.DomainCheck, error) {
 	r, err := unaryCall[wireDomainCheck](ctx, c, opCheckDomain, domainRequest{Hostname: hostname})
 	return r.node(), err
+}
+
+// PruneBuildCache implements node.Builder.
+func (c *Client) PruneBuildCache(ctx context.Context, keepBytes int64) (node.PruneResult, error) {
+	r, err := unaryCall[pruneResult](ctx, c, opPruneCache, pruneCacheRequest{KeepBytes: keepBytes})
+	return node.PruneResult(r), err
 }
 
 // HostStats implements node.Stats.
