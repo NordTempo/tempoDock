@@ -398,3 +398,28 @@ Decided 2026-10-21.
 | Deploy to an offline server | Rejected immediately with "server X is offline". No queue. |
 | Promote with services missing in production | Skipped and listed in the output. Production services are only created on purpose. |
 | Control plane key rotation | Not built in M3. Re-joining nodes is the documented procedure. |
+
+## Amendment (2026-10-22): registry over the node link
+
+Decided by the agent while integrating M3, replacing "registry reachable over
+Tailscale" for nodes.
+
+- The registry container listens on `127.0.0.1:5000` on the control plane
+  and is never exposed on any network.
+- Every node runs a small registry proxy on its own `127.0.0.1:5000` that
+  forwards over the existing node link (one more stream type, like Dial).
+  Pulls and builder pushes go through it; Docker treats loopback registries
+  as plain HTTP without extra config.
+- Image references are therefore identical on every server
+  (`127.0.0.1:5000/<repo>@sha256:...`), and nodes never need registry
+  credentials of their own: the control plane mints a short-lived
+  per-repository token for each pull or push, as before.
+- No extra port, TLS setup or Tailscale dependency for images. A node that
+  can reach the control plane can pull.
+- `dock server add <name> [--production] [--non-production] [--builder]`
+  creates the join token and prints the exact install command for the new
+  server; `install.sh --node` runs `dock node join`, which stores the link
+  state in `/var/lib/dock/node.toml`.
+- `dock admin caddy-config` must work before a node has joined: in tunnel
+  mode the server marker is filled in on first connect (derived from the
+  node key fingerprint), not at install time.
