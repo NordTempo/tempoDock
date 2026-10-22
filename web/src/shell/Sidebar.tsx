@@ -1,4 +1,9 @@
-import { Link, type LinkProps, useMatches } from "@tanstack/react-router";
+import {
+  Link,
+  type LinkProps,
+  useMatches,
+  useRouterState,
+} from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useLogout } from "../data/mutations";
 import {
@@ -49,6 +54,14 @@ export const useShellMode = (): ShellMode =>
  * page scrolls; narrow ones put it above the page.
  */
 export function Sidebar({ mode }: { mode: ShellMode }) {
+  // Narrow screens fold the sidebar behind a button; moving on folds it.
+  const [open, setOpen] = useState(false);
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const [foldedAt, setFoldedAt] = useState(path);
+  if (foldedAt !== path) {
+    setFoldedAt(path);
+    setOpen(false);
+  }
   return (
     <nav
       aria-label={
@@ -65,9 +78,22 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
           : "lg:top-0 lg:h-screen"
       }`}
     >
-      {mode === "app" && <AppNav />}
-      {mode === "settings" && <SettingsNav />}
-      {mode === "console" && <ConsoleNav />}
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="nav-row lg:hidden"
+      >
+        <Icon name="list" className="text-mut" />
+        {open ? "Hide navigation" : "Navigation"}
+      </button>
+      <div
+        className={`${open ? "flex" : "hidden"} flex-1 flex-col gap-0.5 lg:flex`}
+      >
+        {mode === "app" && <AppNav />}
+        {mode === "settings" && <SettingsNav />}
+        {mode === "console" && <ConsoleNav />}
+      </div>
     </nav>
   );
 }

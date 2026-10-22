@@ -221,7 +221,7 @@ export function Page({
 }) {
   return (
     <div
-      className={`flex w-full flex-1 flex-col px-7 pt-6 pb-10 ${width} ${gap}`}
+      className={`flex w-full flex-1 flex-col px-4 pt-6 pb-10 sm:px-7 ${width} ${gap}`}
     >
       {children}
     </div>
