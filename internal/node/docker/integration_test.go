@@ -612,8 +612,9 @@ func assertInvisibleContainer(t *testing.T, e *testEnv, ctx context.Context, nam
 	}
 }
 
-// importDangling imports a one-file image without a tag and returns its ID.
-func (e *testEnv) importDangling(content string) string {
+// importDangling imports a one-file image without a tag and returns its
+// ID. built labels it as one the platform built (node.LabelImage).
+func (e *testEnv) importDangling(content string, built bool) string {
 	e.t.Helper()
 	ctx := context.Background()
 	var buf bytes.Buffer
@@ -621,7 +622,11 @@ func (e *testEnv) importDangling(content string) string {
 	_ = tw.WriteHeader(&tar.Header{Name: "x", Mode: 0o644, Size: int64(len(content))})
 	_, _ = tw.Write([]byte(content))
 	_ = tw.Close()
-	res, err := e.cli.ImageImport(ctx, client.ImageImportSource{Source: &buf, SourceName: "-"}, "", client.ImageImportOptions{})
+	var opts client.ImageImportOptions
+	if built {
+		opts.Changes = []string{"LABEL " + node.LabelImage + "=true"}
+	}
+	res, err := e.cli.ImageImport(ctx, client.ImageImportSource{Source: &buf, SourceName: "-"}, "", opts)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -635,27 +640,30 @@ func (e *testEnv) importDangling(content string) string {
 	return status.Status
 }
 
-// PruneImages removes dangling images except the kept ones. Every other
-// dangling image on the host is kept too, so the test only touches its own.
+// PruneImages removes the platform's dangling images except the kept ones,
+// and never a dangling image it didn't make, even one nothing keeps: a
+// shared host's other work keeps its images. The platform's dangling
+// images of other test runs are kept, so the test only touches its own.
 func TestPruneImages(t *testing.T) {
 	e := newEnv(t)
 	ctx := ctxTimeout(t, time.Minute)
-	gone := e.importDangling(e.prefix + "-gone")
-	kept := e.importDangling(e.prefix + "-kept")
+	gone := e.importDangling(e.prefix+"-gone", true)
+	kept := e.importDangling(e.prefix+"-kept", true)
+	theirs := e.importDangling(e.prefix+"-theirs", false)
 	list, err := e.cli.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("dangling", "true")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var keep []string
 	for _, img := range list.Items {
-		if img.ID != gone {
+		if img.ID != gone && img.ID != theirs {
 			keep = append(keep, img.ID)
 		}
 	}
-	if !slices.Contains(keep, kept) || len(keep) == len(list.Items) {
-		t.Fatalf("dangling images %v should hold both imports", list.Items)
+	if !slices.Contains(keep, kept) || len(keep) != len(list.Items)-2 {
+		t.Fatalf("dangling images %v should hold all three imports", list.Items)
 	}
-	res, err := e.PruneImages(ctx, keep)
+	res, err := e.PruneImages(ctx, node.PruneImagesRequest{Keep: keep, Repos: []string{"127.0.0.1:5000/dock/p"}})
 	if err != nil || res.Removed != 1 {
 		t.Fatalf("PruneImages = %+v, %v", res, err)
 	}
@@ -664,5 +672,39 @@ func TestPruneImages(t *testing.T) {
 	}
 	if _, err := e.cli.ImageInspect(ctx, kept); err != nil {
 		t.Errorf("kept image: %v", err)
+	}
+	if _, err := e.cli.ImageInspect(ctx, theirs); err != nil {
+		t.Errorf("unlabelled dangling image was removed: %v", err)
+	}
+}
+
+// RemoveNetwork removes an environment's network (Docker frees its subnet,
+// and freeSubnet only skips subnets of networks that exist); a network of
+// another environment, or one the platform doesn't manage, is not found.
+func TestRemoveNetwork(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	name := e.name("net")
+	labels := node.Labels{ControlPlane: e.prefix, Project: "p1", Environment: "e1"}
+	if err := e.EnsureNetwork(ctx, name, labels); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RemoveNetwork(ctx, name, node.Labels{ControlPlane: e.prefix, Project: "p1", Environment: "e2"}); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("removing as another environment: %v", err)
+	}
+	if err := e.RemoveNetwork(ctx, name, labels); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); !cerrdefs.IsNotFound(err) {
+		t.Fatalf("network still there: %v", err)
+	}
+	if err := e.RemoveNetwork(ctx, name, labels); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("removing again: %v", err)
+	}
+	if _, err := e.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{Driver: "bridge"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RemoveNetwork(ctx, name, node.Labels{}); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("removing an unmanaged network: %v", err)
 	}
 }

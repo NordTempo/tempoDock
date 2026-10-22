@@ -158,7 +158,8 @@ type (
 		IDs []string `json:"ids"`
 	}
 	pruneImagesRequest struct {
-		Keep []string `json:"keep"`
+		Keep  []string `json:"keep"`
+		Repos []string `json:"repos,omitempty"` // protocol 3
 	}
 	pruneCacheRequest struct {
 		KeepBytes int64 `json:"keep_bytes"`

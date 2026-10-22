@@ -4,6 +4,12 @@
 // and CPU limits and a low CPU weight, so a build can never starve the apps on
 // the same server. A build that needs more memory than the cap fails; apps are
 // unaffected. The container is created on demand before the first build.
+// Its name is fixed, so there is one dock runtime per Docker host: a
+// BuildKit container another runtime created (Builder.Owner) is refused,
+// never recreated.
+//
+// Built images carry node.LabelImage, so disk pruning can tell them from
+// other images on the host once their tag is gone.
 //
 // The container runs the rootful BuildKit image privileged, the same way
 // `docker buildx create --driver docker-container` does. Rootless BuildKit
@@ -75,9 +81,12 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
+	gateway "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/grpcerrors"
@@ -98,6 +107,12 @@ type Builder struct {
 	// must exist; changing it recreates the container on the next build.
 	// Set it before the first build.
 	Network string
+	// Owner identifies the dock runtime this builder belongs to (its data
+	// dir), recorded on the BuildKit container (node.LabelOwner). A
+	// container another runtime on the same Docker host created is never
+	// used, recreated or pruned: builds fail saying so instead. Set it
+	// before the first build.
+	Owner string
 
 	docker  *client.Client
 	cfg     config.BuildKit
@@ -291,6 +306,11 @@ func localOpt(frontend string, attrs map[string]string, contextDir, dockerfileDi
 
 // solve runs the build, streaming plain progress to logs and the resulting
 // image tarball into Docker's image load API.
+//
+// The frontend runs from a build function rather than as the solve's own
+// frontend, so the image config it returns is labelled node.LabelImage
+// (labelImage) before the export: Railpack's frontend takes no label
+// options, and disk pruning only removes images carrying the label.
 func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.SolveOpt, tag string, logs io.Writer) error {
 	pr, pw := io.Pipe()
 	opt.Exports = []bkclient.ExportEntry{{
@@ -318,7 +338,14 @@ func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.S
 		close(shown)
 	}()
 
-	_, err = bk.Solve(ctx, nil, opt, status)
+	frontend, attrs := opt.Frontend, opt.FrontendAttrs
+	_, err = bk.Build(ctx, opt, "dock", func(ctx context.Context, c gateway.Client) (*gateway.Result, error) {
+		res, err := c.Solve(ctx, gateway.SolveRequest{Frontend: frontend, FrontendOpt: attrs})
+		if err != nil {
+			return nil, err
+		}
+		return res, labelImage(res.Metadata)
+	}, status)
 	_ = pw.CloseWithError(err) // unblocks load if the export never started
 	<-shown
 	loadErr := <-loaded
@@ -326,6 +353,47 @@ func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.S
 		return err
 	}
 	return loadErr
+}
+
+// labelImage sets node.LabelImage in the image configs of a frontend's
+// result metadata (one per platform), keeping every other field as is.
+// A result without one has nothing to label: its image stays unlabelled,
+// which pruning treats as not the platform's.
+func labelImage(meta map[string][]byte) error {
+	for k, dt := range meta {
+		if k != exptypes.ExporterImageConfigKey && !strings.HasPrefix(k, exptypes.ExporterImageConfigKey+"/") {
+			continue
+		}
+		var img, cfg map[string]json.RawMessage
+		var labels map[string]string
+		if err := json.Unmarshal(dt, &img); err != nil {
+			return fmt.Errorf("read the image config: %w", err)
+		}
+		if raw, ok := img["config"]; ok {
+			if err := json.Unmarshal(raw, &cfg); err != nil {
+				return fmt.Errorf("read the image config: %w", err)
+			}
+		}
+		if raw, ok := cfg["Labels"]; ok {
+			if err := json.Unmarshal(raw, &labels); err != nil {
+				return fmt.Errorf("read the image labels: %w", err)
+			}
+		}
+		if img == nil {
+			img = map[string]json.RawMessage{}
+		}
+		if cfg == nil {
+			cfg = map[string]json.RawMessage{}
+		}
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		labels[node.LabelImage] = "true"
+		cfg["Labels"], _ = json.Marshal(labels)
+		img["config"], _ = json.Marshal(cfg)
+		meta[k], _ = json.Marshal(img)
+	}
+	return nil
 }
 
 // load feeds an image tarball to Docker and returns any error it reports.

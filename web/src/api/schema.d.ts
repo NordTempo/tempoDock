@@ -2817,7 +2817,7 @@ export interface components {
             server: string;
         };
         Project: {
-            /** @description Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there) */
+            /** @description Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there), and environment networks left on them */
             archive_notes?: string[] | null;
             /** Format: date-time */
             archived_at?: string;

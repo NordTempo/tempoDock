@@ -298,11 +298,12 @@ func (r *Runtime) RemoveImage(_ context.Context, ref string) error {
 }
 
 // PruneImages implements node.Containers, recorded as "prune images
-// keep=<ids>". The fake has no dangling images, so nothing is removed.
-func (r *Runtime) PruneImages(_ context.Context, keep []string) (node.PruneResult, error) {
+// keep=<ids> repos=<prefixes>". The fake has no dangling images, so
+// nothing is removed.
+func (r *Runtime) PruneImages(_ context.Context, req node.PruneImagesRequest) (node.PruneResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.op("prune images keep=%s", strings.Join(keep, ","))
+	r.op("prune images keep=%s repos=%s", strings.Join(req.Keep, ","), strings.Join(req.Repos, ","))
 	return node.PruneResult{}, nil
 }
 
@@ -331,6 +332,20 @@ func (r *Runtime) EnsureNetwork(_ context.Context, name string, labels node.Labe
 		return nil
 	}
 	r.networks[name] = labels
+	return nil
+}
+
+// RemoveNetwork implements node.Containers, recorded as "remove network
+// <name>".
+func (r *Runtime) RemoveNetwork(_ context.Context, name string, labels node.Labels) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	have, ok := r.networks[name]
+	if !ok || !have.Matches(labels) {
+		return fmt.Errorf("network %s: %w", name, node.ErrNotFound)
+	}
+	r.op("remove network %s", name)
+	delete(r.networks, name)
 	return nil
 }
 

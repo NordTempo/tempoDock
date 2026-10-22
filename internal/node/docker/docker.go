@@ -180,17 +180,17 @@ func (r *Runtime) RemoveImage(ctx context.Context, ref string) error {
 }
 
 // PruneImages implements node.Containers. Docker's own `image prune`
-// can't be told what to keep, so this lists dangling images and removes
-// them one by one, without force: one a container uses is refused and
-// skipped.
-func (r *Runtime) PruneImages(ctx context.Context, keep []string) (node.PruneResult, error) {
+// can't be told what to keep or whose images are whose, so this lists
+// dangling images and removes the platform's (ownedImage) one by one,
+// without force: one a container uses is refused and skipped.
+func (r *Runtime) PruneImages(ctx context.Context, req node.PruneImagesRequest) (node.PruneResult, error) {
 	res, err := r.cli.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("dangling", "true")})
 	if err != nil {
 		return node.PruneResult{}, fmt.Errorf("list dangling images: %w", err)
 	}
 	var out node.PruneResult
 	for _, img := range res.Items {
-		if slices.Contains(keep, img.ID) {
+		if slices.Contains(req.Keep, img.ID) || !ownedImage(img.Labels, img.RepoDigests, req.Repos) {
 			continue
 		}
 		_, err := r.cli.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{PruneChildren: true})
@@ -206,6 +206,45 @@ func (r *Runtime) PruneImages(ctx context.Context, keep []string) (node.PruneRes
 		}
 	}
 	return out, nil
+}
+
+// ownedImage reports whether the platform made an image with these labels
+// and digest references (repo@sha256:...): it built it (node.LabelImage),
+// or pulled it from a repository under one of repos (the platform
+// registry's). An image it can't tell is never its own.
+func ownedImage(labels map[string]string, repoDigests, repos []string) bool {
+	if labels[node.LabelImage] == "true" {
+		return true
+	}
+	for _, d := range repoDigests {
+		repo, _, ok := strings.Cut(d, "@")
+		if ok && slices.ContainsFunc(repos, func(p string) bool { return p != "" && strings.HasPrefix(repo, p) }) {
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveNetwork implements node.Containers.
+func (r *Runtime) RemoveNetwork(ctx context.Context, name string, labels node.Labels) error {
+	r.netMu.Lock()
+	defer r.netMu.Unlock()
+	res, err := r.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
+	switch {
+	case cerrdefs.IsNotFound(err):
+		return notFound("network", name)
+	case err != nil:
+		return fmt.Errorf("inspect network %s: %w", name, err)
+	case res.Network.Name != name || !isManaged(res.Network.Labels) || !node.LabelsFrom(res.Network.Labels).Matches(labels):
+		return notFound("network", name)
+	}
+	if _, err := r.cli.NetworkRemove(ctx, res.Network.ID, client.NetworkRemoveOptions{}); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return notFound("network", name)
+		}
+		return fmt.Errorf("remove network %s: %w", name, err)
+	}
+	return nil
 }
 
 // BridgePrefix starts the host interface name of every network the runtime

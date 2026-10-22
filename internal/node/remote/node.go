@@ -329,7 +329,7 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return empty{}, rt.RemoveImage(ctx, a.Ref)
 	}))
 	h(opPruneImages, unary(func(ctx context.Context, a pruneImagesRequest) (pruneResult, error) {
-		r, err := rt.PruneImages(ctx, a.Keep)
+		r, err := rt.PruneImages(ctx, node.PruneImagesRequest{Keep: a.Keep, Repos: a.Repos})
 		return pruneResult(r), err
 	}))
 	h(opPruneCache, unary(func(ctx context.Context, a pruneCacheRequest) (pruneResult, error) {
@@ -338,6 +338,9 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	}))
 	h(opEnsureNetwork, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
 		return empty{}, rt.EnsureNetwork(ctx, a.Name, a.Labels.node())
+	}))
+	h(opRemoveNetwork, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
+		return empty{}, rt.RemoveNetwork(ctx, a.Name, a.Labels.node())
 	}))
 	h(opEnsureVolume, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
 		return empty{}, rt.EnsureVolume(ctx, a.Name, a.Labels.node())

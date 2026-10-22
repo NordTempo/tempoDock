@@ -311,14 +311,22 @@ scope, and `--yes` when not on a terminal.
 
 `dock project archive shop` does the same for every service in every
 environment of the project, then hides it from `dock project list`
-(`--all` shows it). An archived project takes no new environments or
-services. It is refused while one of its services is deploying.
+(`--all` shows it). Once their containers are stopped, its environments'
+Docker networks are removed, so their addresses go back to `[network]
+pool`. An archived project takes no new environments or services. It is
+refused while one of its services is deploying.
+
+Archived services can't be rolled back, so their images leave the
+rollback window: the registry deletes them at its next prune (an archive
+starts one unless one ran in the last hour; otherwise the next deploy
+does), and a server whose disk fills up prunes their dangling copies.
 
 Archiving works while a service's server is unreachable; the answer (and
 the audit log) says what was left:
 
 - **Offline server:** its containers are stopped and its routes removed
-  when it reconnects.
+  when it reconnects. A project archive's networks there stay; the answer
+  names them for `docker network rm` on that machine.
 - **Revoked server:** containers on revoked server homelab were left
   running. Remove them on that machine (`docker ps --filter
   label=dock.managed=true`), or join it again with `dock server add` and

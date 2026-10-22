@@ -521,11 +521,23 @@ func TestArchiveProject(t *testing.T) {
 	if _, err := h.c.ArchiveProject(h.ctx, deployer, "shop"); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("deploy scope archived a project: %v", err)
 	}
+	if nets := h.rt.Networks(); len(nets) != 2 {
+		t.Fatalf("networks = %v", nets)
+	}
 	p, err := h.c.ArchiveProject(h.ctx, System, "shop")
 	if err != nil || p.ArchivedAt == nil {
 		t.Fatalf("archive = %+v, %v", p, err)
 	}
 	h.waitRunning()
+	// The environments' networks go once their containers are stopped, so
+	// their subnets return to the pool.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(h.rt.Networks()) > 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("networks left after the archive: %v", h.rt.Networks())
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
 	for _, ref := range []ServiceRef{web, db, staging} {
 		if svc, _ := h.c.GetService(h.ctx, System, ref); svc.ArchivedAt == nil || svc.ActiveRelease != nil {
 			t.Errorf("%s = %+v", ref, svc)

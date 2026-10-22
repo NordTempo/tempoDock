@@ -8,6 +8,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -225,7 +226,8 @@ func (c *Core) ArchiveService(ctx context.Context, a Actor, ref ServiceRef) (api
 	}
 	var notes []string
 	if len(done) > 0 {
-		notes = c.finishArchive(ctx, done)
+		notes, _ = c.finishArchive(ctx, done)
+		c.maybePruneRegistry()
 		c.audit(ctx, a, "service.archive", &ss.project, &ss.env, ss.String(), archiveSummary("archived service; volumes kept", notes))
 	}
 	svc, err := c.toService(ctx, ss, apitypes.PendingChanges{})
@@ -294,8 +296,10 @@ func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedServ
 // superseded already, so the reconnect procedure removes their containers
 // and applies its routes (sweepRetired, reconnected). A revoked server
 // only gets there if it joins again. The notes it returns say so, one per
-// such server with containers to stop, for the archive's answer.
-func (c *Core) finishArchive(ctx context.Context, done []archivedService) []string {
+// such server with containers to stop, for the archive's answer. stopped
+// is done when the background stops are.
+func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes []string, stopped *sync.WaitGroup) {
+	stopped = &sync.WaitGroup{}
 	links := map[int64]serverLink{}
 	stopping := map[int64]int{} // containers to stop, by server
 	for _, as := range done {
@@ -307,7 +311,6 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) []stri
 			stopping[id]++
 		}
 	}
-	var notes []string
 	for _, id := range slices.Sorted(maps.Keys(links)) {
 		switch link := links[id]; {
 		case link.status == apitypes.ServerOnline:
@@ -336,8 +339,10 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) []stri
 			continue
 		}
 		c.wg.Add(1)
+		stopped.Add(1)
 		go func() {
 			defer c.wg.Done()
+			defer stopped.Done()
 			ctx, ss, rel := c.ctx, as.svcScope, *as.active
 			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopping release %d: %s was archived", rel.Number, ss.svc.Name))
 			if err := c.retire(ctx, ss, rel.ID); err != nil {
@@ -349,7 +354,7 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) []stri
 			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopped release %d; volumes are kept", rel.Number))
 		}()
 	}
-	return notes
+	return notes, stopped
 }
 
 // ListVolumes returns a service's volumes, including staged ones.

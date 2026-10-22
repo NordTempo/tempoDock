@@ -279,3 +279,31 @@ func TestBridgeName(t *testing.T) {
 		t.Errorf("bridge names %q, %q: want distinct, %s prefix, at most 15 chars", a, b, BridgePrefix)
 	}
 }
+
+// Pruning only takes images the platform made: built ones (labelled) and
+// ones pulled from the platform registry. Untagged images of other work on
+// the host, other registries and look-alike paths are never its own.
+func TestOwnedImage(t *testing.T) {
+	repos := []string{"127.0.0.1:5000/dock/p"}
+	for _, tc := range []struct {
+		name    string
+		labels  map[string]string
+		digests []string
+		want    bool
+	}{
+		{"built", map[string]string{node.LabelImage: "true"}, nil, true},
+		{"from the registry", nil, []string{"127.0.0.1:5000/dock/p1_e2_s3@sha256:ab"}, true},
+		{"untagged, someone else's", nil, nil, false},
+		{"other dock labels", map[string]string{node.LabelManaged: "true"}, nil, false},
+		{"another registry", nil, []string{"ghcr.io/acme/web@sha256:ab"}, false},
+		{"same path elsewhere", nil, []string{"ghcr.io/dock/p1_e2_s3@sha256:ab"}, false},
+		{"another port", nil, []string{"127.0.0.1:5001/dock/p1_e2_s3@sha256:ab"}, false},
+	} {
+		if got := ownedImage(tc.labels, tc.digests, repos); got != tc.want {
+			t.Errorf("%s: owned = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if ownedImage(nil, []string{"x/y@sha256:ab"}, []string{""}) {
+		t.Error("an empty repository prefix owns everything")
+	}
+}

@@ -65,8 +65,9 @@ type Project struct {
 	// ArchivedAt is set for archived projects, which are hidden from lists
 	// unless asked for.
 	ArchivedAt *time.Time `json:"archived_at,omitempty"`
-	// ArchiveNotes as on Service: only in an archive's answer.
-	ArchiveNotes []string `json:"archive_notes,omitempty" doc:"Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)"`
+	// ArchiveNotes as on Service, plus networks left on such servers: only
+	// in an archive's answer.
+	ArchiveNotes []string `json:"archive_notes,omitempty" doc:"Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there), and environment networks left on them"`
 }
 
 // CreateProjectRequest creates a project.

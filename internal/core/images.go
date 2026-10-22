@@ -23,14 +23,18 @@ import (
 // with a pull token minted for that one repository. Without a registry
 // (single-server installs) images stay where they were built.
 //
-// Upkeep runs after deploys, never on a timer: a service's images past its
-// rollback window are removed from its server (and its builder), and at
-// most once per registryPruneEvery the registry drops manifests no release
-// keeps, then collects their blobs. Both only touch images the platform
-// made (build tags and registry references), never CI images.
+// Upkeep runs after deploys and archives, never on a timer: a service's
+// images past its rollback window are removed from its server (and its
+// builder), and at most once per registryPruneEvery the registry drops
+// manifests no release keeps, then collects their blobs. Archived
+// services keep no release (they can't be rolled back or restored), so
+// their images leave the registry with the next prune. Both only touch
+// images the platform made (build tags and registry references), never
+// CI images.
 
 // registryPruneEvery is the least time between two registry prunes. A
-// prune is started by a deploy, so an idle daemon never prunes.
+// prune is started by a deploy or an archive, so an idle daemon never
+// prunes.
 const registryPruneEvery = time.Hour
 
 // imageSweep is how many releases past a service's rollback window each
@@ -246,7 +250,8 @@ func (c *Core) imageNames(r store.Release) []string {
 }
 
 // maybePruneRegistry starts a registry prune in the background if none
-// ran within registryPruneEvery. Deploys call it when they finish.
+// ran within registryPruneEvery. Deploys call it when they finish, and
+// archives once they are committed.
 func (c *Core) maybePruneRegistry() {
 	if c.reg == nil {
 		return
@@ -259,7 +264,7 @@ func (c *Core) maybePruneRegistry() {
 	if !due {
 		return
 	}
-	c.wg.Add(1) // callers run in a deploy goroutine, itself in wg
+	c.wg.Add(1) // like finishArchive's stops
 	go func() {
 		defer c.wg.Done()
 		ok := c.pruneRegistry(c.ctx)

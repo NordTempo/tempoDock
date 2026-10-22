@@ -80,7 +80,21 @@ func newBuilder(t *testing.T, docker *client.Client, memoryMB int) *Builder {
 	cfg.MemoryMB = memoryMB
 	b := New(docker, cfg, t.TempDir())
 	b.name, b.cacheVolume = testContainer, testCache
+	b.Owner = testContainer
 	return b
+}
+
+// labelled fails the test unless image id carries node.LabelImage, which
+// disk pruning needs to tell the platform's images from others.
+func labelled(t *testing.T, docker *client.Client, id string) {
+	t.Helper()
+	img, err := docker.ImageInspect(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img.Config == nil || img.Config.Labels[node.LabelImage] != "true" {
+		t.Errorf("image %s has no %s label: %+v", id, node.LabelImage, img.Config)
+	}
 }
 
 // sourceTar packs files (path -> content) into a gzipped tar stream.
@@ -183,6 +197,7 @@ func TestBuildDockerfile(t *testing.T) {
 	if !strings.HasPrefix(id, "sha256:") {
 		t.Fatalf("image ID = %q", id)
 	}
+	labelled(t, docker, id)
 	if body := get(t, run(t, docker, "dock-test-dockerfile", id)); body != "hello dockerfile" {
 		t.Fatalf("body = %q", body)
 	}
@@ -206,6 +221,7 @@ func TestBuildRailpack(t *testing.T) {
 	if !strings.Contains(logs, "Detected Node") {
 		t.Errorf("logs don't mention the detected provider:\n%s", logs)
 	}
+	labelled(t, docker, id)
 	if body := get(t, run(t, docker, "dock-test-railpack", id)); body != "hello railpack" {
 		t.Fatalf("body = %q", body)
 	}
@@ -444,6 +460,37 @@ func TestDaemonLimitsRestored(t *testing.T) {
 		t.Fatalf("loosened limit not detected: %q", p)
 	}
 	ensure()
+}
+
+// A second dock runtime on the same Docker host gets a clear error instead
+// of recreating (and so killing) the first one's BuildKit, and its prune
+// leaves that BuildKit's cache alone.
+func TestBuildKitOfAnotherRuntime(t *testing.T) {
+	docker := dockerClient(t)
+	ctx := t.Context()
+	b := newBuilder(t, docker, 512)
+	bk, err := b.ensureDaemon(ctx, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = bk.Close()
+	before, err := docker.ContainerInspect(ctx, testContainer, client.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	other := newBuilder(t, docker, 1024) // other settings would recreate it
+	other.Owner = testContainer + "-other"
+	if _, err := other.ensureDaemon(ctx, io.Discard); err == nil || !strings.Contains(err.Error(), "one dock runtime per Docker host") {
+		t.Fatalf("second runtime: %v", err)
+	}
+	if _, err := other.PruneBuildCache(ctx, 0); err == nil {
+		t.Fatal("second runtime pruned the first one's build cache")
+	}
+	after, err := docker.ContainerInspect(ctx, testContainer, client.ContainerInspectOptions{})
+	if err != nil || after.Container.ID != before.Container.ID || after.Container.State.StartedAt != before.Container.State.StartedAt {
+		t.Fatalf("BuildKit was recreated or restarted: %v", err)
+	}
 }
 
 // runHelper runs sh -c script in a throwaway alpine container with host

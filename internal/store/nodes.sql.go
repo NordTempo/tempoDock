@@ -275,6 +275,7 @@ func (q *Queries) GetServerByFingerprint(ctx context.Context, fingerprint string
 
 const listKeptDigests = `-- name: ListKeptDigests :many
 SELECT DISTINCT releases.image_digest FROM releases
+JOIN services ON services.id = releases.service_id AND services.archived_at IS NULL
 WHERE releases.image_digest != ''
   AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')
        OR releases.number > (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
@@ -283,9 +284,12 @@ WHERE releases.image_digest != ''
 
 // The registry digests releases still need, which registry pruning keeps
 // (ADR 0014 section 4): every service's newest keep releases (the
-// rollback window) and every active and in-flight release. It reads each
-// release with a digest once, through the (service_id, number) key for
-// the window; pruning runs at most hourly, after a deploy.
+// rollback window) and every active and in-flight release, of services
+// that aren't archived (an archived service is never rolled back or
+// restored, ADR 0020 amendment). It reads each release with a digest
+// once, through the (service_id, number) key for the window and the
+// services primary key; pruning runs at most hourly, after a deploy or an
+// archive.
 func (q *Queries) ListKeptDigests(ctx context.Context, keep int64) ([]string, error) {
 	rows, err := q.query(ctx, q.listKeptDigestsStmt, listKeptDigests, keep)
 	if err != nil {

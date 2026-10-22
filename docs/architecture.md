@@ -193,7 +193,9 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
   `dock.service`, `dock.release`, and `dock.control_plane`, the control
   plane's install ID (created once in its database). Networks and volumes
   get it too. A control plane ignores resources labelled for another one
-  (no drift, never removed), so two can share a Docker host. Resources
+  (no drift, never removed), so two can share a Docker host, though only
+  one of them can build there: the `dock-buildkit` container belongs to
+  the runtime that created it ([install](guide/install.md)). Resources
   from before the label count as its own only when every other label
   matches its records; new containers get the label on the next deploy.
 - Containers run with `restart: unless-stopped`, so they survive daemon and

@@ -2,11 +2,17 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
+	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -134,15 +140,17 @@ func (c *Core) ListProjects(ctx context.Context, a Actor, archived bool) ([]apit
 
 // ArchiveProject archives a project and every service in it, the same
 // non-destructive way as ArchiveService: routes removed, containers stopped
-// in the background, volumes and history kept. The project is hidden from
-// lists and gets no new environments or services. Refused while any of its
-// services is deploying.
+// in the background, volumes and history kept. Its environments' networks
+// go once their containers are stopped (removeNetworks). The project is
+// hidden from lists and gets no new environments or services. Refused
+// while any of its services is deploying.
 func (c *Core) ArchiveProject(ctx context.Context, a Actor, name string) (apitypes.Project, error) {
 	p, err := c.projectFor(ctx, a, name, apitypes.ScopeAdmin, "archiving a project")
 	if err != nil {
 		return apitypes.Project{}, err
 	}
 	var done []archivedService
+	var envs []store.Environment
 	already := false
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if p, err = q.GetProject(ctx, p.ID); err != nil {
@@ -151,8 +159,7 @@ func (c *Core) ArchiveProject(ctx context.Context, a Actor, name string) (apityp
 		if already = p.ArchivedAt != nil; already {
 			return nil
 		}
-		envs, err := q.ListEnvironments(ctx, p.ID)
-		if err != nil {
+		if envs, err = q.ListEnvironments(ctx, p.ID); err != nil {
 			return err
 		}
 		svcs, err := q.ListProjectServices(ctx, p.ID)
@@ -176,11 +183,75 @@ func (c *Core) ArchiveProject(ctx context.Context, a Actor, name string) (apityp
 	if err != nil || already {
 		return toProject(p), err
 	}
-	notes := c.finishArchive(ctx, done)
+	notes, stopped := c.finishArchive(ctx, done)
+	notes = append(notes, c.removeNetworks(ctx, p, envs, done, stopped)...)
+	c.maybePruneRegistry()
 	c.audit(ctx, a, "project.archive", &p, nil, p.Name, archiveSummary(fmt.Sprintf("archived project and its %d services; volumes kept", len(done)), notes))
 	out := toProject(p)
 	out.ArchiveNotes = notes
 	return out, nil
+}
+
+// removeNetworks removes an archived project's environment networks in
+// the background, once stopped is done (finishArchive's container stops),
+// so their subnets go back to [network] pool: each holds a /24, and the
+// pool runs out with 256 left behind. A network is only removed while no
+// container uses it (Docker refuses), and only one labelled for this
+// control plane and environment.
+//
+// Servers that can't be reached keep theirs: the notes it returns say so,
+// one per server, naming the networks of environments that had a running
+// release (the ones sure to exist), for the archive's answer.
+func (c *Core) removeNetworks(ctx context.Context, p store.Project, envs []store.Environment, done []archivedService, stopped *sync.WaitGroup) []string {
+	deployed := map[int64]bool{}
+	for _, as := range done {
+		deployed[as.env.ID] = deployed[as.env.ID] || as.active != nil
+	}
+	links := map[int64]serverLink{}
+	left := map[int64][]string{} // networks on unreachable servers, by server
+	var online []envScope
+	for _, e := range envs {
+		if _, ok := links[e.ServerID]; !ok {
+			links[e.ServerID] = c.linkOf(ctx, e.ServerID)
+		}
+		es := envScope{p, e}
+		switch {
+		case links[e.ServerID].status == apitypes.ServerOnline:
+			online = append(online, es)
+		case deployed[e.ID]:
+			left[e.ServerID] = append(left[e.ServerID], networkName(es))
+		}
+	}
+	var notes []string
+	for _, id := range slices.Sorted(maps.Keys(left)) {
+		link, nets := links[id], left[id]
+		what, it := "network", "it"
+		if len(nets) > 1 {
+			what, it = "networks", "them"
+		}
+		notes = append(notes, fmt.Sprintf("server %s is %s: its %s %s stayed; remove %s on that machine with `docker network rm %s`",
+			link.name, link.status, what, strings.Join(nets, ", "), it, strings.Join(nets, " ")))
+	}
+	if len(online) == 0 {
+		return notes
+	}
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		stopped.Wait()
+		for _, es := range online {
+			rt := c.connected(es.env.ServerID)
+			if rt == nil {
+				continue // went offline meanwhile
+			}
+			name := networkName(es)
+			labels := node.Labels{ControlPlane: c.install, Project: strconv.FormatInt(p.ID, 10), Environment: strconv.FormatInt(es.env.ID, 10)}
+			if err := rt.RemoveNetwork(c.ctx, name, labels); err != nil && !errors.Is(err, node.ErrNotFound) {
+				c.log.Warn("remove the network of an archived environment", "network", name, "server", es.env.ServerID, "err", err)
+			}
+		}
+	}()
+	return notes
 }
 
 // notArchived refuses adding to an archived project.

@@ -88,16 +88,47 @@ func (c *Client) RemoveImage(ctx context.Context, ref string) error {
 	return err
 }
 
-// PruneImages implements node.Containers. A node older than the
-// operation answers with an error, so it is simply not pruned.
-func (c *Client) PruneImages(ctx context.Context, keep []string) (node.PruneResult, error) {
-	r, err := unaryCall[pruneResult](ctx, c, opPruneImages, pruneImagesRequest{Keep: keep})
+// ownImagesProtocol is the first node protocol whose prune-images only
+// removes the platform's own images, and that has remove-network.
+const ownImagesProtocol = 3
+
+// needProtocol returns an error saying what an older node can't do
+// (what) when the server's protocol is below min.
+func (c *Client) needProtocol(ctx context.Context, min int, what string) error {
+	s, err := c.session(ctx)
+	if err != nil {
+		return err
+	}
+	if s.hello.Protocol < min {
+		return fmt.Errorf("server %s runs dock %s, which can't %s; upgrade dock on it", s.name, s.hello.Version, what)
+	}
+	return nil
+}
+
+// PruneImages implements node.Containers. Older nodes prune every
+// dangling image on their host, other work's too, so they are not asked:
+// they answer with an error and are simply not pruned.
+func (c *Client) PruneImages(ctx context.Context, req node.PruneImagesRequest) (node.PruneResult, error) {
+	if err := c.needProtocol(ctx, ownImagesProtocol, "prune only its own images"); err != nil {
+		return node.PruneResult{}, err
+	}
+	r, err := unaryCall[pruneResult](ctx, c, opPruneImages, pruneImagesRequest{Keep: req.Keep, Repos: req.Repos})
 	return node.PruneResult(r), err
 }
 
 // EnsureNetwork implements node.Containers.
 func (c *Client) EnsureNetwork(ctx context.Context, name string, labels node.Labels) error {
 	_, err := unaryCall[empty](ctx, c, opEnsureNetwork, resourceRequest{Name: name, Labels: toWireLabels(labels)})
+	return err
+}
+
+// RemoveNetwork implements node.Containers. An older node doesn't have
+// the operation: its networks stay.
+func (c *Client) RemoveNetwork(ctx context.Context, name string, labels node.Labels) error {
+	if err := c.needProtocol(ctx, ownImagesProtocol, "remove networks"); err != nil {
+		return err
+	}
+	_, err := unaryCall[empty](ctx, c, opRemoveNetwork, resourceRequest{Name: name, Labels: toWireLabels(labels)})
 	return err
 }
 
@@ -160,12 +191,8 @@ func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult,
 	if spec.Stdin != nil {
 		return node.JobResult{}, errors.New("jobs with input run on the control plane's own server only")
 	}
-	s, err := c.session(ctx)
-	if err != nil {
+	if err := c.needProtocol(ctx, jobProtocol, "run backup jobs"); err != nil {
 		return node.JobResult{}, err
-	}
-	if s.hello.Protocol < jobProtocol {
-		return node.JobResult{}, fmt.Errorf("server %s runs dock %s, which can't run backup jobs; upgrade dock on it", s.name, s.hello.Version)
 	}
 	r, err := unaryCall[jobResult](ctx, c, opRunJob, toJobRequest(spec))
 	return node.JobResult{ExitCode: r.ExitCode, Output: r.Output}, err
