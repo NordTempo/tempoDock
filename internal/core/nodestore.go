@@ -333,6 +333,7 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 		c.log.Error("server reconnected: apply routes", "server", serverID, "err", err)
 	}
 	c.kickDomains()
+	c.kickBackups() // overdue backups run now
 }
 
 // publishServer sends a server's current state to clients.

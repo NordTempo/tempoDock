@@ -117,6 +117,10 @@ type Core struct {
 	browse   browseLog
 	deciding decisions
 
+	// backups is the backup scheduler's kick and the runs in flight
+	// (backups.go).
+	backups backupState
+
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
 	uploads   map[int64]bool
@@ -158,6 +162,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		loginLimit: newLimiter(5, 10*time.Second),
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),
+		backups:    newBackupState(),
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
@@ -216,6 +221,9 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.recover(ctx); err != nil {
 		return fmt.Errorf("recover: %w", err)
 	}
+	if err := c.failInterruptedBackups(ctx); err != nil {
+		return fmt.Errorf("recover backups: %w", err)
+	}
 	if err := c.reconcileServer(ctx, c.local.ID, c.rt, true); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
@@ -227,10 +235,11 @@ func (c *Core) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("runtime events: %w", err)
 	}
-	c.wg.Add(3)
+	c.wg.Add(4)
 	go c.watchRuntime(events)
 	go c.checkDomains()
 	go c.collectStats()
+	go c.scheduleBackups()
 	if err := c.resumeGit(ctx); err != nil {
 		return fmt.Errorf("resume queued pushes: %w", err)
 	}

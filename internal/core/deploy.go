@@ -69,6 +69,12 @@ func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
 	}
 	if err != nil {
 		d.fail(ctx, err)
+	} else {
+		c.afterActive(ctx, d.ss)
+		c.kickBackups() // it may be newly stateful
+	}
+	if spec.done != nil {
+		spec.done(err == nil)
 	}
 	if p := spec.promote; p != nil {
 		p.ok = err == nil
@@ -154,11 +160,16 @@ func (d *deployment) run(ctx context.Context) error {
 		Interval: time.Second,
 		Grace:    min(healthGrace, time.Duration(d.cfg.HealthCheckTimeout)*time.Second),
 	}
+	if !d.cfg.Published {
+		hc.Port = d.cfg.HealthPort
+	}
 	if err := d.rt.HealthCheck(ctx, ctr, hc); err != nil {
 		what := "TCP check on port " + strconv.Itoa(d.cfg.Port)
 		switch {
 		case hc.Path != "":
 			what = "HTTP check on " + hc.Path
+		case hc.Port != 0:
+			what = "TCP check on port " + strconv.Itoa(hc.Port) + " in the environment network"
 		case !d.cfg.Published:
 			what = "container must stay running"
 		}

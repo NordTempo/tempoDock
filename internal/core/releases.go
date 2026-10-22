@@ -32,14 +32,17 @@ type releaseConfig struct {
 	Cmd string            `json:"cmd,omitempty"`
 	// Port is the container port; Published means it is bound to a fixed
 	// loopback host port (the release row's host_port) for routing.
-	Port               int           `json:"port"`
-	Published          bool          `json:"published"`
-	HealthCheckPath    string        `json:"health_check_path,omitempty"`
-	HealthCheckTimeout int           `json:"health_check_timeout_seconds"`
-	MemoryMB           int           `json:"memory_mb"`
-	CPUs               float64       `json:"cpus"`
-	Mounts             []configMount `json:"mounts"`
-	Aliases            []string      `json:"aliases"`
+	Port               int    `json:"port"`
+	Published          bool   `json:"published"`
+	HealthCheckPath    string `json:"health_check_path,omitempty"`
+	HealthCheckTimeout int    `json:"health_check_timeout_seconds"`
+	MemoryMB           int    `json:"memory_mb"`
+	// HealthPort is the container port a template database is probed on
+	// over its environment network (it publishes none).
+	HealthPort int           `json:"health_port,omitempty"`
+	CPUs       float64       `json:"cpus"`
+	Mounts     []configMount `json:"mounts"`
+	Aliases    []string      `json:"aliases"`
 	// Repo holds the deploy settings that came from dock.toml, so config
 	// releases built on this one keep them.
 	Repo *repoDeploy `json:"repo,omitempty"`
@@ -195,6 +198,9 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 	}
 	if cfg.HealthCheckTimeout == 0 {
 		cfg.HealthCheckTimeout = c.cfg.Defaults.HealthCheckTimeout
+	}
+	if t, ok := templateOf(target); ok {
+		cfg.HealthPort = t.port
 	}
 	if cfg.MemoryMB == 0 {
 		cfg.MemoryMB = c.cfg.Defaults.MemoryMB
@@ -358,9 +364,14 @@ func (c *Core) resolveLoaded(ev envVars, staged bool) (envs map[int64]map[string
 	return envs, broken, nil
 }
 
+// servicePort is the container port a service listens on (and PORT): its
+// port setting, else its template's, else defaultPort.
 func servicePort(s store.Service) int {
 	if s.Port != 0 {
 		return int(s.Port)
+	}
+	if t, ok := templateOf(s); ok {
+		return t.port
 	}
 	return defaultPort
 }
@@ -403,6 +414,9 @@ type releaseSpec struct {
 	// commit is the pushed commit an upload was fetched from (ADR 0018).
 	// Releases that copy an image copy its commit instead.
 	commit *apitypes.Commit
+	// done, if set, is called when the release finished (ok: it went
+	// active), from the deploy goroutine.
+	done func(ok bool)
 }
 
 var errNoActiveRelease = errors.New("service has no active release")

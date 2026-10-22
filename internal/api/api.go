@@ -89,6 +89,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerStreams(s, a)
 	registerData(s, a)
 	registerGit(s, a)
+	registerBackups(s, a)
 	return a
 }
 
