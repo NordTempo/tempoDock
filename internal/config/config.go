@@ -130,12 +130,14 @@ type Registry struct {
 	// Enabled runs the registry on this server. Control plane only.
 	Enabled bool `toml:"enabled"`
 	// Listen is the host address the registry container is published on.
+	// On a node, `dock node` serves the registry there over the link (ADR
+	// 0014 amendment), so it is the registry's address on every server and
+	// the prefix of every image name.
 	Listen string `toml:"listen"`
 	// StorageDir holds the registry's blobs and manifests on the host.
 	StorageDir string `toml:"storage_dir"`
-	// PublicName is the registry's host[:port] as nodes reach it, and the
-	// prefix of every image name (<public_name>/<project>/<service>).
-	// Required when Enabled.
+	// PublicName names the registry: the audience of its tokens. Required
+	// when Enabled.
 	PublicName string `toml:"public_name"`
 }
 
@@ -232,7 +234,7 @@ func (c *Config) validate() error {
 	}
 	if c.Registry.Enabled {
 		if c.Registry.Listen == "" || c.Registry.StorageDir == "" || c.Registry.PublicName == "" {
-			return errors.New("[registry] enabled needs listen, storage_dir and public_name (the registry's host[:port] as nodes reach it)")
+			return errors.New("[registry] enabled needs listen, storage_dir and public_name (the registry's name in its tokens)")
 		}
 		if err := checkHostPort("[registry] listen", c.Registry.Listen); err != nil {
 			return err

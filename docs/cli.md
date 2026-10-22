@@ -28,7 +28,7 @@ What scripts, CI and agents can rely on. The goals behind these are in
 - The CLI only prompts when stdin is a terminal. Otherwise missing input is a
   usage error naming the flag to pass, and commands that ask for
   confirmation (`discard`, `domain remove`, `service archive`, `project archive`,
-  `user delete`, `db setup`) need `--yes`, and commits to production data
+  `user delete`, `server revoke`, `server remove`, `db setup`) need `--yes`, and commits to production data
   need `--confirm <environment>`.
 
 ## Exit codes
@@ -137,6 +137,7 @@ keeps the linked service, so it means "this service, in staging".
 | `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions end; the CLI's token stays valid |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails |
+| `promote FROM TO [-s service...] [-d]` | Deploy the images serving in environment FROM to TO (same project), by digest, with TO's own variables and settings; nothing is rebuilt. One service at a time, stopping at the first failure. Services missing in TO (or with nothing running in FROM) are skipped and listed. Needs deploy on TO. Exit 6 when a release fails |
 | `status [-a]` | The service's state, releases, domains and staged changes; `-a` (or no service) for the whole environment |
 | `logs [-f] [-n N] [--since] [-r N] [--build]` | Service output, or a build log |
 | `releases`, `release list\|show N` | Release history and one release with its events |
@@ -151,13 +152,17 @@ keeps the linked service, so it means "this service, in staging".
 | `service list\|create\|show\|update\|archive` | Services; `update` stages only the settings passed |
 | `project list [--all]\|create\|archive <name>`, `environment list\|create [--kind]` | Projects and environments (`env` is variables). `project archive` (admin) archives every service in the project and hides it from `project list` (`--all` shows it). An environment's kind (production or non-production) defaults from its name and never changes |
 | `project pin <project> --kind production\|non-production --server NAME` | Admin: choose the server a project's environments of a kind go to, before any exist |
-| `server list`, `server show NAME`, `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement]` | Servers: status, version, accepted kinds, memory reserved, what's placed, current usage. `show` and `update` are admin |
+| `server list`, `server show NAME` | Servers: link status (`online`, `offline`, `incompatible`, `joining`, `revoked`), version, ingress, accepted kinds, memory reserved; `show` (admin) adds base domain, DNS target, what's placed and current usage |
+| `server add NAME [--production] [--non-production] [--builder]` | Admin: create a one-time join token (valid for an hour) and print the exact `install.sh --node` command to run on the new server. The token is shown once |
+| `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement] [--builder\|--no-builder] [--base-domain D]` | Admin: what the server accepts, whether it builds, and the base domain of generated hostnames (`""` removes it) |
+| `server revoke NAME`, `server rotate-key NAME`, `server remove NAME` | Admin: forget a server's key and drop its link (it must join again; its apps keep running); have an online server switch to a new key; remove a server with nothing placed on it |
 | `token list\|create NAME --scope\|update ID\|revoke ID` | Tokens (admin). `create` and `update` take `--data-production`, `--data-non-production` (`none`, `schema`, `read`, `propose`, `write`) and `--data-sensitive` (`masked`, `visible`): the token's own database access instead of the data policy's tokens rule; `update --data-clear` removes it |
 | `user list\|create\|disable\|enable\|delete\|reset-password` | Users (admin). Users are named by email or id. `list` shows status, live sessions and usable tokens; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions (your own: `me password`) |
 | `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
-| `serve`, `admin bootstrap\|caddy-config\|firewall apply\|remove` | Server side, run on the server with `--config`: the daemon, the first admin token, Caddy's initial config, and the app firewall (root; installed as `dock-firewall.service`) |
+| `serve`, `admin bootstrap\|caddy-config\|registry-config --out DIR\|firewall apply\|remove` | Server side, run on the server with `--config`: the control plane daemon, the first admin token, Caddy's initial config (works before a node joins), the image registry's `config.yml` and `jwks.json` (deterministic for a given key), and the app firewall (root; installed as `dock-firewall.service`) |
+| `node`, `node join TOKEN` | On a server that joins a control plane, with `--config`: the node daemon (`dock-node.service`: the link, the registry proxy on `127.0.0.1:5000`, Caddy's `ask`; no API, UI or database), and joining once with a token from `server add` (writes `node.key` and `node.toml` into the data dir, prints the assigned server name). `install.sh --node` runs both |
 
-Commands that start releases (`deploy`, `rollback`, `restart`, `apply`,
+Commands that start releases (`deploy`, `promote`, `rollback`, `restart`, `apply`,
 `--deploy`) follow them until they are live or failed; `--detach` returns
 right after they are queued. Ctrl-C stops following, not the deploy.
 
@@ -191,7 +196,7 @@ Filters (`-w`, `--filter`): `col=value` (equals), `col=op:value` with `eq`,
 
 The release binary `dock` is the CLI, the daemon and the node runtime. A
 laptop or CI runner only needs the client: `make build-cli` builds it with
-the `dockcli` build tag, which leaves out `serve`, `admin` and `openapi` and
+the `dockcli` build tag, which leaves out `serve`, `node`, `admin` and `openapi` and
 with them Docker, BuildKit, Caddy, SQLite and the API server.
 
 ```sh

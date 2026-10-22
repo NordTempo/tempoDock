@@ -22,16 +22,18 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/stats"
 )
 
-// newRuntime builds the local server's node runtime from Docker, BuildKit
-// and Caddy. DOCK_FAKE_RUNTIME=1 uses an in-memory fake (no Docker), for
-// local development of the API, CLI and UI.
-func newRuntime(ctx context.Context, cfg config.Config, log *slog.Logger) (node.Runtime, error) {
+// newRuntime builds this server's node runtime from Docker, BuildKit and
+// Caddy, for `dock serve` and `dock node`. marker is the server's Caddy
+// marker (remote.ServerMarker of its key). The proxy is returned too: a node answers Caddy's
+// `ask` from it. DOCK_FAKE_RUNTIME=1 uses an in-memory fake (no Docker, nil
+// proxy), for local development of the API, CLI and UI.
+func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog.Logger) (node.Runtime, *caddy.Proxy, error) {
 	if os.Getenv("DOCK_FAKE_RUNTIME") == "1" {
-		return fake.New(), nil
+		return fake.New(), nil, nil
 	}
 	containers, err := docker.New(cfg.Network.Pool)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Apps keep running if this fails; only their swap limit stays loose.
 	if n, err := containers.UpgradeSwapLimits(ctx); err != nil {
@@ -39,27 +41,27 @@ func newRuntime(ctx context.Context, cfg config.Config, log *slog.Logger) (node.
 	} else if n > 0 {
 		log.Info("upgraded container swap limits", "containers", n)
 	}
-	proxy, err := caddy.New(caddyOptions(cfg))
+	proxy, err := caddy.New(caddyOptions(cfg, marker))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var builder node.Builder = notBuilder{}
 	if cfg.BuildKit.Enabled {
 		cli, err := client.New(client.FromEnv)
 		if err != nil {
-			return nil, fmt.Errorf("docker client: %w", err)
+			return nil, nil, fmt.Errorf("docker client: %w", err)
 		}
 		// BuildKit gets its own network from the pool, so the app firewall
 		// covers build steps like any app.
 		if err := containers.EnsureNetwork(ctx, buildkitNetwork, node.Labels{}); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		b := build.New(cli, cfg.BuildKit, filepath.Join(cfg.DataDir, "builds", "work"))
 		b.Network = buildkitNetwork
 		builder = b
 	}
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}})
-	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st}, nil
+	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st}, proxy, nil
 }
 
 // dockerRoot asks Docker once where it keeps images, volumes and logs, for
@@ -82,21 +84,44 @@ func dockerRoot() string {
 // buildkitNetwork is the dock network the BuildKit container runs on.
 const buildkitNetwork = "dock_buildkit"
 
-// caddyOptions maps the daemon config onto the Caddy proxy's options.
-func caddyOptions(cfg config.Config) caddy.Options {
-	var ips []string
-	if cfg.PublicIP != "" {
-		ips = []string{cfg.PublicIP}
+// askPath is where Caddy's on-demand TLS check is served on the internal
+// listener: by core on the control plane, by the proxy itself on a node.
+const askPath = "/internal/caddy/ask"
+
+// unjoinedMarker stands in for a server's marker where Caddy needs one
+// before the server knows its own: `dock admin caddy-config` on a tunnel
+// node that hasn't joined yet. The daemon replaces the whole config with
+// the real marker when it starts.
+const unjoinedMarker = "dock-unjoined"
+
+// caddyOptions maps the config onto the Caddy proxy's options. marker is
+// the server's Dock-Server header value (remote.ServerMarker); empty means not
+// known yet.
+func caddyOptions(cfg config.Config, marker string) caddy.Options {
+	if marker == "" && cfg.Ingress.Mode == config.IngressCloudflareTunnel {
+		marker = unjoinedMarker
 	}
 	return caddy.Options{
-		AdminSocket: cfg.Caddy.AdminSocket,
-		HTTPPort:    cfg.Caddy.HTTPPort,
-		HTTPSPort:   cfg.Caddy.HTTPSPort,
-		ACMEEmail:   cfg.Caddy.ACMEEmail,
-		DisableTLS:  cfg.Caddy.DisableTLS,
-		AskURL:      "http://" + cfg.InternalListen + "/internal/caddy/ask",
-		PublicIPs:   ips,
+		AdminSocket:    cfg.Caddy.AdminSocket,
+		Ingress:        caddy.Ingress(cfg.Ingress.Mode),
+		HTTPPort:       cfg.Caddy.HTTPPort,
+		HTTPSPort:      cfg.Caddy.HTTPSPort,
+		ACMEEmail:      cfg.Caddy.ACMEEmail,
+		DisableTLS:     cfg.Caddy.DisableTLS,
+		AskURL:         "http://" + cfg.InternalListen + askPath,
+		PublicIPs:      publicIPs(cfg),
+		ServerMarker:   marker,
+		TunnelHostname: cfg.Ingress.TunnelHostname,
 	}
+}
+
+// publicIPs are the addresses DNS should point at: public_ip on a direct
+// server, none behind a tunnel.
+func publicIPs(cfg config.Config) []string {
+	if cfg.PublicIP == "" || cfg.Ingress.Mode == config.IngressCloudflareTunnel {
+		return nil
+	}
+	return []string{cfg.PublicIP}
 }
 
 // notBuilder is the Builder of servers with [buildkit] enabled = false.

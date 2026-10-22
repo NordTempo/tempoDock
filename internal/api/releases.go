@@ -112,4 +112,14 @@ func registerReleases(s *Server, a huma.API) {
 			_, _ = io.Copy(hctx.BodyWriter(), f)
 		}}, nil
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "promote", Method: http.MethodPost, Path: projectPathT + "/promote",
+		Summary: "Promote between environments", Tags: tags, DefaultStatus: http.StatusAccepted, Errors: withOffline,
+		Description: "Queues a release in `to` for each of `from`'s active releases (all services, or the listed ones), with the same image by digest and `to`'s own variables and settings. They deploy one at a time and stop at the first failure. Services missing in `to` are skipped and listed. Returns immediately; follow `/events` or poll the releases. Scope: deploy on `to`.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ProjectPath
+		Body apitypes.PromoteRequest
+	}) (*out[apitypes.PromoteResult], error) {
+		return reply(s.core.Promote(ctx, actor, in.Project, in.Body))
+	})
 }

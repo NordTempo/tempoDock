@@ -12,14 +12,15 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// Servers and placement (ADR 0015).
+// Servers and placement (ADR 0014, 0015).
 
 func newServerCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "server",
 		Short: "Servers environments run on, and what may be placed on them",
 	})
-	cmd.AddCommand(newServerListCmd(g), newServerShowCmd(g), newServerUpdateCmd(g))
+	cmd.AddCommand(newServerListCmd(g), newServerShowCmd(g), newServerAddCmd(g), newServerUpdateCmd(g),
+		newServerRevokeCmd(g), newServerRotateKeyCmd(g), newServerRemoveCmd(g))
 	return cmd
 }
 
@@ -39,14 +40,181 @@ func newServerListCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(servers, func() error {
-				t := g.io.Table("name", "status", "version", "accepts", "memory reserved", "projects", "environments")
+				t := g.io.Table("name", "status", "version", "ingress", "accepts", "memory reserved", "projects", "environments")
 				for _, sv := range servers {
-					t.Row(sv.Name, string(sv.Status), dash(sv.Version), accepts(sv), reserved(sv), strconv.Itoa(sv.Projects), strconv.Itoa(sv.Environments))
+					t.Row(sv.Name, serverStatus(sv), dash(sv.Version), dash(ingressWords(sv.Ingress)), accepts(sv), reserved(sv),
+						strconv.Itoa(sv.Projects), strconv.Itoa(sv.Environments))
 				}
 				return t.Flush()
 			})
 		},
 	}
+}
+
+// serverStatus is a server's link status, with when it was last seen if
+// it is offline and until when it can join if it is joining.
+func serverStatus(s apitypes.Server) string {
+	switch {
+	case s.Status == apitypes.ServerOffline && s.LastSeenAt != nil:
+		return "offline (seen " + ago(*s.LastSeenAt) + ")"
+	case s.Status == apitypes.ServerJoining && s.JoinExpiresAt != nil:
+		return "joining (token until " + s.JoinExpiresAt.Local().Format("15:04") + ")"
+	}
+	return string(s.Status)
+}
+
+// ingressTarget is where DNS for the server's hostnames points: its public
+// IPs, or its tunnel's CNAME target.
+func ingressTarget(s apitypes.Server) string {
+	switch {
+	case s.TunnelHostname != "":
+		return " (CNAME " + s.TunnelHostname + ")"
+	case len(s.PublicIPs) > 0:
+		return " (" + strings.Join(s.PublicIPs, ", ") + ")"
+	}
+	return ""
+}
+
+// ingressWords is how the CLI writes an ingress mode.
+func ingressWords(ingress apitypes.Ingress) string {
+	if ingress == apitypes.IngressCloudflareTunnel {
+		return "tunnel"
+	}
+	return string(ingress)
+}
+
+func newServerAddCmd(g *globals) *cobra.Command {
+	var prod, nonProd, builder bool
+	cmd := &cobra.Command{
+		Use:   "add <name> [--production] [--non-production] [--builder]",
+		Short: "Add a server: create its join token and print the install command (admin)",
+		Long: `Add a server as a node of this control plane. Prints a join token, valid
+for an hour and usable once, and the install.sh command to run on the new
+server. The token is shown only here. The server shows as joining until it
+connects.
+
+Choose which environment kinds it takes (both is fine), and --builder for a
+server that builds images for others. All of it can be changed later with
+` + "`dock server update`" + `.`,
+		Example: `  dock server add homelab --non-production --builder
+  dock server add vps-2 --production`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !prod && !nonProd {
+				return usageError("choose what the server takes", "Pass --production, --non-production or both.")
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			a, err := send[apitypes.AddedServer](cmd.Context(), s, http.MethodPost, apiPrefix+"/servers", apitypes.AddServerRequest{
+				Name: args[0], AcceptsProduction: prod, AcceptsNonProduction: nonProd, Builder: builder,
+			})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(a, func() error {
+				g.io.Successf("Server %s added; it accepts %s", a.Server.Name, accepts(a.Server))
+				_, _ = fmt.Fprintf(g.io.Out, "\nOn the new server, with Docker installed and the dock binary and deploy/ copied over, run:\n\n  %s\n\n", a.Command)
+				_, _ = fmt.Fprintf(g.io.Out, "The token works once, until %s, and is not shown again.\nThen check it is online: dock server list\n", a.ExpiresAt.Local().Format("15:04"))
+				return nil
+			})
+		},
+	}
+	f := cmd.Flags()
+	f.BoolVar(&prod, "production", false, "accept production environments")
+	f.BoolVar(&nonProd, "non-production", false, "accept non-production environments")
+	f.BoolVar(&builder, "builder", false, "build images on this server")
+	return cmd
+}
+
+func newServerRevokeCmd(g *globals) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "revoke <name>",
+		Short: "Revoke a server's key and drop its connection (admin)",
+		Long: `Revoke a server: the control plane forgets its key and drops the link, so it
+can't connect again until it re-joins with a new token (` + "`dock server add`" + `, then
+install.sh with NODE_JOIN_TOKEN on it). Apps already on it keep running there,
+but nothing can be deployed to it.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				if err := g.io.Confirm(fmt.Sprintf("Revoke server %s? It disconnects until it joins again.", args[0]), "yes"); err != nil {
+					return err
+				}
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			sv, err := send[apitypes.Server](cmd.Context(), s, http.MethodPost, apiPrefix+"/servers/"+url.PathEscape(args[0])+"/revoke", nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(sv, func() error {
+				g.io.Successf("Revoked server %s", sv.Name)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
+}
+
+func newServerRotateKeyCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rotate-key <name>",
+		Short: "Have an online server switch to a new link key (admin)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			sv, err := send[apitypes.Server](cmd.Context(), s, http.MethodPost, apiPrefix+"/servers/"+url.PathEscape(args[0])+"/rotate-key", nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(sv, func() error {
+				g.io.Successf("Server %s is reconnecting with a new key", sv.Name)
+				return nil
+			})
+		},
+	}
+}
+
+func newServerRemoveCmd(g *globals) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "remove <name>",
+		Short: "Remove a server with nothing placed on it (admin)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				if err := g.io.Confirm(fmt.Sprintf("Remove server %s?", args[0]), "yes"); err != nil {
+					return err
+				}
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			if err := del(cmd.Context(), s, apiPrefix+"/servers/"+url.PathEscape(args[0])); err != nil {
+				return err
+			}
+			v := struct {
+				Name    string `json:"name"`
+				Removed bool   `json:"removed"`
+			}{args[0], true}
+			return g.io.Print(v, func() error {
+				g.io.Successf("Removed server %s", args[0])
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
 }
 
 // accepts describes which kinds a server takes, for tables.
@@ -91,7 +259,11 @@ func newServerShowCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(d, func() error {
 				sv := d.Server
-				_, _ = fmt.Fprintf(g.io.Out, "%s  %s  %s\naccepts %s\nmemory reserved %s\n", sv.Name, sv.Status, dash(sv.Version), accepts(sv), reserved(sv))
+				_, _ = fmt.Fprintf(g.io.Out, "%s  %s  %s\naccepts %s\nmemory reserved %s\n", sv.Name, serverStatus(sv), dash(sv.Version), accepts(sv), reserved(sv))
+				_, _ = fmt.Fprintf(g.io.Out, "ingress %s%s\nbase domain %s\n", dash(ingressWords(sv.Ingress)), ingressTarget(sv), dash(sv.BaseDomain))
+				if sv.Builder {
+					_, _ = fmt.Fprintln(g.io.Out, "builds images")
+				}
 				if u := sv.Usage; u != nil {
 					_, _ = fmt.Fprintf(g.io.Out, "cpu %.1f%% of %d cores, memory %s of %s, load %.2f\n",
 						u.CPUPercent, u.CPUs, bytesize(u.MemoryUsedBytes), bytesize(u.MemoryTotalBytes), u.Load1)
@@ -119,13 +291,17 @@ func newServerShowCmd(g *globals) *cobra.Command {
 }
 
 func newServerUpdateCmd(g *globals) *cobra.Command {
-	var prod, noProd, nonProd, noNonProd, disable, enable bool
+	var prod, noProd, nonProd, noNonProd, disable, enable, builder, noBuilder bool
+	var baseDomain string
 	cmd := &cobra.Command{
 		Use:   "update <name>",
-		Short: "Change which environment kinds a server accepts (admin)",
-		Long: `Change which environment kinds a server accepts, and whether it takes new
-placements. Environments already on the server stay where they are.`,
+		Short: "Change what a server accepts, whether it builds, and its base domain (admin)",
+		Long: `Change which environment kinds a server accepts, whether it takes new
+placements, whether it builds images, and the base domain of the hostnames
+generated for services on it (` + "`--base-domain \"\"`" + ` turns them off). Environments
+already on the server stay where they are.`,
 		Example: `  dock server update homelab --non-production --no-production
+  dock server update homelab --builder --base-domain example-apps.dev
   dock server update vps-2 --disable-placement`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -140,8 +316,14 @@ placements. Environments already on the server stay where they are.`,
 			if req.DisabledForPlacement, err = switchFlag(disable, enable, "disable-placement"); err != nil {
 				return err
 			}
+			if req.Builder, err = switchFlag(builder, noBuilder, "builder"); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("base-domain") {
+				req.BaseDomain = &baseDomain
+			}
 			if req == (apitypes.UpdateServerRequest{}) {
-				return usageError("nothing to change", "Pass --production, --no-production, --non-production, --no-non-production, --disable-placement or --enable-placement.")
+				return usageError("nothing to change", "Pass --production, --no-production, --non-production, --no-non-production, --disable-placement, --enable-placement, --builder, --no-builder or --base-domain.")
 			}
 			s, err := g.connect()
 			if err != nil {
@@ -164,6 +346,9 @@ placements. Environments already on the server stay where they are.`,
 	f.BoolVar(&noNonProd, "no-non-production", false, "stop accepting non-production environments")
 	f.BoolVar(&disable, "disable-placement", false, "place nothing new here (pins still work)")
 	f.BoolVar(&enable, "enable-placement", false, "take new placements again")
+	f.BoolVar(&builder, "builder", false, "build images here")
+	f.BoolVar(&noBuilder, "no-builder", false, "stop building images here")
+	f.StringVar(&baseDomain, "base-domain", "", "base of generated hostnames, <service>-<env>.<base>; needs wildcard DNS to this server")
 	return cmd
 }
 

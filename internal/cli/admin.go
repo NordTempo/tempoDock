@@ -21,7 +21,7 @@ func newAdminCmd() *cobra.Command {
 		Use:   "admin",
 		Short: "Server-side administration (run on the server)",
 	})
-	cmd.AddCommand(newBootstrapCmd(), newCaddyConfigCmd(), newFirewallCmd())
+	cmd.AddCommand(newBootstrapCmd(), newCaddyConfigCmd(), newRegistryConfigCmd(), newFirewallCmd())
 	return cmd
 }
 
@@ -39,7 +39,7 @@ func newCaddyConfigCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			b, err := caddy.BootstrapConfig(caddyOptions(cfg))
+			b, err := caddy.BootstrapConfig(caddyOptions(cfg, ""))
 			if err != nil {
 				return err
 			}

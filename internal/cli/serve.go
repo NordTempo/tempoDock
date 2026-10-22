@@ -17,6 +17,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/api"
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
+	"github.com/NordTempo/tempoDock/internal/registry"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
 	"github.com/NordTempo/tempoDock/internal/version"
@@ -58,9 +60,15 @@ func openState(ctx context.Context, cfg config.Config) (*store.Store, *secrets.B
 	return st, box, nil
 }
 
+// serve runs the control plane until ctx ends: the API and UI, the
+// loopback-only internal endpoints and, with [node] listen set, the port
+// nodes connect to.
 func serve(ctx context.Context, cfg config.Config) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := checkLoopback(cfg.InternalListen); err != nil {
+		return err
+	}
+	if err := checkNodeListen(cfg.Node.Listen); err != nil {
 		return err
 	}
 	st, box, err := openState(ctx, cfg)
@@ -68,19 +76,38 @@ func serve(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	defer func() { _ = st.Close() }()
-	rt, err := newRuntime(ctx, cfg, log)
+	// The link key identifies the control plane to nodes, and gives this
+	// server its Caddy marker.
+	linkID, err := remote.LoadOrCreateIdentity(cfg.LinkKeyPath())
 	if err != nil {
 		return err
 	}
-	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log})
+	rt, _, err := newRuntime(ctx, cfg, remote.ServerMarker(linkID.Fingerprint()), log)
 	if err != nil {
 		return err
 	}
-	if err := c.Start(ctx); err != nil {
+	opts := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log}
+	var signer *registry.Signer
+	if cfg.Registry.Enabled {
+		if signer, err = registrySigner(cfg); err != nil {
+			return err
+		}
+		if opts.Registry, err = platformRegistry(cfg, signer); err != nil {
+			return err
+		}
+	}
+	c, hub, err := startCore(ctx, opts, linkID)
+	if err != nil {
 		return err
 	}
 	defer c.Close()
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var registryToken http.Handler
+	if signer != nil {
+		registryToken = signer.Handler()
+	}
 	servers := []*http.Server{
 		{
 			Addr:              cfg.Listen,
@@ -89,23 +116,32 @@ func serve(ctx context.Context, cfg config.Config) error {
 		},
 		{
 			Addr:              cfg.InternalListen,
-			Handler:           api.Internal(c, log),
+			Handler:           api.Internal(c, log, registryToken),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}
-	errc := make(chan error, len(servers))
+	errc := make(chan error, len(servers)+1)
 	for _, srv := range servers {
 		go func() { errc <- srv.ListenAndServe() }()
 	}
-	log.Info("dock daemon listening", "version", version.Version, "api", cfg.Listen, "internal", cfg.InternalListen, "data", cfg.DataDir)
+	if hub != nil {
+		ln, err := net.Listen("tcp", cfg.Node.Listen)
+		if err != nil {
+			return fmt.Errorf("[node] listen: %w", err)
+		}
+		go func() { errc <- hub.Serve(ctx, ln) }()
+	}
+	log.Info("dock daemon listening", "version", version.Version, "api", cfg.Listen, "internal", cfg.InternalListen,
+		"nodes", cfg.Node.Listen, "link_key", linkID.Fingerprint(), "data", cfg.DataDir)
 
 	select {
 	case err = <-errc:
 	case <-ctx.Done():
 		log.Info("shutting down")
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	cancel() // closes the node port and every node session
+	shutdownCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stop()
 	for _, srv := range servers {
 		if serr := srv.Shutdown(shutdownCtx); serr != nil && !errors.Is(serr, http.ErrServerClosed) && err == nil {
 			err = serr
@@ -115,6 +151,36 @@ func serve(ctx context.Context, cfg config.Config) error {
 		err = nil
 	}
 	return err
+}
+
+// startCore creates and starts core and, with [node] listen set, the node
+// hub (not yet serving): the hub takes core's store and status callback,
+// and core the hub, plugged in after New and before Start.
+func startCore(ctx context.Context, opts core.Options, linkID remote.Identity) (*core.Core, *remote.Hub, error) {
+	c, err := core.New(ctx, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	var hub *remote.Hub
+	if cfg := opts.Config; cfg.Node.Listen != "" {
+		var reg string
+		if cfg.Registry.Enabled {
+			reg = cfg.Registry.Listen
+		}
+		hub = remote.NewHub(remote.HubOptions{
+			Identity: linkID,
+			Store:    c.NodeStore(),
+			Addrs:    []string{cfg.Node.Listen},
+			Registry: reg,
+			OnStatus: c.NodeStatus,
+			Logger:   opts.Logger.With("component", "hub"),
+		})
+		c.SetNodes(core.NodesOf(hub))
+	}
+	if err := c.Start(ctx); err != nil {
+		return nil, nil, err
+	}
+	return c, hub, nil
 }
 
 // checkLoopback refuses to serve internal endpoints anywhere but loopback.
@@ -128,6 +194,20 @@ func checkLoopback(addr string) error {
 	}
 	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
 		return fmt.Errorf("internal_listen %q must be a loopback address (127.0.0.1 or ::1)", addr)
+	}
+	return nil
+}
+
+// checkNodeListen requires a specific address for the node port: join
+// tokens carry it as the address nodes dial, and "0.0.0.0" or ":7443"
+// would send them nowhere.
+func checkNodeListen(addr string) error {
+	if addr == "" {
+		return nil
+	}
+	host, _, _ := net.SplitHostPort(addr) // config.Load checked the form
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		return fmt.Errorf("[node] listen %q must name the address nodes dial, e.g. the Tailscale IP: \"100.64.0.10:7443\"", addr)
 	}
 	return nil
 }

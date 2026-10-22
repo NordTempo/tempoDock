@@ -15,7 +15,7 @@ import (
 
 // serverCommands are the "Run a server" commands.
 func serverCommands() []*cobra.Command {
-	return []*cobra.Command{newServeCmd(), newAdminCmd(), newOpenAPICmd()}
+	return []*cobra.Command{newServeCmd(), newNodeCmd(), newAdminCmd(), newOpenAPICmd()}
 }
 
 // helperMain runs a subprocess the daemon starts from its own binary, and
