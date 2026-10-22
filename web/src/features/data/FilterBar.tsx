@@ -1,39 +1,42 @@
 import { useState } from "react";
-import { useShortcuts } from "../../shell/keys";
 import { filterText, opLabels } from "./cells";
+import { Btn } from "./kit";
 import type { DataColumn, DataFilter, DataFilterOp } from "./types";
 
 const ops = Object.keys(opLabels) as DataFilterOp[];
 const noValue = (op: DataFilterOp) => op === "is_null" || op === "not_null";
 
 /**
- * Structured filters (column, op, value; ANDed) and the sort, as one line
- * of text with × to remove each. `f` opens the form to add a filter.
+ * Structured filters (column, op, value; ANDed) and the sort as chips, each
+ * with × to remove it, and the form to add a filter while `adding`.
+ * Renders nothing when there is nothing to show.
  */
 export function FilterBar({
   columns,
   filters,
   order,
+  adding,
+  onAdding,
   onFilters,
   onOrder,
 }: {
   columns: readonly DataColumn[];
   filters: readonly DataFilter[];
   order?: string;
+  adding: boolean;
+  onAdding: (adding: boolean) => void;
   onFilters: (next: DataFilter[]) => void;
   onOrder: (next: string | undefined) => void;
 }) {
-  const [adding, setAdding] = useState(false);
-  useShortcuts([{ key: "f", label: "filter", run: () => setAdding(true) }]);
-
+  if (!filters.length && !order && !adding) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-xs">
+    <div className="flex flex-wrap items-center gap-1.5 px-5 pt-3">
       {filters.map((f, i) => (
-        <span key={`${f.column}${f.op}${i}`} className="whitespace-nowrap">
-          <span className="text-mut">filter:</span> {filterText(f)}{" "}
+        <span key={`${f.column}${f.op}${i}`} className="g-chip on">
+          {filterText(f)}
           <button
             type="button"
-            className="lnk"
+            className="text-(--g-mut) hover:text-(--g-text)"
             aria-label={`Remove filter ${filterText(f)}`}
             onClick={() => onFilters(filters.filter((_, j) => j !== i))}
           >
@@ -42,12 +45,11 @@ export function FilterBar({
         </span>
       ))}
       {order && (
-        <span className="whitespace-nowrap">
-          <span className="text-mut">order:</span> {order.replace(/^-/, "")}{" "}
-          {order.startsWith("-") ? "↓" : "↑"}{" "}
+        <span className="g-chip">
+          {order.replace(/^-/, "")} {order.startsWith("-") ? "↓" : "↑"}
           <button
             type="button"
-            className="lnk"
+            className="text-(--g-mut) hover:text-(--g-text)"
             aria-label="Remove sort"
             onClick={() => onOrder(undefined)}
           >
@@ -55,19 +57,15 @@ export function FilterBar({
           </button>
         </span>
       )}
-      {adding ? (
+      {adding && (
         <FilterForm
           columns={columns}
           onAdd={(f) => {
             onFilters([...filters, f]);
-            setAdding(false);
+            onAdding(false);
           }}
-          onCancel={() => setAdding(false)}
+          onCancel={() => onAdding(false)}
         />
-      ) : (
-        <button type="button" className="lnk" onClick={() => setAdding(true)}>
-          + filter <kbd>F</kbd>
-        </button>
       )}
     </div>
   );
@@ -96,7 +94,7 @@ function FilterForm({
 
   return (
     <form
-      className="flex items-center gap-1.5"
+      className="flex flex-wrap items-center gap-1.5"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -107,7 +105,7 @@ function FilterForm({
         // biome-ignore lint/a11y/noAutofocus: the form opens on request
         autoFocus
         aria-label="Column"
-        className="field py-0.5 text-xs"
+        className="g-field h-7 text-xs"
         value={column}
         onChange={(e) => setColumn(e.target.value)}
       >
@@ -117,7 +115,7 @@ function FilterForm({
       </select>
       <select
         aria-label="Operator"
-        className="field py-0.5 text-xs"
+        className="g-field h-7 text-xs"
         value={op}
         onChange={(e) => setOp(ops.find((o) => o === e.target.value) ?? "eq")}
       >
@@ -130,18 +128,18 @@ function FilterForm({
       {!noValue(op) && (
         <input
           aria-label="Value"
-          className="field w-40 py-0.5 text-xs"
+          className="g-field h-7 w-44 font-mono text-xs"
           placeholder={op === "in" ? "a, b, c" : "value"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />
       )}
-      <button type="submit" className="btn sm">
+      <Btn type="submit" small>
         Add
-      </button>
-      <button type="button" className="lnk" onClick={onCancel}>
+      </Btn>
+      <Btn small ghost onClick={onCancel}>
         Cancel
-      </button>
+      </Btn>
     </form>
   );
 }

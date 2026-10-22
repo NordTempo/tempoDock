@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Act, ErrorText } from "../../ui/kit";
 import { useCli, useDataSetup, useDataSource } from "./api";
+import { Act, ErrorText } from "./kit";
 import type { DataInfo, DataPermission } from "./types";
 
 /**
@@ -18,8 +18,8 @@ export function StatusView({ info }: { info: DataInfo }) {
   switch (info.status) {
     case "setup_needed":
       return (
-        <State glyph="▲" tone="text-warn" title="Not set up">
-          <p className="max-w-[640px] text-mut">
+        <State glyph="▲" tone="text-(--g-warn)" title="Not set up">
+          <p className="max-w-[640px] text-(--g-dim)">
             {words.product} reads this database through its own least-privilege
             roles, {roles.reader} and {roles.writer}. Setup creates them with{" "}
             {words.owner}; their passwords stay in {words.product} and never
@@ -52,22 +52,26 @@ export function StatusView({ info }: { info: DataInfo }) {
       );
     case "unreachable":
       return (
-        <State glyph="✕" tone="text-fail" title="Can't reach the database">
-          <p className="max-w-[640px] text-mut">
+        <State
+          glyph="✕"
+          tone="text-(--g-fail)"
+          title="Can't reach the database"
+        >
+          <p className="max-w-[640px] text-(--g-mut)">
             {info.reason ?? words.unreachable}
           </p>
         </State>
       );
     case "not_running":
       return (
-        <State glyph="○" tone="text-mut" title="Not running">
-          <p className="text-mut">{words.notRunning}</p>
+        <State glyph="○" tone="text-(--g-mut)" title="Not running">
+          <p className="text-(--g-mut)">{words.notRunning}</p>
         </State>
       );
     case "unsupported":
       return (
-        <State glyph="▲" tone="text-warn" title="Unsupported version">
-          <p className="text-mut">
+        <State glyph="▲" tone="text-(--g-warn)" title="Unsupported version">
+          <p className="text-(--g-mut)">
             {info.reason ?? `Postgres ${info.server_version} is too old.`} The
             data panel needs Postgres 14 or later.
           </p>
@@ -76,8 +80,8 @@ export function StatusView({ info }: { info: DataInfo }) {
     case "ready":
       if (access.level !== "none") return null;
       return (
-        <State glyph="○" tone="text-mut" title="No data access">
-          <p className="text-mut">
+        <State glyph="○" tone="text-(--g-mut)" title="No data access">
+          <p className="text-(--g-mut)">
             An admin can grant it in the data access policy.
           </p>
           <Why access={access} />
@@ -91,7 +95,7 @@ export function Why({ access }: { access: DataPermission }) {
   const steps = access.why ?? [];
   if (!steps.length) return null;
   return (
-    <ul className="font-mono text-xs text-mut">
+    <ul className="text-xs text-(--g-mut)">
       {steps.map((s) => (
         <li key={`${s.source}${s.detail}`}>
           {s.source}: {s.detail}
@@ -113,8 +117,8 @@ function State({
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3 py-6">
-      <h2 className="text-lg font-semibold">
+    <section className="flex flex-col gap-3 p-5">
+      <h2 className="text-[14px] font-semibold">
         <span className={tone} aria-hidden>
           {glyph}
         </span>{" "}

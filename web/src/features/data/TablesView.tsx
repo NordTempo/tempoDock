@@ -1,10 +1,12 @@
 import { useMemo, useReducer, useState } from "react";
+import { useShortcuts } from "../../shell/keys";
 import { plural } from "../../ui/format";
 import { type TableQuery, useCli, useTableRows } from "./api";
 import { cellInput, filterFlag, rowCount, rowKey, tableName } from "./cells";
 import { editsReducer, noEdits, rowId, toChanges } from "./edits";
 import { FilterBar } from "./FilterBar";
 import { Grid, type GridCol } from "./Grid";
+import { Btn, Head, Kbd } from "./kit";
 import { type EditActions, ReviewPanel } from "./ReviewPanel";
 import { RowDrawer } from "./RowDrawer";
 import type { DataFilter, DataInfo, DataTable } from "./types";
@@ -13,7 +15,7 @@ import type { DataFilter, DataInfo, DataTable } from "./types";
  * One table's rows: keyset pages loaded as the grid scrolls, filters and
  * sort, FK links, the selected row's drawer, per-column reveal of
  * sensitive columns, and (in edit mode) staged cell edits and deletes with
- * their review. Mount with key={table} so staged edits and reveals never
+ * their review in the side pane (G1, G4). Mount with key={table} so staged edits and reveals never
  * carry over to another table.
  */
 export function TablesView({
@@ -21,14 +23,17 @@ export function TablesView({
   table,
   query,
   editing,
+  onEditing,
   actions,
   onQuery,
 }: {
   info: DataInfo;
   table: DataTable;
   query: TableQuery;
-  /** Edit mode is on (the panel's header toggles it). */
+  /** Edit mode is on. */
   editing: boolean;
+  /** Turns edit mode on or off; absent when the caller can't edit. */
+  onEditing?: (editing: boolean) => void;
   actions?: EditActions;
   /** Show another table, or this one filtered or sorted differently. */
   onQuery: (next: TableQuery) => void;
@@ -45,6 +50,8 @@ export function TablesView({
   });
   const [edits, dispatch] = useReducer(editsReducer, noEdits);
   const [selected, setSelected] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+  useShortcuts([{ key: "f", label: "filter", run: () => setAdding(true) }]);
 
   const pages = rows.data?.pages ?? [];
   const columns = pages[0]?.columns ?? [];
@@ -145,39 +152,61 @@ export function TablesView({
       .join(" "),
   );
 
+  const count = filters.length
+    ? `${loaded}${rows.hasNextPage ? "+" : ""} matching`
+    : rowCount(total);
+  const review = canEdit && actions && changes.length > 0;
+
   return (
-    <div className="flex min-h-0 flex-1 gap-4">
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <h2 className="font-mono text-md font-semibold">{name}</h2>
-          <span className="text-mut">
-            {filters.length
-              ? `${loaded}${rows.hasNextPage ? "+" : ""} matching`
-              : rowCount(total)}
+    <div className="flex min-h-0 min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Head
+          crumb={table.schema}
+          title={table.name}
+          actions={
+            <>
+              <span className="mr-2 hidden font-mono text-2xs text-(--g-mut) xl:inline">
+                {rowsCli}
+              </span>
+              <Btn aria-expanded={adding} onClick={() => setAdding(!adding)}>
+                Filter <Kbd>F</Kbd>
+              </Btn>
+              {onEditing && table.editable && (
+                <Btn aria-pressed={editing} onClick={() => onEditing(!editing)}>
+                  {editing ? "Editing" : "Edit"} <Kbd>E</Kbd>
+                </Btn>
+              )}
+            </>
+          }
+        >
+          {!editing && <span className="g-tag">read only</span>}
+          <span className="text-xs text-(--g-mut)">
+            {count}
             {!table.editable &&
-              (pk.length ? ", read-only view" : ", no primary key: read-only")}
+              (pk.length ? ", a view" : ", no primary key: can't be edited")}
           </span>
-          <span className="ml-auto font-mono text-2xs text-mut">{rowsCli}</span>
-        </div>
+        </Head>
         <FilterBar
           columns={table.columns ?? []}
           filters={filters}
           order={query.order}
+          adding={adding}
+          onAdding={setAdding}
           onFilters={(next: DataFilter[]) =>
             onQuery({ ...query, filters: next })
           }
           onOrder={(order) => onQuery({ ...query, order })}
         />
         {sensitive.length > 0 && (
-          <p className="flex flex-wrap gap-x-3 font-mono text-2xs text-mut">
-            <span>sensitive</span>
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pt-3 text-xs text-(--g-mut)">
+            <span>Sensitive</span>
             {sensitive.map((c) => (
-              <span key={c}>
-                <span className="text-[#d4d4d4]">{c}</span>{" "}
+              <span key={c} className="inline-flex items-center gap-1.5">
+                <span className="font-mono text-(--g-code)">{c}</span>
                 {canReveal ? (
                   <button
                     type="button"
-                    className="lnk"
+                    className="g-lnk"
                     aria-pressed={revealed.has(c)}
                     onClick={() => toggleReveal(c)}
                   >
@@ -189,21 +218,26 @@ export function TablesView({
               </span>
             ))}
             <span>
-              {canReveal
-                ? "· each reveal is audited (data.reveal)"
-                : "· your access masks them"}
+              {canReveal ? "each reveal is audited" : "your access masks them"}
             </span>
           </p>
         )}
-        <div className="relative min-h-[300px] flex-1 border-t border-line">
+        {editing && canEdit && (
+          <p className="px-5 pt-3 text-xs text-(--g-mut)">
+            Double-click a cell to change it, Delete removes its row. Nothing is
+            written until you commit.
+          </p>
+        )}
+        <div className="relative mt-3 min-h-[300px] flex-1 px-3">
           {rows.error ? (
-            <p className="pt-3 text-fail">{rows.error.message}</p>
+            <p className="px-2 text-(--g-fail)">{rows.error.message}</p>
           ) : rows.isPending ? (
-            <p className="pt-3 text-mut">Loading {name}</p>
+            <p className="px-2 text-(--g-mut)">Loading {name}</p>
           ) : (
             <Grid
               columns={gridColumns}
               rows={data}
+              selected={selected}
               staged={(row, column) => {
                 const key = keyAt(row);
                 const edit = key ? edits[rowId(key)] : undefined;
@@ -246,41 +280,46 @@ export function TablesView({
             />
           )}
         </div>
-        <p className="font-mono text-2xs text-mut">
-          {rows.isFetchingNextPage
-            ? `${plural(loaded, "row")}, loading the next page`
-            : rows.hasNextPage
-              ? `${plural(loaded, "row")} loaded, more as you scroll`
-              : rows.isSuccess && `all ${plural(loaded, "row")}`}
-          {canEdit && " · double-click a cell to edit, Delete removes its row"}
-          {editing && !table.editable && " · this table can't be edited"}
+        <p className="flex justify-between px-5 py-2.5 text-xs text-(--g-mut)">
+          <span>
+            {rows.isFetchingNextPage
+              ? `${plural(loaded, "row")}, loading the next page`
+              : rows.hasNextPage
+                ? `${plural(loaded, "row")} loaded, more as you scroll`
+                : rows.isSuccess && `all ${plural(loaded, "row")}`}
+          </span>
+          {editing && !table.editable && (
+            <span>This table can't be edited</span>
+          )}
         </p>
-        {canEdit && actions && changes.length > 0 && (
-          <ReviewPanel
-            changes={changes}
-            // A proposal writes nothing: its approver confirms instead.
-            confirmCommit={
-              info.access.confirm_commit && info.access.level !== "propose"
-            }
-            propose={info.access.level === "propose"}
-            actions={actions}
-            onRestore={(key) => dispatch({ type: "restore", key })}
-            onDiscard={() => dispatch({ type: "discard" })}
-            onCommitted={() => {
-              dispatch({ type: "discard" });
-              rows.refetch();
-            }}
-          />
-        )}
       </div>
-      {selectedRow && (
-        <RowDrawer
-          table={table}
-          columns={columns}
-          row={selectedRow}
-          onOpen={(target, next) => onQuery({ table: target, filters: next })}
-          onClose={() => setSelected(null)}
+      {review ? (
+        <ReviewPanel
+          table={table.name}
+          changes={changes}
+          // A proposal writes nothing: its approver confirms instead.
+          confirmCommit={
+            info.access.confirm_commit && info.access.level !== "propose"
+          }
+          propose={info.access.level === "propose"}
+          actions={actions}
+          onRestore={(key) => dispatch({ type: "restore", key })}
+          onDiscard={() => dispatch({ type: "discard" })}
+          onCommitted={() => {
+            dispatch({ type: "discard" });
+            rows.refetch();
+          }}
         />
+      ) : (
+        selectedRow && (
+          <RowDrawer
+            table={table}
+            columns={columns}
+            row={selectedRow}
+            onOpen={(target, next) => onQuery({ table: target, filters: next })}
+            onClose={() => setSelected(null)}
+          />
+        )
       )}
     </div>
   );

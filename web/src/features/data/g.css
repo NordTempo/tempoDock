@@ -1,0 +1,463 @@
+/*
+ * Style G (docs/design/README.md, mockups G1 to G9): the data panel in Dock
+ * and all of tempoBase. Everything is scoped to `.g`, so Dock's own theme
+ * (style A, src/index.css) is untouched. Components use the tokens below
+ * through Tailwind's variable shorthand (`text-(--g-mut)`) or the classes
+ * here. In the components layer: beats Dock's base styles, loses to
+ * utilities.
+ */
+@layer components {
+  .g {
+    --g-bg: #0a0a0a;
+    --g-side: #0f0f0f;
+    --g-raise: rgba(255, 255, 255, 0.03);
+    --g-raise-2: rgba(255, 255, 255, 0.05);
+    --g-hover: rgba(255, 255, 255, 0.04);
+    --g-sel: rgba(255, 255, 255, 0.07);
+    --g-pop: #191a1d;
+    --g-line: rgba(255, 255, 255, 0.06);
+    --g-edge: rgba(255, 255, 255, 0.08);
+    --g-grid: rgba(255, 255, 255, 0.04);
+    --g-text: #f5f5f5;
+    --g-dim: #a3a3a3;
+    --g-mut: #8a8a8a;
+    --g-faint: #525252;
+    --g-code: #d4d4d4;
+    --g-accent: #346bf1;
+    --g-accent-bg: rgba(52, 107, 241, 0.14);
+    --g-accent-edge: rgba(52, 107, 241, 0.5);
+    --g-accent-ink: #c9d6ff;
+    --g-link: #7da2ff;
+    --g-link-hover: #a8c0ff;
+    --g-add: #86efac;
+    --g-del: #fca5a5;
+    --g-ok: #4ade80;
+    --g-warn: #fbbf24;
+    --g-warn-ink: #fde68a;
+    --g-warn-bg: rgba(245, 158, 11, 0.14);
+    --g-warn-edge: rgba(251, 191, 36, 0.45);
+    --g-fail: #f87171;
+    --g-fail-edge: rgba(248, 113, 113, 0.4);
+    --g-sans:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --g-mono: ui-monospace, "SF Mono", Menlo, monospace;
+    /* Tailwind's font-sans and font-mono read these. */
+    --font-sans: var(--g-sans);
+    --font-mono: var(--g-mono);
+
+    background: var(--g-bg);
+    color: var(--g-text);
+    font-family: var(--g-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .g :focus-visible {
+    outline: 2px solid var(--g-link);
+    outline-offset: 1px;
+  }
+
+  .g a {
+    color: var(--g-link);
+    text-decoration: none;
+  }
+
+  .g a:hover {
+    color: var(--g-link-hover);
+  }
+
+  .g button {
+    cursor: pointer;
+  }
+
+  .g button:disabled {
+    cursor: not-allowed;
+  }
+
+  .g ::placeholder {
+    color: var(--g-faint);
+  }
+
+  .g code,
+  .g pre {
+    font-family: var(--g-mono);
+  }
+
+  /* Buttons: quiet bordered by default; .pri the one primary action. */
+  .g-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid var(--g-edge);
+    background: var(--g-raise);
+    color: var(--g-text);
+    font-size: 13px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .g-btn:hover:not(:disabled) {
+    background: var(--g-raise-2);
+  }
+
+  .g-btn:disabled {
+    opacity: 0.45;
+  }
+
+  .g-btn.pri {
+    border-color: var(--g-accent);
+    background: var(--g-accent);
+    color: #fff;
+    font-weight: 500;
+  }
+
+  .g-btn.pri:hover:not(:disabled) {
+    background: #2f61dc;
+  }
+
+  /* Pressed toggles, like Edit while editing. */
+  .g-btn[aria-pressed="true"] {
+    border-color: var(--g-accent-edge);
+    background: rgba(52, 107, 241, 0.16);
+    color: var(--g-accent-ink);
+  }
+
+  .g-btn.ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--g-dim);
+  }
+
+  .g-btn.ghost:hover:not(:disabled) {
+    background: var(--g-hover);
+    color: var(--g-text);
+  }
+
+  .g-btn.danger {
+    color: var(--g-fail);
+  }
+
+  .g-btn.sm {
+    height: 26px;
+    font-size: 12px;
+  }
+
+  .g-btn .g-kbd {
+    border-color: transparent;
+    opacity: 0.7;
+    padding: 0;
+  }
+
+  /* A text button that reads like a link. */
+  .g-lnk {
+    color: var(--g-link);
+    font-size: inherit;
+  }
+
+  .g-lnk:hover {
+    color: var(--g-link-hover);
+  }
+
+  .g-lnk:disabled {
+    color: var(--g-faint);
+  }
+
+  .g-kbd {
+    display: inline-block;
+    font-family: var(--g-sans);
+    font-size: 11px;
+    line-height: 16px;
+    color: inherit;
+    border: 1px solid var(--g-edge);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+
+  .g-field {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid var(--g-edge);
+    background: var(--g-raise);
+    color: var(--g-text);
+    font: inherit;
+    font-size: 13px;
+  }
+
+  textarea.g-field {
+    height: auto;
+    padding: 6px 10px;
+  }
+
+  select.g-field {
+    padding-right: 6px;
+  }
+
+  .g-field option {
+    background: var(--g-pop);
+  }
+
+  .g-field:focus {
+    outline: none;
+    border-color: var(--g-accent-edge);
+  }
+
+  .g-field:disabled {
+    color: var(--g-mut);
+  }
+
+  /* The page or pane header: crumb, title, meta, actions on the right. */
+  .g-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    min-height: 52px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--g-line);
+  }
+
+  .g-head h1 {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  /* "read only": a small bordered tag. */
+  .g-tag {
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--g-dim);
+    border: 1px solid var(--g-edge);
+    border-radius: 6px;
+    padding: 1px 6px;
+    white-space: nowrap;
+  }
+
+  /* Filters and facts: a filled chip. */
+  .g-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    background: var(--g-hover);
+    color: var(--g-dim);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .g-chip.on {
+    background: var(--g-accent-bg);
+    color: var(--g-accent-ink);
+  }
+
+  /* Tabs as buttons in a row; the current one filled. */
+  .g-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .g-tabs > :is(button, a) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 8px;
+    color: var(--g-dim);
+    font-size: 13px;
+  }
+
+  .g-tabs > :is(button, a):hover {
+    color: var(--g-text);
+  }
+
+  .g-tabs > [aria-pressed="true"],
+  .g-tabs > [aria-current="page"] {
+    background: var(--g-sel);
+    color: var(--g-text);
+  }
+
+  /* A segmented choice in a filled track (radio groups, filters). */
+  .g-seg {
+    display: inline-grid;
+    grid-auto-flow: column;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--g-hover);
+  }
+
+  .g-seg > button {
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 6px;
+    color: var(--g-dim);
+    font-size: 12px;
+  }
+
+  .g-seg > [aria-checked="true"],
+  .g-seg > [aria-pressed="true"] {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--g-text);
+  }
+
+  /* Sidebar and list items: a 30px row, filled when current. */
+  .g-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    padding: 0 10px;
+    border-radius: 8px;
+    color: var(--g-dim);
+    text-align: left;
+    width: 100%;
+  }
+
+  a.g-item {
+    color: var(--g-dim);
+  }
+
+  .g-item:hover,
+  a.g-item:hover {
+    background: var(--g-hover);
+    color: var(--g-text);
+  }
+
+  .g-item[aria-current="page"],
+  .g-item[aria-current="true"] {
+    background: var(--g-sel);
+    color: var(--g-text);
+  }
+
+  /* "Connections", "Connected": a small section label. */
+  .g-label {
+    font-size: 11px;
+    color: var(--g-mut);
+    letter-spacing: 0.02em;
+  }
+
+  /* A side pane (row details, pending changes). */
+  .g-aside {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--g-line);
+    padding: 14px 14px 20px;
+  }
+
+  /* A bordered group (settings sections, the MCP endpoint). */
+  .g-box {
+    border: 1px solid var(--g-line);
+    border-radius: 10px;
+    background: var(--g-side);
+  }
+
+  .g-box > * + * {
+    border-top: 1px solid var(--g-line);
+  }
+
+  /* Dense tables: quiet heads, hairline rows. */
+  .g-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .g-table th {
+    height: 32px;
+    padding: 0 8px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--g-mut);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--g-line);
+    background: none;
+  }
+
+  .g-table td {
+    height: 34px;
+    padding: 0 8px;
+    white-space: nowrap;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--g-grid);
+    background: none;
+  }
+
+  .g-table tr:hover > td {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  /* A change's old and new value. */
+  .g-diff {
+    font-family: var(--g-mono);
+    font-size: 12px;
+    line-height: 22px;
+    padding: 6px 10px;
+  }
+
+  .g-del {
+    color: var(--g-del);
+  }
+
+  .g-add {
+    color: var(--g-add);
+  }
+
+  /* Hover-revealed CLI equivalent under an action button (Dock only). */
+  .g-act {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .g-act > .cli {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    margin-top: 4px;
+    z-index: 10;
+    white-space: nowrap;
+    font-family: var(--g-mono);
+    font-size: 11px;
+    color: var(--g-mut);
+    background: var(--g-pop);
+    border: 1px solid var(--g-edge);
+    border-radius: 6px;
+    padding: 2px 6px;
+    visibility: hidden;
+  }
+
+  .g-act:hover > .cli,
+  .g-act:focus-within > .cli {
+    visibility: visible;
+  }
+
+  /* Initials in a circle (people); square for agents. */
+  .g-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    border-radius: 9999px;
+    background: var(--g-pop);
+    color: var(--g-dim);
+    font-size: 10px;
+  }
+
+  .g-avatar.agent {
+    border-radius: 5px;
+  }
+}

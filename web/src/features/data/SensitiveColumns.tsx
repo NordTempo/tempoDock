@@ -1,5 +1,5 @@
-import { ErrorText } from "../../ui/kit";
 import { useCli, useDataPolicy, useDataSource, useSetSensitive } from "./api";
+import { ErrorText } from "./kit";
 import { kindNames } from "./policy";
 import type { DataColumnRef, DataPolicyRule, DataTable } from "./types";
 
@@ -85,24 +85,24 @@ export function SensitiveSection({
   );
 
   return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-semibold">Sensitive columns</h3>
-      <p className="max-w-[720px] text-xs text-mut">
+    <section className="flex flex-col gap-2 px-2">
+      <h3 className="text-[13px] font-semibold">Sensitive columns</h3>
+      <p className="max-w-[720px] text-xs text-(--g-mut)">
         Marked columns show as •••••• in table pages and references. Callers
         whose access says masked never see them: their SQL runs as{" "}
         {roles.masked}, which can't select them. Callers with visible reveal
         them per column in Tables, and each reveal is audited (data.reveal).
         Views need their own marks.
       </p>
-      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 font-mono text-xs">
-        <dt className="text-mut">admins</dt>
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-0.5 text-xs">
+        <dt className="text-(--g-mut)">admins</dt>
         <dd>visible after a reveal</dd>
         {rules.map((r) => (
           <div key={r.subject} className="contents">
-            <dt className="text-mut">{subjectNames[r.subject]}</dt>
+            <dt className="text-(--g-mut)">{subjectNames[r.subject]}</dt>
             <dd>
               {seesText(r)}
-              <span className="text-faint">
+              <span className="text-(--g-faint)">
                 {" "}
                 {r.level} on {kindNames[r.kind]}
                 {r.subject === "tokens" && ", unless a token has its own"}
@@ -114,7 +114,7 @@ export function SensitiveSection({
       {policy.error && <ErrorText error={policy.error} />}
 
       <p className="font-mono text-xs">
-        <span className="text-mut">marked </span>
+        <span className="text-(--g-mut)">marked </span>
         {marks.marked.length
           ? marks.marked.map((c) => refKey(c)).join(", ")
           : "none"}
@@ -122,10 +122,10 @@ export function SensitiveSection({
       {suggested.length > 0 && (
         <div className="flex flex-col gap-1 font-mono text-xs">
           <p>
-            <span className="text-mut">likely sensitive by name </span>
+            <span className="text-(--g-mut)">likely sensitive by name </span>
             <button
               type="button"
-              className="lnk"
+              className="g-lnk"
               disabled={marks.pending}
               onClick={() => marks.mark(suggested)}
             >
@@ -136,10 +136,10 @@ export function SensitiveSection({
             {suggested.slice(0, maxSuggestions).map((c) => (
               <li key={refKey(c)}>
                 {c.schema === "public" ? "" : `${c.schema}.`}
-                {c.table}.<span className="text-white">{c.column}</span>{" "}
+                {c.table}.<span className="text-(--g-text)">{c.column}</span>{" "}
                 <button
                   type="button"
-                  className="lnk"
+                  className="g-lnk"
                   disabled={marks.pending}
                   onClick={() => marks.toggle(c, true)}
                 >
@@ -148,7 +148,7 @@ export function SensitiveSection({
               </li>
             ))}
             {suggested.length > maxSuggestions && (
-              <li className="text-mut">
+              <li className="text-(--g-mut)">
                 and {suggested.length - maxSuggestions} more
               </li>
             )}
@@ -156,7 +156,7 @@ export function SensitiveSection({
         </div>
       )}
       <ErrorText error={marks.error} />
-      {cli && <p className="font-mono text-2xs text-mut">{cli}</p>}
+      {cli && <p className="font-mono text-2xs text-(--g-mut)">{cli}</p>}
     </section>
   );
 }
