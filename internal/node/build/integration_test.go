@@ -134,8 +134,6 @@ func (w testWriter) Write(p []byte) (int, error) {
 func run(t *testing.T, docker *client.Client, name, image string, cmd ...string) string {
 	t.Helper()
 	ctx := t.Context()
-	// Unique per test process: parallel runs on one Docker host share names.
-	name = fmt.Sprintf("%s-%d", name, os.Getpid())
 	port := network.MustParsePort("3000/tcp")
 	created, err := docker.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: fmt.Sprintf("%s-%d", name, os.Getpid()),
