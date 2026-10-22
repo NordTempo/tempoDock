@@ -365,6 +365,14 @@ binary; no token needed. Upgrade the control plane first. To re-join (after
 token with `dock server add` and re-run with it as `NODE_JOIN_TOKEN`. Node
 logs: `journalctl -u dock-node`.
 
+What to expect, measured on two LAN machines (control plane building,
+node non-production only, plain HTTP): joining takes about 20 ms; a source
+deploy to the node (build on the control plane, push, pull by digest over
+the link, health check) 5 s with a warm build cache; promoting it to
+production 6 s. Upgrading the control plane drops node links for about a
+second. A stopped node turns `offline` at once, deploys to it fail
+immediately with `server_offline`, and its apps keep serving.
+
 ### Registry
 
 When images move between servers (built on one, deployed on another, or
