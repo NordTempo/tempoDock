@@ -1,188 +1,203 @@
 {
   "about": "Recorded by `make perf-baseline` (scripts/perf). Commit it with the change that moved the numbers; see docs/performance.md.",
   "go": "go1.27.3",
-  "binary_bytes": 40865952,
-  "calibration_ns": 295588.433982684,
+  "binary_bytes": 44708000,
+  "calibration_ns": 262186.5029834254,
   "benchmarks": {
     "api.BenchmarkSSEWrite/batch=1": {
-      "ns_op": 143.6,
+      "ns_op": 125.8,
       "bytes_op": 56,
       "allocs_op": 2
     },
     "api.BenchmarkSSEWrite/batch=16": {
-      "ns_op": 360.1,
+      "ns_op": 303,
       "bytes_op": 56,
       "allocs_op": 2
     },
+    "core.BenchmarkAlertEvent": {
+      "ns_op": 39.5,
+      "bytes_op": 24,
+      "allocs_op": 1
+    },
     "core.BenchmarkBusFanOut/subscribers=1": {
-      "ns_op": 1579,
-      "bytes_op": 1112,
+      "ns_op": 1675,
+      "bytes_op": 1176,
       "allocs_op": 5
     },
     "core.BenchmarkBusFanOut/subscribers=100": {
-      "ns_op": 5847,
-      "bytes_op": 1906,
+      "ns_op": 6092,
+      "bytes_op": 1970,
       "allocs_op": 104
     },
     "core.BenchmarkBusFanOut/subscribers=20": {
-      "ns_op": 2413,
-      "bytes_op": 1265,
+      "ns_op": 2611,
+      "bytes_op": 1329,
       "allocs_op": 24
     },
     "core.BenchmarkCoreReads/Changes/services=20,staged": {
-      "ns_op": 565791,
-      "bytes_op": 406556,
-      "allocs_op": 6213
+      "ns_op": 607705,
+      "bytes_op": 411353,
+      "allocs_op": 6217
     },
     "core.BenchmarkCoreReads/GetRelease": {
-      "ns_op": 44440,
-      "bytes_op": 16082,
-      "allocs_op": 354
+      "ns_op": 45488,
+      "bytes_op": 16688,
+      "allocs_op": 370
     },
     "core.BenchmarkCoreReads/ListAudit/action,limit=100": {
-      "ns_op": 70910,
+      "ns_op": 58281,
       "bytes_op": 34200,
       "allocs_op": 522
     },
     "core.BenchmarkCoreReads/ListAudit/action=common,limit=100": {
-      "ns_op": 901624,
-      "bytes_op": 148274,
+      "ns_op": 749944,
+      "bytes_op": 148272,
       "allocs_op": 2464
     },
     "core.BenchmarkCoreReads/ListAudit/all,limit=100": {
-      "ns_op": 213234,
+      "ns_op": 199770,
       "bytes_op": 129865,
       "allocs_op": 2457
     },
     "core.BenchmarkCoreReads/ListAudit/project,action,limit=100": {
-      "ns_op": 67126,
+      "ns_op": 65165,
       "bytes_op": 35632,
       "allocs_op": 564
     },
     "core.BenchmarkCoreReads/ListAudit/project,limit=100": {
-      "ns_op": 266122,
+      "ns_op": 248034,
       "bytes_op": 149665,
       "allocs_op": 2499
     },
     "core.BenchmarkCoreReads/ListAudit/service,limit=100": {
-      "ns_op": 219070,
+      "ns_op": 220885,
       "bytes_op": 121153,
       "allocs_op": 2135
     },
     "core.BenchmarkCoreReads/ListReleases/limit=100": {
-      "ns_op": 779082,
-      "bytes_op": 549982,
-      "allocs_op": 5123
+      "ns_op": 801444,
+      "bytes_op": 588994,
+      "allocs_op": 5140
     },
     "core.BenchmarkCoreReads/ListReleases/limit=20": {
-      "ns_op": 167878,
-      "bytes_op": 118870,
-      "allocs_op": 1196
+      "ns_op": 187240,
+      "bytes_op": 127066,
+      "allocs_op": 1212
     },
     "core.BenchmarkCoreReads/ListServices/services=20": {
-      "ns_op": 185274,
-      "bytes_op": 100640,
-      "allocs_op": 1382
+      "ns_op": 210271,
+      "bytes_op": 102689,
+      "allocs_op": 1384
     },
     "core.BenchmarkCoreReads/ListVariables/services=20": {
-      "ns_op": 169171,
-      "bytes_op": 102097,
-      "allocs_op": 1244
+      "ns_op": 173304,
+      "bytes_op": 102865,
+      "allocs_op": 1246
     },
     "core.BenchmarkCoreReads/Overview/services=60": {
-      "ns_op": 1186627,
-      "bytes_op": 753724,
-      "allocs_op": 8546
+      "ns_op": 1268539,
+      "bytes_op": 811534,
+      "allocs_op": 8648
     },
     "core.BenchmarkCoreReads/Overview/services=60,parallel=8": {
-      "ns_op": 506563,
-      "bytes_op": 753751,
-      "allocs_op": 8546
+      "ns_op": 502088,
+      "bytes_op": 811663,
+      "allocs_op": 8649
     },
     "core.BenchmarkCoreReads/Overview/services=60,staged": {
-      "ns_op": 1116892,
-      "bytes_op": 753940,
-      "allocs_op": 8552
+      "ns_op": 1358593,
+      "bytes_op": 811792,
+      "allocs_op": 8654
     },
     "core.BenchmarkCoreReads/ResolveVariables/services=20": {
-      "ns_op": 376032,
-      "bytes_op": 250482,
-      "allocs_op": 3718
+      "ns_op": 386353,
+      "bytes_op": 253678,
+      "allocs_op": 3721
+    },
+    "core.BenchmarkRetentionPass": {
+      "ns_op": 46727,
+      "bytes_op": 1984,
+      "allocs_op": 63
     },
     "core.BenchmarkStatsTick50": {
-      "ns_op": 224681,
-      "bytes_op": 61982,
-      "allocs_op": 831
+      "ns_op": 238526,
+      "bytes_op": 73180,
+      "allocs_op": 875
+    },
+    "data/pg.BenchmarkAppendRow": {
+      "ns_op": 69446,
+      "bytes_op": 116,
+      "allocs_op": 0
     },
     "mcp.BenchmarkToolCall/tool=service_status": {
-      "ns_op": 129000,
-      "bytes_op": 42740,
-      "allocs_op": 903
+      "ns_op": 133125,
+      "bytes_op": 43966,
+      "allocs_op": 933
     },
     "mcp.BenchmarkToolCall/tool=whoami": {
-      "ns_op": 31000,
-      "bytes_op": 15410,
-      "allocs_op": 232
+      "ns_op": 29496,
+      "bytes_op": 15788,
+      "allocs_op": 240
     },
     "node/caddy.BenchmarkRender/routes=500,tls=false": {
-      "ns_op": 380209,
-      "bytes_op": 462651,
+      "ns_op": 386953,
+      "bytes_op": 479812,
       "allocs_op": 2360
     },
     "node/caddy.BenchmarkRender/routes=500,tls=true": {
-      "ns_op": 413355,
-      "bytes_op": 499559,
-      "allocs_op": 2385
+      "ns_op": 419371,
+      "bytes_op": 521101,
+      "allocs_op": 2386
     },
     "pack.BenchmarkWrite": {
-      "ns_op": 8277921,
-      "bytes_op": 2983394,
+      "ns_op": 7877568,
+      "bytes_op": 2982878,
       "allocs_op": 8298
     },
     "pack.BenchmarkWritePipe": {
-      "ns_op": 9144382,
-      "bytes_op": 2986726,
+      "ns_op": 8500739,
+      "bytes_op": 2985663,
       "allocs_op": 8307
     },
     "repoconfig.BenchmarkFromTar": {
-      "ns_op": 294766,
-      "bytes_op": 85460,
+      "ns_op": 286412,
+      "bytes_op": 85404,
       "allocs_op": 2635
     },
     "repoconfig.BenchmarkParse": {
-      "ns_op": 1291,
+      "ns_op": 1203,
       "bytes_op": 768,
       "allocs_op": 15
     },
     "store.BenchmarkPreparedQuery/param": {
-      "ns_op": 41449,
-      "bytes_op": 6208,
-      "allocs_op": 232
+      "ns_op": 41206,
+      "bytes_op": 6224,
+      "allocs_op": 234
     },
     "store.BenchmarkPreparedQuery/param,parallel=8": {
-      "ns_op": 35114,
-      "bytes_op": 6207,
-      "allocs_op": 232
+      "ns_op": 33574,
+      "bytes_op": 6222,
+      "allocs_op": 234
     },
     "store.BenchmarkPreparedQuery/plus-param": {
-      "ns_op": 27990,
-      "bytes_op": 6208,
-      "allocs_op": 232
+      "ns_op": 29294,
+      "bytes_op": 6224,
+      "allocs_op": 234
     },
     "store.BenchmarkPreparedQuery/plus-param,parallel=8": {
-      "ns_op": 11936,
-      "bytes_op": 6208,
-      "allocs_op": 232
+      "ns_op": 6543,
+      "bytes_op": 6223,
+      "allocs_op": 234
     },
     "store.BenchmarkPreparedQuery/sqlc": {
-      "ns_op": 42175,
-      "bytes_op": 26368,
-      "allocs_op": 260
+      "ns_op": 38602,
+      "bytes_op": 27136,
+      "allocs_op": 262
     },
     "store.BenchmarkPreparedQuery/sqlc,parallel=8": {
-      "ns_op": 22336,
-      "bytes_op": 26368,
-      "allocs_op": 260
+      "ns_op": 15416,
+      "bytes_op": 27136,
+      "allocs_op": 262
     }
   }
 }
