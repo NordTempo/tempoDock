@@ -1,8 +1,10 @@
 # Install
 
-One server runs everything: the `dock` daemon (API, UI, deploys), Caddy
-(public traffic and TLS), and BuildKit (builds). Apps run as Docker
-containers and keep running when the daemon is stopped or upgraded.
+The first server runs everything: the `dock` daemon (API, UI, deploys),
+Caddy (public traffic and TLS), and BuildKit (builds). Apps run as Docker
+containers and keep running when the daemon is stopped or upgraded. More
+servers can [join as nodes](#add-a-server) later; the first one stays the
+control plane.
 
 ## Requirements
 
@@ -13,9 +15,9 @@ containers and keep running when the daemon is stopped or upgraded.
 | Tools | `curl` (downloads Caddy, detects the public IP), `iptables` (the app firewall) |
 | Access | root (`sudo`) |
 | Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-m0)). Builds are capped at 2 GB by default |
-| Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) private |
+| Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) and node port (7443) private. None on a [Cloudflare Tunnel](#cloudflare-tunnel) server |
 | cgroups | cgroup v2 (the default on current distributions) for per-service statistics. Docker's systemd and cgroupfs drivers both work |
-| Optional | Tailscale, so the API listens on the tailnet by default |
+| Optional | Tailscale, so the API listens on the tailnet by default. Recommended for every server once there's more than one |
 
 ## Install
 
@@ -42,17 +44,26 @@ Keep the admin token for scripts and for creating agent tokens
 
 ### install.sh options
 
-Environment variables. Only `DOCK_BINARY` and `CADDY_VERSION` matter on a
-re-run; the rest are only used when `/etc/dock/config.toml` doesn't exist yet.
+`--node` installs a [node](#add-a-server) instead of a control plane. The
+rest are environment variables. `PUBLIC_IP`, `LISTEN`, `BASE_DOMAIN` and
+`DISABLE_TLS` are only used when `/etc/dock/config.toml` doesn't exist yet;
+the others also change an existing config, touching only their own keys.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `DOCK_BINARY` | (required) | Path to the built `dock` binary |
 | `CADDY_VERSION` | `2.11.7` | Caddy release to download from GitHub |
-| `PUBLIC_IP` | auto (`api.ipify.org`) | Address users point DNS at → `public_ip` |
-| `LISTEN` | Tailscale IPv4`:7070`, else `127.0.0.1:7070` | API and UI address → `listen` |
+| `PUBLIC_IP` | auto (`api.ipify.org`), empty on tunnel servers | Address users point DNS at → `public_ip` |
+| `LISTEN` | Tailscale IPv4`:7070`, else `127.0.0.1:7070` | API and UI address → `listen`. Control plane only |
 | `BASE_DOMAIN` | empty | Base for generated hostnames → `base_domain`. Needs a wildcard DNS record |
-| `DISABLE_TLS` | `false` | `true` serves plain HTTP only → `[caddy] disable_tls`. For LAN/Tailscale-only setups or behind a Cloudflare Tunnel |
+| `DISABLE_TLS` | `false` | `true` serves plain HTTP only → `[caddy] disable_tls`. For LAN/Tailscale-only setups. Ignored on tunnel servers |
+| `CLOUDFLARE_TUNNEL_TOKEN` | empty | Serve public traffic through a [Cloudflare Tunnel](#cloudflare-tunnel): installs `cloudflared` and `dock-cloudflared.service`, sets `[ingress]` |
+| `CLOUDFLARED_VERSION`, `CLOUDFLARED_SHA256` | `2026.10.3`, pinned | Another `cloudflared` release and the SHA-256 of `cloudflared-linux-<arch>` from its release notes |
+| `NODE_LISTEN` | empty | Accept nodes on this address, e.g. `100.64.0.10:7443` → `[node] listen`. Control plane only |
+| `REGISTRY` | empty | `1` runs the [image registry](#registry) → `[registry] enabled`. Control plane only |
+| `REGISTRY_NAME` | empty | The registry's `host[:port]` as nodes reach it → `[registry] public_name` |
+| `REGISTRY_LISTEN` | `127.0.0.1:5000` | Host address the registry container is published on → `[registry] listen` |
+| `NODE_JOIN_TOKEN` | empty | From `dock server join-token`; implies `--node`. Needed on the first run, and to re-join |
 
 ### What it installs
 
@@ -61,9 +72,12 @@ re-run; the rest are only used when `/etc/dock/config.toml` doesn't exist yet.
 | `dock` binary | `/usr/local/bin/dock` |
 | Caddy binary | `/usr/local/bin/caddy`, checked against the release's published SHA-512 checksums (skipped if the right version is already there) |
 | System users | `dock` runs the daemon, `dock-caddy` runs Caddy. Neither has a login shell or is in the `docker` group itself |
-| Daemon config | `/etc/dock/config.toml` (root:dock, 0640). Written once, never overwritten |
+| Daemon config | `/etc/dock/config.toml` (root:dock, 0640). Written once; later runs only change the keys their options set, and only after the new binary accepts the result |
 | Caddy bootstrap config | `/etc/dock/caddy.json` (regenerated on every run) |
-| Daemon unit | `dock.service`: `dock serve --config /etc/dock/config.toml` as `dock`, with the `docker` and `dock-caddy` groups for this process only. `MemoryHigh=96M`, `MemoryMax=256M`, `GOMEMLIMIT=64MiB` |
+| Daemon unit | `dock.service`: `dock serve --config /etc/dock/config.toml` as `dock`, with the `docker` and `dock-caddy` groups for this process only. `MemoryMax=768M` (sized for builds), `GOMEMLIMIT=64MiB` |
+| Node unit (nodes only, instead of `dock.service`) | `dock-node.service`: `dock node --config /etc/dock/config.toml`, same user, groups and limits. No API, UI or SQLite |
+| Tunnel unit (tunnel servers only) | `dock-cloudflared.service`: `cloudflared tunnel run` as a throwaway user with no capabilities; the token is in `/etc/dock/cloudflared.env` (root, 0600). `cloudflared` binary in `/usr/local/bin`, checked against a pinned SHA-256 |
+| Registry (control plane, `REGISTRY=1`) | `dock-registry` container, `registry:3.1.2` pinned by digest, Docker restart policy `unless-stopped`. See [Registry](#registry) |
 | Proxy unit | `dock-caddy.service`: `caddy run --resume` as `dock-caddy`, only binds 80/443. No Docker access |
 | Firewall unit | `dock-firewall.service`: runs `dock admin firewall apply` as root whenever Docker starts. See [App firewall](#app-firewall) |
 | Daemon data | `/var/lib/dock` (0700): `dock.db`, `secret.key`, `builds/`, `uploads/` |
@@ -73,7 +87,9 @@ re-run; the rest are only used when `/etc/dock/config.toml` doesn't exist yet.
 | BuildKit image | `moby/buildkit:v0.34.1`, pinned by digest, pulled now; the `dock-buildkit` container is created before the first build |
 
 Re-running the script is safe: config and data are kept, binaries and units
-are replaced, and no second admin is created.
+are replaced, and no second admin is created. A server installed with
+`--node` is upgraded as a node without the flag; the script refuses to turn
+a control plane into a node or back.
 
 ## config.toml
 
@@ -105,6 +121,14 @@ running).
 | `[defaults] cpus` | `1` | CPU limit for services that don't set one |
 | `[defaults] health_check_timeout_seconds` | `60` | Health check timeout for services that don't set one |
 | `[defaults] keep_releases` | `5` | Release images kept for rollback. Not enforced yet: nothing prunes old images |
+| `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
+| `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
+| `[node] listen` | empty | Control plane: where nodes connect, e.g. `100.64.0.10:7443` on Tailscale. Empty: no nodes |
+| `[node] control_plane` | empty | Node: overrides the control plane address from the join token (`host:port`), for when the control plane moves. Its key stays pinned |
+| `[registry] enabled` | `false` | Control plane: run the image registry |
+| `[registry] listen` | `127.0.0.1:5000` | Host address the `dock-registry` container is published on |
+| `[registry] storage_dir` | `/var/lib/dock-registry` | Registry blobs and manifests |
+| `[registry] public_name` | empty | The registry's `host[:port]` as nodes reach it; prefix of every image name. Required when enabled |
 
 Changing `[buildkit]` settings recreates the `dock-buildkit` container
 before the next build. So does finding its memory cap loosened: before each
@@ -127,7 +151,7 @@ How you reach the API and how the public reaches apps are separate choices:
 |---|---|---|---|
 | **Tailscale** (default) | Tailscale IP:7070 (auto) | `false` | Public IP, Caddy issues certificates |
 | **LAN only** | LAN IP:7070 | `true` | LAN, plain HTTP. Point local DNS at the server |
-| **Cloudflare Tunnel** | Tailscale or loopback | `true` | `cloudflared` → Caddy on `localhost:80`; Cloudflare terminates TLS |
+| **Cloudflare Tunnel** | Tailscale or loopback | (n/a) | `cloudflared` → Caddy on `127.0.0.1:80`; Cloudflare terminates TLS |
 
 On LAN setups anyone on the network can sniff tokens sent to the API. Prefer
 Tailscale.
@@ -181,26 +205,58 @@ off: `sudo systemctl disable --now dock-firewall && sudo dock admin firewall rem
 ### Cloudflare Tunnel
 
 For servers without a public IP or open ports, like a homelab
-([ADR 0013](../decisions/0013-homelab-ingress-cloudflare-tunnel.md)). Built-in
-support (a per-server ingress mode) lands in M3; today you run `cloudflared`
-yourself:
+([ADR 0013](../decisions/0013-homelab-ingress-cloudflare-tunnel.md)).
+`cloudflared` dials out to Cloudflare and hands every request to Caddy, which
+listens in plain HTTP on `127.0.0.1:80` only. Cloudflare's edge terminates
+TLS, so apps are still `https://`. Nothing listens publicly and the home IP
+never appears in DNS.
 
-1. Install with `DISABLE_TLS=true`.
-2. Create a tunnel with one catch-all ingress rule to `http://localhost:80`
-   and run `cloudflared` as a systemd service.
-3. In Cloudflare DNS, CNAME your hostnames (or `*.<base_domain>`, first level
-   only) to the tunnel.
+1. **Zone.** Add a dedicated domain for app hostnames to Cloudflare, e.g.
+   `example-apps.dev`, separate from your product's domain (cookies and
+   reputation stay apart).
+2. **Tunnel.** Zero Trust → Networks → Tunnels → Create a tunnel →
+   Cloudflared, name it after the server. Copy the token from the install
+   command it shows (the long `eyJ...` string). Skip its install steps.
+3. **Ingress.** Send everything to Caddy: a public hostname `*.example-apps.dev`
+   with service `HTTP` `127.0.0.1:80`. Use `127.0.0.1`, not `localhost`,
+   which can resolve to `::1` where Caddy doesn't listen. For custom domains
+   on other zones too, make it a true catch-all through the API instead:
 
-Routing works, but domain status stays `waiting_for_dns`: the check compares
-DNS answers with `public_ip`, and a tunnelled hostname resolves to
-Cloudflare. The marker-header check from ADR 0013 replaces this in M3.
+   ```sh
+   curl -X PUT "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations" \
+     -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+     --data '{"config":{"ingress":[{"service":"http://127.0.0.1:80"}]}}'
+   ```
+
+4. **DNS.** In the zone: `*` CNAME `<tunnel-id>.cfargotunnel.com`, proxied.
+   One level only (`web-shop-staging.example-apps.dev`): Cloudflare's free
+   certificate covers `*.example-apps.dev`, not deeper names.
+5. **Install** with the token, and the zone as the base domain:
+
+   ```sh
+   sudo DOCK_BINARY=./dock CLOUDFLARE_TUNNEL_TOKEN=eyJ... BASE_DOMAIN=example-apps.dev \
+     ./deploy/install.sh            # add --node and NODE_JOIN_TOKEN for a node
+   ```
+
+The script installs `cloudflared` (checked against a pinned SHA-256), runs
+it as `dock-cloudflared.service`, and sets `[ingress] mode =
+"cloudflare_tunnel"` and `tunnel_hostname` in `config.toml`. Re-runs without
+the token keep the tunnel; a new token replaces the old one. Already running
+your own `cloudflared` for this server? Disable it first.
+
+Apps see the visitor's address in `CF-Connecting-IP` (and
+`X-Forwarded-For`); Caddy only trusts those headers from loopback. Custom
+domains need their DNS on the same Cloudflare account: CNAME them to the
+tunnel hostname. Domain status is checked with an HTTPS request through
+Cloudflare that looks for this server's `Dock-Server` header, since a
+tunnelled hostname resolves to Cloudflare, not to the server.
 
 ## Servers and placement
 
 The server `install.sh` sets up is the first server. It accepts both kinds
 of environment, production and non-production, so a single-server install
-needs no setup. More servers join as nodes (M3); then an admin decides which
-kinds go where:
+needs no setup. More servers [join as nodes](#add-a-server); then an admin
+decides which kinds go where:
 
 ```sh
 dock server list                                       # status, version, accepted kinds, memory reserved
@@ -237,6 +293,81 @@ kind is taken from its environments; a project whose environments of one
 kind were already spread over servers keeps them there, and new ones follow
 the most recently created.
 
+### Add a server
+
+A node runs apps and builds for the control plane: Docker, Caddy, BuildKit
+and `dock node`, but no API, UI or database. It dials out to the control
+plane over TLS with pinned keys ([ADR 0014](../decisions/0014-node-protocol.md)),
+so it works behind NAT and needs no inbound ports for the link. Put every
+server on the same Tailscale tailnet: the control plane's node port and
+registry are only meant to be reachable there.
+
+1. **Control plane, once:** open the node port on its Tailscale address.
+
+   ```sh
+   sudo NODE_LISTEN="$(tailscale ip -4):7443" DOCK_BINARY=./dock ./deploy/install.sh
+   ```
+
+   Images built on one server and deployed on another go through the
+   [registry](#registry); set it up in the same run if you haven't.
+
+2. **Anywhere you're logged in as an admin:** create a join token. It is
+   valid for an hour and works once.
+
+   ```sh
+   dock server join-token homelab
+   ```
+
+3. **The new server:** install Docker, join the tailnet, then install as a
+   node with the token. Add `CLOUDFLARE_TUNNEL_TOKEN` for a
+   [tunnel](#cloudflare-tunnel) server.
+
+   ```sh
+   sudo DOCK_BINARY=./dock NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
+   ```
+
+   The script installs the same binaries, Caddy and app firewall as on the
+   control plane, runs `dock node join` once (it creates the node's key in
+   `/var/lib/dock` and pins the control plane's), then starts
+   `dock-node.service`.
+
+4. **Check** that it's online and choose what it takes:
+
+   ```sh
+   dock server list
+   dock server update homelab --non-production --no-production
+   ```
+
+Upgrade a node like the control plane: re-run `install.sh` with the new
+binary; no token needed. Upgrade the control plane first. To re-join (after
+`dock server revoke`, or once the control plane's key changed), re-run with a
+new `NODE_JOIN_TOKEN`. Node logs: `journalctl -u dock-node`.
+
+### Registry
+
+When images move between servers (built on one, deployed on another, or
+promoted), they go through a registry on the control plane: CNCF
+Distribution in the `dock-registry` container. Nodes hold no registry
+credentials; the control plane hands them a short-lived token per pull or
+push.
+
+```sh
+sudo REGISTRY=1 REGISTRY_NAME=registry.example.dev DOCK_BINARY=./dock ./deploy/install.sh
+```
+
+| What | Where |
+|---|---|
+| Image | `registry:3.1.2`, pinned by digest |
+| Container | `dock-registry`, restart policy `unless-stopped`, as the `dock-registry` user, read-only root, no capabilities, 256 MB |
+| Published on | `[registry] listen`, `127.0.0.1:5000` by default |
+| Config | `/etc/dock/registry/config.yml`, generated by `dock admin registry-config` on every run |
+| Storage | `[registry] storage_dir`, `/var/lib/dock-registry`. Back it up only if you want to keep images; releases can be rebuilt |
+
+Re-runs recreate the container only when its image, config or mounts
+changed. `REGISTRY_NAME` is the name nodes push to and pull from, reachable
+from them over Tailscale. To turn the registry off, set `[registry] enabled
+= false` and `docker rm -f dock-registry`.
+
 ### Statistics
 
 The daemon samples CPU, memory, disk and load of every server, and CPU,
@@ -266,6 +397,10 @@ sudo install -m 0755 ./dock /usr/local/bin/dock && sudo systemctl restart dock
   `sudo systemctl restart dock-caddy` (the script doesn't restart a running
   Caddy). Traffic blips briefly; `--resume` restores the routes.
 - To upgrade BuildKit, change `[buildkit] image` in `config.toml`.
+- With several servers, upgrade the control plane first, then each node the
+  same way (re-run `install.sh` there; it stays a node).
+- To upgrade `cloudflared`, re-run with `CLOUDFLARED_VERSION` and
+  `CLOUDFLARED_SHA256` (from the release notes); the tunnel restarts.
 - Upgrading an install from before the app firewall: the script moves Caddy
   to the `dock-caddy` user (one Caddy restart, `--resume` restores routes),
   takes `dock` out of the `docker` group, and enables `dock-firewall`.

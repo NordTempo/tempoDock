@@ -1,0 +1,38 @@
+[Unit]
+Description=Tempo Dock node (runs apps for the control plane; dials out to it)
+After=network-online.target docker.service dock-caddy.service dock-firewall.service
+Wants=network-online.target dock-firewall.service
+Requires=docker.service
+
+[Service]
+User=dock
+Group=dock
+# docker: drive Docker. dock-caddy: reach Caddy's admin socket. Only this
+# unit gets them; the dock user itself is in neither group.
+SupplementaryGroups=docker dock-caddy
+# No API, UI or SQLite here: the node serves node.Runtime to the control
+# plane over the link it dials (ADR 0014), reconnecting on its own.
+ExecStart=/usr/local/bin/dock node --config /etc/dock/config.toml
+Restart=always
+RestartSec=2
+# Apps never depend on the node daemon, so stopping it is always safe.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+StateDirectory=dock dock/railpack
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# The node key and link state (node.key, node.toml) live here, so `trust`
+# and `rotate` can rewrite them.
+ReadWritePaths=/var/lib/dock
+PrivateTmp=true
+# Railpack keeps its tool cache (~150 MB) in /tmp/railpack. On disk it
+# survives restarts and isn't charged to this unit's memory as tmpfs.
+BindPaths=/var/lib/dock/railpack:/tmp/railpack
+# Same budget as dock.service: builds run their build-plan subprocess here.
+MemoryMax=768M
+Environment=GOMEMLIMIT=64MiB
+
+[Install]
+WantedBy=multi-user.target

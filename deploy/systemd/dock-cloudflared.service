@@ -1,0 +1,32 @@
+[Unit]
+Description=Tempo Dock tunnel (cloudflared: public traffic from Cloudflare to Caddy on loopback)
+After=network-online.target dock-caddy.service
+Wants=network-online.target
+
+[Service]
+# A remotely managed tunnel: its one ingress rule, a catch-all to
+# http://127.0.0.1:80 (Caddy's [caddy] http_port; not localhost, which may
+# resolve to ::1 where Caddy doesn't listen), lives in Cloudflare. The token
+# is TUNNEL_TOKEN in this root-only file, so it never shows up in `ps`.
+EnvironmentFile=/etc/dock/cloudflared.env
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run
+Restart=always
+RestartSec=5
+# cloudflared only dials out and needs no files: a throwaway user, no
+# capabilities, nothing writable.
+DynamicUser=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
