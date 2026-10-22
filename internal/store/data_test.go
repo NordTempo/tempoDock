@@ -366,6 +366,7 @@ func TestDataQueryPlans(t *testing.T) {
 		{"DecideChangeset", decideChangeset, []any{"committed", now, "a", "", "", "", 1}},
 		{"ExpireChangesets", expireChangesets, []any{now}},
 		{"GetAuditDetail", getAuditDetail, []any{1}},
+		{"GetAuditEventByDetail", getAuditEventByDetail, []any{1}},
 		{"ListDataQueryHistory", listDataQueryHistory, []any{"shop/staging/postgres", 1, nil, math.MaxInt64, 50}},
 		{"SetServiceDatabaseSettings", setServiceDatabaseSettings, []any{"", "", 1}},
 		{"SetTokenDataAccess", setTokenDataAccess, []any{nil, nil, nil, 1}},

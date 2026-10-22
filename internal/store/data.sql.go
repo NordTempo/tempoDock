@@ -333,6 +333,31 @@ func (q *Queries) GetAuditDetail(ctx context.Context, id int64) (AuditDetail, er
 	return i, err
 }
 
+const getAuditEventByDetail = `-- name: GetAuditEventByDetail :one
+SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id FROM audit_events WHERE detail_id = +CAST(?1 AS INTEGER)
+`
+
+// The event a detail belongs to, to check who may read the detail.
+func (q *Queries) GetAuditEventByDetail(ctx context.Context, detailID int64) (AuditEvent, error) {
+	row := q.queryRow(ctx, q.getAuditEventByDetailStmt, getAuditEventByDetail, detailID)
+	var i AuditEvent
+	err := row.Scan(
+		&i.ID,
+		&i.Actor,
+		&i.ActorKind,
+		&i.UserID,
+		&i.TokenID,
+		&i.Action,
+		&i.ProjectID,
+		&i.EnvironmentID,
+		&i.Target,
+		&i.Summary,
+		&i.CreatedAt,
+		&i.DetailID,
+	)
+	return i, err
+}
+
 const getChangeset = `-- name: GetChangeset :one
 SELECT id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by FROM changesets WHERE id = ?1 AND service_id = +?2
 `
