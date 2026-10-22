@@ -154,6 +154,16 @@ func startRegistry(t *testing.T, docker *client.Client, name string, signer *reg
 	if _, err := registry.WriteConfig(dir, signer); err != nil {
 		t.Fatal(err)
 	}
+	// Fresh machines (CI) don't have the image yet.
+	if _, err := docker.ImageInspect(ctx, registry.Image); err != nil {
+		pull, err := docker.ImagePull(ctx, registry.Image, client.ImagePullOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := pull.Wait(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
 	port := network.MustParsePort("5000/tcp")
 	created, err := docker.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: name,
