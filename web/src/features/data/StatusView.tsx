@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import type { ServiceRef } from "../../data/types";
 import { Act, ErrorText } from "../../ui/kit";
-import { useDataSetup } from "./api";
+import { useCli, useDataSetup, useDataSource } from "./api";
 import type { DataInfo, DataPermission } from "./types";
 
 /**
@@ -9,16 +8,11 @@ import type { DataInfo, DataPermission } from "./types";
  * button), unreachable, not running, unsupported, or no access. Renders
  * nothing when the database is ready and the caller has access.
  */
-export function StatusView({
-  serviceRef,
-  info,
-  flags,
-}: {
-  serviceRef: ServiceRef;
-  info: DataInfo;
-  flags: string;
-}) {
-  const setup = useDataSetup(serviceRef);
+export function StatusView({ info }: { info: DataInfo }) {
+  const { roles, words } = useDataSource();
+  const cli = useCli();
+  const setupCli = cli("dock db setup");
+  const setup = useDataSetup();
   const { access } = info;
 
   switch (info.status) {
@@ -26,16 +20,16 @@ export function StatusView({
       return (
         <State glyph="▲" tone="text-warn" title="Not set up">
           <p className="max-w-[640px] text-mut">
-            Dock reads this database through its own least-privilege roles,
-            dock_reader and dock_writer. Setup creates them with the owner
-            credentials from the service's variables; their passwords stay in
-            Dock and never reach the app or the browser.
+            {words.product} reads this database through its own least-privilege
+            roles, {roles.reader} and {roles.writer}. Setup creates them with{" "}
+            {words.owner}; their passwords stay in {words.product} and never
+            reach the app or the browser.
           </p>
           {access.manage ? (
             <div className="flex items-start gap-3">
               <Act
                 primary
-                cli={`dock db setup ${flags}`}
+                cli={setupCli}
                 disabled={setup.isPending}
                 onClick={() => setup.mutate()}
               >
@@ -47,11 +41,12 @@ export function StatusView({
                 <ErrorText error={setup.error} />
               </span>
             </div>
-          ) : (
+          ) : setupCli ? (
             <p>
-              An admin can run{" "}
-              <code className="font-mono">dock db setup {flags}</code>.
+              An admin can run <code className="font-mono">{setupCli}</code>.
             </p>
+          ) : (
+            <p>An admin can set it up.</p>
           )}
         </State>
       );
@@ -59,18 +54,14 @@ export function StatusView({
       return (
         <State glyph="✕" tone="text-fail" title="Can't reach the database">
           <p className="max-w-[640px] text-mut">
-            {info.reason ??
-              "The container runs, but the database didn't answer."}
+            {info.reason ?? words.unreachable}
           </p>
         </State>
       );
     case "not_running":
       return (
         <State glyph="○" tone="text-mut" title="Not running">
-          <p className="text-mut">
-            The service has no running container. Deploy or restart it, then
-            come back.
-          </p>
+          <p className="text-mut">{words.notRunning}</p>
         </State>
       );
     case "unsupported":

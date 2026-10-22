@@ -1,4 +1,3 @@
-import type { ServiceRef } from "../../data/types";
 import { useKeydown } from "../../shell/keys";
 import { useReferences } from "./api";
 import {
@@ -16,14 +15,12 @@ import type { DataFilter, DataResultColumn, DataRow, DataTable } from "./types";
  * links, and the rows that reference it (incoming foreign keys). Esc closes.
  */
 export function RowDrawer({
-  serviceRef,
   table,
   columns,
   row,
   onOpen,
   onClose,
 }: {
-  serviceRef: ServiceRef;
   table: DataTable;
   columns: readonly DataResultColumn[];
   row: DataRow;
@@ -33,7 +30,7 @@ export function RowDrawer({
 }) {
   const names = columns.map((c) => c.name);
   const key = rowKey(table, names, row);
-  const refs = useReferences(serviceRef, tableName(table), key);
+  const refs = useReferences(tableName(table), key);
   useKeydown((e) => e.key === "Escape" && onClose());
 
   const fkFor = (column: string) =>

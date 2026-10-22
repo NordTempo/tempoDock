@@ -1,8 +1,13 @@
 import { useState } from "react";
-import type { ServiceRef } from "../../data/types";
 import { ago, plural, until } from "../../ui/format";
 import { Act, Actor, ErrorText } from "../../ui/kit";
-import { useChangesets, useCommitChangeset, useRejectChangeset } from "./api";
+import {
+  useChangesets,
+  useCli,
+  useCommitChangeset,
+  useDataSource,
+  useRejectChangeset,
+} from "./api";
 import { ChangeList, SqlText } from "./ReviewPanel";
 import type { DataChangeset, DataPermission } from "./types";
 
@@ -20,16 +25,8 @@ const statusText: Record<DataChangeset["status"], [string, string]> = {
  * its rows and exact SQL. Admins approve (commit) or reject pending ones;
  * proposers follow what happened to theirs.
  */
-export function ChangesView({
-  serviceRef,
-  access,
-  flags,
-}: {
-  serviceRef: ServiceRef;
-  access: DataPermission;
-  flags: string;
-}) {
-  const list = useChangesets(serviceRef, true);
+export function ChangesView({ access }: { access: DataPermission }) {
+  const list = useChangesets(true);
   const [selected, setSelected] = useState<number | null>(null);
   const all = list.data ?? [];
   const pending = all.filter((c) => c.status === "pending");
@@ -81,10 +78,8 @@ export function ChangesView({
       {current && (
         <Changeset
           key={current.id}
-          serviceRef={serviceRef}
           changeset={current}
           approve={access.approve}
-          flags={flags}
         />
       )}
     </div>
@@ -93,22 +88,19 @@ export function ChangesView({
 
 /** One changeset: who, when, its rows and SQL, and the admin's decision. */
 function Changeset({
-  serviceRef,
   changeset: c,
   approve,
-  flags,
 }: {
-  serviceRef: ServiceRef;
   changeset: DataChangeset;
   approve: boolean;
-  flags: string;
 }) {
-  const commit = useCommitChangeset(serviceRef);
-  const reject = useRejectChangeset(serviceRef);
+  const commit = useCommitChangeset();
+  const reject = useRejectChangeset();
+  const { confirmName: env, words } = useDataSource();
+  const cli = useCli();
   const [confirm, setConfirm] = useState("");
   const [reason, setReason] = useState("");
   const [label, tone] = statusText[c.status];
-  const env = serviceRef.environment;
   const confirmed = !c.confirm_commit || confirm === env;
   const busy = commit.isPending || reject.isPending;
   const decide = approve && c.status === "pending";
@@ -163,13 +155,15 @@ function Changeset({
                 className="field w-36 py-1 font-mono"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
-                aria-label="Environment name"
+                aria-label={`${words.target} name`}
               />
             </label>
           )}
           <Act
             primary
-            cli={`dock db changes commit ${c.id}${c.confirm_commit ? ` --confirm ${env}` : ""} ${flags}`}
+            cli={cli(
+              `dock db changes commit ${c.id}${c.confirm_commit ? ` --confirm ${env}` : ""}`,
+            )}
             disabled={!confirmed || busy}
             onClick={() =>
               commit.mutate({
@@ -189,7 +183,7 @@ function Changeset({
             onChange={(e) => setReason(e.target.value)}
           />
           <Act
-            cli={`dock db changes reject ${c.id} ${flags}`}
+            cli={cli(`dock db changes reject ${c.id}`)}
             disabled={busy}
             onClick={() =>
               reject.mutate({ id: c.id, reason: reason.trim() || undefined })

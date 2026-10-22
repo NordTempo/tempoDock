@@ -1,23 +1,27 @@
+import { useMutation } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import type { Token, TokenDataAccess } from "../../data/types";
 import { Button, ErrorText } from "../../ui/kit";
-import { levels, sensitivities, useSetTokenData } from "./policy";
+import { levels, sensitivities } from "./policy";
+import type { DataTokenAccess } from "./types";
 
-// A token's own database access (ADR 0016 section 4), on the Tokens page.
+// A token's own database access (ADR 0016 section 4), on Dock's and
+// tempoBase's Tokens pages.
+
+type Access = NonNullable<DataTokenAccess>;
 
 /** "non-production read, production none, masked", or "policy". */
-export const tokenDataText = (d: TokenDataAccess | null | undefined) =>
+export const tokenDataText = (d: DataTokenAccess | undefined) =>
   d
     ? `non-production ${d.non_production}, production ${d.production}, ${d.sensitive}`
     : "policy";
 
 /** The `dock token create` flags for a token's own data access. */
-export const tokenDataFlags = (d: TokenDataAccess | null) =>
+export const tokenDataFlags = (d: DataTokenAccess) =>
   d
     ? `--data-non-production ${d.non_production} --data-production ${d.production} --data-sensitive ${d.sensitive}`
     : "";
 
-const fallback: TokenDataAccess = {
+const fallback: Access = {
   non_production: "read",
   production: "none",
   sensitive: "masked",
@@ -25,14 +29,17 @@ const fallback: TokenDataAccess = {
 
 /**
  * Follow the policy's tokens rule (null), or the token's own levels per
- * environment kind and sensitive-column visibility.
+ * environment kind and sensitive-column visibility. `cap` says what caps
+ * a token's own access on this host.
  */
 export function TokenDataFields({
   value,
   onChange,
+  cap,
 }: {
-  value: TokenDataAccess | null;
-  onChange: (next: TokenDataAccess | null) => void;
+  value: DataTokenAccess;
+  onChange: (next: DataTokenAccess) => void;
+  cap: string;
 }) {
   const own = value ?? fallback;
   const name = useId();
@@ -79,11 +86,7 @@ export function TokenDataFields({
           onChange={() => onChange(own)}
         />
         <span>
-          Its own{" "}
-          <span className="text-mut">
-            never more than a user with its scope, or than its creator has. On
-            production, write acts as propose.
-          </span>
+          Its own <span className="text-mut">{cap}</span>
         </span>
       </label>
       <div className="flex flex-wrap gap-3 pl-6">
@@ -104,40 +107,45 @@ export function TokenDataFields({
   );
 }
 
-/** Changes an existing token's data access (admin), inline in its row. */
+/**
+ * Changes an existing token's data access, inline in its row: `onSave`
+ * sends it (PATCH /tokens/{id}), `cli` is the command for a value (none
+ * where the host has no CLI).
+ */
 export function TokenDataEditor({
-  token,
+  data,
+  onSave,
   onDone,
+  cap,
+  cli,
 }: {
-  token: Token;
+  data: DataTokenAccess | undefined;
+  onSave: (data: DataTokenAccess) => Promise<unknown>;
   onDone: () => void;
+  cap: string;
+  cli?: (data: DataTokenAccess) => string;
 }) {
-  const [value, setValue] = useState<TokenDataAccess | null>(
-    token.data ?? null,
-  );
-  const update = useSetTokenData();
-  const cli = value
-    ? `dock token update ${token.id} ${tokenDataFlags(value)}`
-    : `dock token update ${token.id} --data-clear`;
+  const [value, setValue] = useState<DataTokenAccess>(data ?? null);
+  const save = useMutation({ mutationFn: onSave, onSuccess: onDone });
   return (
     <div className="flex flex-col gap-3 py-2">
-      <TokenDataFields value={value} onChange={setValue} />
+      <TokenDataFields value={value} onChange={setValue} cap={cap} />
       <div className="flex flex-wrap items-center gap-2.5">
         <Button
           primary
           small
-          disabled={update.isPending}
-          onClick={() =>
-            update.mutate({ id: token.id, data: value }, { onSuccess: onDone })
-          }
+          disabled={save.isPending}
+          onClick={() => save.mutate(value)}
         >
           Save data access
         </Button>
         <Button small onClick={onDone}>
           Cancel
         </Button>
-        <span className="font-mono text-2xs text-mut">{cli}</span>
-        <ErrorText error={update.error} />
+        {cli && (
+          <span className="font-mono text-2xs text-mut">{cli(value)}</span>
+        )}
+        <ErrorText error={save.error} />
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
-import type { ServiceRef } from "../../data/types";
 import { ErrorText } from "../../ui/kit";
-import { useSetSensitive } from "./api";
-import { kindNames, subjectNames, usePolicy } from "./policy";
+import { useCli, useDataPolicy, useDataSource, useSetSensitive } from "./api";
+import { kindNames } from "./policy";
 import type { DataColumnRef, DataPolicyRule, DataTable } from "./types";
 
 // Marking sensitive columns (ADR 0016 section 5), admins only: which
@@ -35,11 +34,8 @@ function columnsWhere(
 }
 
 /** The marks, and changing them: toggle one column or mark several. */
-export function useSensitiveMarks(
-  serviceRef: ServiceRef,
-  tables: readonly DataTable[],
-) {
-  const set = useSetSensitive(serviceRef);
+export function useSensitiveMarks(tables: readonly DataTable[]) {
+  const set = useSetSensitive();
   const marked = columnsWhere(tables, (c) => c.sensitive);
   return {
     marked,
@@ -63,41 +59,38 @@ function seesText(rule: DataPolicyRule) {
 
 /**
  * The Sensitive columns section of the Schema tab: what masking means,
- * who sees what in this environment (its effective policy), the marked
+ * who sees what for this database (its effective policy), the marked
  * columns and suggestions by name across the whole schema.
  */
 export function SensitiveSection({
-  serviceRef,
   tables,
   marks,
-  flags,
 }: {
-  serviceRef: ServiceRef;
   tables: readonly DataTable[];
   marks: SensitiveMarks;
-  flags: string;
 }) {
-  const policy = usePolicy({
-    project: serviceRef.project,
-    environment: serviceRef.environment,
-  });
+  const { roles, subjectNames } = useDataSource();
+  const policy = useDataPolicy();
+  const cliHint = useCli();
   const rules = policy.data?.effective ?? [];
   const markedKeys = new Set(marks.marked.map(refKey));
   const suggested = columnsWhere(
     tables,
     (c) => !c.sensitive && likelyName.test(c.name),
   ).filter((c) => !markedKeys.has(refKey(c)));
-  const cli = marks.marked.length
-    ? `dock db sensitive set ${marks.marked.map(cliName).join(" ")} ${flags}`
-    : `dock db sensitive set --clear ${flags}`;
+  const cli = cliHint(
+    marks.marked.length
+      ? `dock db sensitive set ${marks.marked.map(cliName).join(" ")}`
+      : "dock db sensitive set --clear",
+  );
 
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-sm font-semibold">Sensitive columns</h3>
       <p className="max-w-[720px] text-xs text-mut">
         Marked columns show as •••••• in table pages and references. Callers
-        whose access says masked never see them: their SQL runs as
-        dock_reader_masked, which can't select them. Callers with visible reveal
+        whose access says masked never see them: their SQL runs as{" "}
+        {roles.masked}, which can't select them. Callers with visible reveal
         them per column in Tables, and each reveal is audited (data.reveal).
         Views need their own marks.
       </p>
@@ -163,7 +156,7 @@ export function SensitiveSection({
         </div>
       )}
       <ErrorText error={marks.error} />
-      <p className="font-mono text-2xs text-mut">{cli}</p>
+      {cli && <p className="font-mono text-2xs text-mut">{cli}</p>}
     </section>
   );
 }

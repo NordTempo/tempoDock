@@ -1,7 +1,6 @@
 import { useMemo, useReducer, useState } from "react";
-import type { ServiceRef } from "../../data/types";
 import { plural } from "../../ui/format";
-import { type TableQuery, useTableRows } from "./api";
+import { type TableQuery, useCli, useTableRows } from "./api";
 import { cellInput, filterFlag, rowCount, rowKey, tableName } from "./cells";
 import { editsReducer, noEdits, rowId, toChanges } from "./edits";
 import { FilterBar } from "./FilterBar";
@@ -18,23 +17,19 @@ import type { DataFilter, DataInfo, DataTable } from "./types";
  * carry over to another table.
  */
 export function TablesView({
-  serviceRef,
   info,
   table,
   query,
   editing,
   actions,
-  flags,
   onQuery,
 }: {
-  serviceRef: ServiceRef;
   info: DataInfo;
   table: DataTable;
   query: TableQuery;
   /** Edit mode is on (the panel's header toggles it). */
   editing: boolean;
   actions?: EditActions;
-  flags: string;
   /** Show another table, or this one filtered or sorted differently. */
   onQuery: (next: TableQuery) => void;
 }) {
@@ -43,7 +38,8 @@ export function TablesView({
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const rows = useTableRows(serviceRef, {
+  const cli = useCli();
+  const rows = useTableRows({
     ...query,
     reveal: revealed.size > 0,
   });
@@ -138,15 +134,16 @@ export function TablesView({
     estimated: pages[0]?.estimated_rows ?? table.estimated_rows,
     exact: pages.at(-1)?.exact_rows ?? table.exact_rows,
   };
-  const cli = [
-    `dock db rows ${name}`,
-    ...filters.map(filterFlag).filter(Boolean),
-    query.order && `--order ${query.order}`,
-    revealed.size > 0 && "--reveal",
-    flags,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const rowsCli = cli(
+    [
+      `dock db rows ${name}`,
+      ...filters.map(filterFlag).filter(Boolean),
+      query.order && `--order ${query.order}`,
+      revealed.size > 0 && "--reveal",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
 
   return (
     <div className="flex min-h-0 flex-1 gap-4">
@@ -160,7 +157,7 @@ export function TablesView({
             {!table.editable &&
               (pk.length ? ", read-only view" : ", no primary key: read-only")}
           </span>
-          <span className="ml-auto font-mono text-2xs text-mut">{cli}</span>
+          <span className="ml-auto font-mono text-2xs text-mut">{rowsCli}</span>
         </div>
         <FilterBar
           columns={table.columns ?? []}
@@ -261,14 +258,12 @@ export function TablesView({
         {canEdit && actions && changes.length > 0 && (
           <ReviewPanel
             changes={changes}
-            environment={serviceRef.environment}
             // A proposal writes nothing: its approver confirms instead.
             confirmCommit={
               info.access.confirm_commit && info.access.level !== "propose"
             }
             propose={info.access.level === "propose"}
             actions={actions}
-            flags={flags}
             onRestore={(key) => dispatch({ type: "restore", key })}
             onDiscard={() => dispatch({ type: "discard" })}
             onCommitted={() => {
@@ -280,7 +275,6 @@ export function TablesView({
       </div>
       {selectedRow && (
         <RowDrawer
-          serviceRef={serviceRef}
           table={table}
           columns={columns}
           row={selectedRow}

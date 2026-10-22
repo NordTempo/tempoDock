@@ -1,10 +1,11 @@
 import { useState } from "react";
-import type { ServiceRef } from "../../data/types";
 import { modKey, useKeydown } from "../../shell/keys";
 import { clock, day, plural } from "../../ui/format";
 import { Act, Button, ErrorText } from "../../ui/kit";
 import {
   type QueryRun,
+  useCli,
+  useDataSource,
   useDeleteSavedQuery,
   useQueryHistory,
   useQueryRunner,
@@ -41,23 +42,20 @@ const shellQuote = (s: string) =>
  * grid, and the caller's saved queries and history to load from.
  */
 export default function SqlView({
-  serviceRef,
   tables,
-  flags,
 }: {
-  serviceRef: ServiceRef;
   /** For completion. */
   tables: readonly DataTable[];
-  flags: string;
 }) {
   const [sql, setSql] = useState("");
   const [savedId, setSavedId] = useState<number | null>(null);
   const [naming, setNaming] = useState<string | null>(null);
-  const { result, run, cancel } = useQueryRunner(serviceRef);
-  const saved = useSavedQueries(serviceRef);
-  const save = useSaveQuery(serviceRef);
-  const remove = useDeleteSavedQuery(serviceRef);
-  const history = useQueryHistory(serviceRef);
+  const { result, run, cancel } = useQueryRunner();
+  const saved = useSavedQueries();
+  const save = useSaveQuery();
+  const remove = useDeleteSavedQuery();
+  const history = useQueryHistory();
+  const cli = useCli();
   const running = result?.state === "running";
   const current = saved.data?.find((q) => q.id === savedId);
 
@@ -167,7 +165,7 @@ export default function SqlView({
         <div className="flex flex-wrap items-start gap-2.5">
           <Act
             primary
-            cli={`dock db query ${shellQuote(sql || "SQL")} ${flags}`}
+            cli={cli(`dock db query ${shellQuote(sql || "SQL")}`)}
             disabled={!sql.trim() || running}
             onClick={start}
           >
@@ -239,6 +237,7 @@ export default function SqlView({
 
 /** One line on the last run: running, its end frame, or its error. */
 function RunStatus({ run }: { run: QueryRun | null }) {
+  const { cli } = useDataSource();
   if (!run) {
     return (
       <p className="text-mut">
@@ -270,8 +269,9 @@ function RunStatus({ run }: { run: QueryRun | null }) {
           {run.end?.truncated && (
             <span className="text-warn">
               {" "}
-              ▲ stopped at a row or size cap; `dock db query --limit` returns up
-              to 100 000
+              ▲ stopped at a row or size cap
+              {cli !== undefined &&
+                "; `dock db query --limit` returns up to 100 000"}
             </span>
           )}
         </p>

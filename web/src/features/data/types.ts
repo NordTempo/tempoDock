@@ -18,6 +18,13 @@ export type DataPolicyScope = NonNullable<DataPolicyRule["from"]>;
 export type DataPolicy = Schemas["DataPolicy"];
 export type UpdateDataPolicyRequest = Schemas["UpdateDataPolicyRequest"];
 
+/** A token's own data access; null follows the policy's tokens rule. */
+export type DataTokenAccess = Schemas["DataTokenAccess"];
+/** PATCH /tokens/{id}, the same in Dock and tempoBase. */
+export type UpdateTokenRequest = Schemas["UpdateTokenRequest"];
+/** GET /audit/{id}/detail: the SQL behind a data.* event. */
+export type AuditDetail = Schemas["AuditDetail"];
+
 /** GET /data */
 export type DataInfo = Schemas["DataInfo"];
 export type DataStatus = DataInfo["status"];

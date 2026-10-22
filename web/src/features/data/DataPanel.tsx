@@ -1,10 +1,10 @@
 import { lazy, type ReactNode, Suspense, useState } from "react";
-import type { ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import {
   useChangesets,
   useDataInfo,
   useDataSchema,
+  useDataSource,
   useEditActions,
 } from "./api";
 import { ChangesView } from "./ChangesView";
@@ -48,39 +48,38 @@ const levelText: Record<DataLevel, string> = {
 };
 
 /**
- * The Data tab of a database service: header line (engine, mode, role, the
+ * The database panel inside a DataSourceContext (a Dock service's Data
+ * tab, a tempoBase connection): header line (engine, mode, role, the
  * caller's access and why), Tables, SQL, Schema and Changes. Controlled:
  * `view` and `onView` carry everything that belongs in the URL. Edit mode
  * is per mount, off by default, never remembered.
  */
 export function DataPanel({
-  serviceRef,
   view,
   onView,
   height = "h-[calc(100vh-240px)] min-h-[480px]",
 }: {
-  serviceRef: ServiceRef;
   view: DataPanelView;
   onView: (next: DataPanelView) => void;
   /** Tailwind height classes for the panel. */
   height?: string;
 }) {
-  const info = useDataInfo(serviceRef);
+  const { roles, confirmName } = useDataSource();
+  const info = useDataInfo();
   const access = info.data?.access;
   const ready =
     info.data?.status === "ready" && !!access && access.level !== "none";
-  const schema = useDataSchema(serviceRef, ready);
+  const schema = useDataSchema(ready);
   const [editing, setEditing] = useState(false);
   const [why, setWhy] = useState(false);
-  const flags = `-s ${serviceRef.service} -e ${serviceRef.environment}`;
-  const edit = useEditActions(serviceRef, access, () => {
+  const edit = useEditActions(access, () => {
     setEditing(false);
     onView({ ...view, tab: "changes" });
   });
   const canEdit = !!edit;
   const showChanges =
     ready && (access.approve || atLeast(access.level, "propose"));
-  const changesets = useChangesets(serviceRef, showChanges);
+  const changesets = useChangesets(showChanges);
   const pending = (changesets.data ?? []).filter(
     (c) => c.status === "pending",
   ).length;
@@ -114,10 +113,7 @@ export function DataPanel({
   if (info.error) return <p className="text-fail">{info.error.message}</p>;
   if (!info.data || !access)
     return <p className="text-mut">Connecting to the database</p>;
-  if (!ready)
-    return (
-      <StatusView serviceRef={serviceRef} info={info.data} flags={flags} />
-    );
+  if (!ready) return <StatusView info={info.data} />;
 
   const tables = schema.data?.tables ?? [];
   const selected = tables.find((t) => tableName(t) === view.table) ?? tables[0];
@@ -125,10 +121,9 @@ export function DataPanel({
   const production = access.confirm_commit;
   // Edit mode only applies to the Tables tab; it survives a look elsewhere.
   const writing = editing && view.tab === "tables";
-  // Masked callers read through dock_reader_masked, which can't select
+  // Masked callers read through the masked role, which can't select
   // sensitive columns: SQL on them comes back as an error frame.
-  const reader =
-    access.sensitive === "masked" ? "dock_reader_masked" : "dock_reader";
+  const reader = access.sensitive === "masked" ? roles.masked : roles.reader;
   const openTable = (table: string) =>
     onView({ ...view, table, filters: [], order: undefined });
 
@@ -155,12 +150,12 @@ export function DataPanel({
           {info.data.engine} {info.data.server_version} ·{" "}
           {writing ? (
             <span className="text-warn">
-              editing{production && ` ${serviceRef.environment}`}
+              editing{production && ` ${confirmName}`}
             </span>
           ) : (
             <span className="text-white">read-only</span>
           )}{" "}
-          as {writing ? "dock_writer" : reader} · you:{" "}
+          as {writing ? roles.writer : reader} · you:{" "}
           <span className="text-white">{levelText[access.level]}</span>
           {access.sensitive === "masked" && ", sensitive masked"}
           {access.approve && ", approve"}{" "}
@@ -194,7 +189,7 @@ export function DataPanel({
       ) : !schema.data ? (
         <p className="text-mut">Reading the catalog</p>
       ) : view.tab === "changes" && showChanges ? (
-        <ChangesView serviceRef={serviceRef} access={access} flags={flags} />
+        <ChangesView access={access} />
       ) : view.tab === "sql" ? (
         !atLeast(access.level, "read") ? (
           <Limited access={access}>
@@ -202,7 +197,7 @@ export function DataPanel({
           </Limited>
         ) : (
           <Suspense fallback={<p className="text-mut">Loading the editor</p>}>
-            <SqlView serviceRef={serviceRef} tables={tables} flags={flags} />
+            <SqlView tables={tables} />
           </Suspense>
         )
       ) : (
@@ -218,11 +213,9 @@ export function DataPanel({
             <p className="text-mut">This database has no tables yet.</p>
           ) : view.tab === "schema" ? (
             <SchemaView
-              serviceRef={serviceRef}
               table={selected}
               tables={tables}
               manage={access.manage}
-              flags={flags}
               onOpen={openTable}
             />
           ) : !atLeast(access.level, "read") ? (
@@ -233,7 +226,6 @@ export function DataPanel({
           ) : (
             <TablesView
               key={selectedName}
-              serviceRef={serviceRef}
               info={info.data}
               table={selected}
               query={{
@@ -243,7 +235,6 @@ export function DataPanel({
               }}
               editing={editing}
               actions={edit}
-              flags={flags}
               onQuery={(q) => onView({ ...view, ...q })}
             />
           )}

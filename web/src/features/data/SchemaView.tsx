@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import type { ServiceRef } from "../../data/types";
 import { Scroll } from "../../ui/kit";
+import { useCli } from "./api";
 import { byteSize, rowCount, tableName, tableRows } from "./cells";
 import { SensitiveSection, useSensitiveMarks } from "./SensitiveColumns";
 import type { DataTable } from "./types";
@@ -20,23 +20,20 @@ const kindLabel: Record<DataTable["kind"], string> = {
  * sensitive columns here.
  */
 export function SchemaView({
-  serviceRef,
   table,
   tables,
   manage,
-  flags,
   onOpen,
 }: {
-  serviceRef: ServiceRef;
   table: DataTable;
   tables: readonly DataTable[];
   /** The caller may mark sensitive columns (admins). */
   manage: boolean;
-  flags: string;
   /** Show another table's structure. */
   onOpen: (table: string) => void;
 }) {
-  const marks = useSensitiveMarks(serviceRef, tables);
+  const marks = useSensitiveMarks(tables);
+  const cli = useCli();
   const name = tableName(table);
   const pk = table.primary_key ?? [];
   const fks = table.foreign_keys ?? [];
@@ -58,7 +55,7 @@ export function SchemaView({
           {!table.editable && ", read-only"}
         </span>
         <span className="ml-auto font-mono text-2xs text-mut">
-          dock db schema {name} {flags}
+          {cli(`dock db schema ${name}`)}
         </span>
       </div>
       {table.comment && <p className="text-mut">{table.comment}</p>}
@@ -137,14 +134,7 @@ export function SchemaView({
           </tbody>
         </table>
       </Scroll>
-      {manage && (
-        <SensitiveSection
-          serviceRef={serviceRef}
-          tables={tables}
-          marks={marks}
-          flags={flags}
-        />
-      )}
+      {manage && <SensitiveSection tables={tables} marks={marks} />}
 
       <Section title="Foreign keys" empty="No foreign keys." items={fks}>
         {(fk) => (

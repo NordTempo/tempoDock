@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { plural } from "../../ui/format";
 import { Act, Button, ErrorText } from "../../ui/kit";
+import { useCli, useDataSource } from "./api";
 import type { DataChange } from "./types";
 import { dataLimits } from "./types";
 
@@ -10,7 +11,8 @@ export type EditActions = {
   renderSql: (changes: DataChange[]) => Promise<string>;
   /**
    * Commit, or propose for callers with level propose. `confirm` is the
-   * environment's name on production.
+   * source's confirmName (an environment's or connection's name) on
+   * production.
    */
   commit: (changes: DataChange[], confirm?: string) => Promise<void>;
 };
@@ -86,32 +88,29 @@ export function SqlText({ children }: { children: ReactNode }) {
 /**
  * Staged changes before they're written: each change, the exact SQL from
  * `renderSql`, and Commit (Propose) or Discard. On production the commit
- * asks for the environment's name.
+ * asks for the source's confirmName.
  */
 export function ReviewPanel({
   changes,
-  environment,
   confirmCommit,
   propose,
   actions,
-  flags,
   onRestore,
   onDiscard,
   onCommitted,
 }: {
   changes: DataChange[];
-  environment: string;
-  /** Production: type the environment's name to commit. */
+  /** Production: type the confirmName to commit. */
   confirmCommit: boolean;
   /** The caller's level is propose: an admin approves the changeset. */
   propose: boolean;
   actions: EditActions;
-  /** CLI flags naming the service, e.g. "-s postgres -e staging". */
-  flags: string;
   onRestore: (key: Record<string, string>) => void;
   onDiscard: () => void;
   onCommitted: () => void;
 }) {
+  const { confirmName, words } = useDataSource();
+  const cli = useCli();
   const [sql, setSql] = useState<{ text?: string; error?: Error }>({});
   const [confirm, setConfirm] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -133,7 +132,7 @@ export function ReviewPanel({
   }, [signature, actions]);
 
   const tooMany = changes.length > dataLimits.changesetRows;
-  const confirmed = !confirmCommit || confirm === environment;
+  const confirmed = !confirmCommit || confirm === confirmName;
   const verb = propose ? "Propose" : "Commit";
 
   async function commit() {
@@ -174,22 +173,24 @@ export function ReviewPanel({
         {confirmCommit && (
           <label className="flex items-center gap-2 self-center">
             <span>
-              Type <b className="font-mono text-warn">{environment}</b> to{" "}
+              Type <b className="font-mono text-warn">{confirmName}</b> to{" "}
               {verb.toLowerCase()}
             </span>
             <input
               className="field w-36 py-1 font-mono"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              aria-label="Environment name"
+              aria-label={`${words.target} name`}
             />
           </label>
         )}
         <Act
           primary
-          cli={`dock db apply -f changes.json${propose ? " --propose" : ""}${
-            confirmCommit ? ` --confirm ${environment}` : ""
-          } ${flags}`}
+          cli={cli(
+            `dock db apply -f changes.json${propose ? " --propose" : ""}${
+              confirmCommit ? ` --confirm ${confirmName}` : ""
+            }`,
+          )}
           disabled={!confirmed || tooMany || committing || !sql.text}
           onClick={commit}
         >
