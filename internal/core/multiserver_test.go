@@ -185,7 +185,7 @@ func TestReconnectReconcilesServer(t *testing.T) {
 
 	p.setOffline("homelab", true)
 	p.c.NodeStatus(remote.State{ServerID: p.ids["homelab"], Server: "homelab", Status: remote.StatusOffline})
-	lab.AddContainer(node.Container{ID: "leftover", Name: "dock_leftover", Labels: labels(ss, r1.ID), State: node.StateRunning})
+	lab.AddContainer(node.Container{ID: "leftover", Name: "dock_leftover", Labels: p.c.labels(ss, r1.ID), State: node.StateRunning})
 	p.setOffline("homelab", false)
 	p.c.NodeStatus(remote.State{ServerID: p.ids["homelab"], Server: "homelab", Status: remote.StatusOnline,
 		Hello: remote.Hello{Version: "v9", Facts: remote.Facts{Ingress: remote.IngressDirect, DockerVersion: "28.0", MemoryTotal: 32 << 30}}})

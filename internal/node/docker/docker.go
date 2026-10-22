@@ -218,7 +218,7 @@ func (r *Runtime) EnsureNetwork(ctx context.Context, name string, labels node.La
 		Driver:  "bridge",
 		IPAM:    &network.IPAM{Config: []network.IPAMConfig{{Subnet: subnet}}},
 		Options: map[string]string{BridgeNameOption: bridgeName(name)},
-		Labels:  node.Labels{Project: labels.Project, Environment: labels.Environment}.Map(),
+		Labels:  node.Labels{ControlPlane: labels.ControlPlane, Project: labels.Project, Environment: labels.Environment}.Map(),
 	})
 	if err != nil {
 		return fmt.Errorf("create network %s: %w", name, err)
@@ -534,17 +534,20 @@ func (r *Runtime) List(ctx context.Context) ([]node.Container, error) {
 	return out, nil
 }
 
-// ReleaseContainers returns the IDs of a release's containers: one list
-// call filtered by label.
-func (r *Runtime) ReleaseContainers(ctx context.Context, releaseID int64) ([]string, error) {
-	f := managedFilter().Add("label", node.LabelRelease+"="+strconv.FormatInt(releaseID, 10))
+// ReleaseContainers returns the IDs of a release's containers that match
+// want: one list call filtered by the release label, the rest compared
+// here (Docker's filters can't match a missing label).
+func (r *Runtime) ReleaseContainers(ctx context.Context, want node.Labels) ([]string, error) {
+	f := managedFilter().Add("label", node.LabelRelease+"="+want.Release)
 	res, err := r.cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
 	ids := make([]string, 0, len(res.Items))
 	for _, s := range res.Items {
-		ids = append(ids, s.ID)
+		if isApp(s.Labels) && node.LabelsFrom(s.Labels).Matches(want) {
+			ids = append(ids, s.ID)
+		}
 	}
 	return ids, nil
 }

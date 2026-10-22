@@ -89,7 +89,16 @@ func (c *Core) watchRuntime(events <-chan node.ContainerEvent) {
 	}
 }
 
+// foreign reports whether a resource is labelled for another control plane
+// sharing the Docker host. Those are never reconciled, reported or removed.
+func (c *Core) foreign(l node.Labels) bool {
+	return l.ControlPlane != "" && l.ControlPlane != c.install
+}
+
 func (c *Core) onContainerEvent(ctx context.Context, ev node.ContainerEvent) {
+	if c.foreign(ev.Labels) {
+		return
+	}
 	if ev.Action == "die" || ev.Action == "destroy" {
 		// A database's container went away (redeploy, archive, crash):
 		// drop the panel's connections to it.
@@ -176,7 +185,10 @@ func (c *Core) recover(ctx context.Context) error {
 // sweepRetired removes a server's containers of failed and superseded
 // releases, then frees the host ports of retired releases whose containers
 // are gone. A container counts as ours only if all its labels match the
-// release's project, environment and service.
+// release's project, environment and service, and it carries this control
+// plane's label or none (node.Labels.Matches). This is also how an archive
+// on an unreachable server finishes: its release is superseded, so its
+// container goes when the server reconnects.
 func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime) error {
 	ctrs, err := rt.List(ctx)
 	if err != nil {
@@ -184,6 +196,9 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 	}
 	byRelease := map[int64][]node.Container{}
 	for _, ct := range ctrs {
+		if c.foreign(ct.Labels) {
+			continue
+		}
 		if id, err := strconv.ParseInt(ct.Labels.Release, 10, 64); err == nil {
 			byRelease[id] = append(byRelease[id], ct)
 		}
@@ -205,7 +220,8 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 		if err != nil {
 			return err
 		}
-		if ss.env.ServerID != serverID || slices.ContainsFunc(cs, func(ct node.Container) bool { return ct.Labels != labels(ss, rel.ID) }) {
+		want := c.labels(ss, rel.ID)
+		if ss.env.ServerID != serverID || slices.ContainsFunc(cs, func(ct node.Container) bool { return !ct.Labels.Matches(want) }) {
 			continue
 		}
 		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Removing leftover container of release %d (%s)", rel.Number, rel.Status))
@@ -238,7 +254,7 @@ func (c *Core) ensureRunning(ctx context.Context, ss svcScope, active store.Rele
 		return
 	}
 	var stopped []node.Container
-	for _, ct := range ofRelease(ctrs, active.ID) {
+	for _, ct := range c.ofRelease(ctrs, ss, active.ID) {
 		if ct.State != node.StateRunning && ct.State != node.StateRestarting {
 			stopped = append(stopped, ct)
 			continue
@@ -312,7 +328,7 @@ func (c *Core) reconcileServer(ctx context.Context, serverID int64, rt node.Runt
 		activeIDs[strconv.FormatInt(r.ID, 10)] = true // a deploy's new container
 	}
 	for _, ct := range ctrs {
-		if !activeIDs[ct.Labels.Release] {
+		if !activeIDs[ct.Labels.Release] && !c.foreign(ct.Labels) {
 			c.drift(ctx, nil, fmt.Sprintf("container %s (%s) is not part of any active release; leaving it alone", ct.Name, ct.ID))
 		}
 	}

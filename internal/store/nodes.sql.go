@@ -218,6 +218,19 @@ func (q *Queries) DeleteServerPlacements(ctx context.Context, serverID int64) er
 	return err
 }
 
+const getInstallID = `-- name: GetInstallID :one
+SELECT install_id FROM install WHERE id = 1
+`
+
+// This control plane's install ID (migration 0015), the value of the
+// dock.control_plane label on everything it creates.
+func (q *Queries) GetInstallID(ctx context.Context) (string, error) {
+	row := q.queryRow(ctx, q.getInstallIDStmt, getInstallID)
+	var install_id string
+	err := row.Scan(&install_id)
+	return install_id, err
+}
+
 const getServerByFingerprint = `-- name: GetServerByFingerprint :one
 SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http FROM servers
 WHERE key_fingerprint = +CAST(?1 AS TEXT) OR next_key_fingerprint = +CAST(?1 AS TEXT)

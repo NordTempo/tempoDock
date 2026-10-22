@@ -155,3 +155,8 @@ WHERE releases.image_digest != ''
   AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')
        OR releases.number > (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
                             - CAST(sqlc.arg(keep) AS INTEGER));
+
+-- name: GetInstallID :one
+-- This control plane's install ID (migration 0015), the value of the
+-- dock.control_plane label on everything it creates.
+SELECT install_id FROM install WHERE id = 1;

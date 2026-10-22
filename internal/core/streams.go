@@ -260,9 +260,9 @@ func (c *Core) containerLogPath(releaseID int64) string {
 // saveContainerLogs keeps the last lines of a failed release's container
 // (one JSON LogLine per line) before the container is removed, so its logs
 // still explain why it failed. Best effort.
-func (c *Core) saveContainerLogs(ctx context.Context, serverID, releaseID int64) {
-	rt := c.runtime(serverID)
-	ids, err := rt.ReleaseContainers(ctx, releaseID)
+func (c *Core) saveContainerLogs(ctx context.Context, ss svcScope, releaseID int64) {
+	rt := c.runtime(ss.env.ServerID)
+	ids, err := rt.ReleaseContainers(ctx, c.labels(ss, releaseID))
 	if err != nil || len(ids) == 0 {
 		return
 	}

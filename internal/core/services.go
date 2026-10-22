@@ -285,7 +285,7 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) {
 			defer c.wg.Done()
 			ctx, ss, rel := c.ctx, as.svcScope, *as.active
 			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopping release %d: %s was archived", rel.Number, ss.svc.Name))
-			if err := c.retire(ctx, ss.env.ServerID, rel.ID); err != nil {
+			if err := c.retire(ctx, ss, rel.ID); err != nil {
 				if ctx.Err() == nil {
 					c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Could not stop release %d (it keeps its port until it is removed): %v", rel.Number, err))
 				}

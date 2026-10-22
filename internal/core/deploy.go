@@ -121,18 +121,18 @@ func (d *deployment) run(ctx context.Context) error {
 	}
 	d.stateful = len(d.cfg.Mounts) > 0
 	network := networkName(d.ss.envScope)
-	if err := d.rt.EnsureNetwork(ctx, network, labels(d.ss, 0)); err != nil {
+	if err := d.rt.EnsureNetwork(ctx, network, c.labels(d.ss, 0)); err != nil {
 		return step(apitypes.CodeDeployFailed, "create network %s: %w", network, err)
 	}
 	for _, m := range d.cfg.Mounts {
-		if err := d.rt.EnsureVolume(ctx, m.DockerName, labels(d.ss, 0)); err != nil {
+		if err := d.rt.EnsureVolume(ctx, m.DockerName, c.labels(d.ss, 0)); err != nil {
 			return step(apitypes.CodeDeployFailed, "create volume %s: %w", m.Volume, err)
 		}
 	}
 	if d.stateful && d.old != nil {
 		d.event(ctx, fmt.Sprintf("Stopping release %d first: services with volumes are replaced, never run side by side", d.old.Number))
 		d.oldRemoved = true // from here on, failing brings it back
-		if err := c.removeReleaseContainers(ctx, d.ss.env.ServerID, d.old.ID); err != nil {
+		if err := c.removeReleaseContainers(ctx, d.ss, d.old.ID); err != nil {
 			return step(apitypes.CodeDeployFailed, "stop release %d: %w", d.old.Number, err)
 		}
 	}
@@ -367,7 +367,7 @@ func (d *deployment) cutover(ctx context.Context) error {
 				return nil
 			}
 			d.event(ctx, fmt.Sprintf("Stopping release %d", d.old.Number))
-			if err := c.retire(ctx, serverID, d.old.ID); err != nil {
+			if err := c.retire(ctx, d.ss, d.old.ID); err != nil {
 				d.event(ctx, fmt.Sprintf("Could not stop release %d (it keeps its port until it is removed): %v", d.old.Number, err))
 			}
 		}
@@ -406,8 +406,8 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
-	c.saveContainerLogs(ctx, serverID, d.rel.ID)
-	removeErr := c.removeReleaseContainers(ctx, serverID, d.rel.ID)
+	c.saveContainerLogs(ctx, d.ss, d.rel.ID)
+	removeErr := c.removeReleaseContainers(ctx, d.ss, d.rel.ID)
 	if removeErr != nil {
 		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, c.nodeErr(serverID, removeErr)))
 	}
@@ -472,11 +472,14 @@ func (c *Core) restartRelease(ctx context.Context, ss svcScope, rel store.Releas
 	return nil
 }
 
-func labels(ss svcScope, releaseID int64) node.Labels {
+// labels are what this control plane puts on a service's resources: its
+// network and volumes (releaseID 0) and a release's containers.
+func (c *Core) labels(ss svcScope, releaseID int64) node.Labels {
 	l := node.Labels{
-		Project:     strconv.FormatInt(ss.project.ID, 10),
-		Environment: strconv.FormatInt(ss.env.ID, 10),
-		Service:     strconv.FormatInt(ss.svc.ID, 10),
+		ControlPlane: c.install,
+		Project:      strconv.FormatInt(ss.project.ID, 10),
+		Environment:  strconv.FormatInt(ss.env.ID, 10),
+		Service:      strconv.FormatInt(ss.svc.ID, 10),
 	}
 	if releaseID != 0 {
 		l.Release = strconv.FormatInt(releaseID, 10)
@@ -494,7 +497,7 @@ func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) 
 	spec := node.ContainerSpec{
 		Name:    containerName(ss, rel.Number),
 		Image:   image,
-		Labels:  labels(ss, rel.ID),
+		Labels:  c.labels(ss, rel.ID),
 		Env:     cfg.Env,
 		Cmd:     cfg.Cmd,
 		Network: networkName(ss.envScope),
@@ -566,23 +569,27 @@ func (c *Core) removeContainers(ctx context.Context, serverID int64, ctrs []node
 	return errors.Join(errs...)
 }
 
-// ofRelease filters containers labelled with a release.
-func ofRelease(ctrs []node.Container, releaseID int64) []node.Container {
-	id := strconv.FormatInt(releaseID, 10)
+// ofRelease filters the containers of a release of ss: labelled for it by
+// this control plane, or from before the control plane label with every
+// other label matching (node.Labels.Matches).
+func (c *Core) ofRelease(ctrs []node.Container, ss svcScope, releaseID int64) []node.Container {
+	want := c.labels(ss, releaseID)
 	var out []node.Container
 	for _, ct := range ctrs {
-		if ct.Labels.Release == id {
+		if ct.Labels.Matches(want) {
 			out = append(out, ct)
 		}
 	}
 	return out
 }
 
-// removeReleaseContainers stops and removes every container of a release.
-// They are found by label, not by the saved container ID, so a container
-// started just before a crash (ID never saved) is found too.
-func (c *Core) removeReleaseContainers(ctx context.Context, serverID, releaseID int64) error {
-	ids, err := c.runtime(serverID).ReleaseContainers(ctx, releaseID)
+// removeReleaseContainers stops and removes every container of a release
+// of ss. They are found by label, not by the saved container ID, so a
+// container started just before a crash (ID never saved) is found too;
+// another control plane's containers never are.
+func (c *Core) removeReleaseContainers(ctx context.Context, ss svcScope, releaseID int64) error {
+	serverID := ss.env.ServerID
+	ids, err := c.runtime(serverID).ReleaseContainers(ctx, c.labels(ss, releaseID))
 	if err != nil {
 		return err
 	}
@@ -596,8 +603,8 @@ func (c *Core) removeReleaseContainers(ctx context.Context, serverID, releaseID 
 // retire removes a superseded or failed release's containers and then frees
 // its host port. If removal fails the port stays taken, so no new release
 // is handed a port the old container still holds.
-func (c *Core) retire(ctx context.Context, serverID, releaseID int64) error {
-	if err := c.removeReleaseContainers(ctx, serverID, releaseID); err != nil {
+func (c *Core) retire(ctx context.Context, ss svcScope, releaseID int64) error {
+	if err := c.removeReleaseContainers(ctx, ss, releaseID); err != nil {
 		return err
 	}
 	c.freePort(ctx, releaseID)

@@ -68,6 +68,9 @@ type Core struct {
 	bus   *bus
 	local store.Server
 	drain time.Duration
+	// install is this control plane's install ID, the dock.control_plane
+	// label on everything it creates (see labels and foreign).
+	install string
 
 	// servers is the per-server state of remote servers and builders
 	// (servers.go), by server ID.
@@ -158,6 +161,10 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		c.drain = o.CutoverDrain
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
+	var err error
+	if c.install, err = c.store.GetInstallID(ctx); err != nil {
+		return nil, fmt.Errorf("read install ID: %w", err)
+	}
 	if err := c.registerLocalServer(ctx); err != nil {
 		return nil, err
 	}

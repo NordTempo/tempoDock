@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -489,22 +490,31 @@ func TestLogs(t *testing.T) {
 	}
 }
 
-// ReleaseContainers finds a release's containers by label, stopped ones too.
+// ReleaseContainers finds a release's containers by label, stopped ones
+// too, and only those of the asking control plane (or from before the
+// control plane label).
 func TestReleaseContainers(t *testing.T) {
 	e := newEnv(t)
 	ctx := ctxTimeout(t, time.Minute)
 	rel := time.Now().UnixNano() // unique on a shared Docker host
-	start := func(name string, release int64) node.Container {
-		return e.start(node.ContainerSpec{Name: e.name(name), Image: shellImage, Cmd: "sleep 300",
-			Labels: node.Labels{Project: "p", Environment: "e", Service: "s", Release: strconv.FormatInt(release, 10)}})
+	want := node.Labels{ControlPlane: "a", Project: "p", Environment: "e", Service: "s", Release: strconv.FormatInt(rel, 10)}
+	start := func(name string, l node.Labels) node.Container {
+		return e.start(node.ContainerSpec{Name: e.name(name), Image: shellImage, Cmd: "sleep 300", Labels: l})
 	}
-	mine, other := start("mine", rel), start("other", rel+1)
+	legacy, foreign, next := want, want, want
+	legacy.ControlPlane, foreign.ControlPlane, next.Release = "", "b", strconv.FormatInt(rel+1, 10)
+	mine, old := start("mine", want), start("legacy", legacy)
+	start("foreign", foreign)
+	start("next", next)
 	if err := e.Stop(ctx, mine.ID, 0); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := e.ReleaseContainers(ctx, rel)
-	if err != nil || len(ids) != 1 || ids[0] != mine.ID {
-		t.Fatalf("ReleaseContainers = %v, %v; want [%s] (not %s)", ids, err, mine.ID, other.ID)
+	ids, err := e.ReleaseContainers(ctx, want)
+	slices.Sort(ids)
+	wantIDs := []string{mine.ID, old.ID}
+	slices.Sort(wantIDs)
+	if err != nil || !slices.Equal(ids, wantIDs) {
+		t.Fatalf("ReleaseContainers = %v, %v; want %v", ids, err, wantIDs)
 	}
 }
 

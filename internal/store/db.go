@@ -222,6 +222,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getInFlightReleaseStmt, err = db.PrepareContext(ctx, getInFlightRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query GetInFlightRelease: %w", err)
 	}
+	if q.getInstallIDStmt, err = db.PrepareContext(ctx, getInstallID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetInstallID: %w", err)
+	}
 	if q.getLocalServerStmt, err = db.PrepareContext(ctx, getLocalServer); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLocalServer: %w", err)
 	}
@@ -875,6 +878,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getInFlightReleaseStmt: %w", cerr)
 		}
 	}
+	if q.getInstallIDStmt != nil {
+		if cerr := q.getInstallIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getInstallIDStmt: %w", cerr)
+		}
+	}
 	if q.getLocalServerStmt != nil {
 		if cerr := q.getLocalServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getLocalServerStmt: %w", cerr)
@@ -1510,6 +1518,7 @@ type Queries struct {
 	getEnvironmentStmt                 *sql.Stmt
 	getEnvironmentByNameStmt           *sql.Stmt
 	getInFlightReleaseStmt             *sql.Stmt
+	getInstallIDStmt                   *sql.Stmt
 	getLocalServerStmt                 *sql.Stmt
 	getPlacementStmt                   *sql.Stmt
 	getProjectStmt                     *sql.Stmt
@@ -1688,6 +1697,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getEnvironmentStmt:                 q.getEnvironmentStmt,
 		getEnvironmentByNameStmt:           q.getEnvironmentByNameStmt,
 		getInFlightReleaseStmt:             q.getInFlightReleaseStmt,
+		getInstallIDStmt:                   q.getInstallIDStmt,
 		getLocalServerStmt:                 q.getLocalServerStmt,
 		getPlacementStmt:                   q.getPlacementStmt,
 		getProjectStmt:                     q.getProjectStmt,
