@@ -119,6 +119,12 @@ type JobSpec struct {
 	Network   string
 	Mounts    []Mount
 	Resources Resources
+	// Stdin, when set, is copied to the job's standard input, which closes
+	// at its end. A read error from it stops the job (SIGINT) instead, so a
+	// job never takes a cut-short input for the whole (the control plane
+	// backup streams its archive into restic this way, ADR 0021). Local
+	// runtimes only: the node link doesn't carry it.
+	Stdin io.Reader
 }
 
 // JobResult is how a job ended.

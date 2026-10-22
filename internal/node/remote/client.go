@@ -157,6 +157,9 @@ const jobProtocol = 2
 // RunJob implements node.Containers. It blocks on the node until the job
 // ends; a node too old to run jobs is an error saying so.
 func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
+	if spec.Stdin != nil {
+		return node.JobResult{}, errors.New("jobs with input run on the control plane's own server only")
+	}
 	s, err := c.session(ctx)
 	if err != nil {
 		return node.JobResult{}, err
