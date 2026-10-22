@@ -11,7 +11,8 @@ What scripts, CI and agents can rely on. The goals behind these are in
   never renamed or removed. API objects are printed as the API returns them
   (`internal/apitypes`). Stored tokens are never printed; the one exception
   is the secret `dock token create` returns, once.
-- Streaming commands (`dock logs`) print one JSON object per line instead.
+- Streaming commands (`dock logs`, `dock db query`) print one JSON object
+  per line instead.
 - Progress (deploy steps, build output) goes to stderr and is silent with
   `--json`.
 - With `--json`, an error is one JSON object on stderr:
@@ -27,7 +28,8 @@ What scripts, CI and agents can rely on. The goals behind these are in
 - The CLI only prompts when stdin is a terminal. Otherwise missing input is a
   usage error naming the flag to pass, and commands that ask for
   confirmation (`discard`, `domain remove`, `service archive`, `project archive`,
-  `user delete`) need `--yes`.
+  `user delete`, `db setup`) need `--yes`, and commits to production data
+  need `--confirm <environment>`.
 
 ## Exit codes
 
@@ -50,6 +52,12 @@ follows the HTTP status (400/422 → 2, 401/403 → 3, 404/410 → 4, 409/412/42
 5, 426 → 8, 502/503/504 → 7, else 1), except that these problem `code`
 values take precedence: `build_failed`, `deploy_failed`,
 `health_check_failed` → 6, `version_incompatible` → 8.
+
+`dock db query` can also fail after its result started, with an error the
+database reports (code `query_failed`): SQL it refuses as invalid (SQLSTATE
+class 42) → 2, a write in the read-only transaction or a missing privilege
+(25006, 42501) → 3, anything else → 1. A changeset whose rows changed since
+it was proposed (`conflict`) → 5.
 
 ## Contexts and environment
 
@@ -144,7 +152,7 @@ keeps the linked service, so it means "this service, in staging".
 | `project list [--all]\|create\|archive <name>`, `environment list\|create [--kind]` | Projects and environments (`env` is variables). `project archive` (admin) archives every service in the project and hides it from `project list` (`--all` shows it). An environment's kind (production or non-production) defaults from its name and never changes |
 | `project pin <project> --kind production\|non-production --server NAME` | Admin: choose the server a project's environments of a kind go to, before any exist |
 | `server list`, `server show NAME`, `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement]` | Servers: status, version, accepted kinds, memory reserved, what's placed, current usage. `show` and `update` are admin |
-| `token list\|create NAME --scope\|revoke ID` | Tokens (admin) |
+| `token list\|create NAME --scope\|update ID\|revoke ID` | Tokens (admin). `create` and `update` take `--data-production`, `--data-non-production` (`none`, `schema`, `read`, `propose`, `write`) and `--data-sensitive` (`masked`, `visible`): the token's own database access instead of the data policy's tokens rule; `update --data-clear` removes it |
 | `user list\|create\|disable\|enable\|delete\|reset-password` | Users (admin). Users are named by email or id. `list` shows status, live sessions and usable tokens; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions (your own: `me password`) |
 | `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
 | `serve`, `admin bootstrap\|caddy-config\|firewall apply\|remove` | Server side, run on the server with `--config`: the daemon, the first admin token, Caddy's initial config, and the app firewall (root; installed as `dock-firewall.service`) |
@@ -152,3 +160,29 @@ keeps the linked service, so it means "this service, in staging".
 Commands that start releases (`deploy`, `rollback`, `restart`, `apply`,
 `--deploy`) follow them until they are live or failed; `--detach` returns
 right after they are queued. Ctrl-C stops following, not the deploy.
+
+### `dock db`
+
+The database panel ([guide](guide/data.md), [ADR 0016](decisions/0016-database-panel.md)).
+Every subcommand but `policy` acts on the linked service (or `-p -e -s`).
+Access is the data access policy's decision; a permission error (exit 3)
+says which level was missing and the rule that decided it.
+
+| Command | What it does | Needs |
+|---|---|---|
+| `db status` | Engine, version, setup state, who uses it, your access and why | level schema |
+| `db setup [--yes]` | Create or rotate Dock's roles (`dock_reader`, `dock_writer`) | admin |
+| `db settings [--database postgres\|none\|detect] [--url-variable NAME]` | Mark a service as a database, or name its connection URL variable. Immediate, never a release | deploy |
+| `db tables`, `db schema [TABLE]` (`describe`) | Tables; one table's (or every table's) columns, keys, indexes, constraints | level schema |
+| `db rows TABLE [-w col=op:value ...] [--order col\|-col] [-n N] [--after CURSOR] [--count]` | One keyset page; prints the next cursor on stderr. `--json` prints the page with `next` | level read |
+| `db query SQL\|-f FILE\|- [-n N] [--timeout D] [--csv]` | One read-only statement, streamed: a table, CSV, or NDJSON frames with `--json`. Default 1 000 rows, at most 100 000; timeout at most 60s | level read |
+| `db history [--before ID] [-n N]` | Your past queries here, newest first | level read |
+| `db saved list\|save NAME SQL\|run NAME\|delete NAME` | Your saved queries; `save` replaces one with the same name, `run` takes `query`'s flags | level read |
+| `db changes list [--status S]\|show ID\|commit ID [--confirm ENV]\|reject ID [--reason]` | Changesets. Committing someone else's approves it | admin to approve |
+| `db apply -f FILE [--dry-run\|--propose] [-m MSG] [--confirm ENV]` (`propose`) | Changes from JSON: preview the SQL, or store and commit them in one transaction (level write), or leave them pending for an admin (level propose, or `--propose`) | level propose |
+| `db policy show\|set [-p P [-e E]]` | The policy at the default, a project or an environment (explicit flags, not the link). `set deploy.production=read tokens.non-production=propose,visible ...` changes the named rules (`inherit` removes one); `--replace` drops the rest | admin to set |
+| `db sensitive list\|set [schema.]table.column...\|--clear` | Columns masked for callers whose access says masked; `set` replaces the list | admin to set |
+
+Filters (`-w`, `--filter`): `col=value` (equals), `col=op:value` with `eq`,
+`ne`, `lt`, `lte`, `gt`, `gte`, `like`, `ilike`, `in` (comma-separated), or
+`col=is_null` / `col=not_null`. Values are Postgres text input.
