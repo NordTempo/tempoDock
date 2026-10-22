@@ -305,6 +305,9 @@ func TestBuildOnBuilderPushesAndPulls(t *testing.T) {
 	reg := &fakeRegistry{pruned: 1}
 	p.withRegistry(reg)
 	p.acceptProduction("homelab") // it may build production's images
+	// A rollback window of one: the second deploy removes release 1's
+	// images. Set before deploying, since deploys read it as they finish.
+	p.c.cfg.Defaults.KeepReleases = 1
 	web := ServiceRef{"shop", "production", "web"}
 	p.createService("production", "web", apitypes.CreateServiceRequest{})
 
@@ -329,9 +332,8 @@ func TestBuildOnBuilderPushesAndPulls(t *testing.T) {
 		t.Fatalf("release digest %q, want %q", r.ImageDigest, digest)
 	}
 
-	// With a rollback window of one, the next deploy removes release 1's
-	// images: the pulled one on cp, the built one on homelab.
-	p.c.cfg.Defaults.KeepReleases = 1
+	// The next deploy removes release 1's images: the pulled one on cp,
+	// the built one on homelab.
 	p.deploySource(web)
 	waitOps(t, p.rt, "rmi 127.0.0.1:5000/"+repo+"@"+digest)
 	waitOps(t, lab, "rmi "+tag)
