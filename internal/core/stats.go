@@ -45,12 +45,16 @@ type statsState struct {
 	watchers map[*watcher]struct{}
 	stopLive chan struct{}
 	closed   bool
+
+	// firstTick closes after the start-up sample, which replaces whatever
+	// usage was known before it.
+	firstTick chan struct{}
 }
 
 func newStatsState() *statsState {
 	return &statsState{
 		server: map[int64]apitypes.ServerUsage{}, service: map[int64]apitypes.ServiceUsage{},
-		watchers: map[*watcher]struct{}{},
+		watchers: map[*watcher]struct{}{}, firstTick: make(chan struct{}),
 	}
 }
 
@@ -187,6 +191,7 @@ func (c *Core) collectStats() {
 	defer c.wg.Done()
 	col := newCollector()
 	c.statsTick(c.ctx, col, time.Now())
+	close(c.stats.firstTick)
 	t := time.NewTimer(untilNextMinute(time.Now()))
 	defer t.Stop()
 	for {

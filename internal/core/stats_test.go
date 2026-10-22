@@ -121,6 +121,7 @@ func TestStatsTickStoresDownsamplesAndPrunes(t *testing.T) {
 	if !ok || u.MemoryBytes != 110<<20 || u.MemoryLimitBytes != 256<<20 || u.CPUPercent != 50 {
 		t.Fatalf("latest usage = %+v, %v", u, ok)
 	}
+	<-h.c.stats.firstTick
 	h.c.stats.mu.Lock()
 	h.c.stats.service[svc] = u
 	h.c.stats.mu.Unlock()
@@ -238,6 +239,7 @@ func TestServerUsageInListAndDetail(t *testing.T) {
 	h.deploy(ref, "app:1")
 	host := apitypes.ServerUsage{CPUs: 4, MemoryTotalBytes: 8 << 30}
 	svc := apitypes.ServiceUsage{MemoryBytes: 64 << 20}
+	<-h.c.stats.firstTick // the start-up sample would replace what's set below
 	h.c.stats.mu.Lock()
 	h.c.stats.server[h.c.local.ID] = host
 	h.c.stats.service[h.serviceID(ref)] = svc
