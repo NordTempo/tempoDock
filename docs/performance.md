@@ -72,6 +72,9 @@ service, on top of the re-prepare pitfall below.
 An idle daemon does nothing: 0 CPU and almost no wake-ups. Live data is
 event driven: Docker's event stream, the in-process event bus and SSE.
 
+- The statistics tick (below) is the one always-on periodic job. `make
+  perf` measures idle windows between two ticks and budgets the tick with
+  `BenchmarkStatsTick50`.
 - No polling, tickers or timers without a written justification in a doc
   comment, and an entry in the table below with its interval and cost.
 - Periodic work runs only while it has a reason to (a deploy in progress, a
@@ -84,6 +87,8 @@ Everything periodic in the daemon and CLI:
 
 | What | Where | Interval | Runs only while | Cost |
 |---|---|---|---|---|
+| Statistics tick | `internal/core/stats.go` | 1 min, on the minute | always (ADR 0015) | a few file reads per server and container, one transaction, one `usage` event per server and per environment (`BenchmarkStatsTick50`) |
+| Live statistics | `internal/core/stats.go` | 3 s | someone watches a server or service live | the same reads for what is watched |
 | SSE heartbeat | `internal/api/streams.go` | 25 s | an SSE stream is open | one small write per stream |
 | Domain DNS/TLS checks | `internal/core/domains.go` | 5 s, backing off to 5 min | a domain is pending | a DNS lookup and TLS dial per domain |
 | Health check | `internal/node/docker/health.go` | 1 s (configurable) | a release is health checking | one inspect + HTTP/TCP probe |

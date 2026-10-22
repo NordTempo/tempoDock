@@ -235,7 +235,9 @@ const UserRow = memo(function UserRow({
         <td className="w-full py-1.5 text-right">
           {you ? (
             <span className="text-xs text-mut">
-              Your own account can't be disabled, deleted or reset here.
+              Your own account can't be disabled, deleted or reset here. Change
+              your password with{" "}
+              <span className="font-mono">dock me password</span>.
             </span>
           ) : (
             // CLI equivalents show as tooltips here and in each confirm.

@@ -205,6 +205,31 @@ func TestLoginTokenHandling(t *testing.T) {
 	}
 }
 
+// `dock me password` needs both passwords, and a token that acts for a
+// user (from a browser login).
+func TestMePassword(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	tests := []struct {
+		name, stdin string
+		args        []string
+		exit        output.ExitCode
+		stderr      string
+	}{
+		{"no terminal", "", []string{"me", "password"}, output.ExitUsage, "--password-stdin"},
+		{"one line", "old password here\n", []string{"me", "password", "--password-stdin"}, output.ExitUsage, "two lines"},
+		{"API token", "old password here\na new long password\n", []string{"me", "password", "--password-stdin"}, output.ExitUsage, "API tokens"},
+	}
+	for _, tt := range tests {
+		code, _, stderr := execStdin(t, tt.stdin, tt.args...)
+		if code != int(tt.exit) || !strings.Contains(stderr, tt.stderr) {
+			t.Errorf("%s: exit %d, stderr %q; want exit %d mentioning %q", tt.name, code, stderr, tt.exit, tt.stderr)
+		}
+	}
+}
+
 func TestDeployFailureExitCodes(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)

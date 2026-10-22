@@ -29,13 +29,13 @@ func registerServers(s *Server, a huma.API) {
 	tags := []string{"servers"}
 	authed(s, a, huma.Operation{
 		OperationID: "list-servers", Method: http.MethodGet, Path: Prefix + "/servers",
-		Summary: "List servers", Description: "Status, version, accepted environment kinds and load of every server.", Tags: tags,
+		Summary: "List servers", Description: "Status, version, accepted environment kinds and load of every server. Unlimited admins also get each server's latest resource sample.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Server], error) {
 		return reply(s.core.ListServers(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "get-server", Method: http.MethodGet, Path: serverPathT,
-		Summary: "Get a server", Description: "The server, the projects and environments placed on it and its latest resource sample. Scope: admin, unlimited.", Tags: tags,
+		Summary: "Get a server", Description: "The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Scope: admin, unlimited.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.ServerDetail], error) {
 		return reply(s.core.GetServer(ctx, actor, in.Server))
 	})

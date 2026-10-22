@@ -337,7 +337,7 @@ func newUserResetPasswordCmd(g *globals) *cobra.Command {
 		Use:   "reset-password <email|id> [--password <new>]",
 		Short: "Set a user's password, or generate one; their sessions end",
 		Long: `Reset another user's password. Without --password a password is generated
-and printed once. Your own password is changed in the web UI.`,
+and printed once. Change your own with ` + "`dock me password`" + `.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()

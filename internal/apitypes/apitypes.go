@@ -163,14 +163,7 @@ type Service struct {
 	// ActiveRelease is the number of the release serving traffic, if any.
 	ActiveRelease *int64        `json:"active_release,omitempty"`
 	Status        ServiceStatus `json:"status"`
-	// EffectiveMemoryMB and EffectiveCPUs are the limits releases get:
-	// memory_mb and cpus, or the server's defaults when those are 0.
-	EffectiveMemoryMB int     `json:"effective_memory_mb"`
-	EffectiveCPUs     float64 `json:"effective_cpus"`
-	// MemoryFromDefault and CPUsFromDefault say the effective limit is the
-	// default rather than set on the service.
-	MemoryFromDefault bool `json:"memory_from_default"`
-	CPUsFromDefault   bool `json:"cpus_from_default"`
+	EffectiveLimits
 	// Usage is the latest resource sample of the active container (at most
 	// a minute old), when there is one.
 	Usage *ServiceUsage `json:"usage,omitempty"`
@@ -676,6 +669,21 @@ type Server struct {
 	ReservedMemoryBytes int64 `json:"reserved_memory_bytes"`
 	Projects            int   `json:"projects" doc:"Projects with environments placed here"`
 	Environments        int   `json:"environments"`
+	// Usage is the latest minute sample, kept in memory. Only unlimited
+	// admins get it, as with server statistics.
+	Usage *ServerUsage `json:"usage,omitempty"`
+}
+
+// EffectiveLimits are the limits a service's releases get.
+type EffectiveLimits struct {
+	// EffectiveMemoryMB and EffectiveCPUs are memory_mb and cpus, or the
+	// server's defaults when those are 0.
+	EffectiveMemoryMB int     `json:"effective_memory_mb"`
+	EffectiveCPUs     float64 `json:"effective_cpus"`
+	// MemoryFromDefault and CPUsFromDefault say the effective limit is the
+	// default rather than set on the service.
+	MemoryFromDefault bool `json:"memory_from_default"`
+	CPUsFromDefault   bool `json:"cpus_from_default"`
 }
 
 // UpdateServerRequest changes what may be placed on a server. Only fields
@@ -686,12 +694,28 @@ type UpdateServerRequest struct {
 	DisabledForPlacement *bool `json:"disabled_for_placement,omitempty"`
 }
 
-// ServerDetail is one server with what is placed on it and its latest
-// resource sample.
+// ServerDetail is one server (with its latest resource sample) and what
+// is placed on it.
 type ServerDetail struct {
 	Server     Server            `json:"server"`
 	Placements []ServerPlacement `json:"placements"`
-	Usage      *ServerUsage      `json:"usage,omitempty"`
+	// Services are the services of the environments placed here, the
+	// biggest memory users first.
+	Services []ServerService `json:"services"`
+}
+
+// ServerService is a service on a server with its latest usage.
+type ServerService struct {
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+	Name        string `json:"name"`
+	// ActiveRelease is the number of the release serving traffic, if any.
+	ActiveRelease *int64        `json:"active_release,omitempty"`
+	Status        ServiceStatus `json:"status"`
+	EffectiveLimits
+	// Usage is the latest sample of the active container, when there is
+	// one.
+	Usage *ServiceUsage `json:"usage,omitempty"`
 }
 
 // ServerPlacement is one project's environments of one kind on a server.
@@ -720,15 +744,22 @@ type ServerUsage struct {
 	Time time.Time `json:"time"`
 	// CPUPercent is the use of all cores together: 100 means every core
 	// is busy.
-	CPUPercent       float64     `json:"cpu_percent"`
-	CPUs             int         `json:"cpus"`
-	MemoryUsedBytes  int64       `json:"memory_used_bytes" doc:"Total minus available, as free(1) shows"`
-	MemoryTotalBytes int64       `json:"memory_total_bytes"`
-	Load1            float64     `json:"load1"`
-	Disks            []DiskUsage `json:"disks"`
+	CPUPercent       float64 `json:"cpu_percent"`
+	CPUs             int     `json:"cpus"`
+	MemoryUsedBytes  int64   `json:"memory_used_bytes" doc:"Total minus available, as free(1) shows"`
+	MemoryTotalBytes int64   `json:"memory_total_bytes"`
+	Load1            float64 `json:"load1"`
+	// DiskUsedBytes and DiskTotalBytes are the filesystem holding Docker's
+	// data root (images, volumes, container logs): the one that fills up.
+	// History's disk_used_bytes is the same number.
+	DiskUsedBytes  int64 `json:"disk_used_bytes"`
+	DiskTotalBytes int64 `json:"disk_total_bytes"`
+	// Disks are the filesystems dock uses: Docker's data root first, then
+	// dock's data dir when it is on another filesystem.
+	Disks []DiskUsage `json:"disks"`
 }
 
-// DiskUsage is one filesystem dock uses (the data dir, Docker's root).
+// DiskUsage is one filesystem dock uses.
 type DiskUsage struct {
 	Paths      []string `json:"paths"`
 	UsedBytes  int64    `json:"used_bytes"`
@@ -773,7 +804,8 @@ type ServerStatsPoint struct {
 	Time            time.Time `json:"time" doc:"Start of the interval"`
 	CPUPercent      float64   `json:"cpu_percent"`
 	MemoryUsedBytes int64     `json:"memory_used_bytes"`
-	// DiskUsedBytes is the use of the filesystem holding Docker's root.
+	// DiskUsedBytes is the use of the filesystem holding Docker's data
+	// root, as in ServerUsage.
 	DiskUsedBytes int64   `json:"disk_used_bytes"`
 	Load1         float64 `json:"load1"`
 }
@@ -853,11 +885,14 @@ const (
 	EventDrift EventType = "drift"
 	// EventLagged means the client was too slow and missed events; refetch.
 	EventLagged EventType = "lagged"
+	// EventUsage carries a minute's resource samples of a server or of an
+	// environment's services.
+	EventUsage EventType = "usage"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type          EventType      `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged"`
+	Type          EventType      `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage"`
 	Time          time.Time      `json:"time"`
 	Project       string         `json:"project,omitempty"`
 	Environment   string         `json:"environment,omitempty"`
@@ -868,5 +903,25 @@ type Event struct {
 	ServiceStatus *ServiceStatus `json:"service_status,omitempty"`
 	Domain        *Domain        `json:"domain,omitempty"`
 	Audit         *AuditEvent    `json:"audit,omitempty"`
+	Usage         *UsageUpdate   `json:"usage,omitempty"`
 	Message       string         `json:"message,omitempty"`
+}
+
+// UsageUpdate is one minute tick's samples: a server's own (Host; only
+// unlimited admins get these, as with server statistics) or the services
+// of one environment (Services; the event names the project and
+// environment). Server names the server either way. Point, when set, is
+// the start of the 1-minute history point the samples were stored as, so
+// open 1h and 24h charts append them instead of refetching.
+type UsageUpdate struct {
+	Server   string               `json:"server"`
+	Host     *ServerUsage         `json:"host,omitempty"`
+	Services []ServiceUsageSample `json:"services,omitempty"`
+	Point    *time.Time           `json:"point,omitempty"`
+}
+
+// ServiceUsageSample is one service's sample in a UsageUpdate.
+type ServiceUsageSample struct {
+	Service string       `json:"service"`
+	Usage   ServiceUsage `json:"usage"`
 }

@@ -92,7 +92,7 @@ func newServerShowCmd(g *globals) *cobra.Command {
 			return g.io.Print(d, func() error {
 				sv := d.Server
 				_, _ = fmt.Fprintf(g.io.Out, "%s  %s  %s\naccepts %s\nmemory reserved %s\n", sv.Name, sv.Status, dash(sv.Version), accepts(sv), reserved(sv))
-				if u := d.Usage; u != nil {
+				if u := sv.Usage; u != nil {
 					_, _ = fmt.Fprintf(g.io.Out, "cpu %.1f%% of %d cores, memory %s of %s, load %.2f\n",
 						u.CPUPercent, u.CPUs, bytesize(u.MemoryUsedBytes), bytesize(u.MemoryTotalBytes), u.Load1)
 					for _, disk := range u.Disks {

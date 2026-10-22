@@ -46,12 +46,9 @@ export const Route = createFileRoute("/_app/$project/")({
 
 function Overview() {
   const { project } = Route.useParams();
-  const { environments } = useSuspenseQuery({
-    ...queries.overview(project),
-    // CPU and memory columns show the latest minute sample; nothing on
-    // the event bus carries usage, so refresh at that pace while visible.
-    refetchInterval: 60_000,
-  }).data;
+  // CPU and memory columns show the latest minute sample; usage events
+  // patch it (data/live.ts).
+  const { environments } = useSuspenseQuery(queries.overview(project)).data;
   const navigate = useNavigate();
   const openPalette = usePalette();
   const services = environments.flatMap((e) => e.services);

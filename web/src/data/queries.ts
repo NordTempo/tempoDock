@@ -215,7 +215,7 @@ export const queries = {
       queryKey: keys.servers,
       queryFn: () => list(api.GET("/api/v1/servers")),
     }),
-  /** One server, what is placed on it and its latest sample. Admin only. */
+  /** One server, what is placed on it and its services. Admin only. */
   server: (name: string) =>
     queryOptions({
       queryKey: keys.server(name),
@@ -225,7 +225,11 @@ export const queries = {
             params: { path: { server: name } },
           }),
         );
-        return { ...d, placements: d.placements ?? [] };
+        return {
+          ...d,
+          placements: d.placements ?? [],
+          services: d.services ?? [],
+        };
       },
     }),
   /** Where the project's environments of each kind live, once placed. */
@@ -239,7 +243,8 @@ export const queries = {
           }),
         ),
     }),
-  // History has a point a minute at most, so it stays fresh for a minute.
+  // History has a point a minute at most, so it stays fresh for a minute;
+  // usage events append new 1-minute points to open charts (./live.ts).
   serverStats: (name: string, range: StatsRange) =>
     queryOptions({
       queryKey: keys.serverStats(name, range),

@@ -126,6 +126,7 @@ keeps the linked service, so it means "this service, in staging".
 | `login [url] [--no-browser \| --token-stdin]` | Log in through the browser (on a terminal, or with `--no-browser`), or verify a token from stdin; store it as a context and use it. Warns when the server runs another version |
 | `logout` | Remove the context's token; revoke it on the server if it came from a browser login |
 | `whoami` | Who the token belongs to and its scope |
+| `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions end; the CLI's token stays valid |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails |
 | `status [-a]` | The service's state, releases, domains and staged changes; `-a` (or no service) for the whole environment |
@@ -144,7 +145,7 @@ keeps the linked service, so it means "this service, in staging".
 | `project pin <project> --kind production\|non-production --server NAME` | Admin: choose the server a project's environments of a kind go to, before any exist |
 | `server list`, `server show NAME`, `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement]` | Servers: status, version, accepted kinds, memory reserved, what's placed, current usage. `show` and `update` are admin |
 | `token list\|create NAME --scope\|revoke ID` | Tokens (admin) |
-| `user list\|create\|disable\|enable\|delete\|reset-password` | Users (admin). Users are named by email or id. `list` shows status, live sessions and usable tokens; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions |
+| `user list\|create\|disable\|enable\|delete\|reset-password` | Users (admin). Users are named by email or id. `list` shows status, live sessions and usable tokens; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions (your own: `me password`) |
 | `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
 | `serve`, `admin bootstrap\|caddy-config\|firewall apply\|remove` | Server side, run on the server with `--config`: the daemon, the first admin token, Caddy's initial config, and the app firewall (root; installed as `dock-firewall.service`) |
 

@@ -14,7 +14,9 @@ type busEvent struct {
 	projectID int64
 	envID     int64
 	serviceID int64
-	ev        apitypes.Event
+	// serverStats marks server-wide statistics, for unlimited admins only.
+	serverStats bool
+	ev          apitypes.Event
 }
 
 // LiveEvent is an event as delivered to subscribers. Every subscriber that

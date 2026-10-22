@@ -1,12 +1,25 @@
 -- ListStatsTargets lists the containers of active releases, with their
--- service and server: what the stats collector samples.
+-- service, environment and server: what the stats collector samples. By
+-- server, then environment, so usage events group by environment.
 -- name: ListStatsTargets :many
-SELECT releases.container_id, releases.service_id, environments.server_id
+SELECT releases.container_id, releases.service_id, environments.server_id,
+  services.environment_id, environments.project_id
 FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
 WHERE releases.status = 'active' AND releases.container_id != ''
-ORDER BY environments.server_id;
+ORDER BY environments.server_id, services.environment_id;
+
+-- ListStatsNames names the services ListStatsTargets lists, for usage
+-- events. Names never change, so the collector reads them only when its
+-- set of services does.
+-- name: ListStatsNames :many
+SELECT services.id, projects.name AS project_name, environments.name AS environment_name, services.name AS service_name
+FROM releases
+JOIN services ON services.id = releases.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE releases.status = 'active' AND releases.container_id != '';
 
 -- name: AddServerStats :exec
 INSERT OR REPLACE INTO server_stats (res, at, server_id, cpu, memory, disk, load1) VALUES (?, ?, ?, ?, ?, ?, ?);

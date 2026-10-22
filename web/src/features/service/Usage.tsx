@@ -7,6 +7,16 @@ import { cpus, pct, size } from "../../ui/format";
 // latest sample, at most a minute old (live on the Metrics tab). Without
 // a running container, the limit alone: "512M limit", "1 CPU default".
 
+/** What usage cells need: a service, or a service on a server page. */
+type Limited = Pick<
+  Service,
+  | "usage"
+  | "effective_memory_mb"
+  | "memory_from_default"
+  | "effective_cpus"
+  | "cpus_from_default"
+>;
+
 const MiB = 1024 * 1024;
 
 /** Near the limit: worth a look before it runs out. */
@@ -16,13 +26,13 @@ const Default = ({ on }: { on: boolean }) =>
   on ? <span className="font-sans text-mut"> default</span> : null;
 
 /** Share of the memory limit in use, 0 to 1, or null without a sample. */
-export const memoryShare = (s: Service) =>
+export const memoryShare = (s: Limited) =>
   s.usage && s.effective_memory_mb
     ? s.usage.memory_bytes / (s.effective_memory_mb * MiB)
     : null;
 
 /** "231M / 512M", or the limit alone when nothing is running. */
-export function MemoryUsage({ service: s }: { service: Service }) {
+export function MemoryUsage({ service: s }: { service: Limited }) {
   const limit = s.effective_memory_mb ? size(s.effective_memory_mb * MiB) : "";
   const share = memoryShare(s);
   if (!s.usage) {
@@ -46,7 +56,7 @@ export function MemoryUsage({ service: s }: { service: Service }) {
 }
 
 /** "12% of 1 CPU": usage as a share of the CPU limit. */
-export function CpuUsage({ service: s }: { service: Service }) {
+export function CpuUsage({ service: s }: { service: Limited }) {
   const limit = s.effective_cpus;
   if (!s.usage) {
     return (

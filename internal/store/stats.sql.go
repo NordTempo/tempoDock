@@ -195,23 +195,74 @@ func (q *Queries) ListServiceStats(ctx context.Context, arg ListServiceStatsPara
 	return items, nil
 }
 
+const listStatsNames = `-- name: ListStatsNames :many
+SELECT services.id, projects.name AS project_name, environments.name AS environment_name, services.name AS service_name
+FROM releases
+JOIN services ON services.id = releases.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE releases.status = 'active' AND releases.container_id != ''
+`
+
+type ListStatsNamesRow struct {
+	ID              int64
+	ProjectName     string
+	EnvironmentName string
+	ServiceName     string
+}
+
+// ListStatsNames names the services ListStatsTargets lists, for usage
+// events. Names never change, so the collector reads them only when its
+// set of services does.
+func (q *Queries) ListStatsNames(ctx context.Context) ([]ListStatsNamesRow, error) {
+	rows, err := q.query(ctx, q.listStatsNamesStmt, listStatsNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatsNamesRow
+	for rows.Next() {
+		var i ListStatsNamesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectName,
+			&i.EnvironmentName,
+			&i.ServiceName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStatsTargets = `-- name: ListStatsTargets :many
-SELECT releases.container_id, releases.service_id, environments.server_id
+SELECT releases.container_id, releases.service_id, environments.server_id,
+  services.environment_id, environments.project_id
 FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
 WHERE releases.status = 'active' AND releases.container_id != ''
-ORDER BY environments.server_id
+ORDER BY environments.server_id, services.environment_id
 `
 
 type ListStatsTargetsRow struct {
-	ContainerID string
-	ServiceID   int64
-	ServerID    int64
+	ContainerID   string
+	ServiceID     int64
+	ServerID      int64
+	EnvironmentID int64
+	ProjectID     int64
 }
 
 // ListStatsTargets lists the containers of active releases, with their
-// service and server: what the stats collector samples.
+// service, environment and server: what the stats collector samples. By
+// server, then environment, so usage events group by environment.
 func (q *Queries) ListStatsTargets(ctx context.Context) ([]ListStatsTargetsRow, error) {
 	rows, err := q.query(ctx, q.listStatsTargetsStmt, listStatsTargets)
 	if err != nil {
@@ -221,7 +272,13 @@ func (q *Queries) ListStatsTargets(ctx context.Context) ([]ListStatsTargetsRow, 
 	var items []ListStatsTargetsRow
 	for rows.Next() {
 		var i ListStatsTargetsRow
-		if err := rows.Scan(&i.ContainerID, &i.ServiceID, &i.ServerID); err != nil {
+		if err := rows.Scan(
+			&i.ContainerID,
+			&i.ServiceID,
+			&i.ServerID,
+			&i.EnvironmentID,
+			&i.ProjectID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

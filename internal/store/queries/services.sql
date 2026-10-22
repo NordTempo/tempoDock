@@ -101,3 +101,16 @@ UPDATE volumes SET pending = 1 WHERE id = ? AND pending = 0;
 
 -- name: SetEnvironmentApplyError :exec
 UPDATE environments SET apply_error = ? WHERE id = ?;
+
+-- name: ListServerServices :many
+-- The services of the environments on a server, with their active
+-- release: the services table of a server page.
+SELECT services.id, services.name, services.memory_mb, services.cpus,
+  projects.name AS project_name, environments.name AS environment_name,
+  releases.number AS active_release
+FROM environments
+JOIN projects ON projects.id = environments.project_id
+JOIN services ON services.environment_id = environments.id
+LEFT JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
+WHERE environments.server_id = +? AND projects.archived_at IS NULL AND services.archived_at IS NULL
+ORDER BY projects.name, environments.name, services.name;

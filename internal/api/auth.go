@@ -111,6 +111,11 @@ type loginOutput struct {
 	Body      apitypes.Me
 }
 
+// passwordOutput sets the caller's fresh session cookie, if it has one.
+type passwordOutput struct {
+	SetCookie string `header:"Set-Cookie"`
+}
+
 type logoutInput struct {
 	Session string `cookie:"dock_session"`
 }
@@ -133,15 +138,20 @@ func registerAuth(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "change-password", Method: http.MethodPost, Path: Prefix + "/me/password",
-		Summary: "Change your password", Description: "Users only. Ends all your sessions and sets a fresh session cookie.",
+		Summary: "Change your password", Description: "Users, from a UI session or a `dock login` token (API tokens have no password). Ends all your sessions; a session caller gets a fresh session cookie.",
 		Tags: []string{"auth"}, DefaultStatus: http.StatusNoContent,
 		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusTooManyRequests},
-	}, func(ctx context.Context, actor core.Actor, in *passwordInput) (*logoutOutput, error) {
+	}, func(ctx context.Context, actor core.Actor, in *passwordInput) (*passwordOutput, error) {
 		secret, expires, err := s.core.ChangePassword(ctx, actor, in.Body, in.client.ip)
 		if err != nil {
 			return nil, err
 		}
-		return &logoutOutput{SetCookie: in.client.sessionCookie(secret, expires)}, nil
+		out := &passwordOutput{}
+		if secret != "" { // a session caller; tokens get no session
+			cookie := in.client.sessionCookie(secret, expires)
+			out.SetCookie = cookie.String()
+		}
+		return out, nil
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "logout", Method: http.MethodPost, Path: Prefix + "/auth/logout",

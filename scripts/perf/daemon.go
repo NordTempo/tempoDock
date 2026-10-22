@@ -268,6 +268,7 @@ func (d *daemon) anon() (int64, error) {
 // idle measures CPU ticks and wake-ups over one window, with clients SSE
 // streams open, and memory at its end.
 func (d *daemon) idle(t *table, name string, window time.Duration, clients int) error {
+	betweenTicks(window)
 	before, err := d.sample()
 	if err != nil {
 		return err
@@ -288,6 +289,26 @@ func (d *daemon) idle(t *table, name string, window time.Duration, clients int) 
 	wakeupsBudget := idleWakeupsBudget + float64(clients)*sseClientWakeupsBudget
 	t.within(name+": wake-ups", fmt.Sprintf("%.2f/s", wakeups), fmt.Sprintf("≤ %.1f/s", wakeupsBudget), wakeups <= wakeupsBudget)
 	return nil
+}
+
+// betweenTicks waits until an idle window fits between two of the
+// statistics collector's minute ticks (internal/core/stats.go). The tick is
+// the daemon's one always-on periodic job, budgeted on its own
+// (BenchmarkStatsTick50); its 10-20 wake-ups alone would fail a 30 s
+// window that happened to contain it, whatever else the daemon does.
+func betweenTicks(window time.Duration) {
+	const margin = 3 * time.Second // the tick's own work
+	if window > time.Minute-2*margin {
+		return
+	}
+	now := time.Now()
+	last := now.Truncate(time.Minute)
+	switch {
+	case now.Before(last.Add(margin)):
+		time.Sleep(last.Add(margin).Sub(now))
+	case now.Add(window + margin).After(last.Add(time.Minute)):
+		time.Sleep(last.Add(time.Minute + margin).Sub(now))
+	}
 }
 
 // connectSSE opens n /events streams, waits until each is live and keeps

@@ -43,7 +43,7 @@ function useLiveStream<T>(url: string, onSample: (sample: T) => void) {
   return state;
 }
 
-/** Keeps a server's latest sample (`usage` of its detail) live. */
+/** Keeps a server's latest sample (`server.usage` of its detail) live. */
 export function useLiveServer(name: string) {
   const queryClient = useQueryClient();
   return useLiveStream<ServerUsage>(
@@ -51,7 +51,7 @@ export function useLiveServer(name: string) {
     (usage) =>
       queryClient.setQueryData<ServerDetail>(
         keys.server(name),
-        (d) => d && { ...d, usage },
+        (d) => d && { ...d, server: { ...d.server, usage } },
       ),
   );
 }

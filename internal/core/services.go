@@ -355,15 +355,8 @@ func (c *Core) serviceOf(ss svcScope, pending apitypes.PendingChanges, active *i
 		ServiceSettings: settingsOf(ss.svc), Status: c.getStatus(ss.svc.ID),
 		ActiveRelease: active, Stateful: stateful,
 		CreatedAt: ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt,
-		PendingChanges:    pending.CountFor(ss.svc.Name),
-		EffectiveMemoryMB: int(ss.svc.MemoryMb), EffectiveCPUs: ss.svc.Cpus,
-	}
-	// The same defaults releases get (releaseConfig).
-	if s.EffectiveMemoryMB == 0 {
-		s.EffectiveMemoryMB, s.MemoryFromDefault = c.cfg.Defaults.MemoryMB, true
-	}
-	if s.EffectiveCPUs == 0 {
-		s.EffectiveCPUs, s.CPUsFromDefault = c.cfg.Defaults.CPUs, true
+		PendingChanges:  pending.CountFor(ss.svc.Name),
+		EffectiveLimits: c.limitsOf(ss.svc.MemoryMb, ss.svc.Cpus),
 	}
 	if active != nil {
 		if u, ok := c.stats.serviceUsage(ss.svc.ID); ok {
@@ -371,4 +364,17 @@ func (c *Core) serviceOf(ss svcScope, pending apitypes.PendingChanges, active *i
 		}
 	}
 	return s
+}
+
+// limitsOf is a service's memory (MB) and CPU limits with the defaults
+// releases get (releaseConfig) filled in.
+func (c *Core) limitsOf(memoryMB int64, cpus float64) apitypes.EffectiveLimits {
+	l := apitypes.EffectiveLimits{EffectiveMemoryMB: int(memoryMB), EffectiveCPUs: cpus}
+	if l.EffectiveMemoryMB == 0 {
+		l.EffectiveMemoryMB, l.MemoryFromDefault = c.cfg.Defaults.MemoryMB, true
+	}
+	if l.EffectiveCPUs == 0 {
+		l.EffectiveCPUs, l.CPUsFromDefault = c.cfg.Defaults.CPUs, true
+	}
+	return l
 }
