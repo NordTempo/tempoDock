@@ -1,0 +1,4 @@
+# BuildKit reads this for deploy/tempobase/Dockerfile: of the release's
+# dist/ only the Linux tempoBase binaries go into the build context.
+*
+!tempobase-linux-*
