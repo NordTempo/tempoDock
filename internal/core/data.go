@@ -71,6 +71,21 @@ func (c *Core) dataInfo(ctx context.Context, dt *dbTarget) (apitypes.DataInfo, e
 	if err := c.useConn(ctx, dt, conn); err != nil {
 		return info, err
 	}
+	if dt.access.GrantsSyncedHash == "" {
+		// Never synced (an upgrade from the predefined-role grants, or a
+		// sync that failed): try now, as the owner. If it fails, Status
+		// says why (unreachable, or roles that still have the old grants
+		// and need setup again).
+		if err := c.loadSensitive(ctx, dt); err != nil {
+			return info, err
+		}
+		if err := c.syncGrants(ctx, dt, ""); err != nil {
+			if ctx.Err() != nil {
+				return info, ctx.Err()
+			}
+			c.log.Warn("sync data grants", "service", dt.ss.String(), "err", err)
+		}
+	}
 	srv, err := c.data.Status(ctx, dt.t)
 	switch {
 	case err == nil:
@@ -176,7 +191,7 @@ func (c *Core) UpdateDatabaseSettings(ctx context.Context, a Actor, ref ServiceR
 
 // SetupData creates or rotates Dock's roles in the database with the
 // owner's credentials ("Set up data access"), stores their passwords
-// sealed and syncs the masked reader's grants. Admin only.
+// sealed and syncs the roles' grants. Admin only.
 func (c *Core) SetupData(ctx context.Context, a Actor, ref ServiceRef) (apitypes.DataInfo, error) {
 	dt, err := c.dataService(ctx, a, ref)
 	if err != nil {
@@ -214,29 +229,57 @@ func (c *Core) SetupData(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	dt.access = &acc
 	c.audit(ctx, a, apitypes.AuditDataSetup, &dt.ss.project, &dt.ss.env, dt.ss.String(),
 		fmt.Sprintf("set up data access on Postgres %s: created or rotated %s, %s and %s", srv.Version, data.RoleReader, data.RoleWriter, data.RoleReaderMasked))
-	if err := c.syncMasked(ctx, dt, ""); err != nil {
+	if err := c.loadSensitive(ctx, dt); err != nil {
+		return apitypes.DataInfo{}, err
+	}
+	if err := c.syncGrants(ctx, dt, ""); err != nil {
 		return apitypes.DataInfo{}, err
 	}
 	return c.dataInfo(ctx, dt)
 }
 
-// syncMasked brings the masked reader's grants up to date when the schema
-// or the sensitive columns changed since the last sync (current is their
-// MaskedHash, "" to sync regardless), as the owner. A failure is an error:
-// masked callers must not run SQL on stale grants.
-func (c *Core) syncMasked(ctx context.Context, dt *dbTarget, current string) error {
-	if current != "" && current == dt.access.MaskedSyncedHash {
+// syncGrants brings Dock's roles' grants (data.Engine.SyncGrants) up to
+// date when the schema or the sensitive columns changed since the last sync
+// (current is their GrantsHash, "" to sync regardless), as the owner. A
+// failure is an error: masked callers must not run SQL on stale grants.
+func (c *Core) syncGrants(ctx context.Context, dt *dbTarget, current string) error {
+	if current != "" && current == dt.access.GrantsSyncedHash {
 		return nil
 	}
-	hash, err := c.data.SyncMasked(ctx, dt.t, dt.conn.owner, dt.sensitive)
+	hash, err := c.data.SyncGrants(ctx, dt.t, dt.conn.owner, dt.sensitive)
 	if err != nil {
-		return errf(apitypes.CodeConflict, "couldn't update the masked reader's grants in %s (%v); an admin can run `dock db setup` again", dt.ss, dataError(dt, err))
+		return errf(apitypes.CodeConflict, "couldn't update the grants of Dock's roles in %s (%v); an admin can run `dock db setup` again", dt.ss, dataError(dt, err))
 	}
-	if err := c.store.SetDataMaskedSyncedHash(ctx, store.SetDataMaskedSyncedHashParams{MaskedSyncedHash: hash, ServiceID: dt.ss.svc.ID}); err != nil {
+	if err := c.store.SetDataGrantsSyncedHash(ctx, store.SetDataGrantsSyncedHashParams{GrantsSyncedHash: hash, ServiceID: dt.ss.svc.ID}); err != nil {
 		return err
 	}
-	dt.access.MaskedSyncedHash = hash
+	dt.access.GrantsSyncedHash = hash
 	return nil
+}
+
+// ensureGrants syncs the grants unless they were synced for the schema the
+// engine reports now (cached for data.SchemaTTL, so usually without a
+// round trip).
+func (c *Core) ensureGrants(ctx context.Context, dt *dbTarget, call data.Call) error {
+	s, err := c.data.Schema(ctx, dt.t, call, dt.sensitive)
+	if err != nil {
+		return dataError(dt, err)
+	}
+	return c.syncGrants(ctx, dt, data.GrantsHash(s.Tables))
+}
+
+// withGrants runs fn and, when it fails for a missing privilege (a
+// relation another role created since the last sync), syncs the grants
+// and runs it once more.
+func (c *Core) withGrants(ctx context.Context, dt *dbTarget, fn func() error) error {
+	err := fn()
+	if !errors.Is(err, data.ErrNoPrivilege) {
+		return err
+	}
+	if err := c.syncGrants(ctx, dt, ""); err != nil {
+		return err
+	}
+	return fn()
 }
 
 // DataSchema returns the database's structure, sensitive columns marked.
@@ -250,7 +293,8 @@ func (c *Core) DataSchema(ctx context.Context, a Actor, ref ServiceRef) (apitype
 	return s, dataError(dt, err)
 }
 
-// DataRows returns one keyset page of a table. Needs level read.
+// DataRows returns one keyset page of a table. Needs level read. Its
+// cursors are sealed for the caller (sealCursor).
 // Sensitive columns are masked unless the request reveals them, which
 // needs sensitive visible and is audited as data.reveal before the values
 // go out. The first page per caller and table, then at most every 10
@@ -272,9 +316,19 @@ func (c *Core) DataRows(ctx context.Context, a Actor, ref ServiceRef, req apityp
 	if req.Reveal && dt.perm.Sensitive != apitypes.SensitiveVisible {
 		return apitypes.DataPage{}, errf(apitypes.CodeForbidden, "revealing sensitive columns needs sensitive visible; yours are masked (%s)", whyWords(dt.perm))
 	}
-	page, err := c.data.Page(ctx, dt.t, dt.call(a, req.Reveal), req)
+	if req.After, err = c.openCursor(a, dt.ss.svc.ID, req.After); err != nil {
+		return apitypes.DataPage{}, err
+	}
+	var page apitypes.DataPage
+	err = c.withGrants(ctx, dt, func() (err error) {
+		page, err = c.data.Page(ctx, dt.t, dt.call(a, req.Reveal), req)
+		return err
+	})
 	if err != nil {
 		return page, dataError(dt, err)
+	}
+	if page.Next, err = c.sealCursor(a, dt.ss.svc.ID, page.Next); err != nil {
+		return apitypes.DataPage{}, err
 	}
 	c.auditBrowse(ctx, a, dt.ss, req)
 	if req.Reveal {
@@ -284,6 +338,8 @@ func (c *Core) DataRows(ctx context.Context, a Actor, ref ServiceRef, req apityp
 }
 
 // DataReferences returns the rows referencing one row. Needs level read.
+// Masked callers can't look up a row by a sensitive key, and don't get
+// foreign keys over sensitive columns (data.Engine.References).
 func (c *Core) DataReferences(ctx context.Context, a Actor, ref ServiceRef, req apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error) {
 	switch {
 	case req.Limit < 0 || req.Limit > apitypes.DataReferencesMaxLimit:
@@ -295,17 +351,26 @@ func (c *Core) DataReferences(ctx context.Context, a Actor, ref ServiceRef, req 
 	if err != nil {
 		return nil, err
 	}
-	refs, err := c.data.References(ctx, dt.t, dt.call(a, false), req)
+	var refs []apitypes.DataReferences
+	err = c.withGrants(ctx, dt, func() (err error) {
+		refs, err = c.data.References(ctx, dt.t, dt.call(a, false), req)
+		return err
+	})
 	if err != nil {
 		return nil, dataError(dt, err)
+	}
+	for i := range refs {
+		if refs[i].Page.Next, err = c.sealCursor(a, dt.ss.svc.ID, refs[i].Page.Next); err != nil {
+			return nil, err
+		}
 	}
 	c.auditBrowse(ctx, a, dt.ss, apitypes.DataPageRequest{Table: req.Table})
 	return refs, nil
 }
 
 // DataQuery runs one read-only statement, streamed as frames. Needs level
-// read. Masked callers' SQL runs as the masked reader, whose grants are
-// brought up to date first. Every statement is audited as data.query with
+// read. The roles' grants are brought up to date first; masked callers'
+// SQL runs as the masked reader. Every statement is audited as data.query with
 // its SQL, rows, duration and outcome. The stream calls ready with its
 // first frame, so an error before any frame (dial, login, a rejected
 // statement) is a plain error.
@@ -325,14 +390,8 @@ func (c *Core) DataQuery(ctx context.Context, a Actor, ref ServiceRef, req apity
 		return nil, err
 	}
 	call := dt.call(a, true)
-	if call.Masked {
-		s, err := c.data.Schema(ctx, dt.t, call, dt.sensitive)
-		if err != nil {
-			return nil, dataError(dt, err)
-		}
-		if err := c.syncMasked(ctx, dt, data.MaskedHash(s.Tables)); err != nil {
-			return nil, err
-		}
+	if err := c.ensureGrants(ctx, dt, call); err != nil {
+		return nil, err
 	}
 	return func(ctx context.Context, ready func(), send func(...apitypes.DataQueryFrame) error) error {
 		started := false
@@ -477,7 +536,7 @@ func (c *Core) DeleteSavedQuery(ctx context.Context, a Actor, ref ServiceRef, id
 }
 
 // SetSensitiveColumns replaces the database's sensitive columns and, when
-// the database is set up and running, syncs the masked reader's grants
+// the database is set up and running, syncs the roles' grants
 // (otherwise the next masked query does, or refuses). Admin only.
 func (c *Core) SetSensitiveColumns(ctx context.Context, a Actor, ref ServiceRef, req apitypes.SetSensitiveColumnsRequest) ([]apitypes.DataColumnRef, error) {
 	dt, err := c.dataService(ctx, a, ref)
@@ -514,7 +573,7 @@ func (c *Core) SetSensitiveColumns(ctx context.Context, a Actor, ref ServiceRef,
 		conn, err := c.dbConnection(ctx, dt.ss)
 		if err == nil {
 			if err = c.useConn(ctx, dt, conn); err == nil {
-				err = c.syncMasked(ctx, dt, "")
+				err = c.syncGrants(ctx, dt, "")
 			}
 		}
 		if err != nil && !errors.Is(err, errNotRunning) {

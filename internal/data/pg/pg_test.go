@@ -70,10 +70,32 @@ func TestCheckReadStatement(t *testing.T) {
 		"PREPARE p AS SELECT 1",
 		"SELECT 'unterminated",
 		"SELECT /* open",
+		"SELECT pg_catalog.pg_advisory_lock(1)",
+		`SELECT "pg_try_advisory_lock_shared"(1)`,
+		"SELECT PG_LOGICAL_EMIT_MESSAGE(false, 'p', 'x')",
+		"SELECT ts_stat('SELECT 1')",
+		`SELECT u&"x"`,
 	}
 	for _, sql := range bad {
 		if err := checkReadStatement(sql); !errors.Is(err, data.ErrInvalid) {
 			t.Errorf("%q: %v", sql, err)
+		}
+	}
+}
+
+// TestRedact: every literal form becomes ?, comments go, and
+// identifiers, keywords and parameters stay.
+func TestRedact(t *testing.T) {
+	cases := map[string]string{
+		"SELECT * FROM t WHERE email = 'a@b.c' AND n > 42.5e-3":                       "SELECT * FROM t WHERE email = ? AND n > ?",
+		`UPDATE "t1" SET "x" = E'it\'s' WHERE id = $1 AND b = B'101'`:                 `UPDATE "t1" SET "x" = ? WHERE id = $1 AND b = ?`,
+		"SELECT $$secret$$, $q$also$q$, U&'d\\0061ta', x'ff', 1_000 -- pw: hunter2\n": "SELECT ?, ?, ?, ?, ?  ",
+		"SELECT a /* token 123 */ FROM t2.c3":                                         "SELECT a   FROM t2.c3",
+		"SELECT 'unterminated":                                                        "SELECT ?",
+	}
+	for in, want := range cases {
+		if got := redact(in); got != want {
+			t.Errorf("redact(%q)\n got %q\nwant %q", in, got, want)
 		}
 	}
 }
@@ -286,12 +308,15 @@ COMMIT;
 	}
 }
 
+// TestSetupSQL: setup strips privileges and every role membership (older
+// setups made the roles members of pg_read_all_data) and grants none.
 func TestSetupSQL(t *testing.T) {
-	specs := []roleSpec{{name: data.RoleReader, verifier: "SCRAM-SHA-256$4096:c2FsdA==$a:b", grants: []string{"pg_read_all_data"}, settings: [][2]string{{"default_transaction_read_only", "on"}}}}
+	specs := []roleSpec{{name: data.RoleReader, verifier: "SCRAM-SHA-256$4096:c2FsdA==$a:b", settings: [][2]string{{"default_transaction_read_only", "on"}}}}
 	got := strings.Join(setupSQL(specs, map[string]existingRole{
 		"dock_reader": {Privileged: true, MemberOf: []string{"pg_read_all_data", "app_owner"}},
 	}, `my "db"`), "\n")
 	want := `ALTER ROLE "dock_reader" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD 'SCRAM-SHA-256$4096:c2FsdA==$a:b'
+REVOKE "pg_read_all_data" FROM "dock_reader"
 REVOKE "app_owner" FROM "dock_reader"
 ALTER ROLE "dock_reader" SET default_transaction_read_only = 'on'
 GRANT CONNECT ON DATABASE "my ""db""" TO "dock_reader"`
@@ -299,7 +324,7 @@ GRANT CONNECT ON DATABASE "my ""db""" TO "dock_reader"`
 		t.Fatalf("setup\n got %s\nwant %s", got, want)
 	}
 	fresh := setupSQL(specs, nil, "postgres")
-	if !strings.HasPrefix(fresh[0], `CREATE ROLE "dock_reader" WITH LOGIN NOSUPERUSER`) || fresh[1] != `GRANT "pg_read_all_data" TO "dock_reader"` {
+	if !strings.HasPrefix(fresh[0], `CREATE ROLE "dock_reader" WITH LOGIN NOSUPERUSER`) || len(fresh) != 3 || strings.Contains(strings.Join(fresh, "\n"), "GRANT \"") {
 		t.Fatalf("fresh: %q", fresh)
 	}
 }

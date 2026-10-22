@@ -268,8 +268,9 @@ func (c *Core) dataService(ctx context.Context, a Actor, ref ServiceRef) (*dbTar
 	return dt, nil
 }
 
-// dataTarget is dataService plus a level check, a set-up check and
-// connect: everything an engine call needs.
+// dataTarget is dataService plus a level check, a set-up check, connect
+// and, when the grants were never synced, a sync: everything an engine
+// call needs.
 func (c *Core) dataTarget(ctx context.Context, a Actor, ref ServiceRef, need apitypes.DataLevel, action string) (*dbTarget, error) {
 	dt, err := c.dataService(ctx, a, ref)
 	if err != nil {
@@ -281,7 +282,17 @@ func (c *Core) dataTarget(ctx context.Context, a Actor, ref ServiceRef, need api
 	if dt.access == nil {
 		return nil, errNotSetUp(dt)
 	}
-	return dt, c.connect(ctx, dt)
+	if err := c.connect(ctx, dt); err != nil {
+		return nil, err
+	}
+	if dt.access.GrantsSyncedHash == "" {
+		// Never synced: an upgrade from the predefined-role grants (or a
+		// sync that failed). Nothing reads before the new grants are in.
+		if err := c.syncGrants(ctx, dt, ""); err != nil {
+			return nil, err
+		}
+	}
+	return dt, nil
 }
 
 // errNotSetUp says data access isn't set up and who can fix it.
@@ -362,6 +373,8 @@ func dataError(dt *dbTarget, err error) error {
 		return invalid("%v. If POSTGRES_PASSWORD changed after the database was created, set database_url_variable to a variable with the current postgres:// URL", err)
 	case errors.Is(err, data.ErrUnreachable):
 		return errf(apitypes.CodeConflict, "can't reach %s: %v; check that it is running and healthy", dt.ss, err)
+	case errors.Is(err, data.ErrNoPrivilege):
+		return errf(apitypes.CodeConflict, "Dock's roles in %s lack a privilege even after updating their grants (%v); an admin can run `dock db setup` again", dt.ss, err)
 	case errors.Is(err, data.ErrNoTable):
 		return notFound("%v in %s", err, dt.ss)
 	case errors.Is(err, data.ErrInvalid):

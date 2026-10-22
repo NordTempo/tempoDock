@@ -350,7 +350,7 @@ func TestDataQueryPlans(t *testing.T) {
 		{"ListEffectiveDataPolicyRules", listEffectiveDataPolicyRules, []any{1, 2}},
 		{"DeleteDataPolicyRules", deleteDataPolicyRules, []any{1, 2}},
 		{"GetDataAccess", getDataAccess, []any{1}},
-		{"SetDataMaskedSyncedHash", setDataMaskedSyncedHash, []any{"h", 1}},
+		{"SetDataGrantsSyncedHash", setDataGrantsSyncedHash, []any{"h", 1}},
 		{"ListSensitiveColumns", listSensitiveColumns, []any{1}},
 		{"DeleteSensitiveColumns", deleteSensitiveColumns, []any{1}},
 		{"ListSavedQueries", listSavedQueries, []any{1, 1}},

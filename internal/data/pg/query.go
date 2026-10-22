@@ -31,13 +31,15 @@ var textFormats = []int16{pgx.TextFormatCode}
 // Query runs one read statement as the reader and streams its result.
 //
 // The statement is checked before connecting (one statement, a read
-// keyword), then prepared unnamed in a READ ONLY transaction with the
+// keyword, no function whose effects outlive the transaction), then
+// prepared unnamed in a READ ONLY transaction with the
 // request's statement timeout and data.ReadLockTimeout, executed with text
 // results and encoded row by row into frames of at most
 // apitypes.DataFrameRows rows (and about frameMaxBytes). Hitting the row or
 // byte cap ends the result with Truncated: the connection is then cut
 // rather than drained, which also stops the server, and is not reused.
-// The transaction is rolled back afterwards. Masked calls run as the masked
+// The transaction is rolled back afterwards and session advisory locks
+// released (endQuerySQL). Masked calls run as the masked
 // reader, which can't select sensitive columns; without its credentials
 // they can't run SQL.
 func (e *Engine) Query(ctx context.Context, t data.Target, c data.Call, req apitypes.DataQueryRequest, send func(apitypes.DataQueryFrame) error) (data.QueryStats, error) {
@@ -105,12 +107,20 @@ func (e *Engine) Query(ctx context.Context, t data.Target, c data.Call, req apit
 		cn.broken = true
 	}
 	if !cn.broken {
-		if err := simpleExec(qctx, cn.pg, "ROLLBACK"); err != nil {
+		if err := simpleExec(qctx, cn.pg, endQuerySQL); err != nil {
 			cn.broken = true
 		}
 	}
 	return stats, nil
 }
+
+// endQuerySQL ends a query's transaction and undoes what a rollback
+// doesn't: session-level advisory locks, which would otherwise stay held
+// on the cached connection (blocking the app's migrations or leader
+// election). checkReadStatement already refuses the lock functions; this
+// covers calls it can't see (a view or function that takes one). Both
+// statements go in one round trip.
+const endQuerySQL = "ROLLBACK; SELECT pg_advisory_unlock_all()"
 
 // stream is one query's result on its way to send. Its row buffer and
 // frame are reused for every frame.

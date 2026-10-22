@@ -59,7 +59,7 @@ func (s *sqlPair) val(v *string) {
 // a commit would run, values inlined.
 func (e *Engine) Render(ctx context.Context, t data.Target, changes []apitypes.DataChange) (string, error) {
 	var sql string
-	err := e.read(ctx, t, data.Call{}, apitypes.DataQueryTimeout, func(cn *conn) error {
+	err := e.read(ctx, t, data.RoleReader, data.Call{}, apitypes.DataQueryTimeout, func(cn *conn) error {
 		cat, err := e.catalog(ctx, t, cn, true)
 		if err != nil {
 			return err

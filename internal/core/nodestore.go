@@ -343,7 +343,7 @@ func (c *Core) watchServer(ctx context.Context, serverID int64, kick <-chan stru
 				}
 				continue
 			}
-			c.onContainerEvent(ctx, ev)
+			c.onContainerEvent(ctx, serverID, ev)
 		}
 	}
 }

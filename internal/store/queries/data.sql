@@ -54,17 +54,17 @@ SELECT * FROM data_access WHERE service_id = ?;
 
 -- name: UpsertDataAccess :one
 -- Records a setup or rotation: new sealed role passwords and who did it.
--- The masked role's grants are resynced afterwards, so the hash resets.
+-- The roles' grants are resynced afterwards, so the hash resets.
 INSERT INTO data_access (service_id, engine, server_version, reader_secret, writer_secret, set_up_at, set_up_by)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (service_id) DO UPDATE SET
     engine = excluded.engine, server_version = excluded.server_version,
     reader_secret = excluded.reader_secret, writer_secret = excluded.writer_secret,
-    masked_synced_hash = '', set_up_at = excluded.set_up_at, set_up_by = excluded.set_up_by
+    grants_synced_hash = '', set_up_at = excluded.set_up_at, set_up_by = excluded.set_up_by
 RETURNING *;
 
--- name: SetDataMaskedSyncedHash :exec
-UPDATE data_access SET masked_synced_hash = ? WHERE service_id = ?;
+-- name: SetDataGrantsSyncedHash :exec
+UPDATE data_access SET grants_synced_hash = ? WHERE service_id = ?;
 
 -- name: ListSensitiveColumns :many
 SELECT schema_name, table_name, column_name FROM sensitive_columns

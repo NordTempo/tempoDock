@@ -70,6 +70,50 @@ func toChangeset(cs store.Changeset, confirm bool) (apitypes.DataChangeset, erro
 	return out, nil
 }
 
+// changesetFor converts a stored changeset for dt's caller. Callers who
+// see sensitive columns masked (dt.sensitive loaded) get a changeset that
+// touches one masked too: those columns' values are left out of its
+// changes and conflicts, and the literals in its SQL become ?.
+func (c *Core) changesetFor(dt *dbTarget, cs store.Changeset) (apitypes.DataChangeset, error) {
+	out, err := toChangeset(cs, dt.perm.ConfirmCommit)
+	if err != nil || dt.perm.Sensitive == apitypes.SensitiveVisible {
+		return out, err
+	}
+	if maskChanges(out.Changes, out.Conflicts, dt.sensitive) {
+		out.SQL = c.data.Redact(out.SQL)
+	}
+	return out, nil
+}
+
+// maskChanges deletes the sensitive columns' values from changes and
+// their conflicts' current values, and reports whether there were any.
+func maskChanges(changes []apitypes.DataChange, conflicts []apitypes.DataConflict, sensitive []apitypes.DataColumnRef) bool {
+	touched := false
+	for i, ch := range changes {
+		for _, col := range sensitive {
+			if ch.Table != col.Schema+"."+col.Table {
+				continue
+			}
+			_, inKey := ch.Key[col.Column]
+			_, inOld := ch.Old[col.Column]
+			_, inNew := ch.New[col.Column]
+			if !inKey && !inOld && !inNew {
+				continue
+			}
+			touched = true
+			delete(ch.Key, col.Column)
+			delete(ch.Old, col.Column)
+			delete(ch.New, col.Column)
+			for _, cf := range conflicts {
+				if cf.Change == i {
+					delete(cf.Current, col.Column)
+				}
+			}
+		}
+	}
+	return touched
+}
+
 // isAuthor reports whether the actor wrote the changeset.
 func isAuthor(a Actor, cs store.Changeset) bool {
 	switch {
@@ -176,7 +220,7 @@ func (c *Core) CreateDataChangeset(ctx context.Context, a Actor, ref ServiceRef,
 		summary += " (" + req.Message + ")"
 	}
 	c.audit(ctx, a, apitypes.AuditDataPropose, &dt.ss.project, &dt.ss.env, dt.ss.String(), summary)
-	return toChangeset(cs, dt.perm.ConfirmCommit)
+	return c.changesetFor(dt, cs)
 }
 
 // loadChangeset expires overdue changesets, then loads one of the
@@ -193,7 +237,8 @@ func (c *Core) loadChangeset(ctx context.Context, dt *dbTarget, id int64) (store
 }
 
 // ListDataChangesets returns the database's changesets, newest first (at
-// most 200); status "" means all. Needs level read.
+// most 200); status "" means all. Needs level read; masked callers get
+// sensitive values masked (changesetFor).
 func (c *Core) ListDataChangesets(ctx context.Context, a Actor, ref ServiceRef, status apitypes.DataChangesetStatus) ([]apitypes.DataChangeset, error) {
 	switch status {
 	case "", apitypes.ChangesetPending, apitypes.ChangesetCommitted, apitypes.ChangesetRejected, apitypes.ChangesetExpired, apitypes.ChangesetConflict:
@@ -205,6 +250,9 @@ func (c *Core) ListDataChangesets(ctx context.Context, a Actor, ref ServiceRef, 
 		return nil, err
 	}
 	if err := requireLevel(dt.perm, apitypes.LevelRead, "listing changesets"); err != nil {
+		return nil, err
+	}
+	if err := c.loadSensitive(ctx, dt); err != nil {
 		return nil, err
 	}
 	if _, err := c.store.ExpireChangesets(ctx, now()); err != nil {
@@ -225,7 +273,7 @@ func (c *Core) ListDataChangesets(ctx context.Context, a Actor, ref ServiceRef, 
 		if status != "" && r.Status != string(status) {
 			continue
 		}
-		cs, err := toChangeset(r, dt.perm.ConfirmCommit)
+		cs, err := c.changesetFor(dt, r)
 		if err != nil {
 			return nil, err
 		}
@@ -234,7 +282,8 @@ func (c *Core) ListDataChangesets(ctx context.Context, a Actor, ref ServiceRef, 
 	return out, nil
 }
 
-// GetDataChangeset returns one changeset. Needs level read.
+// GetDataChangeset returns one changeset. Needs level read; masked
+// callers get sensitive values masked (changesetFor).
 func (c *Core) GetDataChangeset(ctx context.Context, a Actor, ref ServiceRef, id int64) (apitypes.DataChangeset, error) {
 	dt, err := c.dataService(ctx, a, ref)
 	if err != nil {
@@ -243,11 +292,14 @@ func (c *Core) GetDataChangeset(ctx context.Context, a Actor, ref ServiceRef, id
 	if err := requireLevel(dt.perm, apitypes.LevelRead, "reading changesets"); err != nil {
 		return apitypes.DataChangeset{}, err
 	}
+	if err := c.loadSensitive(ctx, dt); err != nil {
+		return apitypes.DataChangeset{}, err
+	}
 	cs, err := c.loadChangeset(ctx, dt, id)
 	if err != nil {
 		return apitypes.DataChangeset{}, err
 	}
-	return toChangeset(cs, dt.perm.ConfirmCommit)
+	return c.changesetFor(dt, cs)
 }
 
 // decidable loads a pending changeset for a decision and claims it; call
@@ -310,6 +362,9 @@ func (c *Core) CommitDataChangeset(ctx context.Context, a Actor, ref ServiceRef,
 	}
 	defer c.deciding.done(id)
 
+	if err := c.ensureGrants(ctx, dt, dt.call(a, true)); err != nil {
+		return apitypes.DataChangeset{}, err
+	}
 	decidedAt := now()
 	res, err := c.data.Commit(ctx, dt.t, dt.call(a, true), changes)
 	if err != nil {
@@ -346,7 +401,7 @@ func (c *Core) CommitDataChangeset(ctx context.Context, a Actor, ref ServiceRef,
 	if !own && outcome == apitypes.OutcomeOK {
 		c.audit(ctx, a, apitypes.AuditDataApprove, &dt.ss.project, &dt.ss.env, dt.ss.String(), fmt.Sprintf("approved changeset %d by %s", id, cs.Author))
 	}
-	return toChangeset(decided, dt.perm.ConfirmCommit)
+	return c.changesetFor(dt, decided)
 }
 
 // RejectDataChangeset rejects a pending changeset: admins, or its author
@@ -365,6 +420,9 @@ func (c *Core) RejectDataChangeset(ctx context.Context, a Actor, ref ServiceRef,
 	}
 	if !isAuthor(a, cs) && !dt.perm.Approve {
 		return apitypes.DataChangeset{}, errf(apitypes.CodeForbidden, "only admins and its author can reject changeset %d", id)
+	}
+	if err := c.loadSensitive(ctx, dt); err != nil {
+		return apitypes.DataChangeset{}, err
 	}
 	if _, err := c.decidable(ctx, dt, id, "rejected"); err != nil {
 		return apitypes.DataChangeset{}, err
@@ -385,5 +443,5 @@ func (c *Core) RejectDataChangeset(ctx context.Context, a Actor, ref ServiceRef,
 		summary += ": " + req.Reason
 	}
 	c.audit(ctx, a, apitypes.AuditDataReject, &dt.ss.project, &dt.ss.env, dt.ss.String(), summary)
-	return toChangeset(decided, dt.perm.ConfirmCommit)
+	return c.changesetFor(dt, decided)
 }

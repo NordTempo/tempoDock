@@ -111,12 +111,12 @@ func (c *Core) scopeOf(ctx context.Context, serviceID int64) (svcScope, error) {
 	return svcScope{envScope{p, e}, s}, nil
 }
 
-// watchRuntime follows container lifecycle events and keeps the status of
-// each service's active container up to date.
+// watchRuntime follows the local server's container lifecycle events and
+// keeps the status of each service's active container up to date.
 func (c *Core) watchRuntime(events <-chan node.ContainerEvent) {
 	defer c.wg.Done()
 	for ev := range events {
-		c.onContainerEvent(c.ctx, ev)
+		c.onContainerEvent(c.ctx, c.local.ID, ev)
 	}
 }
 
@@ -126,31 +126,36 @@ func (c *Core) foreign(l node.Labels) bool {
 	return l.ControlPlane != "" && l.ControlPlane != c.install
 }
 
-func (c *Core) onContainerEvent(ctx context.Context, ev node.ContainerEvent) {
+// onContainerEvent applies a container event from serverID. Labels are
+// only a lookup: an event counts for a service only when its container is
+// the one the store has for the labelled release, of a service on
+// serverID, so an event carrying another service's labels (from a
+// container someone else labelled, or a misbehaving node) changes nothing.
+func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.ContainerEvent) {
 	if c.foreign(ev.Labels) {
 		return
 	}
-	if ev.Action == "die" || ev.Action == "destroy" {
-		// A database's container went away (redeploy, archive, crash):
-		// drop the panel's connections to it.
-		if id, err := strconv.ParseInt(ev.Labels.Service, 10, 64); err == nil {
-			c.data.Forget(id)
-		}
-	}
-	if c.ownRemoval(ev) {
-		return // the daemon is stopping it: not a crash, not drift
-	}
+	own := c.ownRemoval(ev)
 	id, err := strconv.ParseInt(ev.Labels.Release, 10, 64)
 	if err != nil {
 		return
 	}
 	rel, err := c.store.GetRelease(ctx, id)
-	if err != nil || rel.Status != string(apitypes.ReleaseActive) || rel.ContainerID != ev.ContainerID {
-		return // only the active container defines the service's status
+	if err != nil || rel.ContainerID == "" || rel.ContainerID != ev.ContainerID {
+		return
 	}
 	ss, err := c.scopeOf(ctx, rel.ServiceID)
-	if err != nil {
+	if err != nil || ss.env.ServerID != serverID {
 		return
+	}
+	if ev.Action == "die" || ev.Action == "destroy" {
+		// The service's database container went away (redeploy, archive,
+		// crash): drop the panel's connections to it. Its release is
+		// superseded already when the daemon replaces or archives it.
+		c.data.Forget(ss.svc.ID)
+	}
+	if own || rel.Status != string(apitypes.ReleaseActive) {
+		return // the daemon is stopping it, or it isn't the active container
 	}
 	s := c.getStatus(ss.svc.ID)
 	s.UpdatedAt = nil

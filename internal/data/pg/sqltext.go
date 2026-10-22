@@ -38,6 +38,177 @@ func checkReadStatement(sql string) error {
 		}
 		return fmt.Errorf("%w: only read statements (SELECT, WITH, VALUES, TABLE, EXPLAIN, SHOW) can run here, not %s", data.ErrInvalid, strings.ToUpper(kw))
 	}
+	return checkFunctions(first)
+}
+
+// blockedFunctions are functions a read can't call: their effects outlive
+// the read-only transaction that is rolled back (session advisory locks,
+// non-transactional logical decoding messages that reach CDC consumers),
+// or they run SQL from a string, which would hide such a call from this
+// check. They are executable by PUBLIC, so revoking them from Dock's roles
+// alone wouldn't stop them. Names ending in _ are prefixes.
+var blockedFunctions = []string{
+	"pg_advisory_", "pg_try_advisory_", "pg_logical_emit_message",
+	"query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema",
+	"cursor_to_xml", "cursor_to_xmlschema", "ts_stat", "ts_rewrite", "dblink",
+}
+
+// checkFunctions rejects a statement that names a blocked function,
+// however it is spelled (any case, schema-qualified, quoted). Identifiers
+// with Unicode escapes (U&"...") are rejected outright, since they could
+// spell one in a way this check doesn't decode.
+func checkFunctions(sql string) error {
+	return scanSQL(sql, func(kind tokenKind, text string) error {
+		var name string
+		switch kind {
+		case tokenWord:
+			name = strings.ToLower(text)
+		case tokenQuoted:
+			name = strings.ReplaceAll(text[1:len(text)-1], `""`, `"`)
+		case tokenUnicodeQuoted:
+			return fmt.Errorf("%w: identifiers with Unicode escapes (U&\"...\") aren't supported here", data.ErrInvalid)
+		default:
+			return nil
+		}
+		for _, b := range blockedFunctions {
+			if name == b || strings.HasSuffix(b, "_") && strings.HasPrefix(name, b) {
+				return fmt.Errorf("%w: %s can't be called here: its effects outlive the read, or it runs SQL from a string", data.ErrInvalid, name)
+			}
+		}
+		return nil
+	})
+}
+
+// redact replaces sql's literal values (strings in every form, dollar
+// quotes, numbers) with ? and its comments with a space; identifiers,
+// keywords, operators and parameters stay. Unterminated text is cut at
+// the point it starts.
+func redact(sql string) string {
+	var b strings.Builder
+	b.Grow(len(sql))
+	err := scanSQL(sql, func(kind tokenKind, text string) error {
+		switch kind {
+		case tokenString, tokenNumber:
+			b.WriteByte('?')
+		case tokenComment:
+			b.WriteByte(' ')
+		default:
+			b.WriteString(text)
+		}
+		return nil
+	})
+	if err != nil {
+		b.WriteString("?")
+	}
+	return b.String()
+}
+
+// tokenKind classifies what scanSQL found.
+type tokenKind int
+
+const (
+	// tokenOther is anything else: whitespace, operators, punctuation,
+	// parameters ($1), one byte or run at a time.
+	tokenOther tokenKind = iota
+	// tokenWord is an unquoted identifier or keyword.
+	tokenWord
+	// tokenQuoted is a quoted identifier, quotes included.
+	tokenQuoted
+	// tokenUnicodeQuoted is a U&"..." identifier.
+	tokenUnicodeQuoted
+	// tokenString is a string constant in any form ('...', E'...', B'...',
+	// X'...', N'...', U&'...', $tag$...$tag$), prefix included.
+	tokenString
+	// tokenNumber is a numeric constant.
+	tokenNumber
+	// tokenComment is a -- or /* */ comment.
+	tokenComment
+)
+
+// errUnterminated ends scanSQL at a quote, dollar quote or comment that
+// never ends.
+var errUnterminated = fmt.Errorf("%w: unterminated string, identifier or comment", data.ErrInvalid)
+
+// scanSQL splits sql into tokens and calls fn with each, in order, until
+// fn returns an error. Concatenating the texts gives sql back.
+func scanSQL(sql string, fn func(kind tokenKind, text string) error) error {
+	s := sql
+	for i := 0; i < len(s); {
+		c := s[i]
+		kind, end := tokenOther, i+1
+		switch {
+		case c == '\'':
+			j, ok := skipQuoted(s, i, '\'', false)
+			if !ok {
+				return errUnterminated
+			}
+			kind, end = tokenString, j
+		case c == '"':
+			j, ok := skipQuoted(s, i, '"', false)
+			if !ok {
+				return errUnterminated
+			}
+			kind, end = tokenQuoted, j
+		case c == '-' && i+1 < len(s) && s[i+1] == '-':
+			end = len(s)
+			if j := strings.IndexByte(s[i:], '\n'); j >= 0 {
+				end = i + j + 1
+			}
+			kind = tokenComment
+		case c == '/' && i+1 < len(s) && s[i+1] == '*':
+			j, ok := skipBlockComment(s, i)
+			if !ok {
+				return errUnterminated
+			}
+			kind, end = tokenComment, j
+		case c == '$':
+			if tag, ok := dollarTag(s[i:]); ok {
+				close := strings.Index(s[i+len(tag):], tag)
+				if close < 0 {
+					return errUnterminated
+				}
+				kind, end = tokenString, i+len(tag)+close+len(tag)
+				break
+			}
+			for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+				end++ // a parameter, $1
+			}
+		case c >= '0' && c <= '9' || c == '.' && i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '9':
+			for end < len(s) && (isIdentChar(s[end]) && s[end] != '$' || s[end] == '.' ||
+				(s[end] == '+' || s[end] == '-') && (s[end-1] == 'e' || s[end-1] == 'E')) {
+				end++
+			}
+			kind = tokenNumber
+		case isIdentChar(c):
+			for end < len(s) && isIdentChar(s[end]) {
+				end++
+			}
+			kind = tokenWord
+			word := s[i:end]
+			switch {
+			case end < len(s) && s[end] == '\'' && len(word) == 1 && strings.ContainsRune("eEbBxXnN", rune(word[0])):
+				j, ok := skipQuoted(s, end, '\'', word == "e" || word == "E")
+				if !ok {
+					return errUnterminated
+				}
+				kind, end = tokenString, j
+			case (word == "u" || word == "U") && end+1 < len(s) && s[end] == '&' && (s[end+1] == '\'' || s[end+1] == '"'):
+				j, ok := skipQuoted(s, end+1, s[end+1], false)
+				if !ok {
+					return errUnterminated
+				}
+				kind = tokenString
+				if s[end+1] == '"' {
+					kind = tokenUnicodeQuoted
+				}
+				end = j
+			}
+		}
+		if err := fn(kind, s[i:end]); err != nil {
+			return err
+		}
+		i = end
+	}
 	return nil
 }
 
