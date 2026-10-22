@@ -134,13 +134,26 @@ func (d *daemon) servedUI(t *table) error {
 	return nil
 }
 
-func freePort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+// freePorts picks n distinct free loopback ports. Every listener stays
+// open until all n are chosen, so no two picks can return the same port;
+// they are closed on return, just before the caller starts its server.
+func freePorts(n int) ([]int, error) {
+	ls := make([]net.Listener, 0, n)
+	defer func() {
+		for _, l := range ls {
+			_ = l.Close()
+		}
+	}()
+	ports := make([]int, 0, n)
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, err
+		}
+		ls = append(ls, l)
+		ports = append(ports, l.Addr().(*net.TCPAddr).Port)
 	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port, nil
+	return ports, nil
 }
 
 func startDaemon(bin string) (*daemon, error) {
@@ -148,14 +161,11 @@ func startDaemon(bin string) (*daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	api, err := freePort()
+	ports, err := freePorts(2)
 	if err != nil {
 		return nil, err
 	}
-	internal, err := freePort()
-	if err != nil {
-		return nil, err
-	}
+	api, internal := ports[0], ports[1]
 	data := filepath.Join(dir, "data")
 	cfg := fmt.Sprintf(`data_dir = %q
 listen = "127.0.0.1:%d"
