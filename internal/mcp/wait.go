@@ -84,7 +84,9 @@ func (h *handler) waitReleases(ctx context.Context, c *call, rels []apitypes.Rel
 // follow subscribes to the environment's events and returns when no
 // release in pending is left unfinished, or wait passes. After
 // subscribing it reads each release once, so a release that finished
-// before the subscription isn't waited for in vain.
+// before the subscription isn't waited for in vain, and the steps a
+// deploy took before it are sent as progress too. Steps are sent once
+// each, by their sequence number.
 func (h *handler) follow(ctx context.Context, c *call, env core.EnvRef, pending map[releaseKey]bool, wait time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
@@ -93,7 +95,15 @@ func (h *handler) follow(ctx context.Context, c *call, env core.EnvRef, pending 
 		return err
 	}
 	var readErr error
-	// refresh reads every pending release and drops the finished ones.
+	sent := map[releaseKey]int64{} // the last step sent per release
+	step := func(k releaseKey, ev apitypes.ReleaseEvent) {
+		if ev.Seq > sent[k] {
+			sent[k] = ev.Seq
+			c.notify(fmt.Sprintf("%s #%d: %s", k.service, k.number, ev.Message))
+		}
+	}
+	// refresh reads every pending release, sends its steps not sent yet
+	// and drops the finished ones.
 	refresh := func() bool {
 		for k := range pending {
 			r, err := h.core.GetRelease(ctx, c.actor, core.ServiceRef{Project: env.Project, Environment: env.Environment, Service: k.service}, k.number)
@@ -102,6 +112,9 @@ func (h *handler) follow(ctx context.Context, c *call, env core.EnvRef, pending 
 					readErr = err
 				}
 				return false
+			}
+			for _, ev := range r.Events {
+				step(k, ev)
 			}
 			if r.Status.Done() {
 				delete(pending, k)
@@ -129,7 +142,7 @@ func (h *handler) follow(ctx context.Context, c *call, env core.EnvRef, pending 
 					c.notify(describeRelease(*ev.Release))
 				}
 			case ev.ReleaseEvent != nil && pending[releaseKey{ev.Service, ev.ReleaseEvent.ReleaseNumber}]:
-				c.notify(fmt.Sprintf("%s #%d: %s", ev.Service, ev.ReleaseEvent.ReleaseNumber, ev.ReleaseEvent.Message))
+				step(releaseKey{ev.Service, ev.ReleaseEvent.ReleaseNumber}, *ev.ReleaseEvent)
 			}
 		}
 		if len(pending) == 0 {
