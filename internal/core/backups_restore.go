@@ -208,18 +208,17 @@ func (r *restore) finish(ctx context.Context, err error) {
 	if ctx.Err() != nil {
 		return // shutting down: the next start marks it failed
 	}
+	// The row is written last, as in runBackup.
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), SnapshotID: r.snapshot, FinishedAt: ptr(now()), ID: r.row.ID}
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
+		c.audit(ctx, System, "backup.restore_failed", &r.from.project, &r.from.env, r.from.String(),
+			fmt.Sprintf("restore into %s failed: %v; %s is kept for a look, archive it when done", r.to.svc.Name, err, r.to.svc.Name))
+	} else {
+		c.audit(ctx, System, "backup.restored", &r.from.project, &r.from.env, r.from.String(),
+			fmt.Sprintf("restored snapshot %s into %s; point references at ${{%s.%s}} when it checks out", r.snapshot[:8], r.to.svc.Name, r.to.svc.Name, r.t.exports[0]))
 	}
 	if ferr := c.store.FinishBackup(ctx, fin); ferr != nil {
 		c.log.Error("record restore", "restore", r.row.ID, "err", ferr)
 	}
-	if err != nil {
-		c.audit(ctx, System, "backup.restore_failed", &r.from.project, &r.from.env, r.from.String(),
-			fmt.Sprintf("restore into %s failed: %v; %s is kept for a look, archive it when done", r.to.svc.Name, err, r.to.svc.Name))
-		return
-	}
-	c.audit(ctx, System, "backup.restored", &r.from.project, &r.from.env, r.from.String(),
-		fmt.Sprintf("restored snapshot %s into %s; point references at ${{%s.%s}} when it checks out", r.snapshot[:8], r.to.svc.Name, r.to.svc.Name, r.t.exports[0]))
 }

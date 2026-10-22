@@ -420,25 +420,24 @@ func (c *Core) runBackup(ctx context.Context, ss svcScope, row store.Backup) {
 	if ctx.Err() != nil {
 		return // shutting down: the next start marks it failed
 	}
+	// The row is written last, so whoever sees the run finished also sees
+	// its audit event and the snapshots retention removed.
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), FinishedAt: ptr(now()), ID: row.ID}
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
+		c.audit(ctx, System, "backup.failed", &ss.project, &ss.env, ss.String(), fmt.Sprintf("backup %d failed: %v", row.ID, err))
 	} else {
 		fin.SnapshotID, fin.SizeBytes = res.SnapshotID, res.Bytes
+		if res.Kept != nil {
+			c.markPruned(ctx, ss.svc.ID, row.Repository, res.Kept)
+		}
+		short := res.SnapshotID[:min(8, len(res.SnapshotID))]
+		c.audit(ctx, System, "backup.succeeded", &ss.project, &ss.env, ss.String(),
+			fmt.Sprintf("backup %d: snapshot %s, %s, to %s", row.ID, short, humanBytes(res.Bytes), repoLabel(row.Repository)))
 	}
 	if err := c.store.FinishBackup(ctx, fin); err != nil {
 		c.log.Error("record backup", "backup", row.ID, "err", err)
 	}
-	if err != nil {
-		c.audit(ctx, System, "backup.failed", &ss.project, &ss.env, ss.String(), fmt.Sprintf("backup %d failed: %v", row.ID, err))
-		return
-	}
-	if res.Kept != nil {
-		c.markPruned(ctx, ss.svc.ID, row.Repository, res.Kept)
-	}
-	short := res.SnapshotID[:min(8, len(res.SnapshotID))]
-	c.audit(ctx, System, "backup.succeeded", &ss.project, &ss.env, ss.String(),
-		fmt.Sprintf("backup %d: snapshot %s, %s, to %s", row.ID, short, humanBytes(res.Bytes), repoLabel(row.Repository)))
 }
 
 // markPruned marks the service's snapshots in repository that retention
