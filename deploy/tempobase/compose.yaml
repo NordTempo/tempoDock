@@ -1,0 +1,19 @@
+# tempoBase with Docker Compose (docs/tempobase/install.md): docker compose
+# up -d, then open the setup link in `docker compose logs tempobase` to
+# create the first admin. Put TLS in front (Caddy, a tunnel) before
+# exposing it beyond this machine.
+services:
+  tempobase:
+    image: ghcr.io/nordtempo/tempobase:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7171:7171"
+    environment:
+      # The address people open: used for links and Secure cookies.
+      TEMPOBASE_BASE_URL: http://localhost:7171
+    volumes:
+      # tempobase.db and secrets.key: back up both (docs/tempobase/backups.md).
+      - tempobase:/data
+
+volumes:
+  tempobase:
