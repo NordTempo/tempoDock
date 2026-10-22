@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -129,10 +130,12 @@ func TestRegistry(t *testing.T) {
 		}
 		defer func() { _ = c.Close() }()
 		// Not served: nothing answers (the node holds it up to
-		// registryWait, then closes).
+		// registryWait, then closes; closing with the request unread
+		// resets the connection).
 		_ = req.Write(c)
 		_ = c.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
-		if _, err := c.Read(make([]byte, 1)); !errors.Is(err, net.ErrClosed) && !isTimeout(err) {
+		if _, err := c.Read(make([]byte, 1)); !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) &&
+			!errors.Is(err, syscall.ECONNRESET) && !isTimeout(err) {
 			t.Fatalf("read = %v", err)
 		}
 	})
