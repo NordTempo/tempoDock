@@ -337,59 +337,77 @@ export function Panel({
   );
 }
 
-/** A small popup menu anchored under its button; Escape or a click outside closes it. */
+/**
+ * A small popup menu under its button. It is fixed to the viewport, so a
+ * panel's overflow can't clip it; scrolling, Escape or a click outside
+ * closes it.
+ */
 export function Menu({
   label,
   button,
   right,
-  up,
   className = "",
   children,
 }: {
   label: string;
   button: ReactNode;
-  /** Anchor to the right edge, for menus at the end of a bar. */
+  /** Line up with the button's right edge, for menus at the end of a row. */
   right?: boolean;
-  /** Open upwards, for menus at the bottom of the screen. */
-  up?: boolean;
   className?: string;
   children: (close: () => void) => ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<DOMRect | null>(null);
   const root = useRef<HTMLSpanElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!open) return;
+    if (!at) return;
+    const close = () => setAt(null);
     const onMouse = (event: MouseEvent) => {
       const inside =
         event.target instanceof Node && root.current?.contains(event.target);
-      if (!inside) setOpen(false);
+      if (!inside) close();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key !== "Escape") return;
+      close();
+      trigger.current?.focus();
     };
     document.addEventListener("mousedown", onMouse);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("mousedown", onMouse);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
     };
-  }, [open]);
+  }, [at]);
   return (
     <span ref={root} className={`relative ${className}`}>
       <button
+        ref={trigger}
         type="button"
         aria-label={label}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        aria-expanded={!!at}
+        onClick={(e) =>
+          setAt(at ? null : e.currentTarget.getBoundingClientRect())
+        }
         className="flex w-full items-center rounded-ctl"
       >
         {button}
       </button>
-      {open && (
+      {at && (
         <div
-          className={`absolute ${up ? "bottom-full mb-1" : "top-full mt-1"} ${right ? "right-0" : "left-0"} z-30 flex min-w-44 flex-col rounded-ctl border border-edge bg-panel p-1 shadow-lg shadow-black/40`}
+          style={{
+            top: at.bottom + 4,
+            ...(right
+              ? { right: document.documentElement.clientWidth - at.right }
+              : { left: at.left }),
+          }}
+          className="fixed z-40 flex min-w-44 flex-col rounded-ctl border border-edge bg-panel p-1 shadow-lg shadow-black/40"
         >
-          {children(() => setOpen(false))}
+          {children(() => setAt(null))}
         </div>
       )}
     </span>
