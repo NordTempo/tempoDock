@@ -239,6 +239,22 @@ func BenchmarkCoreReads(b *testing.B) {
 		_, err := c.ListAudit(ctx, System, AuditFilter{Project: "big", Limit: 100})
 		return err
 	})
+	// A rare action (20 domain.add events among thousands): the filter
+	// must not walk the whole log to find them.
+	run("ListAudit/action,limit=100", func() error {
+		_, err := c.ListAudit(ctx, System, AuditFilter{Action: "domain.", Limit: 100})
+		return err
+	})
+	// A common action (most of the log): the page still costs about the
+	// same as an unfiltered one.
+	run("ListAudit/action=common,limit=100", func() error {
+		_, err := c.ListAudit(ctx, System, AuditFilter{Action: "variable.", Limit: 100})
+		return err
+	})
+	run("ListAudit/project,action,limit=100", func() error {
+		_, err := c.ListAudit(ctx, System, AuditFilter{Project: "big", Action: "domain.", Limit: 100})
+		return err
+	})
 	run("ListAudit/service,limit=100", func() error {
 		_, err := c.ListAudit(ctx, System, AuditFilter{Project: "big", Environment: "production", Service: "svc-00", Limit: 100})
 		return err

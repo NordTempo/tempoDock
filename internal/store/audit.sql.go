@@ -91,9 +91,10 @@ type ListAuditEventsRow struct {
 // everything; only events with IDs below before_id are returned (pass
 // math.MaxInt64 for the newest). An action prefix is the range
 // [action_from, action_to) (see core.prefixRange): LIKE would make SQLite
-// re-prepare the statement on every call. Use ListProjectAuditEvents to filter by
-// project: an optional project filter here would keep SQLite from using
-// the audit_events_project index.
+// re-prepare the statement on every call. Use ListProjectAuditEvents to
+// filter by project: an optional project filter here would keep SQLite from
+// using the audit_events_project index; and ListAuditEventsByAction to
+// filter by action alone.
 func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]ListAuditEventsRow, error) {
 	rows, err := q.query(ctx, q.listAuditEventsStmt, listAuditEvents,
 		arg.BeforeID,
@@ -109,6 +110,80 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 	var items []ListAuditEventsRow
 	for rows.Next() {
 		var i ListAuditEventsRow
+		if err := rows.Scan(
+			&i.AuditEvent.ID,
+			&i.AuditEvent.Actor,
+			&i.AuditEvent.ActorKind,
+			&i.AuditEvent.UserID,
+			&i.AuditEvent.TokenID,
+			&i.AuditEvent.Action,
+			&i.AuditEvent.ProjectID,
+			&i.AuditEvent.EnvironmentID,
+			&i.AuditEvent.Target,
+			&i.AuditEvent.Summary,
+			&i.AuditEvent.CreatedAt,
+			&i.AuditEvent.DetailID,
+			&i.ProjectName,
+			&i.EnvironmentName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditEventsByAction = `-- name: ListAuditEventsByAction :many
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id,
+       coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
+FROM audit_events
+LEFT JOIN projects ON projects.id = audit_events.project_id
+LEFT JOIN environments ON environments.id = audit_events.environment_id
+WHERE audit_events.id IN (
+    SELECT page.id FROM audit_events AS page
+    WHERE page.action >= +?1 AND page.action < +?2
+      AND page.id < +?3
+    ORDER BY page.id DESC
+    LIMIT +?4)
+ORDER BY audit_events.id DESC
+`
+
+type ListAuditEventsByActionParams struct {
+	ActionFrom string
+	ActionTo   string
+	BeforeID   int64
+	MaxRows    int64
+}
+
+type ListAuditEventsByActionRow struct {
+	AuditEvent      AuditEvent
+	ProjectName     string
+	EnvironmentName string
+}
+
+// ListAuditEvents for actions in [action_from, action_to), without other
+// filters. The page's IDs come from the covering audit_events_action
+// index, so a rare action doesn't walk the whole log.
+func (q *Queries) ListAuditEventsByAction(ctx context.Context, arg ListAuditEventsByActionParams) ([]ListAuditEventsByActionRow, error) {
+	rows, err := q.query(ctx, q.listAuditEventsByActionStmt, listAuditEventsByAction,
+		arg.ActionFrom,
+		arg.ActionTo,
+		arg.BeforeID,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAuditEventsByActionRow
+	for rows.Next() {
+		var i ListAuditEventsByActionRow
 		if err := rows.Scan(
 			&i.AuditEvent.ID,
 			&i.AuditEvent.Actor,
@@ -184,6 +259,87 @@ func (q *Queries) ListProjectAuditEvents(ctx context.Context, arg ListProjectAud
 	var items []ListProjectAuditEventsRow
 	for rows.Next() {
 		var i ListProjectAuditEventsRow
+		if err := rows.Scan(
+			&i.AuditEvent.ID,
+			&i.AuditEvent.Actor,
+			&i.AuditEvent.ActorKind,
+			&i.AuditEvent.UserID,
+			&i.AuditEvent.TokenID,
+			&i.AuditEvent.Action,
+			&i.AuditEvent.ProjectID,
+			&i.AuditEvent.EnvironmentID,
+			&i.AuditEvent.Target,
+			&i.AuditEvent.Summary,
+			&i.AuditEvent.CreatedAt,
+			&i.AuditEvent.DetailID,
+			&i.ProjectName,
+			&i.EnvironmentName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectAuditEventsByAction = `-- name: ListProjectAuditEventsByAction :many
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id,
+       coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
+FROM audit_events
+LEFT JOIN projects ON projects.id = audit_events.project_id
+LEFT JOIN environments ON environments.id = audit_events.environment_id
+WHERE audit_events.id IN (
+    SELECT page.id FROM audit_events AS page
+    WHERE page.project_id = +?1
+      AND page.action >= +?2 AND page.action < +?3
+      AND +page.id < +?4
+      AND (page.environment_id = +?5 OR ?5 IS NULL)
+    ORDER BY page.id DESC
+    LIMIT +?6)
+ORDER BY audit_events.id DESC
+`
+
+type ListProjectAuditEventsByActionParams struct {
+	ProjectID     *int64
+	ActionFrom    string
+	ActionTo      string
+	BeforeID      int64
+	EnvironmentID *int64
+	MaxRows       int64
+}
+
+type ListProjectAuditEventsByActionRow struct {
+	AuditEvent      AuditEvent
+	ProjectName     string
+	EnvironmentName string
+}
+
+// ListProjectAuditEvents for actions in [action_from, action_to). The
+// page's IDs come from the covering audit_events_project_action index;
+// the unary plus on page.id keeps SQLite from walking the project's
+// history through audit_events_project instead.
+func (q *Queries) ListProjectAuditEventsByAction(ctx context.Context, arg ListProjectAuditEventsByActionParams) ([]ListProjectAuditEventsByActionRow, error) {
+	rows, err := q.query(ctx, q.listProjectAuditEventsByActionStmt, listProjectAuditEventsByAction,
+		arg.ProjectID,
+		arg.ActionFrom,
+		arg.ActionTo,
+		arg.BeforeID,
+		arg.EnvironmentID,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectAuditEventsByActionRow
+	for rows.Next() {
+		var i ListProjectAuditEventsByActionRow
 		if err := rows.Scan(
 			&i.AuditEvent.ID,
 			&i.AuditEvent.Actor,
