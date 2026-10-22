@@ -61,10 +61,11 @@ func startCaddyWith(t *testing.T, mod func(*Options)) *testCaddy {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
+	ports := freePorts(t, 2)
 	opts := Options{
 		AdminSocket: filepath.Join(dir, "admin.sock"),
-		HTTPPort:    freePort(t),
-		HTTPSPort:   freePort(t),
+		HTTPPort:    ports[0],
+		HTTPSPort:   ports[1],
 		PublicIPs:   []string{"127.0.0.1"},
 		internalCA:  true,
 		gracePeriod: testGracePeriod,
@@ -185,14 +186,22 @@ func (tc *testCaddy) get(t *testing.T, url string) (int, http.Header, string) {
 	return resp.StatusCode, resp.Header, string(b)
 }
 
-func freePort(t *testing.T) int {
+// freePorts returns n distinct free TCP ports. It holds every listener
+// until all are picked: closed one at a time, the kernel can hand out the
+// same port twice, and Caddy then fails its initial config ("listener
+// address repeated") and exits under the test's first load.
+func freePorts(t *testing.T, n int) []int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	ports := make([]int, n)
+	for i := range ports {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = l.Close() }()
+		ports[i] = l.Addr().(*net.TCPAddr).Port
 	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port
+	return ports
 }
 
 // backend is an upstream that answers with its name.

@@ -74,13 +74,9 @@ func (p *Proxy) knownHosts(ctx context.Context) (*hostSet, error) {
 // runningHosts reads the hostnames matched by the routes of Caddy's
 // running config.
 func (p *Proxy) runningHosts(ctx context.Context) (*hostSet, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://caddy/config/apps/http/servers", nil)
+	resp, err := p.admin(ctx, http.MethodGet, "/config/apps/http/servers", nil)
 	if err != nil {
 		return nil, err
-	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("caddy: reach admin socket %s: %w", p.opts.AdminSocket, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
