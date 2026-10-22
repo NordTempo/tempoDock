@@ -8,7 +8,8 @@
 //	TLS 1.3, both sides pinned by key fingerprint, ALPN "dock-node/1"
 //	HTTP/2 with the roles reversed: the control plane is the HTTP client,
 //	  the node serves (it never listens on the network)
-//	one POST per Runtime call; responses are NDJSON frames
+//	one POST per Runtime call; responses are NDJSON frames, except Dial,
+//	  whose bodies carry raw bytes both ways
 //
 // Everything below the frames is the standard library (crypto/tls and
 // net/http's HTTP/2), which the binary already links.
@@ -67,6 +68,7 @@ const (
 	opCheckDomain   = "check-domain"
 	opHostStats     = "host-stats"
 	opCtrStats      = "container-stats"
+	opDial          = "dial" // full duplex, raw bytes: see dial.go
 )
 
 // Request bodies start with one line of JSON arguments. Build follows it

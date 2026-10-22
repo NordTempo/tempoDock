@@ -84,8 +84,18 @@ func (n *Node) serveOnce(ctx context.Context) (bool, error) {
 	srv := &http.Server{
 		Handler:   Handler(n.Runtime),
 		Protocols: h2Only(),
-		HTTP2:     &http.HTTP2Config{SendPingTimeout: ka, PingTimeout: ka},
-		ErrorLog:  slog.NewLogLogger(n.logger().Handler(), slog.LevelDebug),
+		HTTP2: &http.HTTP2Config{
+			SendPingTimeout: ka, PingTimeout: ka,
+			// A call whose handler stops reading (a dial to a container
+			// that doesn't read) keeps up to a stream window of unread
+			// upload, and that counts against the connection window until
+			// read. With the default 1 MB for both, one such call would
+			// stall every other call on the link. Memory is only used for
+			// bytes actually waiting.
+			MaxReceiveBufferPerStream:     streamWindow,
+			MaxReceiveBufferPerConnection: (maxDials + 64) * streamWindow,
+		},
+		ErrorLog: slog.NewLogLogger(n.logger().Handler(), slog.LevelDebug),
 	}
 	ln := &oneConnListener{conn: conn, closed: make(chan struct{})}
 	go func() { _ = srv.Serve(ln) }()
@@ -146,6 +156,7 @@ func Handler(rt node.Runtime) http.Handler {
 	h(opCtrStats, unary(func(ctx context.Context, a idsArgs) ([]node.ContainerStats, error) {
 		return rt.ContainerStats(ctx, a.IDs)
 	}))
+	h(opDial, serveDial(rt))
 	return mux
 }
 

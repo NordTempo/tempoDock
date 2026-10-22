@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -44,15 +45,19 @@ type session struct {
 	server string
 	info   Info
 	cc     *http.ClientConn
-	once   sync.Once
+	closed atomic.Bool
 	done   chan struct{}
+	// dials counts open Dial calls, capped at maxDials.
+	dials atomic.Int32
 }
 
+// close closes the connection once. Not a sync.Once: cc.Close can run the
+// state hook, which calls close again on the same goroutine.
 func (s *session) close() {
-	s.once.Do(func() {
+	if s.closed.CompareAndSwap(false, true) {
 		_ = s.cc.Close()
 		close(s.done)
-	})
+	}
 }
 
 // NewHub creates a hub. Call Serve to accept connections.

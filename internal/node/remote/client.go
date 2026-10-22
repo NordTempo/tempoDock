@@ -5,9 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"time"
 
@@ -135,13 +133,6 @@ func (c *Client) Events(ctx context.Context) (<-chan node.ContainerEvent, error)
 	return out, nil
 }
 
-// Dial implements node.Containers.
-// TODO(ADR 0016 phase 2, Dial track): run the dial on the node and stream
-// the bytes over a full-duplex call, the shape Build uses.
-func (c *Client) Dial(context.Context, node.DialRequest) (net.Conn, error) {
-	return nil, fmt.Errorf("server %s: dial is not implemented yet: %w", c.server, errors.ErrUnsupported)
-}
-
 // Build implements node.Builder. The build context streams up while build
 // output streams back, on the same call.
 func (c *Client) Build(ctx context.Context, req node.BuildRequest) (string, error) {
@@ -242,6 +233,15 @@ func open(ctx context.Context, s *session, op string, args any, body io.Reader) 
 	var r io.Reader = bytes.NewReader(append(line, '\n'))
 	if body != nil {
 		r = io.MultiReader(r, body)
+		if c, ok := body.(io.Closer); ok {
+			// The transport closes the body when the call ends early (an
+			// error status, a reset), which unblocks a pending Read. Closing
+			// the response waits for that.
+			r = struct {
+				io.Reader
+				io.Closer
+			}{r, c}
+		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://node/v1/"+op, r)
 	if err != nil {
