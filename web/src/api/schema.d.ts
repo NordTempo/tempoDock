@@ -612,6 +612,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clone an environment
+         * @description Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. Values are copied only for callers that may read them (admin); otherwise reference-only values are copied, template credentials are made anew and the rest are listed in `skipped`. Domains, git connections, releases, backups and staged changes are never copied. Nothing is deployed unless `deploy: true`, which promotes the source's images. Scope: read on this environment, deploy on the project.
+         */
+        post: operations["clone-environment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/data-policy": {
         parameters: {
             query?: never;
@@ -1454,6 +1474,26 @@ export interface paths {
         patch: operations["set-variables"];
         trace?: never;
     };
+    "/api/v1/projects/{project}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export a project's config
+         * @description The project's environments, services and non-secret settings as they are live, sorted by name. Variables are names only; values are never included. Scope: read.
+         */
+        get: operations["export-project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/overview": {
         parameters: {
             query?: never;
@@ -2096,6 +2136,40 @@ export interface components {
             applied?: components["schemas"]["AppliedChanges"];
             pending: components["schemas"]["PendingChanges"];
         };
+        CloneEnvironmentRequest: {
+            /** @description Also deploy the images serving in the source, by digest, like promote */
+            deploy?: boolean;
+            /**
+             * @description Default: production for an environment named production, otherwise non_production. Never changes.
+             * @enum {string}
+             */
+            kind?: "production" | "non_production";
+            /** @description The new environment's DNS-safe name */
+            name: string;
+        };
+        CloneResult: {
+            deploy?: components["schemas"]["PromoteResult"];
+            deploy_error?: string;
+            environment: components["schemas"]["Environment"];
+            from: string;
+            /** @description Template variables set anew (new password, template defaults) because copying needs admin */
+            generated: components["schemas"]["VariableRef"][] | null;
+            not_copied: string[] | null;
+            /** @description Cloned services, by name */
+            services: string[] | null;
+            /** @description Variables not created because copying their value needs admin; set them in the new environment */
+            skipped: components["schemas"]["VariableRef"][] | null;
+            /**
+             * Format: int64
+             * @description Variables created with the source's value
+             */
+            variables: number;
+            /**
+             * Format: int64
+             * @description New, empty volumes, staged until each service's first deploy
+             */
+            volumes: number;
+        };
         Commit: {
             /** @description GitHub login of the author, else their name */
             author: string;
@@ -2525,6 +2599,11 @@ export interface components {
             domain: components["schemas"]["Domain"];
             release?: components["schemas"]["Release"];
         };
+        DomainExport: {
+            generated?: boolean;
+            hostname: string;
+            redirect_to?: string;
+        };
         Environment: {
             /** Format: date-time */
             created_at: string;
@@ -2536,6 +2615,12 @@ export interface components {
             project: string;
             /** @description Server the environment runs on */
             server: string;
+        };
+        EnvironmentExport: {
+            kind: string;
+            name: string;
+            services?: components["schemas"]["ServiceExport"][] | null;
+            shared_variables?: string[] | null;
         };
         EnvironmentOverview: {
             environment: components["schemas"]["Environment"];
@@ -2623,6 +2708,12 @@ export interface components {
         GitDeployResult: {
             commit: components["schemas"]["Commit"];
         };
+        GitExport: {
+            branch: string;
+            directory?: string;
+            repository: string;
+            statuses?: boolean;
+        };
         GitSource: {
             connection?: components["schemas"]["GitConnection"];
             hooks_hint?: string;
@@ -2686,6 +2777,15 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+        };
+        ProjectExport: {
+            environments: components["schemas"]["EnvironmentExport"][] | null;
+            project: string;
+            /**
+             * Format: int64
+             * @description Manifest format version
+             */
+            version: number;
         };
         ProjectOverview: {
             environments: components["schemas"]["EnvironmentOverview"][] | null;
@@ -2989,6 +3089,29 @@ export interface components {
             service: string;
             warning?: string;
         };
+        ServiceExport: {
+            build_command?: string;
+            /** Format: double */
+            cpus?: number;
+            database?: string;
+            database_url_variable?: string;
+            dockerfile_path?: string;
+            domains?: components["schemas"]["DomainExport"][] | null;
+            git?: components["schemas"]["GitExport"];
+            health_check_path?: string;
+            /** Format: int64 */
+            health_check_timeout_seconds?: number;
+            image?: string;
+            /** Format: int64 */
+            memory_mb?: number;
+            name: string;
+            /** Format: int64 */
+            port?: number;
+            start_command?: string;
+            template?: string;
+            variables?: string[] | null;
+            volumes?: components["schemas"]["VolumeExport"][] | null;
+        };
         ServiceOverview: {
             active_release?: components["schemas"]["ReleaseSummary"];
             backup?: components["schemas"]["BackupRun"];
@@ -3245,6 +3368,10 @@ export interface components {
             mount_path: string;
             name: string;
             service: string;
+        };
+        VolumeExport: {
+            mount_path: string;
+            name: string;
         };
         VolumeMount: {
             path: string;
@@ -6214,6 +6341,107 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "clone-environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneEnvironmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloneResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11258,6 +11486,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangeResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "export-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project name */
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectExport"];
                 };
             };
             /** @description Bad Request */

@@ -11,6 +11,7 @@ import type {
   DiscardSelection,
   EnvironmentKind,
   EnvRef,
+  NewClone,
   NewServer,
   NewToken,
   NewUser,
@@ -216,6 +217,19 @@ export const useCreateDatabase = () =>
         ),
       ),
     ({ env }) => [keys.overview(env.project), keys.env(env), ["audit"]],
+  );
+
+/** Clones an environment into a new one (ADR 0022); `deploy` also promotes. */
+export const useCloneEnvironment = () =>
+  useAction(
+    ({ env, ...input }: { env: EnvRef } & NewClone) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/clone",
+          { params: { path: envPath(env) }, body: input },
+        ),
+      ),
+    ({ env }) => [keys.project(env.project), ["audit"]],
   );
 
 const backupsOf = (ref: ServiceRef): QueryKey[] => [

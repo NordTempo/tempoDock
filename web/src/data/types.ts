@@ -16,6 +16,8 @@ export type NewServer = Schemas["AddServerRequest"];
 /** A new server with its join token and install command, shown once. */
 export type AddedServer = Schemas["AddedServer"];
 export type Promotion = Schemas["PromoteResult"];
+export type NewClone = Schemas["CloneEnvironmentRequest"];
+export type Clone = Schemas["CloneResult"];
 export type SkippedService = Schemas["SkippedService"];
 export type ServerUsage = Schemas["ServerUsage"];
 export type ServiceUsage = Schemas["ServiceUsage"];
