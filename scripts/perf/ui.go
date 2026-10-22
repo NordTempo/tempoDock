@@ -22,39 +22,12 @@ var (
 // checkUI measures what a first page load downloads: initial JS and CSS
 // gzipped (as a browser receives them compressed), and fonts as shipped.
 func checkUI(o options, t *table) error {
-	index, err := os.ReadFile(filepath.Join(o.dist, "index.html"))
-	if err != nil {
-		return fmt.Errorf("%w (run `make web` first)", err)
-	}
-	sum := func(re *regexp.Regexp) (int64, int, error) {
-		var total int64
-		ms := re.FindAllSubmatch(index, -1)
-		for _, m := range ms {
-			n, err := gzipSize(filepath.Join(o.dist, strings.TrimPrefix(string(m[1]), "/")))
-			if err != nil {
-				return 0, 0, err
-			}
-			total += n
-		}
-		return total, len(ms), nil
-	}
-	entry, entries, err := sum(entryRe)
+	a, err := initialAssets(o.dist)
 	if err != nil {
 		return err
 	}
-	if entries == 0 {
-		return fmt.Errorf("no entry script in %s/index.html", o.dist)
-	}
-	preload, preloads, err := sum(preloadRe)
-	if err != nil {
-		return err
-	}
-	css, _, err := sum(stylesheetRe)
-	if err != nil {
-		return err
-	}
-	t.within("UI initial JS (gzip)", fmt.Sprintf("%s (%d files)", kb(entry+preload), entries+preloads), "≤ "+kb(initialJSBudget), entry+preload <= initialJSBudget)
-	t.within("UI initial CSS (gzip)", kb(css), "≤ "+kb(cssBudget), css <= cssBudget)
+	t.within("UI initial JS (gzip)", fmt.Sprintf("%s (%d files)", kb(a.js), a.jsFiles), "≤ "+kb(initialJSBudget), a.js <= initialJSBudget)
+	t.within("UI initial CSS (gzip)", kb(a.css), "≤ "+kb(cssBudget), a.css <= cssBudget)
 
 	var fonts, allJS int64
 	var fontFiles, jsFiles int
@@ -86,6 +59,49 @@ func checkUI(o options, t *table) error {
 	t.within("UI fonts", fmt.Sprintf("%s (%d files)", kb(fonts), fontFiles), "≤ "+kb(fontsBudget), fonts <= fontsBudget)
 	t.add("UI all JS incl. lazy routes (gzip)", fmt.Sprintf("%s (%d files)", kb(allJS), jsFiles), "", info)
 	return nil
+}
+
+// assets is what a first page load of one built UI downloads, gzipped.
+type assets struct {
+	js      int64 // entry script and modulepreloads
+	jsFiles int
+	css     int64 // stylesheets
+}
+
+// initialAssets sums the files dist/index.html loads up front.
+func initialAssets(dist string) (assets, error) {
+	index, err := os.ReadFile(filepath.Join(dist, "index.html"))
+	if err != nil {
+		return assets{}, fmt.Errorf("%w (run `make web` first)", err)
+	}
+	sum := func(re *regexp.Regexp) (int64, int, error) {
+		var total int64
+		ms := re.FindAllSubmatch(index, -1)
+		for _, m := range ms {
+			n, err := gzipSize(filepath.Join(dist, strings.TrimPrefix(string(m[1]), "/")))
+			if err != nil {
+				return 0, 0, err
+			}
+			total += n
+		}
+		return total, len(ms), nil
+	}
+	entry, entries, err := sum(entryRe)
+	if err != nil {
+		return assets{}, err
+	}
+	if entries == 0 {
+		return assets{}, fmt.Errorf("no entry script in %s/index.html", dist)
+	}
+	preload, preloads, err := sum(preloadRe)
+	if err != nil {
+		return assets{}, err
+	}
+	css, _, err := sum(stylesheetRe)
+	if err != nil {
+		return assets{}, err
+	}
+	return assets{js: entry + preload, jsFiles: entries + preloads, css: css}, nil
 }
 
 func gzipSize(path string) (int64, error) {

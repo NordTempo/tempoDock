@@ -26,6 +26,9 @@ type baseline struct {
 	Go    string `json:"go"`
 	// BinaryBytes is the size of bin/dock with the UI embedded.
 	BinaryBytes int64 `json:"binary_bytes"`
+	// TempobaseBinaryBytes is the size of bin/tempobase with its UI
+	// embedded; 0 until it is first recorded.
+	TempobaseBinaryBytes int64 `json:"tempobase_binary_bytes,omitempty"`
 	// CalibrationNs is a fixed CPU workload's ns/op on the machine that
 	// recorded the baseline. Benchmarks are compared relative to it, so a
 	// slower or faster machine doesn't read as a regression.
@@ -66,7 +69,8 @@ func updateBaseline(o options) error {
 		Go:      runtime.Version(),
 		Waivers: old.Waivers,
 		// Kept for the parts -checks leaves out.
-		BinaryBytes: old.BinaryBytes, CalibrationNs: old.CalibrationNs, Benchmarks: old.Benchmarks,
+		BinaryBytes: old.BinaryBytes, TempobaseBinaryBytes: old.TempobaseBinaryBytes,
+		CalibrationNs: old.CalibrationNs, Benchmarks: old.Benchmarks,
 	}
 	if slices.Contains(o.checks, "binary") {
 		st, err := os.Stat(o.dock)
@@ -74,6 +78,13 @@ func updateBaseline(o options) error {
 			return fmt.Errorf("%w (run `make build` first)", err)
 		}
 		b.BinaryBytes = st.Size()
+	}
+	if slices.Contains(o.checks, "tempobase-binary") && tempobaseSourceExists() {
+		st, err := os.Stat(o.tempobase)
+		if err != nil {
+			return fmt.Errorf("%w (run `make build-tempobase` first)", err)
+		}
+		b.TempobaseBinaryBytes = st.Size()
 	}
 	if slices.Contains(o.checks, "bench") {
 		runs, calib, err := runBenchmarks(o, nil)
@@ -92,7 +103,7 @@ func updateBaseline(o options) error {
 	if err := os.WriteFile(o.baseline, append(data, '\n'), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("wrote %s: binary %s, %d benchmarks\n", o.baseline, mb(b.BinaryBytes), len(b.Benchmarks))
+	fmt.Printf("wrote %s: binary %s, tempobase %s, %d benchmarks\n", o.baseline, mb(b.BinaryBytes), mb(b.TempobaseBinaryBytes), len(b.Benchmarks))
 	return nil
 }
 

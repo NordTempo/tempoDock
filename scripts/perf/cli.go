@@ -40,8 +40,11 @@ func checkCLI(o options, t *table) error {
 	return nil
 }
 
-// cleanEnv is the environment without DOCK_* variables, so a developer's
-// own context or token never leaks into a measurement.
+// cleanEnv is the environment without DOCK_* and TEMPOBASE_* variables, so
+// a developer's own context, token or config never leaks into a
+// measurement.
 func cleanEnv() []string {
-	return slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "DOCK_") })
+	return slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		return strings.HasPrefix(kv, "DOCK_") || strings.HasPrefix(kv, "TEMPOBASE_")
+	})
 }
