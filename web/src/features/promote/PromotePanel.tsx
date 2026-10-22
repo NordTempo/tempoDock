@@ -3,12 +3,24 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { usePromote } from "../../data/mutations";
 import { queries } from "../../data/queries";
-import type { EnvironmentView, Promotion } from "../../data/types";
+import type {
+  EnvironmentView,
+  Promotion,
+  SkippedService,
+} from "../../data/types";
 import { Button, Check, ErrorText, Scroll, StateText } from "../../ui/kit";
 import { inFlight, releaseState, stepPhrase } from "../../ui/status";
 import { imageLabel } from "../service/releases";
 import { deploySteps, StepTable } from "../service/Steps";
 import { type PlanRow, promoteCli } from "./plan";
+
+/** Why the API skipped a service, when it sends no message. */
+const skipReasons: Record<SkippedService["reason"], string> = {
+  missing_in_target: "not in the target environment",
+  no_active_release: "nothing active in the source",
+  no_digest: "image not in the registry; redeploy it in the source first",
+  deploy_in_progress: "a deploy is in progress there",
+};
 
 const servicesWord = (n: number) => (n === 1 ? "service" : "services");
 
@@ -258,7 +270,9 @@ function Progress({
             <span key={s.service}>
               {i > 0 && "; "}
               <span className="font-medium">{s.service}</span>{" "}
-              <span className="text-mut">({s.reason})</span>
+              <span className="text-mut">
+                ({s.message || skipReasons[s.reason]})
+              </span>
             </span>
           ))}
         </p>

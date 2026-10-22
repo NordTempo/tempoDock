@@ -6,7 +6,7 @@ import { AddServer } from "../features/servers/AddServer";
 import { Ingress, statusTitle, Version } from "../features/servers/parts";
 import { useServerSwitches } from "../features/servers/switches";
 import { useShortcuts } from "../shell/keys";
-import { pct, since, size } from "../ui/format";
+import { pct, since, size, until } from "../ui/format";
 import { Act, ErrorText, Page, Scroll, StateText, TitleRow } from "../ui/kit";
 import { serverKinds, serverState } from "../ui/status";
 
@@ -36,6 +36,7 @@ function Servers() {
       ["offline", count("offline")],
       ["joining", count("joining")],
       ["incompatible", count("incompatible")],
+      ["revoked", count("revoked")],
     ] as const
   )
     .filter(([word, n]) => n > 0 || word === "online")
@@ -145,9 +146,14 @@ function statusNote(s: Server) {
         ? `last seen ${since(s.last_seen_at)} ago`
         : "never connected";
     case "joining":
-      return "waiting for dock node join";
+      if (!s.join_expires_at) return "waiting for it to connect";
+      return Date.parse(s.join_expires_at) > Date.now()
+        ? `token expires in ${until(s.join_expires_at)}`
+        : "token expired, remove and add again";
     case "incompatible":
       return "upgrade dock there";
+    case "revoked":
+      return s.revoked_at ? `${since(s.revoked_at)} ago` : undefined;
     case "online":
       return undefined;
   }

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useAddServer } from "../../data/mutations";
 import { useServers } from "../../data/queries";
-import type { AddedServer, NewServer } from "../../data/types";
+import type { AddedServer, NewServer, ServerStatus } from "../../data/types";
 import { useKeydown } from "../../shell/keys";
+import { until } from "../../ui/format";
 import { Button, Check, CopyButton, ErrorText, StateText } from "../../ui/kit";
 import { serverState } from "../../ui/status";
 
@@ -118,13 +119,14 @@ function Secret({ label, text }: { label: string; text: string }) {
   );
 }
 
-const waiting = {
+const waiting: Record<ServerStatus, string> = {
   joining: "Waiting for it to connect. This updates by itself.",
   online: "Connected and ready for environments.",
   offline: "It connected once and is offline now.",
   incompatible:
     "It connected, but runs a dock version this control plane can't use. Upgrade it.",
-} as const;
+  revoked: "Its key was revoked before it was used.",
+};
 
 /** The install command and join token, shown once, and the live status. */
 function Added({ added, onDone }: { added: AddedServer; onDone: () => void }) {
@@ -142,14 +144,16 @@ function Added({ added, onDone }: { added: AddedServer; onDone: () => void }) {
         <span className="font-mono font-medium">{name}</span>
       </h2>
       <p>
-        <b className="font-semibold">Run this on the new server.</b>{" "}
+        <b className="font-semibold">Run this on the new server</b>{" "}
         <span className="text-mut">
-          The join token in it works once, expires in an hour and is not shown
-          again.
+          in the unpacked release, next to{" "}
+          <code className="font-mono">dock</code> and{" "}
+          <code className="font-mono">deploy/</code>. The join token in it works
+          once, expires in {until(added.expires_at)} and is not shown again.
         </span>
       </p>
-      <Secret label="Install command" text={added.install_command} />
-      <Secret label="Join token" text={added.join_token} />
+      <Secret label="Install command" text={added.command} />
+      <Secret label="Join token" text={added.token} />
       <p className="text-mut">
         The new server dials this control plane on port 7443, so it must reach
         it over Tailscale or the LAN; nothing has to reach the new server.

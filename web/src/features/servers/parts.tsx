@@ -64,6 +64,8 @@ export function Version({ server }: { server: Server }) {
 
 /** "direct" or "tunnel", with the tunnel's hostname. */
 export function Ingress({ server }: { server: Server }) {
+  // Reported when it first connects.
+  if (server.status === "joining") return <span className="text-faint">·</span>;
   switch (server.ingress) {
     case "direct":
       return <span>direct</span>;

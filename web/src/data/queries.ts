@@ -379,6 +379,8 @@ export function deployBlock(server: Server | undefined) {
       return `server ${server.name} runs an incompatible dock version`;
     case "joining":
       return `server ${server.name} hasn't connected yet`;
+    case "revoked":
+      return `server ${server.name} is revoked`;
     default:
       return undefined;
   }

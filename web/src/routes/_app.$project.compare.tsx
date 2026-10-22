@@ -82,7 +82,26 @@ function Compare() {
   const to = environments.find((e) => e.environment.name === toName);
   const isAdmin = useIsAdmin();
   const pair = from && to && from !== to ? { from, to } : undefined;
-  const plan = pair ? promotionPlan(pair.from, pair.to) : [];
+  // Release histories carry registry digests ("already runs this image").
+  const digests = useQueries({
+    queries: (pair ? [...pair.from.services, ...pair.to.services] : [])
+      .filter((s) => s.active_release)
+      .map((s) => queries.releases(serviceRef(s.service))),
+    combine: (results) =>
+      new Map(
+        results.flatMap((r) =>
+          (r.data ?? []).map((x) => [
+            `${x.environment}/${x.service}/${x.number}`,
+            x.image_digest,
+          ]),
+        ),
+      ),
+  });
+  const plan = pair
+    ? promotionPlan(pair.from, pair.to, (environment, service, number) =>
+        digests.get(`${environment}/${service}/${number}`),
+      )
+    : [];
   const promotable = plan.filter((r) => !r.skip).length;
   const allowed = useCanDeploy({ project, environment: toName ?? "" });
   const blocked = deployBlock(

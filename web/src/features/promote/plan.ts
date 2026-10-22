@@ -45,14 +45,23 @@ export type PlanRow = {
   skip?: string;
 };
 
+/** A release's registry digest, when its history is loaded and has one. */
+export type DigestOf = (
+  environment: string,
+  service: string,
+  release: number,
+) => string | undefined;
+
 /**
  * What promoting `from` to `to` would do per service, from what both run
  * now: the source's active image goes over unless the target lacks the
- * service, already runs that image, or is mid-deploy.
+ * service, already runs that image (same registry digest), or is
+ * mid-deploy.
  */
 export function promotionPlan(
   from: EnvironmentView,
   to: EnvironmentView,
+  digestOf: DigestOf,
 ): PlanRow[] {
   const target = new Map<string, ServiceView>(
     to.services.map((s) => [s.service.name, s]),
@@ -75,7 +84,12 @@ export function promotionPlan(
         skip: `r${twin.deploying.number} is deploying in ${there}`,
       };
     }
-    if (current?.image_id && current.image_id === release.image_id) {
+    const digest = digestOf(from.environment.name, service, release.number);
+    if (
+      current &&
+      digest &&
+      digest === digestOf(there, service, current.number)
+    ) {
       return { service, release, current, skip: "already runs this image" };
     }
     return { service, release, current };

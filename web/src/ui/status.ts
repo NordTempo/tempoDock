@@ -204,6 +204,7 @@ const serverStates: Record<ServerStatus, State> = {
   offline: { tone: "fail", glyph: "✕", label: "offline" },
   incompatible: { tone: "warn", glyph: "▲", label: "incompatible" },
   joining: { tone: "prog", glyph: "◐", label: "joining" },
+  revoked: { tone: "mut", glyph: "○", label: "revoked" },
 };
 
 /** A server's link status: "● online", "◐ joining". */

@@ -6,7 +6,6 @@ import {
 } from "@tanstack/react-query";
 import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
 import { api, body, done } from "../api/client";
-import { placeholderApi } from "./placeholders";
 import { envPath, keys, servicePath } from "./queries";
 import type {
   DiscardSelection,
@@ -284,7 +283,12 @@ export const useResetPassword = () =>
 export const useUpdateServer = () =>
   useAction(
     ({ name, patch }: { name: string; patch: ServerPatch }) =>
-      placeholderApi.updateServer(name, patch),
+      body(
+        api.PATCH("/api/v1/servers/{server}", {
+          params: { path: { server: name } },
+          body: patch,
+        }),
+      ),
     () => [keys.servers, ["audit"]],
   );
 
@@ -294,7 +298,7 @@ export const useUpdateServer = () =>
  */
 export const useAddServer = () =>
   useAction(
-    (input: NewServer) => placeholderApi.addServer(input),
+    (input: NewServer) => body(api.POST("/api/v1/servers", { body: input })),
     () => [keys.servers, ["audit"]],
   );
 
@@ -304,18 +308,44 @@ export const useAddServer = () =>
  */
 export const useRevokeServer = () =>
   useAction(
-    (name: string) => placeholderApi.revokeServer(name),
+    (name: string) =>
+      body(
+        api.POST("/api/v1/servers/{server}/revoke", {
+          params: { path: { server: name } },
+        }),
+      ),
     () => [keys.servers, ["audit"]],
   );
 
 /**
- * Deletes a server with no environments placed on it. Only the list
- * refetches: the server's own page would 404 before the caller leaves it.
+ * Has the node make a new key; it reconnects with it and the control
+ * plane forgets the old one. Needs the server online.
+ */
+export const useRotateServerKey = () =>
+  useAction(
+    (name: string) =>
+      body(
+        api.POST("/api/v1/servers/{server}/rotate-key", {
+          params: { path: { server: name } },
+        }),
+      ),
+    () => [keys.servers, ["audit"]],
+  );
+
+/**
+ * Deletes a server with no environments placed on it, or cancels one
+ * that is still joining. Only the list changes: the server's own page
+ * would 404 before the caller leaves it.
  */
 export function useRemoveServer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => placeholderApi.removeServer(name),
+    mutationFn: (name: string) =>
+      done(
+        api.DELETE("/api/v1/servers/{server}", {
+          params: { path: { server: name } },
+        }),
+      ),
     onSuccess: (_data, name) =>
       queryClient.setQueryData<Server[]>(keys.servers, (list) =>
         list?.filter((s) => s.name !== name),
@@ -338,7 +368,13 @@ export const usePromote = () =>
       from: string;
       to: string;
       services?: string[];
-    }) => placeholderApi.promote(project, input),
+    }) =>
+      body(
+        api.POST("/api/v1/projects/{project}/promote", {
+          params: { path: { project } },
+          body: input,
+        }),
+      ),
     ({ project }) => [keys.overview(project), ["audit"]],
   );
 

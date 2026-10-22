@@ -205,6 +205,18 @@ function StatusSentence({ detail }: { detail: ServerDetail }) {
           </span>
         </p>
       );
+    case "revoked":
+      return (
+        <p className="text-lg leading-normal">
+          <span className="text-mut">○</span> Revoked
+          {s.revoked_at && ` ${ago(s.revoked_at)}`}.{" "}
+          <span className="text-mut">
+            {s.environments
+              ? `Its ${what} keep running there but can't be reached or deployed. Add it again under this name to re-join.`
+              : "Nothing is placed here; it is safe to remove."}
+          </span>
+        </p>
+      );
     case "online":
       break;
   }
