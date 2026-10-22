@@ -1,5 +1,4 @@
 import { useIsAdmin, useProjectTree } from "../../data/queries";
-import { ErrorText, Page, TitleRow } from "../../ui/kit";
 import {
   builtIn,
   fromText,
@@ -8,6 +7,7 @@ import {
   usePolicy,
   useSavePolicy,
 } from "./dockPolicy";
+import { ErrorText, Head } from "./kit";
 import { PolicyEditor, PolicyLegend } from "./PolicyEditor";
 import { kindNames, kinds } from "./policy";
 
@@ -45,87 +45,94 @@ export function PolicyPage({
     .join(" ");
 
   return (
-    <Page>
-      <TitleRow
-        title="Data access"
-        context="Who may see and change the data in database services. Admins always may."
-      />
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1.5">
-          <span>Policy</span>
-          <select
-            className="field py-[7px]"
-            value={scope.project ?? ""}
-            onChange={(e) => onScope({ project: e.target.value || undefined })}
-          >
-            <option value="">default, every project</option>
-            {tree.map((p) => (
-              <option key={p.project.id} value={p.project.name}>
-                project {p.project.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {project && (
+    <div className="g flex flex-1 flex-col">
+      <Head title="Data access">
+        <span className="text-xs text-(--g-mut)">
+          Who may see and change the data in database services. Admins always
+          may.
+        </span>
+      </Head>
+      <main className="flex w-full max-w-[1100px] flex-col gap-6 px-5 py-6">
+        <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1.5">
-            <span>Environment</span>
+            <span className="g-label">Policy</span>
             <select
-              className="field py-[7px]"
-              value={scope.environment ?? ""}
+              className="g-field"
+              value={scope.project ?? ""}
               onChange={(e) =>
-                onScope({
-                  project: scope.project,
-                  environment: e.target.value || undefined,
-                })
+                onScope({ project: e.target.value || undefined })
               }
             >
-              <option value="">every environment</option>
-              {project.environments.map(({ environment: e }) => (
-                <option key={e.id} value={e.name}>
-                  {e.name} ({kindNames[e.kind]})
+              <option value="">default, every project</option>
+              {tree.map((p) => (
+                <option key={p.project.id} value={p.project.name}>
+                  project {p.project.name}
                 </option>
               ))}
             </select>
           </label>
+          {project && (
+            <label className="flex flex-col gap-1.5">
+              <span className="g-label">Environment</span>
+              <select
+                className="g-field"
+                value={scope.environment ?? ""}
+                onChange={(e) =>
+                  onScope({
+                    project: scope.project,
+                    environment: e.target.value || undefined,
+                  })
+                }
+              >
+                <option value="">every environment</option>
+                {project.environments.map(({ environment: e }) => (
+                  <option key={e.id} value={e.name}>
+                    {e.name} ({kindNames[e.kind]})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <span className="pb-2 font-mono text-xs text-(--g-mut)">
+            dock db policy show {flags}
+          </span>
+        </div>
+
+        {policy.error ? (
+          <ErrorText error={policy.error} />
+        ) : !policy.data || (parentScope && !parent.data) ? (
+          <p className="text-(--g-mut)">Loading the policy</p>
+        ) : (
+          <PolicyEditor
+            key={`${scope.project ?? ""}/${scope.environment ?? ""}`}
+            policy={policy.data}
+            inherited={parentScope ? parent.data : undefined}
+            shownKinds={kind ? [kind] : kinds}
+            editable={admin}
+            save={save}
+            subjectNames={subjectNames}
+            fromText={(from) => fromText(from, scope)}
+            builtIn={builtIn}
+          />
         )}
-        <span className="pb-2 font-mono text-2xs text-mut">
-          dock db policy show {flags}
-        </span>
-      </div>
 
-      {policy.error ? (
-        <ErrorText error={policy.error} />
-      ) : !policy.data || (parentScope && !parent.data) ? (
-        <p className="text-mut">Loading the policy</p>
-      ) : (
-        <PolicyEditor
-          key={`${scope.project ?? ""}/${scope.environment ?? ""}`}
-          policy={policy.data}
-          inherited={parentScope ? parent.data : undefined}
-          shownKinds={kind ? [kind] : kinds}
-          editable={admin}
-          save={save}
-          subjectNames={subjectNames}
-          fromText={(from) => fromText(from, scope)}
-          builtIn={builtIn}
-        />
-      )}
-
-      <section className="flex max-w-[860px] flex-col gap-2 text-mut">
-        <p>
-          The most specific rule wins for each subject and kind of environment:
-          the environment's, then the project's, then the default, then the
-          built-in defaults. Rows not set at a scope inherit.
-        </p>
-        <PolicyLegend />
-        <p>
-          Tokens follow the tokens rule unless they have their own data access
-          (on the Tokens page), and never get more than a user with the token's
-          scope, or than their creator has now. On production, write acts as
-          propose for tokens: an admin approves the exact SQL. Only admins
-          approve changes, set up data access and change this policy.
-        </p>
-      </section>
-    </Page>
+        <section className="flex max-w-[860px] flex-col gap-2 text-(--g-mut)">
+          <p>
+            The most specific rule wins for each subject and kind of
+            environment: the environment's, then the project's, then the
+            default, then the built-in defaults. Rows not set at a scope
+            inherit.
+          </p>
+          <PolicyLegend />
+          <p>
+            Tokens follow the tokens rule unless they have their own data access
+            (on the Tokens page), and never get more than a user with the
+            token's scope, or than their creator has now. On production, write
+            acts as propose for tokens: an admin approves the exact SQL. Only
+            admins approve changes, set up data access and change this policy.
+          </p>
+        </section>
+      </main>
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, ErrorText, Scroll } from "../../ui/kit";
+import { Btn, ErrorText, Scroll } from "./kit";
 import {
   kindNames,
   levelNotes,
@@ -17,7 +17,7 @@ import type {
 
 // One scope's data access rules (ADR 0016 section 4), shared by Dock's
 // policy page (default, project, environment) and tempoBase's (default,
-// connection).
+// connection). Style G: render inside a `.g` element.
 
 /** A rule as set at a scope. */
 export type PolicyRule = Pick<
@@ -122,7 +122,7 @@ export function PolicyEditor<F extends string>({
   return (
     <section aria-label="Rules" className="flex flex-col gap-3">
       <Scroll>
-        <table>
+        <table className="g-table">
           <thead>
             <tr>
               <th>Subject</th>
@@ -146,13 +146,13 @@ export function PolicyEditor<F extends string>({
                     : "";
                 return (
                   <tr key={key}>
-                    <td className="py-2 pr-4">{subjectNames[subject]}</td>
-                    <td className="py-2 pr-4">{kindNames[kind]}</td>
-                    <td className="py-1.5 pr-4">
+                    <td className="font-medium">{subjectNames[subject]}</td>
+                    <td className="text-(--g-dim)">{kindNames[kind]}</td>
+                    <td>
                       <span className="flex gap-2">
                         <select
                           aria-label={`${subjectNames[subject]}, ${kindNames[kind]}: level`}
-                          className="field py-1"
+                          className="g-field h-7"
                           disabled={!editable}
                           value={here?.level ?? ""}
                           onChange={(e) => {
@@ -178,7 +178,7 @@ export function PolicyEditor<F extends string>({
                         {here && (
                           <select
                             aria-label={`${subjectNames[subject]}, ${kindNames[kind]}: sensitive columns`}
-                            className="field py-1"
+                            className="g-field h-7"
                             disabled={!editable}
                             value={here.sensitive}
                             onChange={(e) => {
@@ -195,17 +195,20 @@ export function PolicyEditor<F extends string>({
                         )}
                       </span>
                     </td>
-                    <td className="py-2 pr-4 font-mono">
+                    <td>
                       <span
                         className={
-                          effective.level === "none" ? "text-mut" : "text-white"
+                          effective.level === "none" ? "text-(--g-mut)" : ""
                         }
                       >
                         {effective.level}
                       </span>
-                      <span className="text-mut"> · {effective.sensitive}</span>
+                      <span className="text-(--g-mut)">
+                        {" "}
+                        · {effective.sensitive}
+                      </span>
                     </td>
-                    <td className="w-full py-2 text-mut">
+                    <td className="w-full text-(--g-mut)">
                       {effective.why}
                       {tokenNote}
                     </td>
@@ -218,16 +221,16 @@ export function PolicyEditor<F extends string>({
       </Scroll>
       {editable && (
         <div className="flex flex-wrap items-center gap-2.5">
-          <Button
+          <Btn
             primary
             disabled={!dirty || save.isPending}
             onClick={() => save.mutate(rules)}
           >
             Save rules
-          </Button>
-          <Button disabled={!dirty} onClick={() => setDraft(initial)}>
+          </Btn>
+          <Btn disabled={!dirty} onClick={() => setDraft(initial)}>
             Discard
-          </Button>
+          </Btn>
           <ErrorText error={save.error} />
         </div>
       )}
@@ -238,16 +241,16 @@ export function PolicyEditor<F extends string>({
 /** What the levels and sensitive settings mean. */
 export function PolicyLegend() {
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-0.5">
+    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-0.5 text-(--g-mut)">
       {levels.map((l) => (
         <div key={l} className="contents">
-          <dt className="font-mono text-white">{l}</dt>
+          <dt className="font-mono text-(--g-text)">{l}</dt>
           <dd>{levelNotes[l]}</dd>
         </div>
       ))}
-      <dt className="font-mono text-white">masked</dt>
+      <dt className="font-mono text-(--g-text)">masked</dt>
       <dd>sensitive columns are never shown</dd>
-      <dt className="font-mono text-white">visible</dt>
+      <dt className="font-mono text-(--g-text)">visible</dt>
       <dd>sensitive columns show after an audited reveal</dd>
     </dl>
   );

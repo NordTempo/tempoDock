@@ -147,12 +147,6 @@
     font-size: 12px;
   }
 
-  .g-btn .g-kbd {
-    border-color: transparent;
-    opacity: 0.7;
-    padding: 0;
-  }
-
   /* A text button that reads like a link. */
   .g-lnk {
     color: var(--g-link);
@@ -176,6 +170,12 @@
     border: 1px solid var(--g-edge);
     border-radius: 4px;
     padding: 0 4px;
+  }
+
+  .g-btn .g-kbd {
+    border-color: transparent;
+    opacity: 0.7;
+    padding: 0;
   }
 
   .g-field {
