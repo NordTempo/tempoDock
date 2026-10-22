@@ -89,6 +89,7 @@ func newAPI(mux *http.ServeMux, s *server) huma.API {
 	registerTokens(s, a)
 	registerConnections(s, a)
 	registerPolicy(s, a)
+	registerData(s, a)
 	registerAudit(s, a)
 	return a
 }
