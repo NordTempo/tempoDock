@@ -142,11 +142,12 @@ type DataSensitivity string
 
 // Sensitive-column visibility.
 const (
-	// SensitiveMasked shows {"masked": true} and never the value. Until
-	// masking is enforced in Postgres (ADR 0016 phase 4), masked callers
-	// get structured browsing only, no free SQL.
+	// SensitiveMasked shows {"masked": true} and never the value. Masked
+	// callers' SQL runs as dock_reader_masked, which Postgres denies the
+	// sensitive columns, so selecting one is an error frame.
 	SensitiveMasked DataSensitivity = "masked"
-	// SensitiveVisible shows values after an explicit, audited reveal.
+	// SensitiveVisible shows values. (An explicit, audited reveal step is
+	// planned; for now visible callers see them directly.)
 	SensitiveVisible DataSensitivity = "visible"
 )
 
