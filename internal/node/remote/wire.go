@@ -1,6 +1,9 @@
 package remote
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -115,7 +118,7 @@ type (
 		Container wireContainer `json:"container"`
 	}
 	containersResult struct {
-		Containers []wireContainer `json:"containers"`
+		Containers capped[wireContainer] `json:"containers"`
 	}
 	// releaseRequest asks for a release's containers. Labels narrows them
 	// (node.Labels.Matches); control planes before it sent only the ID.
@@ -124,7 +127,7 @@ type (
 		Labels    *wireLabels `json:"labels,omitempty"`
 	}
 	idsResult struct {
-		IDs []string `json:"ids"`
+		IDs capped[string] `json:"ids"`
 	}
 	healthRequest struct {
 		Container wireContainer   `json:"container"`
@@ -155,13 +158,50 @@ type (
 		IDs []string `json:"ids"`
 	}
 	containerStatsResult struct {
-		Stats []wireContainerStats `json:"stats"`
+		Stats capped[wireContainerStats] `json:"stats"`
 	}
 	dialRequest struct {
 		ContainerID string `json:"container_id"`
 		Port        int    `json:"port"`
 	}
 )
+
+// capped is a list in a node's answer: decoding fails with errTooMany past
+// maxListItems elements, before they are allocated. It encodes like a
+// plain slice.
+type capped[T any] []T
+
+// UnmarshalJSON implements json.Unmarshaler, one element at a time.
+func (l *capped[T]) UnmarshalJSON(b []byte) error {
+	d := json.NewDecoder(bytes.NewReader(b))
+	tok, err := d.Token()
+	if err != nil {
+		return err
+	}
+	if tok == nil {
+		*l = nil
+		return nil
+	}
+	if tok != json.Delim('[') {
+		return fmt.Errorf("want a list, got %v", tok)
+	}
+	out := (*l)[:0]
+	for d.More() {
+		if len(out) == maxListItems {
+			return errTooMany
+		}
+		var v T
+		if err := d.Decode(&v); err != nil {
+			return err
+		}
+		out = append(out, v)
+	}
+	if _, err := d.Token(); err != nil { // the closing ]
+		return err
+	}
+	*l = out
+	return nil
+}
 
 type wirePushTarget struct {
 	Ref   string `json:"ref"`
@@ -361,11 +401,11 @@ func fromWireRoutes(ws []wireRoute) []node.Route {
 }
 
 type wireDomainCheck struct {
-	ExpectedIPs   []string `json:"expected_ips,omitempty"`
-	ResolvedIPs   []string `json:"resolved_ips,omitempty"`
-	DNSOK         bool     `json:"dns_ok"`
-	CertificateOK bool     `json:"certificate_ok"`
-	Error         string   `json:"error,omitempty"`
+	ExpectedIPs   capped[string] `json:"expected_ips,omitempty"`
+	ResolvedIPs   capped[string] `json:"resolved_ips,omitempty"`
+	DNSOK         bool           `json:"dns_ok"`
+	CertificateOK bool           `json:"certificate_ok"`
+	Error         string         `json:"error,omitempty"`
 }
 
 func toWireDomainCheck(d node.DomainCheck) wireDomainCheck {
@@ -377,19 +417,19 @@ func (w wireDomainCheck) node() node.DomainCheck {
 }
 
 type wireDisk struct {
-	Paths []string `json:"paths"`
-	Total uint64   `json:"total"`
-	Used  uint64   `json:"used"`
+	Paths capped[string] `json:"paths"`
+	Total uint64         `json:"total"`
+	Used  uint64         `json:"used"`
 }
 
 type wireHostStats struct {
-	CPUBusy         uint64     `json:"cpu_busy"`
-	CPUTotal        uint64     `json:"cpu_total"`
-	CPUs            int        `json:"cpus"`
-	MemoryTotal     uint64     `json:"memory_total"`
-	MemoryAvailable uint64     `json:"memory_available"`
-	Load1           float64    `json:"load1"`
-	Disks           []wireDisk `json:"disks,omitempty"`
+	CPUBusy         uint64           `json:"cpu_busy"`
+	CPUTotal        uint64           `json:"cpu_total"`
+	CPUs            int              `json:"cpus"`
+	MemoryTotal     uint64           `json:"memory_total"`
+	MemoryAvailable uint64           `json:"memory_available"`
+	Load1           float64          `json:"load1"`
+	Disks           capped[wireDisk] `json:"disks,omitempty"`
 }
 
 func toWireHostStats(h node.HostStats) wireHostStats {

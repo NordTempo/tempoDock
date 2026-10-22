@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,6 +77,20 @@ func repoOf(ref, host string) string {
 	return ref
 }
 
+// pullAllowed reports whether a deploy of ss may get a pull token for repo:
+// the service's own repository, or another of its project's (where a
+// promotion comes from: Promote checks read access on the source). Users
+// can't name registry images themselves (validateImageRef), so this is
+// the last check that a release can't carry another project's image.
+func pullAllowed(ss svcScope, repo string) bool {
+	rest, ok := strings.CutPrefix(repo, buildTagPrefix)
+	if !ok {
+		return false
+	}
+	project, _, ok := strings.Cut(rest, "_")
+	return ok && project == strconv.FormatInt(ss.project.ID, 10)
+}
+
 // registryRef is where an image is in the registry: by digest.
 func (c *Core) registryRef(ref, digest string) string {
 	host := c.reg.Host()
@@ -112,12 +127,17 @@ func (c *Core) canBuild(s store.Server) bool {
 	return st.Status != remote.StatusOnline || st.Hello.Builder
 }
 
-// builderFor picks the server that builds source for an environment on
-// target (ADR 0010): target itself when it is an online builder, else the
-// oldest online builder, which pushes the image to the registry for
-// target to pull. Without a registry an image can't move between servers,
-// so target builds, as on single-server installs.
-func (c *Core) builderFor(ctx context.Context, target store.Server) (store.Server, node.Runtime, error) {
+// builderFor picks the server that builds source for an environment of
+// kind on target (ADR 0010): target itself when it is an online builder,
+// else the oldest online builder, which pushes the image to the registry
+// for target to pull. Without a registry an image can't move between
+// servers, so target builds, as on single-server installs.
+//
+// A build receives the environment's variables (build args and secrets),
+// so a production build only runs on a builder that accepts production
+// environments: a non-production server never sees production secrets
+// (ADR 0014 amendment, compromised node).
+func (c *Core) builderFor(ctx context.Context, target store.Server, kind apitypes.EnvironmentKind) (store.Server, node.Runtime, error) {
 	if c.reg == nil {
 		rt, err := c.runtimeFor(target.ID)
 		if err == nil && !target.Local && !c.canBuild(target) {
@@ -125,7 +145,8 @@ func (c *Core) builderFor(ctx context.Context, target store.Server) (store.Serve
 		}
 		return target, rt, err
 	}
-	if c.canBuild(target) {
+	trusted := func(s store.Server) bool { return kind != apitypes.KindProduction || s.AcceptsProduction }
+	if c.canBuild(target) && trusted(target) {
 		if rt := c.connected(target.ID); rt != nil {
 			return target, rt, nil
 		}
@@ -134,9 +155,13 @@ func (c *Core) builderFor(ctx context.Context, target store.Server) (store.Serve
 	if err != nil {
 		return store.Server{}, nil, err
 	}
-	var offline []string
+	var offline, untrusted []string
 	for _, s := range servers {
 		if !c.canBuild(s) {
+			continue
+		}
+		if !trusted(s) {
+			untrusted = append(untrusted, s.Name)
 			continue
 		}
 		if rt := c.connected(s.ID); rt != nil {
@@ -144,10 +169,13 @@ func (c *Core) builderFor(ctx context.Context, target store.Server) (store.Serve
 		}
 		offline = append(offline, s.Name)
 	}
-	if len(offline) == 0 {
-		return store.Server{}, nil, invalid("no server builds images; make one a builder with `dock server set <name> --builder`, or deploy a prebuilt image (--image)")
+	switch {
+	case len(offline) > 0:
+		return store.Server{}, nil, errf(apitypes.CodeServerOffline, "no builder is online (builders: %s); try again when one is back, or deploy a prebuilt image (--image)", strings.Join(offline, ", "))
+	case len(untrusted) > 0:
+		return store.Server{}, nil, invalid("production builds only run on servers that accept production environments, so production secrets never reach other servers, and no builder does (builders: %s); make a production server a builder with `dock server update <name> --builder`, or deploy an image built in CI (--image)", strings.Join(untrusted, ", "))
 	}
-	return store.Server{}, nil, errf(apitypes.CodeServerOffline, "no builder is online (builders: %s); try again when one is back, or deploy a prebuilt image (--image)", strings.Join(offline, ", "))
+	return store.Server{}, nil, invalid("no server builds images; make one a builder with `dock server update <name> --builder`, or deploy a prebuilt image (--image)")
 }
 
 // removeOldImages removes the images of a service's releases that fell
@@ -282,16 +310,26 @@ func (c *Core) pruneRegistry(ctx context.Context) bool {
 	return true
 }
 
-// validateImageRef refuses image references whose registry is this machine
-// or a private network (localhost, loopback, link-local, RFC 1918 and ULA
-// addresses): a pull makes the Docker daemon connect there, which would let
-// a deploy token probe internal services. Docker Hub refs and public
-// registries (ghcr.io, registry.example.com:5000) pass. Hostnames are not
-// resolved, so a public name pointing at a private address is not caught.
-func validateImageRef(ref string) error {
+// cgnat is 100.64.0.0/10 (RFC 6598), where Tailscale puts its addresses:
+// private in practice, though netip doesn't call it that.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// validateImageRef refuses image references a user gives that are under
+// the platform registry's host (registry, "" without one: those images
+// are pulled with tokens the control plane mints, see pullAllowed), or
+// whose registry is this machine or a private network (localhost,
+// loopback, link-local, RFC 1918, CGNAT/Tailscale and ULA addresses): a
+// pull makes the Docker daemon connect there, which would let a deploy
+// token probe internal services. Docker Hub refs and public registries
+// (ghcr.io, registry.example.com:5000) pass. Hostnames are not resolved,
+// so a public name pointing at a private address is not caught.
+func validateImageRef(ref, registry string) error {
 	host := registryHost(ref)
 	if host == "" {
 		return nil
+	}
+	if registry != "" && strings.EqualFold(host, registry) {
+		return invalid("image %q is in the platform registry, which only holds images the platform built; deploy from source, promote, or use another registry", ref)
 	}
 	h := host
 	if hh, _, err := net.SplitHostPort(host); err == nil {
@@ -303,11 +341,19 @@ func validateImageRef(ref string) error {
 	}
 	if ip, err := netip.ParseAddr(h); err == nil {
 		ip = ip.Unmap()
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() || cgnat.Contains(ip) {
 			return invalid("image %q is on a registry at a private or loopback address (%s); use a public registry", ref, ip)
 		}
 	}
 	return nil
+}
+
+// registryHost is the platform registry's host:port, "" without one.
+func (c *Core) registryHost() string {
+	if c.reg == nil {
+		return ""
+	}
+	return c.reg.Host()
 }
 
 // registryHost returns the registry part (host[:port]) of an image

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -233,16 +234,39 @@ func (c *Core) loadServer(ctx context.Context, name string) (store.Server, error
 func (c *Core) online(serverID int64) bool { return c.connected(serverID) != nil }
 
 // connected returns the runtime of a server that can be reached now, or nil.
+// A revoked server never can, even while the hub still has its link: no
+// secrets or deploys go to a key the admin took back.
 func (c *Core) connected(serverID int64) node.Runtime {
 	if serverID == c.local.ID {
 		return c.rt
 	}
-	if c.nodes != nil {
+	if c.nodes != nil && !c.isRevoked(serverID) {
 		if rt, ok := c.nodes.Runtime(serverID); ok {
 			return rt
 		}
 	}
 	return nil
+}
+
+// fanOut runs fn(ctx, i) for i in [0, n) at the same time, each with its
+// own timeout, and waits for all. Loops over servers use it so one server
+// that doesn't answer costs at most timeout and holds up no other; a
+// single call runs inline.
+func fanOut(ctx context.Context, n int, timeout time.Duration, fn func(ctx context.Context, i int)) {
+	run := func(i int) {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		fn(ctx, i)
+	}
+	if n == 1 {
+		run(0)
+		return
+	}
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() { run(i) })
+	}
+	wg.Wait()
 }
 
 // runtimeFor returns the node runtime of a server, or a server_offline

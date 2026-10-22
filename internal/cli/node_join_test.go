@@ -89,7 +89,8 @@ func TestNodeJoinAndRun(t *testing.T) {
 	}
 
 	nodeCfg := writeConfig(t, t.TempDir(), "internal_listen = \"127.0.0.1:0\"\n[registry]\nlisten = \"127.0.0.1:0\"\n")
-	code, stdout, stderr = exec(t, "node", "join", "--config", nodeCfg, token)
+	// As install.sh joins: the token on stdin, never in argv.
+	code, stdout, stderr = execStdin(t, token+"\n", "node", "join", "--config", nodeCfg, "--token-file", "-")
 	if code != 0 || !strings.Contains(stdout, "as server homelab") {
 		t.Fatalf("join: exit %d\n%s%s", code, stdout, stderr)
 	}

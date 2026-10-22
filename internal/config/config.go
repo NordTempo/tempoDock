@@ -87,6 +87,9 @@ type BuildKit struct {
 	// MemoryMB and CPUs cap the BuildKit container.
 	MemoryMB int     `toml:"memory_mb"`
 	CPUs     float64 `toml:"cpus"`
+	// TimeoutMinutes fails a build that runs longer, on any builder.
+	// Read by the control plane.
+	TimeoutMinutes int `toml:"timeout_minutes"`
 }
 
 // Network configures app networks and what app containers may reach.
@@ -199,10 +202,11 @@ func Default() Config {
 			HTTPSPort:   443,
 		},
 		BuildKit: BuildKit{
-			Enabled:  true,
-			Image:    "moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c",
-			MemoryMB: 2048,
-			CPUs:     1,
+			Enabled:        true,
+			Image:          "moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c",
+			MemoryMB:       2048,
+			CPUs:           1,
+			TimeoutMinutes: 30,
 		},
 		Network: Network{
 			Pool: netip.MustParsePrefix("10.213.0.0/16"),

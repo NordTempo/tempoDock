@@ -43,9 +43,11 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 # github GET-ARGS... runs curl against the GitHub API, with the token if set.
+# The token goes to curl as a config on stdin (printf is a builtin), never in
+# its arguments, which any user could read in the process list.
 github() {
   if [ -n "${GITHUB_TOKEN:-}" ]; then
-    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" "$@"
+    printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl -K - -fsSL "$@"
   else
     curl -fsSL "$@"
   fi

@@ -33,8 +33,8 @@ func pendingSettings(s store.Service) (*apitypes.ServiceSettings, error) {
 	return &p, nil
 }
 
-func validateSettings(s apitypes.ServiceSettings) error {
-	if err := validateImageRef(s.Image); err != nil {
+func validateSettings(s apitypes.ServiceSettings, registry string) error {
+	if err := validateImageRef(s.Image, registry); err != nil {
 		return err
 	}
 	switch {
@@ -119,7 +119,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		HealthCheckTimeoutSeconds: req.HealthCheckTimeoutSeconds, StartCommand: req.StartCommand,
 		DockerfilePath: req.DockerfilePath, BuildCommand: req.BuildCommand, MemoryMB: req.MemoryMB, CPUs: req.CPUs,
 	}
-	if err := validateSettings(set); err != nil {
+	if err := validateSettings(set, c.registryHost()); err != nil {
 		return apitypes.Service{}, err
 	}
 	s, err := c.store.CreateService(ctx, store.CreateServiceParams{
@@ -164,7 +164,7 @@ func (c *Core) UpdateService(ctx context.Context, a Actor, ref ServiceRef, req a
 	patch(&next.BuildCommand, req.BuildCommand)
 	patch(&next.MemoryMB, req.MemoryMB)
 	patch(&next.CPUs, req.CPUs)
-	if err := validateSettings(next); err != nil {
+	if err := validateSettings(next, c.registryHost()); err != nil {
 		return apitypes.ChangeResult{}, err
 	}
 	var staged *string

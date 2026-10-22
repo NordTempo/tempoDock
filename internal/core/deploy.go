@@ -212,10 +212,14 @@ func (d *deployment) image(ctx context.Context) (string, error) {
 }
 
 // pull pulls ref onto the release's server, with a pull token when it is
-// in the platform registry.
+// in the platform registry: only for a repository of the release's own
+// project (see pullAllowed).
 func (d *deployment) pull(ctx context.Context, ref string) (string, error) {
 	var opts []node.PullOptions
 	if repo, ok := d.c.inRegistry(ref); ok {
+		if !pullAllowed(d.ss, repo) {
+			return "", fmt.Errorf("image %s belongs to another project; deploy it in that project, or push it to a registry of your own and deploy it with --image", ref)
+		}
 		defer d.c.useRegistry()()
 		opts = append(opts, node.PullOptions{Token: d.c.reg.Token("server "+d.server.Name, repo, false)})
 	}
@@ -228,7 +232,7 @@ func (d *deployment) pull(ctx context.Context, ref string) (string, error) {
 // pulls it by digest.
 func (d *deployment) build(ctx context.Context) (string, error) {
 	c, ref := d.c, d.rel.ImageRef
-	builder, brt, err := c.builderFor(ctx, d.server)
+	builder, brt, err := c.builderFor(ctx, d.server, apitypes.EnvironmentKind(d.ss.env.Kind))
 	if err != nil {
 		return "", step(apitypes.CodeBuildFailed, "%w", err)
 	}
@@ -281,8 +285,14 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	} else {
 		d.event(ctx, "Building "+ref)
 	}
-	id, err := brt.Build(ctx, req)
+	timeout := c.buildTimeout()
+	bctx, cancel := context.WithTimeout(ctx, timeout)
+	id, err := brt.Build(bctx, req)
+	cancel()
 	if err != nil {
+		if ctx.Err() == nil && errors.Is(bctx.Err(), context.DeadlineExceeded) {
+			return "", step(apitypes.CodeBuildFailed, "build took longer than %s and was stopped; raise [buildkit] timeout_minutes on the control plane if it needs longer", timeout)
+		}
 		return "", step(apitypes.CodeBuildFailed, "build failed: %w", c.nodeErr(builder.ID, err))
 	}
 	d.event(ctx, "Built "+ref)
@@ -307,6 +317,16 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 		return "", step(apitypes.CodeBuildFailed, "pull %s: %w", from, err)
 	}
 	return id, nil
+}
+
+// buildTimeout is how long a build may run ([buildkit] timeout_minutes,
+// 30 minutes if unset): a builder that hangs fails the deploy instead of
+// holding its build lock forever.
+func (c *Core) buildTimeout() time.Duration {
+	if m := c.cfg.BuildKit.TimeoutMinutes; m > 0 {
+		return time.Duration(m) * time.Minute
+	}
+	return 30 * time.Minute
 }
 
 // cutover switches traffic to the new release, records it as active, then
@@ -642,6 +662,14 @@ func (c *Core) newBuildLog(ss svcScope, rel store.Release) (*logWriter, error) {
 // can't grow the writer's buffer or a log event without bound.
 const maxLogLine = 64 << 10
 
+// maxBuildLog caps a release's build (and pull) log. Output comes from the
+// builder, which may be another server: past this, one marker line says
+// the rest was dropped, and the build goes on.
+const maxBuildLog = 16 << 20
+
+// logTruncated is the last line of a log that hit its limit.
+const logTruncated = "[build log truncated at %d MB; the rest of the output was dropped]"
+
 // logWriter appends build output to the log file and publishes each
 // complete line with its zero-based line number. The file and the events
 // always agree on line boundaries.
@@ -652,12 +680,25 @@ type logWriter struct {
 	out  []byte // what one Write appends to the file
 	seq  int
 	emit func(seq int, line string)
+	// limit caps the bytes written (maxBuildLog when 0); a write that
+	// starts past it ends the log with the logTruncated line, and full
+	// drops everything after.
+	limit   int64
+	written int64
+	full    bool
 }
 
 func (w *logWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	n := len(p)
+	if w.full {
+		return n, nil
+	}
+	if w.written >= cmp.Or(w.limit, maxBuildLog) {
+		w.truncate()
+		return n, nil
+	}
 	w.out = w.out[:0]
 	for len(p) > 0 {
 		room := maxLogLine - len(w.buf)
@@ -682,6 +723,7 @@ func (w *logWriter) Write(p []byte) (int, error) {
 		w.buf = w.buf[:0]
 	}
 	_, err := w.f.Write(w.out)
+	w.written += int64(len(w.out))
 	if cap(w.out) > 4*maxLogLine {
 		w.out = nil // don't keep a huge write's buffer
 	}
@@ -689,6 +731,22 @@ func (w *logWriter) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// truncate ends a log that reached its limit: the partial line, then the
+// logTruncated line.
+func (w *logWriter) truncate() {
+	w.full = true
+	if len(w.buf) > 0 {
+		_, _ = w.f.Write([]byte("\n"))
+		w.emit(w.seq, string(w.buf))
+		w.seq++
+		w.buf = nil
+	}
+	line := fmt.Sprintf(logTruncated, cmp.Or(w.limit, maxBuildLog)>>20)
+	_, _ = w.f.Write([]byte(line + "\n"))
+	w.emit(w.seq, line)
+	w.seq++
 }
 
 // Close terminates a trailing partial line and closes the file.

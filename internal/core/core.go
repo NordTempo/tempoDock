@@ -242,6 +242,9 @@ func (c *Core) Start(ctx context.Context) error {
 			return err
 		}
 		for _, s := range servers {
+			if s.RevokedAt != nil {
+				c.setRevoked(s.ID, true)
+			}
 			if !s.Local && c.online(s.ID) {
 				c.kickServer(s.ID)
 			}

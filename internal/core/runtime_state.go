@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -357,13 +358,32 @@ func (c *Core) reconcileServer(ctx context.Context, serverID int64, rt node.Runt
 	for _, r := range inflight {
 		activeIDs[strconv.FormatInt(r.ID, 10)] = true // a deploy's new container
 	}
+	// One report for all of them: a server's container list is its own
+	// word, and one audit row per container would let it flood the log.
+	var stray []string
+	n := 0
 	for _, ct := range ctrs {
 		if !activeIDs[ct.Labels.Release] && !c.foreign(ct.Labels) {
-			c.drift(ctx, nil, fmt.Sprintf("container %s (%s) is not part of any active release; leaving it alone", ct.Name, ct.ID))
+			if n++; len(stray) < maxStrayNamed {
+				stray = append(stray, fmt.Sprintf("%.64s (%.12s)", ct.Name, ct.ID))
+			}
 		}
+	}
+	switch {
+	case n == 1:
+		c.drift(ctx, nil, fmt.Sprintf("container %s is not part of any active release; leaving it alone", stray[0]))
+	case n > 1:
+		more := ""
+		if n > len(stray) {
+			more = fmt.Sprintf(" and %d more", n-len(stray))
+		}
+		c.drift(ctx, nil, fmt.Sprintf("%d containers are not part of any active release; leaving them alone: %s%s", n, strings.Join(stray, ", "), more))
 	}
 	return nil
 }
+
+// maxStrayNamed is how many stray containers a drift report names.
+const maxStrayNamed = 10
 
 // drift reports a difference between the DB and the runtime: logged,
 // audited and published.
