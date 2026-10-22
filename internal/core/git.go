@@ -508,6 +508,19 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 		w.sha, w.cancel = "", nil
 		c.git.mu.Unlock()
 	}()
+	// A newer push that came before cancel was set couldn't cancel this
+	// one; look again so it isn't deployed after being replaced. Later
+	// pushes cancel fctx.
+	cur, err := c.store.GetGitConnectionByService(ctx, serviceID)
+	if err != nil {
+		if !store.IsNotFound(err) && ctx.Err() == nil {
+			c.log.Error("git worker", "service", serviceID, "err", err)
+		}
+		return gitDone
+	}
+	if cur.PendingSha != sha {
+		return gitAgain
+	}
 	actor := Actor{Kind: "system", Name: conn.PendingBy, Scope: apitypes.ScopeDeploy}
 	open := func() (io.ReadCloser, error) { return c.git.github.tarball(fctx, conn.Repo, sha, token, conn.Dir) }
 	rel, err := c.deploySource(fctx, actor, ss, open, int64(c.cfg.MaxUploadMB)<<20, commit)
@@ -515,9 +528,6 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 	case err == nil:
 		c.audit(ctx, actor, "release.deploy", &ss.project, &ss.env, ss.String(),
 			fmt.Sprintf("release %d from %s %s (%s@%s)", rel.Number, shortSHA(sha), commit.Message, conn.Repo, conn.Branch))
-		if conn.PostStatus {
-			c.postGitStatus(ss, conn, rel, "pending", fmt.Sprintf("Deploying release %d", rel.Number))
-		}
 		finish(fmt.Sprintf("push %s: release %d", shortSHA(sha), rel.Number))
 		return gitDone // the release is in flight; its end kicks again
 	case ctx.Err() != nil:
@@ -543,6 +553,25 @@ func errorLine(err error) string {
 		return "internal error; see the daemon log"
 	}
 	return err.Error()
+}
+
+// gitDeployStart runs as a release built from a push starts, before its
+// deploy can finish: it queues the pending commit status, so success or
+// failure (gitDeployDone) always reaches GitHub after it.
+func (c *Core) gitDeployStart(ss svcScope, rel store.Release) {
+	if rel.Source != string(apitypes.SourceUpload) {
+		return
+	}
+	conn, err := c.store.GetGitConnectionByService(c.ctx, ss.svc.ID)
+	if err != nil {
+		if !store.IsNotFound(err) {
+			c.log.Error("git at deploy start", "service", ss.String(), "err", err)
+		}
+		return
+	}
+	if conn.PostStatus {
+		c.postGitStatus(ss, conn, rel, "pending", fmt.Sprintf("Deploying release %d", rel.Number))
+	}
 }
 
 // gitDeployDone runs when any release of a service finishes: it posts the

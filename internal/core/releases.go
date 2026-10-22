@@ -582,6 +582,9 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	}
 	c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Release %d queued by %s (%s)", rel.Number, a.Name, rel.Source))
 	c.publishRelease(ctx, ss, rel)
+	if rel.CommitSha != "" {
+		c.gitDeployStart(ss, rel)
+	}
 	c.wg.Add(1)
 	go c.deploy(ss, rel, spec)
 	return rel, nil

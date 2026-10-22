@@ -6,11 +6,32 @@
       "!dist",
       "!src/routeTree.gen.ts",
       "!src/api/schema.d.ts",
-      "!openapi.json"
+      "!openapi.json",
+      "!tempobase/openapi.json",
+      "!tempobase/dist",
+      "!tempobase/src/api/schema.d.ts"
     ]
   },
-  "formatter": { "indentStyle": "space" },
-  "css": { "parser": { "tailwindDirectives": true } },
-  "linter": { "rules": { "suspicious": { "noExplicitAny": "error" } } },
-  "assist": { "actions": { "source": { "organizeImports": "on" } } }
+  "formatter": {
+    "indentStyle": "space"
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "rules": {
+      "suspicious": {
+        "noExplicitAny": "error"
+      }
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
 }
