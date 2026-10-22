@@ -3,6 +3,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
+import { applyAlertEvent } from "../features/alerts/data";
 import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
 import { keys, queries } from "./queries";
@@ -35,6 +36,7 @@ const busEvents = [
   "lagged",
   "usage",
   "server",
+  "alert",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -144,6 +146,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "server":
       // A server connected, disconnected, joined, changed or went away.
       applyServer(queryClient, event.server, event.message === "removed");
+      return;
+    case "alert":
+      // Only admins get these; they patch the alert lists.
+      if (event.alert) applyAlertEvent(queryClient, event.alert);
       return;
     case "build_log":
       return; // not subscribed, see busEvents
@@ -309,6 +315,8 @@ function invalidateForAudit(
   if (kind === "project") invalidate(keys.projects);
   if (kind === "token") invalidate(keys.tokens);
   if (kind === "user") invalidate(keys.users);
+  // Channels added, removed or alerts resolved (from the CLI too).
+  if (kind === "alert") invalidate(["alerts"]);
   if (kind === "data") return invalidateForData(queryClient, audit);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);

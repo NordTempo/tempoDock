@@ -1,3 +1,4 @@
+import { useOpenAlertsIfAdmin } from "../features/alerts/data";
 import { isCrashLooping } from "../ui/status";
 import { useProjectOverview, useServers } from "./queries";
 import type { Problem, ServiceView } from "./types";
@@ -27,6 +28,8 @@ const severity = (p: Problem) => {
       return 1;
     case "server_offline":
       return 2;
+    case "alert":
+      return p.alert.severity === "critical" ? 2 : 4;
     case "domain":
       return p.domain.status === "error" ? 3 : 4;
     case "staged":
@@ -35,14 +38,29 @@ const severity = (p: Problem) => {
 };
 
 /**
+ * Alert kinds the overview already derives from live state; their alerts
+ * would show twice.
+ */
+const derived = new Set([
+  "deploy_failed",
+  "crash_loop",
+  "domain_error",
+  "server_offline",
+]);
+
+/**
  * What needs a human on a project, derived from live state, worst first:
  * crashed services, failed latest releases, offline servers, domains
- * failing or waiting for DNS, and staged changes not applied yet. Deploys
- * in flight are not problems; the overview shows them on their own.
+ * failing or waiting for DNS, and staged changes not applied yet. For
+ * admins, open alerts live state doesn't show join them: a full disk on
+ * a server the project uses, and the project's other alerts (a failed
+ * backup). Deploys in flight are not problems; the overview shows them on
+ * their own.
  */
 export function useProblems(project: string): Problem[] {
   const { environments } = useProjectOverview(project);
   const servers = useServers();
+  const alerts = useOpenAlertsIfAdmin();
   const services = environments.flatMap((e) => e.services);
 
   const problems: Problem[] = [];
@@ -64,6 +82,13 @@ export function useProblems(project: string): Problem[] {
     }
   }
   const used = new Set(environments.map((e) => e.environment.server));
+  for (const alert of alerts) {
+    if (derived.has(alert.kind)) continue;
+    const mine =
+      alert.project === project ||
+      (!alert.project && !!alert.server && used.has(alert.server));
+    if (mine) problems.push({ kind: "alert", alert });
+  }
   for (const server of servers) {
     if (server.status === "offline" && used.has(server.name)) {
       problems.push({ kind: "server_offline", server });

@@ -8,6 +8,7 @@ import {
   useServers,
   useSession,
 } from "../data/queries";
+import { useOpenAlertsIfAdmin } from "../features/alerts/data";
 import { statusTitle } from "../features/servers/parts";
 import { Glyph } from "../ui/kit";
 import { serverState, toneText } from "../ui/status";
@@ -64,6 +65,7 @@ export function TopBar() {
               ["/tokens", "Tokens"],
               ...(admin
                 ? ([
+                    ["/alerts", "Alerts"],
                     ["/users", "Users"],
                     ["/data-policy", "Data access"],
                   ] as const)
@@ -78,6 +80,7 @@ export function TopBar() {
               activeProps={{ className: "text-white!", "aria-current": "page" }}
             >
               {label}
+              {to === "/alerts" && <OpenAlertCount />}
             </Link>
           ))}
         </nav>
@@ -95,6 +98,18 @@ export function TopBar() {
       </button>
       <UserMenu />
     </header>
+  );
+}
+
+/** How many alerts are open, in the worst one's color; nothing when none. */
+function OpenAlertCount() {
+  const open = useOpenAlertsIfAdmin();
+  if (open.length === 0) return null;
+  const critical = open.some((a) => a.severity === "critical");
+  return (
+    <span className={`ml-1 ${critical ? "text-fail" : "text-warn"}`}>
+      {open.length}
+    </span>
   );
 }
 

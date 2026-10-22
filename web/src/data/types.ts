@@ -121,4 +121,6 @@ export type Problem =
   | { kind: "deploy_failed"; service: ServiceView; release: ReleaseSummary }
   | { kind: "domain"; service: ServiceView; domain: Domain }
   | { kind: "staged"; environment: EnvironmentView }
-  | { kind: "server_offline"; server: Server };
+  | { kind: "server_offline"; server: Server }
+  /** An open alert live state doesn't show (a full disk, a failed backup). */
+  | { kind: "alert"; alert: Schemas["Alert"] };
