@@ -21,12 +21,12 @@ export function DeployBanner({
     <Link
       to="/$project/$environment/$service"
       params={serviceRef(service.service)}
-      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 bg-prog-bg px-3.5 py-3 no-underline"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-panel border border-warn-edge bg-prog-bg px-3.5 py-2.5 hover:border-warn/50"
     >
       <span className="text-prog">
         <Glyph char="◐" /> Deploying
       </span>
-      <span className="text-md">
+      <span>
         <b className="font-semibold">{name}</b>{" "}
         <span className="text-mut">{environment}</span>{" "}
         <span className="font-mono">r{release.number}</span>,{" "}
@@ -39,7 +39,7 @@ export function DeployBanner({
         · {since(release.created_at)}
       </span>
       {watchKey && (
-        <span className="ml-auto">
+        <span className="ml-auto text-xs text-sec">
           Watch <kbd>W</kbd>
         </span>
       )}

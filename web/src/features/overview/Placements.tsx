@@ -8,7 +8,7 @@ import {
   useServers,
 } from "../../data/queries";
 import type { EnvironmentKind } from "../../data/types";
-import { Button, ErrorText, Scroll, SectionHead } from "../../ui/kit";
+import { Button, ErrorText, Panel, SectionHead } from "../../ui/kit";
 import { kindLabel } from "../../ui/status";
 
 const kinds: EnvironmentKind[] = ["production", "non_production"];
@@ -23,11 +23,11 @@ export function Placements({ project }: { project: string }) {
   const { environments } = useProjectOverview(project);
   const admin = useIsAdmin();
   return (
-    <section aria-labelledby="placement">
+    <section aria-labelledby="placement" className="min-w-0">
       <SectionHead id="placement" aside="each kind stays on one server">
         Placement
       </SectionHead>
-      <Scroll>
+      <Panel>
         <table>
           <thead>
             <tr>
@@ -85,7 +85,7 @@ export function Placements({ project }: { project: string }) {
             })}
           </tbody>
         </table>
-      </Scroll>
+      </Panel>
     </section>
   );
 }
@@ -113,7 +113,7 @@ function Pin({ project, kind }: { project: string; kind: EnvironmentKind }) {
         aria-label={`Server for ${words} environments`}
         value={server}
         onChange={(e) => setServer(e.target.value)}
-        className="field py-[3px] text-white"
+        className="field py-[3px]"
       >
         <option value="">choose a server</option>
         {servers.map((s) => (

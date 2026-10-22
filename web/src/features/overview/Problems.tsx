@@ -6,7 +6,7 @@ import { serviceRef, useChanges } from "../../data/queries";
 import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { plural, since } from "../../ui/format";
-import { Button, ErrorText, Glyph } from "../../ui/kit";
+import { Button, ErrorText, Glyph, SectionHead } from "../../ui/kit";
 import {
   failurePhrase,
   type GlyphChar,
@@ -42,13 +42,13 @@ export function Problems({ project }: { project: string }) {
   const n = problems.length;
   return (
     <section aria-labelledby="problems">
-      <h2 id="problems" className="text-md font-semibold">
-        {plural(n, "problem")}{" "}
-        <span className="font-normal text-mut">
-          worst first · press {n === 1 ? "1" : `1 to ${Math.min(n, 9)}`}
-        </span>
-      </h2>
-      <ol className="mt-1.5 border-t border-line">
+      <SectionHead
+        id="problems"
+        aside={`worst first · press ${n === 1 ? "1" : `1 to ${Math.min(n, 9)}`}`}
+      >
+        {plural(n, "problem")}
+      </SectionHead>
+      <ol className="panel">
         {problems.map((problem, i) => (
           <ProblemRow
             key={problemKey(problem)}
@@ -406,7 +406,7 @@ function Row({
   children: ReactNode;
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-soft py-[9px]">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-soft px-3.5 py-2.5 last:border-0">
       <span className="flex w-[172px] items-baseline gap-2.5 whitespace-nowrap">
         {n ? <kbd>{n}</kbd> : <span className="w-[15px]" />}
         <span className={toneText[tone]}>
@@ -415,7 +415,7 @@ function Row({
       </span>
       <span className="w-[150px] font-mono">{where}</span>
       <span className="min-w-0 flex-[1_1_360px]">{children}</span>
-      {time && <span className="text-mut">{time}</span>}
+      {time && <span className="text-xs text-faint">{time}</span>}
       {action}
     </li>
   );

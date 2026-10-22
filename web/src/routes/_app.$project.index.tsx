@@ -5,14 +5,15 @@ import { useArchiveProject } from "../data/mutations";
 import { queries, serviceRef, useIsAdmin } from "../data/queries";
 import { DeployBanner } from "../features/overview/DeployBanner";
 import { EnvironmentTable } from "../features/overview/EnvironmentTable";
-import { LiveColumn, Recent } from "../features/overview/Live";
+import { Activity } from "../features/overview/Live";
 import { Placements } from "../features/overview/Placements";
 import { Problems } from "../features/overview/Problems";
+import { ServerDots } from "../shell/context";
 import { useShortcuts } from "../shell/keys";
 import { rememberProject } from "../shell/location";
 import { usePalette } from "../shell/palette";
 import { plural } from "../ui/format";
-import { Button, ErrorText, Glyph } from "../ui/kit";
+import { Button, ErrorText, Glyph, Page, PageBar } from "../ui/kit";
 
 export const Route = createFileRoute("/_app/$project/")({
   loader: async ({ context: { queryClient }, params }) => {
@@ -100,21 +101,22 @@ function Overview() {
   ]);
 
   return (
-    <div className="flex flex-1 flex-wrap items-stretch">
-      <main className="flex min-w-0 flex-[999_1_720px] flex-col gap-[26px] px-6 pt-5 pb-8">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="text-xl font-semibold">{project}</h1>
-          <span className="text-mut">
-            {plural(environments.length, "environment")} ·{" "}
-            {plural(services.length, "service")}
-          </span>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+    <>
+      <PageBar
+        title={project}
+        after={
+          <>
+            <span className="text-xs text-faint">
+              {plural(environments.length, "environment")} ·{" "}
+              {plural(services.length, "service")}
+            </span>
+            <ServerDots project={project} />
+          </>
+        }
+        actions={
+          <>
             {environments.length > 1 && (
-              <Link
-                to="/$project/compare"
-                params={{ project }}
-                className="px-1 py-[7px] no-underline"
-              >
+              <Link to="/$project/compare" params={{ project }} className="btn">
                 Compare <kbd>C</kbd>
               </Link>
             )}
@@ -122,7 +124,7 @@ function Overview() {
               <Link
                 to="/$project/$environment"
                 params={{ project, environment: varsEnv.environment.name }}
-                className="px-1 py-[7px] no-underline"
+                className="btn"
               >
                 Variables <kbd>V</kbd>
               </Link>
@@ -130,11 +132,12 @@ function Overview() {
             <Button primary onClick={() => openPalette("deploy ")}>
               Deploy a service <kbd>D</kbd>
             </Button>
-          </div>
-        </div>
-
+          </>
+        }
+      />
+      <Page>
         {deploying.length > 0 && (
-          <div className="-mb-1.5 flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             {deploying.map((s, i) => (
               <DeployBanner key={s.service.id} service={s} watchKey={i === 0} />
             ))}
@@ -150,27 +153,30 @@ function Overview() {
         {environments.length === 0 && (
           <p className="text-mut">
             No environments yet. Create one with{" "}
-            <code className="font-mono text-white">
-              dock environment create
-            </code>
-            .
+            <code className="font-mono text-fg">dock environment create</code>.
           </p>
         )}
 
-        <Placements project={project} />
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] gap-x-7 gap-y-7">
+          <Activity project={project} />
+          <Placements project={project} />
+        </div>
 
-        <Recent project={project} />
-
-        <p className="text-xs text-mut">
-          <span className="text-ok">●</span> running · <Glyph char="◐" /> in
-          progress · ▲ needs action · ✕ failed · ↻ restarting · ○ stopped ·{" "}
-          <span className="text-prog">◇</span> token · ○ person
+        <p className="text-2xs text-faint">
+          <span className="text-ok">
+            <Glyph char="●" />
+          </span>{" "}
+          running ·{" "}
+          <span className="text-prog">
+            <Glyph char="◐" />
+          </span>{" "}
+          in progress · ▲ needs action · ✕ failed · ↻ restarting · ○ stopped ·{" "}
+          <span className="text-info">◇</span> token · ○ person
         </p>
 
         <ArchiveProject project={project} />
-      </main>
-      <LiveColumn project={project} />
-    </div>
+      </Page>
+    </>
   );
 }
 
@@ -186,7 +192,7 @@ function ArchiveProject({ project }: { project: string }) {
       <div>
         <button
           type="button"
-          className="lnk"
+          className="lnk text-xs"
           onClick={() => setConfirming(true)}
         >
           Archive {project}
@@ -195,7 +201,7 @@ function ArchiveProject({ project }: { project: string }) {
     );
   }
   return (
-    <div className="flex flex-wrap items-center gap-3 border border-fail-edge p-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-panel border border-fail-edge bg-fail-bg/40 px-3.5 py-3">
       <span>
         Archive <b className="font-semibold">{project}</b>? Every service stops
         and its routes are removed. Volumes and history are kept.
