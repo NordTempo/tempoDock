@@ -53,11 +53,34 @@ func dockerClient(t *testing.T) *client.Client {
 	return docker
 }
 
+// testContainer is this test run's BuildKit container, so parallel runs on
+// one Docker host (and a real dock-buildkit there) don't recreate each
+// other's. testCache is its cache volume. Both are removed after the run.
+var (
+	testContainer = fmt.Sprintf("dock-test-%d-buildkit", os.Getpid())
+	testCache     = testContainer + "-cache"
+)
+
+func init() {
+	afterTests = append(afterTests, func() {
+		docker, err := client.New(client.FromEnv)
+		if err != nil {
+			return
+		}
+		defer func() { _ = docker.Close() }()
+		ctx := context.Background()
+		_, _ = docker.ContainerRemove(ctx, testContainer, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.VolumeRemove(ctx, testCache, client.VolumeRemoveOptions{Force: true})
+	})
+}
+
 func newBuilder(t *testing.T, docker *client.Client, memoryMB int) *Builder {
 	t.Helper()
 	cfg := config.Default().BuildKit
 	cfg.MemoryMB = memoryMB
-	return New(docker, cfg, t.TempDir())
+	b := New(docker, cfg, t.TempDir())
+	b.name, b.cacheVolume = testContainer, testCache
+	return b
 }
 
 // sourceTar packs files (path -> content) into a gzipped tar stream.
@@ -274,13 +297,13 @@ RUN --mount=type=cache,id=shared,target=/cache echo "nonce $NONCE"; cat /cache/o
 
 func TestBuildNetwork(t *testing.T) {
 	docker := dockerClient(t)
-	const name = "dock-test-build"
+	name := testContainer + "-net"
 	if _, err := docker.NetworkCreate(t.Context(), name, client.NetworkCreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		// The next build recreates BuildKit on the default bridge.
-		_, _ = docker.ContainerRemove(context.Background(), ContainerName, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.ContainerRemove(context.Background(), testContainer, client.ContainerRemoveOptions{Force: true})
 		_, _ = docker.NetworkRemove(context.Background(), name, client.NetworkRemoveOptions{})
 	})
 	b := newBuilder(t, docker, 1024)
@@ -291,7 +314,7 @@ func TestBuildNetwork(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	inspect, err := docker.ContainerInspect(t.Context(), ContainerName, client.ContainerInspectOptions{})
+	inspect, err := docker.ContainerInspect(t.Context(), testContainer, client.ContainerInspectOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +404,7 @@ func TestDaemonLimitsRestored(t *testing.T) {
 		}
 		_ = bk.Close()
 		t.Logf("ensure: %q", logs.String())
-		inspect, err := docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{})
+		inspect, err := docker.ContainerInspect(ctx, testContainer, client.ContainerInspectOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -394,7 +417,7 @@ func TestDaemonLimitsRestored(t *testing.T) {
 	}
 	ensure()
 
-	if _, err := docker.ContainerUpdate(ctx, ContainerName, client.ContainerUpdateOptions{
+	if _, err := docker.ContainerUpdate(ctx, testContainer, client.ContainerUpdateOptions{
 		Resources: &container.Resources{Memory: mem, MemorySwap: -1},
 	}); err != nil {
 		t.Fatal(err)
@@ -405,7 +428,7 @@ func TestDaemonLimitsRestored(t *testing.T) {
 	// still says no swap. buildkitd runs in a
 	// child cgroup ("init") of the container's scope, which holds the limit.
 	// Only the systemd cgroup driver's scope paths are handled.
-	inspect, err := docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{})
+	inspect, err := docker.ContainerInspect(ctx, testContainer, client.ContainerInspectOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,7 +546,7 @@ CMD ["npm", "start"]
 // shows it.
 func watchMemory(t *testing.T, docker *client.Client) func() string {
 	ctx, cancel := context.WithCancel(t.Context())
-	res, err := docker.ContainerStats(ctx, ContainerName, client.ContainerStatsOptions{Stream: true})
+	res, err := docker.ContainerStats(ctx, testContainer, client.ContainerStatsOptions{Stream: true})
 	if err != nil {
 		t.Fatal(err)
 	}
