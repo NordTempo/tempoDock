@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/danielgtaylor/huma/v2 v2.39.1
+	github.com/distribution/reference v0.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/moby/buildkit v0.34.1
 	github.com/moby/moby/api v1.56.1
@@ -50,7 +51,6 @@ require (
 	github.com/containerd/platforms v1.0.0-rc.5 // indirect
 	github.com/containerd/ttrpc v1.2.10 // indirect
 	github.com/containerd/typeurl/v2 v2.3.0 // indirect
-	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect

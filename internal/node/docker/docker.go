@@ -94,8 +94,9 @@ func (e notFoundError) Is(target error) bool {
 // they were pulling. A digest-pinned ref (name@sha256:...) that is already
 // on the server is immutable, so it is not pulled again: that saves the
 // registry round trips (1.5-2 s) of every redeploy. Tags are always pulled,
-// since they may have moved.
-func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer) (string, error) {
+// since they may have moved. A token in opts authenticates the pull (see
+// RegistryAuth).
+func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
 	if logs == nil {
 		logs = io.Discard
 	}
@@ -105,7 +106,11 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer) (string,
 			return img.ID, nil
 		}
 	}
-	resp, err := r.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
+	var pull client.ImagePullOptions
+	if len(opts) > 0 && opts[0].Token != "" {
+		pull.RegistryAuth = RegistryAuth(opts[0].Token)
+	}
+	resp, err := r.cli.ImagePull(ctx, ref, pull)
 	if err != nil {
 		return "", err
 	}

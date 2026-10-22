@@ -75,8 +75,12 @@ const (
 // Request bodies start with one line of JSON arguments. Build follows it
 // with the raw build context.
 type (
-	noArgs      struct{}
-	refArgs     struct{ Ref string }
+	noArgs   struct{}
+	refArgs  struct{ Ref string }
+	pullArgs struct {
+		Ref  string
+		Opts node.PullOptions
+	}
 	nameArgs    struct{ Name string }
 	idArgs      struct{ ID string }
 	releaseArgs struct{ Release int64 }
@@ -102,7 +106,9 @@ type (
 		BuildCommand string
 		StartCommand string
 		BuildArgs    map[string]string
+		CacheScope   string
 		Tag          string
+		Push         *node.PushTarget
 	}
 	routesArgs struct{ Routes []node.Route }
 )

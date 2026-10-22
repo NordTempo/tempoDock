@@ -270,7 +270,9 @@ type offlineRuntime struct{ err error }
 
 var _ node.Runtime = offlineRuntime{}
 
-func (o offlineRuntime) Pull(context.Context, string, io.Writer) (string, error)  { return "", o.err }
+func (o offlineRuntime) Pull(context.Context, string, io.Writer, ...node.PullOptions) (string, error) {
+	return "", o.err
+}
 func (o offlineRuntime) HasImage(context.Context, string) (bool, error)           { return false, o.err }
 func (o offlineRuntime) EnsureNetwork(context.Context, string, node.Labels) error { return o.err }
 func (o offlineRuntime) EnsureVolume(context.Context, string, node.Labels) error  { return o.err }

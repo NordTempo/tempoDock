@@ -52,14 +52,14 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 	}
 	mem := int64(b.cfg.MemoryMB) << 20
 
-	inspect, err := b.docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{})
+	inspect, err := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{})
 	switch {
 	case cerrdefs.IsNotFound(err):
 		if err := b.createDaemon(ctx, want, logs); err != nil {
 			return nil, err
 		}
 	case err != nil:
-		return nil, fmt.Errorf("inspect %s: %w", ContainerName, err)
+		return nil, fmt.Errorf("inspect %s: %w", b.name, err)
 	default:
 		ctr := inspect.Container
 		var problem string
@@ -75,9 +75,9 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 			return b.connect(ctx)
 		}
 		if problem != "" {
-			_, _ = fmt.Fprintf(logs, "recreating %s: %s\n", ContainerName, problem)
-			if _, err := b.docker.ContainerRemove(ctx, ContainerName, client.ContainerRemoveOptions{Force: true}); err != nil {
-				return nil, fmt.Errorf("remove %s: %w", ContainerName, err)
+			_, _ = fmt.Fprintf(logs, "recreating %s: %s\n", b.name, problem)
+			if _, err := b.docker.ContainerRemove(ctx, b.name, client.ContainerRemoveOptions{Force: true}); err != nil {
+				return nil, fmt.Errorf("remove %s: %w", b.name, err)
 			}
 			if err := b.createDaemon(ctx, want, logs); err != nil {
 				return nil, err
@@ -85,8 +85,8 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 		}
 	}
 
-	if _, err := b.docker.ContainerStart(ctx, ContainerName, client.ContainerStartOptions{}); err != nil {
-		return nil, fmt.Errorf("start %s: %w", ContainerName, err)
+	if _, err := b.docker.ContainerStart(ctx, b.name, client.ContainerStartOptions{}); err != nil {
+		return nil, fmt.Errorf("start %s: %w", b.name, err)
 	}
 	return b.connect(ctx)
 }
@@ -107,13 +107,13 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 		node.LabelManaged: "true",
 		node.LabelRole:    "buildkit",
 	}
-	if _, err := b.docker.VolumeCreate(ctx, client.VolumeCreateOptions{Name: CacheVolume, Labels: labels}); err != nil {
-		return fmt.Errorf("create volume %s: %w", CacheVolume, err)
+	if _, err := b.docker.VolumeCreate(ctx, client.VolumeCreateOptions{Name: b.cacheVolume, Labels: labels}); err != nil {
+		return fmt.Errorf("create volume %s: %w", b.cacheVolume, err)
 	}
 
 	mem := int64(b.cfg.MemoryMB) << 20
 	_, err := b.docker.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name: ContainerName,
+		Name: b.name,
 		Config: &container.Config{
 			Image:  b.cfg.Image,
 			Labels: withLabel(labels, labelConfig, configLabel),
@@ -128,7 +128,7 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 				Type:   "local",
 				Config: map[string]string{"max-size": "10m", "max-file": "3"},
 			},
-			Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: CacheVolume, Target: "/var/lib/buildkit"}},
+			Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: b.cacheVolume, Target: "/var/lib/buildkit"}},
 			Resources: container.Resources{
 				Memory:     mem,
 				MemorySwap: docker.NoSwap(mem), // hitting the cap fails the build instead of thrashing the disk
@@ -138,7 +138,7 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("create %s: %w", ContainerName, err)
+		return fmt.Errorf("create %s: %w", b.name, err)
 	}
 	return nil
 }
@@ -202,7 +202,7 @@ func (b *Builder) connect(ctx context.Context) (*bkclient.Client, error) {
 		}
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("buildkit in %s is not answering: %w", ContainerName, err)
+			return nil, fmt.Errorf("buildkit in %s is not answering: %w", b.name, err)
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
@@ -212,7 +212,7 @@ func (b *Builder) connect(ctx context.Context) (*bkclient.Client, error) {
 // connection. This goes through the Docker API, so reaching BuildKit needs
 // no socket or port beyond the Docker socket the daemon already uses.
 func (b *Builder) exec(ctx context.Context, cmd ...string) (net.Conn, error) {
-	created, err := b.docker.ExecCreate(ctx, ContainerName, client.ExecCreateOptions{
+	created, err := b.docker.ExecCreate(ctx, b.name, client.ExecCreateOptions{
 		Cmd:          cmd,
 		AttachStdin:  true,
 		AttachStdout: true,

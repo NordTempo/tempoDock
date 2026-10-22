@@ -23,6 +23,14 @@
 // is what Railpack recommends for platforms. Results are exported straight
 // into the local Docker Engine.
 //
+// # Push
+//
+// With BuildRequest.Push the built image is also pushed to the platform
+// registry (ADR 0014 section 4), so the builder starts it without a pull
+// while other servers pull it by digest. The control plane passes a
+// short-lived token scoped to the one repository; nothing on the builder
+// stores registry credentials. See push for why Docker pushes.
+//
 // # Variables
 //
 // Every service variable is available to build steps as a BuildKit secret
@@ -95,6 +103,9 @@ type Builder struct {
 	cfg     config.BuildKit
 	workDir string
 	sem     chan struct{}
+	// name and cacheVolume are the BuildKit container and its cache volume:
+	// ContainerName and CacheVolume, except in tests.
+	name, cacheVolume string
 }
 
 var _ node.Builder = (*Builder)(nil)
@@ -103,7 +114,10 @@ var _ node.Builder = (*Builder)(nil)
 // loading. Build contexts are unpacked under workDir, which should be on
 // disk (not a tmpfs /tmp) since contexts can be large.
 func New(docker *client.Client, cfg config.BuildKit, workDir string) *Builder {
-	return &Builder{docker: docker, cfg: cfg, workDir: workDir, sem: make(chan struct{}, 1)}
+	return &Builder{
+		docker: docker, cfg: cfg, workDir: workDir, sem: make(chan struct{}, 1),
+		name: ContainerName, cacheVolume: CacheVolume,
+	}
 }
 
 // Build implements node.Builder.
@@ -114,6 +128,11 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, err
 	}
 	if req.Tag == "" {
 		return "", errors.New("build: no tag")
+	}
+	if req.Push != nil {
+		if err := checkPushTarget(req.Push); err != nil {
+			return "", err
+		}
 	}
 
 	if err := os.MkdirAll(b.workDir, 0o700); err != nil {
@@ -169,6 +188,11 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, err
 	if err != nil {
 		return "", fmt.Errorf("inspect built image: %w", err)
 	}
+	if req.Push != nil {
+		if err := b.push(ctx, req.Tag, req.Push, logs); err != nil {
+			return "", err
+		}
+	}
 	return img.ID, nil
 }
 
@@ -197,7 +221,7 @@ func (b *Builder) explain(ctx context.Context, err error, started time.Time) err
 	if grpcerrors.Code(err) == codes.ResourceExhausted {
 		return fmt.Errorf("build ran out of memory (%s): %w", hint, err)
 	}
-	if c, ierr := b.docker.ContainerInspect(ctx, ContainerName, client.ContainerInspectOptions{}); ierr == nil {
+	if c, ierr := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{}); ierr == nil {
 		if t, perr := time.Parse(time.RFC3339Nano, c.Container.State.StartedAt); perr == nil && t.After(started) {
 			return fmt.Errorf("BuildKit restarted during the build, most likely out of memory (%s): %w", hint, err)
 		}

@@ -28,8 +28,9 @@ type Runtime interface {
 // LabelManaged label.
 type Containers interface {
 	// Pull makes an image available locally, writing progress to logs.
-	// It returns the image's content-addressed ID (sha256:...).
-	Pull(ctx context.Context, ref string, logs io.Writer) (string, error)
+	// It returns the image's content-addressed ID (sha256:...). At most one
+	// PullOptions is used; none pulls anonymously.
+	Pull(ctx context.Context, ref string, logs io.Writer, opts ...PullOptions) (string, error)
 	// HasImage reports whether ref is present locally.
 	HasImage(ctx context.Context, ref string) (bool, error)
 
@@ -81,6 +82,14 @@ type Containers interface {
 	// bounds connecting; closing the returned conn ends it. A container
 	// that doesn't exist or isn't a service is ErrNotFound (wrapped).
 	Dial(ctx context.Context, req DialRequest) (net.Conn, error)
+}
+
+// PullOptions are the optional settings of Containers.Pull.
+type PullOptions struct {
+	// Token is a registry bearer token the control plane minted for this
+	// pull (internal/registry, ADR 0014 section 4): scoped to the image's
+	// repository, valid for minutes. Empty pulls anonymously.
+	Token string
 }
 
 // DialRequest names what Containers.Dial connects to.
@@ -342,6 +351,23 @@ type BuildRequest struct {
 	CacheScope string
 	Tag        string
 	Logs       io.Writer
+	// Push, when set, also pushes the image to a registry. The image is
+	// still loaded into the local Docker as Tag, so this server can start
+	// it without pulling.
+	Push *PushTarget
+}
+
+// PushTarget is where a build pushes its image (ADR 0014 section 4 and
+// amendment). The pushed manifest's digest is in the build log and is read
+// back from the registry by the control plane (registry.Client.Digest), so
+// other servers and promotions pull it as <repo>@sha256:...
+type PushTarget struct {
+	// Ref is the full image reference to push, with a tag:
+	// 127.0.0.1:5000/<project>/<service>:<env>-<release>.
+	Ref string
+	// Token is a bearer token with push access to Ref's repository,
+	// minted by the control plane for this build (registry.PushTokenTTL).
+	Token string
 }
 
 // Route sends traffic for Hostnames to Upstream (host:port).

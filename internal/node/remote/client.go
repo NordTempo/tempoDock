@@ -35,8 +35,12 @@ func (c *Client) session(ctx context.Context) (*session, error) {
 }
 
 // Pull implements node.Containers. Progress arrives as log frames.
-func (c *Client) Pull(ctx context.Context, ref string, logs io.Writer) (string, error) {
-	return withLogsCall[string](ctx, c, opPull, refArgs{ref}, nil, logs)
+func (c *Client) Pull(ctx context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
+	a := pullArgs{Ref: ref}
+	if len(opts) > 0 {
+		a.Opts = opts[0]
+	}
+	return withLogsCall[string](ctx, c, opPull, a, nil, logs)
 }
 
 // HasImage implements node.Containers.
@@ -143,7 +147,7 @@ func (c *Client) Events(ctx context.Context) (<-chan node.ContainerEvent, error)
 func (c *Client) Build(ctx context.Context, req node.BuildRequest) (string, error) {
 	args := buildArgs{
 		Dockerfile: req.Dockerfile, BuildCommand: req.BuildCommand, StartCommand: req.StartCommand,
-		BuildArgs: req.BuildArgs, Tag: req.Tag,
+		BuildArgs: req.BuildArgs, CacheScope: req.CacheScope, Tag: req.Tag, Push: req.Push,
 	}
 	return withLogsCall[string](ctx, c, opBuild, args, req.Source, req.Logs)
 }

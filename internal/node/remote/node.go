@@ -118,8 +118,8 @@ func Handler(rt node.Runtime) http.Handler {
 	h(opHello, unary(func(context.Context, noArgs) (Info, error) {
 		return Info{Version: version.Version, Protocol: Protocol}, nil
 	}))
-	h(opPull, withLogs(func(ctx context.Context, a refArgs, _ io.Reader, logs io.Writer) (string, error) {
-		return rt.Pull(ctx, a.Ref, logs)
+	h(opPull, withLogs(func(ctx context.Context, a pullArgs, _ io.Reader, logs io.Writer) (string, error) {
+		return rt.Pull(ctx, a.Ref, logs, a.Opts)
 	}))
 	h(opHasImage, unary(func(ctx context.Context, a refArgs) (bool, error) { return rt.HasImage(ctx, a.Ref) }))
 	h(opEnsureNetwork, unary(func(ctx context.Context, a labeledArgs) (struct{}, error) {
@@ -146,7 +146,8 @@ func Handler(rt node.Runtime) http.Handler {
 	h(opBuild, withLogs(func(ctx context.Context, a buildArgs, source io.Reader, logs io.Writer) (string, error) {
 		return rt.Build(ctx, node.BuildRequest{
 			Source: source, Dockerfile: a.Dockerfile, BuildCommand: a.BuildCommand,
-			StartCommand: a.StartCommand, BuildArgs: a.BuildArgs, Tag: a.Tag, Logs: logs,
+			StartCommand: a.StartCommand, BuildArgs: a.BuildArgs, CacheScope: a.CacheScope,
+			Tag: a.Tag, Push: a.Push, Logs: logs,
 		})
 	}))
 	h(opApplyRoutes, unary(func(ctx context.Context, a routesArgs) (struct{}, error) {

@@ -251,11 +251,16 @@ func imageID(ref string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// Pull implements node.Containers.
-func (r *Runtime) Pull(_ context.Context, ref string, logs io.Writer) (string, error) {
+// Pull implements node.Containers. A pull with a token is recorded as
+// "pull <ref> token=<token>".
+func (r *Runtime) Pull(_ context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.op("pull %s", ref)
+	if len(opts) > 0 && opts[0].Token != "" {
+		r.op("pull %s token=%s", ref, opts[0].Token)
+	} else {
+		r.op("pull %s", ref)
+	}
 	if r.pullErr != nil {
 		return "", r.pullErr
 	}
@@ -525,7 +530,8 @@ func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, err
 	return d.DialContext(ctx, "tcp", addr)
 }
 
-// Build implements node.Builder. It reads the whole source stream.
+// Build implements node.Builder. It reads the whole source stream. A push
+// is recorded as "push <ref> token=<token>" after the build.
 func (r *Runtime) Build(_ context.Context, req node.BuildRequest) (string, error) {
 	n, err := io.Copy(io.Discard, req.Source)
 	if err != nil {
@@ -541,6 +547,10 @@ func (r *Runtime) Build(_ context.Context, req node.BuildRequest) (string, error
 	}
 	_, _ = fmt.Fprintf(req.Logs, "Built %s\n", req.Tag)
 	r.images[req.Tag] = imageID(req.Tag)
+	if p := req.Push; p != nil {
+		r.op("push %s token=%s", p.Ref, p.Token)
+		_, _ = fmt.Fprintf(req.Logs, "Pushed %s\n", p.Ref)
+	}
 	return r.images[req.Tag], nil
 }
 
