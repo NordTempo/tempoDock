@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -27,6 +28,18 @@ func TestOverviewMatchesPerServiceReads(t *testing.T) {
 	inFlight, err := h.c.DeployImage(h.ctx, System, api, apitypes.DeployImageRequest{Image: "api:1"})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// The domain checker moves the domain on from "added" in the
+	// background; let it settle so both reads below see the same status.
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		ds, err := h.c.ListDomains(h.ctx, System, web)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ds) == 1 && ds[0].Status != apitypes.DomainAdded {
+			break
+		}
 	}
 
 	ov, err := h.c.Overview(h.ctx, System, "shop")
