@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { CreateHost } from "../features/create/open";
 import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
 import { toneText } from "../ui/status";
@@ -27,7 +28,10 @@ const PaletteContext = createContext<(query?: string) => void>(() => {});
 
 export const usePalette = () => use(PaletteContext);
 
-/** Owns the palette's open state and the global Cmd+K / Ctrl+K binding. */
+/**
+ * Owns the palette's open state and the global Cmd+K / Ctrl+K binding,
+ * and hosts the create dialogs the palette (and pages) open.
+ */
 export function PaletteProvider({ children }: { children: ReactNode }) {
   const [query, setQuery] = useState<string | null>(null);
   useKeydown((event) => {
@@ -42,6 +46,7 @@ export function PaletteProvider({ children }: { children: ReactNode }) {
       {query !== null && (
         <Palette initial={query} onClose={() => setQuery(null)} />
       )}
+      <CreateHost />
     </PaletteContext>
   );
 }

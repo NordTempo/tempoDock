@@ -1,12 +1,10 @@
 package cli
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -191,7 +189,7 @@ TOML by default; --format json (or --json) prints the API's JSON.`,
 				jsonIO.JSON = true
 				return jsonIO.Print(ex, nil)
 			}
-			b, err := exportTOML(ex)
+			b, err := ex.TOML()
 			if err != nil {
 				return err
 			}
@@ -202,17 +200,4 @@ TOML by default; --format json (or --json) prints the API's JSON.`,
 	f.add(cmd, needProject)
 	cmd.Flags().StringVar(&format, "format", "toml", "toml or json")
 	return cmd
-}
-
-// exportTOML renders an export as TOML with a header saying what it is.
-func exportTOML(ex apitypes.ProjectExport) ([]byte, error) {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "# Tempo Dock project %s, exported with `dock project export`.\n", ex.Project)
-	b.WriteString("# Settings as they are live. Variables are names only: values are never exported.\n\n")
-	enc := toml.NewEncoder(&b)
-	enc.SetIndentTables(true)
-	if err := enc.Encode(ex); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
 }

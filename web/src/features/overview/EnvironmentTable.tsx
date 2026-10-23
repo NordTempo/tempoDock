@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { memo, useState } from "react";
+import { memo } from "react";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
@@ -11,13 +11,13 @@ import {
 } from "../../data/queries";
 import type { EnvironmentView, ServiceView } from "../../data/types";
 import { plural } from "../../ui/format";
-import { Panel, SectionHead, StateText } from "../../ui/kit";
+import { Button, Panel, SectionHead, StateText } from "../../ui/kit";
 import { kindLabel, serviceState } from "../../ui/status";
+import { canCreateEnvironment } from "../create/access";
+import { openCreate } from "../create/open";
 import { EnvServer } from "../servers/parts";
 import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
-import { AddDatabase } from "../templates/AddDatabase";
-import { CloneEnvironment } from "./CloneEnvironment";
 
 /** One environment on the project overview: a row per service. */
 export function EnvironmentTable({ env }: { env: EnvironmentView }) {
@@ -25,9 +25,8 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const ref = { project: environment.project, environment: environment.name };
   const canDeploy = useCanDeploy(ref);
   // Cloning creates an environment: deploy on the whole project.
-  const limitedToEnv = !!useSession()?.environment;
-  const canClone = canDeploy && !limitedToEnv;
-  const [open, setOpen] = useState<"database" | "clone" | null>(null);
+  const canClone = canCreateEnvironment(useSession(), ref.project);
+  const newService = () => openCreate({ kind: "service", env: ref });
   const links = "text-xs text-mut hover:text-fg";
   return (
     <section aria-labelledby={`env-${environment.id}`}>
@@ -53,20 +52,28 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
             <Link to="/$project/$environment" params={ref} className={links}>
               Variables
             </Link>
-            {canDeploy && !open && (
+            {canDeploy && (
               <button
                 type="button"
                 className={links}
-                onClick={() => setOpen("database")}
+                title={`dock service create -e ${ref.environment}`}
+                onClick={newService}
               >
-                Add database
+                New service
               </button>
             )}
-            {canClone && !open && (
+            {canClone && (
               <button
                 type="button"
                 className={links}
-                onClick={() => setOpen("clone")}
+                title={`dock environment clone ${ref.environment} <name>`}
+                onClick={() =>
+                  openCreate({
+                    kind: "environment",
+                    project: ref.project,
+                    cloneFrom: ref.environment,
+                  })
+                }
               >
                 Clone
               </button>
@@ -76,23 +83,20 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
       >
         {environment.name}
       </SectionHead>
-      {open === "database" && (
-        <AddDatabase env={ref} onClose={() => setOpen(null)} />
-      )}
-      {open === "clone" && (
-        <CloneEnvironment
-          env={ref}
-          kind={environment.kind}
-          onClose={() => setOpen(null)}
-        />
-      )}
       {services.length === 0 ? (
-        <p className="rounded-panel border border-dashed border-dash px-3.5 py-3 text-mut">
-          No services. Deploy one with{" "}
-          <code className="font-mono text-fg">
-            dock deploy -e {environment.name}
-          </code>
-          .
+        <p className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-panel border border-dashed border-dash px-3.5 py-3 text-mut">
+          No services yet.
+          {canDeploy && (
+            <Button small primary onClick={newService}>
+              New service
+            </Button>
+          )}
+          <span>
+            {canDeploy ? "or deploy a directory with" : "Deploy one with"}{" "}
+            <code className="font-mono text-fg">
+              dock deploy -e {environment.name}
+            </code>
+          </span>
         </p>
       ) : (
         <Panel>

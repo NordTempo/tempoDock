@@ -5,12 +5,14 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { queries, useProjects, useServers } from "../data/queries";
+import { queries, useProjects, useServers, useSession } from "../data/queries";
+import { canCreateProject } from "../features/create/access";
+import { openCreate } from "../features/create/open";
 import { lastProject } from "../shell/location";
-import { CopyButton, Page } from "../ui/kit";
+import { Button, CopyButton, Page } from "../ui/kit";
 
 // "/" lands on the last project looked at (or the first); with no projects
-// yet, it says how to deploy one.
+// yet, it offers to create one here or says how to deploy from a terminal.
 export const Route = createFileRoute("/_app/")({
   beforeLoad: async ({ context }) => {
     const projects = await context.queryClient.ensureQueryData(
@@ -28,6 +30,7 @@ export const Route = createFileRoute("/_app/")({
 function NoProjects() {
   const server = useServers().find((s) => s.local)?.name;
   const first = useProjects()[0]?.name;
+  const canCreate = canCreateProject(useSession());
   const navigate = useNavigate();
   // Live events refresh the project list; follow the first one in.
   useEffect(() => {
@@ -51,8 +54,18 @@ function NoProjects() {
   return (
     <Page width="max-w-[720px]" gap="gap-5">
       <h1 className="pt-10 text-xl font-semibold">No projects yet</h1>
+      {canCreate && (
+        <p className="flex flex-wrap items-center gap-3">
+          <Button primary onClick={() => openCreate({ kind: "project" })}>
+            New project
+          </Button>
+          <span className="text-mut">
+            then add services from an image, a GitHub repository or a template.
+          </span>
+        </p>
+      )}
       <p className="text-md text-mut">
-        Deploy your first app from its folder.
+        {canCreate ? "Or deploy" : "Deploy"} your first app from its folder.
         {server && (
           <>
             {" "}

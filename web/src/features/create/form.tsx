@@ -1,0 +1,180 @@
+import type { ReactNode } from "react";
+import { Button, ErrorText } from "../../ui/kit";
+
+// Shared parts of the create dialogs: a label column, name rules as core
+// has them, and a footer with the CLI equivalent.
+
+/** core's nameRe: DNS-safe, since service names are private hostnames. */
+const nameRe = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
+
+/**
+ * What is wrong with a new name, said as what to do; undefined when it
+ * is fine or still empty. `taken` holds the names already in use.
+ */
+export function nameProblem(
+  kind: "project" | "environment" | "service",
+  name: string,
+  taken: readonly string[] = [],
+) {
+  if (!name) return undefined;
+  if (!nameRe.test(name)) {
+    return "Use 1 to 32 lowercase letters, digits or dashes, starting and ending with a letter or digit.";
+  }
+  if (kind === "service" && name === "shared") {
+    return `"shared" is reserved for shared variables. Pick another name.`;
+  }
+  if (taken.includes(name)) {
+    return `${name} is taken in this ${kind === "project" ? "Dock" : kind === "environment" ? "project" : "environment"}. Pick another name.`;
+  }
+  return undefined;
+}
+
+/** Names are typed loosely: lower case, spaces and underscores as dashes. */
+export const toName = (value: string) =>
+  value.toLowerCase().replace(/[\s_]+/g, "-");
+
+/**
+ * Focuses an element in a dialog when it mounts. React's autoFocus runs
+ * before <dialog> opens, where focus() does nothing; the autofocus
+ * attribute is what showModal() looks for. Later (a result replacing a
+ * form), focus() does it.
+ */
+export function autofocus(el: HTMLElement | null) {
+  el?.setAttribute("autofocus", "");
+  el?.focus();
+}
+
+/** The fields of a dialog: labels on the left, controls on the right. */
+export function Fields({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5">
+      {children}
+    </div>
+  );
+}
+
+/** One labelled control in Fields; `note` goes under it. */
+export function Field({
+  label,
+  children,
+  note,
+}: {
+  label: string;
+  children: ReactNode;
+  note?: ReactNode;
+}) {
+  return (
+    <>
+      {/* biome-ignore lint/a11y/noLabelWithoutControl: the control is a child */}
+      <label className="contents">
+        <span className="text-xs text-faint">{label}</span>
+        {children}
+      </label>
+      {note && (
+        <span className="col-start-2 -mt-1 text-xs text-mut">{note}</span>
+      )}
+    </>
+  );
+}
+
+/**
+ * A label and controls that are not a single input (radios, checks); a
+ * <label> around them would name them all.
+ */
+export function Group({
+  label,
+  children,
+  note,
+}: {
+  label: string;
+  children: ReactNode;
+  note?: ReactNode;
+}) {
+  return (
+    <>
+      <span className="text-xs text-faint">{label}</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {children}
+      </div>
+      {note && (
+        <span className="col-start-2 -mt-1 text-xs text-mut">{note}</span>
+      )}
+    </>
+  );
+}
+
+/** A segmented radio group: one choice of a few, arrow keys move. */
+export function Choice<T extends string>({
+  label,
+  name,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <fieldset aria-label={label} className="seg">
+      {options.map(([v, text]) => (
+        <label
+          key={v}
+          className="cursor-pointer has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-info"
+        >
+          <input
+            type="radio"
+            name={name}
+            value={v}
+            checked={v === value}
+            onChange={() => onChange(v)}
+            className="sr-only"
+          />
+          {text}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+export const input = "field py-[5px] font-mono";
+
+/** Submit, Cancel, the error, and the CLI commands that do the same. */
+export function Footer({
+  submit,
+  pending,
+  disabled,
+  error,
+  cli,
+  onClose,
+}: {
+  submit: string;
+  pending: boolean;
+  disabled?: boolean;
+  error: Error | null | undefined;
+  cli: readonly string[];
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          type="submit"
+          className="btn pri"
+          disabled={pending || disabled}
+        >
+          {submit} <kbd>↵</kbd>
+        </button>
+        <Button onClick={onClose}>Cancel</Button>
+        <ErrorText error={error} />
+      </div>
+      <div className="mt-3 flex flex-col gap-0.5 border-t border-line pt-2.5 font-mono text-2xs break-all text-faint">
+        {cli.map((line) => (
+          <code key={line}>{line}</code>
+        ))}
+      </div>
+    </>
+  );
+}
