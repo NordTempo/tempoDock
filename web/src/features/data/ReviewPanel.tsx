@@ -10,11 +10,18 @@ export type EditActions = {
   /** The transaction a commit would run (POST /data/changesets, dry_run). */
   renderSql: (changes: DataChange[]) => Promise<string>;
   /**
-   * Commit, or propose for callers with level propose. `confirm` is the
-   * source's confirmName (an environment's or connection's name) on
-   * production.
+   * Commit, or propose: always for callers with level propose, and on
+   * request (`propose`) for writers. `confirm` is the source's confirmName
+   * (an environment's or connection's name) on production; `message` says
+   * why, for reviewers.
    */
-  commit: (changes: DataChange[], confirm?: string) => Promise<void>;
+  commit: (changes: DataChange[], options: CommitOptions) => Promise<void>;
+};
+
+export type CommitOptions = {
+  confirm?: string;
+  message?: string;
+  propose?: boolean;
 };
 
 const cellText = (v: string | null | undefined) =>
@@ -145,11 +152,12 @@ export function ReviewPanel({
   confirmCommit,
   propose,
   actions,
+  message: initialMessage = "",
   onRestore,
   onDiscard,
   onCommitted,
 }: {
-  /** The table's name, for the title. */
+  /** The table's (or changes file's) name, for the title. */
   table: string;
   changes: DataChange[];
   /** Production: type the confirmName to commit. */
@@ -157,6 +165,8 @@ export function ReviewPanel({
   /** The caller's level is propose: an admin approves the changeset. */
   propose: boolean;
   actions: EditActions;
+  /** Why, for reviewers, to start from (a changes file's). */
+  message?: string;
   onRestore: (key: Record<string, string>) => void;
   onDiscard: () => void;
   onCommitted: () => void;
@@ -167,6 +177,12 @@ export function ReviewPanel({
   const [confirm, setConfirm] = useState("");
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [message, setMessage] = useState(initialMessage);
+  // A writer may still leave the changeset for an admin (--propose).
+  const [proposeOnly, setProposeOnly] = useState(false);
+  const proposing = propose || proposeOnly;
+  // A proposal writes nothing: its approver confirms instead.
+  const confirming = confirmCommit && !proposeOnly;
   const signature = JSON.stringify(changes);
 
   useEffect(() => {
@@ -184,14 +200,18 @@ export function ReviewPanel({
   }, [signature, actions]);
 
   const tooMany = changes.length > dataLimits.changesetRows;
-  const confirmed = !confirmCommit || confirm === confirmName;
-  const verb = propose ? "Propose" : "Commit";
+  const confirmed = !confirming || confirm === confirmName;
+  const verb = proposing ? "Propose" : "Commit";
 
   async function commit() {
     setCommitting(true);
     setError(null);
     try {
-      await actions.commit(changes, confirmCommit ? confirm : undefined);
+      await actions.commit(changes, {
+        confirm: confirming ? confirm : undefined,
+        message: message.trim() || undefined,
+        propose: proposeOnly,
+      });
       onCommitted();
     } catch (e) {
       setError(e instanceof Error ? e : new Error(String(e)));
@@ -212,7 +232,7 @@ export function ReviewPanel({
         {plural(changes.length, "change")} in {table}
       </h2>
       <p className="mb-3.5 text-xs text-(--g-mut)">
-        {propose
+        {proposing
           ? "Proposed together; an admin approves them"
           : "Committed together in one transaction"}
       </p>
@@ -226,7 +246,27 @@ export function ReviewPanel({
         </p>
       )}
       <div className="mt-auto flex flex-col gap-2.5 pt-5">
-        {confirmCommit && (
+        <label className="flex flex-col gap-1.5 text-xs text-(--g-dim)">
+          Why, for reviewers
+          <input
+            className="g-field"
+            value={message}
+            maxLength={1000}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="optional"
+          />
+        </label>
+        {!propose && (
+          <label className="flex items-center gap-2 text-xs text-(--g-dim)">
+            <input
+              type="checkbox"
+              checked={proposeOnly}
+              onChange={(e) => setProposeOnly(e.target.checked)}
+            />
+            Only propose, for an admin to approve
+          </label>
+        )}
+        {confirming && (
           <ConfirmName
             verb={verb.toLowerCase()}
             value={confirm}
@@ -242,8 +282,8 @@ export function ReviewPanel({
               primary
               className="h-8 w-full"
               cli={cli(
-                `dock db apply -f changes.json${propose ? " --propose" : ""}${
-                  confirmCommit ? ` --confirm ${confirmName}` : ""
+                `dock db apply -f changes.json${message.trim() ? ` -m ${JSON.stringify(message.trim())}` : ""}${proposing ? " --propose" : ""}${
+                  confirming ? ` --confirm ${confirmName}` : ""
                 }`,
               )}
               disabled={!confirmed || tooMany || committing || !sql.text}

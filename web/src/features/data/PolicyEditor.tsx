@@ -51,6 +51,7 @@ export function PolicyEditor<F extends string>({
   subjectNames,
   fromText,
   builtIn,
+  cli,
 }: {
   policy: ScopedPolicy<F>;
   /** The parent scope's policy; its effective rules are what this inherits. */
@@ -74,6 +75,8 @@ export function PolicyEditor<F extends string>({
     subject: DataSubject,
     kind: DataEnvironmentKind,
   ) => Pick<PolicyRule, "level" | "sensitive">;
+  /** The command that saves these rules, where the host has a CLI. */
+  cli?: (rules: PolicyRule[]) => string;
 }) {
   const initial: Draft = {};
   for (const r of policy.rules ?? []) {
@@ -225,6 +228,11 @@ export function PolicyEditor<F extends string>({
           <Btn disabled={!dirty} onClick={() => setDraft(initial)}>
             Discard
           </Btn>
+          {cli && dirty && (
+            <span className="font-mono text-2xs text-(--g-mut)">
+              {cli(rules)}
+            </span>
+          )}
           <ErrorText error={save.error} />
         </div>
       )}

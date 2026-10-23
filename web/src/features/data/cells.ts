@@ -1,4 +1,10 @@
-import type { DataCell, DataFilter, DataTable } from "./types";
+import type {
+  DataCell,
+  DataFilter,
+  DataResultColumn,
+  DataRow,
+  DataTable,
+} from "./types";
 
 // Reading DataRow cells (see DataCell) for display, keys and filters.
 
@@ -84,6 +90,29 @@ export function cellDetail(cell: DataCell, typeName: string): string {
 }
 
 const oneLine = (s: string) => s.replace(/\s*\n\s*/g, " ");
+
+/** A CSV field, quoted when it has to be. */
+const csvField = (s: string) =>
+  /[",\r\n]|^\s/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+
+/**
+ * A result as CSV, like `dock db query --csv`: NULL is an empty field,
+ * truncated values end in "…", masked ones read "(masked)".
+ */
+export function toCsv(columns: DataResultColumn[], rows: DataRow[]) {
+  const text = (cell: DataCell) =>
+    cell === null
+      ? ""
+      : typeof cell === "object"
+        ? "masked" in cell
+          ? "(masked)"
+          : `${cell.truncated}…`
+        : String(cell);
+  return [
+    columns.map((c) => csvField(c.name)).join(","),
+    ...rows.map((r) => r.map((c) => csvField(text(c))).join(",")),
+  ].join("\r\n");
+}
 
 /**
  * A cell as a value sent back to the server (keys, filters, changes): text

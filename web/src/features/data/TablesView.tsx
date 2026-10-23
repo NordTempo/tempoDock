@@ -1,7 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useReducer, useState } from "react";
 import { useShortcuts } from "../../shell/keys";
 import { plural } from "../../ui/format";
-import { type TableQuery, useCli, useTableRows } from "./api";
+import { type TableQuery, useCli, useDataSource, useTableRows } from "./api";
 import { cellInput, filterFlag, rowCount, rowKey, tableName } from "./cells";
 import { editsReducer, noEdits, rowId, toChanges } from "./edits";
 import { FilterBar } from "./FilterBar";
@@ -51,6 +52,19 @@ export function TablesView({
   const [edits, dispatch] = useReducer(editsReducer, noEdits);
   const [selected, setSelected] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  // An exact count of the rows matching, asked for (`dock db rows --count`).
+  const [counting, setCounting] = useState(false);
+  const source = useDataSource();
+  const exact = useQuery({
+    queryKey: [...source.key, "rows", query.table, "count", query.filters],
+    queryFn: ({ signal }) =>
+      source.rows(
+        { table: query.table, filters: query.filters, limit: 1, count: true },
+        signal,
+      ),
+    enabled: counting,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   useShortcuts([{ key: "f", label: "filter", run: () => setAdding(true) }]);
 
   const pages = rows.data?.pages ?? [];
@@ -147,14 +161,24 @@ export function TablesView({
       ...filters.map(filterFlag).filter(Boolean),
       query.order && `--order ${query.order}`,
       revealed.size > 0 && "--reveal",
+      counting && "--count",
     ]
       .filter(Boolean)
       .join(" "),
   );
 
-  const count = filters.length
-    ? `${loaded}${rows.hasNextPage ? "+" : ""} matching`
-    : rowCount(total);
+  const counted = exact.data?.exact_rows;
+  const count =
+    typeof counted === "number"
+      ? `${plural(counted, "row")}${filters.length ? " matching" : ""}`
+      : filters.length
+        ? `${loaded}${rows.hasNextPage ? "+" : ""} matching`
+        : rowCount(total);
+  // Worth counting: more rows than loaded, and no exact count yet.
+  const canCount =
+    typeof counted !== "number" &&
+    rows.hasNextPage &&
+    (filters.length > 0 || typeof total.exact !== "number");
   const review = canEdit && actions && changes.length > 0;
 
   return (
@@ -182,6 +206,23 @@ export function TablesView({
           {!editing && <span className="g-tag">read only</span>}
           <span className="text-xs text-(--g-mut)">
             {count}
+            {canCount && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="g-lnk"
+                  disabled={exact.isFetching}
+                  title={cli(`dock db rows ${name} --count`)}
+                  onClick={() => setCounting(true)}
+                >
+                  {exact.isFetching ? "counting" : "count"}
+                </button>
+              </>
+            )}
+            {exact.error && (
+              <span className="text-(--g-fail)"> {exact.error.message}</span>
+            )}
             {!table.editable &&
               (pk.length ? ", a view" : ", no primary key: can't be edited")}
           </span>

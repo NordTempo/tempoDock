@@ -113,6 +113,19 @@ export function PolicyPage({
             subjectNames={subjectNames}
             fromText={(from) => fromText(from, scope)}
             builtIn={builtIn}
+            cli={(rules) =>
+              [
+                "dock db policy set",
+                ...rules.map(
+                  (r) =>
+                    `${r.subject.replace("role:", "")}.${r.kind.replace("_", "-")}=${r.level}${r.sensitive === "visible" ? ",visible" : ""}`,
+                ),
+                flags,
+                "--replace",
+              ]
+                .filter(Boolean)
+                .join(" ")
+            }
           />
         )}
 

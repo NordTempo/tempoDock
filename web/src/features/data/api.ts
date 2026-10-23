@@ -14,7 +14,7 @@ import {
   useState,
 } from "react";
 import type { PolicyRule } from "./policy";
-import type { EditActions } from "./ReviewPanel";
+import type { CommitOptions, EditActions } from "./ReviewPanel";
 import type {
   DataChange,
   DataChangeset,
@@ -387,7 +387,8 @@ export function useSetSensitive() {
 /**
  * Staged edits to the API: the SQL comes from a dry run; a commit stages
  * the changeset, then commits it with level write, or leaves it pending
- * for an admin with level propose (`onProposed` then gets it).
+ * for an admin with level propose or when asked to propose (`onProposed`
+ * then gets it).
  */
 export function useEditActions(
   access: DataPermission | undefined,
@@ -406,9 +407,12 @@ export function useEditActions(
     return {
       renderSql: async (changes: DataChange[]) =>
         (await source.changeset({ changes, dry_run: true })).sql,
-      commit: async (changes: DataChange[], confirm?: string) => {
-        const staged = await source.changeset({ changes });
-        if (level === "propose") {
+      commit: async (
+        changes: DataChange[],
+        { confirm, message, propose }: CommitOptions,
+      ) => {
+        const staged = await source.changeset({ changes, message });
+        if (level === "propose" || propose) {
           await settle();
           proposed.current(staged);
           return;
@@ -436,6 +440,9 @@ export type QueryRun = {
   error?: DataQueryError;
 };
 
+/** A query's own row cap and statement timeout; 0 or absent: defaults. */
+export type QueryOptions = Pick<DataQueryRequest, "limit" | "timeout_seconds">;
+
 /**
  * POST /data/query, streamed: `run` starts a query (canceling one still
  * running), `cancel` stops it. Rows append per frame (up to 500 each). A
@@ -450,7 +457,7 @@ export function useQueryRunner() {
   useEffect(() => () => controller.current?.abort(), []);
 
   const run = useCallback(
-    async (sql: string) => {
+    async (sql: string, options: QueryOptions = {}) => {
       controller.current?.abort();
       const abort = new AbortController();
       controller.current = abort;
@@ -461,7 +468,10 @@ export function useQueryRunner() {
       };
       update({});
       try {
-        for await (const frame of source.query({ sql }, abort.signal)) {
+        for await (const frame of source.query(
+          { sql, ...options },
+          abort.signal,
+        )) {
           switch (frame.type) {
             case "header":
               update({ columns: frame.columns ?? [] });

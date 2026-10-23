@@ -1,21 +1,24 @@
 import { lazy, type ReactNode, Suspense, useState } from "react";
 import { useShortcuts } from "../../shell/keys";
+import { ago } from "../../ui/format";
 import {
   useChangesets,
+  useCli,
   useDataInfo,
   useDataSchema,
+  useDataSetup,
   useDataSource,
   useEditActions,
 } from "./api";
 import { ChangesView } from "./ChangesView";
 import { tableName } from "./cells";
-import { Kbd } from "./kit";
+import { Act, ErrorText, Kbd } from "./kit";
 import { levelText } from "./policy";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
 import { TableList } from "./TableList";
 import { TablesView } from "./TablesView";
-import type { DataFilter, DataLevel, DataPermission } from "./types";
+import type { DataFilter, DataInfo, DataLevel, DataPermission } from "./types";
 
 // CodeMirror loads only when the SQL tab opens.
 const SqlView = lazy(() => import("./SqlView"));
@@ -185,8 +188,9 @@ export function DataPanel({
         </span>
       </div>
       {why && (
-        <div className="border-b border-(--g-line) px-5 py-2">
+        <div className="flex flex-col gap-2 border-b border-(--g-line) px-5 py-2">
           <Why access={access} />
+          <SetupLine info={info.data} />
         </div>
       )}
 
@@ -195,7 +199,7 @@ export function DataPanel({
       ) : !schema.data ? (
         <p className="p-5 text-(--g-mut)">Reading the catalog</p>
       ) : view.tab === "changes" && showChanges ? (
-        <ChangesView access={access} />
+        <ChangesView access={access} actions={edit} />
       ) : view.tab === "sql" ? (
         !atLeast(access.level, "read") ? (
           <Limited access={access}>
@@ -254,6 +258,38 @@ export function DataPanel({
         </div>
       )}
     </>,
+  );
+}
+
+/**
+ * Who set up the panel's roles and when, and for those who manage the
+ * database, setting them up again with new passwords (`dock db setup`).
+ */
+function SetupLine({ info }: { info: DataInfo }) {
+  const { roles } = useDataSource();
+  const setup = useDataSetup();
+  const cli = useCli();
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-(--g-mut)">
+      <span>
+        Roles {roles.reader} and {roles.writer}
+        {info.set_up_at
+          ? ` set up ${ago(info.set_up_at)}${info.set_up_by ? ` by ${info.set_up_by}` : ""}`
+          : ""}
+        .
+      </span>
+      {info.access.manage && (
+        <Act
+          small
+          cli={cli("dock db setup")}
+          disabled={setup.isPending}
+          onClick={() => setup.mutate()}
+        >
+          {setup.isPending ? "Rotating" : "Rotate their passwords"}
+        </Act>
+      )}
+      <ErrorText error={setup.error} />
+    </p>
   );
 }
 

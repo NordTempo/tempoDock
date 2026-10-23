@@ -2,15 +2,16 @@ import { useState } from "react";
 import { modKey, useKeydown } from "../../shell/keys";
 import { clock, day, plural } from "../../ui/format";
 import {
+  type QueryOptions,
   type QueryRun,
   useCli,
-  useDataSource,
   useDeleteSavedQuery,
   useQueryHistory,
   useQueryRunner,
   useSavedQueries,
   useSaveQuery,
 } from "./api";
+import { toCsv } from "./cells";
 import { Grid } from "./Grid";
 import { Act, Btn, ErrorText, Head, Kbd } from "./kit";
 import { SqlEditor } from "./SqlEditor";
@@ -37,6 +38,20 @@ function lineCol(sql: string, position: number) {
 const shellQuote = (s: string) =>
   `'${s.replace(/\s+/g, " ").trim().replaceAll("'", "'\\''")}'`;
 
+/** Row caps and timeouts to pick from; the first is the default. */
+const rowLimits = [dataLimits.queryRows, 1_000, 100_000];
+const timeouts = [10, 30, 60];
+
+/** Saves text as a file through the browser. */
+function download(name: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /**
  * Read-only SQL (G3): saved queries on the left, the editor (Mod-Enter
  * runs) under a header with Save and Run, then the streamed result in the
@@ -53,6 +68,20 @@ export default function SqlView({
   const [naming, setNaming] = useState<string | null>(null);
   const [pane, setPane] = useState<"results" | "history">("results");
   const { result, run, cancel } = useQueryRunner();
+  const [options, setOptions] = useState({
+    limit: rowLimits[0] ?? dataLimits.queryRows,
+    timeout: timeouts[0] ?? 10,
+  });
+  const queryOptions: QueryOptions = {
+    limit: options.limit,
+    timeout_seconds: options.timeout,
+  };
+  const flags = [
+    options.limit !== 1_000 && `-n ${options.limit}`,
+    options.timeout !== 10 && `--timeout ${options.timeout}s`,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const saved = useSavedQueries();
   const save = useSaveQuery();
   const remove = useDeleteSavedQuery();
@@ -63,7 +92,7 @@ export default function SqlView({
   const start = () => {
     if (!sql.trim()) return;
     setPane("results");
-    run(sql);
+    run(sql, queryOptions);
   };
   const load = (text: string, id: number | null = null) => {
     setSql(text);
@@ -181,7 +210,9 @@ export default function SqlView({
               )}
               <Act
                 primary
-                cli={cli(`dock db query ${shellQuote(sql || "SQL")}`)}
+                cli={cli(
+                  `dock db query ${shellQuote(sql || "SQL")}${flags ? ` ${flags}` : ""}`,
+                )}
                 disabled={!sql.trim() || running}
                 onClick={start}
               >
@@ -220,7 +251,58 @@ export default function SqlView({
               History
             </button>
           </div>
-          {pane === "results" && <RunLine run={result} />}
+          {pane === "results" && (
+            <>
+              <select
+                aria-label="Row limit"
+                className="g-field h-7"
+                value={options.limit}
+                onChange={(e) =>
+                  setOptions({ ...options, limit: Number(e.target.value) })
+                }
+              >
+                {rowLimits.map((n) => (
+                  <option key={n} value={n}>
+                    {n.toLocaleString("en")} rows
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Statement timeout"
+                className="g-field h-7"
+                value={options.timeout}
+                onChange={(e) =>
+                  setOptions({ ...options, timeout: Number(e.target.value) })
+                }
+              >
+                {timeouts.map((s) => (
+                  <option key={s} value={s}>
+                    {s} s timeout
+                  </option>
+                ))}
+              </select>
+              {result &&
+                result.state !== "running" &&
+                result.columns.length > 0 && (
+                  <Act
+                    small
+                    cli={cli(
+                      `dock db query ${shellQuote(result.sql)}${flags ? ` ${flags}` : ""} --csv > result.csv`,
+                    )}
+                    onClick={() =>
+                      download(
+                        "result.csv",
+                        toCsv(result.columns, result.rows),
+                        "text/csv",
+                      )
+                    }
+                  >
+                    CSV
+                  </Act>
+                )}
+              <RunLine run={result} limit={options.limit} />
+            </>
+          )}
         </div>
         {pane === "history" ? (
           <History onLoad={load} />
@@ -292,16 +374,10 @@ function History({ onLoad }: { onLoad: (sql: string) => void }) {
 }
 
 /** The last run in one line, right of the result tabs. */
-function RunLine({ run }: { run: QueryRun | null }) {
-  const { cli } = useDataSource();
+function RunLine({ run, limit }: { run: QueryRun | null; limit: number }) {
   const line = "ml-auto text-xs text-(--g-mut)";
   if (!run) {
-    return (
-      <span className={line}>
-        One statement, {dataLimits.queryRows.toLocaleString("en")} rows at most,
-        10 s timeout
-      </span>
-    );
+    return <span className={line}>One statement, read only</span>;
   }
   const rows = plural(run.rows.length, "row");
   switch (run.state) {
@@ -314,13 +390,13 @@ function RunLine({ run }: { run: QueryRun | null }) {
         <span className={line}>
           {run.end?.truncated && (
             <span className="text-(--g-warn)">
-              Stopped at a row or size cap
-              {cli !== undefined &&
-                "; `dock db query --limit` returns up to 100 000"}
+              Stopped at {limit.toLocaleString("en")} rows or the size cap
               {" · "}
             </span>
           )}
-          {run.end?.command} · {rows} · {run.end?.duration_ms} ms
+          {[run.end?.command, rows, `${run.end?.duration_ms ?? 0} ms`]
+            .filter(Boolean)
+            .join(" · ")}
         </span>
       );
     case "failed":
