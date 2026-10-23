@@ -18,6 +18,7 @@ import { openCreate } from "../create/open";
 import { EnvServer } from "../servers/parts";
 import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
+import { ArchivedServices } from "./Archived";
 
 /** One environment on the project overview: a row per service. */
 export function EnvironmentTable({ env }: { env: EnvironmentView }) {
@@ -119,6 +120,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
           </table>
         </Panel>
       )}
+      <ArchivedServices env={env} />
     </section>
   );
 }

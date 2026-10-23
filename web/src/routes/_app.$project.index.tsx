@@ -5,6 +5,7 @@ import { useArchiveProject } from "../data/mutations";
 import { queries, serviceRef, useIsAdmin, useSession } from "../data/queries";
 import { canCreateEnvironment } from "../features/create/access";
 import { openCreate } from "../features/create/open";
+import { ArchivedProject } from "../features/overview/Archived";
 import { DeployBanner } from "../features/overview/DeployBanner";
 import { EnvironmentTable } from "../features/overview/EnvironmentTable";
 import { Activity } from "../features/overview/Live";
@@ -47,7 +48,24 @@ export const Route = createFileRoute("/_app/$project/")({
   component: Overview,
 });
 
+/** An archived project gets a read-only page; a live one, the overview. */
 function Overview() {
+  const { project } = Route.useParams();
+  const archived = useSuspenseQuery({
+    ...queries.overview(project),
+    select: (o) => !!o.project.archived_at,
+  }).data;
+  if (archived) {
+    return (
+      <ArchivedProject project={project}>
+        <Export project={project} />
+      </ArchivedProject>
+    );
+  }
+  return <LiveOverview />;
+}
+
+function LiveOverview() {
   const { project } = Route.useParams();
   // CPU and memory columns show the latest minute sample; usage events
   // patch it (data/live.ts).

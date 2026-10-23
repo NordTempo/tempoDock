@@ -34,6 +34,8 @@ export const keys = {
   session: ["session"],
   projects: ["projects"],
   project: (project: string) => ["project", project],
+  /** Under projects, so project.* audit events refetch it. */
+  archivedProjects: ["projects", "archived"],
   overview: (project: string) => ["project", project, "overview"],
   env: envKey,
   changes: (e: EnvRef, reveal = false) => [...envKey(e), "changes", reveal],
@@ -117,18 +119,26 @@ export const listenPort = (s: Service) =>
 export const isDatabase = (s: Service) =>
   !!s.data_engine || (!!s.database && s.database !== "none");
 
-/** Drops archived services and turns the API's null lists into arrays. */
+/**
+ * Sets archived services apart from live ones and turns the API's null
+ * lists into arrays.
+ */
 function toOverview(
   o: components["schemas"]["ProjectOverview"],
 ): ProjectOverview {
   return {
     project: o.project,
-    environments: (o.environments ?? []).map((env) => ({
-      ...env,
-      services: (env.services ?? [])
-        .filter((s) => !s.service.archived_at)
-        .map((s) => ({ ...s, domains: s.domains ?? [] })),
-    })),
+    environments: (o.environments ?? []).map((env) => {
+      const all = (env.services ?? []).map((s) => ({
+        ...s,
+        domains: s.domains ?? [],
+      }));
+      return {
+        ...env,
+        services: all.filter((s) => !s.service.archived_at),
+        archived: all.filter((s) => s.service.archived_at),
+      };
+    }),
   };
 }
 
@@ -160,6 +170,23 @@ export const queries = {
     queryOptions({
       queryKey: keys.projects,
       queryFn: () => list(api.GET("/api/v1/projects")),
+    }),
+  /** Archived projects, last archived first (`dock project list --all`). */
+  archivedProjects: () =>
+    queryOptions({
+      queryKey: keys.archivedProjects,
+      queryFn: async () =>
+        (
+          await list(
+            api.GET("/api/v1/projects", {
+              params: { query: { archived: true } },
+            }),
+          )
+        )
+          .flatMap((p) =>
+            p.archived_at ? [{ ...p, archived_at: p.archived_at }] : [],
+          )
+          .sort((a, b) => b.archived_at.localeCompare(a.archived_at)),
     }),
   overview: (project: string) =>
     queryOptions({
@@ -345,7 +372,7 @@ export const queries = {
       queryFn: () =>
         list(
           api.GET("/api/v1/audit", {
-            params: { query: { limit: 100, ...filter } },
+            params: { query: { ...filter, limit: filter.limit ?? 100 } },
           }),
         ),
     }),
