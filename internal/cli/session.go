@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -164,6 +165,38 @@ func (g *globals) open(f targetFlags, s scope) (*session, target, error) {
 	if err != nil {
 		return nil, target{}, err
 	}
+	if f.project == "" {
+		if err := sess.refreshLinkedProject(g.ctx); err != nil {
+			return nil, target{}, err
+		}
+		if sess.link != nil {
+			sess.api.ProjectID = sess.link.Project.ID
+		}
+	}
 	t, err := f.resolve(sess.link, s)
 	return sess, t, err
+}
+
+// refreshLinkedProject resolves a directory by stable ID, never by its cached
+// name. A missing identity fails closed, even if another project reused its name.
+func (s *session) refreshLinkedProject(ctx context.Context) error {
+	if s.link == nil {
+		return nil
+	}
+	if s.link.Project.ID == "" {
+		return noTarget("project identity in this directory's old link", "Link this directory again with `dock link -p <project>`.")
+	}
+	p, err := get[apitypes.Project](ctx, s, apiPrefix+"/project-ids/"+url.PathEscape(s.link.Project.ID))
+	if err != nil {
+		if e, ok := errors.AsType[*output.Error](err); ok {
+			copy := *e
+			copy.Hint = "Check the project and organization, then link this directory again with `dock link -p <project>`."
+			return &copy
+		}
+		return err
+	}
+	link := *s.link
+	link.Project.Name = p.Name
+	s.link = &link
+	return nil
 }

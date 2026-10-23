@@ -13,7 +13,7 @@ const listAuditEventsByTarget = `-- name: ListAuditEventsByTarget :many
 SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id, org_id FROM audit_events
 WHERE project_id = +?1
   AND environment_id = +?2
-  AND target = +?3
+  AND substr(target, instr(target, '/') + 1) = +?3
   AND ((action >= +?4 AND action < +?5) OR ?4 IS NULL)
   AND (id < +?6 OR ?6 IS NULL)
 ORDER BY id DESC
@@ -32,7 +32,8 @@ type ListAuditEventsByTargetParams struct {
 
 // One target's events in an environment, newest first. A service's events
 // (releases, settings, variables, volumes, domains) target
-// "project/environment/service".
+// "project/environment/service". Match the environment/service suffix so
+// historical targets remain readable after a project rename.
 func (q *Queries) ListAuditEventsByTarget(ctx context.Context, arg ListAuditEventsByTargetParams) ([]AuditEvent, error) {
 	rows, err := q.query(ctx, q.listAuditEventsByTargetStmt, listAuditEventsByTarget,
 		arg.ProjectID,

@@ -184,6 +184,18 @@ type Project struct {
 	ArchiveNotes []string `json:"archive_notes,omitempty" doc:"Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there), and environment networks left on them"`
 }
 
+// RenameProjectRequest changes a project's name and address, not its identity.
+type RenameProjectRequest struct {
+	Name string `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"New DNS-safe name"`
+	ID   int64  `json:"id,omitempty" minimum:"1" doc:"Expected project ID; prevents renaming a reused name"`
+}
+
+// ProjectRenamed lets open clients follow a project to its new address.
+type ProjectRenamed struct {
+	PreviousName string  `json:"previous_name"`
+	Project      Project `json:"project"`
+}
+
 // CreateProjectRequest creates a project.
 type CreateProjectRequest struct {
 	Name string `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name"`
@@ -1207,12 +1219,13 @@ type EventType string
 
 // Event types on the /events stream.
 const (
-	EventRelease       EventType = "release"
-	EventReleaseEvent  EventType = "release_event"
-	EventBuildLog      EventType = "build_log"
-	EventServiceStatus EventType = "service_status"
-	EventDomain        EventType = "domain"
-	EventAudit         EventType = "audit"
+	EventRelease        EventType = "release"
+	EventReleaseEvent   EventType = "release_event"
+	EventBuildLog       EventType = "build_log"
+	EventServiceStatus  EventType = "service_status"
+	EventDomain         EventType = "domain"
+	EventAudit          EventType = "audit"
+	EventProjectRenamed EventType = "project_renamed"
 	// EventDrift reports a difference between the DB and the runtime.
 	EventDrift EventType = "drift"
 	// EventLagged means the client was too slow and missed events; refetch.
@@ -1234,22 +1247,23 @@ const (
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type          EventType      `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,server,alert,update"`
-	Time          time.Time      `json:"time"`
-	Project       string         `json:"project,omitempty"`
-	Environment   string         `json:"environment,omitempty"`
-	Service       string         `json:"service,omitempty"`
-	Release       *Release       `json:"release,omitempty"`
-	ReleaseEvent  *ReleaseEvent  `json:"release_event,omitempty"`
-	BuildLog      *BuildLogLine  `json:"build_log,omitempty"`
-	ServiceStatus *ServiceStatus `json:"service_status,omitempty"`
-	Domain        *Domain        `json:"domain,omitempty"`
-	Audit         *AuditEvent    `json:"audit,omitempty"`
-	Usage         *UsageUpdate   `json:"usage,omitempty"`
-	Server        *Server        `json:"server,omitempty"`
-	Alert         *Alert         `json:"alert,omitempty"`
-	Update        *UpdateStatus  `json:"update,omitempty"`
-	Message       string         `json:"message,omitempty"`
+	Type           EventType       `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,server,alert,update,project_renamed"`
+	Time           time.Time       `json:"time"`
+	ProjectRenamed *ProjectRenamed `json:"project_renamed,omitempty"`
+	Project        string          `json:"project,omitempty"`
+	Environment    string          `json:"environment,omitempty"`
+	Service        string          `json:"service,omitempty"`
+	Release        *Release        `json:"release,omitempty"`
+	ReleaseEvent   *ReleaseEvent   `json:"release_event,omitempty"`
+	BuildLog       *BuildLogLine   `json:"build_log,omitempty"`
+	ServiceStatus  *ServiceStatus  `json:"service_status,omitempty"`
+	Domain         *Domain         `json:"domain,omitempty"`
+	Audit          *AuditEvent     `json:"audit,omitempty"`
+	Usage          *UsageUpdate    `json:"usage,omitempty"`
+	Server         *Server         `json:"server,omitempty"`
+	Alert          *Alert          `json:"alert,omitempty"`
+	Update         *UpdateStatus   `json:"update,omitempty"`
+	Message        string          `json:"message,omitempty"`
 }
 
 // UsageUpdate is one minute tick's samples: a server's own (Host; only

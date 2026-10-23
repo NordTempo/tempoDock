@@ -434,9 +434,11 @@ func (c *Core) runBackup(ctx context.Context, ss svcScope, row store.Backup) {
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
 		c.audit(ctx, System, "backup.failed", &ss.project, &ss.env, ss.String(), fmt.Sprintf("backup %d failed: %v", row.ID, err))
-		c.signalAlert(ctx, backupFailed(ss.project.Name, ss.env.Name, ss.svc.Name, row.ID, err.Error()))
+		s := backupFailed(ss.project.Name, ss.env.Name, ss.svc.Name, row.ID, err.Error(), ss.svc.ID)
+		s.projectID = ss.project.ID
+		c.signalAlert(ctx, s)
 	} else {
-		c.signalAlert(ctx, alertSignal{Key: "backup:" + serviceKey(ss.project.Name, ss.env.Name, ss.svc.Name), Resolve: true})
+		c.signalAlert(ctx, alertSignal{Key: "backup:" + alertServiceKey(ss.svc.ID, ss.project.Name, ss.env.Name, ss.svc.Name), Resolve: true})
 		fin.SnapshotID, fin.SizeBytes = res.SnapshotID, res.Bytes
 		if res.Kept != nil {
 			c.markPruned(ctx, ss.svc.ID, row.Repository, res.Kept)

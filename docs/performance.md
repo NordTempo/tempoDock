@@ -193,6 +193,10 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 - **No unbounded caches or maps.** Anything kept in memory has a size bound
   or is keyed by something finite and removed when it goes away (a
   subscription, a deploy). App logs are read from Docker, never stored.
+- Project rename canonicalization keeps one current name per renamed project ID
+  for the daemon's lifetime. It is bounded by projects, not rename count, and
+  avoids DB reads for in-flight events. There are no historical aliases or timers
+  (`BenchmarkBusRenamedProject`).
 - **Mind allocations on hot paths.** Reuse buffers per stream, preallocate
   slices with known length, avoid `fmt.Sprintf` in loops. Benchmarks report
   allocs/op; the baseline gates them.

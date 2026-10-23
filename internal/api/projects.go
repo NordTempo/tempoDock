@@ -12,13 +12,17 @@ import (
 )
 
 // Path parameters. Resources are addressed by name; names are unique in
-// their parent and immutable. (Exported because Huma only finds parameters
+// their parent. A project can be renamed; its ID stays stable. (Exported because Huma only finds parameters
 // in exported embedded structs.)
 
 // ProjectPath addresses a project.
 type ProjectPath struct {
-	Project string `path:"project" doc:"Project name"`
+	Project    string `path:"project" doc:"Project name"`
+	ExpectedID int64  `header:"Dock-Project-ID" minimum:"1" doc:"Expected project identity for linked clients"`
 }
+
+// expectedProjectID lets authed constrain name-based requests to their identity.
+func (p ProjectPath) expectedProjectID() int64 { return p.ExpectedID }
 
 // EnvPath addresses an environment.
 type EnvPath struct {
@@ -74,6 +78,23 @@ func registerProjects(s *Server, a huma.API) {
 		Summary: "Get a project", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[apitypes.Project], error) {
 		return reply(s.core.GetProject(ctx, actor, in.Project))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "rename-project", Method: http.MethodPatch, Path: projectPathT,
+		Summary: "Rename a project", Description: "Changes its name and address, not its ID. Running services and domains are unchanged. Old-name URLs and scripts need updating. Scope: admin, whole project.", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ProjectPath
+		Body apitypes.RenameProjectRequest
+	}) (*out[apitypes.Project], error) {
+		return reply(s.core.RenameProject(ctx, actor, in.Project, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-project-by-id", Method: http.MethodGet, Path: Prefix + "/project-ids/{id}",
+		Summary: "Get a project by stable ID", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID int64 `path:"id" minimum:"1"`
+	}) (*out[apitypes.Project], error) {
+		return reply(s.core.GetProjectByID(ctx, actor, in.ID))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "archive-project", Method: http.MethodPost, Path: projectPathT + "/archive",

@@ -348,7 +348,7 @@ func (h dataHost) Audit(ctx context.Context, pa datapanel.Actor, d *svcData, e d
 
 // QueryHistory reads the actor's data.query events on the service.
 func (h dataHost) QueryHistory(ctx context.Context, a datapanel.Actor, d *svcData, before int64, limit int) ([]apitypes.DataHistoryEntry, error) {
-	params := store.ListDataQueryHistoryParams{Target: d.ss.String(), BeforeID: before, MaxRows: int64(limit)}
+	params := store.ListDataQueryHistoryParams{EnvironmentID: &d.ss.env.ID, Target: d.ss.env.Name + "/" + d.ss.svc.Name, BeforeID: before, MaxRows: int64(limit)}
 	if params.BeforeID <= 0 {
 		params.BeforeID = math.MaxInt64
 	}

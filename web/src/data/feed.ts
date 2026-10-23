@@ -69,3 +69,13 @@ export function useFeed(project: string) {
   );
   return all.filter((item) => item.ref.project === project);
 }
+
+/** Keeps the bounded live feed attached to a renamed project's new address. */
+export function renameFeedProject(previous: string, name: string) {
+  items = items.map((item) =>
+    item.ref.project === previous
+      ? { ...item, ref: { ...item.ref, project: name } }
+      : item,
+  );
+  for (const listener of listeners) listener();
+}

@@ -19,7 +19,7 @@ func (c *Core) listServiceAudit(ctx context.Context, a Actor, f AuditFilter) ([]
 		return nil, err
 	}
 	params := store.ListAuditEventsByTargetParams{
-		ProjectID: &es.project.ID, EnvironmentID: &es.env.ID, Target: es.String() + "/" + f.Service, MaxRows: int64(f.Limit),
+		ProjectID: &es.project.ID, EnvironmentID: &es.env.ID, Target: es.env.Name + "/" + f.Service, MaxRows: int64(f.Limit),
 	}
 	if params.MaxRows <= 0 || params.MaxRows > 500 {
 		params.MaxRows = 100

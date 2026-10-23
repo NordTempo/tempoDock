@@ -43,6 +43,7 @@ type alertSignal struct {
 	Message  string
 	// What the alert is about, where that applies.
 	Project, Environment, Service, Server string
+	projectID, serviceID                  int64
 	// Resolve closes the open alert with Key; the other fields are unused.
 	Resolve bool
 }
@@ -54,7 +55,7 @@ type alertEngine struct {
 	// open holds the open alerts by key: a handful, bounded by servers,
 	// services and domains.
 	open map[string]store.Alert
-	// restarts tracks container restarts per running service ("p/e/s")
+	// restarts tracks container restarts per running service (stable ID)
 	// for crash loops; an entry goes when the service stops (archived,
 	// nothing deployed) or a new release goes live. A quiet entry is kept
 	// with no times, so its next restart counts.
@@ -144,8 +145,17 @@ func (c *Core) signalAlert(ctx context.Context, s alertSignal) {
 	c.raiseAlert(ctx, s, time.Now())
 }
 
-// serviceKey is how alerts name a service: project/environment/service.
+// serviceKey is the human-readable address of a service.
 func serviceKey(project, env, service string) string { return project + "/" + env + "/" + service }
+
+// alertServiceKey uses a service's stable ID; events without an identity
+// (synthetic events in tests) retain their human-readable address.
+func alertServiceKey(id int64, project, env, service string) string {
+	if id != 0 {
+		return "service:" + strconv.FormatInt(id, 10)
+	}
+	return serviceKey(project, env, service)
+}
 
 // onAlertEvent applies one bus event.
 func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
@@ -156,7 +166,7 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 			c.raiseAlert(ctx, *s, now)
 		}
 	}
-	svc := serviceKey(ev.Project, ev.Environment, ev.Service)
+	svc := alertServiceKey(ev.serviceID, ev.Project, ev.Environment, ev.Service)
 	switch ev.Type {
 	case apitypes.EventRelease:
 		r := ev.Release
@@ -165,7 +175,9 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 		}
 		switch r.Status {
 		case apitypes.ReleaseFailed:
-			c.raiseAlert(ctx, deployFailed(ev.Project, ev.Environment, ev.Service, r.Number, r.Error), now)
+			s := deployFailed(ev.Project, ev.Environment, ev.Service, r.Number, r.Error, ev.serviceID)
+			s.projectID = ev.projectID
+			c.raiseAlert(ctx, s, now)
 		case apitypes.ReleaseActive:
 			// A new container serves: its restarts start from zero.
 			c.resolveAlert(ctx, "deploy:"+svc, now)
@@ -187,7 +199,9 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 		case ev.Message == "removed" || d.Status == apitypes.DomainActive:
 			c.resolveAlert(ctx, "domain:"+d.Hostname, now)
 		case d.Status == apitypes.DomainError:
-			c.raiseAlert(ctx, domainError(ev.Project, ev.Environment, ev.Service, d.Hostname, d.StatusReason), now)
+			s := domainError(ev.Project, ev.Environment, ev.Service, d.Hostname, d.StatusReason)
+			s.projectID, s.serviceID = ev.projectID, ev.serviceID
+			c.raiseAlert(ctx, s, now)
 		}
 	case apitypes.EventServer:
 		s := ev.Server
@@ -208,10 +222,10 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 }
 
 // deployFailed is the alert for a service whose newest release failed.
-func deployFailed(project, env, service string, number int64, reason string) alertSignal {
+func deployFailed(project, env, service string, number int64, reason string, serviceID int64) alertSignal {
 	svc := serviceKey(project, env, service)
 	return alertSignal{
-		Key: "deploy:" + svc, Kind: apitypes.AlertDeployFailed, Severity: apitypes.SeverityWarning,
+		Key: "deploy:" + alertServiceKey(serviceID, project, env, service), serviceID: serviceID, Kind: apitypes.AlertDeployFailed, Severity: apitypes.SeverityWarning,
 		Title:   "Deploy of " + svc + " failed",
 		Message: fmt.Sprintf("Release %d failed: %s. The release before it keeps serving.", number, reason),
 		Project: project, Environment: env, Service: service,
@@ -220,10 +234,10 @@ func deployFailed(project, env, service string, number int64, reason string) ale
 
 // backupFailed is the alert for a service's latest backup failing. The
 // next successful backup resolves it.
-func backupFailed(project, env, service string, id int64, reason string) alertSignal {
+func backupFailed(project, env, service string, id int64, reason string, serviceID int64) alertSignal {
 	svc := serviceKey(project, env, service)
 	return alertSignal{
-		Key: "backup:" + svc, Kind: apitypes.AlertBackupFailed, Severity: apitypes.SeverityWarning,
+		Key: "backup:" + alertServiceKey(serviceID, project, env, service), serviceID: serviceID, Kind: apitypes.AlertBackupFailed, Severity: apitypes.SeverityWarning,
 		Title:   "Backup of " + svc + " failed",
 		Message: fmt.Sprintf("Backup %d failed: %s.", id, strings.TrimRight(strings.TrimSpace(reason), ".:; ")),
 		Project: project, Environment: env, Service: service,
@@ -283,7 +297,8 @@ func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st
 	}
 	c.raiseAlert(ctx, alertSignal{
 		Key: "crash:" + svc, Kind: apitypes.AlertCrashLoop, Severity: apitypes.SeverityCritical,
-		Title: svc + " is crash looping", Message: msg,
+		Title:     serviceKey(ev.Project, ev.Environment, ev.Service) + " is crash looping",
+		projectID: ev.projectID, serviceID: ev.serviceID, Message: msg,
 		Project: ev.Project, Environment: ev.Environment, Service: ev.Service,
 	}, now)
 }
@@ -428,7 +443,8 @@ func (c *Core) reconcileAlerts(ctx context.Context, now time.Time) {
 		return
 	}
 	for _, r := range failed {
-		s := deployFailed(r.Project, r.Environment, r.Service, r.Number, r.Error)
+		s := deployFailed(r.Project, r.Environment, r.Service, r.Number, r.Error, r.ServiceID)
+		s.projectID = r.ProjectID
 		want[s.Key] = s
 	}
 	pending, err := c.store.ListPendingDomains(ctx)
@@ -445,6 +461,7 @@ func (c *Core) reconcileAlerts(ctx context.Context, now time.Time) {
 			continue
 		}
 		s := domainError(ss.project.Name, ss.env.Name, ss.svc.Name, d.Hostname, d.StatusReason)
+		s.projectID, s.serviceID = ss.project.ID, ss.svc.ID
 		want[s.Key] = s
 	}
 	var stale []string
@@ -471,15 +488,19 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	t := now.UTC()
 	e := c.alerts
 	e.mu.Lock()
+	if name := c.bus.projectName(s.projectID, s.Project); name != s.Project {
+		s.Title = strings.Replace(s.Title, s.Project+"/", name+"/", 1)
+		s.Project = name
+	}
 	cur, ok := e.open[s.Key]
 	if ok {
-		if cur.Severity == string(s.Severity) && cur.Title == s.Title && cur.Message == s.Message {
+		if cur.Severity == string(s.Severity) && cur.Title == s.Title && cur.Message == s.Message && cur.Project == s.Project {
 			e.mu.Unlock()
 			return
 		}
 		escalated := severityRank(s.Severity) > severityRank(apitypes.AlertSeverity(cur.Severity))
-		cur.Severity, cur.Title, cur.Message, cur.UpdatedAt = string(s.Severity), s.Title, s.Message, t
-		err := c.store.UpdateAlert(ctx, store.UpdateAlertParams{Severity: cur.Severity, Title: cur.Title, Message: cur.Message, UpdatedAt: t, ID: cur.ID})
+		cur.Severity, cur.Title, cur.Message, cur.Project, cur.UpdatedAt = string(s.Severity), s.Title, s.Message, s.Project, t
+		err := c.store.UpdateAlert(ctx, store.UpdateAlertParams{Severity: cur.Severity, Title: cur.Title, Message: cur.Message, Project: cur.Project, UpdatedAt: t, ID: cur.ID})
 		if err != nil {
 			e.mu.Unlock()
 			c.log.Error("update alert", "alert", s.Key, "err", err)
@@ -493,9 +514,16 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 		}
 		return
 	}
+	var pid, sid *int64
+	if s.projectID != 0 {
+		pid = &s.projectID
+	}
+	if s.serviceID != 0 {
+		sid = &s.serviceID
+	}
 	row, err := c.store.OpenAlert(ctx, store.OpenAlertParams{
 		Key: s.Key, Kind: string(s.Kind), Severity: string(s.Severity), Title: s.Title, Message: s.Message,
-		Project: s.Project, Environment: s.Environment, Service: s.Service, Server: s.Server, OpenedAt: t, UpdatedAt: t,
+		Project: s.Project, Environment: s.Environment, Service: s.Service, Server: s.Server, OpenedAt: t, UpdatedAt: t, ProjectID: pid, ServiceID: sid,
 	})
 	if err != nil {
 		e.mu.Unlock()
@@ -543,7 +571,11 @@ func severityRank(s apitypes.AlertSeverity) int {
 // publishAlert sends an alert event to operators.
 func (c *Core) publishAlert(a store.Alert) {
 	out := toAlert(a)
-	c.bus.publish(busEvent{serverStats: true, ev: apitypes.Event{
+	var projectID int64
+	if a.ProjectID != nil && a.ResolvedAt == nil {
+		projectID = *a.ProjectID
+	}
+	c.bus.publish(busEvent{projectID: projectID, serverStats: true, ev: apitypes.Event{
 		Type: apitypes.EventAlert, Project: a.Project, Environment: a.Environment, Service: a.Service, Alert: &out,
 	}})
 }

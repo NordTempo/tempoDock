@@ -119,13 +119,13 @@ func TestDeployFailureAlertDedupesAndResolves(t *testing.T) {
 
 	h.rt.FailPull(errors.New("manifest unknown"))
 	h.deploy(web, "app:2")
-	a := h.openAlert("deploy:shop/production/web", true)
+	a := h.openAlert("deploy:service:1", true)
 	if a.Kind != string(apitypes.AlertDeployFailed) || a.Service != "web" || !strings.Contains(a.Message, "Release 2 failed") {
 		t.Fatalf("alert = %+v", a)
 	}
 	h.deploy(web, "app:3")
 	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(h.openAlert("deploy:shop/production/web", true).Message, "Release 3") {
+	for !strings.Contains(h.openAlert("deploy:service:1", true).Message, "Release 3") {
 		if time.Now().After(deadline) {
 			t.Fatal("the open alert should follow the newest failure")
 		}
@@ -137,7 +137,7 @@ func TestDeployFailureAlertDedupesAndResolves(t *testing.T) {
 
 	h.rt.FailPull(nil)
 	h.deploy(web, "app:4")
-	h.openAlert("deploy:shop/production/web", false)
+	h.openAlert("deploy:service:1", false)
 	all, _ := h.c.ListAlerts(h.ctx, testSystem, true, 0, 0)
 	if len(all) != 1 || all[0].ResolvedAt == nil {
 		t.Fatalf("alerts after a good deploy = %+v", all)
@@ -154,9 +154,9 @@ func TestAlertsReconcileOnStart(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	h.rt.FailPull(errors.New("manifest unknown"))
 	h.deploy(web, "app:1")
-	h.openAlert("deploy:shop/production/web", true)
+	h.openAlert("deploy:service:1", true)
 	h.restart()
-	h.openAlert("deploy:shop/production/web", true)
+	h.openAlert("deploy:service:1", true)
 
 	// The alert engine misses what happens while the daemon is down: a
 	// release that succeeded is only in the DB.
@@ -173,7 +173,7 @@ func TestAlertsReconcileOnStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.c = h.start()
-	h.openAlert("deploy:shop/production/web", false)
+	h.openAlert("deploy:service:1", false)
 }
 
 // Disk alerts warn and then go critical as a disk fills, and resolve only
@@ -268,7 +268,7 @@ func TestWebhookSignedAtAttempt(t *testing.T) {
 // A backup that failed with nothing more to say still reads as a sentence.
 func TestBackupFailedMessage(t *testing.T) {
 	for _, reason := range []string{"restic reported no snapshot", "exit code 1: Fatal: no key found.", "restic reported no snapshot: "} {
-		m := backupFailed("p", "e", "s", 1, reason).Message
+		m := backupFailed("p", "e", "s", 1, reason, 0).Message
 		if strings.HasSuffix(m, ":.") || strings.HasSuffix(m, "..") || !strings.HasSuffix(m, ".") {
 			t.Errorf("message for %q = %q", reason, m)
 		}

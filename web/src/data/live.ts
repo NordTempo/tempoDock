@@ -1,6 +1,7 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { currentOrg } from "../api/client";
 import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
@@ -10,6 +11,7 @@ import { applyUpdateEvent } from "../features/update/data";
 import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
+import { followProjectRename, reconcileProjectNames } from "./projectRename";
 import { keys, queries } from "./queries";
 import type {
   LiveEvent,
@@ -31,6 +33,7 @@ import type {
 
 // Build output is followed on its own stream (useBuildLog), not the bus.
 const busEvents = [
+  "project_renamed",
   "release",
   "release_event",
   "service_status",
@@ -162,6 +165,8 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Only operators get these: an update moved on.
       if (event.update) applyUpdateEvent(queryClient, event.update);
       return;
+    case "project_renamed":
+      return; // Navigation is handled by useLiveUpdates.
     case "build_log":
       return; // not subscribed, see busEvents
     default:
@@ -322,6 +327,7 @@ function invalidateForAudit(
     queryClient.invalidateQueries({ queryKey });
   invalidate(["audit"]);
   if (!audit) return;
+  if (audit.action === "project.rename") return; // Its typed event moves the cache.
   const [kind] = audit.action.split(".");
   if (kind === "project") invalidate(keys.projects);
   if (kind === "token") invalidate(keys.tokens);
@@ -391,16 +397,36 @@ export function useLiveUpdates() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const org = useOrg();
+  const recover = async (invalidate: boolean) => {
+    await reconcileProjectNames(queryClient, router, org);
+    if (invalidate && org === currentOrg())
+      await queryClient.invalidateQueries();
+  };
   useEventStream<LiveEvent>(
     org ? `/api/v1/events?org=${encodeURIComponent(org)}` : "/api/v1/events",
     busEvents,
     (_, event) => {
-      applyLiveEvent(queryClient, event);
+      if (event.type === "project_renamed" && event.project_renamed) {
+        void followProjectRename(
+          queryClient,
+          router,
+          org,
+          event.project_renamed,
+        )
+          .catch(() => recover(true))
+          .catch(() => router.invalidate());
+      } else if (event.type === "lagged") {
+        void recover(true).catch(() => router.invalidate());
+      } else {
+        applyLiveEvent(queryClient, event);
+      }
       recordLiveEvent(event);
     },
     {
-      // Events may have been missed while disconnected.
-      onReconnect: () => queryClient.invalidateQueries(),
+      // Reconcile after subscribing, including the initial read/subscribe gap.
+      onReady: (reconnected) => {
+        void recover(reconnected).catch(() => router.invalidate());
+      },
       // A refused stream usually means the session ended.
       onClose: async () => {
         const session = await queryClient.fetchQuery({

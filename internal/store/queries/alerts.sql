@@ -1,10 +1,10 @@
 -- name: OpenAlert :one
-INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateAlert :exec
-UPDATE alerts SET severity = ?, title = ?, message = ?, updated_at = ? WHERE id = +?;
+UPDATE alerts SET severity = ?, title = ?, message = ?, project = ?, updated_at = ? WHERE id = +?;
 
 -- name: ResolveAlert :exec
 UPDATE alerts SET resolved_at = sqlc.arg(at), updated_at = sqlc.arg(at) WHERE id = +sqlc.arg(id) AND resolved_at IS NULL;
@@ -69,7 +69,8 @@ WHERE alert_channels.renotify_minutes > 0
 -- be open after the alert engine missed events. One pass over services
 -- (CROSS JOIN keeps SQLite from scanning releases instead), each newest
 -- release found through (service_id, number).
-SELECT projects.name AS project, environments.name AS environment, services.name AS service,
+SELECT projects.id AS project_id, services.id AS service_id,
+  projects.name AS project, environments.name AS environment, services.name AS service,
   releases.number, releases.error
 FROM services
 JOIN environments ON environments.id = services.environment_id
@@ -77,3 +78,10 @@ JOIN projects ON projects.id = environments.project_id
 CROSS JOIN releases ON releases.service_id = services.id
   AND releases.number = (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = services.id)
 WHERE releases.status = 'failed' AND services.archived_at IS NULL;
+
+-- Rename only open alerts of this project; closed alerts keep their snapshots.
+-- name: RenameProjectAlerts :many
+UPDATE alerts SET project = sqlc.arg(name),
+    title = replace(title, sqlc.arg(old_name) || '/' || environment || '/' || service, sqlc.arg(name) || '/' || environment || '/' || service)
+WHERE project_id = +sqlc.arg(project_id) AND resolved_at IS NULL
+RETURNING *;

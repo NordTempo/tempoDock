@@ -283,11 +283,8 @@ func (c *Core) CreateProject(ctx context.Context, a Actor, req apitypes.CreatePr
 	if err := a.requireUnlimited(apitypes.ScopeDeploy, "creating a project"); err != nil {
 		return apitypes.Project{}, err
 	}
-	if err := validName("project", req.Name); err != nil {
+	if err := validProjectName(req.Name); err != nil {
 		return apitypes.Project{}, err
-	}
-	if slices.Contains(reservedProjectNames, req.Name) {
-		return apitypes.Project{}, invalid("%q is the address of a page in the web UI; pick another project name", req.Name)
 	}
 	var p store.Project
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
@@ -423,4 +420,94 @@ func toProject(p store.Project) apitypes.Project {
 
 func toEnvironment(p store.Project, e store.Environment, server string) apitypes.Environment {
 	return apitypes.Environment{ID: e.ID, Project: p.Name, Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), Server: server, CreatedAt: e.CreatedAt}
+}
+
+// validProjectName applies the same address rules to creation and renaming.
+func validProjectName(name string) error {
+	if err := validName("project", name); err != nil {
+		return err
+	}
+	if slices.Contains(reservedProjectNames, name) {
+		return invalid("%q is the address of a page in the web UI; pick another project name", name)
+	}
+	return nil
+}
+
+// GetProjectByID resolves a stable identity for linked clients after a rename.
+func (c *Core) GetProjectByID(ctx context.Context, a Actor, id int64) (apitypes.Project, error) {
+	if err := a.require(apitypes.ScopeRead, "reading a project"); err != nil {
+		return apitypes.Project{}, err
+	}
+	p, err := c.store.GetProject(ctx, id)
+	if store.IsNotFound(err) || (err == nil && p.OrgID != a.OrgID) {
+		return apitypes.Project{}, notFound("project %d not found; link this directory again with `dock link`", id)
+	}
+	if err == nil {
+		err = a.checkProject(apitypes.ScopeRead, "reading a project", p)
+	}
+	return toProject(p), err
+}
+
+// RenameProject changes only a project's name/address. IDs, running services,
+// domains and release snapshots stay unchanged, including during a deployment.
+func (c *Core) RenameProject(ctx context.Context, a Actor, name string, req apitypes.RenameProjectRequest) (apitypes.Project, error) {
+	p, err := c.projectFor(ctx, a, name, apitypes.ScopeAdmin, "renaming a project")
+	if err != nil {
+		return apitypes.Project{}, err
+	}
+	if err := validProjectName(req.Name); err != nil {
+		return apitypes.Project{}, err
+	}
+	c.renameMu.Lock()
+	defer c.renameMu.Unlock()
+	// Alert writes use the same lock before their transaction; the project
+	// row and its open alert labels change together, without notifications.
+	c.alerts.mu.Lock()
+	var alerts []store.Alert
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		var err error
+		if p, err = q.GetProject(ctx, p.ID); err != nil {
+			return err
+		}
+		if p.Name != name || (req.ID != 0 && req.ID != p.ID) {
+			return conflict("project changed; refresh it before renaming")
+		}
+		if err := notArchived(p); err != nil {
+			return err
+		}
+		if p.Name == req.Name {
+			return nil
+		}
+		if p, err = q.RenameProject(ctx, store.RenameProjectParams{Name: req.Name, ID: p.ID}); err != nil {
+			return err
+		}
+		alerts, err = q.RenameProjectAlerts(ctx, store.RenameProjectAlertsParams{Name: req.Name, OldName: &name, ProjectID: &p.ID})
+		return err
+	})
+	if err == nil {
+		for _, row := range alerts {
+			c.alerts.open[row.Key] = row
+		}
+		if name != p.Name {
+			// Canonicalize events from operations which captured the old scope.
+			c.bus.renameProject(p.ID, p.Name)
+		}
+	}
+	c.alerts.mu.Unlock()
+	if store.IsUnique(err) {
+		return apitypes.Project{}, conflict("project %q already exists; pick another name", req.Name)
+	}
+	if err != nil || name == p.Name {
+		return toProject(p), err
+	}
+	out := toProject(p)
+	c.bus.publish(busEvent{orgID: p.OrgID, projectID: p.ID, ev: apitypes.Event{
+		Type: apitypes.EventProjectRenamed, Project: p.Name,
+		ProjectRenamed: &apitypes.ProjectRenamed{PreviousName: name, Project: out},
+	}})
+	c.audit(ctx, a, "project.rename", &p, nil, p.Name, fmt.Sprintf("renamed project %s to %s", name, p.Name))
+	for _, row := range alerts {
+		c.publishAlert(row)
+	}
+	return out, nil
 }

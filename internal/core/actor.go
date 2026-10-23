@@ -27,10 +27,12 @@ type Actor struct {
 	Operator bool
 	// ProjectID and EnvironmentID limit a token to one project or one
 	// environment. Zero means unlimited.
-	ProjectID       int64
-	EnvironmentID   int64
-	ProjectName     string
-	EnvironmentName string
+	ProjectID     int64
+	EnvironmentID int64
+	// ExpectedProjectID guards a linked client against name reuse during a request.
+	ExpectedProjectID int64
+	ProjectName       string
+	EnvironmentName   string
 }
 
 // System is the actor for the daemon's own actions and for trusted local
@@ -157,6 +159,9 @@ func (a Actor) canSee(orgID, projectID, envID int64) bool {
 // find the actor's org's projects; this guards lookups by ID.
 func (a Actor) inOrg(p store.Project) error {
 	if a.Kind == "system" || p.OrgID == a.OrgID {
+		if a.ExpectedProjectID != 0 && a.ExpectedProjectID != p.ID {
+			return conflict("project name changed; retry or link this directory again with `dock link`")
+		}
 		return nil
 	}
 	return notFound("project %q not found", p.Name)

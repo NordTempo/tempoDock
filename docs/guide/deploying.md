@@ -367,3 +367,26 @@ the audit log) says what was left:
   running. Remove them on that machine (`docker ps --filter
   label=dock.managed=true`), or join it again with `dock server add` and
   they are removed when it connects.
+
+## Rename a project
+
+On the project overview, choose **Rename project**, or run:
+
+```sh
+dock project rename shop storefront
+```
+
+This needs admin access to the whole project. Use the same lowercase name rules
+as project creation. Archived projects cannot be renamed, and their names remain
+reserved.
+
+The project's ID, services, containers, volumes, domains, tokens and release
+history stay unchanged. Renaming does not redeploy anything, even if a deployment
+is in progress. Open console pages follow the new address. Existing release
+snapshots, including their `DOCK_PROJECT` value, stay as deployed; newly resolved
+configurations use the new name.
+
+Update bookmarked project URLs, explicit `--project` flags and API paths in
+scripts. Old names do not redirect and may be reused. Current CLI versions
+resolve linked directories by project ID; older clients need updating or
+relinking. Historical audit targets retain the name used when the action happened.

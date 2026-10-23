@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { withOrg } from "../api/client";
 import { useArchiveProject } from "../data/mutations";
 import { queries, serviceRef, useIsAdmin, useSession } from "../data/queries";
@@ -18,6 +18,8 @@ import { rememberProject, useOrg } from "../shell/location";
 import { usePalette } from "../shell/palette";
 import { plural } from "../ui/format";
 import { Act, Button, ErrorText, Glyph, Page, PageBar } from "../ui/kit";
+
+const RenameProject = lazy(() => import("../features/overview/RenameProject"));
 
 export const Route = createFileRoute("/_app/$org/$project/")({
   loader: async ({ context: { queryClient }, params }) => {
@@ -71,7 +73,14 @@ function LiveOverview() {
   const { project } = Route.useParams();
   // CPU and memory columns show the latest minute sample; usage events
   // patch it (data/live.ts).
-  const { environments } = useSuspenseQuery(queries.overview(project)).data;
+  const overview = useSuspenseQuery(queries.overview(project)).data;
+  const { environments } = overview;
+  const session = useSession();
+  const canRename =
+    session?.scope === "admin" &&
+    !session.environment &&
+    (!session.project || session.project === project);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const navigate = useNavigate();
   const openPalette = usePalette();
   const services = environments.flatMap((e) => e.services);
@@ -142,6 +151,14 @@ function LiveOverview() {
         }
         actions={
           <>
+            {canRename && (
+              <Act
+                cli={`dock project rename ${project} <name>`}
+                onClick={() => setRenaming(project)}
+              >
+                Rename project
+              </Act>
+            )}
             {canNewEnv && (
               <Act
                 cli={`dock environment create <name> -p ${project}`}
@@ -174,6 +191,15 @@ function LiveOverview() {
           </>
         }
       />
+      {renaming === project && (
+        <Suspense fallback={null}>
+          <RenameProject
+            key={project}
+            project={overview.project}
+            onClose={() => setRenaming(null)}
+          />
+        </Suspense>
+      )}
       <Page>
         {deploying.length > 0 && (
           <div className="flex flex-col gap-1.5">

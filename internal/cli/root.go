@@ -29,6 +29,7 @@ func Execute() int {
 
 // globals is state shared by all commands.
 type globals struct {
+	ctx  context.Context
 	io   *output.IO
 	json bool
 	// org is --org: the organization to act in, over DOCK_ORG, the link's
@@ -41,7 +42,7 @@ type globals struct {
 
 // run executes one command line against io and returns the exit code.
 func run(ctx context.Context, args []string, io *output.IO) int {
-	g := &globals{io: io}
+	g := &globals{io: io, ctx: ctx}
 	root := &cobra.Command{
 		Use:           "dock",
 		Short:         "Deploy Docker apps to your own servers",

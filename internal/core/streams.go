@@ -43,28 +43,40 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 	if err := a.require(apitypes.ScopeRead, "following events"); err != nil {
 		return nil, err
 	}
+	var pid, eid, sid int64
 	switch {
 	case f.Service != "":
-		if _, err := c.serviceFor(ctx, a, ServiceRef(f), apitypes.ScopeRead, "following events"); err != nil {
+		ss, err := c.serviceFor(ctx, a, ServiceRef(f), apitypes.ScopeRead, "following events")
+		if err != nil {
 			return nil, err
 		}
+		pid, eid, sid = ss.project.ID, ss.env.ID, ss.svc.ID
 	case f.Environment != "":
-		if _, err := c.envFor(ctx, a, EnvRef{f.Project, f.Environment}, apitypes.ScopeRead, "following events"); err != nil {
+		es, err := c.envFor(ctx, a, EnvRef{f.Project, f.Environment}, apitypes.ScopeRead, "following events")
+		if err != nil {
 			return nil, err
 		}
+		pid, eid = es.project.ID, es.env.ID
 	case f.Project != "":
-		if _, err := c.projectFor(ctx, a, f.Project, apitypes.ScopeRead, "following events"); err != nil {
+		p, err := c.projectFor(ctx, a, f.Project, apitypes.ScopeRead, "following events")
+		if err != nil {
 			return nil, err
 		}
+		pid = p.ID
 	}
 	serverStats := a.readsServerStats()
 	match := func(e busEvent) bool {
-		if !a.canSee(e.orgID, e.projectID, e.envID) || (e.serverStats && !serverStats) {
+		// A project rename affects every environment, including scoped readers.
+		envID := e.envID
+		if e.ev.Type == apitypes.EventProjectRenamed {
+			envID = a.EnvironmentID
+		}
+		if !a.canSee(e.orgID, e.projectID, envID) || (e.serverStats && !serverStats) {
 			return false
 		}
-		return (f.Project == "" || e.ev.Project == f.Project) &&
-			(f.Environment == "" || e.ev.Environment == f.Environment) &&
-			(f.Service == "" || e.ev.Service == f.Service)
+		return (pid == 0 || e.projectID == pid) &&
+			(eid == 0 || e.envID == eid || e.ev.Type == apitypes.EventProjectRenamed) &&
+			(sid == 0 || e.serviceID == sid || e.ev.Type == apitypes.EventProjectRenamed)
 	}
 	return func(ctx context.Context, ready func(), send func(...LiveEvent) error) error {
 		sub := c.bus.subscribe(match)

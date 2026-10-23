@@ -155,7 +155,7 @@ type collector struct {
 	// stored.
 	events []busEvent
 	// names are the targets' names by service, for the events; reloaded
-	// when the set of targets changes (names never do).
+	// when the set of targets changes. The bus canonicalizes renamed projects.
 	names map[int64]store.ListStatsNamesRow
 }
 

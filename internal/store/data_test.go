@@ -307,7 +307,7 @@ func TestDataQueryHistory(t *testing.T) {
 				return err
 			}
 			ev, err := q.AddAuditEventWithDetail(ctx, AddAuditEventWithDetailParams{
-				Actor: "a", ActorKind: "user", UserID: userID, TokenID: tokenID, Action: action,
+				Actor: "a", ActorKind: "user", UserID: userID, TokenID: tokenID, Action: action, EnvironmentID: &f.staging.ID,
 				Target: target, Summary: "query", CreatedAt: time.Now(), DetailID: &detail,
 			})
 			id = ev.ID
@@ -324,18 +324,21 @@ func TestDataQueryHistory(t *testing.T) {
 	add("data.query", "shop/staging/other", &f.user.ID, nil, "select other")
 	add("data.commit", target, &f.user.ID, nil, "update")
 
-	rows, err := s.ListDataQueryHistory(ctx, ListDataQueryHistoryParams{Target: target, UserID: &f.user.ID, BeforeID: math.MaxInt64, MaxRows: 10})
+	if _, err := s.RenameProject(ctx, RenameProjectParams{ID: f.project.ID, Name: "storefront"}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.ListDataQueryHistory(ctx, ListDataQueryHistoryParams{EnvironmentID: &f.staging.ID, Target: "staging/postgres", UserID: &f.user.ID, BeforeID: math.MaxInt64, MaxRows: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 2 || rows[0].AuditID != second || rows[0].AuditDetail.Sql != "select 2" || rows[1].AuditID != first {
 		t.Errorf("history = %+v, want select 2, select 1", rows)
 	}
-	page, _ := s.ListDataQueryHistory(ctx, ListDataQueryHistoryParams{Target: target, UserID: &f.user.ID, BeforeID: second, MaxRows: 10})
+	page, _ := s.ListDataQueryHistory(ctx, ListDataQueryHistoryParams{EnvironmentID: &f.staging.ID, Target: "staging/postgres", UserID: &f.user.ID, BeforeID: second, MaxRows: 10})
 	if len(page) != 1 || page[0].AuditID != first {
 		t.Errorf("history before %d = %+v", second, page)
 	}
-	tok, _ := s.ListDataQueryHistory(ctx, ListDataQueryHistoryParams{Target: target, TokenID: &tokenID, BeforeID: math.MaxInt64, MaxRows: 10})
+	tok, _ := s.ListDataQueryHistory(ctx, ListDataQueryHistoryParams{EnvironmentID: &f.staging.ID, Target: "staging/postgres", TokenID: &tokenID, BeforeID: math.MaxInt64, MaxRows: 10})
 	if len(tok) != 1 || tok[0].AuditDetail.Sql != "select token" {
 		t.Errorf("token history = %+v", tok)
 	}
@@ -364,7 +367,7 @@ func TestDataQueryPlans(t *testing.T) {
 		{"ExpireChangesets", expireChangesets, []any{now}},
 		{"GetAuditDetail", getAuditDetail, []any{1}},
 		{"GetAuditEventByDetail", getAuditEventByDetail, []any{1}},
-		{"ListDataQueryHistory", listDataQueryHistory, []any{"shop/staging/postgres", 1, nil, math.MaxInt64, 50}},
+		{"ListDataQueryHistory", listDataQueryHistory, []any{f.staging.ID, "staging/postgres", 1, nil, math.MaxInt64, 50}},
 		{"SetServiceDatabaseSettings", setServiceDatabaseSettings, []any{"", "", 1}},
 		{"SetTokenDataAccess", setTokenDataAccess, []any{nil, nil, nil, 1}},
 	})
