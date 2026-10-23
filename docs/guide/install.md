@@ -190,7 +190,7 @@ running).
 | `[registry] listen` | `127.0.0.1:5000` | Control plane: host address the `dock-registry` container is published on. Node: where `dock node` serves the registry over the link. Image references use it on every server |
 | `[registry] storage_dir` | `/var/lib/dock-registry` | Registry blobs and manifests |
 | `[registry] public_name` | empty | The registry's name: the audience of its tokens. Required when enabled |
-| `[hooks] public_host` | empty | Control plane: the public hostname GitHub delivers pushes to, e.g. `hooks.example.com`, with DNS pointing at this server like an app domain. Caddy routes only `/hooks/github/` on it, to `[hooks] listen`. Empty: [push-to-deploy](deploying.md#deploy-on-git-push) can be connected but receives nothing |
+| `[hooks] public_host` | empty | Control plane: a public hostname GitHub delivers pushes to, e.g. `hooks.example.com`, with DNS pointing at this server like an app domain. Not needed when Dock has a public address, which serves `/hooks/github/` too; set it to keep the API off the internet. Caddy routes only `/hooks/github/` on it, to `[hooks] listen`. Empty, and no public address: [push-to-deploy](deploying.md#deploy-on-git-push) can be connected but receives nothing |
 | `[hooks] listen` | `127.0.0.1:7072` | Loopback listener for webhook deliveries; serves nothing else. Must be loopback |
 | `[hooks] ui_url` | empty | The UI's URL, e.g. `https://dock.example.com`, for the Details link of GitHub commit statuses. Empty: statuses have no link |
 | `[retention] build_log_days` | `30` | Build logs, saved output and progress lines of releases outside the rollback window are deleted after this many days |

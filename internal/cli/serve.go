@@ -131,11 +131,13 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 		registryToken = signer.Handler()
 	}
 	handler := api.New(c, api.Options{MaxUploadBytes: int64(cfg.MaxUploadMB) << 20, Logger: log})
+	hooks := api.Hooks(c, log)
 	servers := []*http.Server{
 		{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second},
-		// Dock's public address, through Caddy (ADR 0029). Served whether
-		// or not one is set, so setting one needs no restart.
-		{Addr: cfg.PublicListen, Handler: api.Public(handler), ReadHeaderTimeout: 10 * time.Second},
+		// Dock's public address, through Caddy (ADR 0029), with GitHub's
+		// webhooks (ADR 0031). Served whether or not one is set, so
+		// setting one needs no restart.
+		{Addr: cfg.PublicListen, Handler: api.Public(handler, hooks), ReadHeaderTimeout: 10 * time.Second},
 		{
 			Addr:              cfg.InternalListen,
 			Handler:           api.Internal(c, log, registryToken, caddy.AccessHandler()),
@@ -145,7 +147,7 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	if cfg.Hooks.PublicHost != "" {
 		// GitHub webhooks, the only thing Caddy exposes publicly (ADR 0018).
 		servers = append(servers, &http.Server{
-			Addr: cfg.Hooks.Listen, Handler: api.Hooks(c, log),
+			Addr: cfg.Hooks.Listen, Handler: hooks,
 			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		})
 	}

@@ -26,8 +26,14 @@ import (
 // commit's tarball from GitHub (git_github.go), re-roots it at the
 // subdirectory (git_tar.go) and hands it to the same pipeline as `dock
 // deploy`. A running deploy is never cancelled; the push waits for it.
+//
+// A connection either has its own webhook and optional token (mode
+// webhook), or goes through the install's GitHub App (mode app, ADR 0031,
+// github_app.go): the App's one webhook delivers every push and its
+// installation tokens read the repository.
 
-// gitHookPath is the webhook path prefix, on [hooks] public_host.
+// gitHookPath is the webhook path prefix, on [hooks] public_host and on
+// Dock's public address.
 const gitHookPath = "/hooks/github/"
 
 // gitRetryDelay is how long a worker waits when the service's upload slot
@@ -41,9 +47,12 @@ type gitState struct {
 	// starts after shutdown began.
 	mu      sync.Mutex
 	workers map[int64]*gitWorker // by service ID, while one runs
-	// limit throttles webhook deliveries per hook.
-	limit  *httpkit.Limiter
-	github githubClient
+	// limit throttles webhook deliveries per hook; appLimit the App's,
+	// which carry every App connection's pushes.
+	limit    *httpkit.Limiter
+	appLimit *httpkit.Limiter
+	github   githubClient
+	app      githubAppState
 	// statusMu guards statusTail: per service, the last commit status
 	// post queued. Each post waits for the one before it, so GitHub sees
 	// pending before success (it shows the newest status per context).
@@ -68,8 +77,10 @@ func newGitState(api string) gitState {
 		statusTail: map[int64]chan struct{}{},
 		// GitHub sends one delivery per push; bursts beyond this are
 		// either a flood or a stolen URL.
-		limit:  httpkit.NewLimiter(30, 2*time.Second),
-		github: newGitHubClient(api),
+		limit:    httpkit.NewLimiter(30, 2*time.Second),
+		appLimit: httpkit.NewLimiter(120, 500*time.Millisecond),
+		github:   newGitHubClient(api),
+		app:      newGitHubAppState(),
 	}
 }
 
@@ -121,7 +132,12 @@ func (c *Core) GitStatus(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	if err != nil {
 		return apitypes.GitSource{}, err
 	}
-	out := apitypes.GitSource{HooksReady: c.cfg.Hooks.PublicHost != "", HooksHint: c.hooksHint()}
+	out := apitypes.GitSource{HooksReady: c.hooksHost() != "", HooksHint: c.hooksHint()}
+	insts, err := c.store.ListOrgGitHubInstallations(ctx, ss.project.OrgID)
+	if err != nil {
+		return out, err
+	}
+	out.AppReady = len(insts) > 0
 	conn, err := c.store.GetGitConnectionByService(ctx, ss.svc.ID)
 	if store.IsNotFound(err) {
 		return out, nil
@@ -137,17 +153,20 @@ func (c *Core) GitStatus(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 // hooksHint says how to give webhooks a public address, while there is
 // none.
 func (c *Core) hooksHint() string {
-	if c.cfg.Hooks.PublicHost != "" {
+	if c.hooksHost() != "" {
 		return ""
 	}
-	return "No public webhook address: set [hooks] public_host in config.toml to a hostname pointing at this server, then restart dock."
+	return "No public address for GitHub to deliver pushes to: set Dock's public address with `dock address set <hostname>` (or [hooks] public_host in config.toml)."
 }
 
 func (c *Core) toGitConnection(conn store.GitConnection) apitypes.GitConnection {
 	out := apitypes.GitConnection{
-		Repo: conn.Repo, Branch: conn.Branch, Dir: conn.Dir, TokenSet: len(conn.Token) > 0, Status: conn.PostStatus,
+		Mode: apitypes.GitModeWebhook, Repo: conn.Repo, Branch: conn.Branch, Dir: conn.Dir, TokenSet: len(conn.Token) > 0, Status: conn.PostStatus,
 		WebhookURL: c.hookURL(conn.HookID), LastEvent: conn.LastEvent, LastEventAt: conn.LastEventAt,
 		CreatedBy: conn.CreatedBy, CreatedAt: conn.CreatedAt,
+	}
+	if conn.InstallationID != 0 {
+		out.Mode, out.WebhookURL = apitypes.GitModeApp, ""
 	}
 	if conn.PendingSha != "" {
 		out.Pending = &apitypes.Commit{SHA: conn.PendingSha, Message: conn.PendingMessage, Author: conn.PendingAuthor}
@@ -155,10 +174,11 @@ func (c *Core) toGitConnection(conn store.GitConnection) apitypes.GitConnection 
 	return out
 }
 
-// hookURL is the webhook's public URL, or "" without [hooks] public_host.
-// It is served by the control plane's own Caddy (withControlRoutes).
+// hookURL is the webhook's public URL, or "" without a public host
+// (hooksHost). It is served by the control plane's own Caddy
+// (withControlRoutes).
 func (c *Core) hookURL(hookID string) string {
-	host := c.cfg.Hooks.PublicHost
+	host := c.hooksHost()
 	if host == "" {
 		return ""
 	}
@@ -166,8 +186,10 @@ func (c *Core) hookURL(hookID string) string {
 }
 
 // GitConnect connects a service to a GitHub repository and branch, or
-// changes its connection. A new connection (or RotateSecret) gets a new
-// webhook URL and secret, returned once. Scope: deploy.
+// changes its connection. Through the GitHub App, the repository must be
+// readable by an installation assigned to the service's org. With a
+// webhook, a new connection (or RotateSecret, or a switch from the App)
+// gets a new webhook URL and secret, returned once. Scope: deploy.
 func (c *Core) GitConnect(ctx context.Context, a Actor, ref ServiceRef, req apitypes.GitConnectRequest) (apitypes.GitConnectResult, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "connecting a GitHub repository")
 	if err != nil {
@@ -185,46 +207,30 @@ func (c *Core) GitConnect(ctx context.Context, a Actor, ref ServiceRef, req apit
 	if err != nil && !store.IsNotFound(err) {
 		return apitypes.GitConnectResult{}, err
 	}
-	token, tokenChange := old.Token, "token unchanged"
-	if req.Token != nil {
-		switch t := strings.TrimSpace(*req.Token); {
-		case t == "":
-			token, tokenChange = nil, "token removed"
-		case len(t) > 512 || strings.ContainsAny(t, " \t\r\n"):
-			return apitypes.GitConnectResult{}, invalid("the GitHub token must be a single token with no spaces")
-		default:
-			if token, err = c.box.Seal([]byte(t)); err != nil {
-				return apitypes.GitConnectResult{}, err
-			}
-			tokenChange = "token set"
-		}
+	mode, err := c.gitMode(ctx, ss, req.Mode, old, exists)
+	if err != nil {
+		return apitypes.GitConnectResult{}, err
 	}
-	if !exists && len(token) == 0 {
-		tokenChange = "no token"
+	wasApp := exists && old.InstallationID != 0
+	t := gitTargetChange{token: old.Token, status: old.PostStatus, hookID: old.HookID, secret: old.Secret}
+	if mode == apitypes.GitModeApp {
+		err = c.appTarget(ctx, ss, req, &repo, &t, !wasApp)
+	} else {
+		err = c.webhookTarget(req, &t, !exists || wasApp)
 	}
-	status := old.PostStatus
-	if req.Status != nil {
-		status = *req.Status
-	}
-	if status && len(token) == 0 {
-		return apitypes.GitConnectResult{}, invalid("commit statuses need a GitHub token with Commit statuses write access; pass one (--token-stdin) or turn statuses off")
-	}
-	hookID, sealed, secret := old.HookID, old.Secret, ""
-	if !exists || req.RotateSecret {
-		hookID, secret = randomHex(16), randomHex(32)
-		if sealed, err = c.box.Seal([]byte(secret)); err != nil {
-			return apitypes.GitConnectResult{}, err
-		}
+	if err != nil {
+		return apitypes.GitConnectResult{}, err
 	}
 	var conn store.GitConnection
 	if exists {
 		conn, err = c.store.UpdateGitConnection(ctx, store.UpdateGitConnectionParams{
-			Repo: repo, Branch: branch, Dir: dir, Token: token, PostStatus: status, HookID: hookID, Secret: sealed, ID: old.ID,
+			Repo: repo, Branch: branch, Dir: dir, Token: t.token, PostStatus: t.status, HookID: t.hookID, Secret: t.secret,
+			InstallationID: t.installationID, RepoID: t.repoID, ID: old.ID,
 		})
 	} else {
 		conn, err = c.store.CreateGitConnection(ctx, store.CreateGitConnectionParams{
-			ServiceID: ss.svc.ID, HookID: hookID, Repo: repo, Branch: branch, Dir: dir, Secret: sealed, Token: token,
-			PostStatus: status, CreatedBy: a.Name,
+			ServiceID: ss.svc.ID, HookID: t.hookID, Repo: repo, Branch: branch, Dir: dir, Secret: t.secret, Token: t.token,
+			PostStatus: t.status, InstallationID: t.installationID, RepoID: t.repoID, CreatedBy: a.Name,
 		})
 	}
 	if err != nil {
@@ -234,15 +240,135 @@ func (c *Core) GitConnect(ctx context.Context, a Actor, ref ServiceRef, req apit
 	if exists {
 		action, summary = "git.update", fmt.Sprintf("GitHub source is now %s", gitTarget(conn))
 	}
-	summary += "; " + tokenChange
-	if status {
+	summary += "; " + t.change
+	if t.status {
 		summary += "; commit statuses on"
 	}
-	if req.RotateSecret && exists {
-		summary += "; webhook secret rotated"
-	}
 	c.audit(ctx, a, action, &ss.project, &ss.env, ss.String(), summary)
-	return apitypes.GitConnectResult{Connection: c.toGitConnection(conn), Created: !exists, Secret: secret, HooksHint: c.hooksHint()}, nil
+	res := apitypes.GitConnectResult{Connection: c.toGitConnection(conn), Created: !exists, Secret: t.newSecret}
+	if mode == apitypes.GitModeWebhook {
+		res.HooksHint = c.hooksHint()
+	}
+	return res, nil
+}
+
+// gitMode is the mode a connection gets: the one asked for; else an
+// existing connection's; else the App when the org has an installation.
+func (c *Core) gitMode(ctx context.Context, ss svcScope, asked apitypes.GitMode, old store.GitConnection, exists bool) (apitypes.GitMode, error) {
+	switch {
+	case asked == apitypes.GitModeApp || asked == apitypes.GitModeWebhook:
+		return asked, nil
+	case asked != "":
+		return "", invalid("mode %q is not app or webhook", asked)
+	case exists && old.InstallationID != 0:
+		return apitypes.GitModeApp, nil
+	case exists:
+		return apitypes.GitModeWebhook, nil
+	}
+	insts, err := c.store.ListOrgGitHubInstallations(ctx, ss.project.OrgID)
+	if err != nil {
+		return "", err
+	}
+	if len(insts) > 0 {
+		return apitypes.GitModeApp, nil
+	}
+	return apitypes.GitModeWebhook, nil
+}
+
+// gitTargetChange is how GitConnect changes a connection's credentials
+// and webhook; it starts as the existing connection's.
+type gitTargetChange struct {
+	token          []byte
+	status         bool
+	hookID         string
+	secret         []byte
+	installationID int64
+	repoID         int64
+	// newSecret is a new webhook secret, returned once; change describes
+	// the change for the audit log.
+	newSecret, change string
+}
+
+// appTarget fills in an App connection: its installation and repository
+// ID, the canonical repository name, and no token. fresh is a new App
+// connection (new, or switched from a webhook): statuses default to on.
+func (c *Core) appTarget(ctx context.Context, ss svcScope, req apitypes.GitConnectRequest, repo *string, t *gitTargetChange, fresh bool) error {
+	if req.Token != nil && *req.Token != "" {
+		return invalid("the GitHub App reads the repository, so it needs no token; drop the token, or connect with --mode webhook")
+	}
+	org, err := c.store.GetOrg(ctx, ss.project.OrgID)
+	if err != nil {
+		return err
+	}
+	inst, r, err := c.appRepo(ctx, org, *repo)
+	if err != nil {
+		return err
+	}
+	if t.hookID == "" {
+		// The webhook columns stay filled, unused, so switching to a
+		// webhook later is an update; the per-service hook refuses App
+		// connections.
+		if t.secret, err = c.box.Seal([]byte(randomHex(32))); err != nil {
+			return err
+		}
+		t.hookID = randomHex(16)
+	}
+	*repo = r.FullName
+	t.token, t.installationID, t.repoID = nil, inst, r.ID
+	switch {
+	case req.Status != nil:
+		t.status = *req.Status
+	case fresh:
+		t.status = true
+	}
+	t.change = "through the GitHub App"
+	return nil
+}
+
+// webhookTarget fills in a webhook connection: its token and, when fresh
+// (new, or switched from the App) or rotated, a new webhook URL and
+// secret. A fresh one starts with no token and statuses off.
+func (c *Core) webhookTarget(req apitypes.GitConnectRequest, t *gitTargetChange, fresh bool) error {
+	t.installationID, t.repoID = 0, 0
+	t.change = "token unchanged"
+	if fresh {
+		t.token, t.change = nil, "no token"
+		if req.Status == nil {
+			t.status = false
+		}
+	}
+	if req.Token != nil {
+		switch tok := strings.TrimSpace(*req.Token); {
+		case tok == "":
+			t.token, t.change = nil, "token removed"
+		case len(tok) > 512 || strings.ContainsAny(tok, " \t\r\n"):
+			return invalid("the GitHub token must be a single token with no spaces")
+		default:
+			sealed, err := c.box.Seal([]byte(tok))
+			if err != nil {
+				return err
+			}
+			t.token, t.change = sealed, "token set"
+		}
+	}
+	if req.Status != nil {
+		t.status = *req.Status
+	}
+	if t.status && len(t.token) == 0 {
+		return invalid("commit statuses need a GitHub token with Commit statuses write access; pass one (--token-stdin) or turn statuses off")
+	}
+	if fresh || req.RotateSecret {
+		t.hookID, t.newSecret = randomHex(16), randomHex(32)
+		sealed, err := c.box.Seal([]byte(t.newSecret))
+		if err != nil {
+			return err
+		}
+		t.secret = sealed
+		if !fresh {
+			t.change += "; webhook secret rotated"
+		}
+	}
+	return nil
 }
 
 // gitTarget is "owner/repo@branch" plus " in dir/" when set.
@@ -301,11 +427,11 @@ func (c *Core) GitDeploy(ctx context.Context, a Actor, ref ServiceRef, req apity
 	if !branchRe.MatchString(at) || strings.Contains(at, "..") {
 		return apitypes.GitDeployResult{}, invalid("%q is not a commit, branch or tag", at)
 	}
-	token, err := c.gitToken(conn)
+	cred, err := c.gitCred(ctx, ss, conn)
 	if err != nil {
 		return apitypes.GitDeployResult{}, err
 	}
-	commit, err := c.git.github.commit(ctx, conn.Repo, at, token)
+	commit, err := c.git.github.commit(ctx, conn.Repo, at, cred)
 	if err != nil {
 		return apitypes.GitDeployResult{}, err
 	}
@@ -459,10 +585,12 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 			return finish(fmt.Sprintf("push %s: already live in release %d", shortSHA(sha), active.Number))
 		}
 	}
-	token, err := c.gitToken(conn)
+	cred, err := c.gitCred(ctx, ss, conn)
 	if err != nil {
-		c.log.Error("git worker", "service", serviceID, "err", err)
-		return gitDone
+		if ctx.Err() != nil {
+			return gitDone // shutting down; the push stays queued
+		}
+		return finish(fmt.Sprintf("push %s: not deployed: %s", shortSHA(sha), errorLine(err)))
 	}
 
 	fctx, cancel := context.WithTimeout(ctx, githubFetchTimeout)
@@ -489,7 +617,7 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 		return gitAgain
 	}
 	actor := Actor{Kind: "system", Name: conn.PendingBy, Scope: apitypes.ScopeDeploy}
-	open := func() (io.ReadCloser, error) { return c.git.github.tarball(fctx, conn.Repo, sha, token, conn.Dir) }
+	open := func() (io.ReadCloser, error) { return c.git.github.tarball(fctx, conn.Repo, sha, cred, conn.Dir) }
 	rel, err := c.deploySource(fctx, actor, ss, open, int64(c.cfg.MaxUploadMB)<<20, commit)
 	switch {
 	case err == nil:
@@ -571,8 +699,7 @@ func (c *Core) gitDeployDone(ss svcScope, rel store.Release, deployErr error) {
 // service's earlier posts. Failures are logged; a deploy never waits for
 // or fails on GitHub.
 func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Release, state, desc string) {
-	token, err := c.gitToken(conn)
-	if err != nil || token == "" {
+	if conn.InstallationID == 0 && len(conn.Token) == 0 {
 		return
 	}
 	sha := rel.CommitSha
@@ -611,7 +738,11 @@ func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Re
 		}
 		ctx, cancel := context.WithTimeout(c.ctx, githubCallTimeout)
 		defer cancel()
-		if err := c.git.github.status(ctx, conn.Repo, sha, token, st); err != nil {
+		cred, err := c.gitCred(ctx, ss, conn)
+		if err == nil {
+			err = c.git.github.status(ctx, conn.Repo, sha, cred, st)
+		}
+		if err != nil {
 			c.log.Warn("post commit status", "service", ss.String(), "commit", shortSHA(sha), "err", err)
 		}
 	}()

@@ -27,7 +27,9 @@ import (
 // repository acme/shop: commits, tarballs and commit statuses.
 type fakeGitHub struct {
 	*httptest.Server
-	mu sync.Mutex
+	// mux serves the API; withApp adds the GitHub App's endpoints.
+	mux *http.ServeMux
+	mu  sync.Mutex
 	// files are the repository's files at every commit.
 	files map[string]string
 	// statuses are "<sha7> <state> <context> <target_url>" as posted.
@@ -104,6 +106,7 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 		g.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 	})
+	g.mux = mux
 	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		g.mu.Lock()
 		g.auth = append(g.auth, r.Header.Get("Authorization"))

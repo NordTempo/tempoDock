@@ -720,6 +720,9 @@ function ConsoleNav() {
       <NavLink to="/console/address" icon="globe">
         Address
       </NavLink>
+      <NavLink to="/console/github" icon="graph">
+        GitHub
+      </NavLink>
       <NavLink to="/console/updates" icon="upload">
         <span className="flex-1">Updates</span>
         <UpdateBadge />

@@ -217,11 +217,35 @@ type GitConnection struct {
 	LastEventAt    *time.Time
 	CreatedBy      string
 	CreatedAt      time.Time
+	InstallationID int64
+	RepoID         int64
 }
 
 type GitDelivery struct {
 	DeliveryID string
 	CreatedAt  time.Time
+}
+
+type GithubApp struct {
+	ID            int64
+	AppID         int64
+	HookID        string
+	Slug          string
+	Name          string
+	Owner         string
+	HtmlUrl       string
+	PrivateKey    []byte
+	WebhookSecret []byte
+	CreatedBy     string
+	CreatedAt     time.Time
+}
+
+type GithubInstallation struct {
+	InstallationID int64
+	OrgID          int64
+	Account        string
+	AssignedBy     string
+	AssignedAt     time.Time
 }
 
 type Install struct {

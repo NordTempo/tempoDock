@@ -37,7 +37,7 @@ Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit
 |---|---|
 | Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock context add\|list\|use\|current\|remove`, `dock mcp` |
 | Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|export\|archive\|pin`, `dock environment list\|create\|clone`, `dock service list\|create\|show\|update\|archive` |
-| Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|rollback`, `dock rollback`, `dock restart`, `dock git connect\|status\|deploy\|disconnect` |
+| Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|rollback`, `dock rollback`, `dock restart`, `dock git connect\|status\|deploy\|disconnect`, `dock github status\|app\|install\|assign\|repos` |
 | Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock apply`, `dock discard`, `dock volume list\|add` |
 | Domains | `dock domain add\|list\|remove\|generate` |
 | Databases and backups | `dock service create NAME --template postgres\|redis`, `dock backup list\|run\|restore\|schedule\|status\|configure` |

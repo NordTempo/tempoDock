@@ -4,16 +4,22 @@ SELECT * FROM git_connections WHERE service_id = +?;
 -- name: GetGitConnectionByHook :one
 SELECT * FROM git_connections WHERE hook_id = +?;
 
+-- name: GetAppGitConnections :many
+-- The App connections of one repository, which an App push delivery is
+-- routed to.
+SELECT * FROM git_connections WHERE repo_id = +? AND installation_id = +?;
+
 -- name: CreateGitConnection :one
-INSERT INTO git_connections (service_id, hook_id, repo, branch, dir, secret, token, post_status, created_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO git_connections (service_id, hook_id, repo, branch, dir, secret, token, post_status, installation_id, repo_id, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateGitConnection :one
 -- Changes what a connection deploys. hook_id and secret change only when
--- the secret is rotated (the caller passes the old ones otherwise).
+-- the secret is rotated (the caller passes the old ones otherwise);
+-- installation_id and repo_id are 0 for a webhook connection.
 UPDATE git_connections
-SET repo = ?, branch = ?, dir = ?, token = ?, post_status = ?, hook_id = ?, secret = ?
+SET repo = ?, branch = ?, dir = ?, token = ?, post_status = ?, hook_id = ?, secret = ?, installation_id = ?, repo_id = ?
 WHERE id = +?
 RETURNING *;
 

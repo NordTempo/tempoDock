@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -42,12 +43,18 @@ func registerAddress(s *Server, a huma.API) {
 // control plane's Caddy connects, proxying Dock's public address. Caddy
 // sets core.ClientIPHeader to the client's address, so login rate limits
 // and tunnels see the client, not Caddy. Other listeners never read it.
-func Public(h http.Handler) http.Handler {
+// GitHub's webhooks (/hooks/github/) go to hooks, so a public address is
+// all push-to-deploy needs (ADR 0031).
+func Public(h, hooks http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if ip := net.ParseIP(r.Header.Get(core.ClientIPHeader)); ip != nil {
 			r.RemoteAddr = net.JoinHostPort(ip.String(), "0")
 		}
 		r.Header.Del(core.ClientIPHeader)
+		if strings.HasPrefix(r.URL.Path, hooksPath) {
+			hooks.ServeHTTP(w, r)
+			return
+		}
 		h.ServeHTTP(w, r)
 	})
 }

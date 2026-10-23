@@ -308,6 +308,22 @@ func (q *Queries) GetOrg(ctx context.Context, id int64) (Org, error) {
 	return i, err
 }
 
+const getOrgBySlug = `-- name: GetOrgBySlug :one
+SELECT id, slug, name, created_at FROM orgs WHERE slug = +?
+`
+
+func (q *Queries) GetOrgBySlug(ctx context.Context, slug string) (Org, error) {
+	row := q.queryRow(ctx, q.getOrgBySlugStmt, getOrgBySlug, slug)
+	var i Org
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getOrgInvite = `-- name: GetOrgInvite :one
 SELECT id, org_id, email, role, hash, created_by, created_at, expires_at, accepted_at, revoked_at FROM org_invites WHERE id = +? AND org_id = +?
 `
@@ -398,6 +414,34 @@ func (q *Queries) ListOrgServerIDs(ctx context.Context, orgID int64) ([]int64, e
 			return nil, err
 		}
 		items = append(items, server_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgSlugs = `-- name: ListOrgSlugs :many
+SELECT slug FROM orgs ORDER BY slug
+`
+
+// Every org's slug, for operators choosing one (the GitHub App console).
+func (q *Queries) ListOrgSlugs(ctx context.Context) ([]string, error) {
+	rows, err := q.query(ctx, q.listOrgSlugsStmt, listOrgSlugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

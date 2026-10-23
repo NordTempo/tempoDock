@@ -246,12 +246,47 @@ go through exactly the pipeline of `dock deploy`, `dock.toml` included
 ([ADR 0018](../decisions/0018-git-push-deploy.md)).
 
 ```sh
-dock git connect acme/shop --branch main                  # public repository
+dock git connect acme/shop --branch main
 dock git connect acme/monorepo --branch main --dir apps/web
-printf %s "$GITHUB_TOKEN" | dock git connect acme/shop --branch main --token-stdin --status
-dock git status                                           # webhook, queued push, last delivery
+dock git status                                           # source, queued push, last delivery
 dock git deploy                                           # the branch's head now (or --ref <sha>)
 dock git disconnect
+```
+
+### Through Dock's GitHub App
+
+Once an operator has set up Dock's GitHub App
+([ADR 0031](../decisions/0031-github-app.md)), connecting needs nothing
+on GitHub: no webhook, no token, private repositories included, and
+commit statuses are on. One push deploys every service of the repository
+whose branch and directory it touches.
+
+```sh
+dock address set dock.example.com     # GitHub delivers pushes here (operator, once)
+dock github app create                # opens GitHub to create the App (operator, once)
+dock github install default           # install it on an account, for an org (operator)
+dock github status                    # the App, its webhook, installations and their orgs
+dock github repos                     # what the org can connect
+```
+
+The console does the same under **System → GitHub**, and **Settings →
+Source** suggests the org's repositories when connecting.
+
+The App is private: only the GitHub account that owns it (yours, or
+`--owner acme`) can install it. Each installation is assigned to one org,
+and only that org's services can read its repositories. GitHub sends the
+browser back to Dock after an install, which assigns it to the org in the
+link. Installations made on GitHub directly are assigned with `dock github
+assign <id> <org>`.
+
+### Through a webhook
+
+Without the App, or with `--mode webhook`, each service has its own
+webhook:
+
+```sh
+dock git connect acme/shop --mode webhook
+printf %s "$GITHUB_TOKEN" | dock git connect acme/shop --mode webhook --token-stdin --status
 ```
 
 `connect` prints the webhook to add on GitHub (repository → Settings →
@@ -269,12 +304,13 @@ The UI does the same under the service's **Settings → Source**.
 | A bad or missing signature, an unknown webhook | Refused (401, 404) |
 | A delivery ID seen in the last 7 days (a replay or a GitHub redelivery) | Answered, nothing deployed; use `dock git deploy` instead |
 
-- **The server needs a public address for webhooks.** The API stays on
-  Tailscale or loopback; set [`[hooks] public_host`](install.md#configtoml)
-  to a hostname that points at the control plane (like an app domain) and
-  Caddy serves only `https://<public_host>/hooks/github/` there. Until it
-  is set, `connect` works but says how to set it.
-- **Private repositories** need a fine-grained token with Contents read
+- **GitHub needs a public address to deliver to.** Dock's public address
+  ([`dock address set`](install.md)) serves `/hooks/github/`. To keep the
+  API private, set [`[hooks] public_host`](install.md#configtoml) instead
+  to a hostname that points at the control plane (like an app domain):
+  Caddy serves only `https://<public_host>/hooks/github/` there. Until
+  there is one, `connect` works but says how to set it.
+- **Private repositories over a webhook** need a fine-grained token with Contents read
   access to the repository; `--status` (commit statuses: pending, then
   success or failure, linking to the release when `[hooks] ui_url` is set)
   also needs Commit statuses read and write. Tokens are stored encrypted

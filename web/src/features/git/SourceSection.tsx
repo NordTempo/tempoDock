@@ -21,6 +21,7 @@ import {
   gitPath,
   targetText,
   useGitDeploy,
+  useGitHubRepos,
   useGitSource,
 } from "./api";
 
@@ -31,8 +32,9 @@ type ConnectResult = Schemas["GitConnectResult"];
 
 /**
  * The service's GitHub source (ADR 0018): pushes to a branch deploy it
- * from source. Connecting shows the webhook secret once. Changing it needs
- * scope deploy; others see it read-only.
+ * from source, through Dock's GitHub App when the org has it installed
+ * (ADR 0031), else through a webhook whose secret connecting shows once.
+ * Changing it needs scope deploy; others see it read-only.
  */
 export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const client = useQueryClient();
@@ -88,11 +90,13 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         canEdit ? (
           <ConnectForm
             connection={conn}
+            viaApp={conn ? conn.mode === "app" : source.data.app_ready}
+            appReady={source.data.app_ready || conn?.mode === "app"}
             pending={connect.isPending}
             error={connect.error}
             onSubmit={(req) => connect.mutate(req)}
             onCancel={conn ? () => setEditing(false) : undefined}
-            cli={`dock git connect owner/repo --branch main ${flags}`}
+            flags={flags}
           />
         ) : (
           <p className="text-mut">Not connected to GitHub.</p>
@@ -110,8 +114,10 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 {targetText(conn)}
               </a>
             </Item>
-            <Item label="Webhook">
-              {conn.webhook_url ? (
+            <Item label={conn.mode === "app" ? "Through" : "Webhook"}>
+              {conn.mode === "app" ? (
+                "the GitHub App"
+              ) : conn.webhook_url ? (
                 <span className="inline-flex flex-wrap items-baseline gap-2">
                   <span className="font-mono">{conn.webhook_url}</span>
                   <CopyButton text={conn.webhook_url} />
@@ -120,12 +126,22 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 <span className="text-warn">no public address yet</span>
               )}
             </Item>
-            <Item label="Token">
-              {conn.token_set ? "set" : "not set"}
-              <span className="text-mut">
-                {" "}
-                · statuses {conn.status ? "on" : "off"}
-              </span>
+            <Item label={conn.mode === "app" ? "Statuses" : "Token"}>
+              {conn.mode === "app" ? (
+                conn.status ? (
+                  "on"
+                ) : (
+                  "off"
+                )
+              ) : (
+                <>
+                  {conn.token_set ? "set" : "not set"}
+                  <span className="text-mut">
+                    {" "}
+                    · statuses {conn.status ? "on" : "off"}
+                  </span>
+                </>
+              )}
             </Item>
             {conn.pending && (
               <Item label="Queued">
@@ -180,9 +196,11 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <Button small onClick={() => setEditing(true)}>
                 Edit
               </Button>
-              <Button small onClick={() => setConfirming("rotate")}>
-                New secret
-              </Button>
+              {conn.mode !== "app" && (
+                <Button small onClick={() => setConfirming("rotate")}>
+                  New secret
+                </Button>
+              )}
               <Button small danger onClick={() => setConfirming("disconnect")}>
                 Disconnect
               </Button>
@@ -225,8 +243,9 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               onConfirm={() => disconnect.mutate()}
               onCancel={() => setConfirming(null)}
             >
-              Pushes stop deploying {ref.service} and the token is deleted.
-              Releases are kept. Delete the webhook on GitHub too.
+              Pushes stop deploying {ref.service}. Releases are kept.
+              {conn.mode !== "app" &&
+                " The token is deleted; delete the webhook on GitHub too."}
             </Confirm>
           )}
         </>
@@ -250,38 +269,52 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Connects a repository, or edits the connection (token blank: keep). */
+/**
+ * Connects a repository, or edits the connection (token blank: keep).
+ * Through the GitHub App (mock S1) the repository field suggests the
+ * org's repositories and there is no token; a link switches to a webhook.
+ */
 function ConnectForm({
   connection: conn,
+  viaApp: startViaApp,
+  appReady,
   pending,
   error,
   onSubmit,
   onCancel,
-  cli,
+  flags,
 }: {
   connection: GitConnection | undefined;
+  viaApp: boolean;
+  appReady: boolean;
   pending: boolean;
   error: Error | null;
   onSubmit: (req: ConnectRequest) => void;
   onCancel?: () => void;
-  cli: string;
+  flags: string;
 }) {
+  const [viaApp, setViaApp] = useState(startViaApp);
+  const repos = useGitHubRepos(viaApp);
+  const repoList = repos.data?.repos ?? [];
   const [repo, setRepo] = useState(conn?.repo ?? "");
   const [branch, setBranch] = useState(conn?.branch ?? "main");
+  // Picking a repository fills in its default branch until one is typed.
+  const [branchTyped, setBranchTyped] = useState(!!conn);
   const [dir, setDir] = useState(conn?.dir ?? "");
   const [token, setToken] = useState("");
   const [removeToken, setRemoveToken] = useState(false);
-  const [status, setStatus] = useState(conn?.status ?? false);
-  const hasToken = (conn?.token_set && !removeToken) || token !== "";
+  const [status, setStatus] = useState(conn?.status ?? viaApp);
+  const hasToken = viaApp || (conn?.token_set && !removeToken) || token !== "";
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     onSubmit({
+      mode: viaApp ? "app" : "webhook",
       repo: repo.trim(),
       branch: branch.trim(),
       dir: dir.trim(),
       status: status && hasToken,
-      ...(token ? { token } : removeToken ? { token: "" } : {}),
+      ...(viaApp ? {} : token ? { token } : removeToken ? { token: "" } : {}),
     });
   };
 
@@ -310,35 +343,104 @@ function ConnectForm({
     >
       <dl className="props">
         <Item label="Repository">
-          {input("Repository", repo, setRepo, "owner/repo")}
+          <input
+            aria-label="Repository"
+            value={repo}
+            placeholder="owner/repo"
+            list={viaApp ? "github-repos" : undefined}
+            spellCheck={false}
+            onChange={(e) => {
+              setRepo(e.target.value);
+              const picked = repoList.find(
+                (r) => r.full_name === e.target.value,
+              );
+              if (picked && !branchTyped) setBranch(picked.default_branch);
+            }}
+            className="field w-56 py-0.5 font-mono text-xs"
+          />
+          {viaApp && (
+            <datalist id="github-repos">
+              {repoList.map((r) => (
+                <option key={r.id} value={r.full_name} />
+              ))}
+            </datalist>
+          )}{" "}
+          {viaApp && repos.error ? (
+            <ErrorText error={repos.error} />
+          ) : (
+            viaApp &&
+            repos.data && (
+              <span className="text-mut">
+                {repoList.length} the App can read
+                {repos.data.truncated ? ", more not listed" : ""}
+              </span>
+            )
+          )}
         </Item>
-        <Item label="Branch">{input("Branch", branch, setBranch, "main")}</Item>
+        <Item label="Branch">
+          {input(
+            "Branch",
+            branch,
+            (v) => {
+              setBranch(v);
+              setBranchTyped(true);
+            },
+            "main",
+          )}
+        </Item>
         <Item label="Directory">
           {input("Directory", dir, setDir, "repository root")}{" "}
           <span className="text-mut">build context, for monorepos</span>
         </Item>
-        <Item label="Token">
-          <span className="inline-flex flex-wrap items-baseline gap-3">
-            <input
-              type="password"
-              aria-label="GitHub token"
-              autoComplete="off"
-              value={token}
-              placeholder={conn?.token_set ? "unchanged" : "public repository"}
-              onChange={(e) => setToken(e.target.value)}
-              className="field w-56 py-0.5 font-mono text-xs"
-            />
-            {conn?.token_set && !token && (
-              <Check
-                label="remove"
-                checked={removeToken}
-                onChange={setRemoveToken}
-              />
-            )}
+        <Item label={viaApp ? "Through" : "Token"}>
+          {viaApp ? (
             <span className="text-mut">
-              fine-grained, Contents read; stored encrypted
+              the GitHub App, no token needed ·{" "}
+              <button
+                type="button"
+                className="lnk"
+                onClick={() => setViaApp(false)}
+              >
+                use a webhook instead
+              </button>
             </span>
-          </span>
+          ) : (
+            <span className="inline-flex flex-wrap items-baseline gap-3">
+              <input
+                type="password"
+                aria-label="GitHub token"
+                autoComplete="off"
+                value={token}
+                placeholder={
+                  conn?.token_set ? "unchanged" : "public repository"
+                }
+                onChange={(e) => setToken(e.target.value)}
+                className="field w-56 py-0.5 font-mono text-xs"
+              />
+              {conn?.token_set && !token && (
+                <Check
+                  label="remove"
+                  checked={removeToken}
+                  onChange={setRemoveToken}
+                />
+              )}
+              <span className="text-mut">
+                fine-grained, Contents read; stored encrypted
+                {appReady && (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      className="lnk"
+                      onClick={() => setViaApp(true)}
+                    >
+                      use the GitHub App
+                    </button>
+                  </>
+                )}
+              </span>
+            </span>
+          )}
         </Item>
         <Item label="Statuses">
           <Check
@@ -361,7 +463,12 @@ function ConnectForm({
             Cancel
           </Button>
         )}
-        <code className="font-mono text-2xs text-mut">{cli}</code>
+        <code className="font-mono text-2xs text-mut">
+          dock git connect {repo.trim() || "owner/repo"} --branch{" "}
+          {branch.trim() || "main"}
+          {dir.trim() && ` --dir ${dir.trim()}`}
+          {!viaApp && appReady && " --mode webhook"} {flags}
+        </code>
         <ErrorText error={error} />
       </div>
     </form>
