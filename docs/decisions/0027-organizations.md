@@ -108,7 +108,7 @@ picked by the owner): your orgs with your role in each, and a new one.
 | Audit | `org_id`; platform events (servers, accounts and logins, backup settings, alert channels, the system's own) have none. Org members read their org's log; operators read the platform's (`platform=true`, `dock audit --platform`). |
 | Alerts | Phase 1: alerts and alert channels stay the platform's, for operators. Phase 2: alerts in a project get its org, org admins add channels that receive their org's alerts, and platform channels keep receiving every alert. |
 | Data policy | Rules per org; a rule without a project is the org's default. |
-| Servers | All servers are the platform's shared pool. Operators list them with statistics; org members see only the servers their environments run on. |
+| Servers | The platform's only, never an org's (decided by the owner): orgs and their members don't think about servers. They say whether an environment is production or non-production, and the operator's servers, placement and policies (which kinds get backups, for example) do the rest. Operators list servers with statistics; org members see only the names of those their environments run on. |
 
 ### Migration
 
@@ -131,16 +131,16 @@ platform channels. Fresh installs create their first org at bootstrap.
    Activity and General), invites by link (emailed in phase 3), leave
    and remove, role changes, org variables referenced as `${{org.KEY}}`
    (explicit only, never auto-injected, one value per key, a redeploy
-   rolls a change out): done. Next: bring-your-own servers per org and
-   org alert channels.
-3. **Signup**: an install setting `signup = closed | invite | open`
-   (closed by default for self-hosting), email verification, password
-   reset. Invite-only before going public is setting it to `invite`.
+   rolls a change out): done. Next: org alert channels. No servers per
+   org (see Servers above).
+3. **Signup**: an install setting `signup = closed | invite | open`.
+   For now Dock is the owner's company's internal tool, on a public
+   address but invite-only: no signup page, people join by an invite.
+   Open signup comes with paying customers, email verification and a
+   payment system, later.
 4. **Hosted**: running strangers' code on servers we own needs its own
    ADR: sandboxed runtime and builds, per-org quotas, egress limits,
    custom domain verification, metering and billing, abuse handling.
-   "We run the control plane, customers bring servers" can launch before
-   it.
 
 ## Consequences
 

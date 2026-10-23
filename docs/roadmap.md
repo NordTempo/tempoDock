@@ -112,14 +112,14 @@ doesn't affect production.
   as the boundary (projects, tokens, data policy, audit, live events) and
   the platform operator; the org switcher and the org in UI URLs; org
   settings with members, invites and org variables (`${{org.KEY}}`).
-  Next: servers per org and org alert channels;
-  then signup modes (`closed`, `invite`, `open`) with email verification.
+  Next: org alert channels. Servers stay the platform's: orgs only say
+  production or non-production. Invite-only until paying customers;
+  open signup, email verification and payments come with them.
 
 ## Later (only when needed)
 
 - Preview environments per pull request (on the homelab)
 - Moving an environment between servers
 - Human approval flow for selected actions
-- Hosted control plane managing customer-owned servers (paid offering)
 - Hosting customers' apps on our servers: sandboxing, quotas, metering,
   billing, abuse handling (its own ADR, after ADR 0027's phases)
