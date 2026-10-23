@@ -395,6 +395,9 @@ function ConsoleNav() {
         <span className="font-semibold">dock</span>{" "}
         <span className="text-faint">· platform</span>
       </div>
+      <NavLink to="/console" exact icon="grid">
+        Overview
+      </NavLink>
       <div className={groupLabel}>Infrastructure</div>
       <NavLink to="/console/servers" exact icon="server">
         Servers

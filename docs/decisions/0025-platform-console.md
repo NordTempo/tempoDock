@@ -57,3 +57,6 @@ operator flag have nothing to hold yet.
 - The overview makes six requests where one aggregate could make one.
   They run in parallel on an admin page and each stays small; if it ever
   shows in `make perf`, an aggregate endpoint replaces them.
+- Not done yet: a user's "last seen" (sessions don't record use, and
+  recording it means a write per request) and a read-only System page
+  with the config in effect.

@@ -121,13 +121,13 @@ function Users() {
 
 const roleText: Record<Scope, string> = {
   admin:
-    "Everything: members, tokens, alerts, data access and servers. Reveals secret values.",
+    "Everything: users, tokens, alerts, data access, servers and the rest of the platform console. Reveals secret values.",
   deploy:
     "Deploy, roll back, restart, edit variables and settings. Values stay hidden.",
   read: "Status, deploys, logs and metrics. Read only.",
 };
 
-/** What each role may do, next to the members table (A4). */
+/** What each role may do, next to the users table (A4). */
 function RoleGuide() {
   return (
     <aside
@@ -373,7 +373,7 @@ function AddUser() {
   const [role, setRole] = useState<Scope>("deploy");
   return (
     <form
-      aria-label="Add a member"
+      aria-label="Add a user"
       className="flex flex-wrap items-center gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
@@ -430,7 +430,7 @@ function AddUser() {
         className="btn pri"
         disabled={create.isPending || !email || !name || !password}
       >
-        Add member
+        Add user
       </button>
       <ErrorText error={create.error} />
     </form>

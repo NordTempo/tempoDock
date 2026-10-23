@@ -341,6 +341,34 @@ export function Panel({
   );
 }
 
+/** A row of labelled numbers between two lines: the console's summaries. */
+export function Facts({ children }: { children: ReactNode }) {
+  return (
+    <dl className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] border-y border-line">
+      {children}
+    </dl>
+  );
+}
+
+/** One number in Facts, with an optional line under it. */
+export function Fact({
+  label,
+  note,
+  children,
+}: {
+  label: string;
+  note?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 border-soft px-3 py-2.5 not-last:border-r">
+      <dt className="text-2xs text-faint">{label}</dt>
+      <dd className="text-md font-semibold">{children}</dd>
+      {note && <dd className="text-2xs text-mut">{note}</dd>}
+    </div>
+  );
+}
+
 /**
  * A small popup menu under its button. It is fixed to the viewport, so a
  * panel's overflow can't clip it; scrolling, Escape or a click outside

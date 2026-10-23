@@ -3,6 +3,8 @@ import { plural, since, size } from "../../ui/format";
 import {
   Act,
   ErrorText,
+  Fact,
+  Facts,
   Page,
   Panel,
   SectionHead,
@@ -53,7 +55,7 @@ export function RegistryPage() {
         }
       />
       <ErrorText error={prune.error} />
-      <dl className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] border-y border-line">
+      <Facts>
         <Fact label="Stored">
           {registry.stored_bytes ? size(registry.stored_bytes) : "unknown"}
         </Fact>
@@ -70,7 +72,7 @@ export function RegistryPage() {
         <Fact label="Last prune">
           <LastPrune registry={registry} />
         </Fact>
-      </dl>
+      </Facts>
       {registry.last_prune_error && (
         <p className="text-fail">
           Last prune failed: {registry.last_prune_error}
@@ -148,21 +150,6 @@ export function RegistryPage() {
         )}
       </section>
     </Page>
-  );
-}
-
-function Fact({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5 border-line px-3 py-2.5 not-last:border-r">
-      <dt className="text-2xs text-faint">{label}</dt>
-      <dd className="text-md font-semibold">{children}</dd>
-    </div>
   );
 }
 
