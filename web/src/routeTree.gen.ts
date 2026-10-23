@@ -13,8 +13,10 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as CliLoginRouteImport } from './routes/cli-login'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
+import { Route as AppAccountRouteImport } from './routes/_app.account'
 import { Route as AppAlertsRouteImport } from './routes/_app.alerts'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
+import { Route as AppBackupsRouteImport } from './routes/_app.backups'
 import { Route as AppDataPolicyRouteImport } from './routes/_app.data-policy'
 import { Route as AppServersRouteImport } from './routes/_app.servers'
 import { Route as AppTokensRouteImport } from './routes/_app.tokens'
@@ -55,6 +57,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAccountRoute = AppAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAlertsRoute = AppAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -63,6 +70,11 @@ const AppAlertsRoute = AppAlertsRouteImport.update({
 const AppAuditRoute = AppAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBackupsRoute = AppBackupsRouteImport.update({
+  id: '/backups',
+  path: '/backups',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDataPolicyRoute = AppDataPolicyRouteImport.update({
@@ -183,8 +195,10 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
+  '/account': typeof AppAccountRoute
   '/alerts': typeof AppAlertsRoute
   '/audit': typeof AppAuditRoute
+  '/backups': typeof AppBackupsRoute
   '/data-policy': typeof AppDataPolicyRoute
   '/servers': typeof AppServersRoute
   '/tokens': typeof AppTokensRoute
@@ -209,8 +223,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
+  '/account': typeof AppAccountRoute
   '/alerts': typeof AppAlertsRoute
   '/audit': typeof AppAuditRoute
+  '/backups': typeof AppBackupsRoute
   '/data-policy': typeof AppDataPolicyRoute
   '/servers': typeof AppServersRoute
   '/tokens': typeof AppTokensRoute
@@ -237,8 +253,10 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
+  '/_app/account': typeof AppAccountRoute
   '/_app/alerts': typeof AppAlertsRoute
   '/_app/audit': typeof AppAuditRoute
+  '/_app/backups': typeof AppBackupsRoute
   '/_app/data-policy': typeof AppDataPolicyRoute
   '/_app/servers': typeof AppServersRoute
   '/_app/tokens': typeof AppTokensRoute
@@ -267,8 +285,10 @@ export interface FileRouteTypes {
     | '/'
     | '/cli-login'
     | '/login'
+    | '/account'
     | '/alerts'
     | '/audit'
+    | '/backups'
     | '/data-policy'
     | '/servers'
     | '/tokens'
@@ -293,8 +313,10 @@ export interface FileRouteTypes {
   to:
     | '/cli-login'
     | '/login'
+    | '/account'
     | '/alerts'
     | '/audit'
+    | '/backups'
     | '/data-policy'
     | '/servers'
     | '/tokens'
@@ -320,8 +342,10 @@ export interface FileRouteTypes {
     | '/_app'
     | '/cli-login'
     | '/login'
+    | '/_app/account'
     | '/_app/alerts'
     | '/_app/audit'
+    | '/_app/backups'
     | '/_app/data-policy'
     | '/_app/servers'
     | '/_app/tokens'
@@ -381,6 +405,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/account': {
+      id: '/_app/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AppAccountRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/alerts': {
       id: '/_app/alerts'
       path: '/alerts'
@@ -393,6 +424,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/audit'
       preLoaderRoute: typeof AppAuditRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/backups': {
+      id: '/_app/backups'
+      path: '/backups'
+      fullPath: '/backups'
+      preLoaderRoute: typeof AppBackupsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/data-policy': {
@@ -581,8 +619,10 @@ const AppProjectEnvironmentServiceRouteWithChildren =
   )
 
 interface AppRouteChildren {
+  AppAccountRoute: typeof AppAccountRoute
   AppAlertsRoute: typeof AppAlertsRoute
   AppAuditRoute: typeof AppAuditRoute
+  AppBackupsRoute: typeof AppBackupsRoute
   AppDataPolicyRoute: typeof AppDataPolicyRoute
   AppServersRoute: typeof AppServersRoute
   AppTokensRoute: typeof AppTokensRoute
@@ -597,8 +637,10 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAccountRoute: AppAccountRoute,
   AppAlertsRoute: AppAlertsRoute,
   AppAuditRoute: AppAuditRoute,
+  AppBackupsRoute: AppBackupsRoute,
   AppDataPolicyRoute: AppDataPolicyRoute,
   AppServersRoute: AppServersRoute,
   AppTokensRoute: AppTokensRoute,
