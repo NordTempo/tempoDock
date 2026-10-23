@@ -39,6 +39,7 @@ const modes: Partial<Record<keyof FileRoutesById, ShellMode>> = {
   "/_app/audit": "settings",
   "/_app/servers": "console",
   "/_app/servers_/$server": "console",
+  "/_app/account": "settings",
 };
 
 export const useShellMode = (): ShellMode =>
@@ -220,12 +221,20 @@ function Workspace() {
   );
 }
 
-/** The signed-in person (or token) and what they may do. */
+/**
+ * The signed-in person (or token) and what they may do; opens their
+ * account (password).
+ */
 function Me() {
   const session = useSession();
   if (!session) return null;
   return (
-    <div className="flex items-center gap-2.5 px-2 py-1">
+    <Link
+      to="/account"
+      title="Your account"
+      activeProps={{ "aria-current": "page" }}
+      className="nav-row gap-2.5 py-1"
+    >
       <span className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold">
         {session.name.slice(0, 1).toUpperCase()}
       </span>
@@ -238,7 +247,7 @@ function Me() {
             ` on ${session.project}${session.environment ? `/${session.environment}` : ""}`}
         </span>
       </span>
-    </div>
+    </Link>
   );
 }
 
