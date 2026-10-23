@@ -161,6 +161,10 @@ keeps the linked service, so it means "this service, in staging".
 | `logout` | Remove the context's token; revoke it on the server if it came from a browser login |
 | `whoami` | Who the token belongs to, the organization it acts in and its scope there |
 | `org list\|create <slug> [--name N]\|use <slug>` | Your organizations and your role in each; create one (users, not tokens) with you as its admin; act in one from now on, in the context in use |
+| `org members`, `org member role <email\|id> <role>\|remove <email\|id> [-y]` | The organization's members (admin); change a role (it always keeps an admin); take someone out (their account stays) |
+| `org invite <email> [--role R]`, `org invites [revoke <id>]`, `org join <link\|code>` | Invite an email address (admin): prints a link that works once, for 7 days, only for that email; list or revoke open invites; accept one |
+| `org env list [--reveal]\|set KEY=value...\|unset KEY...\|redeploy KEY` | Organization variables, used as `${{org.KEY}}` ([guide](guide/variables.md#organization-variables)): set and reveal (admin), remove one nothing uses, redeploy the running services that use one |
+| `org rename <name>`, `org leave [-y]`, `org delete [-y]` | Rename (admin; the slug stays); leave (the last admin can't); delete an organization without projects (admin) |
 | `mcp [--show-token] [--name N]` | Print the MCP client config for the context's server ([agents](guide/agents.md#mcp)): the endpoint URL, a `claude mcp add` command and an `mcp.json` entry. The token is `${DOCK_TOKEN}` unless `--show-token` |
 | `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions and other browser-login tokens end; the CLI's own token stays valid |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |

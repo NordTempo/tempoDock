@@ -20,14 +20,20 @@ type orgView struct {
 func newOrgCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "org",
-		Short: "List, create and choose organizations",
+		Short: "Organizations: choose one, members, invites, variables",
 		Long: `Projects and tokens belong to an organization, and you act in one at a
 time with your role there. With one organization you never need to name
 it. With several, pick one for the context with ` + "`dock org use`" + `, for one
 command with --org, or with DOCK_ORG; a linked directory acts in the
 organization it was linked in.`,
 	})
-	cmd.AddCommand(newOrgListCmd(g), newOrgCreateCmd(g), newOrgUseCmd(g))
+	cmd.AddCommand(newOrgListCmd(g), newOrgCreateCmd(g), newOrgUseCmd(g),
+		newOrgMembersCmd(g), newOrgMemberCmd(g), newOrgInviteCmd(g), newOrgInvitesCmd(g), newOrgJoinCmd(g),
+		newOrgEnvCmd(g), newOrgRenameCmd(g),
+		newOrgGoneCmd(g, "leave", "Leave the organization; the last admin can't", "POST", "/leave",
+			"Leave %s? You lose access to its projects.", "Left %s"),
+		newOrgGoneCmd(g, "delete", "Delete an organization without projects (admin)", "DELETE", "",
+			"Delete %s? Its members, invites, variables and tokens go.", "Deleted %s"))
 	return cmd
 }
 

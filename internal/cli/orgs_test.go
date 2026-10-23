@@ -48,3 +48,39 @@ func TestOrgSelection(t *testing.T) {
 		t.Fatalf("a token creating an org: %d %s", code, stderr)
 	}
 }
+
+// The organization's settings from the CLI: variables, invites and its
+// name.
+func TestOrgSettingsCommands(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	appDir(t)
+	if code, _, stderr := execStdin(t, srv.tokens[apitypes.ScopeAdmin]+"\n", "login", srv.url, "--token-stdin"); code != 0 {
+		t.Fatalf("login: %s", stderr)
+	}
+
+	set := ok[[]apitypes.OrgVariable](t, "org", "env", "set", "SENTRY_DSN=https://x")
+	if len(set) != 1 || set[0].Key != "SENTRY_DSN" {
+		t.Fatalf("env set = %+v", set)
+	}
+	vars := ok[[]apitypes.OrgVariable](t, "org", "env", "list", "--reveal")
+	if len(vars) != 1 || vars[0].Value == nil || *vars[0].Value != "https://x" {
+		t.Fatalf("env list = %+v", vars)
+	}
+
+	inv := ok[inviteView](t, "org", "invite", "bob@example.com", "--role", "read")
+	if !strings.HasPrefix(inv.URL, srv.url+"/invite/dinv_") || inv.Invite.Role != apitypes.ScopeRead {
+		t.Fatalf("invite = %+v", inv)
+	}
+	if list := ok[[]apitypes.Invite](t, "org", "invites"); len(list) != 1 {
+		t.Fatalf("invites = %+v", list)
+	}
+	ok[map[string]any](t, "org", "invites", "revoke", itoa(inv.Invite.ID))
+	if list := ok[[]apitypes.Invite](t, "org", "invites"); len(list) != 0 {
+		t.Fatalf("invites after revoke = %+v", list)
+	}
+
+	if o := ok[apitypes.Org](t, "org", "rename", "Test Org"); o.Name != "Test Org" || o.Slug != "test" {
+		t.Fatalf("rename = %+v", o)
+	}
+}
