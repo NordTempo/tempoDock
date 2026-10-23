@@ -1,6 +1,6 @@
 # 0008: Keep open source and hosting possible, cheaply
 
-Status: accepted
+Status: accepted; organizations superseded by [0027](0027-organizations.md)
 
 ## Context
 
