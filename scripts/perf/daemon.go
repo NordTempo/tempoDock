@@ -179,15 +179,16 @@ func startDaemon(bin string) (*daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	ports, err := freePorts(2)
+	ports, err := freePorts(3)
 	if err != nil {
 		return nil, err
 	}
-	api, internal := ports[0], ports[1]
+	api, internal, public := ports[0], ports[1], ports[2]
 	data := filepath.Join(dir, "data")
 	cfg := fmt.Sprintf(`data_dir = %q
 listen = "127.0.0.1:%d"
 internal_listen = "127.0.0.1:%d"
+public_listen = "127.0.0.1:%d"
 public_ip = "127.0.0.1"
 base_domain = "localhost"
 
@@ -196,7 +197,7 @@ admin_socket = %q
 http_port = 18080
 https_port = 18443
 disable_tls = true
-`, data, api, internal, filepath.Join(data, "caddy-admin.sock"))
+`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"))
 	cfgPath := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		return nil, err

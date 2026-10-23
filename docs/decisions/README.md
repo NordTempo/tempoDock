@@ -36,6 +36,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0026](0026-ui-cli-parity.md) | Everything the CLI does, the UI does | accepted |
 | [0027](0027-organizations.md) | Organizations and the platform operator | accepted |
 | [0028](0028-updates-from-the-console.md) | Updating Dock from the console | accepted |
+| [0029](0029-public-address.md) | Dock's public address | accepted |
 
 ## Template
 

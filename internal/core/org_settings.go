@@ -199,7 +199,11 @@ func (c *Core) CreateInvite(ctx context.Context, a Actor, req apitypes.CreateInv
 		return apitypes.CreatedInvite{}, err
 	}
 	c.audit(ctx, a, "org.invite", nil, nil, email, fmt.Sprintf("invited %s as %s", email, req.Role))
-	return apitypes.CreatedInvite{Invite: toInvite(inv), Code: code}, nil
+	out := apitypes.CreatedInvite{Invite: toInvite(inv), Code: code}
+	if u := c.publicURL(); u != "" {
+		out.URL = u + "/invite/" + code
+	}
+	return out, nil
 }
 
 // ListInvites returns the org's open invites, expired ones too.

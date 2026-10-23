@@ -375,6 +375,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getProjectByNameStmt, err = db.PrepareContext(ctx, getProjectByName); err != nil {
 		return nil, fmt.Errorf("error preparing query GetProjectByName: %w", err)
 	}
+	if q.getPublicHostStmt, err = db.PrepareContext(ctx, getPublicHost); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPublicHost: %w", err)
+	}
 	if q.getReleaseStmt, err = db.PrepareContext(ctx, getRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRelease: %w", err)
 	}
@@ -734,6 +737,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setPendingSettingsStmt, err = db.PrepareContext(ctx, setPendingSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPendingSettings: %w", err)
+	}
+	if q.setPublicHostStmt, err = db.PrepareContext(ctx, setPublicHost); err != nil {
+		return nil, fmt.Errorf("error preparing query SetPublicHost: %w", err)
 	}
 	if q.setReleaseCommitStmt, err = db.PrepareContext(ctx, setReleaseCommit); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseCommit: %w", err)
@@ -1424,6 +1430,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getProjectByNameStmt: %w", cerr)
 		}
 	}
+	if q.getPublicHostStmt != nil {
+		if cerr := q.getPublicHostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPublicHostStmt: %w", cerr)
+		}
+	}
 	if q.getReleaseStmt != nil {
 		if cerr := q.getReleaseStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getReleaseStmt: %w", cerr)
@@ -2024,6 +2035,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setPendingSettingsStmt: %w", cerr)
 		}
 	}
+	if q.setPublicHostStmt != nil {
+		if cerr := q.setPublicHostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setPublicHostStmt: %w", cerr)
+		}
+	}
 	if q.setReleaseCommitStmt != nil {
 		if cerr := q.setReleaseCommitStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setReleaseCommitStmt: %w", cerr)
@@ -2345,6 +2361,7 @@ type Queries struct {
 	getPlacementStmt                    *sql.Stmt
 	getProjectStmt                      *sql.Stmt
 	getProjectByNameStmt                *sql.Stmt
+	getPublicHostStmt                   *sql.Stmt
 	getReleaseStmt                      *sql.Stmt
 	getReleaseByNumberStmt              *sql.Stmt
 	getServerStmt                       *sql.Stmt
@@ -2465,6 +2482,7 @@ type Queries struct {
 	setJoinTokenServerStmt              *sql.Stmt
 	setMemberRoleStmt                   *sql.Stmt
 	setPendingSettingsStmt              *sql.Stmt
+	setPublicHostStmt                   *sql.Stmt
 	setReleaseCommitStmt                *sql.Stmt
 	setReleaseContainerStmt             *sql.Stmt
 	setReleaseDigestStmt                *sql.Stmt
@@ -2621,6 +2639,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPlacementStmt:                    q.getPlacementStmt,
 		getProjectStmt:                      q.getProjectStmt,
 		getProjectByNameStmt:                q.getProjectByNameStmt,
+		getPublicHostStmt:                   q.getPublicHostStmt,
 		getReleaseStmt:                      q.getReleaseStmt,
 		getReleaseByNumberStmt:              q.getReleaseByNumberStmt,
 		getServerStmt:                       q.getServerStmt,
@@ -2741,6 +2760,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setJoinTokenServerStmt:              q.setJoinTokenServerStmt,
 		setMemberRoleStmt:                   q.setMemberRoleStmt,
 		setPendingSettingsStmt:              q.setPendingSettingsStmt,
+		setPublicHostStmt:                   q.setPublicHostStmt,
 		setReleaseCommitStmt:                q.setReleaseCommitStmt,
 		setReleaseContainerStmt:             q.setReleaseContainerStmt,
 		setReleaseDigestStmt:                q.setReleaseDigestStmt,

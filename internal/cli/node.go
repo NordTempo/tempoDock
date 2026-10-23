@@ -161,7 +161,7 @@ func joinToken(stdin io.Reader, args []string, file string) (string, error) {
 // plane, the registry proxy and, on the internal listener, Caddy's `ask`
 // answered from the last applied routes.
 func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	if err := checkLoopback(cfg.InternalListen); err != nil {
+	if err := checkLoopback("internal_listen", cfg.InternalListen); err != nil {
 		return err
 	}
 	link, err := remote.LoadLink(cfg.DataDir)

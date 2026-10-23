@@ -93,6 +93,66 @@
         ],
         "type": "object"
       },
+      "Address": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dns_records": {
+            "items": {
+              "$ref": "#/components/schemas/DNSRecord"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "private_url": {
+            "examples": [
+              "http://100.64.0.10:7070"
+            ],
+            "type": "string"
+          },
+          "resolved_ips": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "waiting_for_dns",
+              "issuing_certificate",
+              "active",
+              "error"
+            ],
+            "type": "string"
+          },
+          "status_reason": {
+            "type": "string"
+          },
+          "url": {
+            "examples": [
+              "https://dock.example.com"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname",
+          "private_url",
+          "dns_records"
+        ],
+        "type": "object"
+      },
       "Alert": {
         "additionalProperties": false,
         "properties": {
@@ -1370,6 +1430,9 @@
           },
           "invite": {
             "$ref": "#/components/schemas/Invite"
+          },
+          "url": {
+            "type": "string"
           }
         },
         "required": [
@@ -5113,6 +5176,22 @@
         ],
         "type": "object"
       },
+      "SetAddressRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "hostname": {
+            "examples": [
+              "dock.example.com"
+            ],
+            "maxLength": 253,
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname"
+        ],
+        "type": "object"
+      },
       "SetMemberRoleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6106,6 +6185,292 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/address": {
+      "delete": {
+        "description": "Stops serving Dock at its public address; sessions there end. The private address keeps working. Operators only.",
+        "operationId": "remove-address",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Address"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove Dock's public address",
+        "tags": [
+          "address"
+        ]
+      },
+      "get": {
+        "description": "Dock's public address, if one is set, with its DNS records and status, checked now (DNS, then the certificate, like a domain's); and its private address, which always works. Operators only.",
+        "operationId": "get-address",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Address"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Show Dock's address",
+        "tags": [
+          "address"
+        ]
+      },
+      "put": {
+        "description": "Serves the API and UI at https://\u003chostname\u003e through the control plane's Caddy, which gets a certificate once the hostname's DNS points at the server. 409 `hostname_taken` if a service's domain or the webhook hostname uses it. Operators only.",
+        "operationId": "set-address",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAddressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Address"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set Dock's public address",
+        "tags": [
+          "address"
+        ]
+      }
+    },
     "/api/v1/alerts": {
       "get": {
         "description": "The open alerts, critical first, then newest first. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events. Operators only.",

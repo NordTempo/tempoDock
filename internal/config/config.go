@@ -35,6 +35,11 @@ type Config struct {
 	// InternalListen serves loopback-only endpoints such as Caddy's
 	// on-demand TLS `ask` check.
 	InternalListen string `toml:"internal_listen"`
+	// PublicListen is the loopback address the control plane's Caddy
+	// proxies Dock's public address to (ADR 0029): the API and UI, for
+	// requests that came through Caddy. It is served even while no
+	// address is set, so setting one needs no restart.
+	PublicListen string `toml:"public_listen"`
 	// PublicIP is the address users point DNS records at.
 	PublicIP string `toml:"public_ip"`
 	// BaseDomain enables generated hostnames (<service>-<env>.<base>).
@@ -263,6 +268,7 @@ func Default() Config {
 		DataDir:        "/var/lib/dock",
 		Listen:         "127.0.0.1:7070",
 		InternalListen: "127.0.0.1:7071",
+		PublicListen:   "127.0.0.1:7073",
 		MaxUploadMB:    512,
 		HostPorts:      PortRange{Min: 20000, Max: 29999},
 		Caddy: Caddy{

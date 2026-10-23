@@ -42,5 +42,5 @@ Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit
 | Domains | `dock domain add\|list\|remove\|generate` |
 | Databases and backups | `dock service create NAME --template postgres\|redis`, `dock backup list\|run\|restore\|schedule\|status\|configure` |
 | Data | `dock db status\|setup\|tables\|schema\|rows\|query\|history\|saved\|changes\|apply\|policy\|sensitive` |
-| Admin | `dock token list\|create\|update\|revoke`, `dock user list\|create\|disable\|enable\|delete\|reset-password`, `dock audit`, `dock server list\|show\|update` |
+| Admin | `dock token list\|create\|update\|revoke`, `dock user list\|create\|disable\|enable\|delete\|reset-password`, `dock audit`, `dock server list\|show\|update`, `dock address` |
 | On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config`, `dock admin backup\|restore`, `dock node set-control-plane` |

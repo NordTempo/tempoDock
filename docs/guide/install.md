@@ -15,7 +15,7 @@ control plane.
 | Tools | `curl` (downloads Caddy, detects the public IP), `iptables` (the app firewall) |
 | Access | root (`sudo`) |
 | Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-m0)). Builds are capped at 2 GB by default |
-| Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) and node port (7443) private. None on a [Cloudflare Tunnel](#cloudflare-tunnel) server |
+| Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) and node port (7443) private: Dock goes public only through Caddy, at its [public address](#public-address). None on a [Cloudflare Tunnel](#cloudflare-tunnel) server |
 | cgroups | cgroup v2 (the default on current distributions) for per-service statistics. Docker's systemd and cgroupfs drivers both work |
 | Optional | Tailscale, so the API listens on the tailnet by default. Recommended for every server once there's more than one |
 
@@ -160,6 +160,7 @@ running).
 | `data_dir` | `/var/lib/dock` | SQLite DB, secrets key, build logs, uploads |
 | `listen` | `127.0.0.1:7070` | API and UI. Tailscale IP or loopback; not meant to be public |
 | `internal_listen` | `127.0.0.1:7071` | Loopback-only endpoints (Caddy's TLS `ask`). Must be loopback or the daemon refuses to start |
+| `public_listen` | `127.0.0.1:7073` | Where Caddy proxies Dock's [public address](#public-address): the API and UI again, trusting the client address Caddy sends. Must be loopback |
 | `public_ip` | empty | Address shown in DNS instructions and used to check domains |
 | `base_domain` | empty | Enables generated hostnames under it. Needs `*.<base>` pointing at `public_ip` |
 | `max_upload_mb` | `512` | Largest source upload for `dock deploy` |
@@ -227,7 +228,8 @@ its registry, and only its own BuildKit's cache.
 ## Network access
 
 Public firewall: 22, 80/tcp, 443/tcp, 443/udp (HTTP/3). Never expose the API
-port to the internet: tokens travel over plain HTTP to it.
+port to the internet: tokens travel over plain HTTP to it. To reach Dock
+from anywhere, give it a [public address](#public-address) instead.
 
 ```sh
 ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443 && ufw enable
@@ -243,6 +245,26 @@ How you reach the API and how the public reaches apps are separate choices:
 
 On LAN setups anyone on the network can sniff tokens sent to the API. Prefer
 Tailscale.
+
+### Public address
+
+Dock itself can be served at a hostname, over HTTPS, by the control
+plane's Caddy, so people open invite links and CI deploys without joining
+the tailnet ([ADR 0029](../decisions/0029-public-address.md)). Set it in
+the console (System → Address) or as an operator:
+
+```sh
+dock address set dock.example.com    # prints the DNS record to create
+dock address                         # status: waiting for DNS, issuing certificate, active
+dock login https://dock.example.com  # once it's active, from anywhere
+```
+
+Create the record it prints (`A` to the server's public IP, or the CNAME to
+the tunnel on a tunnel server), without a CDN proxy in direct mode. The
+certificate is issued once it resolves. The private address (`listen`)
+keeps working beside it; `dock address remove` stops serving the public
+one. The hostname can't also be an app domain or `[hooks] public_host`.
+Invite links and GitHub commit status links use it.
 
 ### App firewall
 

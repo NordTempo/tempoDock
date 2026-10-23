@@ -94,7 +94,9 @@ type handler struct {
 	StatusCode int                 `json:"status_code,omitempty"`
 	Headers    map[string][]string `json:"headers,omitempty"`
 	Body       string              `json:"body,omitempty"`
-	// Response edits response headers (headers handler).
+	// Request and Response edit request and response headers (headers
+	// handler).
+	Request  *headerOps `json:"request,omitempty"`
 	Response *headerOps `json:"response,omitempty"`
 	// StreamCloseDelay keeps upgraded connections (websockets) open across
 	// config reloads, so deploying one app doesn't disconnect every other
@@ -109,8 +111,8 @@ type upstream struct {
 type headerOps struct {
 	Set map[string][]string `json:"set"`
 	// Deferred applies the change when the response is written, so it
-	// overrides the same header from an upstream.
-	Deferred bool `json:"deferred"`
+	// overrides the same header from an upstream. Response edits only.
+	Deferred bool `json:"deferred,omitempty"`
 }
 
 type tlsApp struct {
@@ -237,7 +239,14 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		if r.PathPrefix != "" {
 			m.Path = []string{r.PathPrefix + "*"}
 		}
-		main = append(main, route{Match: []match{m}, Handle: []handler{h}, Terminal: true})
+		handle := []handler{h}
+		if r.ClientIPHeader != "" && r.RedirectTo == "" {
+			// The client's address as this server determined it: the peer,
+			// or CF-Connecting-IP from the local cloudflared on a tunnel.
+			set := &headerOps{Set: map[string][]string{r.ClientIPHeader: {"{http.vars.client_ip}"}}}
+			handle = []handler{{Handler: "headers", Request: set}, h}
+		}
+		main = append(main, route{Match: []match{m}, Handle: handle, Terminal: true})
 	}
 	main = append(main, notFoundRoute())
 
