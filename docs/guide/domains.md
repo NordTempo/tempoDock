@@ -95,6 +95,44 @@ dock domain add www.example.com --redirect-to example.com
 Permanent `308` redirect to the other hostname, keeping path and query.
 Typical: `www` → apex. A redirect domain gets its own certificate.
 
+## Access
+
+By default anyone can open a service's domains. To keep one off the
+public internet:
+
+```sh
+dock access password --username team   # prompts for the password twice
+dock access login                      # members signed in to Dock
+dock access public                     # anyone again
+dock access                            # which one is set
+```
+
+In the UI it is the line above the domain list on the Domains tab ("Open
+to anyone", "Password for team", "Dock login") with Change. It covers
+every domain of the service, generated ones included, and takes effect at
+once. Each environment's service has its own setting, so staging
+can be private while production is public.
+
+| Mode | Visitors | The app gets |
+|---|---|---|
+| `public` | Anyone | |
+| `password` | Type the username and password (HTTP basic auth; `curl -u team:...` works) | `X-Dock-User: team` |
+| `login` | Are sent to Dock to sign in, then back. Members who can read the service's environment get in; the sign-in lasts 12 hours | `X-Dock-User: <their email>` |
+
+Notes:
+
+- `login` sends visitors to Dock's [public address](install.md#public-address) if one
+  is set, else to its private one, so people off the tailnet need the
+  public address.
+- Requests from scripts to a `login` service get `401`; use `password` for
+  machine traffic and webhooks.
+- Turning `login` off and on again signs everyone out. A disabled user can
+  keep a sign-in for up to 12 hours.
+- `X-Dock-User` is always set by Dock; a value the client sends is
+  replaced.
+
+See [ADR 0030](../decisions/0030-access-protection.md).
+
 ## TLS
 
 - Caddy gets a certificate (ACME, Let's Encrypt) on the first HTTPS request

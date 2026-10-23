@@ -71,7 +71,8 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   that name. They cover the hot paths: project overview, service and release
   lists, audit log, variable resolution, event bus fan-out, SSE writes,
   Caddy config rendering, source packing, `dock.toml` parsing, prepared
-  SQLite queries, the retention pass and the alert engine's event handling. Use `b.Loop()` and `b.ReportAllocs()`, seed realistic data
+  SQLite queries, the retention pass, the alert engine's event handling and
+  the access check for login-protected services. Use `b.Loop()` and `b.ReportAllocs()`, seed realistic data
   (the core benchmarks use a 60-service project), and add one for every new
   hot path.
 - **Comparing across machines.** A fixed pure-Go workload is timed next to

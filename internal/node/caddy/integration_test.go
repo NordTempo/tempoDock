@@ -22,6 +22,9 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/NordTempo/tempoDock/internal/access"
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
@@ -623,5 +626,88 @@ func TestIntegrationClientIPHeader(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if b, _ := io.ReadAll(resp.Body); string(b) != "127.0.0.1" {
 		t.Fatalf("upstream saw %q, want the client's 127.0.0.1", b)
+	}
+}
+
+// Both kinds of access protection through a real Caddy: a password asks
+// for basic auth; a login goes through the access check, which sends page
+// loads to sign in, trades a grant for a cookie, and lets the request on
+// with its body and the visitor's name, without the check's headers.
+func TestIntegrationAccess(t *testing.T) {
+	check := httptest.NewServer(AccessHandler())
+	t.Cleanup(check.Close)
+	tc := startCaddyWith(t, func(o *Options) { o.DisableTLS, o.AccessURL = true, check.URL+"/internal/caddy/access" })
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_, _ = fmt.Fprintf(w, "%s %s user=%s body=%s key=%s", r.Method, r.URL.RequestURI(), r.Header.Get(access.UserHeader), b, r.Header.Get(accessKeyHeader))
+	}))
+	t.Cleanup(app.Close)
+	hash, _ := bcrypt.GenerateFromPassword([]byte("correct horse battery"), 4)
+	key := access.NewKey()
+	upstream := strings.TrimPrefix(app.URL, "http://")
+	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
+		{Hostnames: []string{"pw.test"}, Upstream: upstream, Access: &node.Access{Username: "team", PasswordHash: string(hash)}},
+		{Hostnames: []string{"login.test"}, Upstream: upstream, Access: &node.Access{Key: key, LoginURL: "https://dock.test/access"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	do := func(method, url, body string, edit func(*http.Request)) (int, http.Header, string) {
+		t.Helper()
+		req, _ := http.NewRequest(method, url, strings.NewReader(body))
+		if edit != nil {
+			edit(req)
+		}
+		var resp *http.Response
+		for deadline := time.Now().Add(5 * time.Second); ; {
+			if resp, err = tc.client.Do(req); err == nil || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, resp.Header, string(b)
+	}
+
+	// Password.
+	if code, h, _ := do("GET", tc.url("http", "pw.test", "/"), "", nil); code != 401 || !strings.HasPrefix(h.Get("WWW-Authenticate"), "Basic") {
+		t.Fatalf("no password: %d %v", code, h)
+	}
+	if code, _, _ := do("GET", tc.url("http", "pw.test", "/"), "", func(r *http.Request) { r.SetBasicAuth("team", "wrong password!!") }); code != 401 {
+		t.Fatalf("wrong password: %d", code)
+	}
+	code, _, body := do("GET", tc.url("http", "pw.test", "/x"), "", func(r *http.Request) {
+		r.SetBasicAuth("team", "correct horse battery")
+		r.Header.Set(access.UserHeader, "eve")
+	})
+	if code != 200 || body != "GET /x user=team body= key=" {
+		t.Fatalf("right password: %d %q", code, body)
+	}
+
+	// Login: a page load goes to sign in, a script gets a 401.
+	nav := func(r *http.Request) { r.Header.Set("Sec-Fetch-Mode", "navigate") }
+	if code, h, _ := do("GET", tc.url("http", "login.test", "/orders"), "", nav); code != 302 || h.Get("Location") != "https://dock.test/access?host=login.test&to=%2Forders" {
+		t.Fatalf("page load: %d %q", code, h.Get("Location"))
+	}
+	if code, _, _ := do("POST", tc.url("http", "login.test", "/api"), "x", nil); code != 401 {
+		t.Fatalf("script: %d", code)
+	}
+	grant := access.Sign(key, access.Grant, "login.test", "ada@example.com", time.Now().Add(access.GrantTTL))
+	code, h, _ := do("GET", tc.url("http", "login.test", access.CallbackPath+"?grant="+grant+"&to=%2Forders"), "", nav)
+	cookie := h.Get("Set-Cookie")
+	if code != 302 || h.Get("Location") != "/orders" || !strings.HasPrefix(cookie, accessCookie+"=") {
+		t.Fatalf("callback: %d %v", code, h)
+	}
+	code, _, body = do("POST", tc.url("http", "login.test", "/api?q=1"), `{"n":1}`, func(r *http.Request) {
+		r.Header.Set("Cookie", strings.SplitN(cookie, ";", 2)[0])
+		r.Header.Set(access.UserHeader, "eve")
+		r.Header.Set(accessKeyHeader, "forged")
+	})
+	if code != 200 || body != `POST /api?q=1 user=ada@example.com body={"n":1} key=` {
+		t.Fatalf("signed in: %d %q", code, body)
 	}
 }

@@ -110,4 +110,34 @@ func registerDomains(s *Server, a huma.API) {
 	}) (*struct{}, error) {
 		return nil, s.core.RemoveDomain(ctx, actor, in.ref(), in.Hostname)
 	})
+
+	tags = []string{"access"}
+	authed(s, a, huma.Operation{
+		OperationID: "get-access", Method: http.MethodGet, Path: servicePathT + "/access",
+		Summary: "Who can open the service", Description: "Covers all of the service's domains (ADR 0030).", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.Access], error) {
+		return reply(s.core.ServiceAccess(ctx, actor, in.ref()))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-access", Method: http.MethodPut, Path: servicePathT + "/access",
+		Summary: "Change who can open the service",
+		Description: "public: anyone. password: HTTP basic auth with a username and password. " +
+			"login: members signed in to Dock who can read the service. Takes effect at once on every domain of the service. Scope: deploy.",
+		Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Body apitypes.SetAccessRequest
+	}) (*out[apitypes.Access], error) {
+		return reply(s.core.SetServiceAccess(ctx, actor, in.ref(), in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "grant-access", Method: http.MethodPost, Path: Prefix + "/access/grants",
+		Summary:     "Open a login-protected domain",
+		Description: "Returns the domain's sign-in URL with a one-minute grant for the caller. Dock's /access page sends the browser there. Scope: read on the service's environment.",
+		Tags:        tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.AccessGrantRequest
+	}) (*out[apitypes.AccessGrant], error) {
+		return reply(s.core.GrantAccess(ctx, actor, in.Body))
+	})
 }

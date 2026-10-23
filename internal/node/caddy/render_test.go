@@ -280,3 +280,64 @@ func TestRenderClientIPHeader(t *testing.T) {
 		t.Fatalf("set = %v", hs[0].Request.Set)
 	}
 }
+
+func TestRenderAccess(t *testing.T) {
+	opts := testOptions()
+	opts.AccessURL = "http://127.0.0.1:7071/internal/caddy/access"
+	cfg := render(t, opts, []node.Route{
+		{Hostnames: []string{"pw.example.com"}, Upstream: "127.0.0.1:9001", Access: &node.Access{Username: "team", PasswordHash: "$2a$06$abc"}},
+		{Hostnames: []string{"login.example.com"}, Upstream: "127.0.0.1:9002", Access: &node.Access{Key: []byte{1, 2, 3}, LoginURL: "https://dock.example.com/access"}},
+		{Hostnames: []string{"www.example.com"}, RedirectTo: "login.example.com", Access: &node.Access{Key: []byte{1}, LoginURL: "https://dock.example.com/access"}},
+	})
+	routes := cfg.Apps.HTTP.Servers["https"].Routes
+
+	pw := routes[0].Handle
+	if len(pw) != 3 || pw[0].Handler != "authentication" || pw[1].Handler != "headers" || pw[2].Handler != "reverse_proxy" {
+		t.Fatalf("password handlers = %+v", pw)
+	}
+	if acc := pw[0].Providers.HTTPBasic; acc.Accounts[0] != (account{"team", "$2a$06$abc"}) || acc.Hash.Algorithm != "bcrypt" || acc.HashCache == nil {
+		t.Errorf("basic auth = %+v", acc)
+	}
+	if got := pw[1].Request.Set["X-Dock-User"]; len(got) != 1 || got[0] != "{http.auth.user.id}" {
+		t.Errorf("user header = %v", got)
+	}
+
+	login := routes[1].Handle
+	if len(login) != 3 || login[0].Handler != "headers" || login[1].Handler != "reverse_proxy" || login[2].Upstreams[0].Dial != "127.0.0.1:9002" {
+		t.Fatalf("login handlers = %+v", login)
+	}
+	if set := login[0].Request.Set; set[accessKeyHeader][0] != "AQID" || set[accessLoginHeader][0] != "https://dock.example.com/access" {
+		t.Errorf("check headers = %v", set)
+	}
+	check := login[1]
+	if check.Upstreams[0].Dial != "127.0.0.1:7071" || *check.Rewrite != (rewrite{"GET", "/internal/caddy/access"}) {
+		t.Errorf("check = %+v %+v", check.Upstreams, check.Rewrite)
+	}
+	ok := check.HandleResponse[0]
+	clean := ok.Routes[0].Handle[0].Request
+	if ok.Match.StatusCode[0] != 2 || len(clean.Delete) != 4 || clean.Set["X-Dock-User"][0] != "{http.reverse_proxy.header.X-Dock-User}" {
+		t.Errorf("2xx handling = %+v %+v", ok.Match, clean)
+	}
+
+	if h := routes[2].Handle; len(h) != 1 || h[0].StatusCode != 308 {
+		t.Errorf("a redirect stays a plain redirect: %+v", h)
+	}
+
+	for name, a := range map[string]*node.Access{
+		"both":            {Username: "u", PasswordHash: "$2a$06$abc", Key: []byte{1}, LoginURL: "https://d/access"},
+		"plain password":  {Username: "u", PasswordHash: "secret"},
+		"no username":     {PasswordHash: "$2a$06$abc"},
+		"colon username":  {Username: "a:b", PasswordHash: "$2a$06$abc"},
+		"brace username":  {Username: "{env.X}", PasswordHash: "$2a$06$abc"},
+		"no login URL":    {Key: []byte{1}},
+		"brace login URL": {Key: []byte{1}, LoginURL: "https://{host}/access"},
+	} {
+		if _, err := Render(opts, []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", Access: a}}); err == nil {
+			t.Errorf("%s: Render succeeded, want an error", name)
+		}
+	}
+	login1 := []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", Access: &node.Access{Key: []byte{1}, LoginURL: "https://d/access"}}}
+	if _, err := Render(testOptions(), login1); err == nil {
+		t.Error("login access without an access URL rendered")
+	}
+}

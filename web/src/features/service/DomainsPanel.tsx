@@ -18,8 +18,12 @@ import {
   StateText,
 } from "../../ui/kit";
 import { domainState } from "../../ui/status";
+import { AccessLine } from "./AccessLine";
 
-/** Add form, a card per domain that needs a human, and every domain. */
+/**
+ * Add form, who can open the domains, a card per domain that needs a
+ * human, and every domain.
+ */
 export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service, domains } = useService(ref);
   const port = listenPort(service);
@@ -31,6 +35,7 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         serviceRef={ref}
         hasGenerated={domains.some((d) => d.generated)}
       />
+      <AccessLine serviceRef={ref} />
       {waiting.map((d) => (
         <DnsCard key={d.hostname} domain={d} />
       ))}

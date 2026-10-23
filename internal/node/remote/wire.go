@@ -457,12 +457,25 @@ type wireRoute struct {
 	Upstream   string   `json:"upstream,omitempty"`
 	RedirectTo string   `json:"redirect_to,omitempty"`
 	PathPrefix string   `json:"path_prefix,omitempty"`
+	// Access is new in protocol 5 (AccessProtocol).
+	Access *wireAccess `json:"access,omitempty"`
+}
+
+// wireAccess is node.Access; the key travels as base64.
+type wireAccess struct {
+	Username     string `json:"username,omitempty"`
+	PasswordHash string `json:"password_hash,omitempty"`
+	Key          []byte `json:"key,omitempty"`
+	LoginURL     string `json:"login_url,omitempty"`
 }
 
 func toWireRoutes(rs []node.Route) []wireRoute {
 	out := make([]wireRoute, len(rs))
 	for i, r := range rs {
 		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix}
+		if a := r.Access; a != nil {
+			out[i].Access = &wireAccess{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
+		}
 	}
 	return out
 }
@@ -471,6 +484,9 @@ func fromWireRoutes(ws []wireRoute) []node.Route {
 	out := make([]node.Route, len(ws))
 	for i, w := range ws {
 		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix}
+		if a := w.Access; a != nil {
+			out[i].Access = &node.Access{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
+		}
 	}
 	return out
 }

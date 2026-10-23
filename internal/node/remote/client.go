@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -284,8 +285,18 @@ func (c *Client) Build(ctx context.Context, req node.BuildRequest) (string, erro
 	return r.ImageID, err
 }
 
+// AccessProtocol is the first protocol whose routes carry access
+// protection (ADR 0030). An older node would serve protected routes to
+// everyone, so it isn't sent them.
+const AccessProtocol = 5
+
 // ApplyRoutes implements node.Proxy.
 func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route) error {
+	if slices.ContainsFunc(routes, func(r node.Route) bool { return r.Access != nil }) {
+		if err := c.needProtocol(ctx, AccessProtocol, "protect a service's domains"); err != nil {
+			return err
+		}
+	}
 	_, err := unaryCall[empty](ctx, c, opApplyRoutes, routesRequest{Routes: toWireRoutes(routes)})
 	return err
 }

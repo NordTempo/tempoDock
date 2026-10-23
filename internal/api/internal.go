@@ -19,6 +19,8 @@ const RegistryTokenPath = "/internal/registry/token"
 //
 //	GET /internal/caddy/ask?domain=x  Caddy's on-demand TLS check: 200 if the
 //	                                  hostname belongs to a service, else 404.
+//	GET /internal/caddy/access        The access check for login-protected
+//	                                  routes (caddy.AccessHandler, ADR 0030).
 //	GET|POST /internal/registry/token The registry's token endpoint
 //	                                  (registry.Signer.Handler), when
 //	                                  registryToken is not nil.
@@ -26,7 +28,7 @@ const RegistryTokenPath = "/internal/registry/token"
 //	                                  read and audit it.
 //	GET /debug/pprof/...              Go runtime profiles (net/http/pprof), e.g.
 //	                                  curl 127.0.0.1:7071/debug/pprof/heap.
-func Internal(c *core.Core, log *slog.Logger, registryToken http.Handler) http.Handler {
+func Internal(c *core.Core, log *slog.Logger, registryToken, accessCheck http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /internal/caddy/ask", func(w http.ResponseWriter, r *http.Request) {
 		ok, err := c.AllowCertificate(r.Context(), r.URL.Query().Get("domain"))
@@ -40,6 +42,7 @@ func Internal(c *core.Core, log *slog.Logger, registryToken http.Handler) http.H
 			http.NotFound(w, r)
 		}
 	})
+	mux.Handle("GET /internal/caddy/access", accessCheck)
 	if registryToken != nil {
 		mux.Handle(RegistryTokenPath, registryToken)
 	}

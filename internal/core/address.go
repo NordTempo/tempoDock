@@ -130,16 +130,27 @@ func (c *Core) RemoveAddress(ctx context.Context, a Actor) (apitypes.Address, er
 	return c.describeAddress(ctx)
 }
 
-// storePublicHost saves the public address and routes it. A failed route
-// apply leaves Caddy as it was; the address's status shows it, and the
-// next apply (any deploy, or a restart) retries.
+// storePublicHost saves the public address and routes it. Every online
+// server is rerouted too: login-protected services send visitors to
+// Dock's address (ADR 0030); offline ones pick it up when they reconnect.
+// A failed route apply leaves Caddy as it was; the address's status shows
+// it, and the next apply (any deploy, or a restart) retries.
 func (c *Core) storePublicHost(ctx context.Context, a Actor, host string) error {
 	if err := c.store.SetPublicHost(ctx, store.SetPublicHostParams{PublicHost: host, UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
 		return err
 	}
 	c.address.Store(&host)
-	if err := c.applyRoutes(ctx, c.local.ID); err != nil {
-		c.log.Error("apply routes for the public address", "host", host, "err", err)
+	servers, err := c.store.ListServers(ctx)
+	if err != nil {
+		return err
+	}
+	for _, s := range servers {
+		if s.ID != c.local.ID && !c.online(s.ID) {
+			continue
+		}
+		if err := c.applyRoutes(ctx, s.ID); err != nil {
+			c.log.Error("apply routes for the public address", "host", host, "server", s.Name, "err", err)
+		}
 	}
 	return nil
 }

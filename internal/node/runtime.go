@@ -500,7 +500,27 @@ type Route struct {
 	// client's address as it determined it, replacing any the client
 	// sent. Dock's public address uses it (ADR 0029). Local server only.
 	ClientIPHeader string
+	// Access, when set, keeps the route's hostnames from the public
+	// (ADR 0030). Redirect routes ignore it.
+	Access *Access
 }
+
+// Access is how a route is protected: a password (PasswordHash set) or a
+// Dock login (Key set), never both.
+type Access struct {
+	// Username and PasswordHash (bcrypt) ask visitors for HTTP basic auth.
+	Username     string
+	PasswordHash string
+	// Key asks for a Dock login instead: Caddy has the server's access
+	// check verify the visitor's session cookie, signed with Key
+	// (internal/access), on every request, and visitors without one are
+	// sent to LoginURL (Dock's /access page) to get one.
+	Key      []byte
+	LoginURL string
+}
+
+// Login reports whether the route needs a Dock login.
+func (a *Access) Login() bool { return a != nil && len(a.Key) > 0 }
 
 // DomainCheck is the observed state of one hostname on this server.
 type DomainCheck struct {

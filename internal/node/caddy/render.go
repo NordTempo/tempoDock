@@ -2,13 +2,18 @@ package caddy
 
 import (
 	"cmp"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
+	"github.com/NordTempo/tempoDock/internal/access"
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
@@ -86,8 +91,8 @@ type match struct {
 	Path []string `json:"path,omitempty"`
 }
 
-// handler covers the handlers we use: reverse_proxy, static_response and
-// headers.
+// handler covers the handlers we use: reverse_proxy, static_response,
+// headers and authentication.
 type handler struct {
 	Handler    string              `json:"handler"`
 	Upstreams  []upstream          `json:"upstreams,omitempty"`
@@ -102,6 +107,54 @@ type handler struct {
 	// config reloads, so deploying one app doesn't disconnect every other
 	// app's websockets.
 	StreamCloseDelay string `json:"stream_close_delay,omitempty"`
+	// Rewrite and HandleResponse turn a reverse_proxy into a forward-auth
+	// check (loginAccess).
+	Rewrite        *rewrite          `json:"rewrite,omitempty"`
+	HandleResponse []responseHandler `json:"handle_response,omitempty"`
+	// Providers configure the authentication handler (passwordAccess).
+	Providers *authProviders `json:"providers,omitempty"`
+}
+
+// rewrite changes the request a reverse_proxy sends upstream. With method
+// GET Caddy also leaves the request body out.
+type rewrite struct {
+	Method string `json:"method"`
+	URI    string `json:"uri"`
+}
+
+// responseHandler runs Routes for upstream responses that match. Routes
+// that write nothing let the request go on down the handler chain.
+type responseHandler struct {
+	Match  responseMatch `json:"match"`
+	Routes []route       `json:"routes"`
+}
+
+type responseMatch struct {
+	// StatusCode entries below 10 match a class: 2 is any 2xx.
+	StatusCode []int `json:"status_code"`
+}
+
+type authProviders struct {
+	HTTPBasic httpBasic `json:"http_basic"`
+}
+
+type httpBasic struct {
+	Accounts []account `json:"accounts"`
+	Hash     hashAlg   `json:"hash"`
+	// HashCache remembers checked passwords in memory, so a page's
+	// requests don't each pay for a bcrypt comparison.
+	HashCache *struct{} `json:"hash_cache,omitempty"`
+	Realm     string    `json:"realm"`
+}
+
+type account struct {
+	Username string `json:"username"`
+	// Password is a bcrypt hash; Caddy takes "$2…" hashes as they are.
+	Password string `json:"password"`
+}
+
+type hashAlg struct {
+	Algorithm string `json:"algorithm"`
 }
 
 type upstream struct {
@@ -109,7 +162,8 @@ type upstream struct {
 }
 
 type headerOps struct {
-	Set map[string][]string `json:"set"`
+	Set    map[string][]string `json:"set,omitempty"`
+	Delete []string            `json:"delete,omitempty"`
 	// Deferred applies the change when the response is written, so it
 	// overrides the same header from an upstream. Response edits only.
 	Deferred bool `json:"deferred,omitempty"`
@@ -207,7 +261,7 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 	if err := opts.validate(); err != nil {
 		return nil, err
 	}
-	if err := validateRoutes(routes); err != nil {
+	if err := validateRoutes(opts, routes); err != nil {
 		return nil, err
 	}
 
@@ -239,13 +293,21 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		if r.PathPrefix != "" {
 			m.Path = []string{r.PathPrefix + "*"}
 		}
-		handle := []handler{h}
+		var handle []handler
 		if r.ClientIPHeader != "" && r.RedirectTo == "" {
 			// The client's address as this server determined it: the peer,
 			// or CF-Connecting-IP from the local cloudflared on a tunnel.
 			set := &headerOps{Set: map[string][]string{r.ClientIPHeader: {"{http.vars.client_ip}"}}}
-			handle = []handler{{Handler: "headers", Request: set}, h}
+			handle = append(handle, handler{Handler: "headers", Request: set})
 		}
+		if r.Access != nil && r.RedirectTo == "" {
+			if r.Access.Login() {
+				handle = append(handle, loginAccess(opts.accessCheck, r.Access)...)
+			} else {
+				handle = append(handle, passwordAccess(r.Access)...)
+			}
+		}
+		handle = append(handle, h)
 		main = append(main, route{Match: []match{m}, Handle: handle, Terminal: true})
 	}
 	main = append(main, notFoundRoute())
@@ -319,6 +381,58 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 	return json.Marshal(cfg)
 }
 
+// Request headers the access check reads, set by Caddy from the route
+// (AccessHandler).
+const (
+	accessKeyHeader   = "X-Dock-Access-Key"
+	accessLoginHeader = "X-Dock-Access-Login"
+	forwardedMethod   = "X-Forwarded-Method"
+	forwardedURI      = "X-Forwarded-Uri"
+)
+
+// passwordAccess asks for HTTP basic auth and tells the app who signed in
+// (access.UserHeader), replacing any value the client sent.
+func passwordAccess(a *node.Access) []handler {
+	return []handler{
+		{Handler: "authentication", Providers: &authProviders{HTTPBasic: httpBasic{
+			Accounts:  []account{{Username: a.Username, Password: a.PasswordHash}},
+			Hash:      hashAlg{Algorithm: "bcrypt"},
+			HashCache: &struct{}{},
+			Realm:     "restricted",
+		}}},
+		{Handler: "headers", Request: &headerOps{Set: map[string][]string{access.UserHeader: {"{http.auth.user.id}"}}}},
+	}
+}
+
+// loginAccess is Caddy's forward_auth, spelled out: the request's method,
+// URI, cookies and the route's key go to the access check (a GET without
+// the body). A 2xx lets the request on to the app with the visitor's name
+// in access.UserHeader and the check's headers removed; any other answer
+// (a redirect to sign in, the cookie being set, a 401) goes back to the
+// client as it is.
+func loginAccess(check accessCheck, a *node.Access) []handler {
+	return []handler{
+		{Handler: "headers", Request: &headerOps{Set: map[string][]string{
+			accessKeyHeader:   {base64.RawURLEncoding.EncodeToString(a.Key)},
+			accessLoginHeader: {a.LoginURL},
+			forwardedMethod:   {"{http.request.method}"},
+			forwardedURI:      {"{http.request.uri}"},
+		}}},
+		{
+			Handler:   "reverse_proxy",
+			Upstreams: []upstream{{Dial: check.dial}},
+			Rewrite:   &rewrite{Method: http.MethodGet, URI: check.path},
+			HandleResponse: []responseHandler{{
+				Match: responseMatch{StatusCode: []int{2}},
+				Routes: []route{{Handle: []handler{{Handler: "headers", Request: &headerOps{
+					Delete: []string{accessKeyHeader, accessLoginHeader, forwardedMethod, forwardedURI},
+					Set:    map[string][]string{access.UserHeader: {"{http.reverse_proxy.header." + access.UserHeader + "}"}},
+				}}}}},
+			}},
+		},
+	}
+}
+
 func redirect(location string) handler {
 	return handler{
 		Handler:    "static_response",
@@ -355,9 +469,12 @@ func portSuffix(scheme string, port int) string {
 	return ":" + strconv.Itoa(port)
 }
 
-func validateRoutes(routes []node.Route) error {
+func validateRoutes(opts Options, routes []node.Route) error {
 	seen := map[string]bool{}
 	for i, r := range routes {
+		if err := validateAccess(opts, r.Access); err != nil {
+			return fmt.Errorf("route for %s: %w", r.Hostnames[0], err)
+		}
 		if len(r.Hostnames) == 0 {
 			return fmt.Errorf("route %d has no hostnames", i)
 		}
@@ -379,6 +496,28 @@ func validateRoutes(routes []node.Route) error {
 			}
 			seen[h] = true
 		}
+	}
+	return nil
+}
+
+// validateAccess keeps an access setting complete and free of anything
+// Caddy would expand as a placeholder.
+func validateAccess(opts Options, a *node.Access) error {
+	switch {
+	case a == nil:
+		return nil
+	case a.Login() && a.PasswordHash != "":
+		return errors.New("access needs a password or a login, not both")
+	case a.Login() && opts.accessCheck.dial == "":
+		return errors.New("login access needs the access check URL (Options.AccessURL)")
+	case a.Login() && (a.LoginURL == "" || strings.ContainsAny(a.LoginURL, "{} \n")):
+		return fmt.Errorf("login URL %q is not valid", a.LoginURL)
+	case a.Login():
+		return nil
+	case !strings.HasPrefix(a.PasswordHash, "$2") || strings.ContainsAny(a.PasswordHash, "{}"):
+		return errors.New("access needs a bcrypt password hash or a login key")
+	case a.Username == "" || strings.ContainsAny(a.Username, "{}:") || strings.ContainsFunc(a.Username, unicode.IsControl):
+		return fmt.Errorf("username %q is not valid", a.Username)
 	}
 	return nil
 }

@@ -9,7 +9,8 @@ import (
 
 // applyRoutes renders the server's complete routing table from the DB and
 // loads it atomically (ADR 0009). Every domain of a running service routes
-// to its active release's host port; redirect domains redirect.
+// to its active release's host port, with the service's access protection
+// (ADR 0030); redirect domains redirect.
 func (c *Core) applyRoutes(ctx context.Context, serverID int64) error {
 	c.routesMu.Lock()
 	defer c.routesMu.Unlock()
@@ -42,8 +43,14 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 				routes[i].Hostnames = append(routes[i].Hostnames, d.Hostname)
 				continue
 			}
+			acc, err := c.routeAccess(d)
+			if err != nil {
+				// Never serve a protected service unprotected.
+				c.log.Error("service left out of routing", "domain", d.Hostname, "err", err)
+				continue
+			}
 			bySvc[d.ServiceID] = len(routes)
-			routes = append(routes, node.Route{Hostnames: []string{d.Hostname}, Upstream: fmt.Sprintf("127.0.0.1:%d", port)})
+			routes = append(routes, node.Route{Hostnames: []string{d.Hostname}, Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc})
 		}
 	}
 	return c.runtime(serverID).ApplyRoutes(ctx, c.withControlRoutes(serverID, routes))
