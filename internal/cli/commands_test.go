@@ -33,12 +33,18 @@ type testServer struct {
 	tokens map[apitypes.Scope]string
 }
 
+// sys is the system actor in the test org, the first one created.
+var sys = core.System.InOrg(1)
+
 func newTestServer(t *testing.T) *testServer {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateOrg(ctx, store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
 		t.Fatal(err)
 	}
 	box, _ := secrets.New(bytes.Repeat([]byte{1}, secrets.KeySize))
@@ -61,8 +67,9 @@ func newTestServer(t *testing.T) *testServer {
 		_ = st.Close()
 	})
 	ts := &testServer{url: srv.URL, rt: rt, core: c, tokens: map[apitypes.Scope]string{}}
+	// The admin token is the install's, like bootstrap's: an operator's.
 	for _, scope := range []apitypes.Scope{apitypes.ScopeRead, apitypes.ScopeDeploy, apitypes.ScopeAdmin} {
-		tok, err := c.CreateToken(ctx, core.System, apitypes.CreateTokenRequest{Name: string(scope), Scope: scope})
+		tok, err := c.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: string(scope), Scope: scope, Operator: scope == apitypes.ScopeAdmin})
 		if err != nil {
 			t.Fatal(err)
 		}

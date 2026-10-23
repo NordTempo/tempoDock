@@ -10,7 +10,7 @@ import (
 // cliUser creates a user and returns them as a signed-in actor.
 func (h *harness) cliUser(email string, role apitypes.Scope) Actor {
 	h.t.Helper()
-	u, err := h.c.CreateUser(h.ctx, System, apitypes.CreateUserRequest{Email: email, Name: "x", Password: "a long enough password", Role: role})
+	u, err := h.c.CreateUser(h.ctx, testSystem, apitypes.CreateUserRequest{Email: email, Name: "x", Password: "a long enough password", Role: role})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -18,7 +18,11 @@ func (h *harness) cliUser(email string, role apitypes.Scope) Actor {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	return userActor(su)
+	a, err := h.c.actIn(h.ctx, userActor(su), "", apitypes.ScopeAdmin)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return a
 }
 
 func (h *harness) startCLILogin() apitypes.CLILoginStart {
@@ -72,7 +76,7 @@ func TestCLILoginApprovedTokenIsReturnedOnce(t *testing.T) {
 		t.Fatalf("wait took %s; approval should wake it", d)
 	}
 
-	a, err := h.c.AuthenticateToken(h.ctx, r.res.Token)
+	a, err := h.c.AuthenticateToken(h.ctx, r.res.Token, "")
 	if err != nil || a.Scope != apitypes.ScopeDeploy || a.Name != "cli: laptop[31m" || a.Email != "ada@example.com" {
 		t.Fatalf("token actor = %+v, %v", a, err)
 	}
@@ -83,7 +87,7 @@ func TestCLILoginApprovedTokenIsReturnedOnce(t *testing.T) {
 	}, "203.0.113.1"); err != nil || secret != "" {
 		t.Fatalf("change password with the CLI token: %q, %v", secret, err)
 	}
-	tokens, _ := h.c.ListTokens(h.ctx, System)
+	tokens, _ := h.c.ListTokens(h.ctx, testSystem)
 	last := tokens[len(tokens)-1]
 	if last.Origin != "cli_login" || last.CreatedBy != "ada@example.com" || last.ExpiresAt == nil {
 		t.Fatalf("token = %+v", last)
@@ -99,7 +103,7 @@ func TestCLILoginApprovedTokenIsReturnedOnce(t *testing.T) {
 	if err := h.c.RevokeOwnToken(h.ctx, a); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.AuthenticateToken(h.ctx, r.res.Token); CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, err := h.c.AuthenticateToken(h.ctx, r.res.Token, ""); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("revoked token still works: %v", err)
 	}
 }
@@ -124,8 +128,8 @@ func TestCLILoginDeniedAndPending(t *testing.T) {
 	}
 
 	// Tokens can't approve: a token could otherwise mint more tokens.
-	tok, _ := h.c.CreateToken(h.ctx, System, apitypes.CreateTokenRequest{Name: "ci", Scope: apitypes.ScopeAdmin})
-	ta, _ := h.c.AuthenticateToken(h.ctx, tok.Secret)
+	tok, _ := h.c.CreateToken(h.ctx, testSystem, apitypes.CreateTokenRequest{Name: "ci", Scope: apitypes.ScopeAdmin})
+	ta, _ := h.c.AuthenticateToken(h.ctx, tok.Secret, "")
 	s = h.startCLILogin()
 	if err := h.c.DecideCLILogin(h.ctx, ta, s.UserCode, "203.0.113.1", true); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("token approving: %v", err)
@@ -216,7 +220,7 @@ func (h *harness) cliToken(a Actor) string {
 func TestCLILoginTokenFollowsItsUser(t *testing.T) {
 	h := newHarness(t)
 	ada := h.cliUser("ada@example.com", apitypes.ScopeAdmin)
-	authAs := func(secret string) (Actor, error) { return h.c.AuthenticateToken(h.ctx, secret) }
+	authAs := func(secret string) (Actor, error) { return h.c.AuthenticateToken(h.ctx, secret, "") }
 	refused := func(what, secret string) {
 		t.Helper()
 		if _, err := authAs(secret); CodeOf(err) != apitypes.CodeUnauthorized {
@@ -233,11 +237,12 @@ func TestCLILoginTokenFollowsItsUser(t *testing.T) {
 	// Scope is capped at the user's current role, and checked without
 	// waiting for a revocation.
 	tok := h.cliToken(ada)
-	sql("UPDATE users SET role = 'read' WHERE id = ?", ada.UserID)
+	sql("UPDATE org_members SET role = 'read' WHERE user_id = ?", ada.UserID)
 	if a, err := authAs(tok); err != nil || a.Scope != apitypes.ScopeRead {
 		t.Fatalf("after demotion to read: %+v, %v", a, err)
 	}
-	sql("UPDATE users SET role = 'admin', disabled_at = ? WHERE id = ?", now(), ada.UserID)
+	sql("UPDATE org_members SET role = 'admin' WHERE user_id = ?", ada.UserID)
+	sql("UPDATE users SET disabled_at = ? WHERE id = ?", now(), ada.UserID)
 	refused("user disabled behind core's back", tok)
 	sql("UPDATE users SET disabled_at = NULL WHERE id = ?", ada.UserID)
 
@@ -246,11 +251,11 @@ func TestCLILoginTokenFollowsItsUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.SetUserDisabled(h.ctx, System, ada.UserID, true); err != nil {
+	if _, err := h.c.SetUserDisabled(h.ctx, testSystem, ada.UserID, true); err != nil {
 		t.Fatal(err)
 	}
 	refused("disabled", tok)
-	if _, err := h.c.SetUserDisabled(h.ctx, System, ada.UserID, false); err != nil {
+	if _, err := h.c.SetUserDisabled(h.ctx, testSystem, ada.UserID, false); err != nil {
 		t.Fatal(err)
 	}
 	refused("disabled and enabled again", tok)
@@ -273,14 +278,14 @@ func TestCLILoginTokenFollowsItsUser(t *testing.T) {
 		t.Fatalf("calling token after its own password change: %v", err)
 	}
 	refused("own password changed", other)
-	if _, err := h.c.ResetPassword(h.ctx, System, ada.UserID, apitypes.ResetPasswordRequest{}); err != nil {
+	if _, err := h.c.ResetPassword(h.ctx, testSystem, ada.UserID, apitypes.ResetPasswordRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	refused("password reset by an admin", mine)
 
 	// Deleting revokes, even if the email comes back as a new user.
 	tok = h.cliToken(ada)
-	if err := h.c.DeleteUser(h.ctx, System, ada.UserID); err != nil {
+	if err := h.c.DeleteUser(h.ctx, testSystem, ada.UserID); err != nil {
 		t.Fatal(err)
 	}
 	refused("deleted", tok)

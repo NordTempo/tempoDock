@@ -16,7 +16,7 @@ func TestDomainURLAndLastCheck(t *testing.T) {
 	h.rt.SetDomainCheck(func(string) node.DomainCheck {
 		return node.DomainCheck{ExpectedIPs: []string{"203.0.113.10"}, ResolvedIPs: []string{"198.51.100.7"}}
 	})
-	dc, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
+	dc, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,11 +25,11 @@ func TestDomainURLAndLastCheck(t *testing.T) {
 		t.Fatalf("new domain: %+v", dc.Domain)
 	}
 
-	ss, _ := h.c.serviceFor(h.ctx, System, web, apitypes.ScopeRead, "testing")
+	ss, _ := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
 	rows, _ := h.store.ListDomainsByService(h.ctx, ss.svc.ID)
 	var dnsOK time.Time
 	h.c.checkDomain(h.ctx, rows[0], &dnsOK)
-	ds, err := h.c.ListDomains(h.ctx, System, web)
+	ds, err := h.c.ListDomains(h.ctx, testSystem, web)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestDomainURLAndLastCheck(t *testing.T) {
 
 	h.opts.Config.Caddy.DisableTLS = true
 	h.restart()
-	if ds, _ := h.c.ListDomains(h.ctx, System, web); ds[0].URL != "http://shop.example.com" {
+	if ds, _ := h.c.ListDomains(h.ctx, testSystem, web); ds[0].URL != "http://shop.example.com" {
 		t.Fatalf("URL without TLS: %s", ds[0].URL)
 	}
 }

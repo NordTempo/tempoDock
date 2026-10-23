@@ -40,7 +40,10 @@ func newControlPlane(t *testing.T) *controlPlane {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	cp.st = st
-	if _, err := st.DB.ExecContext(ctx, "INSERT INTO projects (name) VALUES ('shop')"); err != nil {
+	if _, err := st.DB.ExecContext(ctx, "INSERT INTO orgs (id, slug, name) VALUES (1, 'test', 'test')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB.ExecContext(ctx, "INSERT INTO projects (org_id, name) VALUES (1, 'shop')"); err != nil {
 		t.Fatal(err)
 	}
 	id, err := remote.LoadOrCreateIdentity(filepath.Join(cp.dir, remote.ControlPlaneKeyFile))

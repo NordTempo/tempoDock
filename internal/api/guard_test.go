@@ -9,14 +9,13 @@ import (
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
-	"github.com/NordTempo/tempoDock/internal/core"
 )
 
 // login creates an admin user and returns its session cookie.
 func (f *fixture) login() *http.Cookie {
 	f.t.Helper()
-	if _, err := f.core.CreateUser(context.Background(), core.System, apitypes.CreateUserRequest{
-		Email: "ada@example.com", Name: "Ada", Password: "correct horse battery", Role: apitypes.ScopeAdmin,
+	if _, err := f.core.CreateUser(context.Background(), sys, apitypes.CreateUserRequest{
+		Email: "ada@example.com", Name: "Ada", Password: "correct horse battery", Role: apitypes.ScopeAdmin, Operator: true,
 	}); err != nil {
 		f.t.Fatal(err)
 	}
@@ -57,7 +56,7 @@ func TestCookieRequestsRefuseCrossSite(t *testing.T) {
 				req.Header.Set(k, v)
 			}
 			if tc.bearer {
-				req.Header.Set("Authorization", "Bearer "+f.tokens["admin"])
+				req.Header.Set("Authorization", "Bearer "+f.tokens["operator"])
 			} else {
 				req.AddCookie(cookie)
 			}

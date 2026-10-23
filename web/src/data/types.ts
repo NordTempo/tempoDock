@@ -6,7 +6,7 @@ import type { components } from "../api/schema";
 
 type Schemas = components["schemas"];
 
-export type Scope = Schemas["Me"]["scope"];
+export type Scope = Schemas["User"]["role"];
 export type Session = Schemas["Me"];
 export type Project = Schemas["Project"];
 export type Server = Schemas["Server"];

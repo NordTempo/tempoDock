@@ -123,30 +123,76 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("read schema version: %w", err)
-		}
-		if version <= current {
-			_ = tx.Rollback()
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("migration %s: %w", base, err)
-		}
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", version)); err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-		if err := tx.Commit(); err != nil {
+		if err := migrateOne(ctx, db, version, string(body)); err != nil {
 			return fmt.Errorf("migration %s: %w", base, err)
 		}
 		current = version
 	}
 	return nil
+}
+
+// fkOffMarker starts a migration that rebuilds a table other tables
+// reference. It runs with foreign keys off (SQLite's documented way to
+// rebuild a table), and commits only if foreign_key_check finds nothing.
+const fkOffMarker = "-- foreign_keys: off\n"
+
+// migrateOne applies one migration on its own connection, so a
+// foreign-keys-off migration doesn't change the pool's other connections.
+func migrateOne(ctx context.Context, db *sql.DB, version int, body string) error {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	fkOff := strings.HasPrefix(body, fkOffMarker)
+	if fkOff {
+		// Outside the transaction: SQLite ignores it inside one.
+		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+			return err
+		}
+		defer func() { _, _ = conn.ExecContext(context.WithoutCancel(ctx), "PRAGMA foreign_keys = ON") }()
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var current int
+	if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	if version <= current {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, body); err != nil {
+		return err
+	}
+	if fkOff {
+		if err := foreignKeyCheck(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", version)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// foreignKeyCheck fails if any row references a missing parent.
+func foreignKeyCheck(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	if rows.Next() {
+		var table, parent string
+		var rowid sql.NullInt64
+		var fk int
+		if err := rows.Scan(&table, &rowid, &parent, &fk); err != nil {
+			return err
+		}
+		return fmt.Errorf("foreign key check: a %s row (rowid %d) references a missing %s", table, rowid.Int64, parent)
+	}
+	return rows.Err()
 }

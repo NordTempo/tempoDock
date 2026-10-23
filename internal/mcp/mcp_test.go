@@ -42,12 +42,18 @@ type fixture struct {
 	tokens  map[string]string
 }
 
+// sys is the system actor in the test org, the first one created.
+var sys = core.System.InOrg(1)
+
 func newFixture(t testing.TB) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateOrg(ctx, store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
 		t.Fatal(err)
 	}
 	box, _ := secrets.New(bytes.Repeat([]byte{1}, secrets.KeySize))
@@ -71,11 +77,11 @@ func newFixture(t testing.TB) *fixture {
 	})
 	f := &fixture{t: t, srv: srv, handler: h, core: c, rt: rt, tokens: map[string]string{}}
 	for _, p := range []string{"shop", "blog"} {
-		if _, err := c.CreateProject(ctx, core.System, apitypes.CreateProjectRequest{Name: p}); err != nil {
+		if _, err := c.CreateProject(ctx, sys, apitypes.CreateProjectRequest{Name: p}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := c.CreateEnvironment(ctx, core.System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+	if _, err := c.CreateEnvironment(ctx, sys, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []struct {
@@ -86,7 +92,7 @@ func newFixture(t testing.TB) *fixture {
 		{core.ServiceRef{Project: "shop", Environment: "staging", Service: "db"}, "postgres:17"},
 		{core.ServiceRef{Project: "blog", Environment: "production", Service: "api"}, "app:1"},
 	} {
-		if _, err := c.CreateService(ctx, core.System, s.ref.Env(), apitypes.CreateServiceRequest{Name: s.ref.Service, Image: s.image}); err != nil {
+		if _, err := c.CreateService(ctx, sys, s.ref.Env(), apitypes.CreateServiceRequest{Name: s.ref.Service, Image: s.image}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -95,7 +101,7 @@ func newFixture(t testing.TB) *fixture {
 		"admin":      {Scope: apitypes.ScopeAdmin},
 	} {
 		req.Name = name
-		tok, err := c.CreateToken(ctx, core.System, req)
+		tok, err := c.CreateToken(ctx, sys, req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -271,7 +277,7 @@ func TestScopedToken(t *testing.T) {
 	}
 
 	// Mutating calls are audited like the API, with the token as actor.
-	evs, err := f.core.ListAudit(context.Background(), core.System, core.AuditFilter{Project: "shop", Limit: 10})
+	evs, err := f.core.ListAudit(context.Background(), sys, core.AuditFilter{Project: "shop", Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +377,7 @@ func TestDeployTimeoutAndFailure(t *testing.T) {
 	}
 	hold()
 	waitFor(t, func() bool {
-		r, err := f.core.GetRelease(context.Background(), core.System, core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}, 1)
+		r, err := f.core.GetRelease(context.Background(), sys, core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}, 1)
 		return err == nil && r.Status.Done()
 	})
 
@@ -510,7 +516,7 @@ func TestNoGoroutinesLeft(t *testing.T) {
 	post(t, f, "shop-agent", `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"deploy_image","arguments":{"service":"web"}}}`)
 	http.DefaultClient.CloseIdleConnections()
 	waitFor(t, func() bool {
-		r, err := f.core.GetRelease(context.Background(), core.System, core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}, 1)
+		r, err := f.core.GetRelease(context.Background(), sys, core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}, 1)
 		return err == nil && r.Status.Done()
 	})
 	if after := settledGoroutines(); after > before {

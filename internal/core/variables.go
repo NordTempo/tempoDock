@@ -92,7 +92,7 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 	var serviceID *int64
 	target := es.String()
 	if req.Service != "" {
-		ss, err := c.loadService(ctx, ServiceRef{ref.Project, ref.Environment, req.Service})
+		ss, err := c.loadService(ctx, a.OrgID, ServiceRef{ref.Project, ref.Environment, req.Service})
 		if err != nil {
 			return apitypes.ChangeResult{}, err
 		}

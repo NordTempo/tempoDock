@@ -23,6 +23,10 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
+// testSystem is the system actor in the test org, which newHarness creates
+// first (ID 1), so tests can address projects by name.
+var testSystem = System.InOrg(1)
+
 type harness struct {
 	t     *testing.T
 	ctx   context.Context
@@ -34,14 +38,24 @@ type harness struct {
 	nodes Nodes
 }
 
+// openTestStore opens a database with the test org (ID 1) in it.
+func openTestStore(t testing.TB, path string) *store.Store {
+	t.Helper()
+	st, err := store.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateOrg(context.Background(), store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t, filepath.Join(dir, "dock.db"))
 	box, err := secrets.New(bytes.Repeat([]byte{7}, secrets.KeySize))
 	if err != nil {
 		t.Fatal(err)
@@ -96,13 +110,13 @@ func (h *harness) crash() {
 // needed, and a service in it.
 func (h *harness) service(name string, req apitypes.CreateServiceRequest) ServiceRef {
 	h.t.Helper()
-	if _, err := h.c.GetProject(h.ctx, System, "shop"); err != nil {
-		if _, err := h.c.CreateProject(h.ctx, System, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
+	if _, err := h.c.GetProject(h.ctx, testSystem, "shop"); err != nil {
+		if _, err := h.c.CreateProject(h.ctx, testSystem, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
 			h.t.Fatal(err)
 		}
 	}
 	req.Name = name
-	if _, err := h.c.CreateService(h.ctx, System, EnvRef{"shop", "production"}, req); err != nil {
+	if _, err := h.c.CreateService(h.ctx, testSystem, EnvRef{"shop", "production"}, req); err != nil {
 		h.t.Fatal(err)
 	}
 	return ServiceRef{"shop", "production", name}
@@ -110,7 +124,7 @@ func (h *harness) service(name string, req apitypes.CreateServiceRequest) Servic
 
 func (h *harness) deploy(ref ServiceRef, image string) apitypes.Release {
 	h.t.Helper()
-	rel, err := h.c.DeployImage(h.ctx, System, ref, apitypes.DeployImageRequest{Image: image})
+	rel, err := h.c.DeployImage(h.ctx, testSystem, ref, apitypes.DeployImageRequest{Image: image})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -122,7 +136,7 @@ func (h *harness) wait(ref ServiceRef, number int64) apitypes.Release {
 	h.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		rel, err := h.c.GetRelease(h.ctx, System, ref, number)
+		rel, err := h.c.GetRelease(h.ctx, testSystem, ref, number)
 		if err != nil {
 			h.t.Fatal(err)
 		}
@@ -140,7 +154,7 @@ func (h *harness) waitStatus(ref ServiceRef, number int64, want apitypes.Release
 	h.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		rel, err := h.c.GetRelease(h.ctx, System, ref, number)
+		rel, err := h.c.GetRelease(h.ctx, testSystem, ref, number)
 		if err != nil {
 			h.t.Fatal(err)
 		}
@@ -156,7 +170,7 @@ func (h *harness) waitStatus(ref ServiceRef, number int64, want apitypes.Release
 
 func (h *harness) status(ref ServiceRef, number int64) apitypes.ReleaseStatus {
 	h.t.Helper()
-	rel, err := h.c.GetRelease(h.ctx, System, ref, number)
+	rel, err := h.c.GetRelease(h.ctx, testSystem, ref, number)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -166,7 +180,7 @@ func (h *harness) status(ref ServiceRef, number int64) apitypes.ReleaseStatus {
 // ctr is the container name of a service's release.
 func (h *harness) ctr(ref ServiceRef, number int64) string {
 	h.t.Helper()
-	ss, err := h.c.serviceFor(h.ctx, System, ref, apitypes.ScopeRead, "testing")
+	ss, err := h.c.serviceFor(h.ctx, testSystem, ref, apitypes.ScopeRead, "testing")
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -191,7 +205,7 @@ func (h *harness) waitRunning(want ...string) {
 func TestDeployActivatesAndSwitchesRoutes(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 3000})
-	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "Shop.Example.com"}); err != nil {
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "Shop.Example.com"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -262,7 +276,7 @@ func TestCrashRecoveryFailsInFlightReleases(t *testing.T) {
 
 	release := h.rt.HoldHealthChecks()
 	defer release()
-	rel, err := h.c.DeployImage(h.ctx, System, web, apitypes.DeployImageRequest{Image: "app:2"})
+	rel, err := h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +289,7 @@ func TestCrashRecoveryFailsInFlightReleases(t *testing.T) {
 	h.c = h.start()
 	defer func() { h.c = crashed }() // Cleanup closes the original
 
-	r2, err := h.c.GetRelease(h.ctx, System, web, rel.Number)
+	r2, err := h.c.GetRelease(h.ctx, testSystem, web, rel.Number)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,16 +308,16 @@ func TestCrashRecoveryFailsInFlightReleases(t *testing.T) {
 func TestRollbackReusesImageAndConfig(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
-	if _, err := h.c.SetVariables(h.ctx, System, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"MODE": "one"}}); err != nil {
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"MODE": "one"}}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(web, "app:1")
-	if _, err := h.c.SetVariables(h.ctx, System, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"MODE": "two"}}); err != nil {
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"MODE": "two"}}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(web, "app:2")
 
-	rel, err := h.c.Rollback(h.ctx, System, web, 1)
+	rel, err := h.c.Rollback(h.ctx, testSystem, web, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +329,7 @@ func TestRollbackReusesImageAndConfig(t *testing.T) {
 	if spec.Env["MODE"] != "one" {
 		t.Fatalf("rollback should use release 1's config, MODE = %q", spec.Env["MODE"])
 	}
-	if _, err := h.c.Rollback(h.ctx, System, web, 9); CodeOf(err) != apitypes.CodeNotFound {
+	if _, err := h.c.Rollback(h.ctx, testSystem, web, 9); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("rollback to missing release: %v", err)
 	}
 }
@@ -323,7 +337,7 @@ func TestRollbackReusesImageAndConfig(t *testing.T) {
 func TestStatefulServiceIsRecreated(t *testing.T) {
 	h := newHarness(t)
 	db := h.service("db", apitypes.CreateServiceRequest{Port: 5432})
-	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/var/lib/postgresql/data"}); err != nil {
+	if _, err := h.c.AddVolume(h.ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/var/lib/postgresql/data"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(db, "postgres:17") // applies the staged volume
@@ -367,13 +381,18 @@ func (h *harness) settleEvents() {
 	}
 }
 
+// drift lists drift entries: the org's (in a project) and the platform's.
 func (h *harness) drift() []apitypes.AuditEvent {
 	h.t.Helper()
-	evs, err := h.c.ListAudit(h.ctx, System, AuditFilter{Action: "reconcile.drift"})
-	if err != nil {
-		h.t.Fatal(err)
+	var all []apitypes.AuditEvent
+	for _, platform := range []bool{false, true} {
+		evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "reconcile.drift", Platform: platform})
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		all = append(all, evs...)
 	}
-	return evs
+	return all
 }
 
 // The die and destroy events of containers the daemon stops itself (the
@@ -382,21 +401,21 @@ func (h *harness) drift() []apitypes.AuditEvent {
 func TestOwnRemovalsAreNotDrift(t *testing.T) {
 	h := newHarness(t)
 	db := h.service("db", apitypes.CreateServiceRequest{Port: 5432})
-	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+	if _, err := h.c.AddVolume(h.ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(db, "postgres:17")
 	h.deploy(db, "postgres:17.1")
 	h.settleEvents()
-	if svc, _ := h.c.GetService(h.ctx, System, db); svc.Status.State != apitypes.ServiceRunning {
+	if svc, _ := h.c.GetService(h.ctx, testSystem, db); svc.Status.State != apitypes.ServiceRunning {
 		t.Fatalf("status after recreate = %+v", svc.Status)
 	}
-	if _, err := h.c.ArchiveService(h.ctx, System, db); err != nil {
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, db); err != nil {
 		t.Fatal(err)
 	}
 	h.waitRunning()
 	h.settleEvents()
-	if svc, _ := h.c.GetService(h.ctx, System, db); svc.Status.State != apitypes.ServiceNone {
+	if svc, _ := h.c.GetService(h.ctx, testSystem, db); svc.Status.State != apitypes.ServiceNone {
 		t.Fatalf("status after archive = %+v", svc.Status)
 	}
 	if d := h.drift(); len(d) > 0 {
@@ -416,7 +435,7 @@ func TestOtherControlPlanesAreIgnored(t *testing.T) {
 	if spec, _ := h.rt.Spec(h.ctr(web, 2)); spec.Labels.ControlPlane == "" || spec.Labels.ControlPlane != h.c.install {
 		t.Fatalf("container labels = %+v, install ID %q", spec.Labels, h.c.install)
 	}
-	ss, err := h.c.loadService(h.ctx, web)
+	ss, err := h.c.loadService(h.ctx, 1, web)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,14 +471,14 @@ func TestOtherControlPlanesAreIgnored(t *testing.T) {
 func TestArchiveStopsInBackground(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
-	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "web.example.com"}); err != nil {
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "web.example.com"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(web, "app:1")
 	release := h.rt.HoldStops()
 	defer release()
 
-	svc, err := h.c.ArchiveService(h.ctx, System, web)
+	svc, err := h.c.ArchiveService(h.ctx, testSystem, web)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +491,7 @@ func TestArchiveStopsInBackground(t *testing.T) {
 	if got := h.rt.Running(); !slices.Equal(got, []string{h.ctr(web, 1)}) {
 		t.Fatalf("running = %v; the stop should still be in progress", got)
 	}
-	ss, _ := h.c.loadService(h.ctx, web)
+	ss, _ := h.c.loadService(h.ctx, 1, web)
 	if ports, _ := h.c.store.ListUsedHostPorts(h.ctx, ss.env.ServerID); len(ports) != 1 {
 		t.Fatalf("port freed while the container still runs: %v", ports)
 	}
@@ -489,7 +508,7 @@ func TestArchiveStopsInBackground(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	r1, _ := h.c.GetRelease(h.ctx, System, web, 1)
+	r1, _ := h.c.GetRelease(h.ctx, testSystem, web, 1)
 	if r1.Status != apitypes.ReleaseSuperseded || !slices.ContainsFunc(r1.Events, func(e apitypes.ReleaseEvent) bool {
 		return strings.HasPrefix(e.Message, "Stopped release 1")
 	}) {
@@ -503,14 +522,14 @@ func TestArchiveProject(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	db := h.service("db", apitypes.CreateServiceRequest{})
-	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+	if _, err := h.c.AddVolume(h.ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.CreateEnvironment(h.ctx, System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		t.Fatal(err)
 	}
 	staging := ServiceRef{"shop", "staging", "web"}
-	if _, err := h.c.CreateService(h.ctx, System, staging.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+	if _, err := h.c.CreateService(h.ctx, testSystem, staging.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(web, "app:1")
@@ -524,7 +543,7 @@ func TestArchiveProject(t *testing.T) {
 	if nets := h.rt.Networks(); len(nets) != 2 {
 		t.Fatalf("networks = %v", nets)
 	}
-	p, err := h.c.ArchiveProject(h.ctx, System, "shop")
+	p, err := h.c.ArchiveProject(h.ctx, testSystem, "shop")
 	if err != nil || p.ArchivedAt == nil {
 		t.Fatalf("archive = %+v, %v", p, err)
 	}
@@ -539,23 +558,23 @@ func TestArchiveProject(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	for _, ref := range []ServiceRef{web, db, staging} {
-		if svc, _ := h.c.GetService(h.ctx, System, ref); svc.ArchivedAt == nil || svc.ActiveRelease != nil {
+		if svc, _ := h.c.GetService(h.ctx, testSystem, ref); svc.ArchivedAt == nil || svc.ActiveRelease != nil {
 			t.Errorf("%s = %+v", ref, svc)
 		}
 	}
-	if vols, _ := h.c.ListVolumes(h.ctx, System, db); len(vols) != 1 {
+	if vols, _ := h.c.ListVolumes(h.ctx, testSystem, db); len(vols) != 1 {
 		t.Errorf("volumes = %+v", vols)
 	}
-	if ps, _ := h.c.ListProjects(h.ctx, System, false); len(ps) != 0 {
+	if ps, _ := h.c.ListProjects(h.ctx, testSystem, false); len(ps) != 0 {
 		t.Errorf("listed by default: %+v", ps)
 	}
-	if ps, _ := h.c.ListProjects(h.ctx, System, true); len(ps) != 1 || ps[0].ArchivedAt == nil {
+	if ps, _ := h.c.ListProjects(h.ctx, testSystem, true); len(ps) != 1 || ps[0].ArchivedAt == nil {
 		t.Errorf("listed with archived: %+v", ps)
 	}
-	if _, err := h.c.CreateService(h.ctx, System, web.Env(), apitypes.CreateServiceRequest{Name: "new"}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.CreateService(h.ctx, testSystem, web.Env(), apitypes.CreateServiceRequest{Name: "new"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("service created in archived project: %v", err)
 	}
-	if _, err := h.c.ArchiveProject(h.ctx, System, "shop"); err != nil {
+	if _, err := h.c.ArchiveProject(h.ctx, testSystem, "shop"); err != nil {
 		t.Errorf("archiving again: %v", err)
 	}
 }
@@ -567,13 +586,13 @@ func TestOOMKillStatusHasLimit(t *testing.T) {
 	mem := 128
 	web := h.service("web", apitypes.CreateServiceRequest{MemoryMB: mem})
 	h.deploy(web, "app:1")
-	ss, _ := h.c.loadService(h.ctx, web)
+	ss, _ := h.c.loadService(h.ctx, 1, web)
 	active, _ := h.c.store.GetActiveRelease(h.ctx, ss.svc.ID)
 	h.rt.Emit(node.ContainerEvent{ContainerID: active.ContainerID, Action: "oom"})
 	h.rt.Emit(node.ContainerEvent{ContainerID: active.ContainerID, Action: "die", ExitCode: 137})
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		svc, _ := h.c.GetService(h.ctx, System, web)
+		svc, _ := h.c.GetService(h.ctx, testSystem, web)
 		if s := svc.Status; s.State == apitypes.ServiceCrashed {
 			if !s.OOMKilled || s.MemoryLimitMB != mem || s.ExitCode != 137 {
 				t.Fatalf("status = %+v", s)
@@ -594,14 +613,14 @@ func TestVariableReferences(t *testing.T) {
 	env := web.Env()
 	set := func(service string, vars map[string]string) {
 		t.Helper()
-		if _, err := h.c.SetVariables(h.ctx, System, env, apitypes.SetVariablesRequest{Service: service, Set: vars}); err != nil {
+		if _, err := h.c.SetVariables(h.ctx, testSystem, env, apitypes.SetVariablesRequest{Service: service, Set: vars}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	set("", map[string]string{"REGION": "eu"})
 	set("api", map[string]string{"URL": "http://${{api.DOCK_PRIVATE_DOMAIN}}:${{ api.PORT }}"})
 	set("web", map[string]string{"API_URL": "${{api.URL}}/v1", "WHERE": "${{shared.REGION}}"})
-	if _, err := h.c.ApplyChanges(h.ctx, System, env); err != nil {
+	if _, err := h.c.ApplyChanges(h.ctx, testSystem, env); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(api, "api:1")
@@ -614,16 +633,16 @@ func TestVariableReferences(t *testing.T) {
 	// An unknown reference fails the apply, names the problem, and leaves
 	// the change staged.
 	set("web", map[string]string{"DB": "${{postgres.DATABASE_URL}}"})
-	_, err := h.c.ApplyChanges(h.ctx, System, env)
+	_, err := h.c.ApplyChanges(h.ctx, testSystem, env)
 	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), `no service "postgres"`) || !strings.Contains(err.Error(), "DB") {
 		t.Fatalf("apply with unknown reference: %v", err)
 	}
-	pending, _ := h.c.GetChanges(h.ctx, System, env, false)
+	pending, _ := h.c.GetChanges(h.ctx, testSystem, env, false)
 	if pending.Count != 1 {
 		t.Fatalf("change should stay staged: %+v", pending)
 	}
 	set("web", map[string]string{"DB": "${{api.NOPE}}"})
-	if _, err := h.c.ApplyChanges(h.ctx, System, env); err == nil || !strings.Contains(err.Error(), "api has no variable NOPE") {
+	if _, err := h.c.ApplyChanges(h.ctx, testSystem, env); err == nil || !strings.Contains(err.Error(), "api has no variable NOPE") {
 		t.Fatalf("apply with unknown key: %v", err)
 	}
 }
@@ -632,11 +651,11 @@ func TestOneDeployPerService(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	release := h.rt.HoldHealthChecks()
-	rel, err := h.c.DeployImage(h.ctx, System, web, apitypes.DeployImageRequest{Image: "app:1"})
+	rel, err := h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = h.c.DeployImage(h.ctx, System, web, apitypes.DeployImageRequest{Image: "app:2"})
+	_, err = h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"})
 	if CodeOf(err) != apitypes.CodeDeployInProgress {
 		t.Fatalf("second deploy: %v", err)
 	}
@@ -651,18 +670,18 @@ func TestStagedChangesCreateConfigRelease(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	h.deploy(web, "app:1")
 
-	res, err := h.c.SetVariables(h.ctx, System, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"FOO": "bar"}})
+	res, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"FOO": "bar"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Pending.Count != 1 || res.Applied != nil {
 		t.Fatalf("staged: %+v", res)
 	}
-	if rels, _ := h.c.ListReleases(h.ctx, System, web, 10); len(rels) != 1 {
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 1 {
 		t.Fatalf("staging must not deploy, releases = %d", len(rels))
 	}
 
-	applied, err := h.c.ApplyChanges(h.ctx, System, web.Env())
+	applied, err := h.c.ApplyChanges(h.ctx, testSystem, web.Env())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,14 +695,14 @@ func TestStagedChangesCreateConfigRelease(t *testing.T) {
 
 	// A deploy takes the service's staged settings with it.
 	port := 4000
-	if _, err := h.c.UpdateService(h.ctx, System, web, apitypes.UpdateServiceRequest{Port: &port}); err != nil {
+	if _, err := h.c.UpdateService(h.ctx, testSystem, web, apitypes.UpdateServiceRequest{Port: &port}); err != nil {
 		t.Fatal(err)
 	}
 	r3 := h.deploy(web, "app:2")
 	if r3.Config.Port != 4000 {
 		t.Fatalf("deploy should apply staged port, got %d", r3.Config.Port)
 	}
-	if pending, _ := h.c.GetChanges(h.ctx, System, web.Env(), false); pending.Count != 0 {
+	if pending, _ := h.c.GetChanges(h.ctx, testSystem, web.Env(), false); pending.Count != 0 {
 		t.Fatalf("nothing should be staged after deploy: %+v", pending)
 	}
 }
@@ -703,13 +722,13 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 	_ = tw.Close()
 	size := buf.Len()
 
-	rel, err := h.c.DeploySource(h.ctx, System, web, &buf, 1<<20)
+	rel, err := h.c.DeploySource(h.ctx, testSystem, web, &buf, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := h.wait(web, rel.Number)
 	// dock.toml is read on the way to disk; the build still gets it all.
-	logs, err := h.c.BuildLog(h.ctx, System, web, rel.Number)
+	logs, err := h.c.BuildLog(h.ctx, testSystem, web, rel.Number)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -724,18 +743,18 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 		t.Fatalf("from_repo_file = %v", r.Config.FromRepoFile)
 	}
 
-	if _, err := h.c.DeploySource(h.ctx, System, web, strings.NewReader(strings.Repeat("x", 100)), 10); CodeOf(err) != apitypes.CodeTooLarge {
+	if _, err := h.c.DeploySource(h.ctx, testSystem, web, strings.NewReader(strings.Repeat("x", 100)), 10); CodeOf(err) != apitypes.CodeTooLarge {
 		t.Fatalf("oversized upload: %v", err)
 	}
 	notTar := strings.NewReader(strings.Repeat("this is a zip file, honest\n", 40))
-	if _, err := h.c.DeploySource(h.ctx, System, web, notTar, 1<<20); CodeOf(err) != apitypes.CodeValidation || err.Error() != "upload is not a tar or tar.gz archive" {
+	if _, err := h.c.DeploySource(h.ctx, testSystem, web, notTar, 1<<20); CodeOf(err) != apitypes.CodeValidation || err.Error() != "upload is not a tar or tar.gz archive" {
 		t.Fatalf("non-tar upload: %v", err)
 	}
 }
 
 func TestProjectNamesAvoidUIPages(t *testing.T) {
 	h := newHarness(t)
-	_, err := h.c.CreateProject(h.ctx, System, apitypes.CreateProjectRequest{Name: "console"})
+	_, err := h.c.CreateProject(h.ctx, testSystem, apitypes.CreateProjectRequest{Name: "console"})
 	if CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("creating project console: got %v, want a validation error", err)
 	}

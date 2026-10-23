@@ -11,9 +11,9 @@ import (
 )
 
 const addAuditEvent = `-- name: AddAuditEvent :one
-INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, project_id, environment_id, target, summary, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id
+INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, org_id, project_id, environment_id, target, summary, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id, org_id
 `
 
 type AddAuditEventParams struct {
@@ -22,6 +22,7 @@ type AddAuditEventParams struct {
 	UserID        *int64
 	TokenID       *int64
 	Action        string
+	OrgID         *int64
 	ProjectID     *int64
 	EnvironmentID *int64
 	Target        string
@@ -36,6 +37,7 @@ func (q *Queries) AddAuditEvent(ctx context.Context, arg AddAuditEventParams) (A
 		arg.UserID,
 		arg.TokenID,
 		arg.Action,
+		arg.OrgID,
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.Target,
@@ -56,24 +58,27 @@ func (q *Queries) AddAuditEvent(ctx context.Context, arg AddAuditEventParams) (A
 		&i.Summary,
 		&i.CreatedAt,
 		&i.DetailID,
+		&i.OrgID,
 	)
 	return i, err
 }
 
 const listAuditEvents = `-- name: ListAuditEvents :many
-SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id,
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id, audit_events.org_id,
        coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
 LEFT JOIN environments ON environments.id = audit_events.environment_id
-WHERE audit_events.id < +?1
-  AND (audit_events.environment_id = +?2 OR ?2 IS NULL)
-  AND ((audit_events.action >= +?3 AND audit_events.action < +?4) OR ?3 IS NULL)
+WHERE audit_events.org_id IS +?1
+  AND audit_events.id < +?2
+  AND (audit_events.environment_id = +?3 OR ?3 IS NULL)
+  AND ((audit_events.action >= +?4 AND audit_events.action < +?5) OR ?4 IS NULL)
 ORDER BY audit_events.id DESC
-LIMIT +?5
+LIMIT +?6
 `
 
 type ListAuditEventsParams struct {
+	OrgID         *int64
 	BeforeID      int64
 	EnvironmentID *int64
 	ActionFrom    *string
@@ -87,9 +92,10 @@ type ListAuditEventsRow struct {
 	EnvironmentName string
 }
 
-// Newest first, with project and environment names. Nil filters match
-// everything; only events with IDs below before_id are returned (pass
-// math.MaxInt64 for the newest). An action prefix is the range
+// One org's events (org_id NULL: the platform's), newest first, with
+// project and environment names. Other nil filters match everything;
+// only events with IDs below before_id are returned (pass math.MaxInt64
+// for the newest). An action prefix is the range
 // [action_from, action_to) (see core.prefixRange): LIKE would make SQLite
 // re-prepare the statement on every call. Use ListProjectAuditEvents to
 // filter by project: an optional project filter here would keep SQLite from
@@ -97,6 +103,7 @@ type ListAuditEventsRow struct {
 // filter by action alone.
 func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]ListAuditEventsRow, error) {
 	rows, err := q.query(ctx, q.listAuditEventsStmt, listAuditEvents,
+		arg.OrgID,
 		arg.BeforeID,
 		arg.EnvironmentID,
 		arg.ActionFrom,
@@ -123,6 +130,7 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 			&i.AuditEvent.Summary,
 			&i.AuditEvent.CreatedAt,
 			&i.AuditEvent.DetailID,
+			&i.AuditEvent.OrgID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {
@@ -140,21 +148,23 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 }
 
 const listAuditEventsByAction = `-- name: ListAuditEventsByAction :many
-SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id,
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id, audit_events.org_id,
        coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
 LEFT JOIN environments ON environments.id = audit_events.environment_id
 WHERE audit_events.id IN (
     SELECT page.id FROM audit_events AS page
-    WHERE page.action >= +?1 AND page.action < +?2
-      AND page.id < +?3
+    WHERE page.org_id IS +?1
+      AND page.action >= +?2 AND page.action < +?3
+      AND +page.id < +?4
     ORDER BY page.id DESC
-    LIMIT +?4)
+    LIMIT +?5)
 ORDER BY audit_events.id DESC
 `
 
 type ListAuditEventsByActionParams struct {
+	OrgID      *int64
 	ActionFrom string
 	ActionTo   string
 	BeforeID   int64
@@ -168,10 +178,12 @@ type ListAuditEventsByActionRow struct {
 }
 
 // ListAuditEvents for actions in [action_from, action_to), without other
-// filters. The page's IDs come from the covering audit_events_action
-// index, so a rare action doesn't walk the whole log.
+// filters. The page's IDs come from the covering audit_events_org_action
+// index, so a rare action doesn't walk the whole log; the unary plus on
+// page.id keeps SQLite from walking it through audit_events_org instead.
 func (q *Queries) ListAuditEventsByAction(ctx context.Context, arg ListAuditEventsByActionParams) ([]ListAuditEventsByActionRow, error) {
 	rows, err := q.query(ctx, q.listAuditEventsByActionStmt, listAuditEventsByAction,
+		arg.OrgID,
 		arg.ActionFrom,
 		arg.ActionTo,
 		arg.BeforeID,
@@ -197,6 +209,7 @@ func (q *Queries) ListAuditEventsByAction(ctx context.Context, arg ListAuditEven
 			&i.AuditEvent.Summary,
 			&i.AuditEvent.CreatedAt,
 			&i.AuditEvent.DetailID,
+			&i.AuditEvent.OrgID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {
@@ -214,7 +227,7 @@ func (q *Queries) ListAuditEventsByAction(ctx context.Context, arg ListAuditEven
 }
 
 const listProjectAuditEvents = `-- name: ListProjectAuditEvents :many
-SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id,
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id, audit_events.org_id,
        coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
@@ -272,6 +285,7 @@ func (q *Queries) ListProjectAuditEvents(ctx context.Context, arg ListProjectAud
 			&i.AuditEvent.Summary,
 			&i.AuditEvent.CreatedAt,
 			&i.AuditEvent.DetailID,
+			&i.AuditEvent.OrgID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {
@@ -289,7 +303,7 @@ func (q *Queries) ListProjectAuditEvents(ctx context.Context, arg ListProjectAud
 }
 
 const listProjectAuditEventsByAction = `-- name: ListProjectAuditEventsByAction :many
-SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id,
+SELECT audit_events.id, audit_events.actor, audit_events.actor_kind, audit_events.user_id, audit_events.token_id, audit_events."action", audit_events.project_id, audit_events.environment_id, audit_events.target, audit_events.summary, audit_events.created_at, audit_events.detail_id, audit_events.org_id,
        coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
@@ -353,6 +367,7 @@ func (q *Queries) ListProjectAuditEventsByAction(ctx context.Context, arg ListPr
 			&i.AuditEvent.Summary,
 			&i.AuditEvent.CreatedAt,
 			&i.AuditEvent.DetailID,
+			&i.AuditEvent.OrgID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {

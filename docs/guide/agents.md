@@ -12,7 +12,9 @@ outcome of a bad deploy is a failed release that never got traffic.
 
 ## 1. Create a token
 
-As an admin, with an unlimited admin token (the one from install):
+As an admin of the organization, with an unlimited admin token (the one
+from install). The token belongs to that organization and never acts in
+another:
 
 ```sh
 dock token create claude-shop-staging \

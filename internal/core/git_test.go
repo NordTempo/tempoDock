@@ -140,7 +140,7 @@ type hook struct {
 
 func (h *harness) connect(ref ServiceRef, req apitypes.GitConnectRequest) *hook {
 	h.t.Helper()
-	res, err := h.c.GitConnect(h.ctx, System, ref, req)
+	res, err := h.c.GitConnect(h.ctx, testSystem, ref, req)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func (h *harness) waitReleases(ref ServiceRef, n int) []apitypes.Release {
 	h.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		rels, err := h.c.ListReleases(h.ctx, System, ref, 100)
+		rels, err := h.c.ListReleases(h.ctx, testSystem, ref, 100)
 		if err != nil {
 			h.t.Fatal(err)
 		}
@@ -281,7 +281,7 @@ func TestGitWebhookDeploys(t *testing.T) {
 	if r.Config.Port != 3000 || !slices.Equal(r.Config.FromRepoFile, []string{"port"}) {
 		t.Fatalf("config: %+v", r.Config)
 	}
-	logs, _ := h.c.BuildLog(h.ctx, System, web, r.Number)
+	logs, _ := h.c.BuildLog(h.ctx, testSystem, web, r.Number)
 	b, _ := io.ReadAll(logs)
 	_ = logs.Close()
 	if !strings.Contains(string(b), "Received 3072 bytes") { // two files and the tar trailer, nothing from apps/api
@@ -333,7 +333,7 @@ func TestGitWebhookDeploys(t *testing.T) {
 	// records it in the background).
 	var src apitypes.GitSource
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(2 * time.Millisecond) {
-		src, err = h.c.GitStatus(h.ctx, System, web)
+		src, err = h.c.GitStatus(h.ctx, testSystem, web)
 		if err != nil || (src.Connection != nil && strings.Contains(src.Connection.LastEvent, "already live")) || time.Now().After(deadline) {
 			break
 		}
@@ -365,7 +365,7 @@ func TestGitNewestPushWins(t *testing.T) {
 	if err != nil || msg != "push ccccccc: queued, replacing bbbbbbb" {
 		t.Fatalf("third push: %q, %v", msg, err)
 	}
-	if src, _ := h.c.GitStatus(h.ctx, System, web); src.Connection.Pending == nil || src.Connection.Pending.SHA != shaC {
+	if src, _ := h.c.GitStatus(h.ctx, testSystem, web); src.Connection.Pending == nil || src.Connection.Pending.SHA != shaC {
 		t.Fatalf("pending: %+v", src.Connection.Pending)
 	}
 	hold()
@@ -378,10 +378,10 @@ func TestGitNewestPushWins(t *testing.T) {
 		t.Fatalf("second release: %s %+v", second.Status, second.Commit)
 	}
 	time.Sleep(20 * time.Millisecond)
-	if rels, _ := h.c.ListReleases(h.ctx, System, web, 10); len(rels) != 2 {
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 2 {
 		t.Fatalf("%d releases, want 2 (B never deploys)", len(rels))
 	}
-	if src, _ := h.c.GitStatus(h.ctx, System, web); src.Connection.Pending != nil {
+	if src, _ := h.c.GitStatus(h.ctx, testSystem, web); src.Connection.Pending != nil {
 		t.Fatalf("still pending: %+v", src.Connection.Pending)
 	}
 }
@@ -393,7 +393,7 @@ func TestGitQueuedPushSurvivesRestart(t *testing.T) {
 	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
 	h.deploy(web, "app:1")
 	hold := h.rt.HoldHealthChecks()
-	if _, err := h.c.Restart(h.ctx, System, web); err != nil {
+	if _, err := h.c.Restart(h.ctx, testSystem, web); err != nil {
 		t.Fatal(err)
 	}
 	h.waitStatus(web, 2, apitypes.ReleaseHealthChecking)
@@ -415,13 +415,13 @@ func TestGitDeployAndFetchFailure(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	token, on := "tok", true
 	h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/missing", Token: &token, Status: &on})
-	res, err := h.c.GitDeploy(h.ctx, System, web, apitypes.GitDeployRequest{})
+	res, err := h.c.GitDeploy(h.ctx, testSystem, web, apitypes.GitDeployRequest{})
 	if err != nil || res.Commit != (apitypes.Commit{SHA: shaC, Message: "ship it", Author: "ada"}) {
 		t.Fatalf("deploy: %+v, %v", res, err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		src, err := h.c.GitStatus(h.ctx, System, web)
+		src, err := h.c.GitStatus(h.ctx, testSystem, web)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -436,7 +436,7 @@ func TestGitDeployAndFetchFailure(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	if rels, _ := h.c.ListReleases(h.ctx, System, web, 10); len(rels) != 0 {
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 0 {
 		t.Fatalf("releases: %+v", rels)
 	}
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(2 * time.Millisecond) {
@@ -448,10 +448,10 @@ func TestGitDeployAndFetchFailure(t *testing.T) {
 	}
 
 	// With the right directory, the same commit deploys.
-	if _, err := h.c.GitConnect(h.ctx, System, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/web"}); err != nil {
+	if _, err := h.c.GitConnect(h.ctx, testSystem, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/web"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.GitDeploy(h.ctx, System, web, apitypes.GitDeployRequest{Ref: shaA}); err != nil {
+	if _, err := h.c.GitDeploy(h.ctx, testSystem, web, apitypes.GitDeployRequest{Ref: shaA}); err != nil {
 		t.Fatal(err)
 	}
 	if r := h.wait(web, h.waitReleases(web, 1)[0].Number); r.Status != apitypes.ReleaseActive || r.Commit.SHA != shaA || r.CreatedBy != "system" {
@@ -463,18 +463,18 @@ func TestGitConnectPermissions(t *testing.T) {
 	h, _ := gitHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	req := apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"}
-	reader := Actor{Kind: "token", Name: "ro", TokenID: 1, Scope: apitypes.ScopeRead}
+	reader := Actor{Kind: "token", OrgID: 1, Name: "ro", TokenID: 1, Scope: apitypes.ScopeRead}
 	if _, err := h.c.GitConnect(h.ctx, reader, web, req); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("read token connects: %v", err)
 	}
 	if _, err := h.c.GitDeploy(h.ctx, reader, web, apitypes.GitDeployRequest{}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("read token deploys: %v", err)
 	}
-	staging := Actor{Kind: "token", Name: "ci", TokenID: 2, Scope: apitypes.ScopeDeploy, ProjectID: 1, EnvironmentID: 999, ProjectName: "shop", EnvironmentName: "staging"}
+	staging := Actor{Kind: "token", OrgID: 1, Name: "ci", TokenID: 2, Scope: apitypes.ScopeDeploy, ProjectID: 1, EnvironmentID: 999, ProjectName: "shop", EnvironmentName: "staging"}
 	if _, err := h.c.GitConnect(h.ctx, staging, web, req); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("token for another environment connects: %v", err)
 	}
-	deployer := Actor{Kind: "token", Name: "ci", TokenID: 3, Scope: apitypes.ScopeDeploy}
+	deployer := Actor{Kind: "token", OrgID: 1, Name: "ci", TokenID: 3, Scope: apitypes.ScopeDeploy}
 	on := true
 	if _, err := h.c.GitConnect(h.ctx, deployer, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Status: &on}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("statuses without a token: %v", err)
@@ -530,7 +530,7 @@ func TestGitHookRoute(t *testing.T) {
 	if ok, _ := h.c.AllowCertificate(h.ctx, "hooks.example.com"); !ok {
 		t.Fatal("no certificate for the webhook host")
 	}
-	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "hooks.example.com"}); CodeOf(err) != apitypes.CodeHostnameTaken {
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "hooks.example.com"}); CodeOf(err) != apitypes.CodeHostnameTaken {
 		t.Fatalf("add webhook host as a domain: %v", err)
 	}
 }

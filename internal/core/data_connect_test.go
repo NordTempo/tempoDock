@@ -65,11 +65,11 @@ func connectFixture(t *testing.T) (*harness, ServiceRef, ServiceRef, <-chan stru
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	h.setVars(db, map[string]string{"POSTGRES_PASSWORD": "s3cret", "POSTGRES_DB": "app"})
 	h.deploy(db, "postgres:17")
-	if _, err := h.c.CreateEnvironment(h.ctx, System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		t.Fatal(err)
 	}
 	web := ServiceRef{"shop", "staging", "web"}
-	if _, err := h.c.CreateService(h.ctx, System, web.Env(), apitypes.CreateServiceRequest{Name: "web", Port: 3000}); err != nil {
+	if _, err := h.c.CreateService(h.ctx, testSystem, web.Env(), apitypes.CreateServiceRequest{Name: "web", Port: 3000}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(web, "nginx:1")
@@ -108,7 +108,7 @@ func TestConnectPermissions(t *testing.T) {
 		for _, kind := range []apitypes.EnvironmentKind{apitypes.KindProduction, apitypes.KindNonProduction} {
 			rules = append(rules, apitypes.DataPolicyRule{Subject: apitypes.SubjectDeployUsers, Kind: kind, Level: apitypes.LevelWrite, Sensitive: sens})
 		}
-		if _, err := h.c.SetDataPolicy(h.ctx, System, EnvRef{}, apitypes.UpdateDataPolicyRequest{Rules: rules}); err != nil {
+		if _, err := h.c.SetDataPolicy(h.ctx, testSystem, EnvRef{}, apitypes.UpdateDataPolicyRequest{Rules: rules}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -134,36 +134,36 @@ func TestConnectPermissions(t *testing.T) {
 // audited.
 func TestConnectInfo(t *testing.T) {
 	h, db, web, _ := connectFixture(t)
-	info, err := h.c.ConnectInfo(h.ctx, System, db, ConnectRequest{Confirm: "production"})
+	info, err := h.c.ConnectInfo(h.ctx, testSystem, db, ConnectRequest{Confirm: "production"})
 	if err != nil || info.Port != 5432 || info.Engine != apitypes.EnginePostgres || info.User != "postgres" || info.Database != "app" || info.URL != "" || !info.Confirm {
 		t.Fatalf("db: %+v %v", info, err)
 	}
-	if evs, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: apitypes.AuditDataReveal}); len(evs) != 0 {
+	if evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: apitypes.AuditDataReveal}); len(evs) != 0 {
 		t.Fatalf("audited without reveal: %+v", evs)
 	}
-	info, err = h.c.ConnectInfo(h.ctx, System, db, ConnectRequest{Confirm: "production", Reveal: true})
+	info, err = h.c.ConnectInfo(h.ctx, testSystem, db, ConnectRequest{Confirm: "production", Reveal: true})
 	if err != nil || info.URL != "postgres://postgres:s3cret@db:5432/app" {
 		t.Fatalf("revealed: %+v %v", info, err)
 	}
-	evs, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: apitypes.AuditDataReveal})
+	evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: apitypes.AuditDataReveal})
 	if len(evs) != 1 || evs[0].Target != "shop/production/db" || strings.Contains(evs[0].Summary, "s3cret") {
 		t.Fatalf("reveal audit: %+v", evs)
 	}
 
-	info, err = h.c.ConnectInfo(h.ctx, System, web, ConnectRequest{})
+	info, err = h.c.ConnectInfo(h.ctx, testSystem, web, ConnectRequest{})
 	if err != nil || info.Port != 3000 || info.Engine != "" || info.Confirm {
 		t.Fatalf("web: %+v %v", info, err)
 	}
-	if _, err := h.c.ConnectInfo(h.ctx, System, web, ConnectRequest{Reveal: true}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.ConnectInfo(h.ctx, testSystem, web, ConnectRequest{Reveal: true}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("no URL to reveal: %v", err)
 	}
 	h.setVars(web, map[string]string{"REDIS_URL": "redis://default:pw@web:6379"})
-	if info, err := h.c.ConnectInfo(h.ctx, System, web, ConnectRequest{Reveal: true}); err != nil || info.URL != "redis://default:pw@web:6379" {
+	if info, err := h.c.ConnectInfo(h.ctx, testSystem, web, ConnectRequest{Reveal: true}); err != nil || info.URL != "redis://default:pw@web:6379" {
 		t.Fatalf("REDIS_URL: %+v %v", info, err)
 	}
 
 	stopped := h.service("idle", apitypes.CreateServiceRequest{Port: 80})
-	if _, err := h.c.ConnectInfo(h.ctx, System, stopped, ConnectRequest{Confirm: "production"}); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "not running") {
+	if _, err := h.c.ConnectInfo(h.ctx, testSystem, stopped, ConnectRequest{Confirm: "production"}); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "not running") {
 		t.Fatalf("not deployed: %v", err)
 	}
 }
@@ -173,7 +173,7 @@ func TestConnectInfo(t *testing.T) {
 // the traffic.
 func TestTunnelRoundTrip(t *testing.T) {
 	h, _, web, ended := connectFixture(t)
-	tun, err := h.c.OpenTunnel(h.ctx, System, web, TunnelRequest{From: "100.64.0.2"})
+	tun, err := h.c.OpenTunnel(h.ctx, testSystem, web, TunnelRequest{From: "100.64.0.2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestTunnelRoundTrip(t *testing.T) {
 		}
 	}
 
-	evs, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: "data."})
+	evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "data."})
 	if len(evs) != 2 {
 		t.Fatalf("audit: %+v", evs)
 	}
@@ -229,7 +229,7 @@ func TestTunnelLimit(t *testing.T) {
 	if _, err := h.c.OpenTunnel(h.ctx, admin, web, TunnelRequest{From: "x"}); CodeOf(err) != apitypes.CodeRateLimited {
 		t.Fatalf("over the limit: %v", err)
 	}
-	other, err := h.c.OpenTunnel(h.ctx, System, web, TunnelRequest{From: "x"})
+	other, err := h.c.OpenTunnel(h.ctx, testSystem, web, TunnelRequest{From: "x"})
 	if err != nil {
 		t.Fatalf("another actor: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestTunnelLimit(t *testing.T) {
 		t.Error("client still open after shutdown")
 	}
 	h.c = h.start()
-	evs, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: apitypes.AuditDataDisconnect})
+	evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: apitypes.AuditDataDisconnect})
 	if len(evs) != apitypes.TunnelsPerActor+2 {
 		t.Errorf("%d closes audited, want %d", len(evs), apitypes.TunnelsPerActor+2)
 	}

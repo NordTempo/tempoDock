@@ -28,7 +28,7 @@ import (
 // at most one alert per key is open. Raising an open key updates the
 // alert in place, resolving it closes it. Open alerts live in memory and
 // in the DB; each change is written, published as an alert event to
-// unlimited admins and handed to the notifier (alerts_notify.go).
+// operators and handed to the notifier (alerts_notify.go).
 
 // alertSignal raises or resolves an alert. Code that sees something
 // alert-worthy beyond the built-in conditions (a failed backup) calls
@@ -540,7 +540,7 @@ func severityRank(s apitypes.AlertSeverity) int {
 	return 1
 }
 
-// publishAlert sends an alert event to unlimited admins.
+// publishAlert sends an alert event to operators.
 func (c *Core) publishAlert(a store.Alert) {
 	out := toAlert(a)
 	c.bus.publish(busEvent{serverStats: true, ev: apitypes.Event{
@@ -561,9 +561,9 @@ const maxAlertList = 500
 
 // ListAlerts returns the open alerts, worst and newest first, or with all
 // every alert newest first (limit at most maxAlertList, paged with
-// beforeID). Scope: unlimited admin.
+// beforeID). Operators only.
 func (c *Core) ListAlerts(ctx context.Context, a Actor, all bool, limit int, beforeID int64) ([]apitypes.Alert, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "reading alerts"); err != nil {
+	if err := a.requireOperator("reading alerts"); err != nil {
 		return nil, err
 	}
 	if !all {
@@ -605,9 +605,9 @@ func sortAlerts(as []apitypes.Alert) {
 
 // ResolveAlert closes an open alert by hand, for one whose condition
 // won't clear by itself (a failed backup never retried). If the condition
-// is still there, the engine raises a new one. Scope: unlimited admin.
+// is still there, the engine raises a new one. Operators only.
 func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Alert, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "resolving alerts"); err != nil {
+	if err := a.requireOperator("resolving alerts"); err != nil {
 		return apitypes.Alert{}, err
 	}
 	row, err := c.store.GetAlert(ctx, id)
@@ -621,7 +621,7 @@ func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Al
 		return toAlert(row), nil
 	}
 	c.resolveAlert(ctx, row.Key, time.Now())
-	c.audit(ctx, a, "alert.resolve", nil, nil, "alert "+strconv.FormatInt(id, 10), "resolved alert: "+row.Title)
+	c.audit(ctx, a.platform(), "alert.resolve", nil, nil, "alert "+strconv.FormatInt(id, 10), "resolved alert: "+row.Title)
 	if row, err = c.store.GetAlert(ctx, id); err != nil {
 		return apitypes.Alert{}, err
 	}

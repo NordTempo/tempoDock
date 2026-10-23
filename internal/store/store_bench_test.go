@@ -34,7 +34,7 @@ func BenchmarkPreparedQuery(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	p, err := s.CreateProject(ctx, "big")
+	p, err := s.CreateProject(ctx, CreateProjectParams{OrgID: testOrg(b, s), Name: "big"})
 	if err != nil {
 		b.Fatal(err)
 	}

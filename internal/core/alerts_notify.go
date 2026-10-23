@@ -533,9 +533,9 @@ func toChannel(ch store.AlertChannel) apitypes.AlertChannel {
 }
 
 // ListAlertChannels lists the channels, without their secrets. Scope:
-// unlimited admin.
+// operators.
 func (c *Core) ListAlertChannels(ctx context.Context, a Actor) ([]apitypes.AlertChannel, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "reading alert channels"); err != nil {
+	if err := a.requireOperator("reading alert channels"); err != nil {
 		return nil, err
 	}
 	rows, err := c.store.ListAlertChannels(ctx)
@@ -550,9 +550,9 @@ func (c *Core) ListAlertChannels(ctx context.Context, a Actor) ([]apitypes.Alert
 }
 
 // CreateAlertChannel adds a channel. A webhook without a secret gets a
-// generated one, returned only here. Scope: unlimited admin.
+// generated one, returned only here. Operators only.
 func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, req apitypes.CreateAlertChannelRequest) (apitypes.CreatedAlertChannel, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "adding alert channels"); err != nil {
+	if err := a.requireOperator("adding alert channels"); err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
 	if err := validName("channel", req.Name); err != nil {
@@ -594,7 +594,7 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, req apitypes.Cre
 	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
-	c.audit(ctx, a, "alert.channel_add", nil, nil, "alert channel "+req.Name,
+	c.audit(ctx, a.platform(), "alert.channel_add", nil, nil, "alert channel "+req.Name,
 		fmt.Sprintf("added %s alert channel %s to %s (%s and up)", req.Kind, req.Name, target, sev))
 	return apitypes.CreatedAlertChannel{Channel: toChannel(row), Secret: generated}, nil
 }
@@ -655,9 +655,9 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest) (c
 }
 
 // RemoveAlertChannel deletes a channel; notifications it is retrying stop
-// with the next attempt. Scope: unlimited admin.
+// with the next attempt. Operators only.
 func (c *Core) RemoveAlertChannel(ctx context.Context, a Actor, name string) error {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "removing alert channels"); err != nil {
+	if err := a.requireOperator("removing alert channels"); err != nil {
 		return err
 	}
 	ch, err := c.channel(ctx, name)
@@ -667,15 +667,15 @@ func (c *Core) RemoveAlertChannel(ctx context.Context, a Actor, name string) err
 	if err := c.store.DeleteAlertChannel(ctx, ch.ID); err != nil {
 		return err
 	}
-	c.audit(ctx, a, "alert.channel_remove", nil, nil, "alert channel "+name, "removed alert channel "+name)
+	c.audit(ctx, a.platform(), "alert.channel_remove", nil, nil, "alert channel "+name, "removed alert channel "+name)
 	return nil
 }
 
 // TestAlertChannel sends a test notification once, without retries, and
 // reports how it went; the outcome is recorded on the channel like any
-// delivery. Scope: unlimited admin.
+// delivery. Operators only.
 func (c *Core) TestAlertChannel(ctx context.Context, a Actor, name string) (apitypes.AlertChannelTest, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "testing alert channels"); err != nil {
+	if err := a.requireOperator("testing alert channels"); err != nil {
 		return apitypes.AlertChannelTest{}, err
 	}
 	ch, err := c.channel(ctx, name)

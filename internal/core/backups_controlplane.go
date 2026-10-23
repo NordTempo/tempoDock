@@ -28,17 +28,17 @@ const controlPlaneAlertKey = "backup:control-plane"
 var errJobEnded = errors.New("the backup job ended before the archive was written")
 
 // RunControlPlaneBackup backs up the control plane now, in the
-// background; the answer is the running backup. Unlimited admins only:
+// background; the answer is the running backup. Operators only:
 // the archive holds every secret.
 func (c *Core) RunControlPlaneBackup(ctx context.Context, a Actor) (apitypes.ControlPlaneBackupRun, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "backing up the control plane"); err != nil {
+	if err := a.requireOperator("backing up the control plane"); err != nil {
 		return apitypes.ControlPlaneBackupRun{}, err
 	}
 	row, err := c.startControlPlaneBackup(ctx, a, "manual")
 	if err != nil {
 		return apitypes.ControlPlaneBackupRun{}, err
 	}
-	c.audit(ctx, a, "backup.run", nil, nil, "control plane", "started a control plane backup")
+	c.audit(ctx, a.platform(), "backup.run", nil, nil, "control plane", "started a control plane backup")
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()

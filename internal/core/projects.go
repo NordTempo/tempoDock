@@ -61,16 +61,17 @@ var reservedProjectNames = []string{
 	"login", "tokens",
 }
 
-func (c *Core) loadProject(ctx context.Context, name string) (store.Project, error) {
-	p, err := c.store.GetProjectByName(ctx, name)
+// loadProject loads a project of one org by name.
+func (c *Core) loadProject(ctx context.Context, orgID int64, name string) (store.Project, error) {
+	p, err := c.store.GetProjectByName(ctx, store.GetProjectByNameParams{OrgID: orgID, Name: name})
 	if store.IsNotFound(err) {
 		return p, notFound("project %q not found", name)
 	}
 	return p, err
 }
 
-func (c *Core) loadEnv(ctx context.Context, ref EnvRef) (envScope, error) {
-	p, err := c.loadProject(ctx, ref.Project)
+func (c *Core) loadEnv(ctx context.Context, orgID int64, ref EnvRef) (envScope, error) {
+	p, err := c.loadProject(ctx, orgID, ref.Project)
 	if err != nil {
 		return envScope{}, err
 	}
@@ -81,8 +82,8 @@ func (c *Core) loadEnv(ctx context.Context, ref EnvRef) (envScope, error) {
 	return envScope{p, e}, err
 }
 
-func (c *Core) loadService(ctx context.Context, ref ServiceRef) (svcScope, error) {
-	es, err := c.loadEnv(ctx, ref.Env())
+func (c *Core) loadService(ctx context.Context, orgID int64, ref ServiceRef) (svcScope, error) {
+	es, err := c.loadEnv(ctx, orgID, ref.Env())
 	if err != nil {
 		return svcScope{}, err
 	}
@@ -98,7 +99,7 @@ func (c *Core) projectFor(ctx context.Context, a Actor, name string, need apityp
 	if err := a.require(need, action); err != nil {
 		return store.Project{}, err
 	}
-	p, err := c.loadProject(ctx, name)
+	p, err := c.loadProject(ctx, a.OrgID, name)
 	if err != nil {
 		return p, err
 	}
@@ -109,7 +110,7 @@ func (c *Core) envFor(ctx context.Context, a Actor, ref EnvRef, need apitypes.Sc
 	if err := a.require(need, action); err != nil {
 		return envScope{}, err
 	}
-	es, err := c.loadEnv(ctx, ref)
+	es, err := c.loadEnv(ctx, a.OrgID, ref)
 	if err != nil {
 		return es, err
 	}
@@ -120,7 +121,7 @@ func (c *Core) serviceFor(ctx context.Context, a Actor, ref ServiceRef, need api
 	if err := a.require(need, action); err != nil {
 		return svcScope{}, err
 	}
-	ss, err := c.loadService(ctx, ref)
+	ss, err := c.loadService(ctx, a.OrgID, ref)
 	if err != nil {
 		return ss, err
 	}
@@ -133,7 +134,7 @@ func (c *Core) ListProjects(ctx context.Context, a Actor, archived bool) ([]apit
 	if err := a.require(apitypes.ScopeRead, "listing projects"); err != nil {
 		return nil, err
 	}
-	rows, err := c.store.ListProjects(ctx)
+	rows, err := c.store.ListProjects(ctx, a.OrgID)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +291,7 @@ func (c *Core) CreateProject(ctx context.Context, a Actor, req apitypes.CreatePr
 	var p store.Project
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if p, err = q.CreateProject(ctx, req.Name); err != nil {
+		if p, err = q.CreateProject(ctx, store.CreateProjectParams{OrgID: a.OrgID, Name: req.Name}); err != nil {
 			return err
 		}
 		_, err = c.createEnv(ctx, q, p, "production", apitypes.KindProduction)
@@ -332,7 +333,7 @@ func (c *Core) ListEnvironments(ctx context.Context, a Actor, project string) ([
 	}
 	out := []apitypes.Environment{}
 	for _, e := range rows {
-		if a.canSee(p.ID, e.ID) {
+		if a.canSee(p.OrgID, p.ID, e.ID) {
 			out = append(out, toEnvironment(p, e, servers[e.ServerID]))
 		}
 	}

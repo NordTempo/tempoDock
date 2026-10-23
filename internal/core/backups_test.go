@@ -27,7 +27,7 @@ func (h *harness) templateDB(name string, tpl apitypes.Template) ServiceRef {
 // revealed returns a service's own live variables.
 func (h *harness) revealed(ref ServiceRef) map[string]string {
 	h.t.Helper()
-	vars, err := h.c.ListVariables(h.ctx, System, ref.Env(), ref.Service, true)
+	vars, err := h.c.ListVariables(h.ctx, testSystem, ref.Env(), ref.Service, true)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func (h *harness) revealed(ref ServiceRef) map[string]string {
 func TestTemplatePostgres(t *testing.T) {
 	h := newHarness(t)
 	db := h.templateDB("db", apitypes.TemplatePostgres)
-	svc, err := h.c.GetService(h.ctx, System, db)
+	svc, err := h.c.GetService(h.ctx, testSystem, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestTemplatePostgres(t *testing.T) {
 	case spec.Image == "" || !slices.Contains(h.rt.Ops(), "pull "+t1.image):
 		t.Errorf("image %q not pulled pinned (%v)", spec.Image, h.rt.Ops())
 	}
-	ss, _ := h.c.serviceFor(h.ctx, System, db, apitypes.ScopeRead, "testing")
+	ss, _ := h.c.serviceFor(h.ctx, testSystem, db, apitypes.ScopeRead, "testing")
 	rel, _ := h.store.GetActiveRelease(h.ctx, ss.svc.ID)
 	if cfg, err := h.c.openConfig(rel.Config); err != nil || cfg.HealthPort != 5432 || cfg.Published {
 		t.Errorf("release config: health port %d, published %v (%v)", cfg.HealthPort, cfg.Published, err)
@@ -95,7 +95,7 @@ func TestTemplatePostgres(t *testing.T) {
 		t.Error("two databases share a password")
 	}
 
-	if _, err := h.c.CreateService(h.ctx, System, db.Env(), apitypes.CreateServiceRequest{Name: "x", Template: "mysql"}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.CreateService(h.ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "x", Template: "mysql"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("unknown template: %v", err)
 	}
 }
@@ -111,7 +111,7 @@ func TestTemplateRedis(t *testing.T) {
 	if !strings.Contains(spec.Cmd, `--requirepass "$REDIS_PASSWORD" --appendonly yes`) || spec.Mounts[0].Path != "/data" || spec.Env["PORT"] != "6379" {
 		t.Errorf("spec = %q %+v", spec.Cmd, spec.Mounts)
 	}
-	if svc, _ := h.c.GetService(h.ctx, System, cache); svc.DataEngine != "" || svc.Database != "" {
+	if svc, _ := h.c.GetService(h.ctx, testSystem, cache); svc.DataEngine != "" || svc.Database != "" {
 		t.Errorf("redis detected as %q", svc.DataEngine)
 	}
 }
@@ -132,7 +132,7 @@ func (h *harness) waitRun(ref ServiceRef, id int64) apitypes.BackupRun {
 	h.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		b, err := h.c.ServiceBackups(h.ctx, System, ref)
+		b, err := h.c.ServiceBackups(h.ctx, testSystem, ref)
 		if err != nil {
 			h.t.Fatal(err)
 		}
@@ -150,7 +150,7 @@ func (h *harness) waitRun(ref ServiceRef, id int64) apitypes.BackupRun {
 
 func (h *harness) runBackup(ref ServiceRef) apitypes.BackupRun {
 	h.t.Helper()
-	run, err := h.c.RunBackup(h.ctx, System, ref)
+	run, err := h.c.RunBackup(h.ctx, testSystem, ref)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestBackupRecordsSnapshotsAndRetention(t *testing.T) {
 	}
 	jobs := h.rt.Jobs()
 	job := jobs[len(jobs)-1]
-	ss, _ := h.c.serviceFor(h.ctx, System, db, apitypes.ScopeRead, "testing")
+	ss, _ := h.c.serviceFor(h.ctx, testSystem, db, apitypes.ScopeRead, "testing")
 	want, _ := backup.BackupScript(apitypes.BackupPostgres)
 	switch {
 	case job.Image != templates[apitypes.TemplatePostgres].image:
@@ -197,7 +197,7 @@ func TestBackupRecordsSnapshotsAndRetention(t *testing.T) {
 	}
 
 	h.runBackup(db)
-	b, err := h.c.ServiceBackups(h.ctx, System, db)
+	b, err := h.c.ServiceBackups(h.ctx, testSystem, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestBackupRecordsSnapshotsAndRetention(t *testing.T) {
 	if installs != 1 {
 		t.Errorf("restic installed %d times", installs)
 	}
-	ov, err := h.c.Overview(h.ctx, System, "shop")
+	ov, err := h.c.Overview(h.ctx, testSystem, "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestBackupJobIgnoresTheServiceImage(t *testing.T) {
 	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
 		return node.JobResult{Output: resticOutput("dddd4444dddd", 1, "dddd4444dddd")}, nil
 	})
-	agent := h.token(System, apitypes.CreateTokenRequest{Name: "agent", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "production"})
+	agent := h.token(testSystem, apitypes.CreateTokenRequest{Name: "agent", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "production"})
 	if _, err := h.c.DeployImage(h.ctx, agent, db, apitypes.DeployImageRequest{Image: "evil/postgres:17"}); err != nil {
 		t.Fatal(err)
 	}
@@ -265,10 +265,10 @@ func TestBackupFailureIsRecorded(t *testing.T) {
 	if run.Status != apitypes.BackupFailed || !strings.Contains(run.Error, "wrong password") {
 		t.Fatalf("run = %+v", run)
 	}
-	if evs, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: "backup.failed"}); len(evs) != 1 {
+	if evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "backup.failed"}); len(evs) != 1 {
 		t.Error("no backup.failed audit event")
 	}
-	if open, _ := h.c.ListAlerts(h.ctx, System, false, 0, 0); len(open) != 1 || open[0].Kind != apitypes.AlertBackupFailed {
+	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); len(open) != 1 || open[0].Kind != apitypes.AlertBackupFailed {
 		t.Fatalf("open alerts after a failed backup = %+v", open)
 	}
 
@@ -282,7 +282,7 @@ func TestBackupFailureIsRecorded(t *testing.T) {
 	if run := h.runBackup(db); run.Status != apitypes.BackupSucceeded {
 		t.Fatalf("second run = %+v", run)
 	}
-	if open, _ := h.c.ListAlerts(h.ctx, System, false, 0, 0); len(open) != 0 {
+	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); len(open) != 0 {
 		t.Fatalf("open alerts after a successful backup = %+v", open)
 	}
 }
@@ -290,7 +290,7 @@ func TestBackupFailureIsRecorded(t *testing.T) {
 func TestVolumeBackupWarnsAndCantRestore(t *testing.T) {
 	h := newHarness(t)
 	app := h.service("app", apitypes.CreateServiceRequest{})
-	if _, err := h.c.AddVolume(h.ctx, System, app, apitypes.AddVolumeRequest{Name: "files", MountPath: "/srv"}); err != nil {
+	if _, err := h.c.AddVolume(h.ctx, testSystem, app, apitypes.AddVolumeRequest{Name: "files", MountPath: "/srv"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(app, "app:1")
@@ -304,14 +304,14 @@ func TestVolumeBackupWarnsAndCantRestore(t *testing.T) {
 		!slices.ContainsFunc(job.Mounts, func(m node.Mount) bool { return m.Path == "/volumes/files" && m.ReadOnly }) {
 		t.Fatalf("run %+v, job %+v", run, job)
 	}
-	b, _ := h.c.ServiceBackups(h.ctx, System, app)
+	b, _ := h.c.ServiceBackups(h.ctx, testSystem, app)
 	if b.Warning == "" || b.Restorable {
 		t.Errorf("volume backups = %+v", b)
 	}
-	if _, err := h.c.RestoreBackup(h.ctx, System, app, apitypes.RestoreBackupRequest{Snapshot: "cccc3333"}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.RestoreBackup(h.ctx, testSystem, app, apitypes.RestoreBackupRequest{Snapshot: "cccc3333"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("volume restore: %v", err)
 	}
-	if _, err := h.c.ServiceBackups(h.ctx, System, h.service("web", apitypes.CreateServiceRequest{})); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.ServiceBackups(h.ctx, testSystem, h.service("web", apitypes.CreateServiceRequest{})); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("service without volume: %v", err)
 	}
 }
@@ -325,7 +325,7 @@ func TestRestorePostgresIntoNewService(t *testing.T) {
 	})
 	h.runBackup(db)
 
-	res, err := h.c.RestoreBackup(h.ctx, System, db, apitypes.RestoreBackupRequest{Snapshot: snap[:8], As: "db-old"})
+	res, err := h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap[:8], As: "db-old"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,13 +347,13 @@ func TestRestorePostgresIntoNewService(t *testing.T) {
 		t.Error("the restored service reuses the live one's password")
 	}
 	// The live database is untouched: still its first release.
-	if rels, _ := h.c.ListReleases(h.ctx, System, db, 10); len(rels) != 1 {
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, db, 10); len(rels) != 1 {
 		t.Errorf("live database got %d releases", len(rels))
 	}
-	if _, err := h.c.RestoreBackup(h.ctx, System, db, apitypes.RestoreBackupRequest{Snapshot: snap, As: "db-old"}); CodeOf(err) != apitypes.CodeConflict {
+	if _, err := h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap, As: "db-old"}); CodeOf(err) != apitypes.CodeConflict {
 		t.Errorf("restore over an existing name: %v", err)
 	}
-	if _, err := h.c.RestoreBackup(h.ctx, System, db, apitypes.RestoreBackupRequest{Snapshot: "ffffffff"}); CodeOf(err) != apitypes.CodeNotFound {
+	if _, err := h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: "ffffffff"}); CodeOf(err) != apitypes.CodeNotFound {
 		t.Errorf("unknown snapshot: %v", err)
 	}
 }
@@ -366,7 +366,7 @@ func TestRestoreRedisFillsVolumeBeforeStart(t *testing.T) {
 		return node.JobResult{Output: resticOutput(snap, 100, snap)}, nil
 	})
 	h.runBackup(cache)
-	res, err := h.c.RestoreBackup(h.ctx, System, cache, apitypes.RestoreBackupRequest{Snapshot: snap})
+	res, err := h.c.RestoreBackup(h.ctx, testSystem, cache, apitypes.RestoreBackupRequest{Snapshot: snap})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +381,7 @@ func TestRestoreRedisFillsVolumeBeforeStart(t *testing.T) {
 		t.Fatalf("volume filled at %d, started at %d: %v", fill, start, ops)
 	}
 	job := h.rt.Jobs()[len(h.rt.Jobs())-1]
-	ss, _ := h.c.serviceFor(h.ctx, System, restored, apitypes.ScopeRead, "testing")
+	ss, _ := h.c.serviceFor(h.ctx, testSystem, restored, apitypes.ScopeRead, "testing")
 	if !slices.ContainsFunc(job.Mounts, func(m node.Mount) bool {
 		return m.Volume == volumeName(ss, templateVolume) && m.Path == "/data" && !m.ReadOnly
 	}) {
@@ -410,7 +410,7 @@ func TestScheduledBackupRunsWhenDue(t *testing.T) {
 	var b apitypes.ServiceBackups
 	for {
 		var err error
-		if b, err = h.c.ServiceBackups(h.ctx, System, db); err != nil {
+		if b, err = h.c.ServiceBackups(h.ctx, testSystem, db); err != nil {
 			t.Fatal(err)
 		}
 		if len(b.Runs) == 1 && b.Runs[0].Status == apitypes.BackupSucceeded {
@@ -431,14 +431,14 @@ func TestScheduledBackupRunsWhenDue(t *testing.T) {
 
 	// Off: never due; a custom hour shows.
 	off := false
-	if _, err := h.c.UpdateBackupSchedule(h.ctx, System, db, apitypes.UpdateBackupScheduleRequest{Enabled: &off}); err != nil {
+	if _, err := h.c.UpdateBackupSchedule(h.ctx, testSystem, db, apitypes.UpdateBackupScheduleRequest{Enabled: &off}); err != nil {
 		t.Fatal(err)
 	}
 	if _, next, _ := h.c.dueBackups(h.ctx); !next.IsZero() {
 		t.Errorf("disabled schedule still has a next run: %v", next)
 	}
 	on, hour := true, 5
-	got, err := h.c.UpdateBackupSchedule(h.ctx, System, db, apitypes.UpdateBackupScheduleRequest{Enabled: &on, Hour: &hour})
+	got, err := h.c.UpdateBackupSchedule(h.ctx, testSystem, db, apitypes.UpdateBackupScheduleRequest{Enabled: &on, Hour: &hour})
 	if err != nil || got.Schedule.Hour != 5 || got.Schedule.DefaultHour || got.Schedule.NextAt.In(time.Local).Hour() != 5 {
 		t.Errorf("schedule = %+v, %v", got.Schedule, err)
 	}
@@ -452,11 +452,11 @@ func TestConfigureBackups(t *testing.T) {
 		t.Fatalf("deploy user configured backups: %v", err)
 	}
 	bad := "/srv/backups"
-	if _, err := h.c.ConfigureBackups(h.ctx, System, apitypes.ConfigureBackupRequest{Repository: &bad}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.ConfigureBackups(h.ctx, testSystem, apitypes.ConfigureBackupRequest{Repository: &bad}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("bad repository: %v", err)
 	}
 	key, secret, daily := "AKIA", "s3cret", 14
-	set, err := h.c.ConfigureBackups(h.ctx, System, apitypes.ConfigureBackupRequest{
+	set, err := h.c.ConfigureBackups(h.ctx, testSystem, apitypes.ConfigureBackupRequest{
 		Repository: &repo, AccessKeyID: &key, SecretAccessKey: &secret, KeepDaily: &daily,
 	})
 	if err != nil {
@@ -466,11 +466,11 @@ func TestConfigureBackups(t *testing.T) {
 		t.Fatalf("settings = %+v", set)
 	}
 	// The password is shown once; again only to admins who ask.
-	again, err := h.c.ConfigureBackups(h.ctx, System, apitypes.ConfigureBackupRequest{})
+	again, err := h.c.ConfigureBackups(h.ctx, testSystem, apitypes.ConfigureBackupRequest{})
 	if err != nil || again.Password != "" {
 		t.Fatalf("second configure: %+v %v", again, err)
 	}
-	if got, _ := h.c.GetBackupSettings(h.ctx, System, true); got.Password != set.Password {
+	if got, _ := h.c.GetBackupSettings(h.ctx, testSystem, true); got.Password != set.Password {
 		t.Errorf("revealed %q, want %q", got.Password, set.Password)
 	}
 	if _, err := h.c.GetBackupSettings(h.ctx, dev, true); CodeOf(err) != apitypes.CodeForbidden {
@@ -495,7 +495,7 @@ func TestRestartFailsRunningBackups(t *testing.T) {
 		}
 		return node.JobResult{}, nil
 	})
-	run, err := h.c.RunBackup(h.ctx, System, db)
+	run, err := h.c.RunBackup(h.ctx, testSystem, db)
 	if err != nil {
 		t.Fatal(err)
 	}

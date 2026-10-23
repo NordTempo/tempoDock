@@ -23,7 +23,7 @@ func (h *harness) waitControlPlaneBackup() apitypes.ControlPlaneBackupRun {
 	h.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		set, err := h.c.GetBackupSettings(h.ctx, System, false)
+		set, err := h.c.GetBackupSettings(h.ctx, testSystem, false)
 		if err != nil {
 			h.t.Fatal(err)
 		}
@@ -69,7 +69,7 @@ func TestControlPlaneBackup(t *testing.T) {
 		}
 		return node.JobResult{Output: resticOutput("cccc1111dddd", int64(archive.Len()), "cccc1111dddd")}, nil
 	})
-	run, err := h.c.RunControlPlaneBackup(h.ctx, System)
+	run, err := h.c.RunControlPlaneBackup(h.ctx, testSystem)
 	if err != nil || run.Status != apitypes.BackupRunning || run.Trigger != "manual" {
 		t.Fatalf("run = %+v, %v", run, err)
 	}
@@ -103,7 +103,7 @@ func TestControlPlaneBackup(t *testing.T) {
 		}
 		return node.JobResult{ExitCode: 1, Output: "Fatal: unable to open repository\n"}, nil
 	})
-	if _, err := h.c.RunControlPlaneBackup(h.ctx, System); err != nil {
+	if _, err := h.c.RunControlPlaneBackup(h.ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
 	if done := h.waitControlPlaneBackup(); done.Status != apitypes.BackupFailed || !strings.Contains(done.Error, "unable to open repository") {
@@ -118,7 +118,7 @@ func TestControlPlaneBackup(t *testing.T) {
 		}
 		return node.JobResult{Output: resticOutput("eeee2222", 10)}, nil
 	})
-	if _, err := h.c.RunControlPlaneBackup(h.ctx, System); err != nil {
+	if _, err := h.c.RunControlPlaneBackup(h.ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
 	if done := h.waitControlPlaneBackup(); done.Status != apitypes.BackupSucceeded || h.alertOpen(controlPlaneAlertKey) {
@@ -137,7 +137,7 @@ func (h *harness) alertOpen(key string) bool {
 // end of its input: the run fails with why, never with a snapshot.
 func TestControlPlaneBackupArchiveFailure(t *testing.T) {
 	h := newHarness(t) // no secrets key in the data dir
-	if _, err := h.c.RunControlPlaneBackup(h.ctx, System); err != nil {
+	if _, err := h.c.RunControlPlaneBackup(h.ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
 	done := h.waitControlPlaneBackup()
@@ -174,7 +174,7 @@ func TestScheduledControlPlaneBackup(t *testing.T) {
 	}
 	// A manual run doesn't move the schedule.
 	row, _ := h.store.GetControlPlaneBackup(h.ctx)
-	if _, err := h.c.RunControlPlaneBackup(h.ctx, System); err != nil {
+	if _, err := h.c.RunControlPlaneBackup(h.ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
 	h.waitControlPlaneBackup()
@@ -211,16 +211,16 @@ func TestAfterRestoreOldServerBecomesNode(t *testing.T) {
 	if h.c.local.ID == old.ID || h.c.local.Name != old.Name+"-2" || !h.c.local.Local {
 		t.Fatalf("new local server = %+v (old %d %s)", h.c.local, old.ID, old.Name)
 	}
-	ss, err := h.c.serviceFor(h.ctx, System, web, apitypes.ScopeRead, "testing")
+	ss, err := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
 	if err != nil || ss.env.ServerID != old.ID {
 		t.Fatalf("environment moved: on server %d, %v", ss.env.ServerID, err)
 	}
-	srv, err := h.c.GetServer(h.ctx, System, old.Name)
+	srv, err := h.c.GetServer(h.ctx, testSystem, old.Name)
 	if err != nil || srv.Server.Status != apitypes.ServerRevoked {
 		t.Fatalf("old server = %+v, %v", srv.Server, err)
 	}
 	// It joins again under its name.
-	if _, err := h.c.AddServer(h.ctx, System, apitypes.AddServerRequest{Name: old.Name, AcceptsNonProduction: true}); err != nil {
+	if _, err := h.c.AddServer(h.ctx, testSystem, apitypes.AddServerRequest{Name: old.Name, AcceptsNonProduction: true}); err != nil {
 		t.Fatalf("add the old server back: %v", err)
 	}
 }

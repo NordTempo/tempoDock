@@ -25,10 +25,7 @@ import (
 func BenchmarkStatsTick50(b *testing.B) {
 	ctx := context.Background()
 	dir := b.TempDir()
-	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
-	if err != nil {
-		b.Fatal(err)
-	}
+	st := openTestStore(b, filepath.Join(dir, "dock.db"))
 	defer func() { _ = st.Close() }()
 	box, _ := secrets.New(bytes.Repeat([]byte{7}, secrets.KeySize))
 	cfg := config.Default()
@@ -38,13 +35,13 @@ func BenchmarkStatsTick50(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	if _, err := c.CreateProject(ctx, System, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
+	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
 		b.Fatal(err)
 	}
 	env := EnvRef{"shop", "production"}
 	var ids []string
 	for i := range 50 {
-		svc, err := c.CreateService(ctx, System, env, apitypes.CreateServiceRequest{Name: fmt.Sprintf("s%d", i), Image: "app:1"})
+		svc, err := c.CreateService(ctx, testSystem, env, apitypes.CreateServiceRequest{Name: fmt.Sprintf("s%d", i), Image: "app:1"})
 		if err != nil {
 			b.Fatal(err)
 		}

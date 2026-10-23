@@ -66,7 +66,7 @@ func TestBrowserLogin(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)
 	ctx := context.Background()
-	if _, err := srv.core.CreateUser(ctx, core.System, apitypes.CreateUserRequest{
+	if _, err := srv.core.CreateUser(ctx, sys, apitypes.CreateUserRequest{
 		Email: "ada@example.com", Name: "Ada", Password: "a long enough password", Role: apitypes.ScopeDeploy,
 	}); err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestBrowserLogin(t *testing.T) {
 	if code, stdout, stderr := exec(t, "logout"); code != 0 || !strings.Contains(stdout, "revoked") {
 		t.Fatalf("logout: exit %d\n%s\n%s", code, stdout, stderr)
 	}
-	if _, err := srv.core.AuthenticateToken(ctx, token); core.CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, err := srv.core.AuthenticateToken(ctx, token, ""); core.CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("token still valid after logout: %v", err)
 	}
 }

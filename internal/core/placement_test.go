@@ -162,14 +162,14 @@ func (p *pool) setOffline(name string, off bool) { p.nodes.setOffline(p.ids[name
 
 func (p *pool) project(name string) {
 	p.t.Helper()
-	if _, err := p.c.CreateProject(p.ctx, System, apitypes.CreateProjectRequest{Name: name}); err != nil {
+	if _, err := p.c.CreateProject(p.ctx, testSystem, apitypes.CreateProjectRequest{Name: name}); err != nil {
 		p.t.Fatal(err)
 	}
 }
 
 // env creates an environment and returns the server it was placed on.
 func (p *pool) env(project, name string, kind apitypes.EnvironmentKind) (string, error) {
-	e, err := p.c.CreateEnvironment(p.ctx, System, project, apitypes.CreateEnvironmentRequest{Name: name, Kind: kind})
+	e, err := p.c.CreateEnvironment(p.ctx, testSystem, project, apitypes.CreateEnvironmentRequest{Name: name, Kind: kind})
 	return e.Server, err
 }
 
@@ -183,7 +183,7 @@ func (p *pool) mustEnv(project, name string, kind apitypes.EnvironmentKind, want
 
 func (p *pool) server(project, env string) string {
 	p.t.Helper()
-	e, err := p.c.GetEnvironment(p.ctx, System, EnvRef{project, env})
+	e, err := p.c.GetEnvironment(p.ctx, testSystem, EnvRef{project, env})
 	if err != nil {
 		p.t.Fatal(err)
 	}
@@ -210,16 +210,16 @@ func TestPlacementKeepsProjectsTogether(t *testing.T) {
 	p.mustEnv("shop", "dev", apitypes.KindNonProduction, "homelab")
 	// An explicit production kind follows the project's production.
 	p.mustEnv("shop", "prod-eu", apitypes.KindProduction, "vps2")
-	if e, _ := p.c.GetEnvironment(p.ctx, System, EnvRef{"shop", "prod-eu"}); e.Kind != apitypes.KindProduction {
+	if e, _ := p.c.GetEnvironment(p.ctx, testSystem, EnvRef{"shop", "prod-eu"}); e.Kind != apitypes.KindProduction {
 		t.Fatalf("prod-eu kind = %s", e.Kind)
 	}
-	if e, _ := p.c.GetEnvironment(p.ctx, System, EnvRef{"shop", "dev"}); e.Kind != apitypes.KindNonProduction {
+	if e, _ := p.c.GetEnvironment(p.ctx, testSystem, EnvRef{"shop", "dev"}); e.Kind != apitypes.KindNonProduction {
 		t.Fatalf("dev kind = %s", e.Kind)
 	}
 
 	// Reserve 12 GiB on vps2: the next project's production fits better
 	// on the control plane's server (8 free vs 4 free).
-	if _, err := p.c.CreateService(p.ctx, System, EnvRef{"shop", "production"}, apitypes.CreateServiceRequest{Name: "db", Image: "postgres:17", MemoryMB: 12 << 10}); err != nil {
+	if _, err := p.c.CreateService(p.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.CreateServiceRequest{Name: "db", Image: "postgres:17", MemoryMB: 12 << 10}); err != nil {
 		t.Fatal(err)
 	}
 	p.project("blog")
@@ -230,7 +230,7 @@ func TestPlacementKeepsProjectsTogether(t *testing.T) {
 	p.mustEnv("blog", "staging", "", "lab2")
 
 	// Placements stick even when the server stops taking new ones.
-	if _, err := p.c.UpdateServer(p.ctx, System, "homelab", apitypes.UpdateServerRequest{DisabledForPlacement: ptr(true)}); err != nil {
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, "homelab", apitypes.UpdateServerRequest{DisabledForPlacement: ptr(true)}); err != nil {
 		t.Fatal(err)
 	}
 	p.mustEnv("shop", "preview", "", "homelab")
@@ -244,14 +244,14 @@ func TestPlacementKeepsProjectsTogether(t *testing.T) {
 		t.Fatalf("placing with no eligible server: %v", err)
 	}
 	// The failed placement left nothing behind.
-	if pls, _ := p.c.ListPlacements(p.ctx, System, "wiki"); len(pls) != 1 || pls[0].Kind != apitypes.KindProduction {
+	if pls, _ := p.c.ListPlacements(p.ctx, testSystem, "wiki"); len(pls) != 1 || pls[0].Kind != apitypes.KindProduction {
 		t.Fatalf("wiki placements = %+v", pls)
 	}
 	p.setOffline("lab2", false)
 	p.mustEnv("wiki", "staging", "", "lab2")
 
 	// The server list reports load and placements.
-	servers, err := p.c.ListServers(p.ctx, System)
+	servers, err := p.c.ListServers(p.ctx, testSystem)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestPlacementKeepsProjectsTogether(t *testing.T) {
 			t.Errorf("vps2 = %+v", s)
 		}
 	}
-	d, err := p.c.GetServer(p.ctx, System, "homelab")
+	d, err := p.c.GetServer(p.ctx, testSystem, "homelab")
 	if err != nil || len(d.Placements) != 1 || d.Placements[0].Project != "shop" || strings.Join(d.Placements[0].Environments, ",") != "dev,preview,staging" {
 		t.Fatalf("homelab detail = %+v, %v", d, err)
 	}
@@ -279,10 +279,10 @@ func TestPinPlacement(t *testing.T) {
 
 	// Pin before the first non-production environment: it goes to the
 	// pinned server, even one disabled for placement.
-	if _, err := p.c.UpdateServer(p.ctx, System, "lab", apitypes.UpdateServerRequest{DisabledForPlacement: ptr(true)}); err != nil {
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, "lab", apitypes.UpdateServerRequest{DisabledForPlacement: ptr(true)}); err != nil {
 		t.Fatal(err)
 	}
-	pl, err := p.c.PinPlacement(p.ctx, System, "shop", apitypes.KindNonProduction, "lab")
+	pl, err := p.c.PinPlacement(p.ctx, testSystem, "shop", apitypes.KindNonProduction, "lab")
 	if err != nil || !pl.Pinned || pl.Server != "lab" {
 		t.Fatalf("pin = %+v, %v", pl, err)
 	}
@@ -295,12 +295,12 @@ func TestPinPlacement(t *testing.T) {
 		server string
 		code   apitypes.ErrorCode
 	}{
-		{"server doesn't accept non-production", System, apitypes.KindNonProduction, "big", apitypes.CodeValidation},
-		{"server doesn't accept production", System, apitypes.KindProduction, "lab", apitypes.CodeValidation},
-		{"production already placed", System, apitypes.KindProduction, p.ids2name("cp"), apitypes.CodeConflict},
-		{"unknown server", System, apitypes.KindProduction, "nope", apitypes.CodeNotFound},
-		{"deploy scope", Actor{Kind: "token", Name: "ci", Scope: apitypes.ScopeDeploy}, apitypes.KindProduction, "big", apitypes.CodeForbidden},
-		{"limited admin", Actor{Kind: "token", Name: "ops", Scope: apitypes.ScopeAdmin, ProjectID: 1, ProjectName: "shop"}, apitypes.KindProduction, "big", apitypes.CodeForbidden},
+		{"server doesn't accept non-production", testSystem, apitypes.KindNonProduction, "big", apitypes.CodeValidation},
+		{"server doesn't accept production", testSystem, apitypes.KindProduction, "lab", apitypes.CodeValidation},
+		{"production already placed", testSystem, apitypes.KindProduction, p.ids2name("cp"), apitypes.CodeConflict},
+		{"unknown server", testSystem, apitypes.KindProduction, "nope", apitypes.CodeNotFound},
+		{"deploy scope", Actor{Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeDeploy}, apitypes.KindProduction, "big", apitypes.CodeForbidden},
+		{"limited admin", Actor{Kind: "token", OrgID: 1, Name: "ops", Scope: apitypes.ScopeAdmin, ProjectID: 1, ProjectName: "shop"}, apitypes.KindProduction, "big", apitypes.CodeForbidden},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -310,7 +310,7 @@ func TestPinPlacement(t *testing.T) {
 		})
 	}
 	// Re-pinning to where the environments already are is a no-op.
-	if _, err := p.c.PinPlacement(p.ctx, System, "shop", apitypes.KindNonProduction, "lab"); err != nil {
+	if _, err := p.c.PinPlacement(p.ctx, testSystem, "shop", apitypes.KindNonProduction, "lab"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -338,7 +338,7 @@ func TestOfflineServerRuntime(t *testing.T) {
 	if _, err := p.c.runtime(p.ids["lab"]).List(p.ctx); CodeOf(err) != apitypes.CodeServerOffline {
 		t.Fatalf("calls on an offline server = %v", err)
 	}
-	servers, _ := p.c.ListServers(p.ctx, System)
+	servers, _ := p.c.ListServers(p.ctx, testSystem)
 	for _, s := range servers {
 		if s.Name == "lab" && s.Status != "offline" {
 			t.Errorf("lab status = %s", s.Status)
@@ -350,8 +350,8 @@ func TestUpdateServerNeedsUnlimitedAdmin(t *testing.T) {
 	h := newHarness(t)
 	name := h.c.local.Name
 	for _, a := range []Actor{
-		{Kind: "token", Name: "ci", Scope: apitypes.ScopeDeploy},
-		{Kind: "token", Name: "ops", Scope: apitypes.ScopeAdmin, ProjectID: 1, ProjectName: "shop"},
+		{Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeDeploy},
+		{Kind: "token", OrgID: 1, Name: "ops", Scope: apitypes.ScopeAdmin, ProjectID: 1, ProjectName: "shop"},
 	} {
 		if _, err := h.c.UpdateServer(h.ctx, a, name, apitypes.UpdateServerRequest{AcceptsProduction: ptr(false)}); CodeOf(err) != apitypes.CodeForbidden {
 			t.Errorf("%s: %v", a, err)
@@ -363,12 +363,12 @@ func TestUpdateServerNeedsUnlimitedAdmin(t *testing.T) {
 			t.Errorf("%s: %v", a, err)
 		}
 	}
-	s, err := h.c.UpdateServer(h.ctx, System, name, apitypes.UpdateServerRequest{AcceptsNonProduction: ptr(false), DisabledForPlacement: ptr(true)})
+	s, err := h.c.UpdateServer(h.ctx, testSystem, name, apitypes.UpdateServerRequest{AcceptsNonProduction: ptr(false), DisabledForPlacement: ptr(true)})
 	if err != nil || !s.AcceptsProduction || s.AcceptsNonProduction || !s.DisabledForPlacement {
 		t.Fatalf("update = %+v, %v", s, err)
 	}
 	// The new local server accepted both kinds before.
-	audit, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: "server.update", Limit: 1})
+	audit, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "server.update", Limit: 1, Platform: true})
 	if len(audit) != 1 || !strings.Contains(audit[0].Summary, "no longer accepts non-production, disabled for new placements") {
 		t.Fatalf("audit = %+v", audit)
 	}

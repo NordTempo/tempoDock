@@ -29,27 +29,27 @@ func registerServers(s *Server, a huma.API) {
 	tags := []string{"servers"}
 	authed(s, a, huma.Operation{
 		OperationID: "list-servers", Method: http.MethodGet, Path: Prefix + "/servers",
-		Summary: "List servers", Description: "Status, version, accepted environment kinds and load of every server. Unlimited admins also get each server's latest resource sample.", Tags: tags,
+		Summary: "List servers", Description: "Status, version, accepted environment kinds and load of every server, for operators with each server's latest resource sample; others get the servers their organization's environments run on.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Server], error) {
 		return reply(s.core.ListServers(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "get-server", Method: http.MethodGet, Path: serverPathT,
-		Summary: "Get a server", Description: "The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Scope: admin, unlimited.", Tags: tags,
+		Summary: "Get a server", Description: "The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Operators only.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.ServerDetail], error) {
 		return reply(s.core.GetServer(ctx, actor, in.Server))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "add-server", Method: http.MethodPost, Path: Prefix + "/servers",
 		Summary: "Add a server", Tags: tags, DefaultStatus: http.StatusCreated,
-		Description: "Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Scope: admin, unlimited.",
+		Description: "Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.AddServerRequest }) (*out[apitypes.AddedServer], error) {
 		return reply(s.core.AddServer(ctx, actor, in.Body))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "update-server", Method: http.MethodPatch, Path: serverPathT,
 		Summary: "Update a server", Tags: tags,
-		Description: "Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Scope: admin, unlimited.",
+		Description: "Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServerPath
 		Body apitypes.UpdateServerRequest
@@ -59,27 +59,27 @@ func registerServers(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "revoke-server", Method: http.MethodPost, Path: serverPathT + "/revoke",
 		Summary: "Revoke a server", Tags: tags,
-		Description: "Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Scope: admin, unlimited.",
+		Description: "Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.Server], error) {
 		return reply(s.core.RevokeServer(ctx, actor, in.Server))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "rotate-server-key", Method: http.MethodPost, Path: serverPathT + "/rotate-key",
 		Summary: "Rotate a server's key", Tags: tags, Errors: withOffline,
-		Description: "The online server creates a new link key and reconnects with it; the old key stops working once it has. Scope: admin, unlimited.",
+		Description: "The online server creates a new link key and reconnects with it; the old key stops working once it has. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.Server], error) {
 		return reply(s.core.RotateServerKey(ctx, actor, in.Server))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "remove-server", Method: http.MethodDelete, Path: serverPathT,
 		Summary: "Remove a server", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Scope: admin, unlimited.",
+		Description: "Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*struct{}, error) {
 		return nil, s.core.RemoveServer(ctx, actor, in.Server)
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "server-stats", Method: http.MethodGet, Path: serverPathT + "/stats",
-		Summary: "Server statistics", Description: "CPU, memory, disk and load history plus the latest sample. Scope: admin, unlimited.", Tags: tags,
+		Summary: "Server statistics", Description: "CPU, memory, disk and load history plus the latest sample. Operators only.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServerPath
 		RangeQuery
@@ -89,7 +89,7 @@ func registerServers(s *Server, a huma.API) {
 	sse(s, a, huma.Operation{
 		OperationID: "server-stats-live", Method: http.MethodGet, Path: serverPathT + "/stats/live",
 		Summary: "Live server statistics", Tags: tags, Errors: withOffline,
-		Description: "A `sample` event every few seconds while connected; the first is the latest minute sample. Sampling stops when the last watcher disconnects. Scope: admin, unlimited.",
+		Description: "A `sample` event every few seconds while connected; the first is the latest minute sample. Sampling stops when the last watcher disconnects. Operators only.",
 	}, []string{"sample"}, sseFormat[apitypes.ServerUsage]{
 		name: func(apitypes.ServerUsage) string { return "sample" },
 	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (core.Stream[apitypes.ServerUsage], error) {
@@ -126,7 +126,7 @@ func registerServers(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "pin-placement", Method: http.MethodPut, Path: projectPathT + "/placements/{kind}",
 		Summary: "Pin a project to a server", Tags: []string{"projects"},
-		Description: "Puts the project's environments of a kind on a server, before any exist. The server must accept the kind; it may be disabled for placement. Scope: admin, unlimited.",
+		Description: "Puts the project's environments of a kind on a server, before any exist. The server must accept the kind; it may be disabled for placement. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ProjectPath
 		Kind apitypes.EnvironmentKind `path:"kind" enum:"production,non_production"`

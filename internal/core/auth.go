@@ -1,12 +1,15 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -51,8 +54,9 @@ func hashSecret(s string) string {
 
 var errUnauthenticated = errf(apitypes.CodeUnauthorized, "invalid, expired or revoked credentials; log in again or use a valid token")
 
-// AuthenticateToken resolves an API token to an actor.
-func (c *Core) AuthenticateToken(ctx context.Context, secret string) (Actor, error) {
+// AuthenticateToken resolves an API token to an actor in org (a slug; ""
+// for the token's own org, or a `dock login` user's only one).
+func (c *Core) AuthenticateToken(ctx context.Context, secret, org string) (Actor, error) {
 	if !strings.HasPrefix(secret, tokenPrefix) {
 		return Actor{}, errUnauthenticated
 	}
@@ -67,25 +71,30 @@ func (c *Core) AuthenticateToken(ctx context.Context, secret string) (Actor, err
 	if t.RevokedAt != nil || (t.ExpiresAt != nil && n.After(*t.ExpiresAt)) {
 		return Actor{}, errUnauthenticated
 	}
-	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope)}
-	// A `dock login` token acts for the user who approved it, so it is only
-	// as good as that user now: gone or disabled refuses it, and a lowered
-	// role lowers it. Acting for them lets them change their password from
-	// the CLI.
-	if t.Origin == "cli_login" {
-		if row.UserEmail == nil || row.UserRole == nil || row.UserDisabledAt != nil {
-			return Actor{}, errUnauthenticated
-		}
-		a.Email = *row.UserEmail
-		if role := apitypes.Scope(*row.UserRole); rank(role) < rank(a.Scope) {
-			a.Scope = role
-		}
-	}
+	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope), Operator: t.Operator}
 	if t.LastUsedAt == nil || n.Sub(*t.LastUsedAt) > tokenTouchInterval {
 		if err := c.store.TouchToken(ctx, store.TouchTokenParams{LastUsedAt: &n, ID: t.ID}); err != nil {
 			c.log.Warn("touch token", "err", err)
 		}
 	}
+	// A `dock login` token acts for the user who approved it, so it is only
+	// as good as that user now: gone or disabled refuses it, and in each
+	// org their role caps it. Acting for them lets them change their
+	// password from the CLI.
+	if t.Origin == "cli_login" {
+		if row.UserEmail == nil || row.UserOperator == nil || row.UserDisabledAt != nil || t.UserID == nil {
+			return Actor{}, errUnauthenticated
+		}
+		a.Email, a.UserID, a.Operator = *row.UserEmail, *t.UserID, *row.UserOperator
+		return c.actIn(ctx, a, org, apitypes.Scope(t.Scope))
+	}
+	if t.OrgID == nil || row.OrgSlug == nil { // manual tokens always have one
+		return Actor{}, errUnauthenticated
+	}
+	if org != "" && org != *row.OrgSlug {
+		return Actor{}, errf(apitypes.CodeForbidden, "token %q belongs to organization %s; it can't act in %s", t.Name, *row.OrgSlug, org)
+	}
+	a.OrgID, a.OrgSlug, a.orgs = *t.OrgID, *row.OrgSlug, 1
 	if t.ProjectID != nil {
 		p, err := c.store.GetProject(ctx, *t.ProjectID)
 		if err != nil {
@@ -103,8 +112,9 @@ func (c *Core) AuthenticateToken(ctx context.Context, secret string) (Actor, err
 	return a, nil
 }
 
-// AuthenticateSession resolves a UI session cookie to an actor.
-func (c *Core) AuthenticateSession(ctx context.Context, secret string) (Actor, error) {
+// AuthenticateSession resolves a UI session cookie to an actor in org (a
+// slug; "" for the user's only org).
+func (c *Core) AuthenticateSession(ctx context.Context, secret, org string) (Actor, error) {
 	if !strings.HasPrefix(secret, sessionPrefix) {
 		return Actor{}, errUnauthenticated
 	}
@@ -118,11 +128,48 @@ func (c *Core) AuthenticateSession(ctx context.Context, secret string) (Actor, e
 	if now().After(row.SessionExpiresAt) || row.User.DisabledAt != nil {
 		return Actor{}, errUnauthenticated
 	}
-	return userActor(row.User), nil
+	return c.actIn(ctx, userActor(row.User), org, apitypes.ScopeAdmin)
 }
 
+// userActor is a user in no org yet; actIn picks one.
 func userActor(u store.User) Actor {
-	return Actor{Kind: "user", Name: u.Email, Email: u.Email, UserID: u.ID, Scope: apitypes.Scope(u.Role)}
+	return Actor{Kind: "user", Name: u.Email, Email: u.Email, UserID: u.ID, Operator: u.Operator}
+}
+
+// actIn puts a user's actor (a session or a `dock login` token) in the org
+// named by slug, or with none in the user's only org; a user with several
+// and no slug gets no org, and org-scoped operations say to choose one.
+// The actor's scope is the user's role there, capped at most.
+func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Scope) (Actor, error) {
+	if slug != "" {
+		m, err := c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: slug})
+		if store.IsNotFound(err) {
+			return Actor{}, notFound("organization %q not found among yours; see `dock org list`", slug)
+		}
+		if err != nil {
+			return Actor{}, err
+		}
+		return a.member(m.Org, m.Role, most), nil
+	}
+	orgs, err := c.store.ListUserOrgs(ctx, a.UserID)
+	if err != nil {
+		return Actor{}, err
+	}
+	if len(orgs) == 1 {
+		return a.member(orgs[0].Org, orgs[0].Role, most), nil
+	}
+	a.orgs = len(orgs)
+	return a, nil
+}
+
+// member is the actor acting in org with role, capped at most.
+func (a Actor) member(org store.Org, role string, most apitypes.Scope) Actor {
+	a.OrgID, a.OrgSlug, a.orgs = org.ID, org.Slug, 1
+	a.Scope = apitypes.Scope(role)
+	if rank(most) < rank(a.Scope) {
+		a.Scope = most
+	}
+	return a
 }
 
 var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password")
@@ -151,8 +198,11 @@ func (c *Core) Login(ctx context.Context, email, password, clientIP string) (sec
 	if err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
-	a = userActor(u)
-	c.audit(ctx, a, "user.login", nil, nil, u.Email, "logged in from "+clientIP)
+	// Accounts are the platform's, so logins are platform events.
+	c.audit(ctx, userActor(u), "user.login", nil, nil, u.Email, "logged in from "+clientIP)
+	if a, err = c.actIn(ctx, userActor(u), "", apitypes.ScopeAdmin); err != nil {
+		return "", time.Time{}, Actor{}, err
+	}
 	return secret, expires, a, nil
 }
 
@@ -206,7 +256,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	}
 	u, err := c.checkPassword(ctx, a.Email, req.CurrentPassword)
 	if CodeOf(err) == apitypes.CodeUnauthorized {
-		c.audit(ctx, a, "user.password_failed", nil, nil, a.Email, "wrong current password from "+clientIP)
+		c.audit(ctx, a.platform(), "user.password_failed", nil, nil, a.Email, "wrong current password from "+clientIP)
 		return "", time.Time{}, invalid("current password is wrong")
 	}
 	if err != nil {
@@ -232,7 +282,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 			return "", time.Time{}, err
 		}
 	}
-	c.audit(ctx, a, "user.password", nil, nil, u.Email, "changed own password; other sessions ended"+revokedNote(revoked))
+	c.audit(ctx, a.platform(), "user.password", nil, nil, u.Email, "changed own password; other sessions ended"+revokedNote(revoked))
 	return secret, expires, nil
 }
 
@@ -261,8 +311,8 @@ func (c *Core) SetUserDisabled(ctx context.Context, a Actor, id int64, disabled 
 		return apitypes.User{}, err
 	}
 	u.DisabledAt = at
-	c.audit(ctx, a, "user."+verb, nil, nil, u.Email, fmt.Sprintf(summary, u.Email)+revokedNote(revoked))
-	return toUser(u), nil
+	c.audit(ctx, a.platform(), "user."+verb, nil, nil, u.Email, fmt.Sprintf(summary, u.Email)+revokedNote(revoked))
+	return c.userIn(ctx, a, u), nil
 }
 
 // DeleteUser deletes a user and their sessions, and revokes their `dock
@@ -284,13 +334,14 @@ func (c *Core) DeleteUser(ctx context.Context, a Actor, id int64) error {
 	if err != nil {
 		return err
 	}
-	c.audit(ctx, a, "user.delete", nil, nil, u.Email, "deleted user "+u.Email+revokedNote(revoked))
+	c.audit(ctx, a.platform(), "user.delete", nil, nil, u.Email, "deleted user "+u.Email+revokedNote(revoked))
 	return nil
 }
 
-// otherUser loads a user an admin manages; nobody can lock themselves out.
+// otherUser loads a user an operator manages; nobody can lock themselves
+// out.
 func (c *Core) otherUser(ctx context.Context, a Actor, id int64, verb string) (store.User, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing users"); err != nil {
+	if err := a.requireOperator("managing user accounts"); err != nil {
 		return store.User{}, err
 	}
 	if a.UserID == id {
@@ -330,15 +381,17 @@ func (c *Core) Logout(ctx context.Context, secret string) error {
 	return c.store.DeleteSession(ctx, hashSecret(secret))
 }
 
-// ListTokens returns all tokens (never their secrets).
+// ListTokens returns the org's tokens and its members' `dock login`
+// tokens (never their secrets).
 func (c *Core) ListTokens(ctx context.Context, a Actor) ([]apitypes.Token, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
 		return nil, err
 	}
-	rows, err := c.store.ListTokens(ctx)
+	rows, err := c.store.ListOrgTokens(ctx, &a.OrgID)
 	if err != nil {
 		return nil, err
 	}
+	slices.SortFunc(rows, func(x, y store.Token) int { return cmp.Compare(x.ID, y.ID) })
 	names := newNames(c.store)
 	out := make([]apitypes.Token, 0, len(rows))
 	for _, t := range rows {
@@ -366,21 +419,29 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	if err != nil {
 		return apitypes.CreatedToken{}, err
 	}
-	params := store.CreateTokenParams{Name: req.Name, Scope: string(req.Scope), CreatedBy: a.Name}
+	if req.Operator {
+		if err := a.requireOperator("creating an operator token"); err != nil {
+			return apitypes.CreatedToken{}, err
+		}
+		if req.Scope != apitypes.ScopeAdmin || req.Project != "" {
+			return apitypes.CreatedToken{}, invalid("an operator token has scope admin and no project or environment limit")
+		}
+	}
+	params := store.CreateTokenParams{Name: req.Name, Scope: string(req.Scope), OrgID: &a.OrgID, Operator: req.Operator, CreatedBy: a.Name}
 	var p *store.Project
 	var e *store.Environment
 	switch {
 	case req.Environment != "" && req.Project == "":
 		return apitypes.CreatedToken{}, invalid("environment limit needs a project too")
 	case req.Environment != "":
-		es, err := c.loadEnv(ctx, EnvRef{req.Project, req.Environment})
+		es, err := c.loadEnv(ctx, a.OrgID, EnvRef{req.Project, req.Environment})
 		if err != nil {
 			return apitypes.CreatedToken{}, err
 		}
 		p, e = &es.project, &es.env
 		params.ProjectID, params.EnvironmentID = &es.project.ID, &es.env.ID
 	case req.Project != "":
-		proj, err := c.loadProject(ctx, req.Project)
+		proj, err := c.loadProject(ctx, a.OrgID, req.Project)
 		if err != nil {
 			return apitypes.CreatedToken{}, err
 		}
@@ -416,15 +477,13 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	return apitypes.CreatedToken{Token: out, Secret: secret}, nil
 }
 
-// RevokeToken revokes a token by ID.
+// RevokeToken revokes one of the org's tokens, or a member's `dock login`
+// token, by ID.
 func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
 		return err
 	}
-	t, err := c.store.GetToken(ctx, id)
-	if store.IsNotFound(err) {
-		return notFound("token %d not found", id)
-	}
+	t, err := c.orgToken(ctx, a, id)
 	if err != nil {
 		return err
 	}
@@ -436,18 +495,35 @@ func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
 	return nil
 }
 
-// ListUsers returns all users with their live sessions and usable tokens.
+// orgToken loads a token the actor's org manages: one of its own, or a
+// member's `dock login` token. Others are not found.
+func (c *Core) orgToken(ctx context.Context, a Actor, id int64) (store.Token, error) {
+	t, err := c.store.GetToken(ctx, id)
+	if err == nil && (t.OrgID == nil || *t.OrgID != a.OrgID) {
+		err = sql.ErrNoRows
+		if t.Origin == "cli_login" && t.UserID != nil {
+			_, err = c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: a.OrgID, UserID: *t.UserID})
+		}
+	}
+	if store.IsNotFound(err) {
+		return t, notFound("token %d not found", id)
+	}
+	return t, err
+}
+
+// ListUsers returns the org's members with their role, live sessions and
+// usable tokens.
 func (c *Core) ListUsers(ctx context.Context, a Actor) ([]apitypes.User, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing users"); err != nil {
 		return nil, err
 	}
-	rows, err := c.store.ListUsersWithCounts(ctx, now())
+	rows, err := c.store.ListOrgMembers(ctx, store.ListOrgMembersParams{Now: now(), OrgID: a.OrgID})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]apitypes.User, 0, len(rows))
 	for _, r := range rows {
-		u := toUser(r.User)
+		u := toUser(r.User, r.Role)
 		u.Sessions, u.Tokens = int(r.Sessions), int(r.Tokens)
 		out = append(out, u)
 	}
@@ -487,8 +563,8 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	if err != nil {
 		return out, err
 	}
-	c.audit(ctx, a, "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions"+revokedNote(revoked))
-	out.User = toUser(u)
+	c.audit(ctx, a.platform(), "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions"+revokedNote(revoked))
+	out.User = c.userIn(ctx, a, u)
 	return out, nil
 }
 
@@ -499,20 +575,29 @@ func generatePassword() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// CreateUser creates a user who can log in to the UI.
+// CreateUser creates a user account and adds it to the actor's org.
+// Accounts are the platform's, so only operators create them.
 func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserRequest) (apitypes.User, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing users"); err != nil {
+	if err := a.requireOperator("creating user accounts"); err != nil {
 		return apitypes.User{}, err
 	}
-	u, err := c.createUser(ctx, req)
+	if a.OrgID == 0 {
+		return apitypes.User{}, a.noOrg("creating a user")
+	}
+	u, err := c.createUser(ctx, req, a.OrgID)
 	if err != nil {
 		return apitypes.User{}, err
 	}
-	c.audit(ctx, a, "user.create", nil, nil, u.Email, fmt.Sprintf("created %s user %s", u.Role, u.Email))
-	return toUser(u), nil
+	kind := "user"
+	if u.Operator {
+		kind = "operator"
+	}
+	c.audit(ctx, a.platform(), "user.create", nil, nil, u.Email, fmt.Sprintf("created %s %s with role %s in %s", kind, u.Email, req.Role, a.OrgSlug))
+	return toUser(u, string(req.Role)), nil
 }
 
-func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest) (store.User, error) {
+// createUser creates a user and makes them a member of org with req.Role.
+func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest, orgID int64) (store.User, error) {
 	if !strings.Contains(req.Email, "@") {
 		return store.User{}, invalid("email %q is not valid", req.Email)
 	}
@@ -526,7 +611,14 @@ func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest) (
 	if err != nil {
 		return store.User{}, err
 	}
-	u, err := c.store.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), Role: string(req.Role)})
+	var u store.User
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		var err error
+		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), Operator: req.Operator}); err != nil {
+			return err
+		}
+		return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: orgID, UserID: u.ID, Role: string(req.Role)})
+	})
 	if store.IsUnique(err) {
 		return store.User{}, conflict("a user with email %s already exists", req.Email)
 	}
@@ -540,36 +632,53 @@ type Bootstrapped struct {
 	Token    string
 }
 
-// Bootstrap creates the first admin user and an admin token if no users
-// exist yet. It returns ok=false (and no error) when already bootstrapped.
+// Bootstrap creates the first user, an operator and the admin of the
+// install's first org, "default" (created now, or the one an older
+// install's data was moved into), and an operator token. It returns
+// ok=false (and no error) when already bootstrapped.
 func (c *Core) Bootstrap(ctx context.Context, email string) (b Bootstrapped, ok bool, err error) {
 	n, err := c.store.CountUsers(ctx)
 	if err != nil || n > 0 {
 		return b, false, err
 	}
-	b = Bootstrapped{Email: email, Password: generatePassword()}
-	u, err := c.createUser(ctx, apitypes.CreateUserRequest{Email: email, Name: "admin", Password: b.Password, Role: apitypes.ScopeAdmin})
+	org, err := c.store.GetOrg(ctx, 1)
+	if store.IsNotFound(err) {
+		org, err = createOrgTx(ctx, c.store.Queries, "default", "Default")
+	}
 	if err != nil {
 		return b, false, err
 	}
-	created, err := c.createToken(ctx, userActor(u), apitypes.CreateTokenRequest{Name: "bootstrap", Scope: apitypes.ScopeAdmin})
+	b = Bootstrapped{Email: email, Password: generatePassword()}
+	u, err := c.createUser(ctx, apitypes.CreateUserRequest{Email: email, Name: "admin", Password: b.Password, Role: apitypes.ScopeAdmin, Operator: true}, org.ID)
+	if err != nil {
+		return b, false, err
+	}
+	a := userActor(u).member(org, string(apitypes.ScopeAdmin), apitypes.ScopeAdmin)
+	created, err := c.createToken(ctx, a, apitypes.CreateTokenRequest{Name: "bootstrap", Scope: apitypes.ScopeAdmin, Operator: true})
 	if err != nil {
 		return b, false, err
 	}
 	b.Token = created.Secret
-	c.audit(ctx, System, "user.bootstrap", nil, nil, u.Email, "created the first admin user and token")
+	c.audit(ctx, System.InOrg(org.ID), "user.bootstrap", nil, nil, u.Email, "created the first user, an operator and admin of "+org.Slug+", and an operator token")
 	return b, true, nil
 }
 
-func toUser(u store.User) apitypes.User {
-	return apitypes.User{ID: u.ID, Email: u.Email, Name: u.Name, Role: apitypes.Scope(u.Role), CreatedAt: u.CreatedAt, DisabledAt: u.DisabledAt}
+// userIn converts a user for the API with their role in the actor's org
+// ("" when they aren't a member).
+func (c *Core) userIn(ctx context.Context, a Actor, u store.User) apitypes.User {
+	role, _ := c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: a.OrgID, UserID: u.ID})
+	return toUser(u, role)
+}
+
+func toUser(u store.User, role string) apitypes.User {
+	return apitypes.User{ID: u.ID, Email: u.Email, Name: u.Name, Role: apitypes.Scope(role), Operator: u.Operator, CreatedAt: u.CreatedAt, DisabledAt: u.DisabledAt}
 }
 
 func toToken(ctx context.Context, names *names, t store.Token) apitypes.Token {
 	out := apitypes.Token{
 		ID: t.ID, Name: t.Name, Scope: apitypes.Scope(t.Scope), CreatedBy: t.CreatedBy, CreatedAt: t.CreatedAt,
 		ExpiresAt: t.ExpiresAt, LastUsedAt: t.LastUsedAt, RevokedAt: t.RevokedAt, Origin: t.Origin,
-		Data: tokenData(t),
+		Operator: t.Operator, Data: tokenData(t),
 	}
 	if t.ProjectID != nil {
 		out.Project = names.project(ctx, *t.ProjectID)

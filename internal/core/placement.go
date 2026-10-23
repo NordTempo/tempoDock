@@ -177,13 +177,13 @@ func (c *Core) ListPlacements(ctx context.Context, a Actor, project string) ([]a
 // environments (and their volumes) is a later feature. The server must
 // accept the kind; being disabled for placement doesn't stop a pin.
 func (c *Core) PinPlacement(ctx context.Context, a Actor, project string, kind apitypes.EnvironmentKind, server string) (apitypes.Placement, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "pinning a project to a server"); err != nil {
+	if err := a.requireOperator("pinning a project to a server"); err != nil {
 		return apitypes.Placement{}, err
 	}
 	if !validKind(kind) {
 		return apitypes.Placement{}, invalid("kind must be production or non_production")
 	}
-	p, err := c.loadProject(ctx, project)
+	p, err := c.loadProject(ctx, a.OrgID, project)
 	if err != nil {
 		return apitypes.Placement{}, err
 	}

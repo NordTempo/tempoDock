@@ -73,14 +73,20 @@ func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentPa
 }
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (name) VALUES (?) RETURNING id, name, created_at, archived_at
+INSERT INTO projects (org_id, name) VALUES (?, ?) RETURNING id, org_id, name, created_at, archived_at
 `
 
-func (q *Queries) CreateProject(ctx context.Context, name string) (Project, error) {
-	row := q.queryRow(ctx, q.createProjectStmt, createProject, name)
+type CreateProjectParams struct {
+	OrgID int64
+	Name  string
+}
+
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
+	row := q.queryRow(ctx, q.createProjectStmt, createProject, arg.OrgID, arg.Name)
 	var i Project
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
 		&i.CreatedAt,
 		&i.ArchivedAt,
@@ -246,7 +252,7 @@ func (q *Queries) GetPlacement(ctx context.Context, arg GetPlacementParams) (Pro
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, created_at, archived_at FROM projects WHERE id = +?
+SELECT id, org_id, name, created_at, archived_at FROM projects WHERE id = +?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
@@ -254,6 +260,7 @@ func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
 	var i Project
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
 		&i.CreatedAt,
 		&i.ArchivedAt,
@@ -262,14 +269,20 @@ func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
 }
 
 const getProjectByName = `-- name: GetProjectByName :one
-SELECT id, name, created_at, archived_at FROM projects WHERE name = +?
+SELECT id, org_id, name, created_at, archived_at FROM projects WHERE org_id = +? AND name = +?
 `
 
-func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, error) {
-	row := q.queryRow(ctx, q.getProjectByNameStmt, getProjectByName, name)
+type GetProjectByNameParams struct {
+	OrgID int64
+	Name  string
+}
+
+func (q *Queries) GetProjectByName(ctx context.Context, arg GetProjectByNameParams) (Project, error) {
+	row := q.queryRow(ctx, q.getProjectByNameStmt, getProjectByName, arg.OrgID, arg.Name)
 	var i Project
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
 		&i.CreatedAt,
 		&i.ArchivedAt,
@@ -417,11 +430,11 @@ func (q *Queries) ListPlacements(ctx context.Context, projectID int64) ([]Projec
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, created_at, archived_at FROM projects ORDER BY name
+SELECT id, org_id, name, created_at, archived_at FROM projects WHERE org_id = +? ORDER BY name
 `
 
-func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := q.query(ctx, q.listProjectsStmt, listProjects)
+func (q *Queries) ListProjects(ctx context.Context, orgID int64) ([]Project, error) {
+	rows, err := q.query(ctx, q.listProjectsStmt, listProjects, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +444,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 		var i Project
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrgID,
 			&i.Name,
 			&i.CreatedAt,
 			&i.ArchivedAt,

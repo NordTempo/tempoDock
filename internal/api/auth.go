@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -24,7 +25,8 @@ func actorFrom(ctx context.Context) core.Actor {
 }
 
 // authenticate resolves `Authorization: Bearer <token>` or the session
-// cookie to an actor for every non-public operation.
+// cookie to an actor for every non-public operation, acting in the org the
+// `org` parameter names (ADR 0027).
 func (s *Server) authenticate(a huma.API) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		if op := ctx.Operation(); op != nil && op.Metadata["public"] == true {
@@ -41,20 +43,17 @@ func (s *Server) authenticate(a huma.API) func(huma.Context, func(huma.Context))
 				_ = huma.WriteErr(a, ctx, http.StatusUnauthorized, "Authorization header must be `Bearer <token>`")
 				return
 			}
-			actor, err = s.core.AuthenticateToken(ctx.Context(), strings.TrimSpace(token))
+			actor, err = s.core.AuthenticateToken(ctx.Context(), strings.TrimSpace(token), ctx.Query("org"))
 		} else if c, cerr := huma.ReadCookie(ctx, sessionCookie); cerr == nil {
-			actor, err = s.core.AuthenticateSession(ctx.Context(), c.Value)
+			actor, err = s.core.AuthenticateSession(ctx.Context(), c.Value, ctx.Query("org"))
 		} else {
 			_ = huma.WriteErr(a, ctx, http.StatusUnauthorized, "authentication required: send `Authorization: Bearer <token>` or log in")
 			return
 		}
 		if err != nil {
-			if core.CodeOf(err) == apitypes.CodeUnauthorized {
-				_ = huma.WriteErr(a, ctx, http.StatusUnauthorized, err.Error())
-			} else {
-				s.opts.Logger.Error("authenticate", "err", err)
-				_ = huma.WriteErr(a, ctx, http.StatusInternalServerError, "internal error; see the daemon log")
-			}
+			// Unknown orgs and tokens of another org are 404 and 403.
+			ae, _ := errors.AsType[*apitypes.Error](s.problem(err))
+			_ = huma.WriteErr(a, ctx, ae.Status, ae.Detail)
 			return
 		}
 		next(huma.WithValue(ctx, actorKey{}, actor))

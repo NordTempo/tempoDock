@@ -23,14 +23,14 @@ func cloneSource(h *harness) {
 	h.set(prod, "", map[string]string{"LOG_LEVEL": "lvl-7f3a"}, false)
 	h.set(prod, "web", map[string]string{"STRIPE_KEY": "sk_live_secret", "DATABASE_URL": "${{postgres.DATABASE_URL}}"}, false)
 	h.set(prod, "old", map[string]string{"OLD": "x"}, false)
-	if _, err := h.c.ApplyChanges(h.ctx, System, prod); err != nil {
+	if _, err := h.c.ApplyChanges(h.ctx, testSystem, prod); err != nil {
 		h.t.Fatal(err)
 	}
 	h.set(prod, "web", map[string]string{"FEATURE_X": "on"}, false) // staged only
-	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
 		h.t.Fatal(err)
 	}
-	if _, err := h.c.ArchiveService(h.ctx, System, old); err != nil {
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, old); err != nil {
 		h.t.Fatal(err)
 	}
 }
@@ -42,7 +42,7 @@ func TestCloneEnvironment(t *testing.T) {
 	h := newHarness(t)
 	cloneSource(h)
 
-	res, err := h.c.CloneEnvironment(h.ctx, System, EnvRef{"shop", "production"}, apitypes.CloneEnvironmentRequest{Name: "prod-2", Kind: apitypes.KindProduction})
+	res, err := h.c.CloneEnvironment(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.CloneEnvironmentRequest{Name: "prod-2", Kind: apitypes.KindProduction})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,16 +56,16 @@ func TestCloneEnvironment(t *testing.T) {
 		t.Fatalf("not copied = %v", res.NotCopied)
 	}
 
-	src, _ := h.c.GetService(h.ctx, System, ServiceRef{"shop", "production", "web"})
-	web, err := h.c.GetService(h.ctx, System, ServiceRef{"shop", "prod-2", "web"})
+	src, _ := h.c.GetService(h.ctx, testSystem, ServiceRef{"shop", "production", "web"})
+	web, err := h.c.GetService(h.ctx, testSystem, ServiceRef{"shop", "prod-2", "web"})
 	if err != nil || web.ServiceSettings != src.ServiceSettings || web.ActiveRelease != nil {
 		t.Fatalf("cloned web = %+v, %v; source settings %+v", web, err, src.ServiceSettings)
 	}
-	db, _ := h.c.GetService(h.ctx, System, ServiceRef{"shop", "prod-2", "postgres"})
+	db, _ := h.c.GetService(h.ctx, testSystem, ServiceRef{"shop", "prod-2", "postgres"})
 	if db.Template != apitypes.TemplatePostgres || db.Database != apitypes.DatabasePostgres || db.ActiveRelease != nil || db.Stateful {
 		t.Fatalf("cloned postgres = %+v", db)
 	}
-	if _, err := h.c.GetService(h.ctx, System, ServiceRef{"shop", "prod-2", "old"}); CodeOf(err) != apitypes.CodeNotFound {
+	if _, err := h.c.GetService(h.ctx, testSystem, ServiceRef{"shop", "prod-2", "old"}); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("archived service cloned: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestCloneEnvironment(t *testing.T) {
 	if got := h.revealed(ServiceRef{"shop", "prod-2", "postgres"}); !maps.Equal(got, want) {
 		t.Fatalf("postgres variables %v, want %v", got, want)
 	}
-	vars, _ := h.c.ListVariables(h.ctx, System, clone, "web", true)
+	vars, _ := h.c.ListVariables(h.ctx, testSystem, clone, "web", true)
 	got := map[string]string{}
 	for _, v := range vars {
 		if v.Pending != "" || v.Value == nil {
@@ -89,8 +89,8 @@ func TestCloneEnvironment(t *testing.T) {
 
 	// The volume is new and staged, so the backup scheduler leaves the
 	// undeployed clone alone; nothing else came along.
-	vols, _ := h.c.ListVolumes(h.ctx, System, ServiceRef{"shop", "prod-2", "postgres"})
-	srcVols, _ := h.c.ListVolumes(h.ctx, System, ServiceRef{"shop", "production", "postgres"})
+	vols, _ := h.c.ListVolumes(h.ctx, testSystem, ServiceRef{"shop", "prod-2", "postgres"})
+	srcVols, _ := h.c.ListVolumes(h.ctx, testSystem, ServiceRef{"shop", "production", "postgres"})
 	if len(vols) != 1 || !vols[0].Pending || vols[0].DockerName == srcVols[0].DockerName || vols[0].MountPath != srcVols[0].MountPath {
 		t.Fatalf("volumes %+v, source %+v", vols, srcVols)
 	}
@@ -98,10 +98,10 @@ func TestCloneEnvironment(t *testing.T) {
 	if len(cands) != 1 {
 		t.Fatalf("backup candidates = %+v", cands)
 	}
-	if ds, _ := h.c.ListDomains(h.ctx, System, ServiceRef{"shop", "prod-2", "web"}); len(ds) != 0 {
+	if ds, _ := h.c.ListDomains(h.ctx, testSystem, ServiceRef{"shop", "prod-2", "web"}); len(ds) != 0 {
 		t.Fatalf("domains cloned: %+v", ds)
 	}
-	if rels, _ := h.c.ListReleases(h.ctx, System, ServiceRef{"shop", "prod-2", "postgres"}, 10); len(rels) != 0 {
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, ServiceRef{"shop", "prod-2", "postgres"}, 10); len(rels) != 0 {
 		t.Fatalf("releases cloned: %+v", rels)
 	}
 
@@ -112,7 +112,7 @@ func TestCloneEnvironment(t *testing.T) {
 		t.Fatalf("first deploy: %s %+v", rel.Status, rel.Config)
 	}
 
-	if _, err := h.c.CloneEnvironment(h.ctx, System, EnvRef{"shop", "production"}, apitypes.CloneEnvironmentRequest{Name: "prod-2"}); CodeOf(err) != apitypes.CodeConflict {
+	if _, err := h.c.CloneEnvironment(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.CloneEnvironmentRequest{Name: "prod-2"}); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("clone onto an existing name: %v", err)
 	}
 }
@@ -127,13 +127,13 @@ func TestCloneFollowsPermissions(t *testing.T) {
 	h := newHarness(t)
 	cloneSource(h)
 	prod := EnvRef{"shop", "production"}
-	p, _ := h.store.GetProjectByName(h.ctx, "shop")
+	p, _ := h.store.GetProjectByName(h.ctx, store.GetProjectByNameParams{OrgID: 1, Name: "shop"})
 	e, _ := h.store.GetEnvironmentByName(h.ctx, store.GetEnvironmentByNameParams{ProjectID: p.ID, Name: "production"})
 
 	for _, a := range []Actor{
-		{Kind: "token", Name: "ro", Scope: apitypes.ScopeRead},
-		{Kind: "token", Name: "env", Scope: apitypes.ScopeDeploy, ProjectID: p.ID, ProjectName: "shop", EnvironmentID: e.ID, EnvironmentName: "production"},
-		{Kind: "token", Name: "blog", Scope: apitypes.ScopeAdmin, ProjectID: p.ID + 1, ProjectName: "blog"},
+		{Kind: "token", OrgID: 1, Name: "ro", Scope: apitypes.ScopeRead},
+		{Kind: "token", OrgID: 1, Name: "env", Scope: apitypes.ScopeDeploy, ProjectID: p.ID, ProjectName: "shop", EnvironmentID: e.ID, EnvironmentName: "production"},
+		{Kind: "token", OrgID: 1, Name: "blog", Scope: apitypes.ScopeAdmin, ProjectID: p.ID + 1, ProjectName: "blog"},
 	} {
 		if _, err := h.c.CloneEnvironment(h.ctx, a, prod, apitypes.CloneEnvironmentRequest{Name: "copy-" + a.Name}); CodeOf(err) != apitypes.CodeForbidden {
 			t.Fatalf("%s cloned: %v", a.Name, err)
@@ -159,8 +159,8 @@ func TestCloneFollowsPermissions(t *testing.T) {
 		}
 	}
 
-	agent := Actor{Kind: "token", Name: "agent", Scope: apitypes.ScopeDeploy, ProjectID: p.ID, ProjectName: "shop"}
-	for _, a := range []Actor{agent, System} {
+	agent := Actor{Kind: "token", OrgID: 1, Name: "agent", Scope: apitypes.ScopeDeploy, ProjectID: p.ID, ProjectName: "shop"}
+	for _, a := range []Actor{agent, testSystem} {
 		env := "preview-" + a.Name
 		res, err := h.c.CloneEnvironment(h.ctx, a, prod, apitypes.CloneEnvironmentRequest{Name: env})
 		if err != nil {
@@ -190,7 +190,7 @@ func TestCloneFollowsPermissions(t *testing.T) {
 	if _, err := h.c.CloneEnvironment(h.ctx, agent, prod, apitypes.CloneEnvironmentRequest{Name: "agent-copy", CopyValues: true}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("agent with copy_values: %v", err)
 	}
-	res, err := h.c.CloneEnvironment(h.ctx, System, prod, apitypes.CloneEnvironmentRequest{Name: "staging", CopyValues: true})
+	res, err := h.c.CloneEnvironment(h.ctx, testSystem, prod, apitypes.CloneEnvironmentRequest{Name: "staging", CopyValues: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestClonePlacement(t *testing.T) {
 	p.createService("production", "web", apitypes.CreateServiceRequest{Image: "web:1"})
 	prod := EnvRef{"shop", "production"}
 	clone := func(name string, kind apitypes.EnvironmentKind) (apitypes.CloneResult, error) {
-		return p.c.CloneEnvironment(p.ctx, System, prod, apitypes.CloneEnvironmentRequest{Name: name, Kind: kind})
+		return p.c.CloneEnvironment(p.ctx, testSystem, prod, apitypes.CloneEnvironmentRequest{Name: name, Kind: kind})
 	}
 
 	if got := p.server("shop", "production"); got != cpName {
@@ -261,19 +261,19 @@ func TestClonePlacement(t *testing.T) {
 
 	// No eligible server: an error naming them, and nothing left behind.
 	p.project("blog")
-	if _, err := p.c.CreateService(p.ctx, System, EnvRef{"blog", "production"}, apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+	if _, err := p.c.CreateService(p.ctx, testSystem, EnvRef{"blog", "production"}, apitypes.CreateServiceRequest{Name: "web"}); err != nil {
 		t.Fatal(err)
 	}
 	p.setOffline("homelab", true)
 	p.setOffline("lab2", true)
-	_, err = p.c.CloneEnvironment(p.ctx, System, EnvRef{"blog", "production"}, apitypes.CloneEnvironmentRequest{Name: "staging"})
+	_, err = p.c.CloneEnvironment(p.ctx, testSystem, EnvRef{"blog", "production"}, apitypes.CloneEnvironmentRequest{Name: "staging"})
 	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "homelab (offline)") {
 		t.Fatalf("clone with no eligible server: %v", err)
 	}
-	if envs, _ := p.c.ListEnvironments(p.ctx, System, "blog"); len(envs) != 1 {
+	if envs, _ := p.c.ListEnvironments(p.ctx, testSystem, "blog"); len(envs) != 1 {
 		t.Fatalf("blog environments = %+v", envs)
 	}
-	if pls, _ := p.c.ListPlacements(p.ctx, System, "blog"); len(pls) != 1 {
+	if pls, _ := p.c.ListPlacements(p.ctx, testSystem, "blog"); len(pls) != 1 {
 		t.Fatalf("blog placements = %+v", pls)
 	}
 }
@@ -288,14 +288,14 @@ func TestCloneDeploy(t *testing.T) {
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
 	db := p.createService("staging", "db", apitypes.CreateServiceRequest{})
 	p.createService("staging", "idle", apitypes.CreateServiceRequest{})
-	if _, err := p.c.AddVolume(p.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+	if _, err := p.c.AddVolume(p.ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 		t.Fatal(err)
 	}
 	p.set(staging, "web", map[string]string{"API": "${{db.DOCK_PRIVATE_DOMAIN}}"}, false)
 	built := p.deploySource(web)
 	p.deploy(db, "ghcr.io/acme/db:1")
 
-	res, err := p.c.CloneEnvironment(p.ctx, System, staging, apitypes.CloneEnvironmentRequest{Name: "prod-eu", Kind: apitypes.KindProduction, Deploy: true})
+	res, err := p.c.CloneEnvironment(p.ctx, testSystem, staging, apitypes.CloneEnvironmentRequest{Name: "prod-eu", Kind: apitypes.KindProduction, Deploy: true})
 	if err != nil || res.DeployError != "" || res.Deploy == nil {
 		t.Fatalf("clone: %+v, %v", res, err)
 	}
@@ -316,7 +316,7 @@ func TestCloneDeploy(t *testing.T) {
 	if !ok || spec.Env["API"] != "db" || spec.Env["DOCK_ENVIRONMENT"] != "prod-eu" {
 		t.Fatalf("web env = %v", spec.Env)
 	}
-	vols, _ := p.c.ListVolumes(p.ctx, System, ServiceRef{"shop", "prod-eu", "db"})
+	vols, _ := p.c.ListVolumes(p.ctx, testSystem, ServiceRef{"shop", "prod-eu", "db"})
 	dbSpec, _ := p.rt.Spec(p.ctr(ServiceRef{"shop", "prod-eu", "db"}, res.Deploy.Promoted[0].Release.Number))
 	if len(vols) != 1 || vols[0].Pending || len(dbSpec.Mounts) != 1 || dbSpec.Mounts[0].Volume != vols[0].DockerName {
 		t.Fatalf("db volumes %+v, mounts %+v", vols, dbSpec.Mounts)

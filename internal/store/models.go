@@ -66,6 +66,7 @@ type AuditEvent struct {
 	Summary       string
 	CreatedAt     time.Time
 	DetailID      *int64
+	OrgID         *int64
 }
 
 type Backup struct {
@@ -166,6 +167,7 @@ type DataAccess struct {
 
 type DataPolicyRule struct {
 	ID            int64
+	OrgID         int64
 	ProjectID     *int64
 	EnvironmentID *int64
 	Subject       string
@@ -241,8 +243,23 @@ type JoinToken struct {
 	UsedByServerID       *int64
 }
 
+type Org struct {
+	ID        int64
+	Slug      string
+	Name      string
+	CreatedAt time.Time
+}
+
+type OrgMember struct {
+	OrgID     int64
+	UserID    int64
+	Role      string
+	CreatedAt time.Time
+}
+
 type Project struct {
 	ID         int64
+	OrgID      int64
 	Name       string
 	CreatedAt  time.Time
 	ArchivedAt *time.Time
@@ -399,6 +416,8 @@ type Token struct {
 	DataNonProduction *string
 	DataSensitive     *string
 	UserID            *int64
+	OrgID             *int64
+	Operator          bool
 }
 
 type User struct {
@@ -406,9 +425,9 @@ type User struct {
 	Email        string
 	Name         string
 	PasswordHash string
-	Role         string
 	CreatedAt    time.Time
 	DisabledAt   *time.Time
+	Operator     bool
 }
 
 type Variable struct {

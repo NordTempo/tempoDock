@@ -14,15 +14,23 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// ListServers returns all servers with their link status, facts,
-// placement settings and load, and for unlimited admins their latest
-// resource sample (from memory). Servers that are still joining (an
-// unused join token) are listed too, with ID 0.
+// ListServers returns servers with their link status, facts, placement
+// settings and load. Operators get every server, those still joining (an
+// unused join token, listed with ID 0) and their latest resource sample
+// (from memory); others only the servers their org's environments run on.
 func (c *Core) ListServers(ctx context.Context, a Actor) ([]apitypes.Server, error) {
+	if a.Operator {
+		return c.listServers(ctx, true)
+	}
 	if err := a.require(apitypes.ScopeRead, "listing servers"); err != nil {
 		return nil, err
 	}
-	return c.listServers(ctx, a.readsServerStats())
+	ids, err := c.store.ListOrgServerIDs(ctx, a.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	all, err := c.listServers(ctx, false)
+	return slices.DeleteFunc(all, func(s apitypes.Server) bool { return s.ID == 0 || !slices.Contains(ids, s.ID) }), err
 }
 
 // listServers loads every server and pending join token in two queries.
@@ -80,7 +88,7 @@ func (c *Core) serverByID(ctx context.Context, id int64) (apitypes.Server, bool,
 // placed on it and its services with their usage. A joining server has
 // nothing placed yet.
 func (c *Core) GetServer(ctx context.Context, a Actor, name string) (apitypes.ServerDetail, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing servers"); err != nil {
+	if err := a.requireOperator("managing servers"); err != nil {
 		return apitypes.ServerDetail{}, err
 	}
 	all, err := c.listServers(ctx, true)
@@ -160,7 +168,7 @@ func (c *Core) serverServices(ctx context.Context, serverID int64, link serverLi
 // enabled on every start, and its base domain falls back to the config's
 // base_domain while unset.
 func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apitypes.UpdateServerRequest) (apitypes.Server, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing servers"); err != nil {
+	if err := a.requireOperator("managing servers"); err != nil {
 		return apitypes.Server{}, err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -214,7 +222,7 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 		if err != nil {
 			return apitypes.Server{}, err
 		}
-		c.audit(ctx, a, "server.update", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s %s", srv.Name, strings.Join(changes, ", ")))
+		c.audit(ctx, a.platform(), "server.update", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s %s", srv.Name, strings.Join(changes, ", ")))
 		c.publishServer(ctx, srv.ID)
 	}
 	return c.serverDetail(ctx, srv.ID)
@@ -241,7 +249,7 @@ func (c *Core) serverDetail(ctx context.Context, id int64) (apitypes.Server, err
 // server joins again under its name and keeps its environments. Admin
 // only.
 func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerRequest) (apitypes.AddedServer, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "adding a server"); err != nil {
+	if err := a.requireOperator("adding a server"); err != nil {
 		return apitypes.AddedServer{}, err
 	}
 	if err := validName("server", req.Name); err != nil {
@@ -268,7 +276,7 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 	if err != nil {
 		return apitypes.AddedServer{}, err
 	}
-	c.audit(ctx, a, "server.add", nil, nil, "server "+req.Name, fmt.Sprintf("created a join token for server %s, valid until %s", req.Name, row.ExpiresAt.Format(time.RFC3339)))
+	c.audit(ctx, a.platform(), "server.add", nil, nil, "server "+req.Name, fmt.Sprintf("created a join token for server %s, valid until %s", req.Name, row.ExpiresAt.Format(time.RFC3339)))
 	srv := joiningServer(row)
 	if existing, ok, err := c.serverByName(ctx, req.Name); err == nil && ok {
 		srv = existing
@@ -328,9 +336,9 @@ func (c *Core) remoteServer(ctx context.Context, name, action string) (store.Ser
 // RevokeServer forgets a remote server's key and drops its connection:
 // it can't connect again until it re-joins with a new token (AddServer
 // under the same name). Its environments stay placed there, and their
-// apps keep running on that machine. Admin only.
+// apps keep running on that machine. Operators only.
 func (c *Core) RevokeServer(ctx context.Context, a Actor, name string) (apitypes.Server, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "revoking a server"); err != nil {
+	if err := a.requireOperator("revoking a server"); err != nil {
 		return apitypes.Server{}, err
 	}
 	srv, err := c.remoteServer(ctx, name, "revoking")
@@ -348,16 +356,16 @@ func (c *Core) RevokeServer(ctx context.Context, a Actor, name string) (apitypes
 		if c.nodes != nil {
 			c.nodes.Disconnect(srv.ID)
 		}
-		c.audit(ctx, a, "server.revoke", nil, nil, "server "+srv.Name, fmt.Sprintf("revoked server %s; its apps keep running there until it joins again", srv.Name))
+		c.audit(ctx, a.platform(), "server.revoke", nil, nil, "server "+srv.Name, fmt.Sprintf("revoked server %s; its apps keep running there until it joins again", srv.Name))
 		c.publishServer(ctx, srv.ID)
 	}
 	return c.serverDetail(ctx, srv.ID)
 }
 
 // RotateServerKey has an online remote server switch to a new link key
-// (ADR 0014 section 2); it reconnects with it at once. Admin only.
+// (ADR 0014 section 2); it reconnects with it at once. Operators only.
 func (c *Core) RotateServerKey(ctx context.Context, a Actor, name string) (apitypes.Server, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "rotating a server's key"); err != nil {
+	if err := a.requireOperator("rotating a server's key"); err != nil {
 		return apitypes.Server{}, err
 	}
 	srv, err := c.remoteServer(ctx, name, "rotating keys")
@@ -371,7 +379,7 @@ func (c *Core) RotateServerKey(ctx context.Context, a Actor, name string) (apity
 	if err != nil {
 		return apitypes.Server{}, c.nodeErr(srv.ID, err)
 	}
-	c.audit(ctx, a, "server.rotate_key", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s switches to key %s", srv.Name, fp))
+	c.audit(ctx, a.platform(), "server.rotate_key", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s switches to key %s", srv.Name, fp))
 	return c.serverDetail(ctx, srv.ID)
 }
 
@@ -379,9 +387,9 @@ func (c *Core) RotateServerKey(ctx context.Context, a Actor, name string) (apity
 // on, or cancels the join tokens of a server that hasn't joined yet. Its
 // project pins go with it, and archived projects' environments move to
 // the local server (nothing of theirs runs; containers an unreachable
-// server still had are left to it). Admin only.
+// server still had are left to it). Operators only.
 func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "removing a server"); err != nil {
+	if err := a.requireOperator("removing a server"); err != nil {
 		return err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -393,7 +401,7 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		if cancelled == 0 {
 			return notFound("server %q not found", name)
 		}
-		c.audit(ctx, a, "server.remove", nil, nil, "server "+name, fmt.Sprintf("cancelled the join of server %s", name))
+		c.audit(ctx, a.platform(), "server.remove", nil, nil, "server "+name, fmt.Sprintf("cancelled the join of server %s", name))
 		c.bus.publish(busEvent{ev: apitypes.Event{Type: apitypes.EventServer, Server: &apitypes.Server{Name: name, Status: apitypes.ServerJoining}, Message: "removed"}})
 		return nil
 	}
@@ -429,7 +437,7 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		c.nodes.Disconnect(srv.ID)
 	}
 	c.forgetServer(srv.ID)
-	c.audit(ctx, a, "server.remove", nil, nil, "server "+srv.Name, "removed server "+srv.Name)
+	c.audit(ctx, a.platform(), "server.remove", nil, nil, "server "+srv.Name, "removed server "+srv.Name)
 	gone := apitypes.Server{ID: srv.ID, Name: srv.Name}
 	c.bus.publish(busEvent{ev: apitypes.Event{Type: apitypes.EventServer, Server: &gone, Message: "removed"}})
 	return nil

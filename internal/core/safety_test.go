@@ -23,16 +23,16 @@ func TestResourceNamesDontCollideAcrossProjects(t *testing.T) {
 	h := newHarness(t)
 	refs := []ServiceRef{{"a", "b-c", "s-v"}, {"a-b", "c", "s-v"}}
 	for _, ref := range refs {
-		if _, err := h.c.CreateProject(h.ctx, System, apitypes.CreateProjectRequest{Name: ref.Project}); err != nil {
+		if _, err := h.c.CreateProject(h.ctx, testSystem, apitypes.CreateProjectRequest{Name: ref.Project}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := h.c.CreateEnvironment(h.ctx, System, ref.Project, apitypes.CreateEnvironmentRequest{Name: ref.Environment}); err != nil {
+		if _, err := h.c.CreateEnvironment(h.ctx, testSystem, ref.Project, apitypes.CreateEnvironmentRequest{Name: ref.Environment}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := h.c.CreateService(h.ctx, System, ref.Env(), apitypes.CreateServiceRequest{Name: ref.Service}); err != nil {
+		if _, err := h.c.CreateService(h.ctx, testSystem, ref.Env(), apitypes.CreateServiceRequest{Name: ref.Service}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := h.c.AddVolume(h.ctx, System, ref, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		if _, err := h.c.AddVolume(h.ctx, testSystem, ref, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 			t.Fatal(err)
 		}
 		if r := h.deploy(ref, "app:1"); r.Status != apitypes.ReleaseActive {
@@ -54,18 +54,18 @@ func TestResourceNamesDontCollideAcrossProjects(t *testing.T) {
 func TestDeployRacingArchiveIsRefused(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
-	ss, err := h.c.serviceFor(h.ctx, System, web, apitypes.ScopeDeploy, "deploying")
+	ss, err := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeDeploy, "deploying")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.ArchiveService(h.ctx, System, web); err != nil {
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, web); err != nil {
 		t.Fatal(err)
 	}
-	_, err = h.c.startRelease(h.ctx, System, ss, releaseSpec{source: apitypes.SourceImage, imageRef: "app:1"})
+	_, err = h.c.startRelease(h.ctx, testSystem, ss, releaseSpec{source: apitypes.SourceImage, imageRef: "app:1"})
 	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "archived") {
 		t.Fatalf("deploy after archive: %v", err)
 	}
-	if rels, _ := h.c.ListReleases(h.ctx, System, web, 10); len(rels) != 0 {
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 0 {
 		t.Fatalf("releases = %d, want none", len(rels))
 	}
 }
@@ -86,7 +86,7 @@ func TestConcurrentUploadsAreLimited(t *testing.T) {
 		pr, pw := io.Pipe()
 		clients = append(clients, pw)
 		go func() {
-			_, err := h.c.DeploySource(h.ctx, System, ref, pr, 1<<20)
+			_, err := h.c.DeploySource(h.ctx, testSystem, ref, pr, 1<<20)
 			errs <- err
 		}()
 	}
@@ -98,10 +98,10 @@ func TestConcurrentUploadsAreLimited(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 
-	if _, err := h.c.DeploySource(h.ctx, System, refs[0], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeDeployInProgress {
+	if _, err := h.c.DeploySource(h.ctx, testSystem, refs[0], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeDeployInProgress {
 		t.Fatalf("second upload to one service: %v", err)
 	}
-	if _, err := h.c.DeploySource(h.ctx, System, refs[2], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeConflict {
+	if _, err := h.c.DeploySource(h.ctx, testSystem, refs[2], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("upload over the server cap: %v", err)
 	}
 	for _, pw := range clients {
@@ -207,7 +207,7 @@ func TestFailedReleaseKeepsContainerLogs(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	release := h.rt.HoldHealthChecks()
 	defer release()
-	rel, err := h.c.DeployImage(h.ctx, System, web, apitypes.DeployImageRequest{Image: "app:1"})
+	rel, err := h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestFailedReleaseKeepsContainerLogs(t *testing.T) {
 		t.Fatalf("release %s, running %v", r.Status, h.rt.Running())
 	}
 
-	stream, err := h.c.ServiceLogs(h.ctx, System, web, LogQuery{Release: rel.Number, Tail: 1})
+	stream, err := h.c.ServiceLogs(h.ctx, testSystem, web, LogQuery{Release: rel.Number, Tail: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,11 +240,11 @@ func TestFailedReleaseKeepsContainerLogs(t *testing.T) {
 func TestPendingCertificateIsIssuing(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
-	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
 		t.Fatal(err)
 	}
 	h.rt.SetDomainCheck(func(string) node.DomainCheck { return node.DomainCheck{DNSOK: true} })
-	ss, _ := h.c.serviceFor(h.ctx, System, web, apitypes.ScopeRead, "testing")
+	ss, _ := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
 	status := func(dnsOK time.Time) string {
 		t.Helper()
 		ds, err := h.store.ListDomainsByService(h.ctx, ss.svc.ID)
@@ -307,7 +307,7 @@ func TestHostPortHeldUntilContainerRemoved(t *testing.T) {
 func TestStatefulRecreateFreesOldPort(t *testing.T) {
 	h := newHarness(t)
 	db := h.service("db", apitypes.CreateServiceRequest{Port: 5432})
-	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+	if _, err := h.c.AddVolume(h.ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(db, "postgres:17")
@@ -341,7 +341,7 @@ func TestShutdownLeavesContainersAlone(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	h.deploy(web, "app:1")
 	defer h.rt.HoldHealthChecks()()
-	rel, err := h.c.DeployImage(h.ctx, System, web, apitypes.DeployImageRequest{Image: "app:2"})
+	rel, err := h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,12 +370,12 @@ func TestShutdownLeavesContainersAlone(t *testing.T) {
 func TestRecoveryFindsContainersByLabel(t *testing.T) {
 	h := newHarness(t)
 	db := h.service("db", apitypes.CreateServiceRequest{})
-	if _, err := h.c.AddVolume(h.ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+	if _, err := h.c.AddVolume(h.ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(db, "postgres:17")
 	defer h.rt.HoldHealthChecks()()
-	rel, err := h.c.DeployImage(h.ctx, System, db, apitypes.DeployImageRequest{Image: "postgres:18"})
+	rel, err := h.c.DeployImage(h.ctx, testSystem, db, apitypes.DeployImageRequest{Image: "postgres:18"})
 	if err != nil {
 		t.Fatal(err)
 	}

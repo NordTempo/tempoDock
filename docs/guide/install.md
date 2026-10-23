@@ -53,9 +53,10 @@ builds `bin/dock`; copy it and `deploy/` over and pass
 `DOCK_BINARY=./dock`. The examples below say `DOCK_BINARY=./dock`; use
 whichever binary you have.
 
-The last lines of output print the API address and the first admin token
-(shown once). `install.sh` also creates an admin user `admin@localhost` for
-the UI and prints its generated password to stderr, once. Log in from your
+The last lines of output print the API address and the first operator
+token (shown once). `install.sh` also creates a user `admin@localhost` for
+the UI, the platform's operator and the admin of its first organization,
+and prints its generated password to stderr, once. Log in from your
 laptop, then sign in as that user in the browser it opens, type the code
 from the terminal and approve:
 
@@ -63,8 +64,10 @@ from the terminal and approve:
 dock login http://100.64.0.10:7070
 ```
 
-Keep the admin token for scripts and for creating agent tokens
-(`dock login <url> --token-stdin` works too).
+Keep the operator token for scripts and for creating agent tokens
+(`dock login <url> --token-stdin` works too). Operators run the platform:
+servers, backups and user accounts; an organization's admins manage its
+projects, members' roles and tokens ([ADR 0027](../decisions/0027-organizations.md)).
 
 ### The CLI
 

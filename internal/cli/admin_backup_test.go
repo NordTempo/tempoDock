@@ -28,7 +28,10 @@ func controlPlaneDir(t *testing.T) (dir, cfg string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.DB.Exec("INSERT INTO projects (name) VALUES ('shop')"); err != nil {
+	if _, err := st.CreateOrg(context.Background(), store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB.Exec("INSERT INTO projects (org_id, name) VALUES (1, 'shop')"); err != nil {
 		t.Fatal(err)
 	}
 	_ = st.Close()

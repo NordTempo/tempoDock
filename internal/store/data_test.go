@@ -36,13 +36,13 @@ func newDataFixture(t *testing.T) dataFixture {
 		t.Fatal(err)
 	}
 	f := dataFixture{s: s}
-	f.project, _ = s.CreateProject(ctx, "shop")
+	f.project, _ = s.CreateProject(ctx, CreateProjectParams{OrgID: testOrg(t, s), Name: "shop"})
 	f.staging, _ = s.CreateEnvironment(ctx, CreateEnvironmentParams{ProjectID: f.project.ID, Name: "staging", Kind: "non_production", ServerID: srv.ID})
 	f.prod, _ = s.CreateEnvironment(ctx, CreateEnvironmentParams{ProjectID: f.project.ID, Name: "production", Kind: "production", ServerID: srv.ID})
 	if f.svc, err = s.CreateService(ctx, CreateServiceParams{EnvironmentID: f.staging.ID, Name: "postgres", Image: "postgres:16"}); err != nil {
 		t.Fatal(err)
 	}
-	if f.user, err = s.CreateUser(ctx, CreateUserParams{Email: "a@example.com", Name: "A", PasswordHash: "x", Role: "deploy"}); err != nil {
+	if f.user, err = s.CreateUser(ctx, CreateUserParams{Email: "a@example.com", Name: "A", PasswordHash: "x"}); err != nil {
 		t.Fatal(err)
 	}
 	return f
@@ -107,7 +107,8 @@ func TestDataMigrationOnExistingDatabase(t *testing.T) {
 	if err != nil || tok.DataProduction != nil || tok.DataNonProduction != nil || tok.DataSensitive != nil {
 		t.Errorf("token = %+v, %v; want no data override", tok, err)
 	}
-	events, err := s.ListAuditEvents(ctx, ListAuditEventsParams{BeforeID: math.MaxInt64, MaxRows: 10})
+	org := int64(1) // the orgs migration moves everything into org 1
+	events, err := s.ListAuditEvents(ctx, ListAuditEventsParams{OrgID: &org, BeforeID: math.MaxInt64, MaxRows: 10})
 	if err != nil || len(events) != 1 || events[0].AuditEvent.DetailID != nil {
 		t.Errorf("audit events = %+v, %v; want one without detail", events, err)
 	}
@@ -140,12 +141,12 @@ func TestDataPolicyLookup(t *testing.T) {
 	ctx := context.Background()
 	f := newDataFixture(t)
 	s := f.s
-	other, _ := s.CreateProject(ctx, "other")
-	pid, sid, pid2, prodID := f.project.ID, f.staging.ID, other.ID, f.prod.ID
+	other, _ := s.CreateProject(ctx, CreateProjectParams{OrgID: f.project.OrgID, Name: "other"})
+	pid, sid, pid2, prodID, org := f.project.ID, f.staging.ID, other.ID, f.prod.ID, f.project.OrgID
 
 	add := func(p, e *int64, subject, kind, level string) {
 		t.Helper()
-		err := s.AddDataPolicyRule(ctx, AddDataPolicyRuleParams{ProjectID: p, EnvironmentID: e, Subject: subject, Kind: kind, Level: level, Sensitive: "masked"})
+		err := s.AddDataPolicyRule(ctx, AddDataPolicyRuleParams{OrgID: org, ProjectID: p, EnvironmentID: e, Subject: subject, Kind: kind, Level: level, Sensitive: "masked"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -174,7 +175,7 @@ func TestDataPolicyLookup(t *testing.T) {
 		{"project", pid, 0, "role:deploy/non_production=read role:deploy/non_production=schema tokens/non_production=none"},
 		{"default", 0, 0, "role:deploy/non_production=schema tokens/non_production=none"},
 	} {
-		rules, err := s.ListEffectiveDataPolicyRules(ctx, ListEffectiveDataPolicyRulesParams{ProjectID: tc.p, EnvironmentID: tc.e})
+		rules, err := s.ListEffectiveDataPolicyRules(ctx, ListEffectiveDataPolicyRulesParams{OrgID: org, ProjectID: tc.p, EnvironmentID: tc.e})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -183,23 +184,23 @@ func TestDataPolicyLookup(t *testing.T) {
 		}
 	}
 
-	at, _ := s.ListDataPolicyRules(ctx, ListDataPolicyRulesParams{ProjectID: pid})
+	at, _ := s.ListDataPolicyRules(ctx, ListDataPolicyRulesParams{OrgID: org, ProjectID: pid})
 	if got := scopes(at); got != "role:deploy/non_production=read" {
 		t.Errorf("project rules = %s", got)
 	}
 
 	// One rule per scope, subject and kind, the default included.
 	for _, scope := range [][2]*int64{{nil, nil}, {&pid, nil}, {&pid, &sid}} {
-		err := s.AddDataPolicyRule(ctx, AddDataPolicyRuleParams{ProjectID: scope[0], EnvironmentID: scope[1], Subject: "role:deploy", Kind: "non_production", Level: "none", Sensitive: "masked"})
+		err := s.AddDataPolicyRule(ctx, AddDataPolicyRuleParams{OrgID: org, ProjectID: scope[0], EnvironmentID: scope[1], Subject: "role:deploy", Kind: "non_production", Level: "none", Sensitive: "masked"})
 		if !IsUnique(err) {
 			t.Errorf("duplicate rule at %v: err = %v, want unique violation", scope, err)
 		}
 	}
 
-	if err := s.DeleteDataPolicyRules(ctx, DeleteDataPolicyRulesParams{ProjectID: pid}); err != nil {
+	if err := s.DeleteDataPolicyRules(ctx, DeleteDataPolicyRulesParams{OrgID: org, ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
-	rules, _ := s.ListEffectiveDataPolicyRules(ctx, ListEffectiveDataPolicyRulesParams{ProjectID: pid, EnvironmentID: sid})
+	rules, _ := s.ListEffectiveDataPolicyRules(ctx, ListEffectiveDataPolicyRulesParams{OrgID: org, ProjectID: pid, EnvironmentID: sid})
 	if got := scopes(rules); got != "role:deploy/non_production=schema role:deploy/non_production=write tokens/non_production=none" {
 		t.Errorf("after clearing the project's rules: %s", got)
 	}
@@ -265,7 +266,7 @@ func TestSavedQueries(t *testing.T) {
 	f := newDataFixture(t)
 	s := f.s
 	t0 := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
-	other, _ := s.CreateUser(ctx, CreateUserParams{Email: "b@example.com", Name: "B", PasswordHash: "x", Role: "deploy"})
+	other, _ := s.CreateUser(ctx, CreateUserParams{Email: "b@example.com", Name: "B", PasswordHash: "x"})
 
 	q, err := s.SaveQuery(ctx, SaveQueryParams{ServiceID: f.svc.ID, UserID: f.user.ID, Name: "paid", Sql: "select 1", Now: t0})
 	if err != nil {
@@ -346,9 +347,9 @@ func TestDataQueryPlans(t *testing.T) {
 	f := newDataFixture(t)
 	now := time.Now()
 	checkPlans(t, f.s, []planCase{
-		{"ListDataPolicyRules", listDataPolicyRules, []any{1, 2}},
-		{"ListEffectiveDataPolicyRules", listEffectiveDataPolicyRules, []any{1, 2}},
-		{"DeleteDataPolicyRules", deleteDataPolicyRules, []any{1, 2}},
+		{"ListDataPolicyRules", listDataPolicyRules, []any{1, 1, 2}},
+		{"ListEffectiveDataPolicyRules", listEffectiveDataPolicyRules, []any{1, 1, 2}},
+		{"DeleteDataPolicyRules", deleteDataPolicyRules, []any{1, 1, 2}},
 		{"GetDataAccess", getDataAccess, []any{1}},
 		{"SetDataGrantsSyncedHash", setDataGrantsSyncedHash, []any{"h", 1}},
 		{"ListSensitiveColumns", listSensitiveColumns, []any{1}},

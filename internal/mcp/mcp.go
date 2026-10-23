@@ -16,6 +16,7 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -40,16 +41,24 @@ type handler struct {
 // call is one tool call by a Dock actor.
 type call = mcpkit.Call[core.Actor]
 
+// orgKey carries the request's `org` parameter to Authenticate.
+type orgKey struct{}
+
 // Handler returns the MCP endpoint, which the API mounts at /api/v1/mcp.
-// Only tokens are accepted (API tokens and `dock login` tokens).
+// Only tokens are accepted (API tokens and `dock login` tokens). A `dock
+// login` token of a user in several orgs names one in the URL:
+// /api/v1/mcp?org=<slug>.
 func Handler(c *core.Core, opts Options) http.Handler {
 	h := &handler{core: c}
-	return mcpkit.New(mcpkit.Options[core.Actor]{
+	srv := mcpkit.New(mcpkit.Options[core.Actor]{
 		Name: "tempo-dock", Title: "Tempo Dock", Version: version.Version,
 		Instructions: instructions,
-		Authenticate: c.AuthenticateToken,
-		Realm:        "dock",
-		NoToken:      "send `Authorization: Bearer <token>` with a Dock API token",
+		Authenticate: func(ctx context.Context, token string) (core.Actor, error) {
+			org, _ := ctx.Value(orgKey{}).(string)
+			return c.AuthenticateToken(ctx, token, org)
+		},
+		Realm:   "dock",
+		NoToken: "send `Authorization: Bearer <token>` with a Dock API token",
 		Tools: func(s *mcpkit.Server[core.Actor]) {
 			h.addPlatformTools(s)
 			mcpkit.DataTools(s, c, serviceOf, core.ServiceRef.String)
@@ -60,6 +69,9 @@ func Handler(c *core.Core, opts Options) http.Handler {
 		},
 		Hints:  hints,
 		Logger: opts.Logger,
+	})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), orgKey{}, r.URL.Query().Get("org"))))
 	})
 }
 

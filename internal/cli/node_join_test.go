@@ -48,6 +48,9 @@ func TestNodeJoinAndRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.CreateOrg(ctx, store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
 	defer func() { _ = st.Close() }()
 	box, _ := secrets.New(bytes.Repeat([]byte{1}, secrets.KeySize))
 	id, err := remote.NewIdentity()
@@ -62,7 +65,7 @@ func TestNodeJoinAndRun(t *testing.T) {
 	go func() { _ = hub.Serve(ctx, ln) }()
 	srv := httptest.NewServer(api.New(c, api.Options{Logger: quiet}))
 	defer srv.Close()
-	tok, err := c.CreateToken(ctx, core.System, apitypes.CreateTokenRequest{Name: "admin", Scope: apitypes.ScopeAdmin})
+	tok, err := c.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: "admin", Scope: apitypes.ScopeAdmin, Operator: true})
 	if err != nil {
 		t.Fatal(err)
 	}

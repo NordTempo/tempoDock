@@ -11,25 +11,25 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
-	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// Server and user administration needs an admin token that isn't limited
-// to a project; service statistics only need read on the service.
-func TestAdminEndpointsNeedUnlimitedAdmin(t *testing.T) {
+// Running the platform (servers, placement pins, user accounts) needs an
+// operator; an org's admin isn't one. Listing the org's members needs an
+// unlimited admin, and service statistics only read on the service.
+func TestPlatformEndpointsNeedOperator(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	tok, err := f.core.CreateToken(ctx, core.System, apitypes.CreateTokenRequest{Name: "shop-admin", Scope: apitypes.ScopeAdmin, Project: "shop"})
+	tok, err := f.core.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: "shop-admin", Scope: apitypes.ScopeAdmin, Project: "shop"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.tokens["shop-admin"] = tok.Secret
-	servers, err := f.core.ListServers(ctx, core.System)
+	servers, err := f.core.ListServers(ctx, sys)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := "/api/v1/servers/" + servers[0].Name
-	bob, err := f.core.CreateUser(ctx, core.System, apitypes.CreateUserRequest{Email: "bob@example.com", Name: "Bob", Password: "bob's long password", Role: apitypes.ScopeRead})
+	bob, err := f.core.CreateUser(ctx, sys, apitypes.CreateUserRequest{Email: "bob@example.com", Name: "Bob", Password: "bob's long password", Role: apitypes.ScopeRead})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,39 +38,48 @@ func TestAdminEndpointsNeedUnlimitedAdmin(t *testing.T) {
 	type call struct {
 		method, path string
 		body         any
-		ok           int // status for an unlimited admin
+		ok           int // status for an operator
 	}
-	admin := []call{
+	platform := []call{
 		{"GET", server, nil, 200},
 		{"PATCH", server, apitypes.UpdateServerRequest{DisabledForPlacement: new(bool)}, 200},
 		{"GET", server + "/stats?range=24h", nil, 200},
 		{"GET", server + "/stats/live", nil, 0},
 		{"PUT", "/api/v1/projects/blog/placements/non_production", apitypes.PinPlacementRequest{Server: servers[0].Name}, 200},
-		{"GET", "/api/v1/users", nil, 200},
 		{"POST", "/api/v1/users", apitypes.CreateUserRequest{Email: "eve@example.com", Name: "Eve", Password: "eve's long password", Role: apitypes.ScopeRead}, 201},
 		{"POST", user + "/reset-password", nil, 200},
 		{"POST", user + "/disable", nil, 200},
 		{"POST", user + "/enable", nil, 200},
 		{"DELETE", user, nil, 204},
 	}
-	for _, c := range admin {
-		for token, detail := range map[string]string{"deploy": "requires admin", "shop-admin": "unlimited admin token"} {
-			resp, body := f.do(token, c.method, c.path, c.body)
-			var p apitypes.Error
-			_ = json.Unmarshal(body, &p)
-			if resp.StatusCode != 403 || !strings.Contains(p.Detail, detail) {
-				t.Errorf("%s %s as %s: %d %s", c.method, c.path, token, resp.StatusCode, body)
-			}
+	refused := func(token, method, path string, body any, detail string) {
+		t.Helper()
+		resp, b := f.do(token, method, path, body)
+		var p apitypes.Error
+		_ = json.Unmarshal(b, &p)
+		if resp.StatusCode != 403 || !strings.Contains(p.Detail, detail) {
+			t.Errorf("%s %s as %s: %d %s", method, path, token, resp.StatusCode, b)
+		}
+	}
+	for _, c := range platform {
+		for _, token := range []string{"deploy", "shop-admin", "admin"} {
+			refused(token, c.method, c.path, c.body, "not a platform operator")
 		}
 	}
 	// In order: delete comes last.
-	for _, c := range admin {
+	for _, c := range platform {
 		if c.ok == 0 {
 			continue // a live stream; see TestServerStatsLive
 		}
-		if resp, body := f.do("admin", c.method, c.path, c.body); resp.StatusCode != c.ok {
-			t.Errorf("%s %s as admin: %d %s", c.method, c.path, resp.StatusCode, body)
+		if resp, body := f.do("operator", c.method, c.path, c.body); resp.StatusCode != c.ok {
+			t.Errorf("%s %s as operator: %d %s", c.method, c.path, resp.StatusCode, body)
 		}
+	}
+
+	refused("deploy", "GET", "/api/v1/users", nil, "requires admin")
+	refused("shop-admin", "GET", "/api/v1/users", nil, "unlimited admin token")
+	if resp, body := f.do("admin", "GET", "/api/v1/users", nil); resp.StatusCode != 200 {
+		t.Errorf("GET /api/v1/users as admin: %d %s", resp.StatusCode, body)
 	}
 
 	// Listing servers and reading a service's statistics only need read.
@@ -86,11 +95,11 @@ func TestAdminEndpointsNeedUnlimitedAdmin(t *testing.T) {
 
 func TestServerStatsLive(t *testing.T) {
 	f := newFixture(t)
-	servers, _ := f.core.ListServers(context.Background(), core.System)
+	servers, _ := f.core.ListServers(context.Background(), sys)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", f.srv.URL+"/api/v1/servers/"+servers[0].Name+"/stats/live", nil)
-	req.Header.Set("Authorization", "Bearer "+f.tokens["admin"])
+	req.Header.Set("Authorization", "Bearer "+f.tokens["operator"])
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +124,7 @@ func TestServerStatsLive(t *testing.T) {
 func TestResetPasswordAndUserCounts(t *testing.T) {
 	f := newFixture(t)
 	admin := f.login()
-	bob, err := f.core.CreateUser(context.Background(), core.System, apitypes.CreateUserRequest{
+	bob, err := f.core.CreateUser(context.Background(), sys, apitypes.CreateUserRequest{
 		Email: "bob@example.com", Name: "Bob", Password: "bob's long password", Role: apitypes.ScopeAdmin,
 	})
 	if err != nil {
@@ -186,11 +195,10 @@ func TestResetPasswordAndUserCounts(t *testing.T) {
 	}
 }
 
-// Adding, revoking, rotating and removing servers needs an admin token
-// that isn't limited to a project.
-func TestServerLinkEndpointsNeedUnlimitedAdmin(t *testing.T) {
+// Adding, revoking, rotating and removing servers needs an operator.
+func TestServerLinkEndpointsNeedOperator(t *testing.T) {
 	f := newFixture(t)
-	tok, err := f.core.CreateToken(context.Background(), core.System, apitypes.CreateTokenRequest{Name: "shop-admin", Scope: apitypes.ScopeAdmin, Project: "shop"})
+	tok, err := f.core.CreateToken(context.Background(), sys, apitypes.CreateTokenRequest{Name: "shop-admin", Scope: apitypes.ScopeAdmin, Project: "shop"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,11 +213,11 @@ func TestServerLinkEndpointsNeedUnlimitedAdmin(t *testing.T) {
 		{"DELETE", "/api/v1/servers/homelab", nil},
 	}
 	for _, c := range calls {
-		for token, detail := range map[string]string{"deploy": "requires admin", "shop-admin": "unlimited admin token"} {
+		for _, token := range []string{"deploy", "shop-admin", "admin"} {
 			resp, body := f.do(token, c.method, c.path, c.body)
 			var p apitypes.Error
 			_ = json.Unmarshal(body, &p)
-			if resp.StatusCode != 403 || !strings.Contains(p.Detail, detail) {
+			if resp.StatusCode != 403 || !strings.Contains(p.Detail, "not a platform operator") {
 				t.Errorf("%s %s as %s: %d %s", c.method, c.path, token, resp.StatusCode, body)
 			}
 		}
@@ -221,10 +229,10 @@ func TestServerLinkEndpointsNeedUnlimitedAdmin(t *testing.T) {
 func TestPromoteNeedsDeployOnTarget(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	if _, err := f.core.CreateEnvironment(ctx, core.System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+	if _, err := f.core.CreateEnvironment(ctx, sys, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		t.Fatal(err)
 	}
-	tok, err := f.core.CreateToken(ctx, core.System, apitypes.CreateTokenRequest{Name: "staging-deploy", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"})
+	tok, err := f.core.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: "staging-deploy", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"})
 	if err != nil {
 		t.Fatal(err)
 	}

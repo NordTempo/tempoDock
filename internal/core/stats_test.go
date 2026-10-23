@@ -51,7 +51,7 @@ func TestSamplerRates(t *testing.T) {
 
 func (h *harness) serviceID(ref ServiceRef) int64 {
 	h.t.Helper()
-	ss, err := h.c.serviceFor(h.ctx, System, ref, apitypes.ScopeRead, "testing")
+	ss, err := h.c.serviceFor(h.ctx, testSystem, ref, apitypes.ScopeRead, "testing")
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestStatsTickStoresDownsamplesAndPrunes(t *testing.T) {
 	h.c.stats.mu.Lock()
 	h.c.stats.service[svc] = u
 	h.c.stats.mu.Unlock()
-	if got, err := h.c.GetService(h.ctx, System, ref); err != nil || got.Usage == nil || *got.Usage != u {
+	if got, err := h.c.GetService(h.ctx, testSystem, ref); err != nil || got.Usage == nil || *got.Usage != u {
 		t.Fatalf("service usage = %+v, %v", got.Usage, err)
 	}
 
@@ -173,9 +173,9 @@ func TestStatsTickPublishesUsage(t *testing.T) {
 		<-ready
 		return out
 	}
-	admin := follow(System)
-	reader := follow(Actor{Kind: "token", Name: "r", Scope: apitypes.ScopeRead})
-	limitedAdmin := follow(Actor{Kind: "token", Name: "blog", Scope: apitypes.ScopeAdmin, ProjectID: 99, ProjectName: "blog"})
+	admin := follow(testSystem)
+	reader := follow(Actor{Kind: "token", OrgID: 1, Name: "r", Scope: apitypes.ScopeRead})
+	limitedAdmin := follow(Actor{Kind: "token", OrgID: 1, Name: "blog", Scope: apitypes.ScopeAdmin, ProjectID: 99, ProjectName: "blog"})
 
 	base := time.Date(2031, 1, 1, 10, 0, 0, 0, time.UTC)
 	col := newCollector()
@@ -187,7 +187,7 @@ func TestStatsTickPublishesUsage(t *testing.T) {
 		h.c.statsTick(h.ctx, col, at)
 	}
 	// Every stream sees this, so what came before it has been delivered.
-	h.c.bus.publish(busEvent{projectID: 99, ev: apitypes.Event{Type: apitypes.EventDrift, Message: "end"}})
+	h.c.bus.publish(busEvent{orgID: 1, projectID: 99, ev: apitypes.Event{Type: apitypes.EventDrift, Message: "end"}})
 
 	// usage collects a stream's usage events from the test's ticks (the
 	// harness's own collector may publish too, at real times).
@@ -245,13 +245,13 @@ func TestServerUsageInListAndDetail(t *testing.T) {
 	h.c.stats.service[h.serviceID(ref)] = svc
 	h.c.stats.mu.Unlock()
 
-	if list, err := h.c.ListServers(h.ctx, System); err != nil || list[0].Usage == nil || list[0].Usage.CPUs != 4 {
+	if list, err := h.c.ListServers(h.ctx, testSystem); err != nil || list[0].Usage == nil || list[0].Usage.CPUs != 4 {
 		t.Fatalf("admin list = %+v, %v", list, err)
 	}
-	if list, err := h.c.ListServers(h.ctx, Actor{Kind: "token", Name: "r", Scope: apitypes.ScopeRead}); err != nil || list[0].Usage != nil {
+	if list, err := h.c.ListServers(h.ctx, Actor{Kind: "token", OrgID: 1, Name: "r", Scope: apitypes.ScopeRead}); err != nil || list[0].Usage != nil {
 		t.Fatalf("read token list = %+v, %v; want no usage", list, err)
 	}
-	d, err := h.c.GetServer(h.ctx, System, h.c.local.Name)
+	d, err := h.c.GetServer(h.ctx, testSystem, h.c.local.Name)
 	if err != nil || d.Server.Usage == nil || len(d.Services) != 2 {
 		t.Fatalf("detail = %+v, %v", d, err)
 	}
@@ -275,14 +275,14 @@ func TestServiceStatsHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	st, err := h.c.ServiceStats(h.ctx, Actor{Kind: "token", Name: "r", Scope: apitypes.ScopeRead}, ref, "")
+	st, err := h.c.ServiceStats(h.ctx, Actor{Kind: "token", OrgID: 1, Name: "r", Scope: apitypes.ScopeRead}, ref, "")
 	if err != nil || st.Range != apitypes.Range1h || st.ResolutionSeconds != 60 || len(st.Points) != 3 || st.Points[0].CPUPercent != 12.34 {
 		t.Fatalf("stats = %+v, %v", st, err)
 	}
-	if _, err := h.c.ServiceStats(h.ctx, System, ref, "2d"); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.ServiceStats(h.ctx, testSystem, ref, "2d"); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("bad range: %v", err)
 	}
-	other := Actor{Kind: "token", Name: "blog", Scope: apitypes.ScopeAdmin, ProjectID: 99, ProjectName: "blog"}
+	other := Actor{Kind: "token", OrgID: 1, Name: "blog", Scope: apitypes.ScopeAdmin, ProjectID: 99, ProjectName: "blog"}
 	if _, err := h.c.ServiceStats(h.ctx, other, ref, ""); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("other project's token: %v", err)
 	}
@@ -298,11 +298,11 @@ func TestLiveStatsStopWhenUnwatched(t *testing.T) {
 	ref := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
 	h.deploy(ref, "app:1")
 
-	stream, err := h.c.ServiceStatsLive(h.ctx, System, ref)
+	stream, err := h.c.ServiceStatsLive(h.ctx, testSystem, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
-	host, err := h.c.ServerStatsLive(h.ctx, System, h.c.local.Name)
+	host, err := h.c.ServerStatsLive(h.ctx, testSystem, h.c.local.Name)
 	if err != nil {
 		t.Fatal(err)
 	}

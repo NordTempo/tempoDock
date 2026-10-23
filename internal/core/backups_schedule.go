@@ -51,7 +51,11 @@ func (c *Core) scheduleOf(ctx context.Context, ss svcScope, set store.BackupSett
 // UpdateBackupSchedule turns a service's scheduled backups on or off or
 // moves them to another hour.
 func (c *Core) UpdateBackupSchedule(ctx context.Context, a Actor, ref ServiceRef, req apitypes.UpdateBackupScheduleRequest) (apitypes.ServiceBackups, error) {
-	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "changing a backup schedule")
+	// Backups are the platform's (ADR 0027): operators set schedules.
+	if err := a.requireOperator("changing a backup schedule"); err != nil {
+		return apitypes.ServiceBackups{}, err
+	}
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "changing a backup schedule")
 	if err != nil {
 		return apitypes.ServiceBackups{}, err
 	}

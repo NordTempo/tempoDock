@@ -99,7 +99,7 @@ func (p *pool) withRegistry(reg Registry) {
 func (p *pool) createService(env, name string, req apitypes.CreateServiceRequest) ServiceRef {
 	p.t.Helper()
 	req.Name = name
-	if _, err := p.c.CreateService(p.ctx, System, EnvRef{"shop", env}, req); err != nil {
+	if _, err := p.c.CreateService(p.ctx, testSystem, EnvRef{"shop", env}, req); err != nil {
 		p.t.Fatal(err)
 	}
 	return ServiceRef{"shop", env, name}
@@ -112,7 +112,7 @@ func (p *pool) deploySource(ref ServiceRef) apitypes.Release {
 	_ = tw.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: 11, Typeflag: tar.TypeReg})
 	_, _ = tw.Write([]byte("FROM app:1\n"))
 	_ = tw.Close()
-	rel, err := p.c.DeploySource(p.ctx, System, ref, &buf, 1<<20)
+	rel, err := p.c.DeploySource(p.ctx, testSystem, ref, &buf, 1<<20)
 	if err != nil {
 		p.t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func hasOp(ops []string, prefix string) bool {
 func TestRemoteDeployAndOffline(t *testing.T) {
 	p, lab := labPool(t)
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{Port: 3000})
-	if _, err := p.c.AddDomain(p.ctx, System, web, apitypes.AddDomainRequest{Hostname: "web.staging.test"}); err != nil {
+	if _, err := p.c.AddDomain(p.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "web.staging.test"}); err != nil {
 		t.Fatal(err)
 	}
 	if r := p.deploy(web, "app:1"); r.Status != apitypes.ReleaseActive {
@@ -158,15 +158,15 @@ func TestRemoteDeployAndOffline(t *testing.T) {
 	}
 
 	p.setOffline("homelab", true)
-	_, err := p.c.DeployImage(p.ctx, System, web, apitypes.DeployImageRequest{Image: "app:2"})
+	_, err := p.c.DeployImage(p.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"})
 	if CodeOf(err) != apitypes.CodeServerOffline || err.Error() != "server homelab is offline" {
 		t.Fatalf("deploy to an offline server: %v", err)
 	}
-	rels, err := p.c.ListReleases(p.ctx, System, web, 10)
+	rels, err := p.c.ListReleases(p.ctx, testSystem, web, 10)
 	if err != nil || len(rels) != 1 {
 		t.Fatalf("releases after a refused deploy: %d, %v", len(rels), err)
 	}
-	srv, err := p.c.GetServer(p.ctx, System, "homelab")
+	srv, err := p.c.GetServer(p.ctx, testSystem, "homelab")
 	if err != nil || srv.Server.Status != apitypes.ServerOffline {
 		t.Fatalf("homelab: %+v, %v", srv.Server, err)
 	}
@@ -180,11 +180,11 @@ func TestStatusOnOfflineServer(t *testing.T) {
 	p.deploy(web, "app:1")
 	status := func() apitypes.ServiceStatus {
 		t.Helper()
-		svc, err := p.c.GetService(p.ctx, System, web)
+		svc, err := p.c.GetService(p.ctx, testSystem, web)
 		if err != nil {
 			t.Fatal(err)
 		}
-		o, err := p.c.Overview(p.ctx, System, "shop")
+		o, err := p.c.Overview(p.ctx, testSystem, "shop")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -208,7 +208,7 @@ func TestStatusOnOfflineServer(t *testing.T) {
 	if s := status(); s != want {
 		t.Fatalf("offline: %+v", s)
 	}
-	if _, err := p.c.RevokeServer(p.ctx, System, "homelab"); err != nil {
+	if _, err := p.c.RevokeServer(p.ctx, testSystem, "homelab"); err != nil {
 		t.Fatal(err)
 	}
 	want.ServerStatus = apitypes.ServerRevoked
@@ -226,14 +226,14 @@ func TestArchiveOnUnreachableServer(t *testing.T) {
 	api := p.createService("staging", "api", apitypes.CreateServiceRequest{})
 	p.deploy(web, "app:1")
 	p.deploy(api, "app:1")
-	ss, err := p.c.loadService(p.ctx, web)
+	ss, err := p.c.loadService(p.ctx, 1, web)
 	if err != nil {
 		t.Fatal(err)
 	}
 	webCtr := containerName(ss, 1)
 
 	p.setOffline("homelab", true)
-	svc, err := p.c.ArchiveService(p.ctx, System, web)
+	svc, err := p.c.ArchiveService(p.ctx, testSystem, web)
 	if err != nil || svc.ArchivedAt == nil {
 		t.Fatalf("archive: %+v, %v", svc, err)
 	}
@@ -248,10 +248,10 @@ func TestArchiveOnUnreachableServer(t *testing.T) {
 		Hello: remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect}}})
 	waitOps(t, lab, "stop "+webCtr)
 
-	if _, err := p.c.RevokeServer(p.ctx, System, "homelab"); err != nil {
+	if _, err := p.c.RevokeServer(p.ctx, testSystem, "homelab"); err != nil {
 		t.Fatal(err)
 	}
-	proj, err := p.c.ArchiveProject(p.ctx, System, "shop")
+	proj, err := p.c.ArchiveProject(p.ctx, testSystem, "shop")
 	if err != nil || proj.ArchivedAt == nil {
 		t.Fatalf("archive project: %+v, %v", proj, err)
 	}
@@ -297,7 +297,7 @@ func TestArchiveReleasesImages(t *testing.T) {
 	p.c.images.mu.Lock()
 	p.c.images.lastPrune = time.Time{} // the deploys' prune was just now
 	p.c.images.mu.Unlock()
-	if _, err := p.c.ArchiveService(p.ctx, System, web); err != nil {
+	if _, err := p.c.ArchiveService(p.ctx, testSystem, web); err != nil {
 		t.Fatal(err)
 	}
 	digests, ids := kept()
@@ -335,7 +335,7 @@ func TestRegistryInfoAndManualPrune(t *testing.T) {
 	p.deploySource(web)
 	second := p.deploySource(web)
 	p.deploySource(api)
-	if _, err := p.c.ArchiveService(p.ctx, System, api); err != nil {
+	if _, err := p.c.ArchiveService(p.ctx, testSystem, api); err != nil {
 		t.Fatal(err)
 	}
 	idle := func() {
@@ -356,7 +356,7 @@ func TestRegistryInfoAndManualPrune(t *testing.T) {
 	}
 	idle() // the deploys' and the archive's own prune
 
-	info, err := p.c.GetRegistry(p.ctx, System)
+	info, err := p.c.GetRegistry(p.ctx, testSystem)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,11 +375,11 @@ func TestRegistryInfoAndManualPrune(t *testing.T) {
 			t.Fatalf("%s: err = %v", a, err)
 		}
 	}
-	if info, err = p.c.PruneRegistry(p.ctx, System); err != nil || !info.Pruning {
+	if info, err = p.c.PruneRegistry(p.ctx, testSystem); err != nil || !info.Pruning {
 		t.Fatalf("prune: %+v, %v", info, err)
 	}
 	idle()
-	if info, err = p.c.GetRegistry(p.ctx, System); err != nil || info.LastPruneAt == nil || info.LastPruned != 3 || info.CollectPending {
+	if info, err = p.c.GetRegistry(p.ctx, testSystem); err != nil || info.LastPruneAt == nil || info.LastPruned != 3 || info.CollectPending {
 		t.Fatalf("after the prune: %+v, %v", info, err)
 	}
 	if ops := reg.Ops(); ops[len(ops)-1] != "gc" {
@@ -395,7 +395,7 @@ func TestReconnectReconcilesServer(t *testing.T) {
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{Port: 3000})
 	r1 := p.deploy(web, "app:1")
 	p.deploy(web, "app:2")
-	ss, err := p.c.serviceFor(p.ctx, System, web, apitypes.ScopeRead, "testing")
+	ss, err := p.c.serviceFor(p.ctx, testSystem, web, apitypes.ScopeRead, "testing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +409,7 @@ func TestReconnectReconcilesServer(t *testing.T) {
 	waitOps(t, lab, "stop dock_leftover")
 	waitOps(t, lab, "routes ")
 
-	srv, err := p.c.GetServer(p.ctx, System, "homelab")
+	srv, err := p.c.GetServer(p.ctx, testSystem, "homelab")
 	if err != nil || srv.Server.Status != apitypes.ServerOnline || srv.Server.Version != "v9" || srv.Server.DockerVersion != "28.0" {
 		t.Fatalf("homelab after hello: %+v, %v", srv.Server, err)
 	}
@@ -444,7 +444,7 @@ func TestBuildOnBuilderPushesAndPulls(t *testing.T) {
 	if r.Status != apitypes.ReleaseActive {
 		t.Fatalf("release 1: %s (%s)", r.Status, r.Error)
 	}
-	ss, err := p.c.serviceFor(p.ctx, System, web, apitypes.ScopeRead, "testing")
+	ss, err := p.c.serviceFor(p.ctx, testSystem, web, apitypes.ScopeRead, "testing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,7 +483,7 @@ func TestBuildNeedsOnlineBuilder(t *testing.T) {
 	p.acceptProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	p.setOffline("homelab", true)
-	_, err := p.c.DeploySource(p.ctx, System, web, strings.NewReader("x"), 1<<20)
+	_, err := p.c.DeploySource(p.ctx, testSystem, web, strings.NewReader("x"), 1<<20)
 	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "builders: homelab") {
 		t.Fatalf("deploy without a builder: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestProductionBuildsOnlyOnProductionServers(t *testing.T) {
 	p, lab := labPool(t)
 	p.withRegistry(&fakeRegistry{})
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
-	_, err := p.c.DeploySource(p.ctx, System, web, strings.NewReader("x"), 1<<20)
+	_, err := p.c.DeploySource(p.ctx, testSystem, web, strings.NewReader("x"), 1<<20)
 	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "production builds only run on servers that accept production") {
 		t.Fatalf("production build on a non-production builder: %v", err)
 	}
@@ -521,16 +521,16 @@ func TestProductionBuildsOnlyOnProductionServers(t *testing.T) {
 func TestRevokedServerGetsNoCalls(t *testing.T) {
 	p, lab := labPool(t)
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
-	if _, err := p.c.RevokeServer(p.ctx, System, "homelab"); err != nil {
+	if _, err := p.c.RevokeServer(p.ctx, testSystem, "homelab"); err != nil {
 		t.Fatal(err)
 	}
 	p.setOffline("homelab", false) // the hub still has a link
-	_, err := p.c.DeployImage(p.ctx, System, web, apitypes.DeployImageRequest{Image: "app:1"})
+	_, err := p.c.DeployImage(p.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:1"})
 	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "revoked") {
 		t.Fatalf("deploy to a revoked server: %v", err)
 	}
 	p.restart() // and after a restart
-	if _, err := p.c.DeployImage(p.ctx, System, web, apitypes.DeployImageRequest{Image: "app:1"}); CodeOf(err) != apitypes.CodeServerOffline {
+	if _, err := p.c.DeployImage(p.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:1"}); CodeOf(err) != apitypes.CodeServerOffline {
 		t.Fatalf("deploy to a revoked server after restart: %v", err)
 	}
 	if hasOp(lab.Ops(), "pull") || hasOp(lab.Ops(), "start") {
@@ -585,7 +585,7 @@ func TestPromote(t *testing.T) {
 	p.deploy(ServiceRef{"shop", "staging", "cron"}, "ghcr.io/acme/cron:1")
 	builds := len(slices.DeleteFunc(lab.Ops(), func(op string) bool { return !strings.HasPrefix(op, "build ") }))
 
-	res, err := p.c.Promote(p.ctx, System, "shop", apitypes.PromoteRequest{From: "staging", To: "production"})
+	res, err := p.c.Promote(p.ctx, testSystem, "shop", apitypes.PromoteRequest{From: "staging", To: "production"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +638,7 @@ func TestPromoteStopsAtFirstFailure(t *testing.T) {
 		}
 		return nil
 	})
-	res, err := p.c.Promote(p.ctx, System, "shop", apitypes.PromoteRequest{From: "staging", To: "production"})
+	res, err := p.c.Promote(p.ctx, testSystem, "shop", apitypes.PromoteRequest{From: "staging", To: "production"})
 	if err != nil || len(res.Promoted) != 2 {
 		t.Fatalf("promote: %+v, %v", res, err)
 	}
@@ -657,14 +657,14 @@ func TestPromoteStopsAtFirstFailure(t *testing.T) {
 // keep it from being removed.
 func TestServerLifecycle(t *testing.T) {
 	p, _ := labPool(t)
-	added, err := p.c.AddServer(p.ctx, System, apitypes.AddServerRequest{Name: "lab2", AcceptsNonProduction: true, Builder: true})
+	added, err := p.c.AddServer(p.ctx, testSystem, apitypes.AddServerRequest{Name: "lab2", AcceptsNonProduction: true, Builder: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if added.Server.Status != apitypes.ServerJoining || !strings.Contains(added.Command, "NODE_JOIN_TOKEN="+added.Token) {
 		t.Fatalf("added: %+v", added)
 	}
-	if _, err := p.c.AddServer(p.ctx, System, apitypes.AddServerRequest{Name: "homelab"}); CodeOf(err) != apitypes.CodeConflict {
+	if _, err := p.c.AddServer(p.ctx, testSystem, apitypes.AddServerRequest{Name: "homelab"}); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("adding an existing name: %v", err)
 	}
 	tok, err := remote.ParseJoinToken(added.Token)
@@ -684,7 +684,7 @@ func TestServerLifecycle(t *testing.T) {
 	if key, ok, err := ns.NodeKey(p.ctx, fp); !ok || err != nil || key.ID != srv.ID {
 		t.Fatalf("node key: %+v %v %v", key, ok, err)
 	}
-	got, err := p.c.GetServer(p.ctx, System, "lab2")
+	got, err := p.c.GetServer(p.ctx, testSystem, "lab2")
 	if err != nil || got.Server.Ingress != apitypes.IngressCloudflareTunnel || got.Server.TunnelHostname != "abc.cfargotunnel.com" || !got.Server.Builder ||
 		got.Server.BaseDomain != "apps.example.dev" {
 		t.Fatalf("lab2: %+v, %v", got.Server, err)
@@ -692,30 +692,30 @@ func TestServerLifecycle(t *testing.T) {
 
 	// homelab has shop/staging: revoked, it stays, and can't be removed.
 	lab := p.ids["homelab"]
-	rev, err := p.c.RevokeServer(p.ctx, System, "homelab")
+	rev, err := p.c.RevokeServer(p.ctx, testSystem, "homelab")
 	if err != nil || rev.Status != apitypes.ServerRevoked || p.nodes.disconnects[lab] != 1 {
 		t.Fatalf("revoke: %+v, %v (disconnects %d)", rev, err, p.nodes.disconnects[lab])
 	}
 	if p.server("shop", "staging") != "homelab" {
 		t.Fatal("revoking moved the environment")
 	}
-	if err := p.c.RemoveServer(p.ctx, System, "homelab"); CodeOf(err) != apitypes.CodeConflict {
+	if err := p.c.RemoveServer(p.ctx, testSystem, "homelab"); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("removing a server with environments: %v", err)
 	}
 	// Once shop is archived, its staging no longer holds homelab.
-	if _, err := p.c.ArchiveProject(p.ctx, System, "shop"); err != nil {
+	if _, err := p.c.ArchiveProject(p.ctx, testSystem, "shop"); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.c.RemoveServer(p.ctx, System, "homelab"); err != nil {
+	if err := p.c.RemoveServer(p.ctx, testSystem, "homelab"); err != nil {
 		t.Fatalf("removing a server with only archived environments: %v", err)
 	}
 	if got := p.server("shop", "staging"); got != p.c.local.Name {
 		t.Fatalf("archived staging moved to %s, want the local server %s", got, p.c.local.Name)
 	}
-	if err := p.c.RemoveServer(p.ctx, System, "lab2"); err != nil {
+	if err := p.c.RemoveServer(p.ctx, testSystem, "lab2"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.c.GetServer(p.ctx, System, "lab2"); CodeOf(err) != apitypes.CodeNotFound {
+	if _, err := p.c.GetServer(p.ctx, testSystem, "lab2"); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("removed server: %v", err)
 	}
 }
@@ -728,15 +728,15 @@ func TestDomainsFollowTheirServer(t *testing.T) {
 	p.nodes.add(lab, p.rts[lab], remote.Hello{Facts: remote.Facts{Ingress: remote.IngressCloudflareTunnel, TunnelHostname: "t1.cfargotunnel.com"}})
 	p.c.NodeStatus(p.nodes.State(lab))
 	base := "up.example.dev"
-	if _, err := p.c.UpdateServer(p.ctx, System, "homelab", apitypes.UpdateServerRequest{BaseDomain: &base}); err != nil {
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, "homelab", apitypes.UpdateServerRequest{BaseDomain: &base}); err != nil {
 		t.Fatal(err)
 	}
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
-	gen, err := p.c.GenerateDomain(p.ctx, System, web)
+	gen, err := p.c.GenerateDomain(p.ctx, testSystem, web)
 	if err != nil || gen.Domain.Hostname != "web-shop-staging.up.example.dev" {
 		t.Fatalf("generated: %+v, %v", gen.Domain, err)
 	}
-	custom, err := p.c.AddDomain(p.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
+	custom, err := p.c.AddDomain(p.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -754,7 +754,7 @@ func TestPlainHTTPNode(t *testing.T) {
 	p.nodes.add(lab, p.rts[lab], remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect, PublicIPs: []string{"192.0.2.7"}, PlainHTTP: true}})
 	p.c.NodeStatus(p.nodes.State(lab))
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
-	d, err := p.c.AddDomain(p.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
+	d, err := p.c.AddDomain(p.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
 	if err != nil || d.Domain.URL != "http://shop.example.com" {
 		t.Fatalf("domain on a plain HTTP node: %+v, %v", d.Domain, err)
 	}

@@ -22,7 +22,8 @@ WHERE id = sqlc.arg(id);
 -- The rules set at exactly one scope: project_id and environment_id 0 for
 -- the default, environment_id 0 for a project.
 SELECT * FROM data_policy_rules
-WHERE coalesce(project_id, 0) = +CAST(sqlc.arg(project_id) AS INTEGER)
+WHERE org_id = +sqlc.arg(org_id)
+  AND coalesce(project_id, 0) = +CAST(sqlc.arg(project_id) AS INTEGER)
   AND coalesce(environment_id, 0) = +CAST(sqlc.arg(environment_id) AS INTEGER)
 ORDER BY subject, kind;
 
@@ -33,21 +34,23 @@ ORDER BY subject, kind;
 -- the row with environment_id set, then project_id set, then the default,
 -- then the built-in defaults. Unordered: at most 18 rows.
 SELECT * FROM data_policy_rules
-WHERE coalesce(project_id, 0) IN (0, +CAST(sqlc.arg(project_id) AS INTEGER))
+WHERE org_id = +sqlc.arg(org_id)
+  AND coalesce(project_id, 0) IN (0, +CAST(sqlc.arg(project_id) AS INTEGER))
   AND coalesce(environment_id, 0) IN (0, +CAST(sqlc.arg(environment_id) AS INTEGER));
 
 -- name: DeleteDataPolicyRules :exec
 -- Removes the rules at one scope (see ListDataPolicyRules); replacing a
 -- scope's policy is this plus AddDataPolicyRule per rule in one transaction.
 DELETE FROM data_policy_rules
-WHERE coalesce(project_id, 0) = +CAST(sqlc.arg(project_id) AS INTEGER)
+WHERE org_id = +sqlc.arg(org_id)
+  AND coalesce(project_id, 0) = +CAST(sqlc.arg(project_id) AS INTEGER)
   AND coalesce(environment_id, 0) = +CAST(sqlc.arg(environment_id) AS INTEGER);
 
 -- name: AddDataPolicyRule :exec
 -- NULL project_id and environment_id add to the default policy; a second
 -- rule for the same scope, subject and kind is a unique violation.
-INSERT INTO data_policy_rules (project_id, environment_id, subject, kind, level, sensitive)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO data_policy_rules (org_id, project_id, environment_id, subject, kind, level, sensitive)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetDataAccess :one
 SELECT * FROM data_access WHERE service_id = ?;
@@ -158,8 +161,8 @@ RETURNING id;
 -- name: AddAuditEventWithDetail :one
 -- AddAuditEvent with a detail row (AddAuditDetail, in the same
 -- transaction).
-INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, project_id, environment_id, target, summary, created_at, detail_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, org_id, project_id, environment_id, target, summary, created_at, detail_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetAuditDetail :one

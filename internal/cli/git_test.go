@@ -16,10 +16,10 @@ func TestGitConnect(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)
 	ctx := context.Background()
-	if _, err := srv.core.CreateProject(ctx, core.System, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
+	if _, err := srv.core.CreateProject(ctx, sys, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.core.CreateService(ctx, core.System, core.EnvRef{Project: "shop", Environment: "production"}, apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+	if _, err := srv.core.CreateService(ctx, sys, core.EnvRef{Project: "shop", Environment: "production"}, apitypes.CreateServiceRequest{Name: "web"}); err != nil {
 		t.Fatal(err)
 	}
 	if code, _, stderr := execStdin(t, srv.tokens[apitypes.ScopeDeploy], "login", srv.url, "--token-stdin"); code != 0 {

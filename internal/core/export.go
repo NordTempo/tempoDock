@@ -83,7 +83,7 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 	}
 
 	for _, e := range envs {
-		if !a.canSee(p.ID, e.ID) {
+		if !a.canSee(p.OrgID, p.ID, e.ID) {
 			continue
 		}
 		ee := apitypes.EnvironmentExport{Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), SharedVariables: shared[e.ID]}

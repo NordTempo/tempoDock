@@ -68,16 +68,16 @@ func dataHarness(t *testing.T, env string) (*harness, ServiceRef, func(string)) 
 	addr, psql := startPostgres(t)
 	psql(dataSeed)
 	h.rt.DialTo(addr)
-	if _, err := h.c.CreateProject(h.ctx, System, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
+	if _, err := h.c.CreateProject(h.ctx, testSystem, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
 		t.Fatal(err)
 	}
 	if env != "production" {
-		if _, err := h.c.CreateEnvironment(h.ctx, System, "shop", apitypes.CreateEnvironmentRequest{Name: env}); err != nil {
+		if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: env}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	db := ServiceRef{"shop", env, "db"}
-	if _, err := h.c.CreateService(h.ctx, System, db.Env(), apitypes.CreateServiceRequest{Name: "db", Image: "postgres:17-alpine"}); err != nil {
+	if _, err := h.c.CreateService(h.ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "db", Image: "postgres:17-alpine"}); err != nil {
 		t.Fatal(err)
 	}
 	h.setVars(db, map[string]string{"POSTGRES_PASSWORD": ownerPassword})
@@ -108,7 +108,7 @@ func (h *harness) query(a Actor, ref ServiceRef, sql string) ([]apitypes.DataQue
 
 func (h *harness) auditCount(action string) int {
 	h.t.Helper()
-	evs, err := h.c.ListAudit(h.ctx, System, AuditFilter{Action: action})
+	evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: action})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestIntegrationDataReads(t *testing.T) {
 	// A table created after the last sync: once the schema is read again,
 	// the masked reader is synced again.
 	psql("CREATE TABLE notes (id int PRIMARY KEY, body text)")
-	ss, _ := h.c.loadService(h.ctx, db)
+	ss, _ := h.c.loadService(h.ctx, 1, db)
 	h.c.data.Forget(ss.svc.ID)
 	if frames, err := h.query(dev, db, "SELECT count(*) FROM notes"); err != nil || frames[len(frames)-1].Type != apitypes.FrameEnd {
 		t.Fatalf("new table: %+v %v", frames, err)
@@ -458,17 +458,17 @@ func TestIntegrationDataRealDial(t *testing.T) {
 	c := dockerHarness(t)
 	ctx := context.Background()
 	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
-	if _, err := c.CreateProject(ctx, System, apitypes.CreateProjectRequest{Name: project}); err != nil {
+	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
 		t.Fatal(err)
 	}
 	db := ServiceRef{project, "production", "db"}
-	if _, err := c.CreateService(ctx, System, db.Env(), apitypes.CreateServiceRequest{Name: "db", Port: 5432, HealthCheckTimeoutSeconds: 60}); err != nil {
+	if _, err := c.CreateService(ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "db", Port: 5432, HealthCheckTimeoutSeconds: 60}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.SetVariables(ctx, System, db.Env(), apitypes.SetVariablesRequest{Service: "db", Set: map[string]string{"POSTGRES_PASSWORD": ownerPassword, "POSTGRES_DB": "shop"}, Apply: true}); err != nil {
+	if _, err := c.SetVariables(ctx, testSystem, db.Env(), apitypes.SetVariablesRequest{Service: "db", Set: map[string]string{"POSTGRES_PASSWORD": ownerPassword, "POSTGRES_DB": "shop"}, Apply: true}); err != nil {
 		t.Fatal(err)
 	}
-	rel, err := c.DeployImage(ctx, System, db, apitypes.DeployImageRequest{Image: "postgres:17-alpine"})
+	rel, err := c.DeployImage(ctx, testSystem, db, apitypes.DeployImageRequest{Image: "postgres:17-alpine"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,14 +479,14 @@ func TestIntegrationDataRealDial(t *testing.T) {
 	// image's init restarts the server.
 	var info apitypes.DataInfo
 	for start := time.Now(); ; time.Sleep(500 * time.Millisecond) {
-		if info, err = c.SetupData(ctx, System, db); err == nil || time.Since(start) > time.Minute {
+		if info, err = c.SetupData(ctx, testSystem, db); err == nil || time.Since(start) > time.Minute {
 			break
 		}
 	}
 	if err != nil || info.Status != apitypes.DataReady {
 		t.Fatalf("setup: %+v %v", info, err)
 	}
-	stream, err := c.DataQuery(ctx, System, db, apitypes.DataQueryRequest{SQL: "SELECT current_database(), current_user"})
+	stream, err := c.DataQuery(ctx, testSystem, db, apitypes.DataQueryRequest{SQL: "SELECT current_database(), current_user"})
 	if err != nil {
 		t.Fatal(err)
 	}

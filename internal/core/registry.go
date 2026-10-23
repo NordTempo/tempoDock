@@ -38,9 +38,9 @@ type Registry interface {
 
 // GetRegistry describes the platform registry for the console: its size,
 // how pruning went since the daemon started, and the services keeping
-// images in it, in one query. Unlimited admins only.
+// images in it, in one query. Operators only.
 func (c *Core) GetRegistry(ctx context.Context, a Actor) (apitypes.Registry, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "reading the registry"); err != nil {
+	if err := a.requireOperator("reading the registry"); err != nil {
 		return apitypes.Registry{}, err
 	}
 	return c.registryInfo(ctx)
@@ -93,9 +93,9 @@ func (c *Core) registryInfo(ctx context.Context) (apitypes.Registry, error) {
 // the images no release keeps are deleted and their layers collected
 // (the registry stops for those seconds). It answers with the registry,
 // pruning; registry.pruned or registry.prune_failed is audited when it
-// ends. Refused while builds or pulls use the registry. Unlimited admins.
+// ends. Refused while builds or pulls use the registry. Operators only.
 func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "pruning the registry"); err != nil {
+	if err := a.requireOperator("pruning the registry"); err != nil {
 		return apitypes.Registry{}, err
 	}
 	if c.reg == nil {

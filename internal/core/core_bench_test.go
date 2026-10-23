@@ -14,7 +14,6 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/secrets"
-	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Benchmarks for the daemon's hot read paths, on a seeded database. The
@@ -43,10 +42,7 @@ func newBenchCore(b *testing.B) *benchCore {
 	b.Helper()
 	ctx := context.Background()
 	dir := b.TempDir()
-	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
-	if err != nil {
-		b.Fatal(err)
-	}
+	st := openTestStore(b, filepath.Join(dir, "dock.db"))
 	box, err := secrets.New(bytes.Repeat([]byte{7}, secrets.KeySize))
 	if err != nil {
 		b.Fatal(err)
@@ -82,35 +78,35 @@ func (bc *benchCore) seed(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	must(c.CreateProject(ctx, System, apitypes.CreateProjectRequest{Name: "big"}))
+	must(c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: "big"}))
 	var pending []ServiceRef
 	var numbers []int64
 	for _, env := range benchEnvs {
 		if env != "production" {
-			must(c.CreateEnvironment(ctx, System, "big", apitypes.CreateEnvironmentRequest{Name: env}))
+			must(c.CreateEnvironment(ctx, testSystem, "big", apitypes.CreateEnvironmentRequest{Name: env}))
 		}
 		ref := EnvRef{"big", env}
-		must(c.SetVariables(ctx, System, ref, apitypes.SetVariablesRequest{Set: map[string]string{
+		must(c.SetVariables(ctx, testSystem, ref, apitypes.SetVariablesRequest{Set: map[string]string{
 			"LOG_LEVEL": "info", "REGION": "eu-north", "FEATURES": "a,b,c",
 			"API_URL": "http://${{svc-01.DOCK_PRIVATE_DOMAIN}}:${{svc-01.PORT}}",
 		}}))
 		for i := range benchServices {
 			name := fmt.Sprintf("svc-%02d", i)
-			must(c.CreateService(ctx, System, ref, apitypes.CreateServiceRequest{Name: name, Image: "app:1", Port: 8080}))
-			must(c.SetVariables(ctx, System, ref, apitypes.SetVariablesRequest{Service: name, Set: map[string]string{
+			must(c.CreateService(ctx, testSystem, ref, apitypes.CreateServiceRequest{Name: name, Image: "app:1", Port: 8080}))
+			must(c.SetVariables(ctx, testSystem, ref, apitypes.SetVariablesRequest{Service: name, Set: map[string]string{
 				"DATABASE_URL": "postgres://app:secret@db:5432/" + name,
 				"SECRET_KEY":   "0123456789abcdef0123456789abcdef",
 				"UPSTREAM":     "${{svc-00.DOCK_PRIVATE_DOMAIN}} ${{shared.REGION}}",
 			}}))
 			svc := ServiceRef{"big", env, name}
 			if env == "production" {
-				must(c.AddDomain(ctx, System, svc, apitypes.AddDomainRequest{Hostname: name + ".big.example.com"}))
+				must(c.AddDomain(ctx, testSystem, svc, apitypes.AddDomainRequest{Hostname: name + ".big.example.com"}))
 			}
 		}
-		must(c.ApplyChanges(ctx, System, ref))
+		must(c.ApplyChanges(ctx, testSystem, ref))
 		for i := range benchServices {
 			svc := ServiceRef{"big", env, fmt.Sprintf("svc-%02d", i)}
-			rel, err := c.DeployImage(ctx, System, svc, apitypes.DeployImageRequest{})
+			rel, err := c.DeployImage(ctx, testSystem, svc, apitypes.DeployImageRequest{})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -122,13 +118,13 @@ func (bc *benchCore) seed(b *testing.B) {
 	}
 	svc := ServiceRef{"big", "production", "svc-00"}
 	for i := 1; i < benchReleases; i++ {
-		rel, err := c.DeployImage(ctx, System, svc, apitypes.DeployImageRequest{Image: fmt.Sprintf("app:%d", i+1)})
+		rel, err := c.DeployImage(ctx, testSystem, svc, apitypes.DeployImageRequest{Image: fmt.Sprintf("app:%d", i+1)})
 		if err != nil {
 			b.Fatal(err)
 		}
 		bc.wait(b, svc, rel.Number)
 	}
-	p, err := c.loadProject(ctx, "big")
+	p, err := c.loadProject(ctx, 1, "big")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -138,7 +134,7 @@ func (bc *benchCore) seed(b *testing.B) {
 	}
 	for i := range benchAudit {
 		e := envs[i%len(envs)]
-		c.audit(ctx, System, "variable.set", &p, &e, fmt.Sprintf("big/%s/svc-%02d", e.Name, i%benchServices), "set PAD")
+		c.audit(ctx, testSystem, "variable.set", &p, &e, fmt.Sprintf("big/%s/svc-%02d", e.Name, i%benchServices), "set PAD")
 	}
 }
 
@@ -147,7 +143,7 @@ func (bc *benchCore) wait(b *testing.B, ref ServiceRef, number int64) {
 	b.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		rel, err := bc.c.GetRelease(bc.ctx, System, ref, number)
+		rel, err := bc.c.GetRelease(bc.ctx, testSystem, ref, number)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -178,7 +174,7 @@ func BenchmarkCoreReads(b *testing.B) {
 		})
 	}
 	run("Overview/services=60", func() error {
-		_, err := c.Overview(ctx, System, "big")
+		_, err := c.Overview(ctx, testSystem, "big")
 		return err
 	})
 	// Eight clients at once, as the API latency budget assumes: shows
@@ -188,7 +184,7 @@ func BenchmarkCoreReads(b *testing.B) {
 		b.ReportAllocs()
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				if _, err := c.Overview(ctx, System, "big"); err != nil {
+				if _, err := c.Overview(ctx, testSystem, "big"); err != nil {
 					b.Error(err)
 					return
 				}
@@ -199,71 +195,71 @@ func BenchmarkCoreReads(b *testing.B) {
 	// staged changes, and the pending-changes diff resolves the
 	// environment's variables as they are and as they would be.
 	staged := func(name string, fn func() error) {
-		if _, err := c.SetVariables(ctx, System, prod, apitypes.SetVariablesRequest{Set: map[string]string{"REGION": "eu-west"}}); err != nil {
+		if _, err := c.SetVariables(ctx, testSystem, prod, apitypes.SetVariablesRequest{Set: map[string]string{"REGION": "eu-west"}}); err != nil {
 			b.Fatal(err)
 		}
 		run(name, fn)
-		if _, err := c.DiscardChanges(ctx, System, prod, apitypes.DiscardChangesRequest{}); err != nil {
+		if _, err := c.DiscardChanges(ctx, testSystem, prod, apitypes.DiscardChangesRequest{}); err != nil {
 			b.Fatal(err)
 		}
 	}
 	staged("Overview/services=60,staged", func() error {
-		_, err := c.Overview(ctx, System, "big")
+		_, err := c.Overview(ctx, testSystem, "big")
 		return err
 	})
 	staged("Changes/services=20,staged", func() error {
-		_, err := c.GetChanges(ctx, System, prod, false)
+		_, err := c.GetChanges(ctx, testSystem, prod, false)
 		return err
 	})
 	run("ListServices/services=20", func() error {
-		_, err := c.ListServices(ctx, System, prod)
+		_, err := c.ListServices(ctx, testSystem, prod)
 		return err
 	})
 	run("ListReleases/limit=20", func() error {
-		_, err := c.ListReleases(ctx, System, svc, 20)
+		_, err := c.ListReleases(ctx, testSystem, svc, 20)
 		return err
 	})
 	run("ListReleases/limit=100", func() error {
-		_, err := c.ListReleases(ctx, System, svc, 100)
+		_, err := c.ListReleases(ctx, testSystem, svc, 100)
 		return err
 	})
 	run("GetRelease", func() error {
-		_, err := c.GetRelease(ctx, System, svc, benchReleases/2)
+		_, err := c.GetRelease(ctx, testSystem, svc, benchReleases/2)
 		return err
 	})
 	run("ListAudit/all,limit=100", func() error {
-		_, err := c.ListAudit(ctx, System, AuditFilter{Limit: 100})
+		_, err := c.ListAudit(ctx, testSystem, AuditFilter{Limit: 100})
 		return err
 	})
 	run("ListAudit/project,limit=100", func() error {
-		_, err := c.ListAudit(ctx, System, AuditFilter{Project: "big", Limit: 100})
+		_, err := c.ListAudit(ctx, testSystem, AuditFilter{Project: "big", Limit: 100})
 		return err
 	})
 	// A rare action (20 domain.add events among thousands): the filter
 	// must not walk the whole log to find them.
 	run("ListAudit/action,limit=100", func() error {
-		_, err := c.ListAudit(ctx, System, AuditFilter{Action: "domain.", Limit: 100})
+		_, err := c.ListAudit(ctx, testSystem, AuditFilter{Action: "domain.", Limit: 100})
 		return err
 	})
 	// A common action (most of the log): the page still costs about the
 	// same as an unfiltered one.
 	run("ListAudit/action=common,limit=100", func() error {
-		_, err := c.ListAudit(ctx, System, AuditFilter{Action: "variable.", Limit: 100})
+		_, err := c.ListAudit(ctx, testSystem, AuditFilter{Action: "variable.", Limit: 100})
 		return err
 	})
 	run("ListAudit/project,action,limit=100", func() error {
-		_, err := c.ListAudit(ctx, System, AuditFilter{Project: "big", Action: "domain.", Limit: 100})
+		_, err := c.ListAudit(ctx, testSystem, AuditFilter{Project: "big", Action: "domain.", Limit: 100})
 		return err
 	})
 	run("ListAudit/service,limit=100", func() error {
-		_, err := c.ListAudit(ctx, System, AuditFilter{Project: "big", Environment: "production", Service: "svc-00", Limit: 100})
+		_, err := c.ListAudit(ctx, testSystem, AuditFilter{Project: "big", Environment: "production", Service: "svc-00", Limit: 100})
 		return err
 	})
 	run("ListVariables/services=20", func() error {
-		_, err := c.ListVariables(ctx, System, prod, "", false)
+		_, err := c.ListVariables(ctx, testSystem, prod, "", false)
 		return err
 	})
-	es, err := c.loadEnv(ctx, prod)
+	es, err := c.loadEnv(ctx, 1, prod)
 	if err != nil {
 		b.Fatal(err)
 	}

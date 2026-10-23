@@ -7,6 +7,16 @@ import (
 	"testing"
 )
 
+// testOrg creates an org for a test's projects and returns its ID.
+func testOrg(t testing.TB, s *Store) int64 {
+	t.Helper()
+	o, err := s.CreateOrg(context.Background(), CreateOrgParams{Slug: "test", Name: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return o.ID
+}
+
 // The schema enforces one in-flight deploy per service; core relies on it.
 func TestOneInFlightReleasePerService(t *testing.T) {
 	ctx := context.Background()
@@ -21,7 +31,7 @@ func TestOneInFlightReleasePerService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _ := s.CreateProject(ctx, "shop")
+	p, _ := s.CreateProject(ctx, CreateProjectParams{OrgID: testOrg(t, s), Name: "shop"})
 	env, _ := s.CreateEnvironment(ctx, CreateEnvironmentParams{ProjectID: p.ID, Name: "production", Kind: "production", ServerID: srv.ID})
 	svc, err := s.CreateService(ctx, CreateServiceParams{EnvironmentID: env.ID, Name: "web"})
 	if err != nil {

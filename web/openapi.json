@@ -1156,6 +1156,26 @@
         ],
         "type": "object"
       },
+      "CreateOrgRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Defaults to the slug",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "slug": {
+            "description": "Lowercase letters, digits and dashes",
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "type": "object"
+      },
       "CreateProjectRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1249,6 +1269,9 @@
             "minLength": 1,
             "type": "string"
           },
+          "operator": {
+            "type": "boolean"
+          },
           "project": {
             "type": "string"
           },
@@ -1277,6 +1300,9 @@
           "name": {
             "minLength": 1,
             "type": "string"
+          },
+          "operator": {
+            "type": "boolean"
           },
           "password": {
             "minLength": 12,
@@ -3167,6 +3193,12 @@
           "name": {
             "type": "string"
           },
+          "operator": {
+            "type": "boolean"
+          },
+          "org": {
+            "type": "string"
+          },
           "project": {
             "type": "string"
           },
@@ -3182,7 +3214,40 @@
         "required": [
           "kind",
           "name",
-          "scope"
+          "operator"
+        ],
+        "type": "object"
+      },
+      "Org": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "read",
+              "deploy",
+              "admin"
+            ],
+            "type": "string"
+          },
+          "slug": {
+            "examples": [
+              "acme"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "role",
+          "created_at"
         ],
         "type": "object"
       },
@@ -5021,6 +5086,9 @@
           "name": {
             "type": "string"
           },
+          "operator": {
+            "type": "boolean"
+          },
           "origin": {
             "enum": [
               "manual",
@@ -5237,6 +5305,9 @@
           "name": {
             "type": "string"
           },
+          "operator": {
+            "type": "boolean"
+          },
           "role": {
             "enum": [
               "read",
@@ -5259,6 +5330,7 @@
           "email",
           "name",
           "role",
+          "operator",
           "created_at",
           "sessions",
           "tokens"
@@ -5512,9 +5584,17 @@
   "paths": {
     "/api/v1/alerts": {
       "get": {
-        "description": "The open alerts, critical first, then newest first. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events. Scope: admin, unlimited.",
+        "description": "The open alerts, critical first, then newest first. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events. Operators only.",
         "operationId": "list-alerts",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Include resolved alerts",
             "explode": false,
@@ -5655,8 +5735,18 @@
     },
     "/api/v1/alerts/channels": {
       "get": {
-        "description": "Where alerts are sent, with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Scope: admin, unlimited.",
+        "description": "Where alerts are sent, with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Operators only.",
         "operationId": "list-alert-channels",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5749,8 +5839,18 @@
         ]
       },
       "post": {
-        "description": "A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP. A webhook's generated signing secret is returned once. Scope: admin, unlimited.",
+        "description": "A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP. A webhook's generated signing secret is returned once. Operators only.",
         "operationId": "create-alert-channel",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5859,9 +5959,17 @@
     },
     "/api/v1/alerts/channels/{channel}": {
       "delete": {
-        "description": "Scope: admin, unlimited.",
+        "description": "Operators only.",
         "operationId": "remove-alert-channel",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Channel name",
             "in": "path",
@@ -5964,9 +6072,17 @@
     },
     "/api/v1/alerts/channels/{channel}/test": {
       "post": {
-        "description": "Sends a test notification once, without retries, and says whether it went through. Scope: admin, unlimited.",
+        "description": "Sends a test notification once, without retries, and says whether it went through. Operators only.",
         "operationId": "test-alert-channel",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Channel name",
             "in": "path",
@@ -6076,9 +6192,17 @@
     },
     "/api/v1/alerts/{id}/resolve": {
       "post": {
-        "description": "Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. Scope: admin, unlimited.",
+        "description": "Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. Operators only.",
         "operationId": "resolve-alert",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "id",
@@ -6187,9 +6311,17 @@
     },
     "/api/v1/audit": {
       "get": {
-        "description": "Newest first. Tokens limited to a project or environment only see events there.",
+        "description": "The organization's events, newest first, or with `platform=true` the platform's (operators only). Tokens limited to a project or environment only see events there.",
         "operationId": "list-audit",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "explode": false,
             "in": "query",
@@ -6249,6 +6381,16 @@
               "maximum": 500,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "description": "The platform's events (servers, accounts, backups settings) instead of the organization's; operators only",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's events (servers, accounts, backups settings) instead of the organization's; operators only",
+              "type": "boolean"
             }
           }
         ],
@@ -6359,6 +6501,14 @@
         "description": "The SQL, rows, duration and outcome of a data.* audit event (its detail_id), to anyone who may see the event.",
         "operationId": "get-audit-detail",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "The event's detail_id",
             "in": "path",
@@ -6543,6 +6693,16 @@
       "post": {
         "description": "Signed-in users only. The CLI gets a new token of yours with your role as scope, expiring in 90 days.",
         "operationId": "approve-cli-login",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6656,6 +6816,16 @@
       "post": {
         "description": "Signed-in users only.",
         "operationId": "deny-cli-login",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6770,6 +6940,14 @@
         "description": "Signed-in users only. Wrong codes lock the caller out for minutes after a few tries.",
         "operationId": "get-cli-login",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "code",
@@ -7045,6 +7223,14 @@
         "operationId": "logout",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "cookie",
             "name": "dock_session",
             "schema": {
@@ -7150,9 +7336,17 @@
     },
     "/api/v1/backup": {
       "get": {
-        "description": "The install's repository, retention and schedule. `reveal` adds the repository password (unlimited admin).",
+        "description": "The platform's repository, retention and schedule. `reveal` adds the repository password (operators).",
         "operationId": "get-backup-settings",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Include the repository password",
             "explode": false,
@@ -7260,8 +7454,18 @@
         ]
       },
       "put": {
-        "description": "Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Unlimited admin.",
+        "description": "Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Operators only.",
         "operationId": "configure-backups",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -7370,8 +7574,18 @@
     },
     "/api/v1/backup/control-plane": {
       "post": {
-        "description": "Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Unlimited admin.",
+        "description": "Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Operators only.",
         "operationId": "run-control-plane-backup",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "202": {
             "content": {
@@ -7462,6 +7676,16 @@
       "get": {
         "description": "The rules every project inherits, and the effective rule per subject and environment kind with where it comes from.",
         "operationId": "get-default-data-policy",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -7550,6 +7774,16 @@
       "put": {
         "description": "Replaces the default rules; subjects and kinds left out use the built-in defaults. Admin.",
         "operationId": "set-default-data-policy",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -7658,9 +7892,17 @@
     },
     "/api/v1/events": {
       "get": {
-        "description": "Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage: unlimited admins only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
+        "description": "Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage and platform events: operators only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
         "operationId": "events",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "explode": false,
             "in": "query",
@@ -7852,6 +8094,16 @@
     "/api/v1/me": {
       "get": {
         "operationId": "me",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -7942,6 +8194,16 @@
       "post": {
         "description": "Users, from a UI session or a `dock login` token (API tokens have no password). Ends all your sessions and revokes your other `dock login` tokens; a session caller gets a fresh session cookie, a token caller keeps its token.",
         "operationId": "change-password",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -8032,6 +8294,16 @@
       "delete": {
         "description": "Tokens only; `dock logout` uses it for tokens from `dock login`.",
         "operationId": "revoke-own-token",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "No Content"
@@ -8111,11 +8383,243 @@
         ]
       }
     },
+    "/api/v1/orgs": {
+      "get": {
+        "description": "A user's organizations with their role in each; a token's own organization.",
+        "operationId": "list-orgs",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Org"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List your organizations",
+        "tags": [
+          "organizations"
+        ]
+      },
+      "post": {
+        "description": "With you as its admin. Users only.",
+        "operationId": "create-org",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrgRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Org"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create an organization",
+        "tags": [
+          "organizations"
+        ]
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "description": "Archived projects only with `archived=true`.",
         "operationId": "list-projects",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Include archived projects",
             "explode": false,
@@ -8231,6 +8735,16 @@
       "post": {
         "description": "Creates the project with a `production` environment. Scope: deploy, unlimited.",
         "operationId": "create-project",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -8341,6 +8855,14 @@
       "get": {
         "operationId": "get-project",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -8454,6 +8976,14 @@
         "operationId": "archive-project",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -8566,6 +9096,14 @@
         "operationId": "get-project-data-policy",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -8675,6 +9213,14 @@
         "description": "Replaces the project's rules; anything left out is inherited from the default. Admin.",
         "operationId": "set-project-data-policy",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -8797,6 +9343,14 @@
         "operationId": "list-environments",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -8912,6 +9466,14 @@
         "description": "Placed where the project's environments of the same kind are; the first of a kind goes to the eligible server with the most free memory. Scope: deploy.",
         "operationId": "create-environment",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -9034,6 +9596,14 @@
         "operationId": "get-environment",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -9155,6 +9725,14 @@
         "description": "The environment's staged (not yet live) changes as a diff. Values are masked unless `reveal=true` (admin).",
         "operationId": "get-changes",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -9288,6 +9866,14 @@
         "operationId": "apply-changes",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -9409,6 +9995,14 @@
         "description": "Discards the selected staged changes, or all of them without a body (or an empty selection). Selecting a change that isn't staged is a 404 and discards nothing. Scope: deploy.",
         "operationId": "discard-changes",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -9540,6 +10134,14 @@
         "description": "Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. Reference-only values are always copied. Literal values are copied only for admins, and between production and non-production only with `copy_values` (admin; listed in `copied_across_kinds`); otherwise template credentials are made anew and the rest are listed in `skipped`. Domains, git connections, releases, backups and staged changes are never copied. Nothing is deployed unless `deploy: true`, which promotes the source's images. Scope: read on this environment, deploy on the project.",
         "operationId": "clone-environment",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -9683,6 +10285,14 @@
         "operationId": "get-environment-data-policy",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -9802,6 +10412,14 @@
         "description": "Replaces the environment's rules, which may only name its own kind; anything left out is inherited from the project. Admin.",
         "operationId": "set-environment-data-policy",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -9935,6 +10553,14 @@
         "operationId": "list-services",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -10060,6 +10686,14 @@
         "description": "Creates the service without deploying it. Scope: deploy.",
         "operationId": "create-service",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -10192,6 +10826,14 @@
         "operationId": "get-service",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -10321,6 +10963,14 @@
         "description": "Changed settings are staged; they go live on the next deploy of the service or when the environment's changes are applied (`apply: true` does that now). Scope: deploy.",
         "operationId": "update-service",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -10464,6 +11114,14 @@
         "operationId": "archive-service",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -10596,6 +11254,14 @@
         "operationId": "list-backups",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -10725,6 +11391,14 @@
         "description": "Starts a backup in the background and answers with it, running. Scope: deploy.",
         "operationId": "run-backup",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -10857,6 +11531,14 @@
         "description": "Creates a new service from the template with the snapshot's data; the live service is never touched. Answers with the new service at once; the restore finishes in the background. Scope: deploy.",
         "operationId": "restore-backup",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -10996,9 +11678,17 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/schedule": {
       "put": {
-        "description": "Turn daily backups on or off, or set their hour. Scope: deploy.",
+        "description": "Turn daily backups on or off, or set their hour. Backups are the platform's: operators only (with read on the service).",
         "operationId": "update-backup-schedule",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -11141,6 +11831,14 @@
         "description": "What tunnels to the service reach (port, and the owner's user and database for Postgres) and the caller's data access. Tunnels are raw access: they need data access level write with sensitive visible, and on production `confirm` set to the environment's name. Each tunnelled connection is `GET /api/v1/projects/{project}/environments/{environment}/services/{service}/tunnel` with `Connection: Upgrade` and `Upgrade: dock-tunnel` (bearer token only), answered with 101 and then raw bytes.",
         "operationId": "get-connect",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -11304,6 +12002,14 @@
         "operationId": "get-data",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -11445,6 +12151,14 @@
         "description": "Newest first. Level schema.",
         "operationId": "list-changesets",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -11609,6 +12323,14 @@
         "operationId": "create-changeset",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -11759,6 +12481,14 @@
       "get": {
         "operationId": "get-changeset",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -11912,6 +12642,14 @@
         "description": "Revalidates the pending changeset against current data and commits it in one transaction. Rows that changed meanwhile fail it as a whole (409, status conflict). One's own with level write; anyone's (approving) as admin. Production needs `confirm` set to the environment's name.",
         "operationId": "commit-changeset",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -12075,6 +12813,14 @@
         "operationId": "reject-changeset",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -12236,6 +12982,14 @@
         "description": "The caller's own queries on this database (their data.query audit events), newest first. Page back with `before`, the last entry's audit_id.",
         "operationId": "get-data-history",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -12409,6 +13163,14 @@
         "operationId": "data-query",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -12561,6 +13323,14 @@
         "operationId": "list-saved-queries",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -12705,6 +13475,14 @@
       "post": {
         "operationId": "create-saved-query",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -12857,6 +13635,14 @@
         "operationId": "delete-saved-query",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -12999,6 +13785,14 @@
       "put": {
         "operationId": "update-saved-query",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -13163,6 +13957,14 @@
         "operationId": "get-data-schema",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -13304,6 +14106,14 @@
         "description": "Replaces the database's sensitive columns. Admin.",
         "operationId": "set-sensitive-columns",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -13463,6 +14273,14 @@
         "operationId": "setup-data",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -13604,6 +14422,14 @@
         "description": "For each incoming foreign key, the first rows that reference the row with primary key `key`, and filters that open them. Level read.",
         "operationId": "get-data-references",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -13789,6 +14615,14 @@
         "description": "A keyset page: sorted by `order` and the primary key, starting after the `after` cursor. Pass the page's `next` as `after` for the following page. Sensitive columns are masked unless `reveal` is set by a caller with sensitive visible. Level read.",
         "operationId": "get-data-rows",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -14018,6 +14852,14 @@
         "operationId": "update-database-settings",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -14160,6 +15002,14 @@
         "operationId": "list-domains",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -14295,6 +15145,14 @@
         "description": "Any hostname, unique across all services. DNS can be set up before or after. Scope: deploy.",
         "operationId": "add-domain",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -14438,6 +15296,14 @@
         "operationId": "generate-domain",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -14569,6 +15435,14 @@
         "description": "Scope: deploy.",
         "operationId": "remove-domain",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -14703,6 +15577,14 @@
         "operationId": "disconnect-git",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -14825,6 +15707,14 @@
         "description": "The connected repository, branch and directory, the webhook URL, a queued push and what the latest delivery did. The webhook secret and token are never returned (`token_set` only).",
         "operationId": "get-git-source",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -14955,6 +15845,14 @@
         "description": "Pushes to the branch then deploy the service from source, like `dock deploy` of that directory. Creates the connection or changes it. A new connection (or `rotate_secret`) returns the webhook secret once in `secret`. Scope: deploy.",
         "operationId": "connect-git",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -15098,6 +15996,14 @@
         "operationId": "deploy-git",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -15239,6 +16145,14 @@
         "description": "Output of the active release's container (or `release`), read from the runtime. For a failed release, the last 200 lines its container wrote before it was removed.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
         "operationId": "service-logs",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -15440,6 +16354,14 @@
         "operationId": "list-releases",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -15588,6 +16510,14 @@
         "operationId": "deploy-image",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -15729,6 +16659,14 @@
         "description": "Upload a build context as a tar (optionally gzipped) stream. It is streamed to disk, built on this server, and deployed. A `dock.toml` at its root overrides build and deploy settings. Scope: deploy.",
         "operationId": "deploy-source",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -15891,6 +16829,14 @@
         "operationId": "get-release",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -16035,6 +16981,14 @@
         "operationId": "get-build-log",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -16178,6 +17132,14 @@
         "description": "The build log so far, then new lines until the build phase ends.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
         "operationId": "follow-build-log",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -16347,6 +17309,14 @@
         "operationId": "rollback",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -16491,6 +17461,14 @@
         "operationId": "restart",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -16622,6 +17600,14 @@
         "description": "CPU, memory and IO history of the service (across releases) plus the latest sample.",
         "operationId": "service-stats",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -16770,6 +17756,14 @@
         "description": "A `sample` event every few seconds while the service has a running container; the first is the latest minute sample. Sampling stops when the last watcher disconnects.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
         "operationId": "service-stats-live",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -16936,6 +17930,14 @@
         "operationId": "list-volumes",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -17071,6 +18073,14 @@
         "description": "A service with a volume is stateful: deploys stop the old container before starting the new one. Volumes are never deleted as a side effect. Scope: deploy.",
         "operationId": "add-volume",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -17213,6 +18223,14 @@
         "description": "Shared (environment-level) and service variables. Names only unless `reveal=true` (admin).",
         "operationId": "list-variables",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -17360,6 +18378,14 @@
         "operationId": "set-variables",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -17492,6 +18518,14 @@
         "operationId": "export-project",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -17603,6 +18637,14 @@
         "description": "The export as a `\u003cproject\u003e.dock.toml` attachment, exactly as `dock project export` prints it. Scope: read.",
         "operationId": "export-project-toml",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -17716,6 +18758,14 @@
         "operationId": "project-overview",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -17827,6 +18877,14 @@
         "description": "Which server the project's production and non-production environments live on.",
         "operationId": "list-placements",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -17942,9 +19000,17 @@
     },
     "/api/v1/projects/{project}/placements/{kind}": {
       "put": {
-        "description": "Puts the project's environments of a kind on a server, before any exist. The server must accept the kind; it may be disabled for placement. Scope: admin, unlimited.",
+        "description": "Puts the project's environments of a kind on a server, before any exist. The server must accept the kind; it may be disabled for placement. Operators only.",
         "operationId": "pin-placement",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Project name",
             "in": "path",
@@ -18080,6 +19146,14 @@
         "operationId": "promote",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Project name",
             "in": "path",
             "name": "project",
@@ -18208,8 +19282,18 @@
     },
     "/api/v1/registry": {
       "get": {
-        "description": "The platform registry's size on disk, how pruning went since the daemon started, and the services keeping images in it. enabled is false on installs without a registry. Scope: admin, unlimited.",
+        "description": "The platform registry's size on disk, how pruning went since the daemon started, and the services keeping images in it. enabled is false on installs without a registry. Operators only.",
         "operationId": "get-registry",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -18298,8 +19382,18 @@
     },
     "/api/v1/registry/prune": {
       "post": {
-        "description": "Deletes the images no release keeps (outside every service's rollback window and not active) and collects their layers, in the background; the registry stops for those seconds. Answers with the registry, pruning. 409 while builds or pulls use the registry or a prune runs. Scope: admin, unlimited.",
+        "description": "Deletes the images no release keeps (outside every service's rollback window and not active) and collects their layers, in the background; the registry stops for those seconds. Answers with the registry, pruning. 409 while builds or pulls use the registry or a prune runs. Operators only.",
         "operationId": "prune-registry",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "202": {
             "content": {
@@ -18388,8 +19482,18 @@
     },
     "/api/v1/servers": {
       "get": {
-        "description": "Status, version, accepted environment kinds and load of every server. Unlimited admins also get each server's latest resource sample.",
+        "description": "Status, version, accepted environment kinds and load of every server, for operators with each server's latest resource sample; others get the servers their organization's environments run on.",
         "operationId": "list-servers",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -18482,8 +19586,18 @@
         ]
       },
       "post": {
-        "description": "Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Scope: admin, unlimited.",
+        "description": "Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Operators only.",
         "operationId": "add-server",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -18592,9 +19706,17 @@
     },
     "/api/v1/servers/{server}": {
       "delete": {
-        "description": "Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Scope: admin, unlimited.",
+        "description": "Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Operators only.",
         "operationId": "remove-server",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Server name",
             "in": "path",
@@ -18695,9 +19817,17 @@
         ]
       },
       "get": {
-        "description": "The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Scope: admin, unlimited.",
+        "description": "The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Operators only.",
         "operationId": "get-server",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Server name",
             "in": "path",
@@ -18805,9 +19935,17 @@
         ]
       },
       "patch": {
-        "description": "Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Scope: admin, unlimited.",
+        "description": "Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Operators only.",
         "operationId": "update-server",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Server name",
             "in": "path",
@@ -18927,9 +20065,17 @@
     },
     "/api/v1/servers/{server}/revoke": {
       "post": {
-        "description": "Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Scope: admin, unlimited.",
+        "description": "Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Operators only.",
         "operationId": "revoke-server",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Server name",
             "in": "path",
@@ -19039,9 +20185,17 @@
     },
     "/api/v1/servers/{server}/rotate-key": {
       "post": {
-        "description": "The online server creates a new link key and reconnects with it; the old key stops working once it has. Scope: admin, unlimited.",
+        "description": "The online server creates a new link key and reconnects with it; the old key stops working once it has. Operators only.",
         "operationId": "rotate-server-key",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Server name",
             "in": "path",
@@ -19161,9 +20315,17 @@
     },
     "/api/v1/servers/{server}/stats": {
       "get": {
-        "description": "CPU, memory, disk and load history plus the latest sample. Scope: admin, unlimited.",
+        "description": "CPU, memory, disk and load history plus the latest sample. Operators only.",
         "operationId": "server-stats",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Server name",
             "in": "path",
@@ -19289,9 +20451,17 @@
     },
     "/api/v1/servers/{server}/stats/live": {
       "get": {
-        "description": "A `sample` event every few seconds while connected; the first is the latest minute sample. Sampling stops when the last watcher disconnects. Scope: admin, unlimited.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
+        "description": "A `sample` event every few seconds while connected; the first is the latest minute sample. Sampling stops when the last watcher disconnects. Operators only.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
         "operationId": "server-stats-live",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Server name",
             "in": "path",
@@ -19437,6 +20607,16 @@
       "get": {
         "description": "Create one with `template` in create-service.",
         "operationId": "list-templates",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -19531,8 +20711,18 @@
     },
     "/api/v1/tokens": {
       "get": {
-        "description": "Scope: admin, unlimited.",
+        "description": "The organization's tokens and its members' `dock login` tokens. Scope: admin, unlimited.",
         "operationId": "list-tokens",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -19625,8 +20815,18 @@
         ]
       },
       "post": {
-        "description": "The secret is returned once and never again. Scope: admin, unlimited.",
+        "description": "In the organization. The secret is returned once and never again. Scope: admin, unlimited; an operator token needs an operator.",
         "operationId": "create-token",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -19739,6 +20939,14 @@
         "operationId": "revoke-token",
         "parameters": [
           {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
@@ -19840,6 +21048,14 @@
         "description": "Sets the token's own data access (`data`), or removes it with `data: null` so the token follows the data policy's tokens rule. Scope: admin, unlimited.",
         "operationId": "update-token",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "id",
@@ -19958,8 +21174,18 @@
     },
     "/api/v1/users": {
       "get": {
-        "description": "With each user's live sessions and usable tokens. Scope: admin, unlimited.",
+        "description": "The organization's members with their role, live sessions and usable tokens. Scope: admin, unlimited.",
         "operationId": "list-users",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -20052,8 +21278,18 @@
         ]
       },
       "post": {
-        "description": "Scope: admin, unlimited.",
+        "description": "Creates an account and adds it to the organization with the role. Operators only.",
         "operationId": "create-user",
+        "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -20162,9 +21398,17 @@
     },
     "/api/v1/users/{id}": {
       "delete": {
-        "description": "Ends their sessions and revokes their `dock login` tokens. Their audit history and the tokens they created by hand stay. Scope: admin, unlimited.",
+        "description": "Ends their sessions and revokes their `dock login` tokens. Their audit history and the tokens they created by hand stay. Operators only.",
         "operationId": "delete-user",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "id",
@@ -20266,9 +21510,17 @@
     },
     "/api/v1/users/{id}/disable": {
       "post": {
-        "description": "The user can't log in, their sessions end and their `dock login` tokens are revoked now. Tokens they created by hand keep working until revoked. Scope: admin, unlimited.",
+        "description": "The user can't log in, their sessions end and their `dock login` tokens are revoked now. Tokens they created by hand keep working until revoked. Operators only.",
         "operationId": "disable-user",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "id",
@@ -20377,9 +21629,17 @@
     },
     "/api/v1/users/{id}/enable": {
       "post": {
-        "description": "Lets a disabled user log in again. Scope: admin, unlimited.",
+        "description": "Lets a disabled user log in again. Operators only.",
         "operationId": "enable-user",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "id",
@@ -20488,9 +21748,17 @@
     },
     "/api/v1/users/{id}/reset-password": {
       "post": {
-        "description": "Sets the given password, or generates one and returns it once. The user's sessions end and their `dock login` tokens are revoked. Not for your own account (use change-password). Scope: admin, unlimited.",
+        "description": "Sets the given password, or generates one and returns it once. The user's sessions end and their `dock login` tokens are revoked. Not for your own account (use change-password). Operators only.",
         "operationId": "reset-password",
         "parameters": [
+          {
+            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "id",

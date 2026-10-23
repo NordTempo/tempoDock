@@ -2,7 +2,7 @@
 SELECT count(*) FROM users;
 
 -- name: CreateUser :one
-INSERT INTO users (email, name, password_hash, role)
+INSERT INTO users (email, name, password_hash, operator)
 VALUES (?, ?, ?, ?)
 RETURNING *;
 
@@ -27,22 +27,29 @@ DELETE FROM sessions WHERE hash = +?;
 DELETE FROM sessions WHERE expires_at < +?;
 
 -- name: CreateToken :one
-INSERT INTO tokens (name, hash, scope, project_id, environment_id, created_by, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment_id, created_by, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
--- GetTokenByHash also returns the user a `dock login` token acts for, in
--- the same query, since authentication checks them on every request.
+-- GetTokenByHash also returns the user a `dock login` token acts for and
+-- a manual token's org, in the same query, since authentication checks
+-- them on every request.
 -- name: GetTokenByHash :one
-SELECT sqlc.embed(tokens), users.email AS user_email, users.role AS user_role, users.disabled_at AS user_disabled_at
-FROM tokens LEFT JOIN users ON users.id = tokens.user_id
+SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_operator,
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug
+FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.hash = +?;
 
 -- name: GetToken :one
 SELECT * FROM tokens WHERE id = +?;
 
--- name: ListTokens :many
-SELECT * FROM tokens ORDER BY id;
+-- ListOrgTokens is an org's manual tokens, then its members' `dock
+-- login` tokens (which have no org), each through an index.
+-- name: ListOrgTokens :many
+SELECT * FROM tokens WHERE tokens.org_id = +sqlc.arg(org_id)
+UNION ALL
+SELECT tokens.* FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
+WHERE org_members.org_id = +sqlc.arg(org_id) AND tokens.origin = 'cli_login';
 
 -- name: TouchToken :exec
 UPDATE tokens SET last_used_at = ? WHERE id = +?;
@@ -68,11 +75,14 @@ DELETE FROM users WHERE id = +?;
 -- name: DeleteUserSessions :exec
 DELETE FROM sessions WHERE user_id = +?;
 
--- ListUsersWithCounts adds each user's live sessions and usable tokens.
--- Tokens record their creator by name, which for users is their email.
--- name: ListUsersWithCounts :many
-SELECT sqlc.embed(users),
+-- ListOrgMembers is an org's users with their role, live sessions and
+-- usable tokens. Tokens record their creator by name, which for users is
+-- their email.
+-- name: ListOrgMembers :many
+SELECT sqlc.embed(users), org_members.role,
     CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +sqlc.arg(now)) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.created_by = users.email AND tokens.revoked_at IS NULL
         AND (tokens.expires_at IS NULL OR tokens.expires_at > +sqlc.arg(now))) AS INTEGER) AS tokens
-FROM users ORDER BY users.id;
+FROM org_members JOIN users ON users.id = org_members.user_id
+WHERE org_members.org_id = +sqlc.arg(org_id)
+ORDER BY org_members.user_id;

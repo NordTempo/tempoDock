@@ -271,10 +271,15 @@ func (s *Server[A]) authenticate(w http.ResponseWriter, r *http.Request) (A, boo
 	}
 	a, err := s.o.Authenticate(r.Context(), strings.TrimSpace(token))
 	if err != nil {
-		if datapanel.CodeOf(err) == apitypes.CodeUnauthorized {
+		switch code := datapanel.CodeOf(err); code {
+		case apitypes.CodeUnauthorized:
 			w.Header().Set("WWW-Authenticate", `Bearer realm="`+s.o.Realm+`", error="invalid_token"`)
-			problem(w, http.StatusUnauthorized, apitypes.CodeUnauthorized, err.Error())
-		} else {
+			problem(w, http.StatusUnauthorized, code, err.Error())
+		case apitypes.CodeForbidden:
+			problem(w, http.StatusForbidden, code, err.Error())
+		case apitypes.CodeNotFound:
+			problem(w, http.StatusNotFound, code, err.Error())
+		default:
 			s.log.Error("mcp: authenticate", "err", err)
 			problem(w, http.StatusInternalServerError, apitypes.CodeInternal, "internal error; see the daemon log")
 		}

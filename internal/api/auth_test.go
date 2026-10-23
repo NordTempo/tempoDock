@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
-	"github.com/NordTempo/tempoDock/internal/core"
 )
 
 // as sends a request authenticated by a session cookie, like the UI.
@@ -60,7 +59,8 @@ func TestLoginIsRateLimitedAndAudited(t *testing.T) {
 		t.Fatalf("sixth attempt: %d %s", resp.StatusCode, body)
 	}
 
-	_, body = f.do("admin", "GET", "/api/v1/audit?action=user.login_failed", nil)
+	// Accounts are the platform's: their events are in the platform's log.
+	_, body = f.do("operator", "GET", "/api/v1/audit?platform=true&action=user.login_failed", nil)
 	var audit []apitypes.AuditEvent
 	_ = json.Unmarshal(body, &audit)
 	if len(audit) != 4 || audit[0].Actor != "ada@example.com" || strings.Contains(string(body), "guess") {
@@ -71,7 +71,7 @@ func TestLoginIsRateLimitedAndAudited(t *testing.T) {
 func TestDisableAndDeleteUser(t *testing.T) {
 	f := newFixture(t)
 	admin := f.login()
-	bob, err := f.core.CreateUser(context.Background(), core.System, apitypes.CreateUserRequest{
+	bob, err := f.core.CreateUser(context.Background(), sys, apitypes.CreateUserRequest{
 		Email: "bob@example.com", Name: "Bob", Password: "bob's long password", Role: apitypes.ScopeDeploy,
 	})
 	if err != nil {

@@ -108,6 +108,11 @@ doesn't affect production.
 - Polished install and upgrade path, public docs, license.
 - Multiple users with roles in the UI.
 - Telemetry-free by default.
+- Organizations ([ADR 0027](decisions/0027-organizations.md)). Done: orgs
+  as the boundary (projects, tokens, data policy, audit, live events) and
+  the platform operator. Next: the org switcher and org in UI URLs (mocks
+  first), invites, org variables (`${{org.KEY}}`) and servers per org;
+  then signup modes (`closed`, `invite`, `open`) with email verification.
 
 ## Later (only when needed)
 
@@ -115,3 +120,5 @@ doesn't affect production.
 - Moving an environment between servers
 - Human approval flow for selected actions
 - Hosted control plane managing customer-owned servers (paid offering)
+- Hosting customers' apps on our servers: sandboxing, quotas, metering,
+  billing, abuse handling (its own ADR, after ADR 0027's phases)

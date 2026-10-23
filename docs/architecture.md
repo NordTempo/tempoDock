@@ -219,7 +219,7 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
   each 10-minute boundary averages the last ten points and prunes points
   older than 24 hours (1-minute) and 7 days (10-minute), all as range
   queries on time-first keys. It then publishes the samples on the event
-  bus as `usage` events, one per server (unlimited admins only) and one
+  bus as `usage` events, one per server (operators only) and one
   per environment with its services, so open pages update their numbers
   and append the new point to their charts without polling. Watching a
   server or service live samples every 3 seconds, and only while someone
@@ -298,6 +298,13 @@ docs/                design docs; docs/guide is Dock's guide, docs/tempobase tem
 - `core` depends on the `store` package and the `node.Runtime` interface,
   never on Docker or HTTP directly. Every core operation takes the calling
   actor and checks permissions itself (one code path for users and tokens).
+- Organizations ([ADR 0027](decisions/0027-organizations.md)): the actor
+  acts in one org, named by the API's `org` parameter (a token's own, or
+  a user's only one, when left out), with its role there. Projects, manual
+  tokens, the data policy and the audit log are per org; lookups by name
+  only find the actor's org's, and live events are filtered by org.
+  Operators (`users.operator`, `tokens.operator`) run the platform:
+  servers, backups, alerts and user accounts.
 - Tests: unit tests for `core` with a fake node runtime; integration tests in CI
   against a real Docker Engine; a small set of UI tests where logic is
   non-trivial.

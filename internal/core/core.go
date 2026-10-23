@@ -334,10 +334,19 @@ func (c *Core) Close() {
 func now() time.Time { return time.Now().UTC() }
 
 // audit records a mutating action and publishes it. Failures are logged,
-// never returned: the action already happened.
+// never returned: the action already happened. It happened in the
+// project's org, else in the actor's; the system's actions outside a
+// project are the platform's.
 func (c *Core) audit(ctx context.Context, a Actor, action string, p *store.Project, e *store.Environment, target, summary string) {
 	params := store.AddAuditEventParams{
 		Actor: a.Name, ActorKind: a.Kind, Action: action, Target: target, Summary: summary, CreatedAt: now(),
+	}
+	oid := a.OrgID
+	if p != nil {
+		oid = p.OrgID
+	}
+	if oid != 0 {
+		params.OrgID = &oid
 	}
 	if a.UserID != 0 {
 		params.UserID = &a.UserID
@@ -369,7 +378,7 @@ func (c *Core) audit(ctx context.Context, a Actor, action string, p *store.Proje
 	if e != nil {
 		ae.Environment = e.Name
 	}
-	c.bus.publish(busEvent{projectID: pid, envID: eid, ev: apitypes.Event{
+	c.bus.publish(busEvent{orgID: oid, projectID: pid, envID: eid, ev: apitypes.Event{
 		Type: apitypes.EventAudit, Project: ae.Project, Environment: ae.Environment, Audit: &ae,
 	}})
 }

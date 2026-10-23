@@ -1,12 +1,13 @@
 -- name: AddAuditEvent :one
-INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, project_id, environment_id, target, summary, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, org_id, project_id, environment_id, target, summary, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListAuditEvents :many
--- Newest first, with project and environment names. Nil filters match
--- everything; only events with IDs below before_id are returned (pass
--- math.MaxInt64 for the newest). An action prefix is the range
+-- One org's events (org_id NULL: the platform's), newest first, with
+-- project and environment names. Other nil filters match everything;
+-- only events with IDs below before_id are returned (pass math.MaxInt64
+-- for the newest). An action prefix is the range
 -- [action_from, action_to) (see core.prefixRange): LIKE would make SQLite
 -- re-prepare the statement on every call. Use ListProjectAuditEvents to
 -- filter by project: an optional project filter here would keep SQLite from
@@ -17,7 +18,8 @@ SELECT sqlc.embed(audit_events),
 FROM audit_events
 LEFT JOIN projects ON projects.id = audit_events.project_id
 LEFT JOIN environments ON environments.id = audit_events.environment_id
-WHERE audit_events.id < +sqlc.arg(before_id)
+WHERE audit_events.org_id IS +sqlc.narg(org_id)
+  AND audit_events.id < +sqlc.arg(before_id)
   AND (audit_events.environment_id = +sqlc.narg(environment_id) OR sqlc.narg(environment_id) IS NULL)
   AND ((audit_events.action >= +sqlc.narg(action_from) AND audit_events.action < +sqlc.narg(action_to)) OR sqlc.narg(action_from) IS NULL)
 ORDER BY audit_events.id DESC
@@ -25,8 +27,9 @@ LIMIT +sqlc.arg(max_rows);
 
 -- name: ListAuditEventsByAction :many
 -- ListAuditEvents for actions in [action_from, action_to), without other
--- filters. The page's IDs come from the covering audit_events_action
--- index, so a rare action doesn't walk the whole log.
+-- filters. The page's IDs come from the covering audit_events_org_action
+-- index, so a rare action doesn't walk the whole log; the unary plus on
+-- page.id keeps SQLite from walking it through audit_events_org instead.
 SELECT sqlc.embed(audit_events),
        coalesce(projects.name, '') AS project_name, coalesce(environments.name, '') AS environment_name
 FROM audit_events
@@ -34,8 +37,9 @@ LEFT JOIN projects ON projects.id = audit_events.project_id
 LEFT JOIN environments ON environments.id = audit_events.environment_id
 WHERE audit_events.id IN (
     SELECT page.id FROM audit_events AS page
-    WHERE page.action >= +sqlc.arg(action_from) AND page.action < +sqlc.arg(action_to)
-      AND page.id < +sqlc.arg(before_id)
+    WHERE page.org_id IS +sqlc.narg(org_id)
+      AND page.action >= +sqlc.arg(action_from) AND page.action < +sqlc.arg(action_to)
+      AND +page.id < +sqlc.arg(before_id)
     ORDER BY page.id DESC
     LIMIT +sqlc.arg(max_rows))
 ORDER BY audit_events.id DESC;

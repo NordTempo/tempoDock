@@ -45,7 +45,8 @@ and what we deliberately don't build yet.
   (we do place whole environments on different servers, see
   [ADR 0010](decisions/0010-environments-on-servers.md))
 - Kubernetes, Nomad, Swarm or any orchestrator layer
-- Billing, organizations, or hosting untrusted customer workloads
+- Billing, or hosting untrusted customer workloads (organizations exist,
+  [ADR 0027](decisions/0027-organizations.md); hosting is its own design)
 - Managed databases beyond "a container with a volume and backups"
 - Building our own reverse proxy or container runtime
 

@@ -55,7 +55,7 @@ func (s *Server) tunnel(w http.ResponseWriter, r *http.Request) {
 			Detail: "send `Authorization: Bearer <token>`"})
 		return
 	}
-	actor, err := s.core.AuthenticateToken(r.Context(), strings.TrimSpace(token))
+	actor, err := s.core.AuthenticateToken(r.Context(), strings.TrimSpace(token), r.URL.Query().Get("org"))
 	if err != nil {
 		s.writeProblem(w, s.problem(err))
 		return

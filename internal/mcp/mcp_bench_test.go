@@ -18,7 +18,7 @@ import (
 func BenchmarkToolCall(b *testing.B) {
 	f := newFixture(b)
 	ref := core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}
-	if _, err := f.core.DeployImage(context.Background(), core.System, ref, apitypes.DeployImageRequest{}); err != nil {
+	if _, err := f.core.DeployImage(context.Background(), sys, ref, apitypes.DeployImageRequest{}); err != nil {
 		b.Fatal(err)
 	}
 	for _, tool := range []string{"whoami", "service_status"} {

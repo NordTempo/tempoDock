@@ -58,22 +58,22 @@ func TestConnect(t *testing.T) {
 	}()
 	srv.rt.DialTo(echo.Addr().String())
 	ctx := context.Background()
-	if _, err := srv.core.CreateProject(ctx, core.System, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
+	if _, err := srv.core.CreateProject(ctx, sys, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.core.CreateEnvironment(ctx, core.System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+	if _, err := srv.core.CreateEnvironment(ctx, sys, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		t.Fatal(err)
 	}
 	ref := core.ServiceRef{Project: "shop", Environment: "staging", Service: "cache"}
-	if _, err := srv.core.CreateService(ctx, core.System, ref.Env(), apitypes.CreateServiceRequest{Name: "cache", Port: 6379}); err != nil {
+	if _, err := srv.core.CreateService(ctx, sys, ref.Env(), apitypes.CreateServiceRequest{Name: "cache", Port: 6379}); err != nil {
 		t.Fatal(err)
 	}
-	rel, err := srv.core.DeployImage(ctx, core.System, ref, apitypes.DeployImageRequest{Image: "redis:8"})
+	rel, err := srv.core.DeployImage(ctx, sys, ref, apitypes.DeployImageRequest{Image: "redis:8"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for deadline := time.Now().Add(5 * time.Second); rel.Status != apitypes.ReleaseActive; time.Sleep(2 * time.Millisecond) {
-		if rel, err = srv.core.GetRelease(ctx, core.System, ref, rel.Number); err != nil || time.Now().After(deadline) {
+		if rel, err = srv.core.GetRelease(ctx, sys, ref, rel.Number); err != nil || time.Now().After(deadline) {
 			t.Fatalf("deploy: %+v %v", rel, err)
 		}
 	}

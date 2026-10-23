@@ -12,7 +12,7 @@ import (
 
 func (h *harness) set(env EnvRef, service string, vars map[string]string, apply bool) apitypes.ChangeResult {
 	h.t.Helper()
-	res, err := h.c.SetVariables(h.ctx, System, env, apitypes.SetVariablesRequest{Service: service, Set: vars, Apply: apply})
+	res, err := h.c.SetVariables(h.ctx, testSystem, env, apitypes.SetVariablesRequest{Service: service, Set: vars, Apply: apply})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestApplyRedeploysDependents(t *testing.T) {
 	if got := res.Pending.Affected; !slices.Equal(got, []string{"api", "postgres", "worker"}) {
 		t.Fatalf("affected = %v", got)
 	}
-	applied, err := h.c.ApplyChanges(h.ctx, System, env)
+	applied, err := h.c.ApplyChanges(h.ctx, testSystem, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,10 +77,10 @@ func TestFailedReleaseRestagesItsChanges(t *testing.T) {
 		return nil
 	})
 	memory := 256
-	if _, err := h.c.UpdateService(h.ctx, System, web, apitypes.UpdateServiceRequest{MemoryMB: &memory}); err != nil {
+	if _, err := h.c.UpdateService(h.ctx, testSystem, web, apitypes.UpdateServiceRequest{MemoryMB: &memory}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := h.c.SetVariables(h.ctx, System, env, apitypes.SetVariablesRequest{
+	res, err := h.c.SetVariables(h.ctx, testSystem, env, apitypes.SetVariablesRequest{
 		Service: "web", Set: map[string]string{"MODE": "bad", "NEW": "x"}, Unset: []string{"KEEP"}, Apply: true,
 	})
 	if err != nil {
@@ -90,7 +90,7 @@ func TestFailedReleaseRestagesItsChanges(t *testing.T) {
 		t.Fatalf("release 2 = %s", r.Status)
 	}
 
-	p, _ := h.c.GetChanges(h.ctx, System, env, true)
+	p, _ := h.c.GetChanges(h.ctx, testSystem, env, true)
 	if p.Count != 4 || !strings.Contains(p.LastFailure, "release 2 of web failed") {
 		t.Fatalf("staged again: %+v", p)
 	}
@@ -107,13 +107,13 @@ func TestFailedReleaseRestagesItsChanges(t *testing.T) {
 	if v := byKey["KEEP"]; v.Action != apitypes.ChangeRemove || *v.Old != "1" {
 		t.Errorf("KEEP = %+v", v)
 	}
-	if svc, _ := h.c.GetService(h.ctx, System, web); svc.MemoryMB != 0 {
+	if svc, _ := h.c.GetService(h.ctx, testSystem, web); svc.MemoryMB != 0 {
 		t.Errorf("live memory = %d, want the active release's (default)", svc.MemoryMB)
 	}
 
 	// Once discarded, the next deploy ships the active release's values.
 	// (A deploy takes the service's own staged changes with it.)
-	if _, err := h.c.DiscardChanges(h.ctx, System, env, apitypes.DiscardChangesRequest{}); err != nil {
+	if _, err := h.c.DiscardChanges(h.ctx, testSystem, env, apitypes.DiscardChangesRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	r3 := h.deploy(web, "app:2")
@@ -121,7 +121,7 @@ func TestFailedReleaseRestagesItsChanges(t *testing.T) {
 	if r3.Status != apitypes.ReleaseActive || spec.Env["MODE"] != "good" || spec.Env["KEEP"] != "1" || spec.Env["NEW"] != "" {
 		t.Fatalf("release 3 %s env %v", r3.Status, spec.Env)
 	}
-	if p, _ := h.c.GetChanges(h.ctx, System, env, false); p.Count != 0 || p.LastFailure != "" {
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, env, false); p.Count != 0 || p.LastFailure != "" {
 		t.Fatalf("after discard: %+v", p)
 	}
 }
@@ -138,13 +138,13 @@ func TestDiscardSelectedChanges(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(h.c.SetVariables(h.ctx, System, env, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"A": "1", "B": "2"}}))
-	must(h.c.SetVariables(h.ctx, System, env, apitypes.SetVariablesRequest{Set: map[string]string{"S": "1"}}))
+	must(h.c.SetVariables(h.ctx, testSystem, env, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"A": "1", "B": "2"}}))
+	must(h.c.SetVariables(h.ctx, testSystem, env, apitypes.SetVariablesRequest{Set: map[string]string{"S": "1"}}))
 	port, memory := 4000, 256
-	must(h.c.UpdateService(h.ctx, System, web, apitypes.UpdateServiceRequest{Port: &port, MemoryMB: &memory}))
-	must(h.c.AddVolume(h.ctx, System, web, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}))
+	must(h.c.UpdateService(h.ctx, testSystem, web, apitypes.UpdateServiceRequest{Port: &port, MemoryMB: &memory}))
+	must(h.c.AddVolume(h.ctx, testSystem, web, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}))
 
-	p, err := h.c.DiscardChanges(h.ctx, System, env, apitypes.DiscardChangesRequest{
+	p, err := h.c.DiscardChanges(h.ctx, testSystem, env, apitypes.DiscardChangesRequest{
 		Variables: []apitypes.VariableRef{{Key: "A", Service: "web"}, {Key: "S"}},
 		Settings:  []apitypes.SettingRef{{Service: "web", Field: "port"}},
 		Volumes:   []apitypes.VolumeRef{{Service: "web", Name: "data"}},
@@ -157,17 +157,17 @@ func TestDiscardSelectedChanges(t *testing.T) {
 	}
 
 	// A selection with anything not staged discards nothing.
-	_, err = h.c.DiscardChanges(h.ctx, System, env, apitypes.DiscardChangesRequest{
+	_, err = h.c.DiscardChanges(h.ctx, testSystem, env, apitypes.DiscardChangesRequest{
 		Variables: []apitypes.VariableRef{{Key: "B", Service: "web"}, {Key: "A", Service: "web"}},
 	})
 	if CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("discarding an unstaged change: %v", err)
 	}
-	if p, _ := h.c.GetChanges(h.ctx, System, env, false); p.Count != 2 {
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, env, false); p.Count != 2 {
 		t.Fatalf("a failed discard changed something: %+v", p)
 	}
 
-	if p, err := h.c.DiscardChanges(h.ctx, System, env, apitypes.DiscardChangesRequest{}); err != nil || p.Count != 0 {
+	if p, err := h.c.DiscardChanges(h.ctx, testSystem, env, apitypes.DiscardChangesRequest{}); err != nil || p.Count != 0 {
 		t.Fatalf("discard all: %+v %v", p, err)
 	}
 }

@@ -16,7 +16,7 @@ func TestOverviewMatchesPerServiceReads(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 3000})
 	api := h.service("api", apitypes.CreateServiceRequest{Port: 3000})
-	if _, err := h.c.AddDomain(h.ctx, System, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(web, "web:1")
@@ -25,7 +25,7 @@ func TestOverviewMatchesPerServiceReads(t *testing.T) {
 	h.rt.FailHealthCheck(nil)
 	release := h.rt.HoldHealthChecks()
 	defer release()
-	inFlight, err := h.c.DeployImage(h.ctx, System, api, apitypes.DeployImageRequest{Image: "api:1"})
+	inFlight, err := h.c.DeployImage(h.ctx, testSystem, api, apitypes.DeployImageRequest{Image: "api:1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestOverviewMatchesPerServiceReads(t *testing.T) {
 	// The domain checker moves the domain on from "added" in the
 	// background; let it settle so both reads below see the same status.
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		ds, err := h.c.ListDomains(h.ctx, System, web)
+		ds, err := h.c.ListDomains(h.ctx, testSystem, web)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,7 +42,7 @@ func TestOverviewMatchesPerServiceReads(t *testing.T) {
 		}
 	}
 
-	ov, err := h.c.Overview(h.ctx, System, "shop")
+	ov, err := h.c.Overview(h.ctx, testSystem, "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,11 +66,11 @@ func TestOverviewMatchesPerServiceReads(t *testing.T) {
 	}
 
 	for _, ref := range []ServiceRef{web, api} {
-		svc, err := h.c.GetService(h.ctx, System, ref)
+		svc, err := h.c.GetService(h.ctx, testSystem, ref)
 		if err != nil {
 			t.Fatal(err)
 		}
-		domains, err := h.c.ListDomains(h.ctx, System, ref)
+		domains, err := h.c.ListDomains(h.ctx, testSystem, ref)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,15 +88,15 @@ func TestOverviewMatchesPerServiceReads(t *testing.T) {
 func TestListAuditFiltersAndPages(t *testing.T) {
 	h := newHarness(t)
 	h.service("web", apitypes.CreateServiceRequest{})
-	if _, err := h.c.CreateProject(h.ctx, System, apitypes.CreateProjectRequest{Name: "blog"}); err != nil {
+	if _, err := h.c.CreateProject(h.ctx, testSystem, apitypes.CreateProjectRequest{Name: "blog"}); err != nil {
 		t.Fatal(err)
 	}
 
-	all, err := h.c.ListAudit(h.ctx, System, AuditFilter{})
+	all, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	shop, err := h.c.ListAudit(h.ctx, System, AuditFilter{Project: "shop"})
+	shop, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Project: "shop"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestListAuditFiltersAndPages(t *testing.T) {
 		t.Fatalf("no shop event names its environment: %+v", shop)
 	}
 
-	page, err := h.c.ListAudit(h.ctx, System, AuditFilter{Before: all[0].ID, Limit: 1})
+	page, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Before: all[0].ID, Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

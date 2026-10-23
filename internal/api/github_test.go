@@ -57,6 +57,9 @@ func TestHooksHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.CreateOrg(ctx, store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
 	box, _ := secrets.New(bytes.Repeat([]byte{1}, secrets.KeySize))
 	cfg := config.Default()
 	cfg.DataDir = dir
@@ -74,14 +77,14 @@ func TestHooksHandler(t *testing.T) {
 		c.Close()
 		_ = st.Close()
 	})
-	if _, err := c.CreateProject(ctx, core.System, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
+	if _, err := c.CreateProject(ctx, sys, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
 		t.Fatal(err)
 	}
 	web := core.ServiceRef{Project: "shop", Environment: "production", Service: "web"}
-	if _, err := c.CreateService(ctx, core.System, web.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+	if _, err := c.CreateService(ctx, sys, web.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
 		t.Fatal(err)
 	}
-	conn, err := c.GitConnect(ctx, core.System, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
+	conn, err := c.GitConnect(ctx, sys, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}

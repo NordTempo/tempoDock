@@ -227,7 +227,8 @@ func (c *Core) settleCLILogin(ctx context.Context, l store.CliLogin, err error) 
 }
 
 // issueCLIToken consumes an approved login and creates the approving
-// user's token: their role as scope, unlimited, expiring in cliTokenTTL.
+// user's token: unlimited, expiring in cliTokenTTL, with scope admin that
+// their role caps in each org they act in.
 func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CLILoginWait, error) {
 	if l.UserID == nil { // approving always sets it
 		return apitypes.CLILoginWait{}, errCLILoginExpired
@@ -257,7 +258,7 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 			return errCLILoginExpired
 		}
 		tok, err = q.CreateCLILoginToken(ctx, store.CreateCLILoginTokenParams{
-			Name: cliTokenName(l.Hostname), Hash: hash, Scope: u.Role, CreatedBy: u.Email, UserID: &u.ID, ExpiresAt: ptr(now().Add(cliTokenTTL)),
+			Name: cliTokenName(l.Hostname), Hash: hash, Scope: string(apitypes.ScopeAdmin), CreatedBy: u.Email, UserID: &u.ID, ExpiresAt: ptr(now().Add(cliTokenTTL)),
 		})
 		return err
 	})
@@ -266,7 +267,11 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 	}
 	c.audit(ctx, userActor(u), "token.cli_login", nil, nil, "token "+tok.Name,
 		fmt.Sprintf("approved dock login from %s (%s, %s); created %s token %q (id %d)", l.Ip, l.Hostname, l.Os, tok.Scope, tok.Name, tok.ID))
-	return apitypes.CLILoginWait{Status: "approved", Token: secret, User: u.Email, Scope: apitypes.Scope(u.Role)}, nil
+	out := apitypes.CLILoginWait{Status: "approved", Token: secret, User: u.Email}
+	if a, err := c.actIn(ctx, userActor(u), "", apitypes.ScopeAdmin); err == nil {
+		out.Scope = a.Scope // their role, if they have one org
+	}
+	return out, nil
 }
 
 // CLILogin shows a pending login to the user about to approve it.

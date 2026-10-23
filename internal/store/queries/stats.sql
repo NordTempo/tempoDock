@@ -10,11 +10,11 @@ JOIN environments ON environments.id = services.environment_id
 WHERE releases.status = 'active' AND releases.container_id != ''
 ORDER BY environments.server_id, services.environment_id;
 
--- ListStatsNames names the services ListStatsTargets lists, for usage
--- events. Names never change, so the collector reads them only when its
+-- ListStatsNames names the services ListStatsTargets lists, with their
+-- org, for usage events. Names never change, so the collector reads them only when its
 -- set of services does.
 -- name: ListStatsNames :many
-SELECT services.id, projects.name AS project_name, environments.name AS environment_name, services.name AS service_name
+SELECT services.id, projects.org_id, projects.name AS project_name, environments.name AS environment_name, services.name AS service_name
 FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id

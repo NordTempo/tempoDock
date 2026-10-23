@@ -39,18 +39,18 @@ func (f *fixture) cacheService() <-chan struct{} {
 
 	ctx := context.Background()
 	ref := core.ServiceRef{Project: "shop", Environment: "staging", Service: "cache"}
-	if _, err := f.core.CreateEnvironment(ctx, core.System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+	if _, err := f.core.CreateEnvironment(ctx, sys, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		f.t.Fatal(err)
 	}
-	if _, err := f.core.CreateService(ctx, core.System, ref.Env(), apitypes.CreateServiceRequest{Name: "cache", Port: 6379}); err != nil {
+	if _, err := f.core.CreateService(ctx, sys, ref.Env(), apitypes.CreateServiceRequest{Name: "cache", Port: 6379}); err != nil {
 		f.t.Fatal(err)
 	}
-	rel, err := f.core.DeployImage(ctx, core.System, ref, apitypes.DeployImageRequest{Image: "redis:8"})
+	rel, err := f.core.DeployImage(ctx, sys, ref, apitypes.DeployImageRequest{Image: "redis:8"})
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(2 * time.Millisecond) {
-		r, err := f.core.GetRelease(ctx, core.System, ref, rel.Number)
+		r, err := f.core.GetRelease(ctx, sys, ref, rel.Number)
 		if err != nil || r.Status == apitypes.ReleaseActive {
 			break
 		}
@@ -130,7 +130,7 @@ func TestTunnel(t *testing.T) {
 
 	var evs []apitypes.AuditEvent
 	for deadline := time.Now().Add(5 * time.Second); len(evs) < 2 && time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		evs, _ = f.core.ListAudit(context.Background(), core.System, core.AuditFilter{Action: "data."})
+		evs, _ = f.core.ListAudit(context.Background(), sys, core.AuditFilter{Action: "data."})
 	}
 	if len(evs) != 2 || evs[1].Action != apitypes.AuditDataConnect || evs[1].Summary != "opened a tunnel to port 6379 from 127.0.0.1" ||
 		evs[0].Action != apitypes.AuditDataDisconnect || evs[0].Actor != "admin" {

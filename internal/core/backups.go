@@ -144,14 +144,15 @@ func upsertParams(s store.BackupSetting) store.UpsertBackupSettingsParams {
 // repoLabel is how a backup's repository shows: "local" or the URL.
 func repoLabel(repository string) string { return cmp.Or(repository, "local") }
 
-// GetBackupSettings returns the install's backup settings. reveal adds the
-// repository password (admins only).
+// GetBackupSettings returns the platform's backup settings, to operators
+// and to anyone who can read in an org. reveal adds the repository
+// password (operators only).
 func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (apitypes.BackupSettings, error) {
-	if err := a.require(apitypes.ScopeRead, "reading backup settings"); err != nil {
+	if err := a.require(apitypes.ScopeRead, "reading backup settings"); err != nil && !a.Operator {
 		return apitypes.BackupSettings{}, err
 	}
 	if reveal {
-		if err := a.requireUnlimited(apitypes.ScopeAdmin, "revealing the backup password"); err != nil {
+		if err := a.requireOperator("revealing the backup password"); err != nil {
 			return apitypes.BackupSettings{}, err
 		}
 	}
@@ -170,7 +171,7 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 		}
 		out.Password = repo.Password
 		if s.Password == nil {
-			c.audit(ctx, a, "backup.configure", nil, nil, "backups", "generated the backup repository password")
+			c.audit(ctx, a.platform(), "backup.configure", nil, nil, "backups", "generated the backup repository password")
 		}
 	}
 	return out, nil
@@ -188,11 +189,11 @@ func (c *Core) toBackupSettings(s store.BackupSetting) apitypes.BackupSettings {
 	return out
 }
 
-// ConfigureBackups changes the install's backup settings (admin). The
+// ConfigureBackups changes the platform's backup settings (operators). The
 // answer carries the repository password when this call generated it:
 // without it, an off-box repository can't be read after losing the server.
 func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.ConfigureBackupRequest) (apitypes.BackupSettings, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "configuring backups"); err != nil {
+	if err := a.requireOperator("configuring backups"); err != nil {
 		return apitypes.BackupSettings{}, err
 	}
 	s, err := c.backupSettings(ctx)
@@ -275,7 +276,7 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 	if len(changed) > 0 {
 		summary = "set " + strings.Join(changed, ", ")
 	}
-	c.audit(ctx, a, "backup.configure", nil, nil, "backups", summary)
+	c.audit(ctx, a.platform(), "backup.configure", nil, nil, "backups", summary)
 	c.kickBackups()
 	out := c.toBackupSettings(s)
 	out.Password = password

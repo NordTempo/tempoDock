@@ -10,8 +10,8 @@ import (
 )
 
 // GetAuditDetail returns an audit event's detail by its ID
-// (AuditEvent.DetailID), to anyone who may see the event: limited actors
-// only in their project or environment. The detail of a data.* event (the
+// (AuditEvent.DetailID), to anyone who may see the event: members of its
+// org, limited actors only in their project or environment. The detail of a data.* event (the
 // SQL of a query or commit, values included) also needs data access level
 // read in its environment, and callers who see sensitive columns masked
 // get its values redacted when the database has sensitive columns, unless
@@ -27,14 +27,17 @@ func (c *Core) GetAuditDetail(ctx context.Context, a Actor, id int64) (apitypes.
 	if err != nil {
 		return apitypes.AuditDetail{}, err
 	}
-	var pid, eid int64
+	var oid, pid, eid int64
+	if ev.OrgID != nil {
+		oid = *ev.OrgID
+	}
 	if ev.ProjectID != nil {
 		pid = *ev.ProjectID
 	}
 	if ev.EnvironmentID != nil {
 		eid = *ev.EnvironmentID
 	}
-	if a.limited() && (pid == 0 || !a.canSee(pid, eid)) {
+	if !a.canSee(oid, pid, eid) || a.limited() && pid == 0 {
 		return apitypes.AuditDetail{}, notFound("audit detail %d not found", id)
 	}
 	var perm apitypes.DataPermission

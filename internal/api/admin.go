@@ -11,16 +11,31 @@ import (
 )
 
 func registerAdmin(s *Server, a huma.API) {
-	tags := []string{"tokens"}
+	tags := []string{"organizations"}
+	authed(s, a, huma.Operation{
+		OperationID: "list-orgs", Method: http.MethodGet, Path: Prefix + "/orgs",
+		Summary: "List your organizations", Description: "A user's organizations with their role in each; a token's own organization.", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Org], error) {
+		return reply(s.core.ListOrgs(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "create-org", Method: http.MethodPost, Path: Prefix + "/orgs",
+		Summary: "Create an organization", Description: "With you as its admin. Users only.",
+		Tags: tags, DefaultStatus: http.StatusCreated,
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.CreateOrgRequest }) (*out[apitypes.Org], error) {
+		return reply(s.core.CreateOrg(ctx, actor, in.Body))
+	})
+
+	tags = []string{"tokens"}
 	authed(s, a, huma.Operation{
 		OperationID: "list-tokens", Method: http.MethodGet, Path: Prefix + "/tokens",
-		Summary: "List tokens", Description: "Scope: admin, unlimited.", Tags: tags,
+		Summary: "List tokens", Description: "The organization's tokens and its members' `dock login` tokens. Scope: admin, unlimited.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Token], error) {
 		return reply(s.core.ListTokens(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "create-token", Method: http.MethodPost, Path: Prefix + "/tokens",
-		Summary: "Create a token", Description: "The secret is returned once and never again. Scope: admin, unlimited.",
+		Summary: "Create a token", Description: "In the organization. The secret is returned once and never again. Scope: admin, unlimited; an operator token needs an operator.",
 		Tags: tags, DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.CreateTokenRequest }) (*out[apitypes.CreatedToken], error) {
 		return reply(s.core.CreateToken(ctx, actor, in.Body))
@@ -37,13 +52,13 @@ func registerAdmin(s *Server, a huma.API) {
 	tags = []string{"users"}
 	authed(s, a, huma.Operation{
 		OperationID: "list-users", Method: http.MethodGet, Path: Prefix + "/users",
-		Summary: "List users", Description: "With each user's live sessions and usable tokens. Scope: admin, unlimited.", Tags: tags,
+		Summary: "List users", Description: "The organization's members with their role, live sessions and usable tokens. Scope: admin, unlimited.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.User], error) {
 		return reply(s.core.ListUsers(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "create-user", Method: http.MethodPost, Path: Prefix + "/users",
-		Summary: "Create a user", Description: "Scope: admin, unlimited.", Tags: tags, DefaultStatus: http.StatusCreated,
+		Summary: "Create a user", Description: "Creates an account and adds it to the organization with the role. Operators only.", Tags: tags, DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.CreateUserRequest }) (*out[apitypes.User], error) {
 		return reply(s.core.CreateUser(ctx, actor, in.Body))
 	})
@@ -57,16 +72,16 @@ func registerAdmin(s *Server, a huma.API) {
 	userIDOp(huma.Operation{
 		OperationID: "disable-user", Method: http.MethodPost, Path: Prefix + "/users/{id}/disable",
 		Summary: "Disable a user", Tags: tags,
-		Description: "The user can't log in, their sessions end and their `dock login` tokens are revoked now. Tokens they created by hand keep working until revoked. Scope: admin, unlimited.",
+		Description: "The user can't log in, their sessions end and their `dock login` tokens are revoked now. Tokens they created by hand keep working until revoked. Operators only.",
 	}, true)
 	userIDOp(huma.Operation{
 		OperationID: "enable-user", Method: http.MethodPost, Path: Prefix + "/users/{id}/enable",
-		Summary: "Enable a user", Description: "Lets a disabled user log in again. Scope: admin, unlimited.", Tags: tags,
+		Summary: "Enable a user", Description: "Lets a disabled user log in again. Operators only.", Tags: tags,
 	}, false)
 	authed(s, a, huma.Operation{
 		OperationID: "reset-password", Method: http.MethodPost, Path: Prefix + "/users/{id}/reset-password",
 		Summary: "Reset a user's password", Tags: tags,
-		Description: "Sets the given password, or generates one and returns it once. The user's sessions end and their `dock login` tokens are revoked. Not for your own account (use change-password). Scope: admin, unlimited.",
+		Description: "Sets the given password, or generates one and returns it once. The user's sessions end and their `dock login` tokens are revoked. Not for your own account (use change-password). Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ID   int64 `path:"id"`
 		Body *apitypes.ResetPasswordRequest
@@ -79,7 +94,7 @@ func registerAdmin(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "delete-user", Method: http.MethodDelete, Path: Prefix + "/users/{id}",
-		Summary: "Delete a user", Description: "Ends their sessions and revokes their `dock login` tokens. Their audit history and the tokens they created by hand stay. Scope: admin, unlimited.",
+		Summary: "Delete a user", Description: "Ends their sessions and revokes their `dock login` tokens. Their audit history and the tokens they created by hand stay. Operators only.",
 		Tags: tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ID int64 `path:"id"`
@@ -89,7 +104,7 @@ func registerAdmin(s *Server, a huma.API) {
 
 	authed(s, a, huma.Operation{
 		OperationID: "list-audit", Method: http.MethodGet, Path: Prefix + "/audit",
-		Summary: "Audit log", Description: "Newest first. Tokens limited to a project or environment only see events there.",
+		Summary: "Audit log", Description: "The organization's events, newest first, or with `platform=true` the platform's (operators only). Tokens limited to a project or environment only see events there.",
 		Tags: []string{"audit"},
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Project     string `query:"project"`
@@ -98,9 +113,11 @@ func registerAdmin(s *Server, a huma.API) {
 		Action      string `query:"action" doc:"Action prefix, e.g. release. or domain.add"`
 		Before      int64  `query:"before" doc:"Only events with a smaller ID (paging)"`
 		Limit       int    `query:"limit" default:"100" minimum:"1" maximum:"500"`
+		Platform    bool   `query:"platform" doc:"The platform's events (servers, accounts, backups settings) instead of the organization's; operators only"`
 	}) (*out[[]apitypes.AuditEvent], error) {
 		return reply(s.core.ListAudit(ctx, actor, core.AuditFilter{
 			Project: in.Project, Environment: in.Environment, Service: in.Service, Action: in.Action, Before: in.Before, Limit: in.Limit,
+			Platform: in.Platform,
 		}))
 	})
 

@@ -190,7 +190,7 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 		return // set up already, or unknown: leave it to an admin
 	}
 	ref := ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name}
-	if _, err := c.SetupData(ctx, System, ref); err != nil && ctx.Err() == nil {
+	if _, err := c.SetupData(ctx, System.InOrg(ss.project.OrgID), ref); err != nil && ctx.Err() == nil {
 		c.log.Warn("set up data access for template database", "service", ss.String(), "err", err)
 	}
 }

@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * List alerts
-         * @description The open alerts, critical first, then newest first. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events. Scope: admin, unlimited.
+         * @description The open alerts, critical first, then newest first. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events. Operators only.
          */
         get: operations["list-alerts"];
         put?: never;
@@ -33,13 +33,13 @@ export interface paths {
         };
         /**
          * List alert channels
-         * @description Where alerts are sent, with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Scope: admin, unlimited.
+         * @description Where alerts are sent, with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Operators only.
          */
         get: operations["list-alert-channels"];
         put?: never;
         /**
          * Add an alert channel
-         * @description A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP. A webhook's generated signing secret is returned once. Scope: admin, unlimited.
+         * @description A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP. A webhook's generated signing secret is returned once. Operators only.
          */
         post: operations["create-alert-channel"];
         delete?: never;
@@ -60,7 +60,7 @@ export interface paths {
         post?: never;
         /**
          * Remove an alert channel
-         * @description Scope: admin, unlimited.
+         * @description Operators only.
          */
         delete: operations["remove-alert-channel"];
         options?: never;
@@ -79,7 +79,7 @@ export interface paths {
         put?: never;
         /**
          * Send a test alert
-         * @description Sends a test notification once, without retries, and says whether it went through. Scope: admin, unlimited.
+         * @description Sends a test notification once, without retries, and says whether it went through. Operators only.
          */
         post: operations["test-alert-channel"];
         delete?: never;
@@ -99,7 +99,7 @@ export interface paths {
         put?: never;
         /**
          * Resolve an alert
-         * @description Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. Scope: admin, unlimited.
+         * @description Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. Operators only.
          */
         post: operations["resolve-alert"];
         delete?: never;
@@ -117,7 +117,7 @@ export interface paths {
         };
         /**
          * Audit log
-         * @description Newest first. Tokens limited to a project or environment only see events there.
+         * @description The organization's events, newest first, or with `platform=true` the platform's (operators only). Tokens limited to a project or environment only see events there.
          */
         get: operations["list-audit"];
         put?: never;
@@ -294,12 +294,12 @@ export interface paths {
         };
         /**
          * Backup settings
-         * @description The install's repository, retention and schedule. `reveal` adds the repository password (unlimited admin).
+         * @description The platform's repository, retention and schedule. `reveal` adds the repository password (operators).
          */
         get: operations["get-backup-settings"];
         /**
          * Configure backups
-         * @description Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Unlimited admin.
+         * @description Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Operators only.
          */
         put: operations["configure-backups"];
         post?: never;
@@ -320,7 +320,7 @@ export interface paths {
         put?: never;
         /**
          * Back up the control plane now
-         * @description Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Unlimited admin.
+         * @description Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Operators only.
          */
         post: operations["run-control-plane-backup"];
         delete?: never;
@@ -362,7 +362,7 @@ export interface paths {
         };
         /**
          * Live events
-         * @description Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage: unlimited admins only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.
+         * @description Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage and platform events: operators only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.
          *
          *     Server-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.
          */
@@ -444,6 +444,30 @@ export interface paths {
          * @description Tokens only; `dock logout` uses it for tokens from `dock login`.
          */
         delete: operations["revoke-own-token"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orgs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your organizations
+         * @description A user's organizations with their role in each; a token's own organization.
+         */
+        get: operations["list-orgs"];
+        put?: never;
+        /**
+         * Create an organization
+         * @description With you as its admin. Users only.
+         */
+        post: operations["create-org"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -795,7 +819,7 @@ export interface paths {
         get?: never;
         /**
          * Change a service's backup schedule
-         * @description Turn daily backups on or off, or set their hour. Scope: deploy.
+         * @description Turn daily backups on or off, or set their hour. Backups are the platform's: operators only (with read on the service).
          */
         put: operations["update-backup-schedule"];
         post?: never;
@@ -1584,7 +1608,7 @@ export interface paths {
         get?: never;
         /**
          * Pin a project to a server
-         * @description Puts the project's environments of a kind on a server, before any exist. The server must accept the kind; it may be disabled for placement. Scope: admin, unlimited.
+         * @description Puts the project's environments of a kind on a server, before any exist. The server must accept the kind; it may be disabled for placement. Operators only.
          */
         put: operations["pin-placement"];
         post?: never;
@@ -1623,7 +1647,7 @@ export interface paths {
         };
         /**
          * Describe the registry
-         * @description The platform registry's size on disk, how pruning went since the daemon started, and the services keeping images in it. enabled is false on installs without a registry. Scope: admin, unlimited.
+         * @description The platform registry's size on disk, how pruning went since the daemon started, and the services keeping images in it. enabled is false on installs without a registry. Operators only.
          */
         get: operations["get-registry"];
         put?: never;
@@ -1645,7 +1669,7 @@ export interface paths {
         put?: never;
         /**
          * Prune the registry now
-         * @description Deletes the images no release keeps (outside every service's rollback window and not active) and collects their layers, in the background; the registry stops for those seconds. Answers with the registry, pruning. 409 while builds or pulls use the registry or a prune runs. Scope: admin, unlimited.
+         * @description Deletes the images no release keeps (outside every service's rollback window and not active) and collects their layers, in the background; the registry stops for those seconds. Answers with the registry, pruning. 409 while builds or pulls use the registry or a prune runs. Operators only.
          */
         post: operations["prune-registry"];
         delete?: never;
@@ -1663,13 +1687,13 @@ export interface paths {
         };
         /**
          * List servers
-         * @description Status, version, accepted environment kinds and load of every server. Unlimited admins also get each server's latest resource sample.
+         * @description Status, version, accepted environment kinds and load of every server, for operators with each server's latest resource sample; others get the servers their organization's environments run on.
          */
         get: operations["list-servers"];
         put?: never;
         /**
          * Add a server
-         * @description Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Scope: admin, unlimited.
+         * @description Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Operators only.
          */
         post: operations["add-server"];
         delete?: never;
@@ -1687,21 +1711,21 @@ export interface paths {
         };
         /**
          * Get a server
-         * @description The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Scope: admin, unlimited.
+         * @description The server with its latest resource sample, the projects and environments placed on it, and its services with their latest usage. Operators only.
          */
         get: operations["get-server"];
         put?: never;
         post?: never;
         /**
          * Remove a server
-         * @description Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Scope: admin, unlimited.
+         * @description Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Operators only.
          */
         delete: operations["remove-server"];
         options?: never;
         head?: never;
         /**
          * Update a server
-         * @description Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Scope: admin, unlimited.
+         * @description Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Operators only.
          */
         patch: operations["update-server"];
         trace?: never;
@@ -1717,7 +1741,7 @@ export interface paths {
         put?: never;
         /**
          * Revoke a server
-         * @description Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Scope: admin, unlimited.
+         * @description Forgets the server's key and drops its connection; it can't connect again until it re-joins with a new token. Its apps keep running there. Operators only.
          */
         post: operations["revoke-server"];
         delete?: never;
@@ -1737,7 +1761,7 @@ export interface paths {
         put?: never;
         /**
          * Rotate a server's key
-         * @description The online server creates a new link key and reconnects with it; the old key stops working once it has. Scope: admin, unlimited.
+         * @description The online server creates a new link key and reconnects with it; the old key stops working once it has. Operators only.
          */
         post: operations["rotate-server-key"];
         delete?: never;
@@ -1755,7 +1779,7 @@ export interface paths {
         };
         /**
          * Server statistics
-         * @description CPU, memory, disk and load history plus the latest sample. Scope: admin, unlimited.
+         * @description CPU, memory, disk and load history plus the latest sample. Operators only.
          */
         get: operations["server-stats"];
         put?: never;
@@ -1775,7 +1799,7 @@ export interface paths {
         };
         /**
          * Live server statistics
-         * @description A `sample` event every few seconds while connected; the first is the latest minute sample. Sampling stops when the last watcher disconnects. Scope: admin, unlimited.
+         * @description A `sample` event every few seconds while connected; the first is the latest minute sample. Sampling stops when the last watcher disconnects. Operators only.
          *
          *     Server-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.
          */
@@ -1817,13 +1841,13 @@ export interface paths {
         };
         /**
          * List tokens
-         * @description Scope: admin, unlimited.
+         * @description The organization's tokens and its members' `dock login` tokens. Scope: admin, unlimited.
          */
         get: operations["list-tokens"];
         put?: never;
         /**
          * Create a token
-         * @description The secret is returned once and never again. Scope: admin, unlimited.
+         * @description In the organization. The secret is returned once and never again. Scope: admin, unlimited; an operator token needs an operator.
          */
         post: operations["create-token"];
         delete?: never;
@@ -1865,13 +1889,13 @@ export interface paths {
         };
         /**
          * List users
-         * @description With each user's live sessions and usable tokens. Scope: admin, unlimited.
+         * @description The organization's members with their role, live sessions and usable tokens. Scope: admin, unlimited.
          */
         get: operations["list-users"];
         put?: never;
         /**
          * Create a user
-         * @description Scope: admin, unlimited.
+         * @description Creates an account and adds it to the organization with the role. Operators only.
          */
         post: operations["create-user"];
         delete?: never;
@@ -1892,7 +1916,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a user
-         * @description Ends their sessions and revokes their `dock login` tokens. Their audit history and the tokens they created by hand stay. Scope: admin, unlimited.
+         * @description Ends their sessions and revokes their `dock login` tokens. Their audit history and the tokens they created by hand stay. Operators only.
          */
         delete: operations["delete-user"];
         options?: never;
@@ -1911,7 +1935,7 @@ export interface paths {
         put?: never;
         /**
          * Disable a user
-         * @description The user can't log in, their sessions end and their `dock login` tokens are revoked now. Tokens they created by hand keep working until revoked. Scope: admin, unlimited.
+         * @description The user can't log in, their sessions end and their `dock login` tokens are revoked now. Tokens they created by hand keep working until revoked. Operators only.
          */
         post: operations["disable-user"];
         delete?: never;
@@ -1931,7 +1955,7 @@ export interface paths {
         put?: never;
         /**
          * Enable a user
-         * @description Lets a disabled user log in again. Scope: admin, unlimited.
+         * @description Lets a disabled user log in again. Operators only.
          */
         post: operations["enable-user"];
         delete?: never;
@@ -1951,7 +1975,7 @@ export interface paths {
         put?: never;
         /**
          * Reset a user's password
-         * @description Sets the given password, or generates one and returns it once. The user's sessions end and their `dock login` tokens are revoked. Not for your own account (use change-password). Scope: admin, unlimited.
+         * @description Sets the given password, or generates one and returns it once. The user's sessions end and their `dock login` tokens are revoked. Not for your own account (use change-password). Operators only.
          */
         post: operations["reset-password"];
         delete?: never;
@@ -2340,6 +2364,12 @@ export interface components {
             /** @description DNS-safe name */
             name: string;
         };
+        CreateOrgRequest: {
+            /** @description Defaults to the slug */
+            name?: string;
+            /** @description Lowercase letters, digits and dashes */
+            slug: string;
+        };
         CreateProjectRequest: {
             /** @description DNS-safe name */
             name: string;
@@ -2376,6 +2406,7 @@ export interface components {
              */
             expires_in_days?: number;
             name: string;
+            operator?: boolean;
             project?: string;
             /** @enum {string} */
             scope: "read" | "deploy" | "admin";
@@ -2384,6 +2415,7 @@ export interface components {
             /** Format: email */
             email: string;
             name: string;
+            operator?: boolean;
             password: string;
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
@@ -2853,9 +2885,20 @@ export interface components {
             /** @enum {string} */
             kind: "user" | "token";
             name: string;
+            operator: boolean;
+            org?: string;
             project?: string;
             /** @enum {string} */
-            scope: "read" | "deploy" | "admin";
+            scope?: "read" | "deploy" | "admin";
+        };
+        Org: {
+            /** Format: date-time */
+            created_at: string;
+            name: string;
+            /** @enum {string} */
+            role: "read" | "deploy" | "admin";
+            /** @example acme */
+            slug: string;
         };
         PendingChanges: {
             affected: string[] | null;
@@ -3383,6 +3426,7 @@ export interface components {
             /** Format: date-time */
             last_used_at?: string;
             name: string;
+            operator?: boolean;
             /** @enum {string} */
             origin: "manual" | "cli_login";
             project?: string;
@@ -3451,6 +3495,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+            operator: boolean;
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
             /** Format: int64 */
@@ -3534,6 +3579,8 @@ export interface operations {
     "list-alerts": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Include resolved alerts */
                 all?: boolean;
                 /** @description With all: only alerts with a smaller ID (paging) */
@@ -3623,7 +3670,10 @@ export interface operations {
     };
     "list-alert-channels": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3697,7 +3747,10 @@ export interface operations {
     };
     "create-alert-channel": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3784,7 +3837,10 @@ export interface operations {
     };
     "remove-alert-channel": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Channel name */
@@ -3868,7 +3924,10 @@ export interface operations {
     };
     "test-alert-channel": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Channel name */
@@ -3954,7 +4013,10 @@ export interface operations {
     };
     "resolve-alert": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 id: number;
@@ -4040,6 +4102,8 @@ export interface operations {
     "list-audit": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 project?: string;
                 /** @description Requires project */
                 environment?: string;
@@ -4050,6 +4114,8 @@ export interface operations {
                 /** @description Only events with a smaller ID (paging) */
                 before?: number;
                 limit?: number;
+                /** @description The platform's events (servers, accounts, backups settings) instead of the organization's; operators only */
+                platform?: boolean;
             };
             header?: never;
             path?: never;
@@ -4133,7 +4199,10 @@ export interface operations {
     };
     "get-audit-detail": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description The event's detail_id */
@@ -4279,7 +4348,10 @@ export interface operations {
     };
     "approve-cli-login": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4373,7 +4445,10 @@ export interface operations {
     };
     "deny-cli-login": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4467,7 +4542,10 @@ export interface operations {
     };
     "get-cli-login": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 code: string;
@@ -4682,7 +4760,10 @@ export interface operations {
     };
     logout: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: {
@@ -4767,6 +4848,8 @@ export interface operations {
     "get-backup-settings": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Include the repository password */
                 reveal?: boolean;
             };
@@ -4852,7 +4935,10 @@ export interface operations {
     };
     "configure-backups": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4939,7 +5025,10 @@ export interface operations {
     };
     "run-control-plane-backup": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5013,7 +5102,10 @@ export interface operations {
     };
     "get-default-data-policy": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5087,7 +5179,10 @@ export interface operations {
     };
     "set-default-data-policy": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5175,6 +5270,8 @@ export interface operations {
     events: {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 project?: string;
                 /** @description Requires project */
                 environment?: string;
@@ -5297,7 +5394,10 @@ export interface operations {
     };
     me: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5371,7 +5471,10 @@ export interface operations {
     };
     "change-password": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5439,7 +5542,10 @@ export interface operations {
     };
     "revoke-own-token": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5509,9 +5615,178 @@ export interface operations {
             };
         };
     };
+    "list-orgs": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Org"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "create-org": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrgRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Org"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-projects": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Include archived projects */
                 archived?: boolean;
             };
@@ -5597,7 +5872,10 @@ export interface operations {
     };
     "create-project": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5684,7 +5962,10 @@ export interface operations {
     };
     "get-project": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -5770,7 +6051,10 @@ export interface operations {
     };
     "archive-project": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -5856,7 +6140,10 @@ export interface operations {
     };
     "get-project-data-policy": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -5942,7 +6229,10 @@ export interface operations {
     };
     "set-project-data-policy": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6032,7 +6322,10 @@ export interface operations {
     };
     "list-environments": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6118,7 +6411,10 @@ export interface operations {
     };
     "create-environment": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6208,7 +6504,10 @@ export interface operations {
     };
     "get-environment": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6297,6 +6596,8 @@ export interface operations {
     "get-changes": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Include secret values (admin only) */
                 reveal?: boolean;
             };
@@ -6387,7 +6688,10 @@ export interface operations {
     };
     "apply-changes": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6475,7 +6779,10 @@ export interface operations {
     };
     "discard-changes": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6567,7 +6874,10 @@ export interface operations {
     };
     "clone-environment": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6668,7 +6978,10 @@ export interface operations {
     };
     "get-environment-data-policy": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6756,7 +7069,10 @@ export interface operations {
     };
     "set-environment-data-policy": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6848,7 +7164,10 @@ export interface operations {
     };
     "list-services": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -6936,7 +7255,10 @@ export interface operations {
     };
     "create-service": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7028,7 +7350,10 @@ export interface operations {
     };
     "get-service": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7118,7 +7443,10 @@ export interface operations {
     };
     "update-service": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7212,7 +7540,10 @@ export interface operations {
     };
     "archive-service": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7302,7 +7633,10 @@ export interface operations {
     };
     "list-backups": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7392,7 +7726,10 @@ export interface operations {
     };
     "run-backup": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7482,7 +7819,10 @@ export interface operations {
     };
     "restore-backup": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7576,7 +7916,10 @@ export interface operations {
     };
     "update-backup-schedule": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7671,6 +8014,8 @@ export interface operations {
     "get-connect": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description The environment's name; needed on production */
                 confirm?: string;
                 /** @description Add the connection URL with its password; audited as data.reveal */
@@ -7774,7 +8119,10 @@ export interface operations {
     };
     "get-data": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -7874,6 +8222,8 @@ export interface operations {
     "list-changesets": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Only changesets with this status */
                 status?: "pending" | "committed" | "rejected" | "expired" | "conflict";
             };
@@ -7975,7 +8325,10 @@ export interface operations {
     };
     "create-changeset": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -8078,7 +8431,10 @@ export interface operations {
     };
     "get-changeset": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -8179,7 +8535,10 @@ export interface operations {
     };
     "commit-changeset": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -8284,7 +8643,10 @@ export interface operations {
     };
     "reject-changeset": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -8390,6 +8752,8 @@ export interface operations {
     "get-data-history": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Only entries with a smaller audit_id */
                 before?: number;
                 limit?: number;
@@ -8492,7 +8856,10 @@ export interface operations {
     };
     "data-query": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -8595,7 +8962,10 @@ export interface operations {
     };
     "list-saved-queries": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -8694,7 +9064,10 @@ export interface operations {
     };
     "create-saved-query": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -8797,7 +9170,10 @@ export interface operations {
     };
     "update-saved-query": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -8902,7 +9278,10 @@ export interface operations {
     };
     "delete-saved-query": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9001,7 +9380,10 @@ export interface operations {
     };
     "get-data-schema": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9100,7 +9482,10 @@ export interface operations {
     };
     "set-sensitive-columns": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9203,7 +9588,10 @@ export interface operations {
     };
     "setup-data": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9303,6 +9691,8 @@ export interface operations {
     "get-data-references": {
         parameters: {
             query: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description The row's primary key as a JSON object, column to value, e.g. {"id":"42"} */
                 key: string;
                 /** @description Rows per foreign key; 0 means 10 */
@@ -9409,6 +9799,8 @@ export interface operations {
     "get-data-rows": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Column to sort by, -column for descending; default the primary key */
                 order?: string;
                 /** @description The previous page's next cursor */
@@ -9524,7 +9916,10 @@ export interface operations {
     };
     "update-database-settings": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9618,7 +10013,10 @@ export interface operations {
     };
     "list-domains": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9708,7 +10106,10 @@ export interface operations {
     };
     "add-domain": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9802,7 +10203,10 @@ export interface operations {
     };
     "generate-domain": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9892,7 +10296,10 @@ export interface operations {
     };
     "remove-domain": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -9981,7 +10388,10 @@ export interface operations {
     };
     "get-git-source": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -10071,7 +10481,10 @@ export interface operations {
     };
     "connect-git": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -10165,7 +10578,10 @@ export interface operations {
     };
     "disconnect-git": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -10253,7 +10669,10 @@ export interface operations {
     };
     "deploy-git": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -10348,6 +10767,8 @@ export interface operations {
     "service-logs": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Release number; default the active release */
                 release?: number;
                 /** @description Keep streaming new lines */
@@ -10452,6 +10873,8 @@ export interface operations {
     "list-releases": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 limit?: number;
             };
             header?: never;
@@ -10543,7 +10966,10 @@ export interface operations {
     };
     "deploy-image": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -10637,7 +11063,10 @@ export interface operations {
     };
     "deploy-source": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -10741,7 +11170,10 @@ export interface operations {
     };
     "get-release": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -10833,7 +11265,10 @@ export interface operations {
     };
     "get-build-log": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -10925,7 +11360,10 @@ export interface operations {
     };
     "follow-build-log": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11022,7 +11460,10 @@ export interface operations {
     };
     rollback: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11114,7 +11555,10 @@ export interface operations {
     };
     restart: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11205,6 +11649,8 @@ export interface operations {
     "service-stats": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description 1h and 24h: a point per minute; 7d: a point per 10 minutes */
                 range?: "1h" | "24h" | "7d";
             };
@@ -11297,7 +11743,10 @@ export interface operations {
     };
     "service-stats-live": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11401,7 +11850,10 @@ export interface operations {
     };
     "list-volumes": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11491,7 +11943,10 @@ export interface operations {
     };
     "add-volume": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11586,6 +12041,8 @@ export interface operations {
     "list-variables": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description Include secret values (admin only) */
                 reveal?: boolean;
                 /** @description Only shared variables and this service's */
@@ -11678,7 +12135,10 @@ export interface operations {
     };
     "set-variables": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11770,7 +12230,10 @@ export interface operations {
     };
     "export-project": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11856,7 +12319,10 @@ export interface operations {
     };
     "export-project-toml": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -11942,7 +12408,10 @@ export interface operations {
     };
     "project-overview": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -12028,7 +12497,10 @@ export interface operations {
     };
     "list-placements": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -12114,7 +12586,10 @@ export interface operations {
     };
     "pin-placement": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -12205,7 +12680,10 @@ export interface operations {
     };
     promote: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Project name */
@@ -12304,7 +12782,10 @@ export interface operations {
     };
     "get-registry": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -12378,7 +12859,10 @@ export interface operations {
     };
     "prune-registry": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -12452,7 +12936,10 @@ export interface operations {
     };
     "list-servers": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -12526,7 +13013,10 @@ export interface operations {
     };
     "add-server": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -12613,7 +13103,10 @@ export interface operations {
     };
     "get-server": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Server name */
@@ -12699,7 +13192,10 @@ export interface operations {
     };
     "remove-server": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Server name */
@@ -12783,7 +13279,10 @@ export interface operations {
     };
     "update-server": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Server name */
@@ -12873,7 +13372,10 @@ export interface operations {
     };
     "revoke-server": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Server name */
@@ -12959,7 +13461,10 @@ export interface operations {
     };
     "rotate-server-key": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Server name */
@@ -13055,6 +13560,8 @@ export interface operations {
     "server-stats": {
         parameters: {
             query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
                 /** @description 1h and 24h: a point per minute; 7d: a point per 10 minutes */
                 range?: "1h" | "24h" | "7d";
             };
@@ -13143,7 +13650,10 @@ export interface operations {
     };
     "server-stats-live": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 /** @description Server name */
@@ -13243,7 +13753,10 @@ export interface operations {
     };
     "list-templates": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13317,7 +13830,10 @@ export interface operations {
     };
     "list-tokens": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13391,7 +13907,10 @@ export interface operations {
     };
     "create-token": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13478,7 +13997,10 @@ export interface operations {
     };
     "revoke-token": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 id: number;
@@ -13561,7 +14083,10 @@ export interface operations {
     };
     "update-token": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 id: number;
@@ -13650,7 +14175,10 @@ export interface operations {
     };
     "list-users": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13724,7 +14252,10 @@ export interface operations {
     };
     "create-user": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13811,7 +14342,10 @@ export interface operations {
     };
     "delete-user": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 id: number;
@@ -13894,7 +14428,10 @@ export interface operations {
     };
     "disable-user": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 id: number;
@@ -13979,7 +14516,10 @@ export interface operations {
     };
     "enable-user": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 id: number;
@@ -14064,7 +14604,10 @@ export interface operations {
     };
     "reset-password": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
             header?: never;
             path: {
                 id: number;

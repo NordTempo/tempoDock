@@ -936,5 +936,5 @@ func (c *Core) publishRelease(ctx context.Context, ss svcScope, r store.Release)
 // publish sends a service-scoped event.
 func (c *Core) publish(ss svcScope, ev apitypes.Event) {
 	ev.Project, ev.Environment, ev.Service = ss.project.Name, ss.env.Name, ss.svc.Name
-	c.bus.publish(busEvent{projectID: ss.project.ID, envID: ss.env.ID, serviceID: ss.svc.ID, ev: ev})
+	c.bus.publish(busEvent{orgID: ss.project.OrgID, projectID: ss.project.ID, envID: ss.env.ID, serviceID: ss.svc.ID, ev: ev})
 }

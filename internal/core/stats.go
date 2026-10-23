@@ -263,7 +263,7 @@ func untilNextMinute(now time.Time) time.Duration {
 }
 
 // statsTick samples every online server, stores the minute's points and
-// publishes them as usage events: one per server (admins only) and one per
+// publishes them as usage events: one per server (operators only) and one per
 // environment with its services.
 func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	servers, err := c.store.ListServers(ctx)
@@ -395,7 +395,7 @@ func (col *collector) serviceEvents(server string, targets []store.ListStatsTarg
 			}
 			name := col.names[t.ServiceID]
 			up = &apitypes.UsageUpdate{Server: server, Services: make([]apitypes.ServiceUsageSample, 0, size)}
-			col.events = append(col.events, busEvent{projectID: t.ProjectID, envID: t.EnvironmentID, ev: apitypes.Event{
+			col.events = append(col.events, busEvent{orgID: name.OrgID, projectID: t.ProjectID, envID: t.EnvironmentID, ev: apitypes.Event{
 				Type: apitypes.EventUsage, Time: now.UTC(), Project: name.ProjectName, Environment: name.EnvironmentName, Usage: up,
 			}})
 		}
@@ -471,7 +471,7 @@ func statsSpan(r apitypes.StatsRange, now time.Time) (res int64, since int64, er
 
 // ServerStats returns a server's statistics history and latest sample.
 func (c *Core) ServerStats(ctx context.Context, a Actor, name string, r apitypes.StatsRange) (apitypes.ServerStats, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "reading server statistics"); err != nil {
+	if err := a.requireOperator("reading server statistics"); err != nil {
 		return apitypes.ServerStats{}, err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -715,7 +715,7 @@ func offer[T any](ch chan T, v T) {
 // ServerStatsLive streams a server's usage every few seconds while the
 // client watches; the first event is the latest minute sample, if any.
 func (c *Core) ServerStatsLive(ctx context.Context, a Actor, name string) (Stream[apitypes.ServerUsage], error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "reading server statistics"); err != nil {
+	if err := a.requireOperator("reading server statistics"); err != nil {
 		return nil, err
 	}
 	srv, err := c.loadServer(ctx, name)

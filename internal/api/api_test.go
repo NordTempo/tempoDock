@@ -36,12 +36,18 @@ type fixture struct {
 	tokens  map[string]string // name → secret
 }
 
+// sys is the system actor in the test org, the first one created.
+var sys = core.System.InOrg(1)
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateOrg(ctx, store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
 		t.Fatal(err)
 	}
 	box, _ := secrets.New(bytes.Repeat([]byte{1}, secrets.KeySize))
@@ -64,7 +70,7 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{t: t, srv: srv, core: c, rt: rt, dataDir: dir, tokens: map[string]string{}}
 
 	for _, p := range []string{"shop", "blog"} {
-		if _, err := c.CreateProject(ctx, core.System, apitypes.CreateProjectRequest{Name: p}); err != nil {
+		if _, err := c.CreateProject(ctx, sys, apitypes.CreateProjectRequest{Name: p}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -73,18 +79,19 @@ func newFixture(t *testing.T) *fixture {
 		{Project: "shop", Environment: "production", Service: "worker"},
 		{Project: "blog", Environment: "production", Service: "api"},
 	} {
-		if _, err := c.CreateService(ctx, core.System, s.Env(), apitypes.CreateServiceRequest{Name: s.Service, Image: "app:1"}); err != nil {
+		if _, err := c.CreateService(ctx, sys, s.Env(), apitypes.CreateServiceRequest{Name: s.Service, Image: "app:1"}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for name, req := range map[string]apitypes.CreateTokenRequest{
+		"operator":    {Scope: apitypes.ScopeAdmin, Operator: true},
 		"admin":       {Scope: apitypes.ScopeAdmin},
 		"deploy":      {Scope: apitypes.ScopeDeploy},
 		"read":        {Scope: apitypes.ScopeRead},
 		"shop-deploy": {Scope: apitypes.ScopeDeploy, Project: "shop"},
 	} {
 		req.Name = name
-		tok, err := c.CreateToken(ctx, core.System, req)
+		tok, err := c.CreateToken(ctx, sys, req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -306,7 +313,7 @@ func TestSourceUploadStreamsToDisk(t *testing.T) {
 
 func TestLoginSessionAndEvents(t *testing.T) {
 	f := newFixture(t)
-	if _, err := f.core.CreateUser(context.Background(), core.System, apitypes.CreateUserRequest{
+	if _, err := f.core.CreateUser(context.Background(), sys, apitypes.CreateUserRequest{
 		Email: "ada@example.com", Name: "Ada", Password: "correct horse battery", Role: apitypes.ScopeAdmin,
 	}); err != nil {
 		t.Fatal(err)

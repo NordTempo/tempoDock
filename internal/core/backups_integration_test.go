@@ -33,13 +33,13 @@ func TestIntegrationTemplateBackupRestore(t *testing.T) {
 	install = c.install
 	ctx := context.Background()
 	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
-	if _, err := c.CreateProject(ctx, System, apitypes.CreateProjectRequest{Name: project}); err != nil {
+	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
 		t.Fatal(err)
 	}
 	env := EnvRef{project, "production"}
 	db, cache := ServiceRef{project, "production", "db"}, ServiceRef{project, "production", "cache"}
 	for ref, tpl := range map[ServiceRef]apitypes.Template{db: apitypes.TemplatePostgres, cache: apitypes.TemplateRedis} {
-		if _, err := c.CreateService(ctx, System, env, apitypes.CreateServiceRequest{Name: ref.Service, Template: tpl}); err != nil {
+		if _, err := c.CreateService(ctx, testSystem, env, apitypes.CreateServiceRequest{Name: ref.Service, Template: tpl}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -50,7 +50,7 @@ func TestIntegrationTemplateBackupRestore(t *testing.T) {
 	}
 	// Data setup runs on its own once Postgres went active.
 	for start := time.Now(); ; time.Sleep(200 * time.Millisecond) {
-		info, err := c.DataInfo(ctx, System, db)
+		info, err := c.DataInfo(ctx, testSystem, db)
 		if err == nil && info.Status == apitypes.DataReady {
 			break
 		}
@@ -65,7 +65,7 @@ func TestIntegrationTemplateBackupRestore(t *testing.T) {
 	execIn(t, c, cache, "redis-cli", "-a", pw, "--no-auth-warning", "SET", "greeting", "hello")
 
 	for _, ref := range []ServiceRef{db, cache} {
-		run, err := c.RunBackup(ctx, System, ref)
+		run, err := c.RunBackup(ctx, testSystem, ref)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +73,7 @@ func TestIntegrationTemplateBackupRestore(t *testing.T) {
 		if done.Status != apitypes.BackupSucceeded || done.Snapshot == "" || done.SizeBytes == 0 {
 			t.Fatalf("backup of %s: %+v", ref.Service, done)
 		}
-		res, err := c.RestoreBackup(ctx, System, ref, apitypes.RestoreBackupRequest{Snapshot: done.Snapshot[:8]})
+		res, err := c.RestoreBackup(ctx, testSystem, ref, apitypes.RestoreBackupRequest{Snapshot: done.Snapshot[:8]})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,12 +108,12 @@ func TestIntegrationControlPlaneBackup(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(c.cfg.DataDir, cpbackup.SecretKeyFile), bytes.Repeat([]byte{7}, 32), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.RunControlPlaneBackup(ctx, System); err != nil {
+	if _, err := c.RunControlPlaneBackup(ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
 	var run apitypes.ControlPlaneBackupRun
 	for deadline := time.Now().Add(5 * time.Minute); ; time.Sleep(200 * time.Millisecond) {
-		set, err := c.GetBackupSettings(ctx, System, false)
+		set, err := c.GetBackupSettings(ctx, testSystem, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -153,7 +153,7 @@ func TestIntegrationControlPlaneBackup(t *testing.T) {
 // trimmed output.
 func execIn(t *testing.T, c *Core, ref ServiceRef, args ...string) string {
 	t.Helper()
-	ss, err := c.serviceFor(context.Background(), System, ref, apitypes.ScopeRead, "testing")
+	ss, err := c.serviceFor(context.Background(), testSystem, ref, apitypes.ScopeRead, "testing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func execIn(t *testing.T, c *Core, ref ServiceRef, args ...string) string {
 
 func liveVar(t *testing.T, c *Core, ref ServiceRef, key string) string {
 	t.Helper()
-	vars, err := c.ListVariables(context.Background(), System, ref.Env(), ref.Service, true)
+	vars, err := c.ListVariables(context.Background(), testSystem, ref.Env(), ref.Service, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func waitBackupRun(t *testing.T, c *Core, ref ServiceRef, id int64) apitypes.Bac
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Minute)
 	for {
-		b, err := c.ServiceBackups(context.Background(), System, ref)
+		b, err := c.ServiceBackups(context.Background(), testSystem, ref)
 		if err != nil {
 			t.Fatal(err)
 		}

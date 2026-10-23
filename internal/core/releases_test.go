@@ -15,7 +15,7 @@ func TestImageSettingFollowsDeploys(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
 	image := func() string {
 		t.Helper()
-		s, err := h.c.GetService(h.ctx, System, web)
+		s, err := h.c.GetService(h.ctx, testSystem, web)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,7 +35,7 @@ func TestImageSettingFollowsDeploys(t *testing.T) {
 	_ = tw.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: 11, Typeflag: tar.TypeReg})
 	_, _ = tw.Write([]byte("FROM app:2\n"))
 	_ = tw.Close()
-	rel, err := h.c.DeploySource(h.ctx, System, web, &buf, 1<<20)
+	rel, err := h.c.DeploySource(h.ctx, testSystem, web, &buf, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}

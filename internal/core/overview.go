@@ -63,7 +63,7 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 	}
 
 	for _, e := range envs {
-		if !a.canSee(p.ID, e.ID) {
+		if !a.canSee(p.OrgID, p.ID, e.ID) {
 			continue
 		}
 		es := envScope{p, e}
@@ -140,18 +140,32 @@ type AuditFilter struct {
 	Project, Environment, Service, Action string
 	Before                                int64
 	Limit                                 int
+	// Platform lists the platform's events (those in no org) instead of
+	// the actor's org's; operators only.
+	Platform bool
 }
 
-// ListAudit returns audit events, newest first. Actors limited to a
-// project or environment only see events there.
+// ListAudit returns the actor's org's audit events, newest first, or with
+// f.Platform the platform's. Actors limited to a project or environment
+// only see events there.
 func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitypes.AuditEvent, error) {
-	if err := a.require(apitypes.ScopeRead, "reading the audit log"); err != nil {
+	if f.Platform {
+		if err := a.requireOperator("reading the platform's audit log"); err != nil {
+			return nil, err
+		}
+		if f.Project != "" || f.Service != "" {
+			return nil, invalid("the platform's audit log has no projects; drop the project filter")
+		}
+	} else if err := a.require(apitypes.ScopeRead, "reading the audit log"); err != nil {
 		return nil, err
 	}
 	if f.Service != "" {
 		return c.listServiceAudit(ctx, a, f)
 	}
 	params := store.ListAuditEventsParams{MaxRows: int64(f.Limit), BeforeID: f.Before}
+	if !f.Platform {
+		params.OrgID = &a.OrgID
+	}
 	if params.MaxRows <= 0 || params.MaxRows > 500 {
 		params.MaxRows = 100
 	}
@@ -185,9 +199,9 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 	var rows []store.ListAuditEventsRow
 	switch {
 	case projectID == nil && params.EnvironmentID == nil && params.ActionFrom != nil:
-		// Through audit_events_action, however rare the action.
+		// Through audit_events_org_action, however rare the action.
 		arows, err := c.store.ListAuditEventsByAction(ctx, store.ListAuditEventsByActionParams{
-			ActionFrom: *params.ActionFrom, ActionTo: *params.ActionTo, BeforeID: params.BeforeID, MaxRows: params.MaxRows,
+			OrgID: params.OrgID, ActionFrom: *params.ActionFrom, ActionTo: *params.ActionTo, BeforeID: params.BeforeID, MaxRows: params.MaxRows,
 		})
 		if err != nil {
 			return nil, err

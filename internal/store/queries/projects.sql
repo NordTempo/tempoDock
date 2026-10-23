@@ -68,16 +68,16 @@ WHERE environments.server_id = +? AND projects.archived_at IS NULL
 ORDER BY environments.project_id, environments.name;
 
 -- name: CreateProject :one
-INSERT INTO projects (name) VALUES (?) RETURNING *;
+INSERT INTO projects (org_id, name) VALUES (?, ?) RETURNING *;
 
 -- name: GetProjectByName :one
-SELECT * FROM projects WHERE name = +?;
+SELECT * FROM projects WHERE org_id = +? AND name = +?;
 
 -- name: GetProject :one
 SELECT * FROM projects WHERE id = +?;
 
 -- name: ListProjects :many
-SELECT * FROM projects ORDER BY name;
+SELECT * FROM projects WHERE org_id = +? ORDER BY name;
 
 -- name: CreateEnvironment :one
 INSERT INTO environments (project_id, name, kind, server_id) VALUES (?, ?, ?, ?) RETURNING *;

@@ -65,7 +65,7 @@ func TestReleaseHistoryRetentionKeepsRollbackWindow(t *testing.T) {
 		t.Fatalf("a second pass trimmed %d again", got.releases)
 	}
 	// A trimmed release still reads, without its history.
-	rel, err := h.c.GetRelease(h.ctx, System, web, 1)
+	rel, err := h.c.GetRelease(h.ctx, testSystem, web, 1)
 	if err != nil || len(rel.Events) != 0 {
 		t.Fatalf("release 1 = %+v, %v", rel, err)
 	}
@@ -129,7 +129,7 @@ func TestResolvedAlertRetention(t *testing.T) {
 	if got := h.c.retain(h.ctx, t0.Add(91*24*time.Hour)); got.alerts != 1 {
 		t.Fatalf("pruned %d alerts, want 1", got.alerts)
 	}
-	all, _ := h.c.ListAlerts(h.ctx, System, true, 0, 0)
+	all, _ := h.c.ListAlerts(h.ctx, testSystem, true, 0, 0)
 	if len(all) != 1 || all[0].Title != "b" {
 		t.Fatalf("alerts = %+v", all)
 	}

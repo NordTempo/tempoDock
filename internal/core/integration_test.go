@@ -22,7 +22,6 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/docker"
 	"github.com/NordTempo/tempoDock/internal/secrets"
-	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Core against a real Docker Engine. Routing is a no-op (no Caddy needed)
@@ -65,10 +64,7 @@ func dockerHarness(t *testing.T) *Core {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t, filepath.Join(dir, "dock.db"))
 	box, err := secrets.New(bytes.Repeat([]byte{7}, secrets.KeySize))
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +83,7 @@ func dockerHarness(t *testing.T) *Core {
 	}
 	id := 1_000_000 + rand.Int64N(1_000_000)*10
 	for _, q := range []string{
-		fmt.Sprintf(`INSERT INTO projects (id, name) VALUES (%d, 'seed')`, id),
+		fmt.Sprintf(`INSERT INTO projects (id, org_id, name) VALUES (%d, 1, 'seed')`, id),
 		fmt.Sprintf(`INSERT INTO environments (id, project_id, name, server_id) VALUES (%d, %d, 'seed', %d)`, id, id, c.local.ID),
 		fmt.Sprintf(`INSERT INTO services (id, environment_id, name) VALUES (%d, %d, 'seed')`, id, id),
 		fmt.Sprintf(`INSERT INTO releases (id, service_id, number, status, source, config, created_by) VALUES (%d, %d, 1, 'failed', 'image', x'00', 'seed')`, id, id),
@@ -101,9 +97,9 @@ func dockerHarness(t *testing.T) *Core {
 	}
 	t.Cleanup(func() {
 		// Archive everything (stops and removes containers), then stop.
-		ps, _ := c.ListProjects(ctx, System, false)
+		ps, _ := c.ListProjects(ctx, testSystem, false)
 		for _, p := range ps {
-			_, _ = c.ArchiveProject(ctx, System, p.Name)
+			_, _ = c.ArchiveProject(ctx, testSystem, p.Name)
 		}
 		deadline := time.Now().Add(time.Minute)
 		for time.Now().Before(deadline) {
@@ -122,9 +118,9 @@ func dockerHarness(t *testing.T) *Core {
 		c.Close()
 		if cli, err := client.New(client.FromEnv); err == nil {
 			for _, p := range ps {
-				envs, _ := c.ListEnvironments(ctx, System, p.Name)
+				envs, _ := c.ListEnvironments(ctx, testSystem, p.Name)
 				for _, e := range envs {
-					es, _ := c.loadEnv(ctx, EnvRef{p.Name, e.Name})
+					es, _ := c.loadEnv(ctx, 1, EnvRef{p.Name, e.Name})
 					_, _ = cli.NetworkRemove(ctx, networkName(es), client.NetworkRemoveOptions{})
 				}
 			}
@@ -146,7 +142,7 @@ func waitRelease(t *testing.T, c *Core, ref ServiceRef, number int64) apitypes.R
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Minute)
 	for {
-		rel, err := c.GetRelease(context.Background(), System, ref, number)
+		rel, err := c.GetRelease(context.Background(), testSystem, ref, number)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -167,20 +163,20 @@ func TestIntegrationDeploysDuringDrain(t *testing.T) {
 	c := dockerHarness(t)
 	ctx := context.Background()
 	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
-	if _, err := c.CreateProject(ctx, System, apitypes.CreateProjectRequest{Name: project}); err != nil {
+	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
 		t.Fatal(err)
 	}
 	env := EnvRef{project, "production"}
 	a, b := ServiceRef{project, "production", "a"}, ServiceRef{project, "production", "b"}
 	for _, ref := range []ServiceRef{a, b} {
-		if _, err := c.CreateService(ctx, System, env, apitypes.CreateServiceRequest{Name: ref.Service, Port: 80}); err != nil {
+		if _, err := c.CreateService(ctx, testSystem, env, apitypes.CreateServiceRequest{Name: ref.Service, Port: 80}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	const image = "traefik/whoami:latest"
 	deploy := func(ref ServiceRef) int64 {
 		t.Helper()
-		rel, err := c.DeployImage(ctx, System, ref, apitypes.DeployImageRequest{Image: image})
+		rel, err := c.DeployImage(ctx, testSystem, ref, apitypes.DeployImageRequest{Image: image})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,7 +187,7 @@ func TestIntegrationDeploysDuringDrain(t *testing.T) {
 	}
 
 	// A restart is a cutover: release 1 drains (12s) and then stops.
-	restart, err := c.Restart(ctx, System, a)
+	restart, err := c.Restart(ctx, testSystem, a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +199,7 @@ func TestIntegrationDeploysDuringDrain(t *testing.T) {
 		t.Fatalf("b release 1 during a's drain: %s %s", r.Status, r.Error)
 	}
 	// And another restart of A while release 1 may still be stopping.
-	again, err := c.Restart(ctx, System, a)
+	again, err := c.Restart(ctx, testSystem, a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,18 +214,18 @@ func TestIntegrationOwnRemovalsAreNotDrift(t *testing.T) {
 	c := dockerHarness(t)
 	ctx := context.Background()
 	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
-	if _, err := c.CreateProject(ctx, System, apitypes.CreateProjectRequest{Name: project}); err != nil {
+	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
 		t.Fatal(err)
 	}
 	db := ServiceRef{project, "production", "db"}
-	if _, err := c.CreateService(ctx, System, db.Env(), apitypes.CreateServiceRequest{Name: "db", StartCommand: "trap 'exit 0' TERM; while true; do sleep 1; done", HealthCheckTimeoutSeconds: 20}); err != nil {
+	if _, err := c.CreateService(ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "db", StartCommand: "trap 'exit 0' TERM; while true; do sleep 1; done", HealthCheckTimeoutSeconds: 20}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.AddVolume(ctx, System, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+	if _, err := c.AddVolume(ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
-		rel, err := c.DeployImage(ctx, System, db, apitypes.DeployImageRequest{Image: "alpine:latest"})
+		rel, err := c.DeployImage(ctx, testSystem, db, apitypes.DeployImageRequest{Image: "alpine:latest"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -237,10 +233,10 @@ func TestIntegrationOwnRemovalsAreNotDrift(t *testing.T) {
 			t.Fatalf("release %d: %s %s", r.Number, r.Status, r.Error)
 		}
 	}
-	if svc, _ := c.GetService(ctx, System, db); svc.Status.State != apitypes.ServiceRunning {
+	if svc, _ := c.GetService(ctx, testSystem, db); svc.Status.State != apitypes.ServiceRunning {
 		t.Fatalf("status after recreate = %+v", svc.Status)
 	}
-	if _, err := c.ArchiveService(ctx, System, db); err != nil {
+	if _, err := c.ArchiveService(ctx, testSystem, db); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(time.Minute)
@@ -256,7 +252,7 @@ func TestIntegrationOwnRemovalsAreNotDrift(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	evs, err := c.ListAudit(ctx, System, AuditFilter{Project: project, Action: "reconcile.drift"})
+	evs, err := c.ListAudit(ctx, testSystem, AuditFilter{Project: project, Action: "reconcile.drift"})
 	if err != nil || len(evs) > 0 {
 		t.Fatalf("drift: %+v %v", evs, err)
 	}
@@ -266,7 +262,7 @@ func TestIntegrationOwnRemovalsAreNotDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = cli.Close() }()
-	ss, _ := c.loadService(ctx, db)
+	ss, _ := c.loadService(ctx, 1, db)
 	vols, _ := c.store.ListVolumes(ctx, ss.svc.ID)
 	if _, err := cli.VolumeInspect(ctx, vols[0].DockerName, client.VolumeInspectOptions{}); err != nil {
 		t.Fatalf("volume gone: %v", err)

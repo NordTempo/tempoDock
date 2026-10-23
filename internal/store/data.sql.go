@@ -37,9 +37,9 @@ func (q *Queries) AddAuditDetail(ctx context.Context, arg AddAuditDetailParams) 
 }
 
 const addAuditEventWithDetail = `-- name: AddAuditEventWithDetail :one
-INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, project_id, environment_id, target, summary, created_at, detail_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id
+INSERT INTO audit_events (actor, actor_kind, user_id, token_id, action, org_id, project_id, environment_id, target, summary, created_at, detail_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id, org_id
 `
 
 type AddAuditEventWithDetailParams struct {
@@ -48,6 +48,7 @@ type AddAuditEventWithDetailParams struct {
 	UserID        *int64
 	TokenID       *int64
 	Action        string
+	OrgID         *int64
 	ProjectID     *int64
 	EnvironmentID *int64
 	Target        string
@@ -65,6 +66,7 @@ func (q *Queries) AddAuditEventWithDetail(ctx context.Context, arg AddAuditEvent
 		arg.UserID,
 		arg.TokenID,
 		arg.Action,
+		arg.OrgID,
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.Target,
@@ -86,16 +88,18 @@ func (q *Queries) AddAuditEventWithDetail(ctx context.Context, arg AddAuditEvent
 		&i.Summary,
 		&i.CreatedAt,
 		&i.DetailID,
+		&i.OrgID,
 	)
 	return i, err
 }
 
 const addDataPolicyRule = `-- name: AddDataPolicyRule :exec
-INSERT INTO data_policy_rules (project_id, environment_id, subject, kind, level, sensitive)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO data_policy_rules (org_id, project_id, environment_id, subject, kind, level, sensitive)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type AddDataPolicyRuleParams struct {
+	OrgID         int64
 	ProjectID     *int64
 	EnvironmentID *int64
 	Subject       string
@@ -108,6 +112,7 @@ type AddDataPolicyRuleParams struct {
 // rule for the same scope, subject and kind is a unique violation.
 func (q *Queries) AddDataPolicyRule(ctx context.Context, arg AddDataPolicyRuleParams) error {
 	_, err := q.exec(ctx, q.addDataPolicyRuleStmt, addDataPolicyRule,
+		arg.OrgID,
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.Subject,
@@ -254,11 +259,13 @@ func (q *Queries) DecideChangeset(ctx context.Context, arg DecideChangesetParams
 
 const deleteDataPolicyRules = `-- name: DeleteDataPolicyRules :exec
 DELETE FROM data_policy_rules
-WHERE coalesce(project_id, 0) = +CAST(?1 AS INTEGER)
-  AND coalesce(environment_id, 0) = +CAST(?2 AS INTEGER)
+WHERE org_id = +?1
+  AND coalesce(project_id, 0) = +CAST(?2 AS INTEGER)
+  AND coalesce(environment_id, 0) = +CAST(?3 AS INTEGER)
 `
 
 type DeleteDataPolicyRulesParams struct {
+	OrgID         int64
 	ProjectID     int64
 	EnvironmentID int64
 }
@@ -266,7 +273,7 @@ type DeleteDataPolicyRulesParams struct {
 // Removes the rules at one scope (see ListDataPolicyRules); replacing a
 // scope's policy is this plus AddDataPolicyRule per rule in one transaction.
 func (q *Queries) DeleteDataPolicyRules(ctx context.Context, arg DeleteDataPolicyRulesParams) error {
-	_, err := q.exec(ctx, q.deleteDataPolicyRulesStmt, deleteDataPolicyRules, arg.ProjectID, arg.EnvironmentID)
+	_, err := q.exec(ctx, q.deleteDataPolicyRulesStmt, deleteDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
 	return err
 }
 
@@ -334,7 +341,7 @@ func (q *Queries) GetAuditDetail(ctx context.Context, id int64) (AuditDetail, er
 }
 
 const getAuditEventByDetail = `-- name: GetAuditEventByDetail :one
-SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id FROM audit_events WHERE detail_id = +CAST(?1 AS INTEGER)
+SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environment_id, target, summary, created_at, detail_id, org_id FROM audit_events WHERE detail_id = +CAST(?1 AS INTEGER)
 `
 
 // The event a detail belongs to, to check who may read the detail.
@@ -354,6 +361,7 @@ func (q *Queries) GetAuditEventByDetail(ctx context.Context, detailID int64) (Au
 		&i.Summary,
 		&i.CreatedAt,
 		&i.DetailID,
+		&i.OrgID,
 	)
 	return i, err
 }
@@ -469,13 +477,15 @@ func (q *Queries) ListChangesets(ctx context.Context, arg ListChangesetsParams) 
 }
 
 const listDataPolicyRules = `-- name: ListDataPolicyRules :many
-SELECT id, project_id, environment_id, subject, kind, level, sensitive FROM data_policy_rules
-WHERE coalesce(project_id, 0) = +CAST(?1 AS INTEGER)
-  AND coalesce(environment_id, 0) = +CAST(?2 AS INTEGER)
+SELECT id, org_id, project_id, environment_id, subject, kind, level, sensitive FROM data_policy_rules
+WHERE org_id = +?1
+  AND coalesce(project_id, 0) = +CAST(?2 AS INTEGER)
+  AND coalesce(environment_id, 0) = +CAST(?3 AS INTEGER)
 ORDER BY subject, kind
 `
 
 type ListDataPolicyRulesParams struct {
+	OrgID         int64
 	ProjectID     int64
 	EnvironmentID int64
 }
@@ -483,7 +493,7 @@ type ListDataPolicyRulesParams struct {
 // The rules set at exactly one scope: project_id and environment_id 0 for
 // the default, environment_id 0 for a project.
 func (q *Queries) ListDataPolicyRules(ctx context.Context, arg ListDataPolicyRulesParams) ([]DataPolicyRule, error) {
-	rows, err := q.query(ctx, q.listDataPolicyRulesStmt, listDataPolicyRules, arg.ProjectID, arg.EnvironmentID)
+	rows, err := q.query(ctx, q.listDataPolicyRulesStmt, listDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -493,6 +503,7 @@ func (q *Queries) ListDataPolicyRules(ctx context.Context, arg ListDataPolicyRul
 		var i DataPolicyRule
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrgID,
 			&i.ProjectID,
 			&i.EnvironmentID,
 			&i.Subject,
@@ -582,12 +593,14 @@ func (q *Queries) ListDataQueryHistory(ctx context.Context, arg ListDataQueryHis
 }
 
 const listEffectiveDataPolicyRules = `-- name: ListEffectiveDataPolicyRules :many
-SELECT id, project_id, environment_id, subject, kind, level, sensitive FROM data_policy_rules
-WHERE coalesce(project_id, 0) IN (0, +CAST(?1 AS INTEGER))
-  AND coalesce(environment_id, 0) IN (0, +CAST(?2 AS INTEGER))
+SELECT id, org_id, project_id, environment_id, subject, kind, level, sensitive FROM data_policy_rules
+WHERE org_id = +?1
+  AND coalesce(project_id, 0) IN (0, +CAST(?2 AS INTEGER))
+  AND coalesce(environment_id, 0) IN (0, +CAST(?3 AS INTEGER))
 `
 
 type ListEffectiveDataPolicyRulesParams struct {
+	OrgID         int64
 	ProjectID     int64
 	EnvironmentID int64
 }
@@ -598,7 +611,7 @@ type ListEffectiveDataPolicyRulesParams struct {
 // the row with environment_id set, then project_id set, then the default,
 // then the built-in defaults. Unordered: at most 18 rows.
 func (q *Queries) ListEffectiveDataPolicyRules(ctx context.Context, arg ListEffectiveDataPolicyRulesParams) ([]DataPolicyRule, error) {
-	rows, err := q.query(ctx, q.listEffectiveDataPolicyRulesStmt, listEffectiveDataPolicyRules, arg.ProjectID, arg.EnvironmentID)
+	rows, err := q.query(ctx, q.listEffectiveDataPolicyRulesStmt, listEffectiveDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -608,6 +621,7 @@ func (q *Queries) ListEffectiveDataPolicyRules(ctx context.Context, arg ListEffe
 		var i DataPolicyRule
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrgID,
 			&i.ProjectID,
 			&i.EnvironmentID,
 			&i.Subject,

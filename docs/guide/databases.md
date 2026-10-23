@@ -69,7 +69,7 @@ printf %s "$SECRET" | dock backup configure \
 
 The first `configure` prints the **repository password**. Store it in your
 password manager: without it nobody can read the backups, including you
-after losing the server. Admins can show it again with `dock backup status
+after losing the server. Operators can show it again with `dock backup status
 --reveal`.
 
 Retention per service: 7 daily, 4 weekly and 6 monthly snapshots
@@ -102,8 +102,11 @@ password, `restic -r <repository> restore <snapshot> --target <dir>`
 
 ## Permissions
 
+Backups are the platform's: they run on their own, and the platform's
+operator decides where they go and when.
+
 | Action | Needs |
 |---|---|
 | See backups and settings | read |
-| Run, schedule, restore | deploy |
-| Configure the repository, reveal its password | admin |
+| Back up now, restore | deploy |
+| Change a service's schedule, configure the repository, reveal its password | operator |

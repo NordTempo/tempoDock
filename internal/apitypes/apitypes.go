@@ -40,15 +40,37 @@ type Health struct {
 	Version string `json:"version" example:"v0.1.0"`
 }
 
-// Me describes the caller: a logged-in user or an API token.
+// Me describes the caller: a logged-in user or an API token, acting in
+// one org.
 type Me struct {
 	Kind  string `json:"kind" enum:"user,token"`
 	Name  string `json:"name"`
 	Email string `json:"email,omitempty"`
-	Scope Scope  `json:"scope" enum:"read,deploy,admin"`
+	// Org is the org the caller acts in; empty when a user with several
+	// hasn't chosen one (the `org` parameter), and then Scope is too.
+	Org   string `json:"org,omitempty"`
+	Scope Scope  `json:"scope,omitempty" enum:"read,deploy,admin"`
+	// Operator runs the platform: servers, backups, user accounts.
+	Operator bool `json:"operator"`
 	// Project and Environment are set when a token is limited to them.
 	Project     string `json:"project,omitempty"`
 	Environment string `json:"environment,omitempty"`
+}
+
+// Org is an organization the caller belongs to (ADR 0027). It owns
+// projects and tokens; the API's `org` parameter names it by slug.
+type Org struct {
+	Slug string `json:"slug" example:"acme"`
+	Name string `json:"name"`
+	// Role is the caller's role in the org.
+	Role      Scope     `json:"role" enum:"read,deploy,admin"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// CreateOrgRequest creates an org with the caller as its admin.
+type CreateOrgRequest struct {
+	Slug string `json:"slug" minLength:"1" maxLength:"32" doc:"Lowercase letters, digits and dashes"`
+	Name string `json:"name,omitempty" maxLength:"100" doc:"Defaults to the slug"`
 }
 
 // LoginRequest starts a UI session.
@@ -589,6 +611,8 @@ type Token struct {
 	// Origin is "cli_login" for tokens created by approving `dock login`
 	// in the browser, else "manual".
 	Origin string `json:"origin" enum:"manual,cli_login"`
+	// Operator tokens may run the platform, like operator users.
+	Operator bool `json:"operator,omitempty"`
 	// Data is the token's own database access; without it the token
 	// follows the data policy's tokens rule (ADR 0016).
 	Data *DataTokenAccess `json:"data,omitempty"`
@@ -602,6 +626,9 @@ type CreateTokenRequest struct {
 	Project       string `json:"project,omitempty"`
 	Environment   string `json:"environment,omitempty" doc:"Requires project"`
 	ExpiresInDays int    `json:"expires_in_days,omitempty" minimum:"0" doc:"0 means never"`
+	// Operator makes a platform operator token (operators only): admin
+	// scope, no project or environment limit.
+	Operator bool `json:"operator,omitempty"`
 	// Data overrides the data policy's tokens rule for this token.
 	Data *DataTokenAccess `json:"data,omitempty"`
 }
@@ -612,12 +639,15 @@ type CreatedToken struct {
 	Secret string `json:"secret" example:"dock_3q2..."`
 }
 
-// User is a human who can log in to the UI.
+// User is a human who can log in to the UI, as a member of an org.
 type User struct {
-	ID        int64     `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Role      Scope     `json:"role" enum:"read,deploy,admin"`
+	ID    int64  `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	// Role is the user's role in the org.
+	Role Scope `json:"role" enum:"read,deploy,admin"`
+	// Operator runs the platform: servers, backups, user accounts.
+	Operator  bool      `json:"operator"`
 	CreatedAt time.Time `json:"created_at"`
 	// DisabledAt is set while the user can't log in.
 	DisabledAt *time.Time `json:"disabled_at,omitempty"`
@@ -648,12 +678,15 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password" minLength:"12"`
 }
 
-// CreateUserRequest creates a user.
+// CreateUserRequest creates a user account (operators only) and adds it
+// to the caller's org with Role.
 type CreateUserRequest struct {
 	Email    string `json:"email" format:"email"`
 	Name     string `json:"name" minLength:"1"`
 	Password string `json:"password" minLength:"12"`
 	Role     Scope  `json:"role" enum:"read,deploy,admin"`
+	// Operator makes the user a platform operator too.
+	Operator bool `json:"operator,omitempty"`
 }
 
 // AuditEvent records one mutating action.

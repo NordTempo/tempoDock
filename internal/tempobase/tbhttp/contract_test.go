@@ -113,13 +113,17 @@ func (s *spec) ops(match func(path string) bool) map[string]bool {
 var locators = map[string]bool{"project": true, "environment": true, "service": true, "connection": true}
 
 // shape is what the client sees of an operation: its parameters but the
-// locators, request body and responses, with every $ref resolved.
+// locators and Dock's `org` (which every Dock operation takes and its
+// client adds to every call, ADR 0027), request body and responses, with
+// every $ref resolved.
 func (s *spec) shape(op map[string]any, requestOnly bool) map[string]any {
 	var params []any
 	list, _ := op["parameters"].([]any)
 	for _, p := range list {
 		p := p.(map[string]any)
-		if p["in"] != "path" || !locators[p["name"].(string)] {
+		locator := p["in"] == "path" && locators[p["name"].(string)]
+		org := p["in"] == "query" && p["name"] == "org"
+		if !locator && !org {
 			params = append(params, p)
 		}
 	}

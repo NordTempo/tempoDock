@@ -59,7 +59,7 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 	}
 	serverStats := a.readsServerStats()
 	match := func(e busEvent) bool {
-		if !a.canSee(e.projectID, e.envID) || (e.serverStats && !serverStats) {
+		if !a.canSee(e.orgID, e.projectID, e.envID) || (e.serverStats && !serverStats) {
 			return false
 		}
 		return (f.Project == "" || e.ev.Project == f.Project) &&

@@ -133,14 +133,14 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 				return apitypes.DataPermission{}, fmt.Errorf("load token %d: %w", a.TokenID, err)
 			}
 			in.token = &t
-			if u, err := c.store.GetUserByEmail(ctx, t.CreatedBy); err == nil {
-				role := apitypes.Scope(u.Role)
+			if r, err := c.store.GetMemberRoleByEmail(ctx, store.GetMemberRoleByEmailParams{OrgID: es.project.OrgID, Email: t.CreatedBy}); err == nil {
+				role := apitypes.Scope(r)
 				in.creator = &role
 			} else if !store.IsNotFound(err) {
 				return apitypes.DataPermission{}, err
 			}
 		}
-		rules, err := c.store.ListEffectiveDataPolicyRules(ctx, store.ListEffectiveDataPolicyRulesParams{ProjectID: es.project.ID, EnvironmentID: es.env.ID})
+		rules, err := c.store.ListEffectiveDataPolicyRules(ctx, store.ListEffectiveDataPolicyRulesParams{OrgID: es.project.OrgID, ProjectID: es.project.ID, EnvironmentID: es.env.ID})
 		if err != nil {
 			return apitypes.DataPermission{}, err
 		}
@@ -199,19 +199,20 @@ func (c *Core) GetDataPolicy(ctx context.Context, a Actor, ref EnvRef) (apitypes
 	if err != nil {
 		return pol, err
 	}
-	return c.loadPolicy(ctx, pol, p, e)
+	return c.loadPolicy(ctx, a.OrgID, pol, p, e)
 }
 
-// loadPolicy fills a policy's rules and effective rules (two queries).
-func (c *Core) loadPolicy(ctx context.Context, pol apitypes.DataPolicy, p *store.Project, e *store.Environment) (apitypes.DataPolicy, error) {
+// loadPolicy fills a policy's rules and effective rules in an org (two
+// queries).
+func (c *Core) loadPolicy(ctx context.Context, orgID int64, pol apitypes.DataPolicy, p *store.Project, e *store.Environment) (apitypes.DataPolicy, error) {
 	pid, eid := scopeIDs(p, e)
-	own, err := c.store.ListDataPolicyRules(ctx, store.ListDataPolicyRulesParams{ProjectID: pid, EnvironmentID: eid})
+	own, err := c.store.ListDataPolicyRules(ctx, store.ListDataPolicyRulesParams{OrgID: orgID, ProjectID: pid, EnvironmentID: eid})
 	if err != nil {
 		return pol, err
 	}
 	all := policyRules(own)
 	if p != nil {
-		if all, err = c.store.ListEffectiveDataPolicyRules(ctx, store.ListEffectiveDataPolicyRulesParams{ProjectID: pid, EnvironmentID: eid}); err != nil {
+		if all, err = c.store.ListEffectiveDataPolicyRules(ctx, store.ListEffectiveDataPolicyRulesParams{OrgID: orgID, ProjectID: pid, EnvironmentID: eid}); err != nil {
 			return pol, err
 		}
 	}
@@ -228,7 +229,7 @@ func (c *Core) loadPolicy(ctx context.Context, pol apitypes.DataPolicy, p *store
 }
 
 // SetDataPolicy replaces the rules at one scope (see GetDataPolicy).
-// Admin only; the default policy needs an unlimited admin. An
+// Admin only; the org's default policy needs an unlimited admin. An
 // environment's rules may only name its own kind.
 func (c *Core) SetDataPolicy(ctx context.Context, a Actor, ref EnvRef, req apitypes.UpdateDataPolicyRequest) (apitypes.DataPolicy, error) {
 	pol, p, e, err := c.policyScope(ctx, a, ref, apitypes.ScopeAdmin, "changing the data access policy")
@@ -245,11 +246,11 @@ func (c *Core) SetDataPolicy(ctx context.Context, a Actor, ref EnvRef, req apity
 	}
 	pid, eid := scopeIDs(p, e)
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if err := q.DeleteDataPolicyRules(ctx, store.DeleteDataPolicyRulesParams{ProjectID: pid, EnvironmentID: eid}); err != nil {
+		if err := q.DeleteDataPolicyRules(ctx, store.DeleteDataPolicyRulesParams{OrgID: a.OrgID, ProjectID: pid, EnvironmentID: eid}); err != nil {
 			return err
 		}
 		for _, r := range req.Rules {
-			params := store.AddDataPolicyRuleParams{Subject: string(r.Subject), Kind: string(r.Kind), Level: string(r.Level), Sensitive: string(r.Sensitive)}
+			params := store.AddDataPolicyRuleParams{OrgID: a.OrgID, Subject: string(r.Subject), Kind: string(r.Kind), Level: string(r.Level), Sensitive: string(r.Sensitive)}
 			if p != nil {
 				params.ProjectID = &p.ID
 			}
@@ -273,7 +274,7 @@ func (c *Core) SetDataPolicy(ctx context.Context, a Actor, ref EnvRef, req apity
 		target = p.Name
 	}
 	c.audit(ctx, a, apitypes.AuditDataPolicy, p, e, target, datapanel.DescribeRules(target, req.Rules))
-	return c.loadPolicy(ctx, pol, p, e)
+	return c.loadPolicy(ctx, a.OrgID, pol, p, e)
 }
 
 // tokenData is a token's own data access, nil when it follows the policy.

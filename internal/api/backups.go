@@ -23,7 +23,7 @@ func registerBackups(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "get-backup-settings", Method: http.MethodGet, Path: Prefix + "/backup",
 		Summary: "Backup settings", Tags: tags,
-		Description: "The install's repository, retention and schedule. `reveal` adds the repository password (unlimited admin).",
+		Description: "The platform's repository, retention and schedule. `reveal` adds the repository password (operators).",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Reveal bool `query:"reveal" doc:"Include the repository password"`
 	}) (*out[apitypes.BackupSettings], error) {
@@ -32,7 +32,7 @@ func registerBackups(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "configure-backups", Method: http.MethodPut, Path: Prefix + "/backup",
 		Summary: "Configure backups", Tags: tags,
-		Description: "Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Unlimited admin.",
+		Description: "Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Body apitypes.ConfigureBackupRequest
 	}) (*out[apitypes.BackupSettings], error) {
@@ -41,7 +41,7 @@ func registerBackups(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "run-control-plane-backup", Method: http.MethodPost, Path: Prefix + "/backup/control-plane",
 		Summary: "Back up the control plane now", Tags: tags, DefaultStatus: http.StatusAccepted,
-		Description: "Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Unlimited admin.",
+		Description: "Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.ControlPlaneBackupRun], error) {
 		return reply(s.core.RunControlPlaneBackup(ctx, actor))
 	})
@@ -62,7 +62,7 @@ func registerBackups(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "update-backup-schedule", Method: http.MethodPut, Path: servicePathT + "/backups/schedule",
 		Summary: "Change a service's backup schedule", Tags: tags,
-		Description: "Turn daily backups on or off, or set their hour. Scope: deploy.",
+		Description: "Turn daily backups on or off, or set their hour. Backups are the platform's: operators only (with read on the service).",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Body apitypes.UpdateBackupScheduleRequest

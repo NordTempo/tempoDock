@@ -9,13 +9,15 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// busEvent is an event plus the IDs used for permission filtering.
+// busEvent is an event plus the IDs used for permission filtering. An
+// event in no org (orgID 0) is the platform's, for operators.
 type busEvent struct {
+	orgID     int64
 	projectID int64
 	envID     int64
 	serviceID int64
 	// serverStats marks platform-wide events (server statistics, alerts),
-	// for unlimited admins only.
+	// for operators only.
 	serverStats bool
 	ev          apitypes.Event
 	// alert, when set, raises or resolves an alert along with the event

@@ -16,14 +16,19 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// user creates a user with a role and returns them as an actor.
+// user creates a user with a role in the test org and returns them as an
+// actor there. They aren't an operator.
 func (h *harness) user(email string, role apitypes.Scope) Actor {
 	h.t.Helper()
-	u, err := h.c.createUser(h.ctx, apitypes.CreateUserRequest{Email: email, Name: email, Password: "password-123456", Role: role})
+	u, err := h.c.createUser(h.ctx, apitypes.CreateUserRequest{Email: email, Name: email, Password: "password-123456", Role: role}, 1)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	return userActor(u)
+	a, err := h.c.actIn(h.ctx, userActor(u), "", apitypes.ScopeAdmin)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return a
 }
 
 // token creates a token as by and returns it as an authenticated actor.
@@ -33,7 +38,7 @@ func (h *harness) token(by Actor, req apitypes.CreateTokenRequest) Actor {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	a, err := h.c.AuthenticateToken(h.ctx, created.Secret)
+	a, err := h.c.AuthenticateToken(h.ctx, created.Secret, "")
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -44,10 +49,10 @@ func (h *harness) token(by Actor, req apitypes.CreateTokenRequest) Actor {
 // config releases.
 func (h *harness) setVars(ref ServiceRef, vars map[string]string) {
 	h.t.Helper()
-	if _, err := h.c.SetVariables(h.ctx, System, ref.Env(), apitypes.SetVariablesRequest{Service: ref.Service, Set: vars}); err != nil {
+	if _, err := h.c.SetVariables(h.ctx, testSystem, ref.Env(), apitypes.SetVariablesRequest{Service: ref.Service, Set: vars}); err != nil {
 		h.t.Fatal(err)
 	}
-	applied, err := h.c.ApplyChanges(h.ctx, System, ref.Env())
+	applied, err := h.c.ApplyChanges(h.ctx, testSystem, ref.Env())
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -77,10 +82,10 @@ func TestDecidePermission(t *testing.T) {
 	)
 	role := func(s apitypes.Scope) *apitypes.Scope { return &s }
 	lvl := func(l apitypes.DataLevel) *string { s := string(l); return &s }
-	user := func(s apitypes.Scope) Actor { return Actor{Kind: "user", Name: "u@x", UserID: 1, Scope: s} }
-	agent := func(s apitypes.Scope) Actor { return Actor{Kind: "token", Name: "bot", TokenID: 1, Scope: s} }
+	user := func(s apitypes.Scope) Actor { return Actor{Kind: "user", OrgID: 1, Name: "u@x", UserID: 1, Scope: s} }
+	agent := func(s apitypes.Scope) Actor { return Actor{Kind: "token", OrgID: 1, Name: "bot", TokenID: 1, Scope: s} }
 	cliLogin := func(s apitypes.Scope) Actor {
-		return Actor{Kind: "token", Name: "cli", TokenID: 2, Scope: s, Email: "u@x"}
+		return Actor{Kind: "token", OrgID: 1, Name: "cli", TokenID: 2, Scope: s, Email: "u@x"}
 	}
 	override := func(prodLevel, nonProdLevel apitypes.DataLevel, sens apitypes.DataSensitivity) *store.Token {
 		s := string(sens)
@@ -171,7 +176,7 @@ func toStrings[T ~string](s []T) []string {
 
 func TestPermissionWhy(t *testing.T) {
 	in := permissionInput{
-		actor: Actor{Kind: "token", Name: "bot", TokenID: 1, Scope: apitypes.ScopeRead},
+		actor: Actor{Kind: "token", OrgID: 1, Name: "bot", TokenID: 1, Scope: apitypes.ScopeRead},
 		token: &store.Token{Name: "bot", CreatedBy: "ada@x"}, kind: apitypes.KindNonProduction, project: "shop", env: "staging",
 		rules: policyRules{rule(apitypes.PolicyProject, apitypes.SubjectTokens, apitypes.KindNonProduction, apitypes.LevelWrite, apitypes.SensitiveMasked)},
 	}
@@ -194,7 +199,7 @@ func TestPermissionWhy(t *testing.T) {
 func TestDataPolicyScopes(t *testing.T) {
 	h := newHarness(t)
 	h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
-	if _, err := h.c.CreateEnvironment(h.ctx, System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		t.Fatal(err)
 	}
 	admin := h.user("admin@x", apitypes.ScopeAdmin)
@@ -255,7 +260,7 @@ func TestDataPolicyScopes(t *testing.T) {
 		t.Fatalf("project policy: %+v", proj)
 	}
 
-	es, _ := h.c.loadEnv(h.ctx, staging)
+	es, _ := h.c.loadEnv(h.ctx, 1, staging)
 	perm, err := h.c.dataPermission(h.ctx, deploy, es)
 	if err != nil || perm.Level != apitypes.LevelSchema || perm.Why[0].Detail != "environment shop/staging: role:deploy gets schema on non-production, sensitive masked" {
 		t.Fatalf("deploy user on staging: %+v %v", perm, err)
@@ -267,7 +272,7 @@ func TestDataPolicyScopes(t *testing.T) {
 	if perm, _ := h.c.dataPermission(h.ctx, deploy, es); perm.Level != apitypes.LevelWrite || perm.Why[0].Policy != apitypes.PolicyProject {
 		t.Fatalf("after clearing staging: %+v", perm)
 	}
-	evs, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: apitypes.AuditDataPolicy})
+	evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: apitypes.AuditDataPolicy})
 	if len(evs) != 4 || !strings.Contains(evs[0].Summary, "cleared the data access policy of shop/staging") {
 		t.Fatalf("policy audit: %+v", evs)
 	}
@@ -278,10 +283,10 @@ func TestTokenDataAccess(t *testing.T) {
 	h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	admin := h.user("admin@x", apitypes.ScopeAdmin)
 	deploy := h.user("dev@x", apitypes.ScopeDeploy)
-	if _, err := h.c.CreateEnvironment(h.ctx, System, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		t.Fatal(err)
 	}
-	es, _ := h.c.loadEnv(h.ctx, EnvRef{"shop", "staging"})
+	es, _ := h.c.loadEnv(h.ctx, 1, EnvRef{"shop", "staging"})
 
 	read := apitypes.DataTokenAccess{Production: apitypes.LevelNone, NonProduction: apitypes.LevelRead, Sensitive: apitypes.SensitiveMasked}
 	if _, err := h.c.createToken(h.ctx, admin, apitypes.CreateTokenRequest{Name: "bad", Scope: apitypes.ScopeDeploy, Data: &apitypes.DataTokenAccess{Production: "all", NonProduction: apitypes.LevelRead, Sensitive: apitypes.SensitiveMasked}}); CodeOf(err) != apitypes.CodeValidation {
@@ -314,7 +319,7 @@ func TestTokenDataAccess(t *testing.T) {
 	if perm, _ := h.c.dataPermission(h.ctx, bot, es); perm.Level != apitypes.LevelNone || perm.Why[0].Subject != apitypes.SubjectTokens {
 		t.Fatalf("token following the policy: %+v", perm)
 	}
-	evs, _ := h.c.ListAudit(h.ctx, System, AuditFilter{Action: apitypes.AuditDataPolicy})
+	evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: apitypes.AuditDataPolicy})
 	if len(evs) != 1 || evs[0].Target != "token bot" || !strings.Contains(evs[0].Summary, "follows the data policy") {
 		t.Fatalf("audit: %+v", evs)
 	}
@@ -351,7 +356,7 @@ func TestDataConnection(t *testing.T) {
 	api := h.service("api", apitypes.CreateServiceRequest{})
 	conn := func() (dbConn, error) {
 		t.Helper()
-		ss, err := h.c.loadService(h.ctx, db)
+		ss, err := h.c.loadService(h.ctx, 1, db)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -360,7 +365,7 @@ func TestDataConnection(t *testing.T) {
 	if _, err := conn(); !errors.Is(err, errNotRunning) {
 		t.Fatalf("not deployed: %v", err)
 	}
-	if info, err := h.c.DataInfo(h.ctx, System, db); err != nil || info.Status != apitypes.DataNotRunning || info.DetectedBy != apitypes.DetectedByImage {
+	if info, err := h.c.DataInfo(h.ctx, testSystem, db); err != nil || info.Status != apitypes.DataNotRunning || info.DetectedBy != apitypes.DetectedByImage {
 		t.Fatalf("info before deploy: %+v %v", info, err)
 	}
 
@@ -370,7 +375,7 @@ func TestDataConnection(t *testing.T) {
 	if err != nil || got.owner.User != "app" || got.owner.Password != "pw" || got.database != "app" || got.port != 5432 || got.containerID == "" || got.serverID != h.c.local.ID {
 		t.Fatalf("from POSTGRES_*: %+v %v", got, err)
 	}
-	if info, _ := h.c.DataInfo(h.ctx, System, db); info.Status != apitypes.DataSetupNeeded {
+	if info, _ := h.c.DataInfo(h.ctx, testSystem, db); info.Status != apitypes.DataSetupNeeded {
 		t.Fatalf("info before setup: %+v", info)
 	}
 
@@ -382,13 +387,13 @@ func TestDataConnection(t *testing.T) {
 	// Another service's variable, resolved with references.
 	h.setVars(api, map[string]string{"DATABASE_URL": "postgresql://${{db.POSTGRES_USER}}:x@db/api"})
 	url := "api.DATABASE_URL"
-	if _, err := h.c.UpdateDatabaseSettings(h.ctx, System, db, apitypes.UpdateDatabaseSettingsRequest{DatabaseURLVariable: &url}); err != nil {
+	if _, err := h.c.UpdateDatabaseSettings(h.ctx, testSystem, db, apitypes.UpdateDatabaseSettingsRequest{DatabaseURLVariable: &url}); err != nil {
 		t.Fatal(err)
 	}
 	if got, err = conn(); err != nil || got.owner.User != "app" || got.database != "api" || got.port != 5432 {
 		t.Fatalf("from api.DATABASE_URL: %+v %v", got, err)
 	}
-	info, err := h.c.DataInfo(h.ctx, System, db)
+	info, err := h.c.DataInfo(h.ctx, testSystem, db)
 	if err != nil || len(info.UsedBy) != 1 || info.UsedBy[0] != "api" {
 		t.Fatalf("used by: %+v %v", info, err)
 	}
@@ -397,20 +402,20 @@ func TestDataConnection(t *testing.T) {
 	if _, err := conn(); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "external databases") {
 		t.Fatalf("external host: %v", err)
 	}
-	if info, _ := h.c.DataInfo(h.ctx, System, db); info.Status != apitypes.DataUnreachable || !strings.Contains(info.Reason, "api.DATABASE_URL") {
+	if info, _ := h.c.DataInfo(h.ctx, testSystem, db); info.Status != apitypes.DataUnreachable || !strings.Contains(info.Reason, "api.DATABASE_URL") {
 		t.Fatalf("external host info: %+v", info)
 	}
 
 	bad := "1x"
-	if _, err := h.c.UpdateDatabaseSettings(h.ctx, System, db, apitypes.UpdateDatabaseSettingsRequest{DatabaseURLVariable: &bad}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.UpdateDatabaseSettings(h.ctx, testSystem, db, apitypes.UpdateDatabaseSettingsRequest{DatabaseURLVariable: &bad}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("bad variable name: %v", err)
 	}
 	none := apitypes.DatabaseNone
-	svc, err := h.c.UpdateDatabaseSettings(h.ctx, System, db, apitypes.UpdateDatabaseSettingsRequest{Database: &none})
+	svc, err := h.c.UpdateDatabaseSettings(h.ctx, testSystem, db, apitypes.UpdateDatabaseSettingsRequest{Database: &none})
 	if err != nil || svc.Database != apitypes.DatabaseNone || svc.DataEngine != "" || svc.DatabaseURLVariable != url {
 		t.Fatalf("database none: %+v %v", svc, err)
 	}
-	if _, err := h.c.DataInfo(h.ctx, System, db); CodeOf(err) != apitypes.CodeNotFound {
+	if _, err := h.c.DataInfo(h.ctx, testSystem, db); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("info of a non-database: %v", err)
 	}
 }
@@ -419,7 +424,7 @@ func TestDataInfoWithoutAccess(t *testing.T) {
 	h := newHarness(t)
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	h.deploy(db, "postgres:17")
-	ss, _ := h.c.loadService(h.ctx, db)
+	ss, _ := h.c.loadService(h.ctx, 1, db)
 	sealed, _ := h.c.box.Seal([]byte("pw"))
 	if _, err := h.c.store.UpsertDataAccess(h.ctx, store.UpsertDataAccessParams{
 		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: sealed, WriterSecret: sealed, SetUpAt: now(), SetUpBy: "admin@x",
@@ -441,7 +446,7 @@ func TestDataInfoWithoutAccess(t *testing.T) {
 		t.Fatalf("setup by deploy user: %v", err)
 	}
 	// An admin's info probes the database; unreachable says so.
-	info, err = h.c.DataInfo(h.ctx, System, db)
+	info, err = h.c.DataInfo(h.ctx, testSystem, db)
 	if err != nil || info.Status != apitypes.DataUnreachable {
 		t.Fatalf("admin info: %+v %v", info, err)
 	}
@@ -510,7 +515,7 @@ func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
 	h.restart()
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	h.deploy(db, "postgres:17")
-	ss, err := h.c.loadService(h.ctx, db)
+	ss, err := h.c.loadService(h.ctx, 1, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -520,12 +525,12 @@ func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.SetDataPolicy(h.ctx, System, EnvRef{}, apitypes.UpdateDataPolicyRequest{Rules: []apitypes.DataPolicyRule{
+	if _, err := h.c.SetDataPolicy(h.ctx, testSystem, EnvRef{}, apitypes.UpdateDataPolicyRequest{Rules: []apitypes.DataPolicyRule{
 		{Subject: apitypes.SubjectDeployUsers, Kind: apitypes.KindProduction, Level: apitypes.LevelRead, Sensitive: apitypes.SensitiveMasked},
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.SetSensitiveColumns(h.ctx, System, db, apitypes.SetSensitiveColumnsRequest{Columns: []apitypes.DataColumnRef{
+	if _, err := h.c.SetSensitiveColumns(h.ctx, testSystem, db, apitypes.SetSensitiveColumnsRequest{Columns: []apitypes.DataColumnRef{
 		{Schema: "public", Table: "customers", Column: "email"},
 	}}); err != nil {
 		t.Fatal(err)
@@ -672,7 +677,7 @@ func TestDataReveal(t *testing.T) {
 	h.restart()
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	h.deploy(db, "postgres:17")
-	ss, _ := h.c.loadService(h.ctx, db)
+	ss, _ := h.c.loadService(h.ctx, 1, db)
 	sealed, _ := h.c.box.Seal([]byte("pw"))
 	if _, err := h.c.store.UpsertDataAccess(h.ctx, store.UpsertDataAccessParams{
 		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: sealed, WriterSecret: sealed, SetUpAt: now(), SetUpBy: "admin@x",
@@ -698,7 +703,7 @@ func TestDataReveal(t *testing.T) {
 		return err
 	}
 	reveals := func() []apitypes.AuditEvent {
-		evs, err := h.c.ListAudit(h.ctx, System, AuditFilter{Action: apitypes.AuditDataReveal})
+		evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: apitypes.AuditDataReveal})
 		if err != nil {
 			t.Fatal(err)
 		}
