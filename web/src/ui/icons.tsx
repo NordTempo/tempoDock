@@ -23,6 +23,7 @@ const paths = {
   grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
   box: "M3 7l9-4 9 4v10l-9 4-9-4ZM3 7l9 4 9-4M12 11v10",
   history: "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2",
+  upload: "M12 20V6M6 12l6-6 6 6M4 4h16",
   sliders: "M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4",
 } as const;
 

@@ -685,7 +685,7 @@ else
   if [[ -n "$node_listen" ]]; then
     say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
   fi
-  say "  Updates: the platform console, or dock update. A private release"
+  say "  Updates: the console's Updates page, or dock update. A private release"
   say "  repository needs a token in /etc/dock/github-token (root:dock, 0640)."
   if [[ -n "$restore" ]]; then
     say "  Restored from $restore."

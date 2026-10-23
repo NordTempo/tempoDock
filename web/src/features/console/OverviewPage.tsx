@@ -29,6 +29,7 @@ import { AuditTable } from "../audit/AuditTable";
 import { useBackupSettings } from "../backups/settings";
 import { useRegistry } from "../registry/data";
 import { useControlPlaneVersion, Version } from "../servers/parts";
+import { useUpdateNote } from "../update/data";
 
 // The console's landing page: what needs an admin now, then the numbers,
 // servers at a glance, open alerts and recent activity. It reads what the
@@ -91,12 +92,33 @@ function Attention() {
   const alerts = useOpenAlerts();
   const backups = useBackupSettings();
   const registry = useRegistry();
+  const update = useUpdateNote();
   const items: Item[] = [];
   const serverLink = (s: Server, label: string) => (
     <Link to="/console/servers/$server" params={{ server: s.name }}>
       {label}
     </Link>
   );
+  if (update?.last && update.last.status !== "succeeded" && !update.running) {
+    items.push({
+      key: "update-failed",
+      tone: "fail",
+      text: `Updating to ${update.last.to} ${update.last.status === "rolled_back" ? "was rolled back" : "failed"} ${since(update.last.finished_at)} ago`,
+      to: <Link to="/console/updates">Updates</Link>,
+    });
+  } else if (update?.available && !update.running) {
+    items.push({
+      key: "update",
+      tone: "warn",
+      text: (
+        <>
+          dock <span className="font-mono">{update.latest}</span> is out; this
+          Dock runs <span className="font-mono">{update.version}</span>
+        </>
+      ),
+      to: <Link to="/console/updates">Updates</Link>,
+    });
+  }
   for (const a of alerts) {
     items.push({
       key: `alert-${a.id}`,
@@ -187,6 +209,7 @@ function Numbers({ online }: { online: number }) {
   const disabled = users.filter((u) => u.disabled_at).length;
   const latest = backups.control_plane.latest;
   const critical = alerts.filter((a) => a.severity === "critical").length;
+  const update = useUpdateNote();
   return (
     <Facts>
       <Fact
@@ -198,6 +221,24 @@ function Numbers({ online }: { online: number }) {
           {" "}
           / {servers.length} online
         </span>
+      </Fact>
+      <Fact
+        label="Version"
+        note={
+          update?.running ? (
+            <span className="text-prog">
+              updating to {update.running.version}
+            </span>
+          ) : update?.available ? (
+            <span className="text-warn">{update.latest} available</span>
+          ) : update?.latest ? (
+            "up to date"
+          ) : undefined
+        }
+      >
+        <Link to="/console/updates" className="font-mono text-inherit">
+          {update?.version ?? "·"}
+        </Link>
       </Fact>
       <Fact
         label="Projects"

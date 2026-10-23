@@ -29,6 +29,7 @@ import { Route as AppConsoleDataAccessRouteImport } from './routes/_app.console.
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
 import { Route as AppConsoleTokensRouteImport } from './routes/_app.console.tokens'
+import { Route as AppConsoleUpdatesRouteImport } from './routes/_app.console.updates'
 import { Route as AppConsoleUsersRouteImport } from './routes/_app.console.users'
 import { Route as AppOrgProjectIndexRouteImport } from './routes/_app.$org.$project.index'
 import { Route as AppOrgProjectCompareRouteImport } from './routes/_app.$org.$project.compare'
@@ -148,6 +149,11 @@ const AppConsoleServersRoute = AppConsoleServersRouteImport.update({
 const AppConsoleTokensRoute = AppConsoleTokensRouteImport.update({
   id: '/tokens',
   path: '/tokens',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleUpdatesRoute = AppConsoleUpdatesRouteImport.update({
+  id: '/updates',
+  path: '/updates',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleUsersRoute = AppConsoleUsersRouteImport.update({
@@ -287,6 +293,7 @@ export interface FileRoutesByFullPath {
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/tokens': typeof AppConsoleTokensRoute
+  '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
   '/$org/': typeof AppOrgIndexRoute
   '/console/': typeof AppConsoleIndexRoute
@@ -327,6 +334,7 @@ export interface FileRoutesByTo {
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/tokens': typeof AppConsoleTokensRoute
+  '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
   '/$org': typeof AppOrgIndexRoute
   '/console': typeof AppConsoleIndexRoute
@@ -370,6 +378,7 @@ export interface FileRoutesById {
   '/_app/console/registry': typeof AppConsoleRegistryRoute
   '/_app/console/servers': typeof AppConsoleServersRoute
   '/_app/console/tokens': typeof AppConsoleTokensRoute
+  '/_app/console/updates': typeof AppConsoleUpdatesRoute
   '/_app/console/users': typeof AppConsoleUsersRoute
   '/_app/$org/': typeof AppOrgIndexRoute
   '/_app/console/': typeof AppConsoleIndexRoute
@@ -414,6 +423,7 @@ export interface FileRouteTypes {
     | '/console/registry'
     | '/console/servers'
     | '/console/tokens'
+    | '/console/updates'
     | '/console/users'
     | '/$org/'
     | '/console/'
@@ -454,6 +464,7 @@ export interface FileRouteTypes {
     | '/console/registry'
     | '/console/servers'
     | '/console/tokens'
+    | '/console/updates'
     | '/console/users'
     | '/$org'
     | '/console'
@@ -496,6 +507,7 @@ export interface FileRouteTypes {
     | '/_app/console/registry'
     | '/_app/console/servers'
     | '/_app/console/tokens'
+    | '/_app/console/updates'
     | '/_app/console/users'
     | '/_app/$org/'
     | '/_app/console/'
@@ -669,6 +681,13 @@ declare module '@tanstack/react-router' {
       path: '/tokens'
       fullPath: '/console/tokens'
       preLoaderRoute: typeof AppConsoleTokensRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/updates': {
+      id: '/_app/console/updates'
+      path: '/updates'
+      fullPath: '/console/updates'
+      preLoaderRoute: typeof AppConsoleUpdatesRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/users': {
@@ -906,6 +925,7 @@ interface AppConsoleRouteChildren {
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
   AppConsoleServersRoute: typeof AppConsoleServersRoute
   AppConsoleTokensRoute: typeof AppConsoleTokensRoute
+  AppConsoleUpdatesRoute: typeof AppConsoleUpdatesRoute
   AppConsoleUsersRoute: typeof AppConsoleUsersRoute
   AppConsoleIndexRoute: typeof AppConsoleIndexRoute
   AppConsoleServersServerRoute: typeof AppConsoleServersServerRoute
@@ -919,6 +939,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,
   AppConsoleServersRoute: AppConsoleServersRoute,
   AppConsoleTokensRoute: AppConsoleTokensRoute,
+  AppConsoleUpdatesRoute: AppConsoleUpdatesRoute,
   AppConsoleUsersRoute: AppConsoleUsersRoute,
   AppConsoleIndexRoute: AppConsoleIndexRoute,
   AppConsoleServersServerRoute: AppConsoleServersServerRoute,

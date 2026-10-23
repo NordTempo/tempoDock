@@ -182,7 +182,7 @@ func (r *run) apply(ctx context.Context) update.Result {
 		res.Status, res.FinishedAt, res.Backup = s, r.o.Now().UTC(), r.backup
 		if err != nil {
 			res.Error = err.Error()
-			r.say("%s: %v", s, err)
+			r.say("%s: %v", strings.ReplaceAll(string(s), "_", " "), err)
 		} else {
 			r.say("%s: dock %s", s, r.req.Version)
 		}

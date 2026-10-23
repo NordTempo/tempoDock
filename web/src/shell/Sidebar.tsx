@@ -27,6 +27,7 @@ import {
   canCreateProject,
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
+import { useUpdateNote } from "../features/update/data";
 import type { FileRoutesById } from "../routeTree.gen";
 import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
@@ -311,6 +312,19 @@ function Me() {
 }
 
 /** How many alerts are open, in the worst one's colour; nothing when none. */
+/** The newer release, or that an update runs; nothing when up to date. */
+function UpdateBadge() {
+  const st = useUpdateNote();
+  if (st?.running) return <span className="text-2xs text-prog">updating</span>;
+  if (!st?.available) return null;
+  return (
+    <span className="font-mono text-2xs text-warn">
+      {st.latest}
+      <span className="sr-only"> available</span>
+    </span>
+  );
+}
+
 function OpenAlertCount() {
   const open = useOpenAlertsIfAdmin();
   if (open.length === 0) return null;
@@ -702,6 +716,11 @@ function ConsoleNav() {
       </NavLink>
       <NavLink to="/console/audit" icon="activity">
         Audit
+      </NavLink>
+      <div className={groupLabel}>System</div>
+      <NavLink to="/console/updates" icon="upload">
+        <span className="flex-1">Updates</span>
+        <UpdateBadge />
       </NavLink>
       <div className="min-h-6 flex-1" />
       <Me />

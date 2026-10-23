@@ -505,9 +505,10 @@ shows.
 
 ## Upgrading
 
-The platform console shows when a newer release is out, with its notes,
-and updates the platform: the control plane first, then every node. The
-CLI does the same:
+The platform console's Updates page (under System) shows when a newer
+release is out, with its notes, and updates the platform: the control
+plane first, then every node. The overview says when one is out. The CLI
+does the same:
 
 ```sh
 dock update             # versions, the newer releases' notes, each server's version
