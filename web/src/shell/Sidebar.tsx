@@ -13,6 +13,7 @@ import {
   isDatabase,
   queries,
   serviceRef,
+  useIsAdmin,
   useIsOperator,
   useOrgs,
   useProjectTree,
@@ -43,6 +44,9 @@ import { usePalette } from "./palette";
 export type ShellMode = "app" | "settings" | "console";
 
 const settings = new Set<keyof FileRoutesById>([
+  "/_app/$org/settings/members",
+  "/_app/$org/settings/variables",
+  "/_app/$org/settings/general",
   "/_app/$org/tokens",
   "/_app/$org/audit",
   "/_app/account",
@@ -249,6 +253,17 @@ function OrgSwitcher() {
             >
               <Icon name="plus" className="text-mut" /> New organization
             </button>
+            {current && (
+              <Link
+                to="/$org/settings"
+                params={{ org: current.slug }}
+                className={menuItem}
+                onClick={close}
+              >
+                <Icon name="sliders" className="text-mut" /> Organization
+                settings
+              </Link>
+            )}
             <div className="my-1 border-t border-line" />
             <button
               type="button"
@@ -588,14 +603,35 @@ function ServiceLink({ view }: { view: ServiceView }) {
 
 function SettingsNav() {
   const operator = useIsOperator();
+  const admin = useIsAdmin();
+  const slug = useOrg();
+  const org = useOrgs().find((o) => o.slug === slug);
+  const params = { org: slug };
   return (
     <>
       <Link to="/" className="nav-row mb-1 text-mut">
         <Icon name="chevronLeft" /> Back to projects
       </Link>
-      <div className={groupLabel}>Organization</div>
-      {!operator && <NavLink to="/$org/tokens">Tokens</NavLink>}
-      <NavLink to="/$org/audit">Audit log</NavLink>
+      <div className={groupLabel}>{org?.name ?? "Organization"}</div>
+      {admin && (
+        <NavLink to="/$org/settings/members" params={params}>
+          Members
+        </NavLink>
+      )}
+      <NavLink to="/$org/settings/variables" params={params}>
+        Variables
+      </NavLink>
+      {!operator && (
+        <NavLink to="/$org/tokens" params={params}>
+          Tokens
+        </NavLink>
+      )}
+      <NavLink to="/$org/audit" params={params}>
+        Activity
+      </NavLink>
+      <NavLink to="/$org/settings/general" params={params}>
+        General
+      </NavLink>
       <div className="min-h-6 flex-1" />
       <Me />
     </>

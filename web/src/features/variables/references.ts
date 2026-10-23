@@ -8,7 +8,8 @@ export const hasReference = (value: string) => /\$\{\{/.test(value);
 /**
  * Expands references the way the daemon does at deploy time, from revealed
  * values: `shared.KEY` is an environment variable, `web.KEY` one of web's.
- * Unknown references stay as written.
+ * Unknown references stay as written, and so do ${{org.KEY}}: their values
+ * are the organization's.
  */
 export function resolve(
   value: string,

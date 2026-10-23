@@ -11,6 +11,11 @@ export const Route = createFileRoute("/_app")({
     if (!session) {
       throw redirect({ to: "/login", search: { redirect: location.href } });
     }
+    // The shell shows one organization's projects; with none, there's a
+    // page saying so (and invite links work outside the shell).
+    if (!session.org && session.kind === "user") {
+      throw redirect({ to: "/no-org" });
+    }
   },
   // The sidebar tree and palette show every project's services, and the
   // org switcher the caller's organizations.
