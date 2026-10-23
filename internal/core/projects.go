@@ -53,6 +53,14 @@ func validName(kind, name string) error {
 	return nil
 }
 
+// reservedProjectNames are the web UI's top-level paths (web/src/routes,
+// public/ and assets/): a project's page is /<name>, so a project with one
+// of these names could not be opened.
+var reservedProjectNames = []string{
+	"account", "alerts", "api", "assets", "audit", "backups", "cli-login",
+	"data-policy", "fonts", "login", "servers", "tokens", "users",
+}
+
 func (c *Core) loadProject(ctx context.Context, name string) (store.Project, error) {
 	p, err := c.store.GetProjectByName(ctx, name)
 	if store.IsNotFound(err) {
@@ -275,6 +283,9 @@ func (c *Core) CreateProject(ctx context.Context, a Actor, req apitypes.CreatePr
 	}
 	if err := validName("project", req.Name); err != nil {
 		return apitypes.Project{}, err
+	}
+	if slices.Contains(reservedProjectNames, req.Name) {
+		return apitypes.Project{}, invalid("%q is the address of a page in the web UI; pick another project name", req.Name)
 	}
 	var p store.Project
 	err := c.store.Tx(ctx, func(q *store.Queries) error {

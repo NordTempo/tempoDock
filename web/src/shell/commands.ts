@@ -334,9 +334,11 @@ export function useCommands(): Command[] {
       ? ([
           ["Users", "/users", "dock user list"],
           ["Data access policy", "/data-policy", "dock db policy show"],
+          ["Backups", "/backups", "dock backup status"],
         ] as const)
       : []),
     ["Audit log", "/audit", "dock audit"],
+    ["Account", "/account", "dock whoami"],
   ] as const;
   for (const [label, to, cli] of org) {
     add({

@@ -732,3 +732,11 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 		t.Fatalf("non-tar upload: %v", err)
 	}
 }
+
+func TestProjectNamesAvoidUIPages(t *testing.T) {
+	h := newHarness(t)
+	_, err := h.c.CreateProject(h.ctx, System, apitypes.CreateProjectRequest{Name: "servers"})
+	if CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("creating project servers: got %v, want a validation error", err)
+	}
+}

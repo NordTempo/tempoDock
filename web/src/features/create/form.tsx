@@ -7,6 +7,23 @@ import { Button, ErrorText } from "../../ui/kit";
 /** core's nameRe: DNS-safe, since service names are private hostnames. */
 const nameRe = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
 
+/** core's reservedProjectNames: the UI's top-level paths. */
+const reservedProjectNames = [
+  "account",
+  "alerts",
+  "api",
+  "assets",
+  "audit",
+  "backups",
+  "cli-login",
+  "data-policy",
+  "fonts",
+  "login",
+  "servers",
+  "tokens",
+  "users",
+];
+
 /**
  * What is wrong with a new name, said as what to do; undefined when it
  * is fine or still empty. `taken` holds the names already in use.
@@ -22,6 +39,9 @@ export function nameProblem(
   }
   if (kind === "service" && name === "shared") {
     return `"shared" is reserved for shared variables. Pick another name.`;
+  }
+  if (kind === "project" && reservedProjectNames.includes(name)) {
+    return `/${name} is a page in Dock. Pick another name.`;
   }
   if (taken.includes(name)) {
     return `${name} is taken in this ${kind === "project" ? "Dock" : kind === "environment" ? "project" : "environment"}. Pick another name.`;
