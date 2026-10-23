@@ -113,7 +113,10 @@ func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, e
 	}
 	u.pruning = true
 	u.mu.Unlock()
-	c.audit(ctx, a, "registry.prune", nil, nil, "registry", "started a registry prune")
+	c.audit(ctx, a.platform(), "registry.prune", nil, nil, "registry", "started a registry prune")
+	// The answer is read before the prune starts, so it says pruning
+	// however fast the prune is.
+	info, err := c.registryInfo(ctx)
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -124,5 +127,5 @@ func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, e
 		}
 		c.audit(c.ctx, System, "registry.pruned", nil, nil, "registry", fmt.Sprintf("pruned %d images no release keeps", n))
 	}()
-	return c.registryInfo(ctx)
+	return info, err
 }
