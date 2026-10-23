@@ -201,7 +201,7 @@ var security = []map[string][]string{{"bearer": {}}, {"session": {}}}
 // takes; the auth middleware reads it (ADR 0027).
 var orgParam = &huma.Param{
 	Name: "org", In: "query", Schema: &huma.Schema{Type: "string"},
-	Description: "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+	Description: "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
 }
 
 // authed registers an operation that requires a caller. The handler gets

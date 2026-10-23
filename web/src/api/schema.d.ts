@@ -3579,7 +3579,7 @@ export interface operations {
     "list-alerts": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Include resolved alerts */
                 all?: boolean;
@@ -3671,7 +3671,7 @@ export interface operations {
     "list-alert-channels": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -3748,7 +3748,7 @@ export interface operations {
     "create-alert-channel": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -3838,7 +3838,7 @@ export interface operations {
     "remove-alert-channel": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -3925,7 +3925,7 @@ export interface operations {
     "test-alert-channel": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -4014,7 +4014,7 @@ export interface operations {
     "resolve-alert": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -4102,7 +4102,7 @@ export interface operations {
     "list-audit": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 project?: string;
                 /** @description Requires project */
@@ -4200,7 +4200,7 @@ export interface operations {
     "get-audit-detail": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -4349,7 +4349,7 @@ export interface operations {
     "approve-cli-login": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -4446,7 +4446,7 @@ export interface operations {
     "deny-cli-login": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -4543,7 +4543,7 @@ export interface operations {
     "get-cli-login": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -4761,7 +4761,7 @@ export interface operations {
     logout: {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -4848,7 +4848,7 @@ export interface operations {
     "get-backup-settings": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Include the repository password */
                 reveal?: boolean;
@@ -4936,7 +4936,7 @@ export interface operations {
     "configure-backups": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5026,7 +5026,7 @@ export interface operations {
     "run-control-plane-backup": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5103,7 +5103,7 @@ export interface operations {
     "get-default-data-policy": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5180,7 +5180,7 @@ export interface operations {
     "set-default-data-policy": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5270,7 +5270,7 @@ export interface operations {
     events: {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 project?: string;
                 /** @description Requires project */
@@ -5395,7 +5395,7 @@ export interface operations {
     me: {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5472,7 +5472,7 @@ export interface operations {
     "change-password": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5543,7 +5543,7 @@ export interface operations {
     "revoke-own-token": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5618,7 +5618,7 @@ export interface operations {
     "list-orgs": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5695,7 +5695,7 @@ export interface operations {
     "create-org": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5785,7 +5785,7 @@ export interface operations {
     "list-projects": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Include archived projects */
                 archived?: boolean;
@@ -5873,7 +5873,7 @@ export interface operations {
     "create-project": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -5963,7 +5963,7 @@ export interface operations {
     "get-project": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6052,7 +6052,7 @@ export interface operations {
     "archive-project": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6141,7 +6141,7 @@ export interface operations {
     "get-project-data-policy": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6230,7 +6230,7 @@ export interface operations {
     "set-project-data-policy": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6323,7 +6323,7 @@ export interface operations {
     "list-environments": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6412,7 +6412,7 @@ export interface operations {
     "create-environment": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6505,7 +6505,7 @@ export interface operations {
     "get-environment": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6596,7 +6596,7 @@ export interface operations {
     "get-changes": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Include secret values (admin only) */
                 reveal?: boolean;
@@ -6689,7 +6689,7 @@ export interface operations {
     "apply-changes": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6780,7 +6780,7 @@ export interface operations {
     "discard-changes": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6875,7 +6875,7 @@ export interface operations {
     "clone-environment": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -6979,7 +6979,7 @@ export interface operations {
     "get-environment-data-policy": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7070,7 +7070,7 @@ export interface operations {
     "set-environment-data-policy": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7165,7 +7165,7 @@ export interface operations {
     "list-services": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7256,7 +7256,7 @@ export interface operations {
     "create-service": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7351,7 +7351,7 @@ export interface operations {
     "get-service": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7444,7 +7444,7 @@ export interface operations {
     "update-service": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7541,7 +7541,7 @@ export interface operations {
     "archive-service": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7634,7 +7634,7 @@ export interface operations {
     "list-backups": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7727,7 +7727,7 @@ export interface operations {
     "run-backup": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7820,7 +7820,7 @@ export interface operations {
     "restore-backup": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -7917,7 +7917,7 @@ export interface operations {
     "update-backup-schedule": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -8014,7 +8014,7 @@ export interface operations {
     "get-connect": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description The environment's name; needed on production */
                 confirm?: string;
@@ -8120,7 +8120,7 @@ export interface operations {
     "get-data": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -8222,7 +8222,7 @@ export interface operations {
     "list-changesets": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Only changesets with this status */
                 status?: "pending" | "committed" | "rejected" | "expired" | "conflict";
@@ -8326,7 +8326,7 @@ export interface operations {
     "create-changeset": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -8432,7 +8432,7 @@ export interface operations {
     "get-changeset": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -8536,7 +8536,7 @@ export interface operations {
     "commit-changeset": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -8644,7 +8644,7 @@ export interface operations {
     "reject-changeset": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -8752,7 +8752,7 @@ export interface operations {
     "get-data-history": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Only entries with a smaller audit_id */
                 before?: number;
@@ -8857,7 +8857,7 @@ export interface operations {
     "data-query": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -8963,7 +8963,7 @@ export interface operations {
     "list-saved-queries": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -9065,7 +9065,7 @@ export interface operations {
     "create-saved-query": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -9171,7 +9171,7 @@ export interface operations {
     "update-saved-query": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -9279,7 +9279,7 @@ export interface operations {
     "delete-saved-query": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -9381,7 +9381,7 @@ export interface operations {
     "get-data-schema": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -9483,7 +9483,7 @@ export interface operations {
     "set-sensitive-columns": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -9589,7 +9589,7 @@ export interface operations {
     "setup-data": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -9691,7 +9691,7 @@ export interface operations {
     "get-data-references": {
         parameters: {
             query: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description The row's primary key as a JSON object, column to value, e.g. {"id":"42"} */
                 key: string;
@@ -9799,7 +9799,7 @@ export interface operations {
     "get-data-rows": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Column to sort by, -column for descending; default the primary key */
                 order?: string;
@@ -9917,7 +9917,7 @@ export interface operations {
     "update-database-settings": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10014,7 +10014,7 @@ export interface operations {
     "list-domains": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10107,7 +10107,7 @@ export interface operations {
     "add-domain": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10204,7 +10204,7 @@ export interface operations {
     "generate-domain": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10297,7 +10297,7 @@ export interface operations {
     "remove-domain": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10389,7 +10389,7 @@ export interface operations {
     "get-git-source": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10482,7 +10482,7 @@ export interface operations {
     "connect-git": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10579,7 +10579,7 @@ export interface operations {
     "disconnect-git": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10670,7 +10670,7 @@ export interface operations {
     "deploy-git": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -10767,7 +10767,7 @@ export interface operations {
     "service-logs": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Release number; default the active release */
                 release?: number;
@@ -10873,7 +10873,7 @@ export interface operations {
     "list-releases": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 limit?: number;
             };
@@ -10967,7 +10967,7 @@ export interface operations {
     "deploy-image": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11064,7 +11064,7 @@ export interface operations {
     "deploy-source": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11171,7 +11171,7 @@ export interface operations {
     "get-release": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11266,7 +11266,7 @@ export interface operations {
     "get-build-log": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11361,7 +11361,7 @@ export interface operations {
     "follow-build-log": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11461,7 +11461,7 @@ export interface operations {
     rollback: {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11556,7 +11556,7 @@ export interface operations {
     restart: {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11649,7 +11649,7 @@ export interface operations {
     "service-stats": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description 1h and 24h: a point per minute; 7d: a point per 10 minutes */
                 range?: "1h" | "24h" | "7d";
@@ -11744,7 +11744,7 @@ export interface operations {
     "service-stats-live": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11851,7 +11851,7 @@ export interface operations {
     "list-volumes": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -11944,7 +11944,7 @@ export interface operations {
     "add-volume": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12041,7 +12041,7 @@ export interface operations {
     "list-variables": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description Include secret values (admin only) */
                 reveal?: boolean;
@@ -12136,7 +12136,7 @@ export interface operations {
     "set-variables": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12231,7 +12231,7 @@ export interface operations {
     "export-project": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12320,7 +12320,7 @@ export interface operations {
     "export-project-toml": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12409,7 +12409,7 @@ export interface operations {
     "project-overview": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12498,7 +12498,7 @@ export interface operations {
     "list-placements": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12587,7 +12587,7 @@ export interface operations {
     "pin-placement": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12681,7 +12681,7 @@ export interface operations {
     promote: {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12783,7 +12783,7 @@ export interface operations {
     "get-registry": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12860,7 +12860,7 @@ export interface operations {
     "prune-registry": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -12937,7 +12937,7 @@ export interface operations {
     "list-servers": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13014,7 +13014,7 @@ export interface operations {
     "add-server": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13104,7 +13104,7 @@ export interface operations {
     "get-server": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13193,7 +13193,7 @@ export interface operations {
     "remove-server": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13280,7 +13280,7 @@ export interface operations {
     "update-server": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13373,7 +13373,7 @@ export interface operations {
     "revoke-server": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13462,7 +13462,7 @@ export interface operations {
     "rotate-server-key": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13560,7 +13560,7 @@ export interface operations {
     "server-stats": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
                 /** @description 1h and 24h: a point per minute; 7d: a point per 10 minutes */
                 range?: "1h" | "24h" | "7d";
@@ -13651,7 +13651,7 @@ export interface operations {
     "server-stats-live": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13754,7 +13754,7 @@ export interface operations {
     "list-templates": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13831,7 +13831,7 @@ export interface operations {
     "list-tokens": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13908,7 +13908,7 @@ export interface operations {
     "create-token": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -13998,7 +13998,7 @@ export interface operations {
     "revoke-token": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -14084,7 +14084,7 @@ export interface operations {
     "update-token": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -14176,7 +14176,7 @@ export interface operations {
     "list-users": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -14253,7 +14253,7 @@ export interface operations {
     "create-user": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -14343,7 +14343,7 @@ export interface operations {
     "delete-user": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -14429,7 +14429,7 @@ export interface operations {
     "disable-user": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -14517,7 +14517,7 @@ export interface operations {
     "enable-user": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;
@@ -14605,7 +14605,7 @@ export interface operations {
     "reset-password": {
         parameters: {
             query?: {
-                /** @description Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization. */
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
             header?: never;

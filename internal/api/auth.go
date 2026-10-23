@@ -24,9 +24,14 @@ func actorFrom(ctx context.Context) core.Actor {
 	return a
 }
 
+// orgHeader names the org like the `org` parameter does. The web UI sends
+// it: adding a parameter means rebuilding the browser's request, which
+// loses its body.
+const orgHeader = "Dock-Org"
+
 // authenticate resolves `Authorization: Bearer <token>` or the session
 // cookie to an actor for every non-public operation, acting in the org the
-// `org` parameter names (ADR 0027).
+// `org` parameter (or the Dock-Org header) names (ADR 0027).
 func (s *Server) authenticate(a huma.API) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		if op := ctx.Operation(); op != nil && op.Metadata["public"] == true {
@@ -37,15 +42,19 @@ func (s *Server) authenticate(a huma.API) func(huma.Context, func(huma.Context))
 			actor core.Actor
 			err   error
 		)
+		org := ctx.Query("org")
+		if org == "" {
+			org = ctx.Header(orgHeader)
+		}
 		if h := ctx.Header("Authorization"); h != "" {
 			token, ok := strings.CutPrefix(h, "Bearer ")
 			if !ok {
 				_ = huma.WriteErr(a, ctx, http.StatusUnauthorized, "Authorization header must be `Bearer <token>`")
 				return
 			}
-			actor, err = s.core.AuthenticateToken(ctx.Context(), strings.TrimSpace(token), ctx.Query("org"))
+			actor, err = s.core.AuthenticateToken(ctx.Context(), strings.TrimSpace(token), org)
 		} else if c, cerr := huma.ReadCookie(ctx, sessionCookie); cerr == nil {
-			actor, err = s.core.AuthenticateSession(ctx.Context(), c.Value, ctx.Query("org"))
+			actor, err = s.core.AuthenticateSession(ctx.Context(), c.Value, org)
 		} else {
 			_ = huma.WriteErr(a, ctx, http.StatusUnauthorized, "authentication required: send `Authorization: Bearer <token>` or log in")
 			return

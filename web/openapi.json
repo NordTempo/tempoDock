@@ -5588,7 +5588,7 @@
         "operationId": "list-alerts",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -5739,7 +5739,7 @@
         "operationId": "list-alert-channels",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -5843,7 +5843,7 @@
         "operationId": "create-alert-channel",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -5963,7 +5963,7 @@
         "operationId": "remove-alert-channel",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -6076,7 +6076,7 @@
         "operationId": "test-alert-channel",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -6196,7 +6196,7 @@
         "operationId": "resolve-alert",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -6315,7 +6315,7 @@
         "operationId": "list-audit",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -6502,7 +6502,7 @@
         "operationId": "get-audit-detail",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -6695,7 +6695,7 @@
         "operationId": "approve-cli-login",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -6818,7 +6818,7 @@
         "operationId": "deny-cli-login",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -6941,7 +6941,7 @@
         "operationId": "get-cli-login",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -7223,7 +7223,7 @@
         "operationId": "logout",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -7340,7 +7340,7 @@
         "operationId": "get-backup-settings",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -7458,7 +7458,7 @@
         "operationId": "configure-backups",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -7578,7 +7578,7 @@
         "operationId": "run-control-plane-backup",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -7678,7 +7678,7 @@
         "operationId": "get-default-data-policy",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -7776,7 +7776,7 @@
         "operationId": "set-default-data-policy",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -7896,7 +7896,7 @@
         "operationId": "events",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8096,7 +8096,7 @@
         "operationId": "me",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8196,7 +8196,7 @@
         "operationId": "change-password",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8296,7 +8296,7 @@
         "operationId": "revoke-own-token",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8389,7 +8389,7 @@
         "operationId": "list-orgs",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8493,7 +8493,7 @@
         "operationId": "create-org",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8613,7 +8613,7 @@
         "operationId": "list-projects",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8737,7 +8737,7 @@
         "operationId": "create-project",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8856,7 +8856,7 @@
         "operationId": "get-project",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -8976,7 +8976,7 @@
         "operationId": "archive-project",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -9096,7 +9096,7 @@
         "operationId": "get-project-data-policy",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -9214,7 +9214,7 @@
         "operationId": "set-project-data-policy",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -9343,7 +9343,7 @@
         "operationId": "list-environments",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -9467,7 +9467,7 @@
         "operationId": "create-environment",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -9596,7 +9596,7 @@
         "operationId": "get-environment",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -9726,7 +9726,7 @@
         "operationId": "get-changes",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -9866,7 +9866,7 @@
         "operationId": "apply-changes",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -9996,7 +9996,7 @@
         "operationId": "discard-changes",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -10135,7 +10135,7 @@
         "operationId": "clone-environment",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -10285,7 +10285,7 @@
         "operationId": "get-environment-data-policy",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -10413,7 +10413,7 @@
         "operationId": "set-environment-data-policy",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -10553,7 +10553,7 @@
         "operationId": "list-services",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -10687,7 +10687,7 @@
         "operationId": "create-service",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -10826,7 +10826,7 @@
         "operationId": "get-service",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -10964,7 +10964,7 @@
         "operationId": "update-service",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -11114,7 +11114,7 @@
         "operationId": "archive-service",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -11254,7 +11254,7 @@
         "operationId": "list-backups",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -11392,7 +11392,7 @@
         "operationId": "run-backup",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -11532,7 +11532,7 @@
         "operationId": "restore-backup",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -11682,7 +11682,7 @@
         "operationId": "update-backup-schedule",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -11832,7 +11832,7 @@
         "operationId": "get-connect",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -12002,7 +12002,7 @@
         "operationId": "get-data",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -12152,7 +12152,7 @@
         "operationId": "list-changesets",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -12323,7 +12323,7 @@
         "operationId": "create-changeset",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -12482,7 +12482,7 @@
         "operationId": "get-changeset",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -12643,7 +12643,7 @@
         "operationId": "commit-changeset",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -12813,7 +12813,7 @@
         "operationId": "reject-changeset",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -12983,7 +12983,7 @@
         "operationId": "get-data-history",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -13163,7 +13163,7 @@
         "operationId": "data-query",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -13323,7 +13323,7 @@
         "operationId": "list-saved-queries",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -13476,7 +13476,7 @@
         "operationId": "create-saved-query",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -13635,7 +13635,7 @@
         "operationId": "delete-saved-query",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -13786,7 +13786,7 @@
         "operationId": "update-saved-query",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -13957,7 +13957,7 @@
         "operationId": "get-data-schema",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -14107,7 +14107,7 @@
         "operationId": "set-sensitive-columns",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -14273,7 +14273,7 @@
         "operationId": "setup-data",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -14423,7 +14423,7 @@
         "operationId": "get-data-references",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -14616,7 +14616,7 @@
         "operationId": "get-data-rows",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -14852,7 +14852,7 @@
         "operationId": "update-database-settings",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -15002,7 +15002,7 @@
         "operationId": "list-domains",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -15146,7 +15146,7 @@
         "operationId": "add-domain",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -15296,7 +15296,7 @@
         "operationId": "generate-domain",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -15436,7 +15436,7 @@
         "operationId": "remove-domain",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -15577,7 +15577,7 @@
         "operationId": "disconnect-git",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -15708,7 +15708,7 @@
         "operationId": "get-git-source",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -15846,7 +15846,7 @@
         "operationId": "connect-git",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -15996,7 +15996,7 @@
         "operationId": "deploy-git",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -16146,7 +16146,7 @@
         "operationId": "service-logs",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -16354,7 +16354,7 @@
         "operationId": "list-releases",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -16510,7 +16510,7 @@
         "operationId": "deploy-image",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -16660,7 +16660,7 @@
         "operationId": "deploy-source",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -16829,7 +16829,7 @@
         "operationId": "get-release",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -16981,7 +16981,7 @@
         "operationId": "get-build-log",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -17133,7 +17133,7 @@
         "operationId": "follow-build-log",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -17309,7 +17309,7 @@
         "operationId": "rollback",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -17461,7 +17461,7 @@
         "operationId": "restart",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -17601,7 +17601,7 @@
         "operationId": "service-stats",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -17757,7 +17757,7 @@
         "operationId": "service-stats-live",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -17930,7 +17930,7 @@
         "operationId": "list-volumes",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -18074,7 +18074,7 @@
         "operationId": "add-volume",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -18224,7 +18224,7 @@
         "operationId": "list-variables",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -18378,7 +18378,7 @@
         "operationId": "set-variables",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -18518,7 +18518,7 @@
         "operationId": "export-project",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -18638,7 +18638,7 @@
         "operationId": "export-project-toml",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -18758,7 +18758,7 @@
         "operationId": "project-overview",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -18878,7 +18878,7 @@
         "operationId": "list-placements",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19004,7 +19004,7 @@
         "operationId": "pin-placement",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19146,7 +19146,7 @@
         "operationId": "promote",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19286,7 +19286,7 @@
         "operationId": "get-registry",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19386,7 +19386,7 @@
         "operationId": "prune-registry",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19486,7 +19486,7 @@
         "operationId": "list-servers",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19590,7 +19590,7 @@
         "operationId": "add-server",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19710,7 +19710,7 @@
         "operationId": "remove-server",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19821,7 +19821,7 @@
         "operationId": "get-server",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -19939,7 +19939,7 @@
         "operationId": "update-server",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -20069,7 +20069,7 @@
         "operationId": "revoke-server",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -20189,7 +20189,7 @@
         "operationId": "rotate-server-key",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -20319,7 +20319,7 @@
         "operationId": "server-stats",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -20455,7 +20455,7 @@
         "operationId": "server-stats-live",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -20609,7 +20609,7 @@
         "operationId": "list-templates",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -20715,7 +20715,7 @@
         "operationId": "list-tokens",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -20819,7 +20819,7 @@
         "operationId": "create-token",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -20939,7 +20939,7 @@
         "operationId": "revoke-token",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -21049,7 +21049,7 @@
         "operationId": "update-token",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -21178,7 +21178,7 @@
         "operationId": "list-users",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -21282,7 +21282,7 @@
         "operationId": "create-user",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -21402,7 +21402,7 @@
         "operationId": "delete-user",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -21514,7 +21514,7 @@
         "operationId": "disable-user",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -21633,7 +21633,7 @@
         "operationId": "enable-user",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {
@@ -21752,7 +21752,7 @@
         "operationId": "reset-password",
         "parameters": [
           {
-            "description": "Organization slug to act in. Optional for a token, which belongs to one, and for a user with one organization.",
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
             "in": "query",
             "name": "org",
             "schema": {

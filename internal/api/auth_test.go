@@ -140,3 +140,22 @@ func TestChangePasswordRotatesSessions(t *testing.T) {
 		t.Fatalf("token changing a password: %d", resp.StatusCode)
 	}
 }
+
+// The Dock-Org header names the org like the `org` parameter does (the web
+// UI sends it), and a token is still refused another org.
+func TestOrgHeader(t *testing.T) {
+	f := newFixture(t)
+	for org, want := range map[string]int{"test": 200, "acme": 403} {
+		req, _ := http.NewRequest("GET", f.srv.URL+"/api/v1/projects", nil)
+		req.Header.Set("Authorization", "Bearer "+f.tokens["read"])
+		req.Header.Set("Dock-Org", org)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("Dock-Org: %s: %d, want %d", org, resp.StatusCode, want)
+		}
+	}
+}
