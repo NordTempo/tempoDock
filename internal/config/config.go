@@ -59,6 +59,23 @@ type Config struct {
 	// Retention and Alerts are control plane settings (ADR 0020).
 	Retention Retention `toml:"retention"`
 	Alerts    Alerts    `toml:"alerts"`
+	// Updates is where the control plane looks for new releases (ADR 0028).
+	Updates Updates `toml:"updates"`
+}
+
+// DefaultUpdateSource is the GitHub repository releases are published to
+// (.github/workflows/release.yml).
+const DefaultUpdateSource = "github.com/NordTempo/tempoDock"
+
+// Updates configures update checks and downloads (ADR 0028). Control
+// plane only: nodes get their releases over the node link.
+type Updates struct {
+	// Source is "github.com/OWNER/REPO" (GitHub's releases) or an absolute
+	// path to a directory of releases, <dir>/<version>/ with the assets.
+	Source string `toml:"source"`
+	// TokenFile holds a GitHub token that can read Source's releases, used
+	// when the file exists. A private repository needs one.
+	TokenFile string `toml:"token_file"`
 }
 
 // Retention is how long the control plane keeps history, and when it
@@ -285,6 +302,10 @@ func Default() Config {
 			PruneDiskPercent: 80,
 			BuildCacheKeepMB: 2048,
 		},
+		Updates: Updates{
+			Source:    DefaultUpdateSource,
+			TokenFile: "/etc/dock/github-token",
+		},
 		Alerts: Alerts{
 			DiskWarningPercent:   85,
 			DiskCriticalPercent:  95,
@@ -343,6 +364,9 @@ func (c *Config) validate() error {
 	if err := c.Alerts.validate(); err != nil {
 		return err
 	}
+	if err := c.Updates.validate(); err != nil {
+		return err
+	}
 	switch c.Ingress.Mode {
 	case "":
 		c.Ingress.Mode = IngressDirect
@@ -399,6 +423,16 @@ func CheckHostPort(field, addr string) error {
 	}
 	if err != nil {
 		return fmt.Errorf("%s %q must be host:port, e.g. \"100.64.0.10:7443\": %w", field, addr, err)
+	}
+	return nil
+}
+
+// githubSourceRe matches "github.com/OWNER/REPO".
+var githubSourceRe = regexp.MustCompile(`^github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+func (u Updates) validate() error {
+	if !githubSourceRe.MatchString(u.Source) && !filepath.IsAbs(u.Source) {
+		return fmt.Errorf("[updates] source %q must be github.com/OWNER/REPO or an absolute path to a directory of releases", u.Source)
 	}
 	return nil
 }

@@ -1,0 +1,18 @@
+[Unit]
+Description=Tempo Dock updater (applies a release the daemon downloaded and verified)
+# Started only by dock-update.path. It runs the installed dock, which
+# checks the staged release against its SHA256SUMS again, backs up the
+# control plane, runs the release's install.sh and rolls back if the new
+# version isn't healthy (ADR 0028). Logs: journalctl -u dock-update
+
+[Service]
+Type=oneshot
+# Root: it replaces /usr/local/bin/dock and the units, like install.sh.
+ExecStart=/usr/local/bin/dock admin update --config /etc/dock/config.toml
+# install.sh may pull images and download Caddy; the health check and a
+# rollback's wait up to 90 s each.
+TimeoutStartSec=20min
+# The verified release, what it replaced and the backup: root only.
+StateDirectory=dock-update
+StateDirectoryMode=0700
+PrivateTmp=true

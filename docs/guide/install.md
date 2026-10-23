@@ -136,7 +136,9 @@ the others also change an existing config, touching only their own keys.
 | Registry (control plane, `REGISTRY=1`) | `dock-registry` container, `registry:3.1.2` pinned by digest, Docker restart policy `unless-stopped`. See [Registry](#registry) |
 | Proxy unit | `dock-caddy.service`: `caddy run --resume` as `dock-caddy`, only binds 80/443. No Docker access |
 | Firewall unit | `dock-firewall.service`: runs `dock admin firewall apply` as root whenever Docker starts. See [App firewall](#app-firewall) |
-| Daemon data | `/var/lib/dock` (0700): `dock.db`, `secret.key`, `link.key` (what nodes trust), `registry.key`, `builds/`, `uploads/` |
+| Updater units | `dock-update.path` starts `dock-update.service` (`dock admin update`, root) when the daemon asks for an update in `/var/lib/dock/update`. See [Upgrading](#upgrading) |
+| Daemon data | `/var/lib/dock` (0700): `dock.db`, `secret.key`, `link.key` (what nodes trust), `registry.key`, `builds/`, `uploads/`, `update/` (staged releases) |
+| Updater data | `/var/lib/dock-update` (root, 0700): the release being applied, the binary and units it replaced, and the backup taken before the last update |
 | Caddy data | `/var/lib/dock-caddy`: certificates and the last loaded config |
 | Caddy admin socket | `/run/dock-caddy/admin.sock` (dock-caddy:dock-caddy, 0660: only the daemon can change routing) |
 | Kernel setting | `/etc/sysctl.d/90-dock.conf`: `net.ipv4.tcp_migrate_req = 1`, so Caddy reloads hand queued connections over instead of resetting them |
@@ -199,6 +201,8 @@ running).
 | `[alerts] disk_warning_percent`, `disk_critical_percent` | `85`, `95` | Disk use that raises a warning or critical alert |
 | `[alerts] server_offline_minutes` | `5` | How long a server may be unreachable before an alert |
 | `[alerts] crash_loop_restarts`, `crash_loop_minutes` | `3`, `10` | This many restarts within this many minutes is a crash loop |
+| `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |
+| `[updates] token_file` | `/etc/dock/github-token` | A GitHub token that can read the repository's releases, used when the file exists. A private repository needs one |
 
 Where alerts are sent (webhook, Slack, email) is set with `dock alerts
 channel add`, not in this file; see [ADR 0020](../decisions/0020-retention-and-alerts.md).
@@ -444,8 +448,10 @@ control plane is unreachable. Stopping or upgrading it never stops apps.
 | `dock server rotate-key homelab` | The online node switches to a new key |
 | `dock server remove homelab` | Only once no live project uses it; archive projects first. Archived projects' environments move to the control plane's server. Containers a revoked or offline server still runs stay there; remove them by hand |
 
-Upgrade a node like the control plane: re-run `install.sh` with the new
-binary; no token needed. Upgrade the control plane first. To re-join (after
+Nodes are updated with the control plane, over their link
+([Upgrading](#upgrading)). By hand, upgrade a node like the control
+plane: re-run `install.sh` with the new binary; no token needed. Upgrade
+the control plane first. To re-join (after
 `dock server revoke`, or once the control plane's key changed), get a new
 token with `dock server add` and re-run with it as `NODE_JOIN_TOKEN`. Node
 logs: `journalctl -u dock-node`.
@@ -499,32 +505,80 @@ shows.
 
 ## Upgrading
 
-Swap the binary and restart the daemon. Apps and routing are unaffected; only
-the API is down for a second. Download the new release as in
-[Install](#install) and re-run the script from its tarball, so the units
-match the binary:
+The platform console shows when a newer release is out, with its notes,
+and updates the platform: the control plane first, then every node. The
+CLI does the same:
+
+```sh
+dock update             # versions, the newer releases' notes, each server's version
+dock update apply       # update to the newest release and wait until every server runs it
+dock update apply v0.4.0 --detach
+```
+
+Apps and routing keep running; the API is down for a few seconds while
+the control plane restarts. What happens
+([ADR 0028](../decisions/0028-updates-from-the-console.md)):
+
+1. The control plane downloads the release (its binary for every server's
+   architecture, the install tarball and `SHA256SUMS`) and refuses any
+   file that doesn't match `SHA256SUMS`.
+2. It asks its updater: `dock-update.service`, which runs as root,
+   started by `dock-update.path`. The updater copies the release out of
+   the daemon's reach and checks it again, stops `dock`, writes a control
+   plane backup to `/var/lib/dock-update/`, and runs the new release's
+   `install.sh`, which swaps the binary and refreshes the units, as below.
+3. If `install.sh` fails, or the new version doesn't answer on the API
+   within 90 seconds, the updater puts the old binary, units and database
+   (from the backup) back and starts it. Changes made in those seconds are
+   lost. The console and `dock update` show the result and the end of the
+   log; `journalctl -u dock-update` has all of it.
+4. The control plane, now on the new version, updates each node behind
+   it over its link, one at a time: the node gets the files, checks them,
+   and its own updater applies them the same way (no backup: a node has
+   no database). Offline nodes are skipped; `dock update apply` again
+   takes them once they are back.
+
+Everything is audited as platform events (`dock audit --platform`).
+
+**The repository is private**, so the control plane needs a token that
+can read its releases, e.g. a fine-grained token with read access to its
+contents:
+
+```sh
+sudo install -m 0640 -o root -g dock /dev/stdin /etc/dock/github-token <<< "github_pat_..."
+```
+
+Without it the console says the repository answered 404. Once the
+repository is public, delete the file.
+
+**The first update to a version with updates in the console is by hand**,
+because the updater units come with it, and so is a node's first update
+to protocol 4 (`dock update` lists such nodes with the command). By hand
+means downloading the new release as in [Install](#install) and re-running
+the script from its tarball, so the units match the binary:
 
 ```sh
 sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh     # also refreshes units and caddy.json
 # or let it download the tarball's version:
 sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh
-# or by hand:
-sudo install -m 0755 ./dock-linux-amd64 /usr/local/bin/dock && sudo systemctl restart dock
 ```
 
-Then install the matching CLI on laptops and in CI ([The CLI](#the-cli));
-`dock version` shows whether they are in step.
+With several servers, upgrade the control plane first, then each node the
+same way (re-run `install.sh` there; it stays a node). Then install the
+matching CLI on laptops and in CI ([The CLI](#the-cli)); `dock version`
+shows whether they are in step.
 
-- Database migrations run on start and only go forward. Back up first:
-  `sudo dock admin backup` ([Backups](#backups)).
+- Database migrations run on start and only go forward. Updates from the
+  console back up first; by hand, run `sudo dock admin backup`
+  ([Backups](#backups)).
 - A deploy running during the restart is marked `failed`; the previous
   release keeps serving. Deploy again afterwards.
 - To upgrade Caddy, re-run with `CADDY_VERSION=x.y.z`, then
   `sudo systemctl restart dock-caddy` (the script doesn't restart a running
-  Caddy). Traffic blips briefly; `--resume` restores the routes.
+  Caddy). Traffic blips briefly; `--resume` restores the routes. A
+  rollback leaves an upgraded Caddy, cloudflared or BuildKit image as it
+  is.
 - To upgrade BuildKit, change `[buildkit] image` in `config.toml`.
-- With several servers, upgrade the control plane first, then each node the
-  same way (re-run `install.sh` there; it stays a node).
 - To upgrade `cloudflared`, re-run with `CLOUDFLARED_VERSION` and
   `CLOUDFLARED_SHA256` (from the release notes); the tunnel restarts.
 - Upgrading an install from before the app firewall: the script moves Caddy
@@ -534,6 +588,8 @@ Then install the matching CLI on laptops and in CI ([The CLI](#the-cli));
   covers them too. Your `config.toml` is not rewritten, so pin
   `[buildkit] image` by digest yourself if it still says only
   `moby/buildkit:v0.34.1`.
+- Air-gapped: copy a release's assets to `<dir>/<version>/` on the
+  control plane and set `[updates] source = "<dir>"`.
 
 ## Backups
 

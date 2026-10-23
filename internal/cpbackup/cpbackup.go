@@ -94,10 +94,11 @@ type Source struct {
 
 // skipData are data dir entries never archived: the live database (the
 // snapshot replaces it), transient uploads and build contexts, Railpack's
-// tool cache, the moved marker, and a node's own identity.
+// tool cache, the moved marker, staged updates (ADR 0028), and a node's
+// own identity.
 var skipData = map[string]bool{
 	DBFile: true, DBFile + "-wal": true, DBFile + "-shm": true, DBFile + "-journal": true,
-	"uploads": true, "railpack": true, "builds/work": true, MovedFile: true,
+	"uploads": true, "railpack": true, "builds/work": true, MovedFile: true, "update": true,
 	remote.NodeKeyFile: true, remote.NodeKeyFile + ".next": true, remote.StateFile: true,
 }
 
@@ -388,4 +389,51 @@ func writeFile(dst string, r io.Reader) error {
 		return err
 	}
 	return f.Close()
+}
+
+// RestoreDB puts the database in an archive back over dataDir's, which
+// must not be in use: the updater's rollback (ADR 0028), after the new
+// version may have migrated it. The database is unpacked beside the live
+// one, checked, then renamed over it, with the old one's -wal and -shm
+// removed first so SQLite doesn't replay them onto the restored file.
+// The other files in the archive are left alone.
+func RestoreDB(ctx context.Context, r io.Reader, dataDir string) error {
+	tr, m, err := openArchive(r)
+	if err != nil {
+		return err
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return errors.New("the backup has no database")
+		}
+		if err != nil {
+			return fmt.Errorf("read the backup: %w", err)
+		}
+		if hdr.Name != dataPrefix+DBFile || hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		restoring := filepath.Join(dataDir, restoringDB)
+		if err := writeFile(restoring, tr); err != nil {
+			return err
+		}
+		info, err := store.Inspect(ctx, restoring)
+		if err == nil && info.InstallID != m.InstallID {
+			err = errors.New("the database in the backup doesn't match its manifest")
+		}
+		if err != nil {
+			_ = os.Remove(restoring)
+			return err
+		}
+		db := filepath.Join(dataDir, DBFile)
+		for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+			if err := os.Remove(db + suffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+		}
+		return os.Rename(restoring, db)
+	}
 }

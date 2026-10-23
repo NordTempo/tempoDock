@@ -108,6 +108,9 @@ event driven: Docker's event stream, the in-process event bus and SSE.
 - Prefer a timer to the next deadline over a fixed ticker; prefer backoff
   over a fixed retry interval.
 - Resource stats and logs are read only while someone is viewing them.
+- Release checks ([ADR 0028](decisions/0028-updates-from-the-console.md))
+  run when an operator opens the console or runs `dock update`, and are
+  reused for 15 minutes. Nothing checks in the background.
 
 Everything periodic in the daemon, the CLI and tempoBase (which has nothing else: no statistics tick, no session sweeper, no changeset timer):
 
@@ -129,6 +132,9 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Node reconnect | `internal/node/remote/node.go` | jittered backoff | a node lost its control plane | one dial |
 | Registry tunnel wait | `internal/node/remote/registry.go` | once, up to 10 s | a registry connection on a node waits for a free tunnel | one timer per waiting connection |
 | Backup scheduler | `internal/core/backups_schedule.go` | once, at the next due backup (daily per stateful service, and daily for the control plane itself, ADR 0021) | always: the control plane's own daily backup keeps it armed | one goroutine and one timer; a pass is four queries, then one job container per due backup. The control plane's backup is a `VACUUM INTO` of the database streamed with the keys and build logs into one restic job |
+| Update pickup | `internal/core/update.go` | once, 30 s after asking | the control plane asked its updater for an update (ADR 0028) | one timer and one stat; the updater normally stops the daemon first |
+| Updater health check | `internal/updater/system.go` | 1 s, up to 90 s | the root updater applies an update or rolls one back (its own process, not the daemon) | one HTTP GET to the local API, or one small file read on a node |
+| CLI update wait | `internal/cli/update.go` | 2 s | `dock update apply` waits for an update | one GET |
 | CLI backup wait | `internal/cli/backup.go` | 2 s | `dock backup run`/`restore` (or `run --control-plane`) waits for a run | one GET |
 | Data connection idle close | `internal/data/pg` | once, 60 s after last use | a database connection is open (Dock and tempoBase) | one timer per connection |
 | tempoBase audit prune | `internal/tempobase` | at most hourly, inline when an event is written; no timer | something is being audited | one indexed delete of events past `audit_retention_days`, at most 1000 |

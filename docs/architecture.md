@@ -234,12 +234,17 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
 | Docker Engine | systemd | Everything (rare) |
 | Caddy | systemd, `caddy run --resume` | Traffic, briefly |
 | dock daemon (`serve` or `node`) | systemd | Only the API/UI, or that node's link to the control plane |
+| Updater (`dock admin update`, root) | systemd, started by `dock-update.path` when the daemon asks | Runs only during an update: swaps the binary and units, restarts the daemon |
 | BuildKit (builder servers only) | Docker, capped CPU/RAM | Only builds |
 | Registry (control plane server only) | Docker | Image pushes and pulls |
 | App containers | Docker restart policy | That app |
 
 Upgrading the platform means swapping the binary and restarting the systemd
-unit. Apps and routing are unaffected.
+unit. Apps and routing are unaffected. Operators do it from the console
+or `dock update apply`: the daemon downloads and verifies the release and
+a root updater applies it, backed up and rolled back if the new version
+isn't healthy, then nodes are updated over their links
+([ADR 0028](decisions/0028-updates-from-the-console.md)).
 
 ## tempoBase, a second binary
 

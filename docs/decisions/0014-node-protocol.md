@@ -1,6 +1,6 @@
 # 0014: Node protocol
 
-Status: accepted
+Status: accepted; updates over the link by [0028](0028-updates-from-the-console.md)
 
 ## Context
 

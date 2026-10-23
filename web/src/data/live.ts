@@ -6,6 +6,7 @@ import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { registryKey } from "../features/registry/data";
+import { applyUpdateEvent } from "../features/update/data";
 import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
@@ -40,6 +41,7 @@ const busEvents = [
   "usage",
   "server",
   "alert",
+  "update",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -155,6 +157,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "alert":
       // Only admins get these; they patch the alert lists.
       if (event.alert) applyAlertEvent(queryClient, event.alert);
+      return;
+    case "update":
+      // Only operators get these: an update moved on.
+      if (event.update) applyUpdateEvent(queryClient, event.update);
       return;
     case "build_log":
       return; // not subscribed, see busEvents

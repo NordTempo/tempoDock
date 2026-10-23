@@ -55,6 +55,9 @@ type Hello struct {
 	Version string `json:"version"`
 	// Protocol is the node's minor protocol version.
 	Protocol int `json:"protocol"`
+	// Arch is the node binary's GOARCH (protocol 4): which release binary
+	// an update sends it.
+	Arch string `json:"arch,omitempty"`
 	Facts
 }
 
@@ -80,6 +83,18 @@ type (
 	}
 	rotateResult struct {
 		Fingerprint string `json:"fingerprint"`
+	}
+	// updateRequest is the update call's arguments (protocol 4, ADR
+	// 0028). The files follow in the body, back to back, in this order.
+	updateRequest struct {
+		Version     string       `json:"version"`
+		RequestedBy string       `json:"requested_by"`
+		Files       []updateFile `json:"files"`
+	}
+	updateFile struct {
+		Name   string `json:"name"`
+		Size   int64  `json:"size"`
+		SHA256 string `json:"sha256"`
 	}
 )
 

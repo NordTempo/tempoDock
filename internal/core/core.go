@@ -25,6 +25,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/update"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
 
@@ -62,6 +63,11 @@ type Options struct {
 	// ConfigPath is the daemon config file, archived by the control
 	// plane's own backup (ADR 0021); empty leaves it out.
 	ConfigPath string
+	// Updates is the release source (ADR 0028); nil uses [updates] in
+	// Config. UpdaterUnit overrides update.PathUnit, whose existence says
+	// the updater is installed. Tests set both.
+	Updates     update.Source
+	UpdaterUnit string
 }
 
 // Core is the control plane.
@@ -138,6 +144,8 @@ type Core struct {
 
 	// git is GitHub push-to-deploy's state (git.go).
 	git gitState
+	// updates is updating Dock (update.go).
+	updates updates
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -180,6 +188,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
+		updates:    newUpdates(o),
 	}
 	if c.data == nil {
 		c.data = pg.New(pg.Options{})
@@ -267,6 +276,8 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.startAlerts(ctx); err != nil {
 		return err
 	}
+	c.loadLastUpdate()
+	c.UpdateFinished(ctx)
 	c.wg.Add(4)
 	go c.watchRuntime(events)
 	go c.checkDomains()

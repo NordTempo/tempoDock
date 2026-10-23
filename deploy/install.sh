@@ -11,7 +11,9 @@
 #
 # Re-running is safe: data is kept, binaries and units are replaced (that is
 # also how you upgrade; a node is upgraded as a node). config.toml is written
-# once; later runs only change the keys the options below ask for.
+# once; later runs only change the keys the options below ask for. Once
+# installed, later versions can be applied from the console or `dock update
+# apply`: dock-update.service runs this script from the new release (ADR 0028).
 #
 # Options:
 #   --node        install as a node: `dock node` instead of `dock serve`. On a
@@ -519,7 +521,7 @@ if [[ "$node_mode" == true ]]; then
 else
   daemon=dock.service
 fi
-units=("$daemon" dock-caddy.service dock-firewall.service)
+units=("$daemon" dock-caddy.service dock-firewall.service dock-update.path dock-update.service)
 [[ "$tunnel" == false ]] || units+=(dock-cloudflared.service)
 caddy_unit_changed=false
 cmp -s "$SRC_DIR/systemd/dock-caddy.service" /etc/systemd/system/dock-caddy.service || caddy_unit_changed=true
@@ -530,6 +532,10 @@ for unit in "${units[@]}"; do
   install -m 0644 "$SRC_DIR/systemd/$unit" "/etc/systemd/system/$unit"
 done
 systemctl daemon-reload
+# The daemon stages releases and asks for updates in here; dock-update.path
+# starts the updater when it does (ADR 0028).
+install -d -m 0700 -o dock -g dock /var/lib/dock /var/lib/dock/update
+systemctl enable --now dock-update.path
 
 say "==> firewall"
 systemctl enable dock-firewall.service
@@ -679,6 +685,8 @@ else
   if [[ -n "$node_listen" ]]; then
     say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
   fi
+  say "  Updates: the platform console, or dock update. A private release"
+  say "  repository needs a token in /etc/dock/github-token (root:dock, 0640)."
   if [[ -n "$restore" ]]; then
     say "  Restored from $restore."
     [[ ! -f /etc/dock/config.from-backup.toml ]] || say "  The old config.toml is in /etc/dock/config.from-backup.toml for reference."

@@ -25,6 +25,11 @@ type Nodes interface {
 	RotateKey(ctx context.Context, serverID int64) (string, error)
 	// MintJoinToken creates a one-time join token.
 	MintJoinToken() (remote.JoinToken, error)
+	// WaitOnline waits until a server is online, or ctx ends.
+	WaitOnline(ctx context.Context, serverID int64) error
+	// UpdateNode sends a server a release and waits for it to come back
+	// on it (ADR 0028).
+	UpdateNode(ctx context.Context, serverID int64, u remote.NodeUpdate) (remote.Hello, error)
 }
 
 // NodesOf adapts the node hub to Nodes.

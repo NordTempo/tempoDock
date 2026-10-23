@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,9 @@ type Node struct {
 	// Facts gathers what the node reports in every hello. Nil reports
 	// direct ingress and nothing else.
 	Facts func(context.Context) (Facts, error)
+	// UpdaterUnit is the updater's path unit (update.PathUnit); the update
+	// call needs it to exist. Empty refuses updates over the link.
+	UpdaterUnit string
 
 	// KeepAlive defaults to DefaultKeepAlive.
 	KeepAlive time.Duration
@@ -56,6 +60,8 @@ type Node struct {
 
 	regOnce  sync.Once
 	regConns chan net.Conn
+
+	connectedOnce sync.Once
 }
 
 // Errors that keep a node out until someone acts. Run logs them and keeps
@@ -242,6 +248,9 @@ func (n *Node) handler(st *connState) http.Handler {
 		return n.hello(ctx, req, st)
 	}))
 	mux.Handle("POST /v1/"+opRotate, unary(func(context.Context, empty) (rotateResult, error) { return n.rotate() }))
+	mux.Handle("POST /v1/"+opUpdate, withLogs(func(ctx context.Context, req updateRequest, body io.Reader, _ io.Writer) (empty, error) {
+		return n.receiveUpdate(ctx, req, body)
+	}))
 	mux.HandleFunc("POST /v1/"+opRegistry, n.serveRegistryCall)
 	runtimeRoutes(mux, n.Runtime)
 	return mux
@@ -262,12 +271,13 @@ func (n *Node) hello(ctx context.Context, req helloRequest, st *connState) (Hell
 		n.promoteNext()
 	}
 	st.helloed.Store(true)
+	n.markConnected()
 	return h, nil
 }
 
 // gatherHello builds the hello for this binary and machine.
 func gatherHello(ctx context.Context, facts func(context.Context) (Facts, error)) (Hello, error) {
-	h := Hello{Version: version.Version, Protocol: Protocol}
+	h := Hello{Version: version.Version, Protocol: Protocol, Arch: runtime.GOARCH}
 	if facts != nil {
 		f, err := facts(ctx)
 		if err != nil {

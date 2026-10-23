@@ -20,12 +20,15 @@ type fakeNodes struct {
 	// disconnects counts Disconnect calls per server.
 	disconnects map[int64]int
 	minted      int
+	// updated lists UpdateNode calls by server; updateErr fails one.
+	updated   map[int64][]remote.NodeUpdate
+	updateErr map[int64]error
 }
 
 func newFakeNodes() *fakeNodes {
 	return &fakeNodes{
 		rts: map[int64]*fake.Runtime{}, off: map[int64]bool{}, hello: map[int64]remote.Hello{},
-		disconnects: map[int64]int{},
+		disconnects: map[int64]int{}, updated: map[int64][]remote.NodeUpdate{}, updateErr: map[int64]error{},
 	}
 }
 
@@ -88,4 +91,27 @@ func (n *fakeNodes) MintJoinToken() (remote.JoinToken, error) {
 	defer n.mu.Unlock()
 	n.minted++
 	return remote.JoinToken{Addrs: []string{"100.64.0.1:7443"}, ControlPlane: "sha256:" + strings.Repeat("cd", 32), Secret: [32]byte{byte(n.minted), 2, 3}}, nil
+}
+
+// WaitOnline fails at once for an offline server: tests don't wait.
+func (n *fakeNodes) WaitOnline(_ context.Context, id int64) error {
+	if n.State(id).Status != remote.StatusOnline {
+		return remote.ErrOffline
+	}
+	return nil
+}
+
+// UpdateNode records the update and, unless updateErr fails it, has the
+// server come back on its version.
+func (n *fakeNodes) UpdateNode(_ context.Context, id int64, u remote.NodeUpdate) (remote.Hello, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.updated[id] = append(n.updated[id], u)
+	if err := n.updateErr[id]; err != nil {
+		return n.hello[id], err
+	}
+	h := n.hello[id]
+	h.Version = u.Version
+	n.hello[id] = h
+	return h, nil
 }

@@ -498,6 +498,12 @@ func (h *Hub) name(serverID int64) string {
 	return fmt.Sprintf("#%d", serverID)
 }
 
+// WaitOnline waits until the server is online, or ctx ends.
+func (h *Hub) WaitOnline(ctx context.Context, serverID int64) error {
+	_, err := h.wait(ctx, serverID)
+	return err
+}
+
 // wait returns the server's online session, waiting for it to connect.
 func (h *Hub) wait(ctx context.Context, serverID int64) (*session, error) {
 	for {

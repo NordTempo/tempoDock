@@ -2120,6 +2120,46 @@ export interface paths {
         patch: operations["update-token"];
         trace?: never;
     };
+    "/api/v1/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check for a newer Dock
+         * @description The version this control plane runs, the releases newer than it with their notes, each server's version, and the update running or last finished. The release check is reused for 15 minutes; refresh=true checks now. Operators only.
+         */
+        get: operations["get-update"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/update/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update Dock
+         * @description Updates Dock to a version (the newest release when left out): downloads and verifies it, then the control plane updates itself through its root updater (a backup first, rolled back if the new version isn't healthy), then every node behind it over its link. Answers once it is under way; update events follow it. 409 while an update runs. Operators only.
+         */
+        post: operations["start-update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users": {
         parameters: {
             query?: never;
@@ -3057,7 +3097,8 @@ export interface components {
             /** Format: date-time */
             time: string;
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "server" | "alert";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "server" | "alert" | "update";
+            update?: components["schemas"]["UpdateStatus"];
             usage?: components["schemas"]["UsageUpdate"];
         };
         GitConnectRequest: {
@@ -3705,6 +3746,10 @@ export interface components {
             reason: "missing_in_target" | "no_active_release" | "no_digest" | "deploy_in_progress";
             service: string;
         };
+        StartUpdateRequest: {
+            /** @example v0.4.0 */
+            version?: string;
+        };
         TemplateInfo: {
             description: string;
             exports: string[] | null;
@@ -3757,6 +3802,52 @@ export interface components {
         UpdateOrgRequest: {
             name: string;
         };
+        UpdateRelease: {
+            name?: string;
+            /** @description Release notes, Markdown */
+            notes: string;
+            prerelease: boolean;
+            /** Format: date-time */
+            published_at: string;
+            url?: string;
+            /** @example v0.4.0 */
+            version: string;
+        };
+        UpdateResult: {
+            backup?: string;
+            error?: string;
+            /** Format: date-time */
+            finished_at: string;
+            from: string;
+            log?: string;
+            requested_by?: string;
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            status: "succeeded" | "rolled_back" | "failed";
+            to: string;
+        };
+        UpdateRun: {
+            requested_by?: string;
+            /** @enum {string} */
+            stage: "downloading" | "applying" | "servers";
+            /** Format: date-time */
+            started_at: string;
+            version: string;
+        };
+        UpdateServer: {
+            behind: boolean;
+            error?: string;
+            /** @description Runs the control plane */
+            local: boolean;
+            manual?: string;
+            name: string;
+            /** @enum {string} */
+            state?: "updating" | "updated" | "failed" | "skipped";
+            /** @enum {string} */
+            status: "online" | "offline" | "incompatible" | "joining" | "revoked";
+            version: string;
+        };
         UpdateServerRequest: {
             accepts_non_production?: boolean;
             accepts_production?: boolean;
@@ -3780,6 +3871,23 @@ export interface components {
             /** Format: int64 */
             port?: number;
             start_command?: string;
+        };
+        UpdateStatus: {
+            available: boolean;
+            check_error?: string;
+            /** Format: date-time */
+            checked_at?: string;
+            last?: components["schemas"]["UpdateResult"];
+            /** @example v0.4.0 */
+            latest?: string;
+            releases: components["schemas"]["UpdateRelease"][] | null;
+            running?: components["schemas"]["UpdateRun"];
+            servers: components["schemas"]["UpdateServer"][] | null;
+            /** @example github.com/NordTempo/tempoDock */
+            source: string;
+            updater: boolean;
+            /** @example v0.3.0 */
+            version: string;
         };
         UpdateTokenRequest: {
             data: components["schemas"]["DataTokenAccess"];
@@ -15762,6 +15870,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Token"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-update": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Check the release source now instead of reusing the last check */
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "start-update": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StartUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
                 };
             };
             /** @description Bad Request */

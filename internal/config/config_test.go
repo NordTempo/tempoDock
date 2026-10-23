@@ -98,3 +98,18 @@ func TestLinkSectionsInvalid(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateSource(t *testing.T) {
+	for toml, ok := range map[string]bool{
+		``:                                    true, // GitHub, NordTempo/tempoDock
+		`updates.source = "/srv/releases"`:    true,
+		`updates.source = "github.com/o/r"`:   true,
+		`updates.source = "releases"`:         false, // relative path
+		`updates.source = "gitlab.com/o/r"`:   false,
+		`updates.source = "github.com/o/r/x"`: false,
+	} {
+		if _, err := load(t, toml); (err == nil) != ok {
+			t.Errorf("%q: err = %v", toml, err)
+		}
+	}
+}

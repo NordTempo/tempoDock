@@ -1,0 +1,12 @@
+[Unit]
+Description=Tempo Dock update trigger (starts dock-update.service when the daemon asks for an update)
+
+[Path]
+# The daemon, as the dock user, writes this file to ask for an update
+# (ADR 0028); the updater renames it as it starts. Nothing in the file
+# chooses what runs: the updater reads only the version from it.
+PathExists=/var/lib/dock/update/request.json
+Unit=dock-update.service
+
+[Install]
+WantedBy=multi-user.target

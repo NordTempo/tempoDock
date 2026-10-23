@@ -6,6 +6,7 @@ import (
 	"net/http/pprof"
 
 	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/update"
 )
 
 // RegistryTokenPath is the image registry's token endpoint on the internal
@@ -21,6 +22,8 @@ const RegistryTokenPath = "/internal/registry/token"
 //	GET|POST /internal/registry/token The registry's token endpoint
 //	                                  (registry.Signer.Handler), when
 //	                                  registryToken is not nil.
+//	POST /internal/update             The updater wrote its result (ADR 0028):
+//	                                  read and audit it.
 //	GET /debug/pprof/...              Go runtime profiles (net/http/pprof), e.g.
 //	                                  curl 127.0.0.1:7071/debug/pprof/heap.
 func Internal(c *core.Core, log *slog.Logger, registryToken http.Handler) http.Handler {
@@ -40,6 +43,12 @@ func Internal(c *core.Core, log *slog.Logger, registryToken http.Handler) http.H
 	if registryToken != nil {
 		mux.Handle(RegistryTokenPath, registryToken)
 	}
+	// Anyone on the machine may call it; it only makes the daemon read a
+	// file that only dock and root can write.
+	mux.HandleFunc("POST "+update.NotifyPath, func(w http.ResponseWriter, r *http.Request) {
+		c.UpdateFinished(r.Context())
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("GET /debug/pprof/", pprof.Index) // also serves heap, goroutine, allocs, ...
 	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)

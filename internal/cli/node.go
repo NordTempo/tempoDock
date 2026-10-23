@@ -20,6 +20,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/node/stats"
+	"github.com/NordTempo/tempoDock/internal/update"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
 
@@ -184,8 +185,9 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Runtime: rt,
 		// Facts don't change while the node runs: Docker restarting
 		// restarts this unit too (Requires=docker.service).
-		Facts:  func(context.Context) (remote.Facts, error) { return facts, nil },
-		Logger: log,
+		Facts:       func(context.Context) (remote.Facts, error) { return facts, nil },
+		UpdaterUnit: update.PathUnit,
+		Logger:      log,
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

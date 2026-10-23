@@ -35,6 +35,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0025](0025-platform-console.md) | The platform console is Dock's admin panel; the registry gets an API | accepted; operators by [0027](0027-organizations.md) |
 | [0026](0026-ui-cli-parity.md) | Everything the CLI does, the UI does | accepted |
 | [0027](0027-organizations.md) | Organizations and the platform operator | accepted |
+| [0028](0028-updates-from-the-console.md) | Updating Dock from the console | accepted |
 
 ## Template
 

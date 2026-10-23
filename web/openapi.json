@@ -2960,9 +2960,13 @@
               "lagged",
               "usage",
               "server",
-              "alert"
+              "alert",
+              "update"
             ],
             "type": "string"
+          },
+          "update": {
+            "$ref": "#/components/schemas/UpdateStatus"
           },
           "usage": {
             "$ref": "#/components/schemas/UsageUpdate"
@@ -5256,6 +5260,18 @@
         ],
         "type": "object"
       },
+      "StartUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "examples": [
+              "v0.4.0"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TemplateInfo": {
         "additionalProperties": false,
         "properties": {
@@ -5434,6 +5450,168 @@
         ],
         "type": "object"
       },
+      "UpdateRelease": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "description": "Release notes, Markdown",
+            "type": "string"
+          },
+          "prerelease": {
+            "type": "boolean"
+          },
+          "published_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "version": {
+            "examples": [
+              "v0.4.0"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "notes",
+          "published_at",
+          "prerelease"
+        ],
+        "type": "object"
+      },
+      "UpdateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "log": {
+            "type": "string"
+          },
+          "requested_by": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "succeeded",
+              "rolled_back",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "status",
+          "started_at",
+          "finished_at"
+        ],
+        "type": "object"
+      },
+      "UpdateRun": {
+        "additionalProperties": false,
+        "properties": {
+          "requested_by": {
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "downloading",
+              "applying",
+              "servers"
+            ],
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "stage",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "UpdateServer": {
+        "additionalProperties": false,
+        "properties": {
+          "behind": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "local": {
+            "description": "Runs the control plane",
+            "type": "boolean"
+          },
+          "manual": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "updating",
+              "updated",
+              "failed",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "online",
+              "offline",
+              "incompatible",
+              "joining",
+              "revoked"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "local",
+          "status",
+          "version",
+          "behind"
+        ],
+        "type": "object"
+      },
       "UpdateServerRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5500,6 +5678,75 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UpdateStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "check_error": {
+            "type": "string"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last": {
+            "$ref": "#/components/schemas/UpdateResult"
+          },
+          "latest": {
+            "examples": [
+              "v0.4.0"
+            ],
+            "type": "string"
+          },
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/UpdateRelease"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "running": {
+            "$ref": "#/components/schemas/UpdateRun"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/UpdateServer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "source": {
+            "examples": [
+              "github.com/NordTempo/tempoDock"
+            ],
+            "type": "string"
+          },
+          "updater": {
+            "type": "boolean"
+          },
+          "version": {
+            "examples": [
+              "v0.3.0"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "source",
+          "available",
+          "releases",
+          "updater",
+          "servers"
+        ],
         "type": "object"
       },
       "UpdateTokenRequest": {
@@ -23236,6 +23483,245 @@
         "summary": "Change a token",
         "tags": [
           "tokens"
+        ]
+      }
+    },
+    "/api/v1/update": {
+      "get": {
+        "description": "The version this control plane runs, the releases newer than it with their notes, each server's version, and the update running or last finished. The release check is reused for 15 minutes; refresh=true checks now. Operators only.",
+        "operationId": "get-update",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Check the release source now instead of reusing the last check",
+            "explode": false,
+            "in": "query",
+            "name": "refresh",
+            "schema": {
+              "description": "Check the release source now instead of reusing the last check",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Check for a newer Dock",
+        "tags": [
+          "update"
+        ]
+      }
+    },
+    "/api/v1/update/apply": {
+      "post": {
+        "description": "Updates Dock to a version (the newest release when left out): downloads and verifies it, then the control plane updates itself through its root updater (a backup first, rolled back if the new version isn't healthy), then every node behind it over its link. Answers once it is under way; update events follow it. 409 while an update runs. Operators only.",
+        "operationId": "start-update",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatus"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Update Dock",
+        "tags": [
+          "update"
         ]
       }
     },
