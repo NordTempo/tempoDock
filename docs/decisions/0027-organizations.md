@@ -126,10 +126,13 @@ platform channels. Fresh installs create their first org at bootstrap.
    use`), MCP (`/api/v1/mcp?org=`). The web UI sends the org and, for a
    user with several, acts in their first until the switcher exists. One
    org per install in practice.
-2. **Org UI and membership**: org switcher and org in UI URLs (done),
-   org settings (mocks first), invites by email, leave and remove, role changes, org
-   variables referenced as `${{org.KEY}}` (explicit only, never
-   auto-injected, one value per key), bring-your-own servers per org.
+2. **Org UI and membership**: org switcher and org in UI URLs, org
+   settings (mock A: a settings sidebar with Members, Variables, Tokens,
+   Activity and General), invites by link (emailed in phase 3), leave
+   and remove, role changes, org variables referenced as `${{org.KEY}}`
+   (explicit only, never auto-injected, one value per key, a redeploy
+   rolls a change out): done. Next: bring-your-own servers per org and
+   org alert channels.
 3. **Signup**: an install setting `signup = closed | invite | open`
    (closed by default for self-hosting), email verification, password
    reset. Invite-only before going public is setting it to `invite`.

@@ -7,7 +7,25 @@ package store
 
 import (
 	"context"
+	"time"
 )
+
+const acceptOrgInvite = `-- name: AcceptOrgInvite :execrows
+UPDATE org_invites SET accepted_at = ? WHERE id = +? AND accepted_at IS NULL AND revoked_at IS NULL
+`
+
+type AcceptOrgInviteParams struct {
+	AcceptedAt *time.Time
+	ID         int64
+}
+
+func (q *Queries) AcceptOrgInvite(ctx context.Context, arg AcceptOrgInviteParams) (int64, error) {
+	result, err := q.exec(ctx, q.acceptOrgInviteStmt, acceptOrgInvite, arg.AcceptedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
 
 const addOrgMember = `-- name: AddOrgMember :exec
 INSERT INTO org_members (org_id, user_id, role) VALUES (?, ?, ?)
@@ -22,6 +40,28 @@ type AddOrgMemberParams struct {
 func (q *Queries) AddOrgMember(ctx context.Context, arg AddOrgMemberParams) error {
 	_, err := q.exec(ctx, q.addOrgMemberStmt, addOrgMember, arg.OrgID, arg.UserID, arg.Role)
 	return err
+}
+
+const countOrgAdmins = `-- name: CountOrgAdmins :one
+SELECT count(*) FROM org_members WHERE org_id = +? AND role = 'admin'
+`
+
+func (q *Queries) CountOrgAdmins(ctx context.Context, orgID int64) (int64, error) {
+	row := q.queryRow(ctx, q.countOrgAdminsStmt, countOrgAdmins, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOrgProjects = `-- name: CountOrgProjects :one
+SELECT count(*) FROM projects WHERE org_id = +?
+`
+
+func (q *Queries) CountOrgProjects(ctx context.Context, orgID int64) (int64, error) {
+	row := q.queryRow(ctx, q.countOrgProjectsStmt, countOrgProjects, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createOrg = `-- name: CreateOrg :one
@@ -41,6 +81,148 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 		&i.Slug,
 		&i.Name,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createOrgInvite = `-- name: CreateOrgInvite :one
+INSERT INTO org_invites (org_id, email, role, hash, created_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, email, role, hash, created_by, created_at, expires_at, accepted_at, revoked_at
+`
+
+type CreateOrgInviteParams struct {
+	OrgID     int64
+	Email     string
+	Role      string
+	Hash      string
+	CreatedBy string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+func (q *Queries) CreateOrgInvite(ctx context.Context, arg CreateOrgInviteParams) (OrgInvite, error) {
+	row := q.queryRow(ctx, q.createOrgInviteStmt, createOrgInvite,
+		arg.OrgID,
+		arg.Email,
+		arg.Role,
+		arg.Hash,
+		arg.CreatedBy,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+	)
+	var i OrgInvite
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Email,
+		&i.Role,
+		&i.Hash,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const deleteOrg = `-- name: DeleteOrg :exec
+DELETE FROM orgs WHERE id = +?
+`
+
+func (q *Queries) DeleteOrg(ctx context.Context, id int64) error {
+	_, err := q.exec(ctx, q.deleteOrgStmt, deleteOrg, id)
+	return err
+}
+
+const deleteOrgDataPolicy = `-- name: DeleteOrgDataPolicy :exec
+DELETE FROM data_policy_rules WHERE org_id = +?
+`
+
+func (q *Queries) DeleteOrgDataPolicy(ctx context.Context, orgID int64) error {
+	_, err := q.exec(ctx, q.deleteOrgDataPolicyStmt, deleteOrgDataPolicy, orgID)
+	return err
+}
+
+const deleteOrgInvites = `-- name: DeleteOrgInvites :exec
+DELETE FROM org_invites WHERE org_id = +?
+`
+
+func (q *Queries) DeleteOrgInvites(ctx context.Context, orgID int64) error {
+	_, err := q.exec(ctx, q.deleteOrgInvitesStmt, deleteOrgInvites, orgID)
+	return err
+}
+
+const deleteOrgMembers = `-- name: DeleteOrgMembers :exec
+DELETE FROM org_members WHERE org_id = +?
+`
+
+// Deleting an org without projects: DeleteOrgMembers, -Invites,
+// -Variables, -DataPolicy, RevokeOrgTokens and DeleteOrg, in one
+// transaction. Audit events stay.
+func (q *Queries) DeleteOrgMembers(ctx context.Context, orgID int64) error {
+	_, err := q.exec(ctx, q.deleteOrgMembersStmt, deleteOrgMembers, orgID)
+	return err
+}
+
+const deleteOrgVariable = `-- name: DeleteOrgVariable :execrows
+DELETE FROM org_variables WHERE org_id = +? AND key = +?
+`
+
+type DeleteOrgVariableParams struct {
+	OrgID int64
+	Key   string
+}
+
+func (q *Queries) DeleteOrgVariable(ctx context.Context, arg DeleteOrgVariableParams) (int64, error) {
+	result, err := q.exec(ctx, q.deleteOrgVariableStmt, deleteOrgVariable, arg.OrgID, arg.Key)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteOrgVariables = `-- name: DeleteOrgVariables :exec
+DELETE FROM org_variables WHERE org_id = +?
+`
+
+func (q *Queries) DeleteOrgVariables(ctx context.Context, orgID int64) error {
+	_, err := q.exec(ctx, q.deleteOrgVariablesStmt, deleteOrgVariables, orgID)
+	return err
+}
+
+const getInviteByHash = `-- name: GetInviteByHash :one
+SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at
+FROM org_invites JOIN orgs ON orgs.id = org_invites.org_id
+WHERE org_invites.hash = +?
+`
+
+type GetInviteByHashRow struct {
+	OrgInvite OrgInvite
+	Org       Org
+}
+
+// GetInviteByHash also returns the invite's org, for the page that shows
+// it before it is accepted.
+func (q *Queries) GetInviteByHash(ctx context.Context, hash string) (GetInviteByHashRow, error) {
+	row := q.queryRow(ctx, q.getInviteByHashStmt, getInviteByHash, hash)
+	var i GetInviteByHashRow
+	err := row.Scan(
+		&i.OrgInvite.ID,
+		&i.OrgInvite.OrgID,
+		&i.OrgInvite.Email,
+		&i.OrgInvite.Role,
+		&i.OrgInvite.Hash,
+		&i.OrgInvite.CreatedBy,
+		&i.OrgInvite.CreatedAt,
+		&i.OrgInvite.ExpiresAt,
+		&i.OrgInvite.AcceptedAt,
+		&i.OrgInvite.RevokedAt,
+		&i.Org.ID,
+		&i.Org.Slug,
+		&i.Org.Name,
+		&i.Org.CreatedAt,
 	)
 	return i, err
 }
@@ -126,6 +308,75 @@ func (q *Queries) GetOrg(ctx context.Context, id int64) (Org, error) {
 	return i, err
 }
 
+const getOrgInvite = `-- name: GetOrgInvite :one
+SELECT id, org_id, email, role, hash, created_by, created_at, expires_at, accepted_at, revoked_at FROM org_invites WHERE id = +? AND org_id = +?
+`
+
+type GetOrgInviteParams struct {
+	ID    int64
+	OrgID int64
+}
+
+func (q *Queries) GetOrgInvite(ctx context.Context, arg GetOrgInviteParams) (OrgInvite, error) {
+	row := q.queryRow(ctx, q.getOrgInviteStmt, getOrgInvite, arg.ID, arg.OrgID)
+	var i OrgInvite
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Email,
+		&i.Role,
+		&i.Hash,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const listOrgInvites = `-- name: ListOrgInvites :many
+SELECT id, org_id, email, role, hash, created_by, created_at, expires_at, accepted_at, revoked_at FROM org_invites
+WHERE org_id = +? AND accepted_at IS NULL AND revoked_at IS NULL
+ORDER BY id DESC
+`
+
+// ListOrgInvites is an org's open invites, newest first; expired ones are
+// listed until revoked so an admin sees they lapsed.
+func (q *Queries) ListOrgInvites(ctx context.Context, orgID int64) ([]OrgInvite, error) {
+	rows, err := q.query(ctx, q.listOrgInvitesStmt, listOrgInvites, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgInvite
+	for rows.Next() {
+		var i OrgInvite
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Email,
+			&i.Role,
+			&i.Hash,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.AcceptedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgServerIDs = `-- name: ListOrgServerIDs :many
 SELECT environments.server_id
 FROM projects JOIN environments ON environments.project_id = projects.id
@@ -147,6 +398,93 @@ func (q *Queries) ListOrgServerIDs(ctx context.Context, orgID int64) ([]int64, e
 			return nil, err
 		}
 		items = append(items, server_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgVariableUses = `-- name: ListOrgVariableUses :many
+SELECT variables.environment_id, variables.service_id, variables.value, variables.pending_value,
+    projects.name AS project_name, environments.name AS environment_name,
+    coalesce(services.name, '') AS service_name
+FROM projects
+JOIN environments ON environments.project_id = projects.id
+JOIN variables ON variables.environment_id = environments.id
+LEFT JOIN services ON services.id = variables.service_id
+WHERE projects.org_id = +? AND projects.archived_at IS NULL
+`
+
+type ListOrgVariableUsesRow struct {
+	EnvironmentID   int64
+	ServiceID       *int64
+	Value           []byte
+	PendingValue    []byte
+	ProjectName     string
+	EnvironmentName string
+	ServiceName     string
+}
+
+// ListOrgVariableUses is every live or staged variable of an org's live
+// projects, with where it is, for finding ${{org.KEY}} references.
+func (q *Queries) ListOrgVariableUses(ctx context.Context, orgID int64) ([]ListOrgVariableUsesRow, error) {
+	rows, err := q.query(ctx, q.listOrgVariableUsesStmt, listOrgVariableUses, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgVariableUsesRow
+	for rows.Next() {
+		var i ListOrgVariableUsesRow
+		if err := rows.Scan(
+			&i.EnvironmentID,
+			&i.ServiceID,
+			&i.Value,
+			&i.PendingValue,
+			&i.ProjectName,
+			&i.EnvironmentName,
+			&i.ServiceName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgVariables = `-- name: ListOrgVariables :many
+SELECT org_id, "key", value, updated_at, updated_by FROM org_variables WHERE org_id = +? ORDER BY key
+`
+
+func (q *Queries) ListOrgVariables(ctx context.Context, orgID int64) ([]OrgVariable, error) {
+	rows, err := q.query(ctx, q.listOrgVariablesStmt, listOrgVariables, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgVariable
+	for rows.Next() {
+		var i OrgVariable
+		if err := rows.Scan(
+			&i.OrgID,
+			&i.Key,
+			&i.Value,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -209,4 +547,119 @@ func (q *Queries) OrgSlugTaken(ctx context.Context, slug string) (bool, error) {
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const removeOrgMember = `-- name: RemoveOrgMember :execrows
+DELETE FROM org_members WHERE org_id = +? AND user_id = +?
+`
+
+type RemoveOrgMemberParams struct {
+	OrgID  int64
+	UserID int64
+}
+
+func (q *Queries) RemoveOrgMember(ctx context.Context, arg RemoveOrgMemberParams) (int64, error) {
+	result, err := q.exec(ctx, q.removeOrgMemberStmt, removeOrgMember, arg.OrgID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const renameOrg = `-- name: RenameOrg :one
+UPDATE orgs SET name = ? WHERE id = +? RETURNING id, slug, name, created_at
+`
+
+type RenameOrgParams struct {
+	Name string
+	ID   int64
+}
+
+func (q *Queries) RenameOrg(ctx context.Context, arg RenameOrgParams) (Org, error) {
+	row := q.queryRow(ctx, q.renameOrgStmt, renameOrg, arg.Name, arg.ID)
+	var i Org
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const revokeOrgInvite = `-- name: RevokeOrgInvite :execrows
+UPDATE org_invites SET revoked_at = ? WHERE id = +? AND org_id = +? AND accepted_at IS NULL AND revoked_at IS NULL
+`
+
+type RevokeOrgInviteParams struct {
+	RevokedAt *time.Time
+	ID        int64
+	OrgID     int64
+}
+
+func (q *Queries) RevokeOrgInvite(ctx context.Context, arg RevokeOrgInviteParams) (int64, error) {
+	result, err := q.exec(ctx, q.revokeOrgInviteStmt, revokeOrgInvite, arg.RevokedAt, arg.ID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeOrgTokens = `-- name: RevokeOrgTokens :exec
+UPDATE tokens SET revoked_at = coalesce(revoked_at, +?1), org_id = NULL
+WHERE org_id = +?2
+`
+
+type RevokeOrgTokensParams struct {
+	Now   *time.Time
+	OrgID *int64
+}
+
+// RevokeOrgTokens revokes an org's tokens and detaches them from it, so
+// the org can go; a manual token without an org never authenticates.
+func (q *Queries) RevokeOrgTokens(ctx context.Context, arg RevokeOrgTokensParams) error {
+	_, err := q.exec(ctx, q.revokeOrgTokensStmt, revokeOrgTokens, arg.Now, arg.OrgID)
+	return err
+}
+
+const setMemberRole = `-- name: SetMemberRole :execrows
+UPDATE org_members SET role = ? WHERE org_id = +? AND user_id = +?
+`
+
+type SetMemberRoleParams struct {
+	Role   string
+	OrgID  int64
+	UserID int64
+}
+
+func (q *Queries) SetMemberRole(ctx context.Context, arg SetMemberRoleParams) (int64, error) {
+	result, err := q.exec(ctx, q.setMemberRoleStmt, setMemberRole, arg.Role, arg.OrgID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const upsertOrgVariable = `-- name: UpsertOrgVariable :exec
+INSERT INTO org_variables (org_id, key, value, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (org_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by
+`
+
+type UpsertOrgVariableParams struct {
+	OrgID     int64
+	Key       string
+	Value     []byte
+	UpdatedAt time.Time
+	UpdatedBy string
+}
+
+func (q *Queries) UpsertOrgVariable(ctx context.Context, arg UpsertOrgVariableParams) error {
+	_, err := q.exec(ctx, q.upsertOrgVariableStmt, upsertOrgVariable,
+		arg.OrgID,
+		arg.Key,
+		arg.Value,
+		arg.UpdatedAt,
+		arg.UpdatedBy,
+	)
+	return err
 }

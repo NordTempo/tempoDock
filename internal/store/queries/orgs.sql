@@ -39,3 +39,92 @@ WHERE org_members.org_id = +sqlc.arg(org_id) AND users.email = +sqlc.arg(email);
 SELECT environments.server_id
 FROM projects JOIN environments ON environments.project_id = projects.id
 WHERE projects.org_id = +?;
+
+-- name: RenameOrg :one
+UPDATE orgs SET name = ? WHERE id = +? RETURNING *;
+
+-- name: CountOrgProjects :one
+SELECT count(*) FROM projects WHERE org_id = +?;
+
+-- Deleting an org without projects: DeleteOrgMembers, -Invites,
+-- -Variables, -DataPolicy, RevokeOrgTokens and DeleteOrg, in one
+-- transaction. Audit events stay.
+-- name: DeleteOrgMembers :exec
+DELETE FROM org_members WHERE org_id = +?;
+
+-- name: DeleteOrgInvites :exec
+DELETE FROM org_invites WHERE org_id = +?;
+
+-- name: DeleteOrgVariables :exec
+DELETE FROM org_variables WHERE org_id = +?;
+
+-- name: DeleteOrgDataPolicy :exec
+DELETE FROM data_policy_rules WHERE org_id = +?;
+
+-- RevokeOrgTokens revokes an org's tokens and detaches them from it, so
+-- the org can go; a manual token without an org never authenticates.
+-- name: RevokeOrgTokens :exec
+UPDATE tokens SET revoked_at = coalesce(revoked_at, +sqlc.arg(now)), org_id = NULL
+WHERE org_id = +sqlc.arg(org_id);
+
+-- name: DeleteOrg :exec
+DELETE FROM orgs WHERE id = +?;
+
+-- name: SetMemberRole :execrows
+UPDATE org_members SET role = ? WHERE org_id = +? AND user_id = +?;
+
+-- name: RemoveOrgMember :execrows
+DELETE FROM org_members WHERE org_id = +? AND user_id = +?;
+
+-- name: CountOrgAdmins :one
+SELECT count(*) FROM org_members WHERE org_id = +? AND role = 'admin';
+
+-- name: CreateOrgInvite :one
+INSERT INTO org_invites (org_id, email, role, hash, created_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- ListOrgInvites is an org's open invites, newest first; expired ones are
+-- listed until revoked so an admin sees they lapsed.
+-- name: ListOrgInvites :many
+SELECT * FROM org_invites
+WHERE org_id = +? AND accepted_at IS NULL AND revoked_at IS NULL
+ORDER BY id DESC;
+
+-- name: GetOrgInvite :one
+SELECT * FROM org_invites WHERE id = +? AND org_id = +?;
+
+-- GetInviteByHash also returns the invite's org, for the page that shows
+-- it before it is accepted.
+-- name: GetInviteByHash :one
+SELECT sqlc.embed(org_invites), sqlc.embed(orgs)
+FROM org_invites JOIN orgs ON orgs.id = org_invites.org_id
+WHERE org_invites.hash = +?;
+
+-- name: RevokeOrgInvite :execrows
+UPDATE org_invites SET revoked_at = ? WHERE id = +? AND org_id = +? AND accepted_at IS NULL AND revoked_at IS NULL;
+
+-- name: AcceptOrgInvite :execrows
+UPDATE org_invites SET accepted_at = ? WHERE id = +? AND accepted_at IS NULL AND revoked_at IS NULL;
+
+-- name: ListOrgVariables :many
+SELECT * FROM org_variables WHERE org_id = +? ORDER BY key;
+
+-- name: UpsertOrgVariable :exec
+INSERT INTO org_variables (org_id, key, value, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (org_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by;
+
+-- name: DeleteOrgVariable :execrows
+DELETE FROM org_variables WHERE org_id = +? AND key = +?;
+
+-- ListOrgVariableUses is every live or staged variable of an org's live
+-- projects, with where it is, for finding ${{org.KEY}} references.
+-- name: ListOrgVariableUses :many
+SELECT variables.environment_id, variables.service_id, variables.value, variables.pending_value,
+    projects.name AS project_name, environments.name AS environment_name,
+    coalesce(services.name, '') AS service_name
+FROM projects
+JOIN environments ON environments.project_id = projects.id
+JOIN variables ON variables.environment_id = environments.id
+LEFT JOIN services ON services.id = variables.service_id
+WHERE projects.org_id = +? AND projects.archived_at IS NULL;

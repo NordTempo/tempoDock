@@ -24,6 +24,9 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.acceptOrgInviteStmt, err = db.PrepareContext(ctx, acceptOrgInvite); err != nil {
+		return nil, fmt.Errorf("error preparing query AcceptOrgInvite: %w", err)
+	}
 	if q.activateReleaseStmt, err = db.PrepareContext(ctx, activateRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query ActivateRelease: %w", err)
 	}
@@ -87,6 +90,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countKindEnvironmentsStmt, err = db.PrepareContext(ctx, countKindEnvironments); err != nil {
 		return nil, fmt.Errorf("error preparing query CountKindEnvironments: %w", err)
 	}
+	if q.countOrgAdminsStmt, err = db.PrepareContext(ctx, countOrgAdmins); err != nil {
+		return nil, fmt.Errorf("error preparing query CountOrgAdmins: %w", err)
+	}
+	if q.countOrgProjectsStmt, err = db.PrepareContext(ctx, countOrgProjects); err != nil {
+		return nil, fmt.Errorf("error preparing query CountOrgProjects: %w", err)
+	}
 	if q.countPendingCLILoginsStmt, err = db.PrepareContext(ctx, countPendingCLILogins); err != nil {
 		return nil, fmt.Errorf("error preparing query CountPendingCLILogins: %w", err)
 	}
@@ -122,6 +131,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.createOrgStmt, err = db.PrepareContext(ctx, createOrg); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateOrg: %w", err)
+	}
+	if q.createOrgInviteStmt, err = db.PrepareContext(ctx, createOrgInvite); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateOrgInvite: %w", err)
 	}
 	if q.createProjectStmt, err = db.PrepareContext(ctx, createProject); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateProject: %w", err)
@@ -188,6 +200,24 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteJoinTokenStmt, err = db.PrepareContext(ctx, deleteJoinToken); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteJoinToken: %w", err)
+	}
+	if q.deleteOrgStmt, err = db.PrepareContext(ctx, deleteOrg); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteOrg: %w", err)
+	}
+	if q.deleteOrgDataPolicyStmt, err = db.PrepareContext(ctx, deleteOrgDataPolicy); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteOrgDataPolicy: %w", err)
+	}
+	if q.deleteOrgInvitesStmt, err = db.PrepareContext(ctx, deleteOrgInvites); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteOrgInvites: %w", err)
+	}
+	if q.deleteOrgMembersStmt, err = db.PrepareContext(ctx, deleteOrgMembers); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteOrgMembers: %w", err)
+	}
+	if q.deleteOrgVariableStmt, err = db.PrepareContext(ctx, deleteOrgVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteOrgVariable: %w", err)
+	}
+	if q.deleteOrgVariablesStmt, err = db.PrepareContext(ctx, deleteOrgVariables); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteOrgVariables: %w", err)
 	}
 	if q.deleteReleaseEventsStmt, err = db.PrepareContext(ctx, deleteReleaseEvents); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteReleaseEvents: %w", err)
@@ -315,6 +345,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getInstallIDStmt, err = db.PrepareContext(ctx, getInstallID); err != nil {
 		return nil, fmt.Errorf("error preparing query GetInstallID: %w", err)
 	}
+	if q.getInviteByHashStmt, err = db.PrepareContext(ctx, getInviteByHash); err != nil {
+		return nil, fmt.Errorf("error preparing query GetInviteByHash: %w", err)
+	}
 	if q.getLocalServerStmt, err = db.PrepareContext(ctx, getLocalServer); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLocalServer: %w", err)
 	}
@@ -329,6 +362,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getOrgStmt, err = db.PrepareContext(ctx, getOrg); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOrg: %w", err)
+	}
+	if q.getOrgInviteStmt, err = db.PrepareContext(ctx, getOrgInvite); err != nil {
+		return nil, fmt.Errorf("error preparing query GetOrgInvite: %w", err)
 	}
 	if q.getPlacementStmt, err = db.PrepareContext(ctx, getPlacement); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPlacement: %w", err)
@@ -471,6 +507,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listOpenAlertsStmt, err = db.PrepareContext(ctx, listOpenAlerts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOpenAlerts: %w", err)
 	}
+	if q.listOrgInvitesStmt, err = db.PrepareContext(ctx, listOrgInvites); err != nil {
+		return nil, fmt.Errorf("error preparing query ListOrgInvites: %w", err)
+	}
 	if q.listOrgMembersStmt, err = db.PrepareContext(ctx, listOrgMembers); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOrgMembers: %w", err)
 	}
@@ -479,6 +518,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listOrgTokensStmt, err = db.PrepareContext(ctx, listOrgTokens); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOrgTokens: %w", err)
+	}
+	if q.listOrgVariableUsesStmt, err = db.PrepareContext(ctx, listOrgVariableUses); err != nil {
+		return nil, fmt.Errorf("error preparing query ListOrgVariableUses: %w", err)
+	}
+	if q.listOrgVariablesStmt, err = db.PrepareContext(ctx, listOrgVariables); err != nil {
+		return nil, fmt.Errorf("error preparing query ListOrgVariables: %w", err)
 	}
 	if q.listPendingChangesetsStmt, err = db.PrepareContext(ctx, listPendingChangesets); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPendingChangesets: %w", err)
@@ -633,11 +678,23 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.registerNodeServerStmt, err = db.PrepareContext(ctx, registerNodeServer); err != nil {
 		return nil, fmt.Errorf("error preparing query RegisterNodeServer: %w", err)
 	}
+	if q.removeOrgMemberStmt, err = db.PrepareContext(ctx, removeOrgMember); err != nil {
+		return nil, fmt.Errorf("error preparing query RemoveOrgMember: %w", err)
+	}
+	if q.renameOrgStmt, err = db.PrepareContext(ctx, renameOrg); err != nil {
+		return nil, fmt.Errorf("error preparing query RenameOrg: %w", err)
+	}
 	if q.resolveAlertStmt, err = db.PrepareContext(ctx, resolveAlert); err != nil {
 		return nil, fmt.Errorf("error preparing query ResolveAlert: %w", err)
 	}
 	if q.restoreVariableStmt, err = db.PrepareContext(ctx, restoreVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query RestoreVariable: %w", err)
+	}
+	if q.revokeOrgInviteStmt, err = db.PrepareContext(ctx, revokeOrgInvite); err != nil {
+		return nil, fmt.Errorf("error preparing query RevokeOrgInvite: %w", err)
+	}
+	if q.revokeOrgTokensStmt, err = db.PrepareContext(ctx, revokeOrgTokens); err != nil {
+		return nil, fmt.Errorf("error preparing query RevokeOrgTokens: %w", err)
 	}
 	if q.revokeServerStmt, err = db.PrepareContext(ctx, revokeServer); err != nil {
 		return nil, fmt.Errorf("error preparing query RevokeServer: %w", err)
@@ -671,6 +728,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setJoinTokenServerStmt, err = db.PrepareContext(ctx, setJoinTokenServer); err != nil {
 		return nil, fmt.Errorf("error preparing query SetJoinTokenServer: %w", err)
+	}
+	if q.setMemberRoleStmt, err = db.PrepareContext(ctx, setMemberRole); err != nil {
+		return nil, fmt.Errorf("error preparing query SetMemberRole: %w", err)
 	}
 	if q.setPendingSettingsStmt, err = db.PrepareContext(ctx, setPendingSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPendingSettings: %w", err)
@@ -768,6 +828,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.upsertDataAccessStmt, err = db.PrepareContext(ctx, upsertDataAccess); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertDataAccess: %w", err)
 	}
+	if q.upsertOrgVariableStmt, err = db.PrepareContext(ctx, upsertOrgVariable); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertOrgVariable: %w", err)
+	}
 	if q.upsertPlacementStmt, err = db.PrepareContext(ctx, upsertPlacement); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertPlacement: %w", err)
 	}
@@ -776,6 +839,11 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 
 func (q *Queries) Close() error {
 	var err error
+	if q.acceptOrgInviteStmt != nil {
+		if cerr := q.acceptOrgInviteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing acceptOrgInviteStmt: %w", cerr)
+		}
+	}
 	if q.activateReleaseStmt != nil {
 		if cerr := q.activateReleaseStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing activateReleaseStmt: %w", cerr)
@@ -881,6 +949,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing countKindEnvironmentsStmt: %w", cerr)
 		}
 	}
+	if q.countOrgAdminsStmt != nil {
+		if cerr := q.countOrgAdminsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countOrgAdminsStmt: %w", cerr)
+		}
+	}
+	if q.countOrgProjectsStmt != nil {
+		if cerr := q.countOrgProjectsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countOrgProjectsStmt: %w", cerr)
+		}
+	}
 	if q.countPendingCLILoginsStmt != nil {
 		if cerr := q.countPendingCLILoginsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countPendingCLILoginsStmt: %w", cerr)
@@ -939,6 +1017,11 @@ func (q *Queries) Close() error {
 	if q.createOrgStmt != nil {
 		if cerr := q.createOrgStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createOrgStmt: %w", cerr)
+		}
+	}
+	if q.createOrgInviteStmt != nil {
+		if cerr := q.createOrgInviteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createOrgInviteStmt: %w", cerr)
 		}
 	}
 	if q.createProjectStmt != nil {
@@ -1049,6 +1132,36 @@ func (q *Queries) Close() error {
 	if q.deleteJoinTokenStmt != nil {
 		if cerr := q.deleteJoinTokenStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteJoinTokenStmt: %w", cerr)
+		}
+	}
+	if q.deleteOrgStmt != nil {
+		if cerr := q.deleteOrgStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteOrgStmt: %w", cerr)
+		}
+	}
+	if q.deleteOrgDataPolicyStmt != nil {
+		if cerr := q.deleteOrgDataPolicyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteOrgDataPolicyStmt: %w", cerr)
+		}
+	}
+	if q.deleteOrgInvitesStmt != nil {
+		if cerr := q.deleteOrgInvitesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteOrgInvitesStmt: %w", cerr)
+		}
+	}
+	if q.deleteOrgMembersStmt != nil {
+		if cerr := q.deleteOrgMembersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteOrgMembersStmt: %w", cerr)
+		}
+	}
+	if q.deleteOrgVariableStmt != nil {
+		if cerr := q.deleteOrgVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteOrgVariableStmt: %w", cerr)
+		}
+	}
+	if q.deleteOrgVariablesStmt != nil {
+		if cerr := q.deleteOrgVariablesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteOrgVariablesStmt: %w", cerr)
 		}
 	}
 	if q.deleteReleaseEventsStmt != nil {
@@ -1261,6 +1374,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getInstallIDStmt: %w", cerr)
 		}
 	}
+	if q.getInviteByHashStmt != nil {
+		if cerr := q.getInviteByHashStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getInviteByHashStmt: %w", cerr)
+		}
+	}
 	if q.getLocalServerStmt != nil {
 		if cerr := q.getLocalServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getLocalServerStmt: %w", cerr)
@@ -1284,6 +1402,11 @@ func (q *Queries) Close() error {
 	if q.getOrgStmt != nil {
 		if cerr := q.getOrgStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getOrgStmt: %w", cerr)
+		}
+	}
+	if q.getOrgInviteStmt != nil {
+		if cerr := q.getOrgInviteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getOrgInviteStmt: %w", cerr)
 		}
 	}
 	if q.getPlacementStmt != nil {
@@ -1521,6 +1644,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listOpenAlertsStmt: %w", cerr)
 		}
 	}
+	if q.listOrgInvitesStmt != nil {
+		if cerr := q.listOrgInvitesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listOrgInvitesStmt: %w", cerr)
+		}
+	}
 	if q.listOrgMembersStmt != nil {
 		if cerr := q.listOrgMembersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listOrgMembersStmt: %w", cerr)
@@ -1534,6 +1662,16 @@ func (q *Queries) Close() error {
 	if q.listOrgTokensStmt != nil {
 		if cerr := q.listOrgTokensStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listOrgTokensStmt: %w", cerr)
+		}
+	}
+	if q.listOrgVariableUsesStmt != nil {
+		if cerr := q.listOrgVariableUsesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listOrgVariableUsesStmt: %w", cerr)
+		}
+	}
+	if q.listOrgVariablesStmt != nil {
+		if cerr := q.listOrgVariablesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listOrgVariablesStmt: %w", cerr)
 		}
 	}
 	if q.listPendingChangesetsStmt != nil {
@@ -1791,6 +1929,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing registerNodeServerStmt: %w", cerr)
 		}
 	}
+	if q.removeOrgMemberStmt != nil {
+		if cerr := q.removeOrgMemberStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing removeOrgMemberStmt: %w", cerr)
+		}
+	}
+	if q.renameOrgStmt != nil {
+		if cerr := q.renameOrgStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing renameOrgStmt: %w", cerr)
+		}
+	}
 	if q.resolveAlertStmt != nil {
 		if cerr := q.resolveAlertStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing resolveAlertStmt: %w", cerr)
@@ -1799,6 +1947,16 @@ func (q *Queries) Close() error {
 	if q.restoreVariableStmt != nil {
 		if cerr := q.restoreVariableStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing restoreVariableStmt: %w", cerr)
+		}
+	}
+	if q.revokeOrgInviteStmt != nil {
+		if cerr := q.revokeOrgInviteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing revokeOrgInviteStmt: %w", cerr)
+		}
+	}
+	if q.revokeOrgTokensStmt != nil {
+		if cerr := q.revokeOrgTokensStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing revokeOrgTokensStmt: %w", cerr)
 		}
 	}
 	if q.revokeServerStmt != nil {
@@ -1854,6 +2012,11 @@ func (q *Queries) Close() error {
 	if q.setJoinTokenServerStmt != nil {
 		if cerr := q.setJoinTokenServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setJoinTokenServerStmt: %w", cerr)
+		}
+	}
+	if q.setMemberRoleStmt != nil {
+		if cerr := q.setMemberRoleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setMemberRoleStmt: %w", cerr)
 		}
 	}
 	if q.setPendingSettingsStmt != nil {
@@ -2016,6 +2179,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing upsertDataAccessStmt: %w", cerr)
 		}
 	}
+	if q.upsertOrgVariableStmt != nil {
+		if cerr := q.upsertOrgVariableStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertOrgVariableStmt: %w", cerr)
+		}
+	}
 	if q.upsertPlacementStmt != nil {
 		if cerr := q.upsertPlacementStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing upsertPlacementStmt: %w", cerr)
@@ -2060,6 +2228,7 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 type Queries struct {
 	db                                  DBTX
 	tx                                  *sql.Tx
+	acceptOrgInviteStmt                 *sql.Stmt
 	activateReleaseStmt                 *sql.Stmt
 	addAlertNoticeStmt                  *sql.Stmt
 	addAuditDetailStmt                  *sql.Stmt
@@ -2081,6 +2250,8 @@ type Queries struct {
 	clearReleaseHostPortStmt            *sql.Stmt
 	consumeJoinTokenStmt                *sql.Stmt
 	countKindEnvironmentsStmt           *sql.Stmt
+	countOrgAdminsStmt                  *sql.Stmt
+	countOrgProjectsStmt                *sql.Stmt
 	countPendingCLILoginsStmt           *sql.Stmt
 	countUsersStmt                      *sql.Stmt
 	createAlertChannelStmt              *sql.Stmt
@@ -2093,6 +2264,7 @@ type Queries struct {
 	createGitConnectionStmt             *sql.Stmt
 	createJoinTokenStmt                 *sql.Stmt
 	createOrgStmt                       *sql.Stmt
+	createOrgInviteStmt                 *sql.Stmt
 	createProjectStmt                   *sql.Stmt
 	createPromotedReleaseStmt           *sql.Stmt
 	createReleaseStmt                   *sql.Stmt
@@ -2115,6 +2287,12 @@ type Queries struct {
 	deleteExpiredSessionsStmt           *sql.Stmt
 	deleteGitConnectionStmt             *sql.Stmt
 	deleteJoinTokenStmt                 *sql.Stmt
+	deleteOrgStmt                       *sql.Stmt
+	deleteOrgDataPolicyStmt             *sql.Stmt
+	deleteOrgInvitesStmt                *sql.Stmt
+	deleteOrgMembersStmt                *sql.Stmt
+	deleteOrgVariableStmt               *sql.Stmt
+	deleteOrgVariablesStmt              *sql.Stmt
 	deleteReleaseEventsStmt             *sql.Stmt
 	deleteSavedQueryStmt                *sql.Stmt
 	deleteSensitiveColumnsStmt          *sql.Stmt
@@ -2157,11 +2335,13 @@ type Queries struct {
 	getGitConnectionByServiceStmt       *sql.Stmt
 	getInFlightReleaseStmt              *sql.Stmt
 	getInstallIDStmt                    *sql.Stmt
+	getInviteByHashStmt                 *sql.Stmt
 	getLocalServerStmt                  *sql.Stmt
 	getMemberRoleStmt                   *sql.Stmt
 	getMemberRoleByEmailStmt            *sql.Stmt
 	getMembershipStmt                   *sql.Stmt
 	getOrgStmt                          *sql.Stmt
+	getOrgInviteStmt                    *sql.Stmt
 	getPlacementStmt                    *sql.Stmt
 	getProjectStmt                      *sql.Stmt
 	getProjectByNameStmt                *sql.Stmt
@@ -2209,9 +2389,12 @@ type Queries struct {
 	listLatestScheduledBackupsStmt      *sql.Stmt
 	listOldestAuditEventsStmt           *sql.Stmt
 	listOpenAlertsStmt                  *sql.Stmt
+	listOrgInvitesStmt                  *sql.Stmt
 	listOrgMembersStmt                  *sql.Stmt
 	listOrgServerIDsStmt                *sql.Stmt
 	listOrgTokensStmt                   *sql.Stmt
+	listOrgVariableUsesStmt             *sql.Stmt
+	listOrgVariablesStmt                *sql.Stmt
 	listPendingChangesetsStmt           *sql.Stmt
 	listPendingDomainsStmt              *sql.Stmt
 	listPendingJoinTokensStmt           *sql.Stmt
@@ -2263,8 +2446,12 @@ type Queries struct {
 	pruneServerStatsStmt                *sql.Stmt
 	pruneServiceStatsStmt               *sql.Stmt
 	registerNodeServerStmt              *sql.Stmt
+	removeOrgMemberStmt                 *sql.Stmt
+	renameOrgStmt                       *sql.Stmt
 	resolveAlertStmt                    *sql.Stmt
 	restoreVariableStmt                 *sql.Stmt
+	revokeOrgInviteStmt                 *sql.Stmt
+	revokeOrgTokensStmt                 *sql.Stmt
 	revokeServerStmt                    *sql.Stmt
 	revokeTokenStmt                     *sql.Stmt
 	revokeUserLoginTokensStmt           *sql.Stmt
@@ -2276,6 +2463,7 @@ type Queries struct {
 	setGitLastEventStmt                 *sql.Stmt
 	setGitPendingStmt                   *sql.Stmt
 	setJoinTokenServerStmt              *sql.Stmt
+	setMemberRoleStmt                   *sql.Stmt
 	setPendingSettingsStmt              *sql.Stmt
 	setReleaseCommitStmt                *sql.Stmt
 	setReleaseContainerStmt             *sql.Stmt
@@ -2308,6 +2496,7 @@ type Queries struct {
 	upsertBackupScheduleStmt            *sql.Stmt
 	upsertBackupSettingsStmt            *sql.Stmt
 	upsertDataAccessStmt                *sql.Stmt
+	upsertOrgVariableStmt               *sql.Stmt
 	upsertPlacementStmt                 *sql.Stmt
 }
 
@@ -2315,6 +2504,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
 		db:                                  tx,
 		tx:                                  tx,
+		acceptOrgInviteStmt:                 q.acceptOrgInviteStmt,
 		activateReleaseStmt:                 q.activateReleaseStmt,
 		addAlertNoticeStmt:                  q.addAlertNoticeStmt,
 		addAuditDetailStmt:                  q.addAuditDetailStmt,
@@ -2336,6 +2526,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		clearReleaseHostPortStmt:            q.clearReleaseHostPortStmt,
 		consumeJoinTokenStmt:                q.consumeJoinTokenStmt,
 		countKindEnvironmentsStmt:           q.countKindEnvironmentsStmt,
+		countOrgAdminsStmt:                  q.countOrgAdminsStmt,
+		countOrgProjectsStmt:                q.countOrgProjectsStmt,
 		countPendingCLILoginsStmt:           q.countPendingCLILoginsStmt,
 		countUsersStmt:                      q.countUsersStmt,
 		createAlertChannelStmt:              q.createAlertChannelStmt,
@@ -2348,6 +2540,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createGitConnectionStmt:             q.createGitConnectionStmt,
 		createJoinTokenStmt:                 q.createJoinTokenStmt,
 		createOrgStmt:                       q.createOrgStmt,
+		createOrgInviteStmt:                 q.createOrgInviteStmt,
 		createProjectStmt:                   q.createProjectStmt,
 		createPromotedReleaseStmt:           q.createPromotedReleaseStmt,
 		createReleaseStmt:                   q.createReleaseStmt,
@@ -2370,6 +2563,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteExpiredSessionsStmt:           q.deleteExpiredSessionsStmt,
 		deleteGitConnectionStmt:             q.deleteGitConnectionStmt,
 		deleteJoinTokenStmt:                 q.deleteJoinTokenStmt,
+		deleteOrgStmt:                       q.deleteOrgStmt,
+		deleteOrgDataPolicyStmt:             q.deleteOrgDataPolicyStmt,
+		deleteOrgInvitesStmt:                q.deleteOrgInvitesStmt,
+		deleteOrgMembersStmt:                q.deleteOrgMembersStmt,
+		deleteOrgVariableStmt:               q.deleteOrgVariableStmt,
+		deleteOrgVariablesStmt:              q.deleteOrgVariablesStmt,
 		deleteReleaseEventsStmt:             q.deleteReleaseEventsStmt,
 		deleteSavedQueryStmt:                q.deleteSavedQueryStmt,
 		deleteSensitiveColumnsStmt:          q.deleteSensitiveColumnsStmt,
@@ -2412,11 +2611,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getGitConnectionByServiceStmt:       q.getGitConnectionByServiceStmt,
 		getInFlightReleaseStmt:              q.getInFlightReleaseStmt,
 		getInstallIDStmt:                    q.getInstallIDStmt,
+		getInviteByHashStmt:                 q.getInviteByHashStmt,
 		getLocalServerStmt:                  q.getLocalServerStmt,
 		getMemberRoleStmt:                   q.getMemberRoleStmt,
 		getMemberRoleByEmailStmt:            q.getMemberRoleByEmailStmt,
 		getMembershipStmt:                   q.getMembershipStmt,
 		getOrgStmt:                          q.getOrgStmt,
+		getOrgInviteStmt:                    q.getOrgInviteStmt,
 		getPlacementStmt:                    q.getPlacementStmt,
 		getProjectStmt:                      q.getProjectStmt,
 		getProjectByNameStmt:                q.getProjectByNameStmt,
@@ -2464,9 +2665,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listLatestScheduledBackupsStmt:      q.listLatestScheduledBackupsStmt,
 		listOldestAuditEventsStmt:           q.listOldestAuditEventsStmt,
 		listOpenAlertsStmt:                  q.listOpenAlertsStmt,
+		listOrgInvitesStmt:                  q.listOrgInvitesStmt,
 		listOrgMembersStmt:                  q.listOrgMembersStmt,
 		listOrgServerIDsStmt:                q.listOrgServerIDsStmt,
 		listOrgTokensStmt:                   q.listOrgTokensStmt,
+		listOrgVariableUsesStmt:             q.listOrgVariableUsesStmt,
+		listOrgVariablesStmt:                q.listOrgVariablesStmt,
 		listPendingChangesetsStmt:           q.listPendingChangesetsStmt,
 		listPendingDomainsStmt:              q.listPendingDomainsStmt,
 		listPendingJoinTokensStmt:           q.listPendingJoinTokensStmt,
@@ -2518,8 +2722,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		pruneServerStatsStmt:                q.pruneServerStatsStmt,
 		pruneServiceStatsStmt:               q.pruneServiceStatsStmt,
 		registerNodeServerStmt:              q.registerNodeServerStmt,
+		removeOrgMemberStmt:                 q.removeOrgMemberStmt,
+		renameOrgStmt:                       q.renameOrgStmt,
 		resolveAlertStmt:                    q.resolveAlertStmt,
 		restoreVariableStmt:                 q.restoreVariableStmt,
+		revokeOrgInviteStmt:                 q.revokeOrgInviteStmt,
+		revokeOrgTokensStmt:                 q.revokeOrgTokensStmt,
 		revokeServerStmt:                    q.revokeServerStmt,
 		revokeTokenStmt:                     q.revokeTokenStmt,
 		revokeUserLoginTokensStmt:           q.revokeUserLoginTokensStmt,
@@ -2531,6 +2739,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setGitLastEventStmt:                 q.setGitLastEventStmt,
 		setGitPendingStmt:                   q.setGitPendingStmt,
 		setJoinTokenServerStmt:              q.setJoinTokenServerStmt,
+		setMemberRoleStmt:                   q.setMemberRoleStmt,
 		setPendingSettingsStmt:              q.setPendingSettingsStmt,
 		setReleaseCommitStmt:                q.setReleaseCommitStmt,
 		setReleaseContainerStmt:             q.setReleaseContainerStmt,
@@ -2563,6 +2772,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		upsertBackupScheduleStmt:            q.upsertBackupScheduleStmt,
 		upsertBackupSettingsStmt:            q.upsertBackupSettingsStmt,
 		upsertDataAccessStmt:                q.upsertDataAccessStmt,
+		upsertOrgVariableStmt:               q.upsertOrgVariableStmt,
 		upsertPlacementStmt:                 q.upsertPlacementStmt,
 	}
 }

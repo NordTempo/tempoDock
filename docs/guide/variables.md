@@ -33,6 +33,7 @@ resolved when a release is created, so each release is self-contained.
 |---|---|
 | `${{api.KEY}}` | Variable `KEY` as service `api` sees it (its own, shared, or injected) |
 | `${{shared.KEY}}` | Shared variable `KEY` |
+| `${{org.KEY}}` | Organization variable `KEY`, the same in every project |
 
 ```sh
 dock env set API_URL='http://${{api.DOCK_PRIVATE_DOMAIN}}:${{api.PORT}}' --service web
@@ -41,7 +42,25 @@ dock env set DATABASE_URL='${{postgres.DATABASE_URL}}' --service api
 
 Quote values with `${{ }}` in single quotes so the shell leaves them alone. A
 reference to a missing service or variable, or a cycle, is an error, and
-applying fails as a whole. `shared` can't be used as a service name.
+applying fails as a whole. `shared` and `org` can't be used as service names.
+
+### Organization variables
+
+Values every project needs, like an error tracker's DSN, live once in the
+organization (Organization settings, Variables, or `dock org env`) and are
+used where a variable says `${{org.KEY}}`. They are never added to
+services by themselves. Admins set and reveal them; everyone sees which
+services use each.
+
+```sh
+dock org env set SENTRY_DSN=https://...
+dock env set 'SENTRY_DSN=${{org.SENTRY_DSN}}' --service web
+dock org env redeploy SENTRY_DSN   # roll a new value out to every service using it
+```
+
+A changed value reaches a service on its next release; `redeploy` starts
+one for each running service that uses it. An organization variable in
+use can't be removed.
 
 Services in an environment reach each other by service name on the
 environment's private network, so `DOCK_PRIVATE_DOMAIN` is just the name.

@@ -112,8 +112,8 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 	if err := validName("service", req.Name); err != nil {
 		return apitypes.Service{}, err
 	}
-	if req.Name == "shared" {
-		return apitypes.Service{}, invalid(`"shared" is reserved for environment variable references`)
+	if req.Name == sharedScope || req.Name == orgScope {
+		return apitypes.Service{}, invalid("%q is reserved for variable references (${{%s.KEY}})", req.Name, req.Name)
 	}
 	if req.Template != apitypes.TemplateNone {
 		t, ok := templates[req.Template]

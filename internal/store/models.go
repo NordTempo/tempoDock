@@ -250,11 +250,32 @@ type Org struct {
 	CreatedAt time.Time
 }
 
+type OrgInvite struct {
+	ID         int64
+	OrgID      int64
+	Email      string
+	Role       string
+	Hash       string
+	CreatedBy  string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	AcceptedAt *time.Time
+	RevokedAt  *time.Time
+}
+
 type OrgMember struct {
 	OrgID     int64
 	UserID    int64
 	Role      string
 	CreatedAt time.Time
+}
+
+type OrgVariable struct {
+	OrgID     int64
+	Key       string
+	Value     []byte
+	UpdatedAt time.Time
+	UpdatedBy string
 }
 
 type Project struct {

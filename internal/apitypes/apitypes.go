@@ -73,6 +73,95 @@ type CreateOrgRequest struct {
 	Name string `json:"name,omitempty" maxLength:"100" doc:"Defaults to the slug"`
 }
 
+// UpdateOrgRequest renames an org. Its slug (its address) stays.
+type UpdateOrgRequest struct {
+	Name string `json:"name" minLength:"1" maxLength:"100"`
+}
+
+// SetMemberRoleRequest changes a member's role in the org.
+type SetMemberRoleRequest struct {
+	Role Scope `json:"role" enum:"read,deploy,admin"`
+}
+
+// Invite is an open invitation to the org for one email address.
+type Invite struct {
+	ID        int64     `json:"id"`
+	Email     string    `json:"email"`
+	Role      Scope     `json:"role" enum:"read,deploy,admin"`
+	CreatedBy string    `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	// Expired is set once the link no longer works; revoke to list it no
+	// more.
+	Expired bool `json:"expired,omitempty"`
+}
+
+// CreateInviteRequest invites an email address with a role.
+type CreateInviteRequest struct {
+	Email string `json:"email" format:"email"`
+	Role  Scope  `json:"role" enum:"read,deploy,admin"`
+}
+
+// CreatedInvite is returned once, on creation: the link's code is never
+// shown again.
+type CreatedInvite struct {
+	Invite Invite `json:"invite"`
+	// Code is the secret in the invite link, /invite/<code> on the web UI.
+	Code string `json:"code"`
+}
+
+// InviteInfo is an invite as the person invited sees it before accepting.
+type InviteInfo struct {
+	Org       string    `json:"org" doc:"The org's slug"`
+	OrgName   string    `json:"org_name"`
+	Email     string    `json:"email"`
+	Role      Scope     `json:"role" enum:"read,deploy,admin"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Status    string    `json:"status" enum:"open,accepted,revoked,expired"`
+}
+
+// OrgVariable is a variable every project of the org may reference as
+// ${{org.KEY}}.
+type OrgVariable struct {
+	Key string `json:"key"`
+	// Value is set only with reveal (admins).
+	Value     *string   `json:"value,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedBy string    `json:"updated_by"`
+	// UsedBy is where a live or staged variable references it.
+	UsedBy []VariableUse `json:"used_by"`
+}
+
+// VariableUse is a variable that references an org variable: a service's,
+// or with no service an environment's shared one.
+type VariableUse struct {
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+	Service     string `json:"service,omitempty"`
+}
+
+// SetOrgVariableRequest sets an org variable's value.
+type SetOrgVariableRequest struct {
+	Value string `json:"value"`
+}
+
+// OrgVariableRollout is what redeploying an org variable's users started:
+// a config release per running service, and those it couldn't redeploy.
+type OrgVariableRollout struct {
+	Started []RolloutService `json:"started"`
+	Skipped []RolloutService `json:"skipped"`
+}
+
+// RolloutService is a service a rollout redeployed (Number, its new
+// release) or left alone (Reason).
+type RolloutService struct {
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+	Service     string `json:"service"`
+	Number      int64  `json:"number,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+}
+
 // LoginRequest starts a UI session.
 type LoginRequest struct {
 	Email    string `json:"email" format:"email"`

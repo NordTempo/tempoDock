@@ -233,6 +233,8 @@ type envVars struct {
 	es   envScope
 	svcs []store.Service // by name
 	vars []store.Variable
+	// org is the org's variables, ${{org.KEY}}.
+	org []store.OrgVariable
 	// public is each service's public domain (DOCK_PUBLIC_DOMAIN): its
 	// first domain that isn't a redirect.
 	public map[int64]string
@@ -252,6 +254,9 @@ func loadEnvVars(ctx context.Context, q *store.Queries, es envScope, svcs []stor
 		if ev.vars, err = q.ListVariables(ctx, es.env.ID); err != nil {
 			return ev, err
 		}
+	}
+	if ev.org, err = q.ListOrgVariables(ctx, es.project.OrgID); err != nil {
+		return ev, err
 	}
 	domains, err := q.ListEnvironmentDomains(ctx, es.env.ID)
 	if err != nil {
@@ -303,6 +308,17 @@ func (c *Core) envResolver(ev envVars, include int64, staged bool) (*resolver, e
 	}
 
 	r := &resolver{env: es.String(), vars: map[string]map[string]string{sharedScope: shared}, done: map[string]string{}, visiting: map[string]bool{}}
+	// Org variables are literal: an org's value can't reference one
+	// environment's variables.
+	org := map[string]string{}
+	for _, v := range ev.org {
+		val, err := c.openValue(v.Value)
+		if err != nil {
+			return nil, err
+		}
+		org[v.Key] = *val
+		r.done[orgScope+"."+v.Key] = *val
+	}
 	for _, s := range ev.svcs {
 		if s.ArchivedAt != nil && s.ID != include {
 			continue
@@ -323,6 +339,7 @@ func (c *Core) envResolver(ev envVars, include int64, staged bool) (*resolver, e
 		}
 		r.vars[s.Name] = vars
 	}
+	r.vars[orgScope] = org
 	return r, nil
 }
 

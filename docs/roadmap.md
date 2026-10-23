@@ -110,9 +110,9 @@ doesn't affect production.
 - Telemetry-free by default.
 - Organizations ([ADR 0027](decisions/0027-organizations.md)). Done: orgs
   as the boundary (projects, tokens, data policy, audit, live events) and
-  the platform operator; the org switcher and the org in UI URLs. Next:
-  org settings (mocks first), invites, org variables (`${{org.KEY}}`)
-  and servers per org;
+  the platform operator; the org switcher and the org in UI URLs; org
+  settings with members, invites and org variables (`${{org.KEY}}`).
+  Next: servers per org and org alert channels;
   then signup modes (`closed`, `invite`, `open`) with email verification.
 
 ## Later (only when needed)

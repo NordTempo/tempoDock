@@ -179,7 +179,7 @@ func describeVariableChange(req apitypes.SetVariablesRequest) string {
 	return "staged: " + strings.Join(parts, "; ")
 }
 
-// refRe matches ${{service.KEY}} and ${{shared.KEY}}.
+// refRe matches ${{service.KEY}}, ${{shared.KEY}} and ${{org.KEY}}.
 var refRe = regexp.MustCompile(`\$\{\{\s*([a-z0-9-]+)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
 
 // sharedScope is the reference prefix for environment-level variables.
@@ -215,6 +215,12 @@ func (r *resolver) value(scope, key string) (string, error) {
 		if !ok {
 			if firstErr == nil {
 				firstErr = invalid("%s, but there is no service %q in %s", where, refScope, r.env)
+			}
+			return ""
+		}
+		if _, ok := vars[refKey]; !ok && refScope == orgScope {
+			if firstErr == nil {
+				firstErr = invalid("%s, but the organization has no variable %s; add it in organization settings or with `dock org env set %s=...`", where, refKey, refKey)
 			}
 			return ""
 		}

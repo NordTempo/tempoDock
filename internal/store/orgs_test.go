@@ -100,6 +100,12 @@ func TestOrgQueryPlans(t *testing.T) {
 		{"GetProjectByName", getProjectByName, []any{1, "shop"}},
 		{"ListProjects", listProjects, []any{1}},
 		{"ListAuditEvents", listAuditEvents, []any{1, math.MaxInt64, nil, nil, nil, nil, 100}},
+		{"ListOrgInvites", listOrgInvites, []any{1}},
+		{"GetInviteByHash", getInviteByHash, []any{"h"}},
+		{"ListOrgVariables", listOrgVariables, []any{1}},
+		{"ListOrgVariableUses", listOrgVariableUses, []any{1}},
+		{"CountOrgAdmins", countOrgAdmins, []any{1}},
+		{"CountOrgProjects", countOrgProjects, []any{1}},
 	})
 
 	// An action prefix is a range, so the page's IDs (only the matching

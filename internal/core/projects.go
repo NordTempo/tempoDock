@@ -58,8 +58,8 @@ func validName(kind, name string) error {
 // so an org can't be named like a top-level page, nor a project like a
 // page of an org.
 var (
-	reservedOrgSlugs     = []string{"account", "api", "assets", "cli-login", "console", "fonts", "login"}
-	reservedProjectNames = []string{"audit", "tokens"}
+	reservedOrgSlugs     = []string{"account", "api", "assets", "cli-login", "console", "fonts", "invite", "login", "no-org"}
+	reservedProjectNames = []string{"audit", "settings", "tokens"}
 )
 
 // loadProject loads a project of one org by name.
