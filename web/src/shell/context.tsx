@@ -130,15 +130,8 @@ export function ServerDots({
     <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-faint">
       {shown.map((s) => {
         const state = serverState(s.status);
-        return (
-          <Link
-            key={s.id}
-            // Server pages are for admins; everyone else gets the list.
-            to={admin ? "/servers/$server" : "/servers"}
-            params={{ server: s.name }}
-            className="flex items-center gap-1.5 hover:text-fg"
-            title={statusTitle(s)}
-          >
+        const label = (
+          <>
             <span className={toneText[state.tone]}>
               <Glyph char={state.glyph ?? "●"} />
             </span>
@@ -146,7 +139,27 @@ export function ServerDots({
             {s.status !== "online" && (
               <span className={toneText[state.tone]}>{state.label}</span>
             )}
+          </>
+        );
+        // Server pages are in the console, for admins.
+        return admin ? (
+          <Link
+            key={s.id}
+            to="/console/servers/$server"
+            params={{ server: s.name }}
+            className="flex items-center gap-1.5 hover:text-fg"
+            title={statusTitle(s)}
+          >
+            {label}
           </Link>
+        ) : (
+          <span
+            key={s.id}
+            className="flex items-center gap-1.5"
+            title={statusTitle(s)}
+          >
+            {label}
+          </span>
         );
       })}
     </span>

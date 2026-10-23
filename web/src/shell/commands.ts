@@ -276,17 +276,22 @@ export function useCommands(): Command[] {
     }
   }
 
-  const org = [
-    ["Servers", "/servers", "dock server list"],
-    ["Tokens", "/tokens", "dock token list"],
-    ...(admin
-      ? ([
-          ["Users", "/users", "dock user list"],
-          ["Data access policy", "/data-policy", "dock db policy show"],
-        ] as const)
-      : []),
-    ["Audit log", "/audit", "dock audit"],
-  ] as const;
+  // Admins reach the platform console's pages; everyone else their own
+  // tokens and the activity they may see.
+  const org = admin
+    ? ([
+        ["Platform console", "/console", ""],
+        ["Servers", "/console/servers", "dock server list"],
+        ["Users", "/console/users", "dock user list"],
+        ["Tokens", "/console/tokens", "dock token list"],
+        ["Data access policy", "/console/data-access", "dock db policy show"],
+        ["Alerts", "/console/alerts", "dock alerts"],
+        ["Audit log", "/console/audit", "dock audit"],
+      ] as const)
+    : ([
+        ["Tokens", "/tokens", "dock token list"],
+        ["Audit log", "/audit", "dock audit"],
+      ] as const);
   for (const [label, to, cli] of org) {
     add({
       id: `go:${to}`,
@@ -297,7 +302,7 @@ export function useCommands(): Command[] {
       run: () => navigate({ to }),
     });
   }
-  // Server pages (statistics, placement) are for admins.
+  // Server pages (statistics, placement) are in the console.
   for (const { name } of admin ? servers : []) {
     add({
       id: `go:server:${name}`,
@@ -306,7 +311,8 @@ export function useCommands(): Command[] {
       strong: name,
       cli: `dock server show ${name}`,
       weight: 0,
-      run: () => navigate({ to: "/servers/$server", params: { server: name } }),
+      run: () =>
+        navigate({ to: "/console/servers/$server", params: { server: name } }),
     });
   }
   add({

@@ -13,17 +13,21 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as CliLoginRouteImport } from './routes/cli-login'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
-import { Route as AppAlertsRouteImport } from './routes/_app.alerts'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
-import { Route as AppDataPolicyRouteImport } from './routes/_app.data-policy'
-import { Route as AppServersRouteImport } from './routes/_app.servers'
+import { Route as AppConsoleRouteImport } from './routes/_app.console'
 import { Route as AppTokensRouteImport } from './routes/_app.tokens'
-import { Route as AppUsersRouteImport } from './routes/_app.users'
 import { Route as AppProjectIndexRouteImport } from './routes/_app.$project.index'
 import { Route as AppProjectCompareRouteImport } from './routes/_app.$project.compare'
-import { Route as AppServersServerRouteImport } from './routes/_app.servers_.$server'
+import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
+import { Route as AppConsoleAlertsRouteImport } from './routes/_app.console.alerts'
+import { Route as AppConsoleAuditRouteImport } from './routes/_app.console.audit'
+import { Route as AppConsoleDataAccessRouteImport } from './routes/_app.console.data-access'
+import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
+import { Route as AppConsoleTokensRouteImport } from './routes/_app.console.tokens'
+import { Route as AppConsoleUsersRouteImport } from './routes/_app.console.users'
 import { Route as AppProjectEnvironmentIndexRouteImport } from './routes/_app.$project.$environment.index'
 import { Route as AppProjectEnvironmentServiceRouteImport } from './routes/_app.$project.$environment.$service'
+import { Route as AppConsoleServersServerRouteImport } from './routes/_app.console.servers_.$server'
 import { Route as AppProjectEnvironmentServiceIndexRouteImport } from './routes/_app.$project.$environment.$service.index'
 import { Route as AppProjectEnvironmentServiceAuditRouteImport } from './routes/_app.$project.$environment.$service.audit'
 import { Route as AppProjectEnvironmentServiceBackupsRouteImport } from './routes/_app.$project.$environment.$service.backups'
@@ -55,34 +59,19 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAlertsRoute = AppAlertsRouteImport.update({
-  id: '/alerts',
-  path: '/alerts',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppAuditRoute = AppAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
   getParentRoute: () => AppRoute,
 } as any)
-const AppDataPolicyRoute = AppDataPolicyRouteImport.update({
-  id: '/data-policy',
-  path: '/data-policy',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppServersRoute = AppServersRouteImport.update({
-  id: '/servers',
-  path: '/servers',
+const AppConsoleRoute = AppConsoleRouteImport.update({
+  id: '/console',
+  path: '/console',
   getParentRoute: () => AppRoute,
 } as any)
 const AppTokensRoute = AppTokensRouteImport.update({
   id: '/tokens',
   path: '/tokens',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppUsersRoute = AppUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProjectIndexRoute = AppProjectIndexRouteImport.update({
@@ -95,10 +84,40 @@ const AppProjectCompareRoute = AppProjectCompareRouteImport.update({
   path: '/$project/compare',
   getParentRoute: () => AppRoute,
 } as any)
-const AppServersServerRoute = AppServersServerRouteImport.update({
-  id: '/servers_/$server',
-  path: '/servers/$server',
-  getParentRoute: () => AppRoute,
+const AppConsoleIndexRoute = AppConsoleIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleAlertsRoute = AppConsoleAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleAuditRoute = AppConsoleAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleDataAccessRoute = AppConsoleDataAccessRouteImport.update({
+  id: '/data-access',
+  path: '/data-access',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleServersRoute = AppConsoleServersRouteImport.update({
+  id: '/servers',
+  path: '/servers',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleTokensRoute = AppConsoleTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleUsersRoute = AppConsoleUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppProjectEnvironmentIndexRoute =
   AppProjectEnvironmentIndexRouteImport.update({
@@ -112,6 +131,11 @@ const AppProjectEnvironmentServiceRoute =
     path: '/$project/$environment/$service',
     getParentRoute: () => AppRoute,
   } as any)
+const AppConsoleServersServerRoute = AppConsoleServersServerRouteImport.update({
+  id: '/servers_/$server',
+  path: '/servers/$server',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
 const AppProjectEnvironmentServiceIndexRoute =
   AppProjectEnvironmentServiceIndexRouteImport.update({
     id: '/',
@@ -183,16 +207,20 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
-  '/alerts': typeof AppAlertsRoute
   '/audit': typeof AppAuditRoute
-  '/data-policy': typeof AppDataPolicyRoute
-  '/servers': typeof AppServersRoute
+  '/console': typeof AppConsoleRouteWithChildren
   '/tokens': typeof AppTokensRoute
-  '/users': typeof AppUsersRoute
   '/$project/compare': typeof AppProjectCompareRoute
-  '/servers/$server': typeof AppServersServerRoute
+  '/console/alerts': typeof AppConsoleAlertsRoute
+  '/console/audit': typeof AppConsoleAuditRoute
+  '/console/data-access': typeof AppConsoleDataAccessRoute
+  '/console/servers': typeof AppConsoleServersRoute
+  '/console/tokens': typeof AppConsoleTokensRoute
+  '/console/users': typeof AppConsoleUsersRoute
   '/$project/': typeof AppProjectIndexRoute
+  '/console/': typeof AppConsoleIndexRoute
   '/$project/$environment/$service': typeof AppProjectEnvironmentServiceRouteWithChildren
+  '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$project/$environment/': typeof AppProjectEnvironmentIndexRoute
   '/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
   '/$project/$environment/$service/backups': typeof AppProjectEnvironmentServiceBackupsRoute
@@ -209,16 +237,19 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
-  '/alerts': typeof AppAlertsRoute
   '/audit': typeof AppAuditRoute
-  '/data-policy': typeof AppDataPolicyRoute
-  '/servers': typeof AppServersRoute
   '/tokens': typeof AppTokensRoute
-  '/users': typeof AppUsersRoute
   '/': typeof AppIndexRoute
   '/$project/compare': typeof AppProjectCompareRoute
-  '/servers/$server': typeof AppServersServerRoute
+  '/console/alerts': typeof AppConsoleAlertsRoute
+  '/console/audit': typeof AppConsoleAuditRoute
+  '/console/data-access': typeof AppConsoleDataAccessRoute
+  '/console/servers': typeof AppConsoleServersRoute
+  '/console/tokens': typeof AppConsoleTokensRoute
+  '/console/users': typeof AppConsoleUsersRoute
   '/$project': typeof AppProjectIndexRoute
+  '/console': typeof AppConsoleIndexRoute
+  '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$project/$environment': typeof AppProjectEnvironmentIndexRoute
   '/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
   '/$project/$environment/$service/backups': typeof AppProjectEnvironmentServiceBackupsRoute
@@ -237,17 +268,21 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
-  '/_app/alerts': typeof AppAlertsRoute
   '/_app/audit': typeof AppAuditRoute
-  '/_app/data-policy': typeof AppDataPolicyRoute
-  '/_app/servers': typeof AppServersRoute
+  '/_app/console': typeof AppConsoleRouteWithChildren
   '/_app/tokens': typeof AppTokensRoute
-  '/_app/users': typeof AppUsersRoute
   '/_app/': typeof AppIndexRoute
   '/_app/$project/compare': typeof AppProjectCompareRoute
-  '/_app/servers_/$server': typeof AppServersServerRoute
+  '/_app/console/alerts': typeof AppConsoleAlertsRoute
+  '/_app/console/audit': typeof AppConsoleAuditRoute
+  '/_app/console/data-access': typeof AppConsoleDataAccessRoute
+  '/_app/console/servers': typeof AppConsoleServersRoute
+  '/_app/console/tokens': typeof AppConsoleTokensRoute
+  '/_app/console/users': typeof AppConsoleUsersRoute
   '/_app/$project/': typeof AppProjectIndexRoute
+  '/_app/console/': typeof AppConsoleIndexRoute
   '/_app/$project/$environment/$service': typeof AppProjectEnvironmentServiceRouteWithChildren
+  '/_app/console/servers_/$server': typeof AppConsoleServersServerRoute
   '/_app/$project/$environment/': typeof AppProjectEnvironmentIndexRoute
   '/_app/$project/$environment/$service/audit': typeof AppProjectEnvironmentServiceAuditRoute
   '/_app/$project/$environment/$service/backups': typeof AppProjectEnvironmentServiceBackupsRoute
@@ -267,16 +302,20 @@ export interface FileRouteTypes {
     | '/'
     | '/cli-login'
     | '/login'
-    | '/alerts'
     | '/audit'
-    | '/data-policy'
-    | '/servers'
+    | '/console'
     | '/tokens'
-    | '/users'
     | '/$project/compare'
-    | '/servers/$server'
+    | '/console/alerts'
+    | '/console/audit'
+    | '/console/data-access'
+    | '/console/servers'
+    | '/console/tokens'
+    | '/console/users'
     | '/$project/'
+    | '/console/'
     | '/$project/$environment/$service'
+    | '/console/servers/$server'
     | '/$project/$environment/'
     | '/$project/$environment/$service/audit'
     | '/$project/$environment/$service/backups'
@@ -293,16 +332,19 @@ export interface FileRouteTypes {
   to:
     | '/cli-login'
     | '/login'
-    | '/alerts'
     | '/audit'
-    | '/data-policy'
-    | '/servers'
     | '/tokens'
-    | '/users'
     | '/'
     | '/$project/compare'
-    | '/servers/$server'
+    | '/console/alerts'
+    | '/console/audit'
+    | '/console/data-access'
+    | '/console/servers'
+    | '/console/tokens'
+    | '/console/users'
     | '/$project'
+    | '/console'
+    | '/console/servers/$server'
     | '/$project/$environment'
     | '/$project/$environment/$service/audit'
     | '/$project/$environment/$service/backups'
@@ -320,17 +362,21 @@ export interface FileRouteTypes {
     | '/_app'
     | '/cli-login'
     | '/login'
-    | '/_app/alerts'
     | '/_app/audit'
-    | '/_app/data-policy'
-    | '/_app/servers'
+    | '/_app/console'
     | '/_app/tokens'
-    | '/_app/users'
     | '/_app/'
     | '/_app/$project/compare'
-    | '/_app/servers_/$server'
+    | '/_app/console/alerts'
+    | '/_app/console/audit'
+    | '/_app/console/data-access'
+    | '/_app/console/servers'
+    | '/_app/console/tokens'
+    | '/_app/console/users'
     | '/_app/$project/'
+    | '/_app/console/'
     | '/_app/$project/$environment/$service'
+    | '/_app/console/servers_/$server'
     | '/_app/$project/$environment/'
     | '/_app/$project/$environment/$service/audit'
     | '/_app/$project/$environment/$service/backups'
@@ -381,13 +427,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/alerts': {
-      id: '/_app/alerts'
-      path: '/alerts'
-      fullPath: '/alerts'
-      preLoaderRoute: typeof AppAlertsRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/audit': {
       id: '/_app/audit'
       path: '/audit'
@@ -395,18 +434,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAuditRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/data-policy': {
-      id: '/_app/data-policy'
-      path: '/data-policy'
-      fullPath: '/data-policy'
-      preLoaderRoute: typeof AppDataPolicyRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/servers': {
-      id: '/_app/servers'
-      path: '/servers'
-      fullPath: '/servers'
-      preLoaderRoute: typeof AppServersRouteImport
+    '/_app/console': {
+      id: '/_app/console'
+      path: '/console'
+      fullPath: '/console'
+      preLoaderRoute: typeof AppConsoleRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/tokens': {
@@ -414,13 +446,6 @@ declare module '@tanstack/react-router' {
       path: '/tokens'
       fullPath: '/tokens'
       preLoaderRoute: typeof AppTokensRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/users': {
-      id: '/_app/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof AppUsersRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/$project/': {
@@ -437,12 +462,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectCompareRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/servers_/$server': {
-      id: '/_app/servers_/$server'
-      path: '/servers/$server'
-      fullPath: '/servers/$server'
-      preLoaderRoute: typeof AppServersServerRouteImport
-      parentRoute: typeof AppRoute
+    '/_app/console/': {
+      id: '/_app/console/'
+      path: '/'
+      fullPath: '/console/'
+      preLoaderRoute: typeof AppConsoleIndexRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/alerts': {
+      id: '/_app/console/alerts'
+      path: '/alerts'
+      fullPath: '/console/alerts'
+      preLoaderRoute: typeof AppConsoleAlertsRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/audit': {
+      id: '/_app/console/audit'
+      path: '/audit'
+      fullPath: '/console/audit'
+      preLoaderRoute: typeof AppConsoleAuditRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/data-access': {
+      id: '/_app/console/data-access'
+      path: '/data-access'
+      fullPath: '/console/data-access'
+      preLoaderRoute: typeof AppConsoleDataAccessRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/servers': {
+      id: '/_app/console/servers'
+      path: '/servers'
+      fullPath: '/console/servers'
+      preLoaderRoute: typeof AppConsoleServersRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/tokens': {
+      id: '/_app/console/tokens'
+      path: '/tokens'
+      fullPath: '/console/tokens'
+      preLoaderRoute: typeof AppConsoleTokensRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/users': {
+      id: '/_app/console/users'
+      path: '/users'
+      fullPath: '/console/users'
+      preLoaderRoute: typeof AppConsoleUsersRouteImport
+      parentRoute: typeof AppConsoleRoute
     }
     '/_app/$project/$environment/': {
       id: '/_app/$project/$environment/'
@@ -457,6 +524,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$project/$environment/$service'
       preLoaderRoute: typeof AppProjectEnvironmentServiceRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/console/servers_/$server': {
+      id: '/_app/console/servers_/$server'
+      path: '/servers/$server'
+      fullPath: '/console/servers/$server'
+      preLoaderRoute: typeof AppConsoleServersServerRouteImport
+      parentRoute: typeof AppConsoleRoute
     }
     '/_app/$project/$environment/$service/': {
       id: '/_app/$project/$environment/$service/'
@@ -538,6 +612,32 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppConsoleRouteChildren {
+  AppConsoleAlertsRoute: typeof AppConsoleAlertsRoute
+  AppConsoleAuditRoute: typeof AppConsoleAuditRoute
+  AppConsoleDataAccessRoute: typeof AppConsoleDataAccessRoute
+  AppConsoleServersRoute: typeof AppConsoleServersRoute
+  AppConsoleTokensRoute: typeof AppConsoleTokensRoute
+  AppConsoleUsersRoute: typeof AppConsoleUsersRoute
+  AppConsoleIndexRoute: typeof AppConsoleIndexRoute
+  AppConsoleServersServerRoute: typeof AppConsoleServersServerRoute
+}
+
+const AppConsoleRouteChildren: AppConsoleRouteChildren = {
+  AppConsoleAlertsRoute: AppConsoleAlertsRoute,
+  AppConsoleAuditRoute: AppConsoleAuditRoute,
+  AppConsoleDataAccessRoute: AppConsoleDataAccessRoute,
+  AppConsoleServersRoute: AppConsoleServersRoute,
+  AppConsoleTokensRoute: AppConsoleTokensRoute,
+  AppConsoleUsersRoute: AppConsoleUsersRoute,
+  AppConsoleIndexRoute: AppConsoleIndexRoute,
+  AppConsoleServersServerRoute: AppConsoleServersServerRoute,
+}
+
+const AppConsoleRouteWithChildren = AppConsoleRoute._addFileChildren(
+  AppConsoleRouteChildren,
+)
+
 interface AppProjectEnvironmentServiceRouteChildren {
   AppProjectEnvironmentServiceAuditRoute: typeof AppProjectEnvironmentServiceAuditRoute
   AppProjectEnvironmentServiceBackupsRoute: typeof AppProjectEnvironmentServiceBackupsRoute
@@ -581,15 +681,11 @@ const AppProjectEnvironmentServiceRouteWithChildren =
   )
 
 interface AppRouteChildren {
-  AppAlertsRoute: typeof AppAlertsRoute
   AppAuditRoute: typeof AppAuditRoute
-  AppDataPolicyRoute: typeof AppDataPolicyRoute
-  AppServersRoute: typeof AppServersRoute
+  AppConsoleRoute: typeof AppConsoleRouteWithChildren
   AppTokensRoute: typeof AppTokensRoute
-  AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
   AppProjectCompareRoute: typeof AppProjectCompareRoute
-  AppServersServerRoute: typeof AppServersServerRoute
   AppProjectIndexRoute: typeof AppProjectIndexRoute
   AppProjectEnvironmentServiceRoute: typeof AppProjectEnvironmentServiceRouteWithChildren
   AppProjectEnvironmentIndexRoute: typeof AppProjectEnvironmentIndexRoute
@@ -597,15 +693,11 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppAlertsRoute: AppAlertsRoute,
   AppAuditRoute: AppAuditRoute,
-  AppDataPolicyRoute: AppDataPolicyRoute,
-  AppServersRoute: AppServersRoute,
+  AppConsoleRoute: AppConsoleRouteWithChildren,
   AppTokensRoute: AppTokensRoute,
-  AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,
   AppProjectCompareRoute: AppProjectCompareRoute,
-  AppServersServerRoute: AppServersServerRoute,
   AppProjectIndexRoute: AppProjectIndexRoute,
   AppProjectEnvironmentServiceRoute:
     AppProjectEnvironmentServiceRouteWithChildren,

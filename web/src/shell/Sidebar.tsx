@@ -26,26 +26,20 @@ import { useCurrentContext } from "./location";
 import { usePalette } from "./palette";
 
 /**
- * Which sidebar a page gets: the project tree, workspace settings, or the
- * platform console (operators: servers).
+ * Which sidebar a page gets: the project tree, workspace settings (the
+ * caller's tokens and activity), or the platform console (admins: every
+ * page under /console).
  */
 export type ShellMode = "app" | "settings" | "console";
 
-const modes: Partial<Record<keyof FileRoutesById, ShellMode>> = {
-  "/_app/users": "settings",
-  "/_app/tokens": "settings",
-  "/_app/data-policy": "settings",
-  "/_app/alerts": "settings",
-  "/_app/audit": "settings",
-  "/_app/servers": "console",
-  "/_app/servers_/$server": "console",
-};
+const settings = new Set<keyof FileRoutesById>(["/_app/tokens", "/_app/audit"]);
 
 export const useShellMode = (): ShellMode =>
   useMatches({
     select: (matches) => {
+      if (matches.some((m) => m.routeId === "/_app/console")) return "console";
       const id = matches.at(-1)?.routeId;
-      return (id && modes[id]) || "app";
+      return id && settings.has(id) ? "settings" : "app";
     },
   });
 
@@ -143,31 +137,21 @@ function AppNav() {
       <NavLink to="/audit" icon="activity">
         Activity
       </NavLink>
-      {admin ? (
-        <NavLink to="/users" icon="users">
-          Members &amp; tokens
-        </NavLink>
-      ) : (
+      {!admin && (
         <NavLink to="/tokens" icon="key">
           Tokens
-        </NavLink>
-      )}
-      {admin && (
-        <NavLink to="/alerts" icon="bell">
-          <span className="flex-1">Alerts</span>
-          <OpenAlertCount />
         </NavLink>
       )}
       <div className="mx-1 mt-2 mb-1.5 border-t border-line" />
       <Me />
       {admin && (
         <Link
-          to="/servers"
+          to="/console"
           className="mx-1 mt-1.5 flex items-center gap-2 rounded-ctl border border-dashed border-dash px-2 py-1.5 text-xs text-warn hover:bg-warn-bg"
         >
           <Icon name="console" size={13} />
           <span className="flex-1">Platform console</span>
-          <span className="text-2xs text-faint">servers</span>
+          <OpenAlertCount />
         </Link>
       )}
     </>
@@ -391,15 +375,7 @@ function SettingsNav() {
         <Icon name="chevronLeft" /> Back to projects
       </Link>
       <div className={groupLabel}>Workspace</div>
-      {admin && <NavLink to="/users">Members</NavLink>}
-      <NavLink to="/tokens">Tokens</NavLink>
-      {admin && <NavLink to="/data-policy">Data access</NavLink>}
-      {admin && (
-        <NavLink to="/alerts">
-          <span className="flex-1">Alerts</span>
-          <OpenAlertCount />
-        </NavLink>
-      )}
+      {!admin && <NavLink to="/tokens">Tokens</NavLink>}
       <NavLink to="/audit">Audit log</NavLink>
       <div className="min-h-6 flex-1" />
       <Me />
@@ -407,10 +383,12 @@ function SettingsNav() {
   );
 }
 
-/** The operator side: servers, with each one's link status. */
+/**
+ * The platform console's sidebar: infrastructure (servers, each with its
+ * link status), access, and operations. Only admins reach it.
+ */
 function ConsoleNav() {
   const servers = useServers();
-  const admin = useIsAdmin();
   return (
     <>
       <div className="px-2.5 pt-1 pb-2">
@@ -418,15 +396,15 @@ function ConsoleNav() {
         <span className="text-faint">· platform</span>
       </div>
       <div className={groupLabel}>Infrastructure</div>
-      <NavLink to="/servers" exact icon="server">
+      <NavLink to="/console/servers" exact icon="server">
         Servers
       </NavLink>
       {servers.map((s) => {
         const state = serverState(s.status);
-        return admin ? (
+        return (
           <Link
             key={s.id}
-            to="/servers/$server"
+            to="/console/servers/$server"
             params={{ server: s.name }}
             activeProps={{ "aria-current": "page" }}
             className="nav-row py-[5px] pl-[30px]"
@@ -441,8 +419,26 @@ function ConsoleNav() {
               </span>
             )}
           </Link>
-        ) : null;
+        );
       })}
+      <div className={groupLabel}>Access</div>
+      <NavLink to="/console/users" icon="users">
+        Users
+      </NavLink>
+      <NavLink to="/console/tokens" icon="key">
+        Tokens
+      </NavLink>
+      <NavLink to="/console/data-access" icon="shield">
+        Data access
+      </NavLink>
+      <div className={groupLabel}>Operations</div>
+      <NavLink to="/console/alerts" icon="bell">
+        <span className="flex-1">Alerts</span>
+        <OpenAlertCount />
+      </NavLink>
+      <NavLink to="/console/audit" icon="activity">
+        Audit
+      </NavLink>
       <div className="min-h-6 flex-1" />
       <Me />
     </>

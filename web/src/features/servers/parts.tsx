@@ -23,7 +23,7 @@ export function EnvServer({ name }: { name: string }) {
   const admin = useIsAdmin();
   const label = admin ? (
     <Link
-      to="/servers/$server"
+      to="/console/servers/$server"
       params={{ server: name }}
       className="font-mono text-inherit"
     >

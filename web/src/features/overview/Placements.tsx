@@ -50,7 +50,7 @@ export function Placements({ project }: { project: string }) {
                     {placed ? (
                       admin ? (
                         <Link
-                          to="/servers/$server"
+                          to="/console/servers/$server"
                           params={{ server: placed.server }}
                         >
                           {placed.server}
@@ -102,7 +102,7 @@ function Pin({ project, kind }: { project: string; kind: EnvironmentKind }) {
     return (
       <span>
         No server accepts {words} environments.{" "}
-        <Link to="/servers">Servers</Link>
+        <Link to="/console/servers">Servers</Link>
       </span>
     );
   }

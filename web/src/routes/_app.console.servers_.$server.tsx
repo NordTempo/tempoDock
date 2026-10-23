@@ -2,7 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { memo, useMemo } from "react";
 import { ApiError } from "../api/client";
-import { queries, useIsAdmin, useServer } from "../data/queries";
+import { queries, useServer } from "../data/queries";
 import type {
   Server,
   ServerDetail,
@@ -34,14 +34,12 @@ import {
 } from "../ui/kit";
 import { containerState, kindLabel } from "../ui/status";
 
-// One server for admins: live usage, history, what is placed on it and the
-// services there by memory. /servers/homelab?range=24h
-export const Route = createFileRoute("/_app/servers_/$server")({
+// One server: live usage, history, what is placed on it and the services
+// there by memory. /console/servers/homelab?range=24h
+export const Route = createFileRoute("/_app/console/servers_/$server")({
   validateSearch: validateRange,
   loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),
   loader: async ({ context: { queryClient }, params, deps }) => {
-    const session = await queryClient.ensureQueryData(queries.session());
-    if (session?.scope !== "admin") return;
     try {
       await Promise.all([
         queryClient.ensureQueryData(queries.server(params.server)),
@@ -58,22 +56,6 @@ export const Route = createFileRoute("/_app/servers_/$server")({
 });
 
 function ServerPage() {
-  const admin = useIsAdmin();
-  if (!admin) {
-    return (
-      <Page>
-        <TitleRow title={Route.useParams().server} />
-        <p className="text-mut">
-          Server statistics and placement are for admins.{" "}
-          <Link to="/servers">All servers</Link>
-        </p>
-      </Page>
-    );
-  }
-  return <AdminServer />;
-}
-
-function AdminServer() {
   const { server: name } = Route.useParams();
   const range = Route.useSearch().range ?? "1h";
   const navigate = Route.useNavigate();
@@ -95,7 +77,7 @@ function AdminServer() {
           .filter(Boolean)
           .join(" · ")}
         actions={
-          <Link to="/servers" className="self-center text-mut">
+          <Link to="/console/servers" className="self-center text-mut">
             All servers
           </Link>
         }
