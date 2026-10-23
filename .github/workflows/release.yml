@@ -1,7 +1,7 @@
 name: release
 
-# Pushing a v* tag runs every CI check, then builds the release artifacts
-# (make release-local, see scripts/release/build.sh) and publishes them as a
+# Pushing a v* tag runs every CI check alongside the release build
+# (make release-local, see scripts/release/build.sh), then publishes a
 # GitHub Release with generated notes: dock and tempobase from the same
 # commit, one version (ADR 0024). Tags with a "-" (v0.2.0-rc.1) are marked
 # as pre-releases, so "latest" never points at them. tempoBase's image goes
@@ -17,12 +17,8 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
-  release:
-    needs: ci
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -37,6 +33,36 @@ jobs:
           cache: true
           cache_dependency_path: web/pnpm-lock.yaml
       - run: make release-local VERSION="$GITHUB_REF_NAME"
+      # Artifact uploads strip executable bits; tar preserves them for the
+      # tempoBase image's entrypoint and the release binaries.
+      - name: Archive release artifacts
+        run: tar -C dist -cf "$RUNNER_TEMP/release-artifacts.tar" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: ${{ runner.temp }}/release-artifacts.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  # Neither GitHub Releases nor GHCR may publish until every check and the
+  # parallel build have succeeded. Publish the built artifacts, never rebuild.
+  release:
+    needs: [ci, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-artifacts
+          path: ${{ runner.temp }}
+      - name: Restore release artifacts
+        run: |
+          mkdir dist
+          tar -xf "$RUNNER_TEMP/release-artifacts.tar" -C dist
+          (cd dist && sha256sum --check SHA256SUMS)
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

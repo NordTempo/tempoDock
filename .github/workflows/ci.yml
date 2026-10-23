@@ -47,10 +47,9 @@ jobs:
 
   # Performance budgets (docs/performance.md): binary size, CLI start-up,
   # daemon idle memory/CPU/wake-ups, API latency, UI bundle and benchmarks
-  # against scripts/perf/baseline.json, for Dock and tempoBase. Takes about
-  # three minutes, most of it the 30 s idle windows and the benchmarks.
+  # against scripts/perf/baseline.json, for Dock and tempoBase. Builds its
+  # own inputs, so it runs alongside the Go and web checks.
   perf:
-    needs: [go, web]
     runs-on: ubuntu-latest
     # For tempoBase's check that it closes Postgres connections after use.
     services:
