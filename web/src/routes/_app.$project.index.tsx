@@ -190,9 +190,39 @@ function Overview() {
           <span className="text-info">◇</span> token · ○ person
         </p>
 
+        <Export project={project} />
         <ArchiveProject project={project} />
       </Page>
     </>
+  );
+}
+
+/**
+ * `dock project export`: the project's config as a download, TOML as the
+ * CLI prints it or the API's JSON. Variable values are never in it.
+ */
+function Export({ project }: { project: string }) {
+  const path = `/api/v1/projects/${encodeURIComponent(project)}/export`;
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-3 text-xs text-faint">
+      Export config
+      <a
+        href={`${path}.toml`}
+        download
+        className="lnk font-mono"
+        title={`dock project export ${project} > ${project}.dock.toml`}
+      >
+        {project}.dock.toml
+      </a>
+      <a
+        href={path}
+        download={`${project}.dock.json`}
+        className="lnk font-mono"
+        title={`dock project export ${project} --format json`}
+      >
+        {project}.dock.json
+      </a>
+    </p>
   );
 }
 
