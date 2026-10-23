@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useApplyChanges } from "../../data/mutations";
 import { useProblems } from "../../data/problems";
-import { serviceRef, useChanges } from "../../data/queries";
+import { serviceRef, useChanges, useIsAdmin } from "../../data/queries";
 import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { plural, since } from "../../ui/format";
@@ -81,6 +81,7 @@ type RowProps = { n: number; problem: Problem; project: string };
 
 function ProblemRow({ n, problem: p, project }: RowProps) {
   const key = n <= 9 ? String(n) : undefined;
+  const admin = useIsAdmin();
   switch (p.kind) {
     case "crashed": {
       const { status, active_release } = p.service.service;
@@ -270,7 +271,7 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           }
           time={since(a.opened_at)}
           action={
-            <Link to="/alerts" className={actionClass} data-problem={n}>
+            <Link to="/console/alerts" className={actionClass} data-problem={n}>
               Alerts
             </Link>
           }
@@ -290,9 +291,16 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           where={p.server.name}
           time={p.server.last_seen_at && since(p.server.last_seen_at)}
           action={
-            <Link to="/servers" className={actionClass} data-problem={n}>
-              Servers
-            </Link>
+            admin && (
+              <Link
+                to="/console/servers/$server"
+                params={{ server: p.server.name }}
+                className={actionClass}
+                data-problem={n}
+              >
+                Server
+              </Link>
+            )
           }
         >
           Not reachable

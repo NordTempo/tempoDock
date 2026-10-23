@@ -10,18 +10,14 @@ const nameRe = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
 /** core's reservedProjectNames: the UI's top-level paths. */
 const reservedProjectNames = [
   "account",
-  "alerts",
   "api",
   "assets",
   "audit",
-  "backups",
   "cli-login",
-  "data-policy",
+  "console",
   "fonts",
   "login",
-  "servers",
   "tokens",
-  "users",
 ];
 
 /**

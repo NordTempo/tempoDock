@@ -1,4 +1,4 @@
-# 0025: Everything the CLI does, the UI does
+# 0026: Everything the CLI does, the UI does
 
 Status: accepted (decided by the agent, on Saile's direction)
 

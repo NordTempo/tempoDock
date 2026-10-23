@@ -4,10 +4,10 @@ import { PolicyPage } from "../features/data/PolicyPage";
 
 const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 
-// The data access policy (ADR 0016): /data-policy for the default,
+// The data access policy (ADR 0016): /console/data-access for the default,
 // ?project=shop for a project's rules, &environment=staging for one
-// environment's. Everyone may read it; admins change it.
-export const Route = createFileRoute("/_app/data-policy")({
+// environment's.
+export const Route = createFileRoute("/_app/console/data-access")({
   validateSearch: (search: Record<string, unknown>): PolicyScope => {
     const project = text(search.project);
     return {

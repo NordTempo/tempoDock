@@ -190,18 +190,6 @@ export const kindLabel: Record<EnvironmentKind, string> = {
   non_production: "non-production",
 };
 
-/** Which environment kinds a server accepts, as shown in tables. */
-export function serverKinds(s: {
-  accepts_production: boolean;
-  accepts_non_production: boolean;
-}) {
-  const kinds = [
-    s.accepts_production && "production",
-    s.accepts_non_production && "non-production",
-  ].filter(Boolean);
-  return kinds.length ? kinds.join(", ") : "nothing";
-}
-
 const serverStates: Record<ServerStatus, State> = {
   online: { tone: "ok", glyph: "●", label: "online" },
   offline: { tone: "fail", glyph: "✕", label: "offline" },

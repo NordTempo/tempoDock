@@ -258,7 +258,7 @@ function Actions({ server: s }: { server: Server }) {
           error={remove.error}
           onConfirm={() =>
             remove.mutate(s.name, {
-              onSuccess: () => navigate({ to: "/servers" }),
+              onSuccess: () => navigate({ to: "/console/servers" }),
             })
           }
           onCancel={cancel(remove.reset)}

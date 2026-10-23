@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"strconv"
@@ -57,6 +58,10 @@ type imageUpkeep struct {
 	lastPrune time.Time
 	// collect: manifests were pruned whose blobs aren't collected yet.
 	collect bool
+	// lastPruned and lastErr are the last prune's outcome, for the
+	// console: how many manifests it deleted, and why it failed.
+	lastPruned int
+	lastErr    string
 }
 
 // useRegistry marks a build or pull that uses the registry until release
@@ -250,15 +255,15 @@ func (c *Core) imageNames(r store.Release) []string {
 }
 
 // maybePruneRegistry starts a registry prune in the background if none
-// ran within registryPruneEvery. Deploys call it when they finish, and
-// archives once they are committed.
+// ran within registryPruneEvery and no build or pull uses the registry.
+// Deploys call it when they finish, and archives once they are committed.
 func (c *Core) maybePruneRegistry() {
 	if c.reg == nil {
 		return
 	}
 	u := &c.images
 	u.mu.Lock()
-	due := !u.pruning && time.Since(u.lastPrune) >= registryPruneEvery
+	due := !u.pruning && time.Since(u.lastPrune) >= registryPruneEvery && u.inUse.TryLock()
 	u.pruning = u.pruning || due
 	u.mu.Unlock()
 	if !due {
@@ -267,53 +272,64 @@ func (c *Core) maybePruneRegistry() {
 	c.wg.Add(1) // like finishArchive's stops
 	go func() {
 		defer c.wg.Done()
-		ok := c.pruneRegistry(c.ctx)
-		u.mu.Lock()
-		u.pruning = false
-		if ok {
-			u.lastPrune = time.Now()
-		}
-		u.mu.Unlock()
+		_, _ = c.pruneRegistry(c.ctx)
 	}()
 }
 
 // pruneRegistry deletes the manifests no release keeps (ListKeptDigests),
 // then collects unreferenced blobs if anything was deleted (now or by an
-// earlier prune whose collection failed). It returns false without doing
-// anything while a build or pull uses the registry; the next deploy tries
-// again.
-func (c *Core) pruneRegistry(ctx context.Context) bool {
+// earlier prune whose collection failed), and returns how many manifests
+// it deleted. The caller has set pruning and holds inUse; pruneRegistry
+// releases both and records the outcome. A failed prune doesn't move
+// lastPrune, so the next deploy tries again.
+func (c *Core) pruneRegistry(ctx context.Context) (n int, err error) {
 	u := &c.images
-	if !u.inUse.TryLock() {
-		return false
-	}
-	defer u.inUse.Unlock()
-	keep, err := c.store.ListKeptDigests(ctx, int64(max(c.cfg.Defaults.KeepReleases, 1)))
+	defer func() {
+		u.inUse.Unlock()
+		if err != nil {
+			c.log.Warn("registry prune", "err", err)
+		}
+		u.mu.Lock()
+		defer u.mu.Unlock()
+		u.pruning = false
+		u.lastPruned = n
+		u.lastErr = ""
+		if err != nil {
+			u.lastErr = err.Error()
+		} else {
+			u.lastPrune = time.Now()
+		}
+	}()
+	keep, err := c.store.ListKeptDigests(ctx, int64(c.keepReleases()))
 	if err != nil {
-		c.log.Warn("registry prune", "err", err)
-		return false
+		return 0, err
 	}
 	if len(keep) == 0 {
-		return true // nothing was ever pushed, or nothing is kept: leave it
+		return 0, nil // nothing was ever pushed, or nothing is kept: leave it
 	}
-	n, err := c.reg.Prune(ctx, keep)
+	n, err = c.reg.Prune(ctx, keep)
+	u.mu.Lock()
+	collect := u.collect || n > 0
+	u.collect = collect
+	u.mu.Unlock()
 	if n > 0 {
-		u.collect = true
 		c.log.Info("registry: pruned images no release keeps", "manifests", n)
 	}
-	if err != nil {
-		c.log.Warn("registry prune", "err", err)
-		return false
+	if err != nil || !collect {
+		return n, err
 	}
-	if u.collect {
-		if err := c.reg.GarbageCollect(ctx); err != nil {
-			c.log.Warn("registry garbage collection", "err", err)
-			return false
-		}
-		u.collect = false
+	if err := c.reg.GarbageCollect(ctx); err != nil {
+		return n, fmt.Errorf("garbage collection: %w", err)
 	}
-	return true
+	u.mu.Lock()
+	u.collect = false
+	u.mu.Unlock()
+	return n, nil
 }
+
+// keepReleases is the rollback window: how many of a service's newest
+// releases keep their images.
+func (c *Core) keepReleases() int { return max(c.cfg.Defaults.KeepReleases, 1) }
 
 // cgnat is 100.64.0.0/10 (RFC 6598), where Tailscale puts its addresses:
 // private in practice, though netip doesn't call it that.

@@ -6,7 +6,7 @@ import {
   useResetPassword,
   useSetUserDisabled,
 } from "../data/mutations";
-import { queries, useIsAdmin, useSession, useUsers } from "../data/queries";
+import { queries, useSession, useUsers } from "../data/queries";
 import type { Scope, User } from "../data/types";
 import { day, plural } from "../ui/format";
 import {
@@ -23,30 +23,13 @@ import {
   TitleRow,
 } from "../ui/kit";
 
-// People who sign in to the UI. Managing them is for admins (the API
-// refuses everyone else), and nobody can disable, delete or reset
+// People who sign in to the UI. Nobody can disable, delete or reset
 // themselves here.
-export const Route = createFileRoute("/_app/users")({
-  loader: async ({ context: { queryClient } }) => {
-    const session = await queryClient.ensureQueryData(queries.session());
-    if (session?.scope === "admin") {
-      await queryClient.ensureQueryData(queries.users());
-    }
-  },
-  component: UsersPage,
+export const Route = createFileRoute("/_app/console/users")({
+  loader: ({ context: { queryClient } }) =>
+    queryClient.ensureQueryData(queries.users()),
+  component: Users,
 });
-
-function UsersPage() {
-  if (!useIsAdmin()) {
-    return (
-      <Page>
-        <TitleRow title="Members" />
-        <p className="text-mut">Only admins manage members.</p>
-      </Page>
-    );
-  }
-  return <Users />;
-}
 
 /** A generated password, shown once. */
 type Reset = { email: string; password: string };
@@ -62,7 +45,7 @@ function Users() {
       <div className="flex flex-wrap items-start gap-x-8 gap-y-7">
         <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-6">
           <TitleRow
-            title="Members"
+            title="Users"
             context={`People who sign in. ${active} active${users.length > active ? `, ${users.length - active} disabled` : ""}. Roles match token scopes.`}
           />
           <AddUser />
@@ -127,7 +110,7 @@ function Users() {
               your account
             </Link>
             . Tokens for agents, CI and scripts are on{" "}
-            <Link to="/tokens" className="text-info hover:underline">
+            <Link to="/console/tokens" className="text-info hover:underline">
               Tokens
             </Link>
             .
@@ -141,13 +124,13 @@ function Users() {
 
 const roleText: Record<Scope, string> = {
   admin:
-    "Everything: members, tokens, alerts, data access and servers. Reveals secret values.",
+    "Everything: users, tokens, alerts, data access, servers and the rest of the platform console. Reveals secret values.",
   deploy:
     "Deploy, roll back, restart, edit variables and settings. Values stay hidden.",
   read: "Status, deploys, logs and metrics. Read only.",
 };
 
-/** What each role may do, next to the members table (A4). */
+/** What each role may do, next to the users table (A4). */
 function RoleGuide() {
   return (
     <aside
@@ -411,7 +394,7 @@ function AddUser() {
   const [role, setRole] = useState<Scope>("deploy");
   return (
     <form
-      aria-label="Add a member"
+      aria-label="Add a user"
       className="flex flex-wrap items-center gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
@@ -469,7 +452,7 @@ function AddUser() {
         cli={`dock user create --email ${email.trim() || "<email>"} --name ${JSON.stringify(name.trim() || "<name>")} --role ${role}`}
         disabled={create.isPending || !email || !name || !password}
       >
-        Add member
+        Add user
       </Act>
       <ErrorText error={create.error} />
     </form>

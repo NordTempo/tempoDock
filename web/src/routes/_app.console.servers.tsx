@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { memo, type ReactNode, useState } from "react";
-import { queries, useIsAdmin, useServers } from "../data/queries";
+import { queries, useServers } from "../data/queries";
 import type { Server } from "../data/types";
 import { AddServer } from "../features/servers/AddServer";
 import { Ingress, statusTitle, Version } from "../features/servers/parts";
@@ -8,14 +8,13 @@ import { useServerSwitches } from "../features/servers/switches";
 import { useShortcuts } from "../shell/keys";
 import { pct, plural, since, size, until } from "../ui/format";
 import { Act, ErrorText, Page, Panel, StateText, TitleRow } from "../ui/kit";
-import { serverKinds, serverState } from "../ui/status";
+import { serverState } from "../ui/status";
 
 // Every server: link status, version, ingress, what it accepts, how loaded
-// it is. Admins add servers (A), switch accepted kinds and builds inline,
-// and open a server for its link, statistics and placements. Admins get
-// each server's latest sample with the list; usage and server status
-// events keep it current.
-export const Route = createFileRoute("/_app/servers")({
+// it is. Add servers (A), switch accepted kinds and builds inline, and open
+// a server for its link, statistics and placements. The list carries each
+// server's latest sample; usage and server status events keep it current.
+export const Route = createFileRoute("/_app/console/servers")({
   loader: ({ context: { queryClient } }) =>
     Promise.all([
       queryClient.ensureQueryData(queries.session()),
@@ -26,7 +25,6 @@ export const Route = createFileRoute("/_app/servers")({
 
 function Servers() {
   const servers = useServers();
-  const admin = useIsAdmin();
   const [adding, setAdding] = useState(false);
   const count = (status: Server["status"]) =>
     servers.filter((s) => s.status === status).length;
@@ -43,11 +41,7 @@ function Servers() {
     .map(([word, n]) => `${n} ${word}`)
     .join(" · ");
 
-  useShortcuts(
-    admin
-      ? [{ key: "a", label: "add server", run: () => setAdding(true) }]
-      : [],
-  );
+  useShortcuts([{ key: "a", label: "add server", run: () => setAdding(true) }]);
 
   return (
     <Page width="max-w-[1400px]" gap="gap-[18px]">
@@ -55,20 +49,14 @@ function Servers() {
         title="Servers"
         context={context}
         actions={
-          admin ? (
-            <Act
-              primary
-              cli="dock server add"
-              disabled={adding}
-              onClick={() => setAdding(true)}
-            >
-              Add server <kbd>A</kbd>
-            </Act>
-          ) : (
-            <span className="self-center font-mono text-2xs text-mut">
-              dock server list
-            </span>
-          )
+          <Act
+            primary
+            cli="dock server add"
+            disabled={adding}
+            onClick={() => setAdding(true)}
+          >
+            Add server <kbd>A</kbd>
+          </Act>
         }
       />
       {adding && <AddServer onClose={() => setAdding(false)} />}
@@ -94,21 +82,12 @@ function Servers() {
             </tr>
           </thead>
           <tbody>
-            {servers.map((s) =>
-              admin ? (
-                <AdminRow key={s.id} server={s} />
-              ) : (
-                <Row key={s.id} server={s} />
-              ),
-            )}
+            {servers.map((s) => (
+              <ServerRow key={s.id} server={s} />
+            ))}
           </tbody>
         </table>
       </Panel>
-      {servers.length > 0 && !admin && (
-        <p className="text-xs text-mut">
-          Admins see live usage and manage servers.
-        </p>
-      )}
     </Page>
   );
 }
@@ -178,8 +157,8 @@ function Kinds({ servers }: { servers: Server[] }) {
   );
 }
 
-/** A row with the admin's switches, and a confirm row when asked. */
-const AdminRow = memo(function AdminRow({ server }: { server: Server }) {
+/** A server's row with its switches, and a confirm row when asked. */
+const ServerRow = memo(function ServerRow({ server }: { server: Server }) {
   const { accepts, placement, builder, confirm, error } =
     useServerSwitches(server);
   return (
@@ -189,7 +168,6 @@ const AdminRow = memo(function AdminRow({ server }: { server: Server }) {
         accepts={accepts}
         placement={placement}
         builder={builder}
-        admin
       />
       {(confirm || error) && (
         <tr>
@@ -228,29 +206,22 @@ const Row = memo(function Row({
   accepts,
   placement,
   builder,
-  admin,
 }: {
   server: Server;
-  accepts?: ReactNode;
-  placement?: ReactNode;
-  builder?: ReactNode;
-  admin?: boolean;
+  accepts: ReactNode;
+  placement: ReactNode;
+  builder: ReactNode;
 }) {
   const offline = s.status === "offline";
-  // Only admins get the latest sample.
   const usage = s.usage;
   const dash = <span className="text-faint">·</span>;
   const note = statusNote(s);
   return (
     <tr id={s.name} className={offline ? "bg-fail-bg/50" : undefined}>
       <td className="py-2.5 font-mono font-medium">
-        {admin ? (
-          <Link to="/servers/$server" params={{ server: s.name }}>
-            {s.name}
-          </Link>
-        ) : (
-          s.name
-        )}
+        <Link to="/console/servers/$server" params={{ server: s.name }}>
+          {s.name}
+        </Link>
         {s.local && (
           <div className="font-sans text-xs font-normal text-mut">
             control plane
@@ -267,18 +238,9 @@ const Row = memo(function Row({
       <td className="py-2.5">
         <Ingress server={s} />
       </td>
-      <td className={`py-2.5 ${s.builder ? "" : "text-mut"}`}>
-        {builder ?? (s.builder ? "yes" : "no")}
-      </td>
-      <td className="py-2.5">{accepts ?? serverKinds(s)}</td>
-      <td className="py-2.5">
-        {placement ??
-          (s.disabled_for_placement ? (
-            <span className="text-warn">disabled</span>
-          ) : (
-            <span className="text-mut">open</span>
-          ))}
-      </td>
+      <td className={`py-2.5 ${s.builder ? "" : "text-mut"}`}>{builder}</td>
+      <td className="py-2.5">{accepts}</td>
+      <td className="py-2.5">{placement}</td>
       <td className="py-2.5 font-mono">
         {usage ? pct(usage.cpu_percent) : dash}
         {usage && (

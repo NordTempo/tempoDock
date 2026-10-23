@@ -20,7 +20,7 @@ function set(request: CreateRequest | null) {
   for (const listener of listeners) listener();
 }
 
-/** Opens a create dialog (ADR 0025). Its code loads on first use. */
+/** Opens a create dialog (ADR 0026). Its code loads on first use. */
 export const openCreate = (request: CreateRequest) => set(request);
 
 const subscribe = (listener: () => void) => {

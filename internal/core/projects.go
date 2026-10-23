@@ -57,8 +57,8 @@ func validName(kind, name string) error {
 // public/ and assets/): a project's page is /<name>, so a project with one
 // of these names could not be opened.
 var reservedProjectNames = []string{
-	"account", "alerts", "api", "assets", "audit", "backups", "cli-login",
-	"data-policy", "fonts", "login", "servers", "tokens", "users",
+	"account", "api", "assets", "audit", "cli-login", "console", "fonts",
+	"login", "tokens",
 }
 
 func (c *Core) loadProject(ctx context.Context, name string) (store.Project, error) {

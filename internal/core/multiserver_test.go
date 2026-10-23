@@ -64,6 +64,8 @@ func (r *fakeRegistry) GarbageCollect(context.Context) error {
 	return nil
 }
 
+func (r *fakeRegistry) Stored() (int64, error) { return 1 << 30, nil }
+
 func digestOf(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return "sha256:" + hex.EncodeToString(sum[:])
@@ -317,6 +319,71 @@ func TestArchiveReleasesImages(t *testing.T) {
 		}
 		p.c.images.mu.Unlock()
 		p.c.maybePruneRegistry()
+	}
+}
+
+// The console's registry view lists each service's kept images from the
+// releases (none once archived), and a manual prune runs whenever asked,
+// for unlimited admins only, and records how it went.
+func TestRegistryInfoAndManualPrune(t *testing.T) {
+	p, _ := labPool(t)
+	reg := &fakeRegistry{pruned: 3}
+	p.withRegistry(reg)
+	p.acceptProduction("homelab")
+	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
+	api := p.createService("production", "api", apitypes.CreateServiceRequest{})
+	p.deploySource(web)
+	second := p.deploySource(web)
+	p.deploySource(api)
+	if _, err := p.c.ArchiveService(p.ctx, System, api); err != nil {
+		t.Fatal(err)
+	}
+	idle := func() {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			p.c.images.mu.Lock()
+			pruning := p.c.images.pruning
+			p.c.images.mu.Unlock()
+			if !pruning {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("prune still running")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	idle() // the deploys' and the archive's own prune
+
+	info, err := p.c.GetRegistry(p.ctx, System)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Enabled || info.StoredBytes != 1<<30 || len(info.Services) != 2 {
+		t.Fatalf("registry = %+v", info)
+	}
+	a, w := info.Services[0], info.Services[1] // by name: api, web
+	if !a.Archived || a.Kept != 0 || w.Archived || w.Kept != 2 || w.Newest != second.Number || w.Active != second.Number ||
+		!strings.HasPrefix(w.Repository, buildTagPrefix) {
+		t.Fatalf("services = %+v", info.Services)
+	}
+
+	limited := Actor{Kind: "token", Name: "ops", Scope: apitypes.ScopeAdmin, ProjectID: 1, ProjectName: "shop"}
+	for _, a := range []Actor{limited, {Kind: "token", Name: "ci", Scope: apitypes.ScopeDeploy}} {
+		if _, err := p.c.PruneRegistry(p.ctx, a); CodeOf(err) != apitypes.CodeForbidden {
+			t.Fatalf("%s: err = %v", a, err)
+		}
+	}
+	if info, err = p.c.PruneRegistry(p.ctx, System); err != nil || !info.Pruning {
+		t.Fatalf("prune: %+v, %v", info, err)
+	}
+	idle()
+	if info, err = p.c.GetRegistry(p.ctx, System); err != nil || info.LastPruneAt == nil || info.LastPruned != 3 || info.CollectPending {
+		t.Fatalf("after the prune: %+v, %v", info, err)
+	}
+	if ops := reg.Ops(); ops[len(ops)-1] != "gc" {
+		t.Fatalf("registry ops: %v", ops)
 	}
 }
 

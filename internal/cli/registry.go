@@ -43,10 +43,11 @@ func platformRegistry(cfg config.Config, s *registry.Signer) (*registry.Platform
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
 	return &registry.Platform{
-		Name:   cfg.Registry.Listen,
-		Signer: s,
-		Client: &registry.Client{URL: "http://" + cfg.Registry.Listen, Signer: s},
-		Docker: docker,
+		Name:       cfg.Registry.Listen,
+		Signer:     s,
+		Client:     &registry.Client{URL: "http://" + cfg.Registry.Listen, Signer: s},
+		Docker:     docker,
+		StorageDir: cfg.Registry.StorageDir,
 	}, nil
 }
 

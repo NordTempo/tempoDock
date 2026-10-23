@@ -735,8 +735,8 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 
 func TestProjectNamesAvoidUIPages(t *testing.T) {
 	h := newHarness(t)
-	_, err := h.c.CreateProject(h.ctx, System, apitypes.CreateProjectRequest{Name: "servers"})
+	_, err := h.c.CreateProject(h.ctx, System, apitypes.CreateProjectRequest{Name: "console"})
 	if CodeOf(err) != apitypes.CodeValidation {
-		t.Fatalf("creating project servers: got %v, want a validation error", err)
+		t.Fatalf("creating project console: got %v, want a validation error", err)
 	}
 }
