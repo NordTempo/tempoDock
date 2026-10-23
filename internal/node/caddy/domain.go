@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -28,6 +29,9 @@ const certCheckTimeout = 30 * time.Second
 // against the system roots. That handshake is what triggers on-demand
 // issuance, so it is skipped while DNS is wrong to avoid burning CA rate
 // limits.
+//
+// DNS that points elsewhere may still reach this server through a proxy,
+// like a record proxied by Cloudflare; see checkProxied.
 //
 // In tunnel mode it requests https://<hostname>/ through Cloudflare; see
 // checkTunnel.
@@ -80,7 +84,7 @@ func (p *Proxy) CheckDomain(ctx context.Context, hostname string) (node.DomainCh
 	case !dc.DNSOK:
 		dc.Error = fmt.Sprintf("%s points at %s, but should point at %s",
 			hostname, strings.Join(dc.ResolvedIPs, ", "), strings.Join(p.opts.PublicIPs, ", "))
-		return dc, nil
+		return p.checkProxied(ctx, hostname, dc)
 	case len(stray) > 0:
 		// Still DNSOK, but a CA may validate against the wrong address.
 		dc.Error = fmt.Sprintf("%s also points at %s, which is not this server; remove that record",
@@ -103,6 +107,48 @@ func (p *Proxy) CheckDomain(ctx context.Context, hostname string) (node.DomainCh
 	}
 	dc.CertificateOK = true
 	return dc, nil
+}
+
+// checkProxied is CheckDomain's second chance when hostname resolves to
+// addresses that aren't this server's, as it does for a record proxied by
+// Cloudflare or another CDN. It visits https://<hostname>/ and looks for
+// this server's marker header: a match means visitors reach this server
+// with a valid certificate, so DNSOK and CertificateOK are set together.
+// Otherwise dc keeps its DNS error, made clearer when Cloudflare answered.
+func (p *Proxy) checkProxied(ctx context.Context, hostname string, dc node.DomainCheck) (node.DomainCheck, error) {
+	if p.opts.ServerMarker == "" {
+		return dc, nil
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, visitTimeout)
+	defer cancel()
+	resp, err := p.visit(reqCtx, hostname)
+	if ctx.Err() != nil {
+		return dc, ctx.Err()
+	}
+	if err != nil {
+		return dc, nil
+	}
+	_ = resp.Body.Close()
+
+	ip := strings.Join(p.opts.PublicIPs, ", ")
+	switch {
+	case resp.Header.Get(MarkerHeader) == p.opts.ServerMarker && redirectsToItself(resp, hostname):
+		// The proxy talks plain HTTP to this server, which sends it back to
+		// HTTPS: visitors loop. Cloudflare does this in Flexible mode.
+		dc.DNSOK, dc.Error = true, fmt.Sprintf("%s reaches this server over plain HTTP, which redirects back to HTTPS in a loop; if it is proxied by Cloudflare, set the zone's SSL/TLS encryption mode to Full (strict)", hostname)
+	case resp.Header.Get(MarkerHeader) == p.opts.ServerMarker:
+		dc.DNSOK, dc.CertificateOK, dc.Error = true, true, ""
+	case resp.Header.Get("CF-Ray") != "":
+		dc.Error = fmt.Sprintf("%s is proxied by Cloudflare, but its answer (HTTP %d) did not come from this server; point the record at %s and check that ports 80 and 443 reach this server", hostname, resp.StatusCode, ip)
+	}
+	return dc, nil
+}
+
+// redirectsToItself reports whether resp, the answer to https://<hostname>/,
+// redirects to that same URL.
+func redirectsToItself(resp *http.Response, hostname string) bool {
+	loc, err := resp.Location()
+	return err == nil && loc.Scheme == "https" && loc.Host == hostname && (loc.Path == "/" || loc.Path == "")
 }
 
 // errNoCertYet means the handshake failed without a certificate to judge:
