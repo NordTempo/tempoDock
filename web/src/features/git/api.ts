@@ -27,7 +27,7 @@ export const useGitSource = (ref: ServiceRef, enabled = true) =>
 
 /**
  * The repositories the org can connect through Dock's GitHub App (ADR
- * 0030), for the connect form; fetched when the form opens.
+ * 0031), for the connect form; fetched when the form opens.
  */
 export const useGitHubRepos = (enabled: boolean) =>
   useQuery({

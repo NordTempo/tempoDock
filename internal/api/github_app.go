@@ -18,7 +18,7 @@ import (
 // githubAppNewPath is the page that posts the App's manifest to GitHub.
 const githubAppNewPath = Prefix + "/github/app/new"
 
-// registerGitHub registers the install's GitHub App (ADR 0030): operators
+// registerGitHub registers the install's GitHub App (ADR 0031): operators
 // create it, install it and assign installations to orgs; members list the
 // repositories their org can connect. GitHub's redirects back land on
 // plain pages (githubPages), outside Huma.

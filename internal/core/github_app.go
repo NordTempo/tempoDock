@@ -16,7 +16,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// The install's GitHub App (ADR 0030). One App per Dock install, created
+// The install's GitHub App (ADR 0031). One App per Dock install, created
 // through GitHub's manifest flow: an operator opens a page Dock serves
 // (GitHubManifest), which posts the App's manifest to github.com; GitHub
 // redirects back with a code (CompleteGitHubApp), exchanged for the App's

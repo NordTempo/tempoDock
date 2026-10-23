@@ -57,7 +57,7 @@ type credKind int
 
 const (
 	credToken   credKind = iota // a webhook connection's own token, or none
-	credInstall                 // a GitHub App installation token (ADR 0030)
+	credInstall                 // a GitHub App installation token (ADR 0031)
 	credApp                     // the GitHub App's JWT
 )
 

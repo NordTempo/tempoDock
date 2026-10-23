@@ -23,7 +23,7 @@ import {
 
 // The console's GitHub page (mock G1): Dock's GitHub App as a list of
 // properties, its installations below with the org each deploys for
-// (ADR 0030). Creating and installing continue on github.com.
+// (ADR 0031). Creating and installing continue on github.com.
 
 export function GitHubPage() {
   const { data: gh, refetch, isFetching } = useGitHub();

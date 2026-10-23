@@ -3,7 +3,7 @@ package apitypes
 import "time"
 
 // GitHubStatus is the install's GitHub App and its installations (ADR
-// 0030), for operators.
+// 0031), for operators.
 type GitHubStatus struct {
 	// App is nil until an operator creates one (`dock github app create`).
 	App *GitHubApp `json:"app,omitempty"`

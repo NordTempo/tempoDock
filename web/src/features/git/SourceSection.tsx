@@ -33,7 +33,7 @@ type ConnectResult = Schemas["GitConnectResult"];
 /**
  * The service's GitHub source (ADR 0018): pushes to a branch deploy it
  * from source, through Dock's GitHub App when the org has it installed
- * (ADR 0030), else through a webhook whose secret connecting shows once.
+ * (ADR 0031), else through a webhook whose secret connecting shows once.
  * Changing it needs scope deploy; others see it read-only.
  */
 export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {

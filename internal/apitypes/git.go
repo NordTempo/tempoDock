@@ -19,12 +19,12 @@ type GitSource struct {
 	// HooksHint says how to fix it.
 	HooksReady bool   `json:"hooks_ready"`
 	HooksHint  string `json:"hooks_hint,omitempty"`
-	// AppReady says the org can connect through the GitHub App (ADR 0030):
+	// AppReady says the org can connect through the GitHub App (ADR 0031):
 	// one of the App's installations is assigned to it.
 	AppReady bool `json:"app_ready"`
 }
 
-// GitMode is how a service connects to GitHub (ADR 0030).
+// GitMode is how a service connects to GitHub (ADR 0031).
 type GitMode string
 
 const (

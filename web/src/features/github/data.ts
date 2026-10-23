@@ -7,7 +7,7 @@ import {
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
 
-// Dock's GitHub App for the console's GitHub page (ADR 0030). Reading it
+// Dock's GitHub App for the console's GitHub page (ADR 0031). Reading it
 // asks GitHub for the App's installations now, so a refetch is "check
 // again"; nothing polls. Creating the App and installing it continue on
 // github.com, which sends the browser back to Dock.

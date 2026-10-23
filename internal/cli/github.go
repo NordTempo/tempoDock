@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// newGitHubCmd is `dock github`: the install's GitHub App (ADR 0030),
+// newGitHubCmd is `dock github`: the install's GitHub App (ADR 0031),
 // through which services deploy on every push with no webhook or token of
 // their own.
 func newGitHubCmd(g *globals) *cobra.Command {

@@ -28,7 +28,7 @@ import (
 // deploy`. A running deploy is never cancelled; the push waits for it.
 //
 // A connection either has its own webhook and optional token (mode
-// webhook), or goes through the install's GitHub App (mode app, ADR 0030,
+// webhook), or goes through the install's GitHub App (mode app, ADR 0031,
 // github_app.go): the App's one webhook delivers every push and its
 // installation tokens read the repository.
 

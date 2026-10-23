@@ -256,7 +256,7 @@ dock git disconnect
 ### Through Dock's GitHub App
 
 Once an operator has set up Dock's GitHub App
-([ADR 0030](../decisions/0030-github-app.md)), connecting needs nothing
+([ADR 0031](../decisions/0031-github-app.md)), connecting needs nothing
 on GitHub: no webhook, no token, private repositories included, and
 commit statuses are on. One push deploys every service of the repository
 whose branch and directory it touches.

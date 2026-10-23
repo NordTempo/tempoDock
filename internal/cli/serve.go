@@ -135,7 +135,7 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	servers := []*http.Server{
 		{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second},
 		// Dock's public address, through Caddy (ADR 0029), with GitHub's
-		// webhooks (ADR 0030). Served whether or not one is set, so
+		// webhooks (ADR 0031). Served whether or not one is set, so
 		// setting one needs no restart.
 		{Addr: cfg.PublicListen, Handler: api.Public(handler, hooks), ReadHeaderTimeout: 10 * time.Second},
 		{

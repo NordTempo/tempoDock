@@ -1,4 +1,4 @@
--- The install's GitHub App (ADR 0030): one row (id 1), registered through
+-- The install's GitHub App (ADR 0031): one row (id 1), registered through
 -- GitHub's manifest flow. private_key and webhook_secret are sealed with
 -- the secrets box. hook_id is its webhook URL's last segment, random like
 -- a connection's, so only GitHub knows where to deliver.

@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-// The GitHub App's side of GitHub's REST API (ADR 0030): the manifest
+// The GitHub App's side of GitHub's REST API (ADR 0031): the manifest
 // conversion, the App's JWT and installation tokens, and the installation
 // and repository lookups. github_app.go uses them.
 

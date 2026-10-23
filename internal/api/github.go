@@ -76,7 +76,7 @@ const hooksPath = "/hooks/github/"
 // Build it once and share it, so both share the read slots. It serves only:
 //
 //	POST /hooks/github/{id}  a delivery to a connection's webhook, or to the
-//	                         GitHub App's (ADR 0030) (core.GitWebhook)
+//	                         GitHub App's (ADR 0031) (core.GitWebhook)
 //
 // Answers are plain text, which GitHub shows in the delivery log. The
 // webhook must exist, and the body fit, before a read slot is taken: the

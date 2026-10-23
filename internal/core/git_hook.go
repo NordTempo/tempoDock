@@ -173,7 +173,7 @@ func (c *Core) gitDelivery(ctx context.Context, id string) (string, error) {
 }
 
 // gitAppWebhook handles a delivery to the GitHub App's webhook (ADR
-// 0030): pushes go to every App connection of the repository (by its
+// 0031): pushes go to every App connection of the repository (by its
 // GitHub ID, so renames don't matter), each deciding by its branch and
 // directory; an uninstalled App's installation is unassigned. The App's
 // webhook secret is the authority, as a connection's is for its own hook.

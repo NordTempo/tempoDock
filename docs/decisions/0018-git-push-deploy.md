@@ -21,7 +21,7 @@ The daemon's API listens on Tailscale or loopback and must stay there
 | Public surface | Only `/hooks/github/` on `[hooks] public_host`, routed by the control plane's Caddy to a loopback listener that serves nothing else |
 | Queue | Newest push wins: one queued push per connection, in the DB; a running deploy is never cancelled |
 | Feedback | Commit statuses (optional), the latest delivery's outcome on the connection, the commit on the release |
-| No GitHub App | See below; superseded by [0030](0030-github-app.md), which adds one beside these webhooks |
+| No GitHub App | See below; superseded by [0031](0031-github-app.md), which adds one beside these webhooks |
 
 ## Receiving pushes
 
@@ -102,7 +102,7 @@ with `deploy` on that one service. Audit: `git.connect`, `git.update`,
 
 ## Why not a GitHub App
 
-Superseded by [0030](0030-github-app.md): the manifest flow registers an
+Superseded by [0031](0031-github-app.md): the manifest flow registers an
 App in one click, and Dock's public address receives its webhook.
 
 An App gives installation tokens, one webhook for many repositories and
