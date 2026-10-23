@@ -1,10 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { useDeploy, useRestart, useRollback } from "../../data/mutations";
+import { useRestart, useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   isDatabase,
   listenPort,
+  useCanDeploy,
   useChanges,
   useDeployBlock,
   useEnvironment,
@@ -80,10 +81,13 @@ const tabs = [
 export function ServiceBar({
   serviceRef: ref,
   full,
+  onDeploy,
 }: {
   serviceRef: ServiceRef;
   /** With the actions, as on the Overview tab. */
   full: boolean;
+  /** Opens the Deploy window (folder, image or GitHub). */
+  onDeploy: () => void;
 }) {
   const view = useService(ref);
   const state = serviceState(view);
@@ -115,7 +119,7 @@ export function ServiceBar({
           </span>
         </>
       }
-      actions={full && <Actions serviceRef={ref} />}
+      actions={full && <Actions serviceRef={ref} onDeploy={onDeploy} />}
     />
   );
 }
@@ -326,10 +330,16 @@ export function StatusSentence({ view }: { view: ServiceView }) {
 }
 
 /** Deploy, restart, roll back: buttons with keys and CLI equivalents. */
-function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+function Actions({
+  serviceRef: ref,
+  onDeploy,
+}: {
+  serviceRef: ServiceRef;
+  onDeploy: () => void;
+}) {
   const { service, deploying } = useService(ref);
   const releases = useReleases(ref);
-  const deploy = useDeploy();
+  const mayDeploy = useCanDeploy(ref);
   const restart = useRestart();
   const rollback = useRollback();
   const target = rollbackTarget(releases);
@@ -340,7 +350,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     blocked ?? (deploying ? `r${deploying.number} is deploying` : undefined);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
 
-  const canDeploy = !!service.image && !busy && !deploy.isPending;
+  // A GitHub deploy queues behind a running one; the window says what applies.
+  const canDeploy = mayDeploy && !blocked;
   const canRestart = !!service.active_release && !busy && !restart.isPending;
   const canRollback = !!target && !busy && !rollback.isPending;
 
@@ -349,7 +360,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       key: "d",
       label: "deploy",
       disabled: !canDeploy,
-      run: () => deploy.mutate(ref),
+      run: onDeploy,
     },
     {
       key: "r",
@@ -416,21 +427,21 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </Act>
       <Act
         primary
-        cli={`dock deploy ${flags}`}
+        cli={`dock deploy [dir | --image ${service.image || "<image>"}] ${flags}`}
         disabled={!canDeploy}
         title={
-          busy ??
-          (service.image
-            ? `Deploy ${service.image}`
-            : "Built from source: deploy with dock deploy")
+          blocked ??
+          (mayDeploy
+            ? "A folder, an image or the GitHub branch; or drop a folder here"
+            : "Needs the deploy scope")
         }
-        onClick={() => deploy.mutate(ref)}
+        onClick={onDeploy}
       >
         Deploy <kbd>D</kbd>
       </Act>
       <span className="self-center text-xs">
         {blocked && <span className="text-fail">Disabled: {blocked}.</span>}{" "}
-        <ErrorText error={deploy.error ?? restart.error ?? rollback.error} />
+        <ErrorText error={restart.error ?? rollback.error} />
       </span>
     </div>
   );
