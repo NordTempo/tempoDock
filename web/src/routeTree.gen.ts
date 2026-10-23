@@ -22,6 +22,7 @@ import { Route as AppOrgIndexRouteImport } from './routes/_app.$org.index'
 import { Route as AppOrgAuditRouteImport } from './routes/_app.$org.audit'
 import { Route as AppOrgTokensRouteImport } from './routes/_app.$org.tokens'
 import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
+import { Route as AppConsoleAddressRouteImport } from './routes/_app.console.address'
 import { Route as AppConsoleAlertsRouteImport } from './routes/_app.console.alerts'
 import { Route as AppConsoleAuditRouteImport } from './routes/_app.console.audit'
 import { Route as AppConsoleBackupsRouteImport } from './routes/_app.console.backups'
@@ -114,6 +115,11 @@ const AppOrgTokensRoute = AppOrgTokensRouteImport.update({
 const AppConsoleIndexRoute = AppConsoleIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleAddressRoute = AppConsoleAddressRouteImport.update({
+  id: '/address',
+  path: '/address',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleAlertsRoute = AppConsoleAlertsRouteImport.update({
@@ -286,6 +292,7 @@ export interface FileRoutesByFullPath {
   '/invite/$code': typeof InviteCodeRoute
   '/$org/audit': typeof AppOrgAuditRoute
   '/$org/tokens': typeof AppOrgTokensRoute
+  '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/audit': typeof AppConsoleAuditRoute
   '/console/backups': typeof AppConsoleBackupsRoute
@@ -327,6 +334,7 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/$org/audit': typeof AppOrgAuditRoute
   '/$org/tokens': typeof AppOrgTokensRoute
+  '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/audit': typeof AppConsoleAuditRoute
   '/console/backups': typeof AppConsoleBackupsRoute
@@ -371,6 +379,7 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/$org/audit': typeof AppOrgAuditRoute
   '/_app/$org/tokens': typeof AppOrgTokensRoute
+  '/_app/console/address': typeof AppConsoleAddressRoute
   '/_app/console/alerts': typeof AppConsoleAlertsRoute
   '/_app/console/audit': typeof AppConsoleAuditRoute
   '/_app/console/backups': typeof AppConsoleBackupsRoute
@@ -416,6 +425,7 @@ export interface FileRouteTypes {
     | '/invite/$code'
     | '/$org/audit'
     | '/$org/tokens'
+    | '/console/address'
     | '/console/alerts'
     | '/console/audit'
     | '/console/backups'
@@ -457,6 +467,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$org/audit'
     | '/$org/tokens'
+    | '/console/address'
     | '/console/alerts'
     | '/console/audit'
     | '/console/backups'
@@ -500,6 +511,7 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/$org/audit'
     | '/_app/$org/tokens'
+    | '/_app/console/address'
     | '/_app/console/alerts'
     | '/_app/console/audit'
     | '/_app/console/backups'
@@ -632,6 +644,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/console/'
       preLoaderRoute: typeof AppConsoleIndexRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/address': {
+      id: '/_app/console/address'
+      path: '/address'
+      fullPath: '/console/address'
+      preLoaderRoute: typeof AppConsoleAddressRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/alerts': {
@@ -918,6 +937,7 @@ const AppOrgRouteWithChildren =
   AppOrgRoute._addFileChildren(AppOrgRouteChildren)
 
 interface AppConsoleRouteChildren {
+  AppConsoleAddressRoute: typeof AppConsoleAddressRoute
   AppConsoleAlertsRoute: typeof AppConsoleAlertsRoute
   AppConsoleAuditRoute: typeof AppConsoleAuditRoute
   AppConsoleBackupsRoute: typeof AppConsoleBackupsRoute
@@ -932,6 +952,7 @@ interface AppConsoleRouteChildren {
 }
 
 const AppConsoleRouteChildren: AppConsoleRouteChildren = {
+  AppConsoleAddressRoute: AppConsoleAddressRoute,
   AppConsoleAlertsRoute: AppConsoleAlertsRoute,
   AppConsoleAuditRoute: AppConsoleAuditRoute,
   AppConsoleBackupsRoute: AppConsoleBackupsRoute,
