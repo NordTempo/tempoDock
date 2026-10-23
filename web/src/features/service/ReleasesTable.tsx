@@ -4,6 +4,7 @@ import { useRollback } from "../../data/mutations";
 import type { Release, ServiceRef } from "../../data/types";
 import { since } from "../../ui/format";
 import {
+  Act,
   Actor,
   actorKind,
   Button,
@@ -91,9 +92,10 @@ export function ReleasesTable({
                         <span className="font-mono text-xs text-mut">
                           {copiedConfig(r)}
                         </span>
-                        <Button
+                        <Act
                           small
                           primary
+                          cli={`dock rollback ${r.number} -s ${ref.service} -e ${ref.environment}`}
                           disabled={deploying || rollback.isPending}
                           onClick={() =>
                             rollback.mutate(
@@ -103,7 +105,7 @@ export function ReleasesTable({
                           }
                         >
                           Roll back
-                        </Button>
+                        </Act>
                         <Button small onClick={() => setConfirming(null)}>
                           Cancel
                         </Button>

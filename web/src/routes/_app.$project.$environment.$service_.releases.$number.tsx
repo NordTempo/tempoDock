@@ -4,9 +4,9 @@ import {
   notFound,
   useNavigate,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useServiceLogs } from "../data/live";
-import { useDeploy } from "../data/mutations";
+import { useDeploy, useRollback } from "../data/mutations";
 import {
   findService,
   queries,
@@ -18,7 +18,7 @@ import {
 } from "../data/queries";
 import type { LogLine, Release } from "../data/types";
 import { LogRow } from "../features/service/LogsPane";
-import { imageLabel } from "../features/service/releases";
+import { copiedConfig, imageLabel } from "../features/service/releases";
 import { deploySteps, StepTable } from "../features/service/Steps";
 import { useShortcuts } from "../shell/keys";
 import { ago, plural } from "../ui/format";
@@ -26,6 +26,7 @@ import {
   Act,
   Actor,
   actorKind,
+  Confirm,
   ErrorText,
   Glyph,
   Page,
@@ -62,6 +63,8 @@ function ReleasePage() {
   const release = useRelease(ref, Number(params.number));
   const releases = useReleases(ref);
   const deploy = useDeploy();
+  const rollback = useRollback();
+  const [rollingBack, setRollingBack] = useState(false);
   const blocked = useDeployBlock(ref);
   const navigate = useNavigate();
   const { service } = view;
@@ -207,6 +210,21 @@ function ReleasePage() {
             >
               Variables of {ref.service}
             </Act>
+            {release.status === "superseded" && !rollingBack && (
+              <Act
+                cli={`dock rollback ${release.number} -s ${ref.service} -e ${ref.environment}`}
+                disabled={!!view.deploying || !!blocked}
+                title={
+                  blocked ??
+                  (view.deploying
+                    ? `r${view.deploying.number} is deploying`
+                    : undefined)
+                }
+                onClick={() => setRollingBack(true)}
+              >
+                Roll back to {r}
+              </Act>
+            )}
             <span className="self-center">
               {failed && service.image && blocked && (
                 <span className="text-fail">Disabled: {blocked}. </span>
@@ -214,6 +232,35 @@ function ReleasePage() {
               <ErrorText error={deploy.error} />
             </span>
           </div>
+          {rollingBack && (
+            <Confirm
+              action={`Roll back to ${r}`}
+              cli={`dock rollback ${release.number} -s ${ref.service} -e ${ref.environment}`}
+              pending={rollback.isPending}
+              error={rollback.error}
+              onConfirm={() =>
+                rollback.mutate(
+                  { ref, to: release.number },
+                  {
+                    onSuccess: () =>
+                      navigate({
+                        to: "/$project/$environment/$service",
+                        params: ref,
+                      }),
+                  },
+                )
+              }
+              onCancel={() => {
+                rollback.reset();
+                setRollingBack(false);
+              }}
+            >
+              A new release with {r}'s image and config:{" "}
+              <span className="font-mono text-mut">
+                {copiedConfig(release)}
+              </span>
+            </Confirm>
+          )}
         </section>
 
         <section aria-labelledby="steps" className="flex flex-col gap-2">

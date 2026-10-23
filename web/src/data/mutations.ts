@@ -24,9 +24,11 @@ import type {
 
 // Mutation hooks. Each one names the cache subtrees it touches; they are
 // refetched once the call settles. Live events (./live.ts) cover what happens
-// later, such as deploy progress, and changes made from the CLI.
+// later, such as deploy progress, and changes made from the CLI. This module
+// is in the initial bundle: hooks only one screen uses live with that
+// screen's feature, built on useAction.
 
-function useAction<Vars, Data>(
+export function useAction<Vars, Data>(
   mutationFn: (vars: Vars) => Promise<Data>,
   touches: (vars: Vars) => QueryKey[],
 ) {
@@ -42,7 +44,7 @@ function useAction<Vars, Data>(
   });
 }
 
-const serviceWide = (ref: ServiceRef): QueryKey[] => [
+export const serviceWide = (ref: ServiceRef): QueryKey[] => [
   keys.service(ref),
   keys.overview(ref.project),
   ["audit"],
@@ -87,7 +89,7 @@ export const useRestart = () =>
 
 // Staging touches the environment (changes, variables) and the overview,
 // which counts staged changes per service.
-const staging = (env: EnvRef): QueryKey[] => [
+export const staging = (env: EnvRef): QueryKey[] => [
   keys.env(env),
   keys.overview(env.project),
   ["audit"],
@@ -99,15 +101,17 @@ type VariableEdit = {
   service: string | null;
   set?: Record<string, string>;
   unset?: string[];
+  /** Also apply everything staged in the environment (`--deploy`). */
+  apply?: boolean;
 };
 
-function setVariables({ env, service, set, unset }: VariableEdit) {
+function setVariables({ env, service, ...edit }: VariableEdit) {
   return body(
     api.PATCH(
       "/api/v1/projects/{project}/environments/{environment}/variables",
       {
         params: { path: envPath(env) },
-        body: { set, unset, ...(service && { service }) },
+        body: { ...edit, ...(service && { service }) },
       },
     ),
   );
@@ -159,13 +163,21 @@ export const useApplyChanges = () =>
     (env) => [keys.project(env.project), ["audit"]],
   );
 
+/** Adds a hostname; with redirect_to it only redirects there. */
 export const useAddDomain = () =>
   useAction(
-    ({ ref, hostname }: { ref: ServiceRef; hostname: string }) =>
+    ({
+      ref,
+      ...domain
+    }: {
+      ref: ServiceRef;
+      hostname: string;
+      redirect_to?: string;
+    }) =>
       body(
         api.POST(
           "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains",
-          { params: { path: servicePath(ref) }, body: { hostname } },
+          { params: { path: servicePath(ref) }, body: domain },
         ),
       ),
     ({ ref }) => serviceWide(ref),
@@ -255,17 +267,18 @@ export const useBackupSchedule = () =>
   useAction(
     ({
       ref,
-      enabled,
-      hour,
+      ...schedule
     }: {
       ref: ServiceRef;
       enabled?: boolean;
       hour?: number;
+      /** Follow the install's hour (`dock backup configure --hour`). */
+      default_hour?: boolean;
     }) =>
       body(
         api.PUT(
           "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/schedule",
-          { params: { path: servicePath(ref) }, body: { enabled, hour } },
+          { params: { path: servicePath(ref) }, body: schedule },
         ),
       ),
     ({ ref }) => backupsOf(ref),
@@ -363,16 +376,16 @@ export const useDeleteUser = () =>
   );
 
 /**
- * Generates a new password (resolved once, never shown again) and ends the
- * user's sessions. Not for your own account.
+ * Sets the password given, or generates one (resolved once, never shown
+ * again), and ends the user's sessions. Not for your own account.
  */
 export const useResetPassword = () =>
   useAction(
-    (id: number) =>
+    ({ id, password }: { id: number; password?: string }) =>
       body(
         api.POST("/api/v1/users/{id}/reset-password", {
           params: { path: { id } },
-          body: {},
+          body: password ? { password } : {},
         }),
       ),
     () => [keys.users, ["audit"]],

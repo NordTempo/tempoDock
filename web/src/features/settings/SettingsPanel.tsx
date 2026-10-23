@@ -4,6 +4,8 @@ import { type ReactNode, useState } from "react";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import {
+  staging,
+  useAction,
   useArchiveService,
   useDiscardChanges,
   useStageSettings,
@@ -12,6 +14,7 @@ import {
   envPath,
   keys,
   listenPort,
+  servicePath,
   useChanges,
   useEnvironment,
   useIsAdmin,
@@ -20,7 +23,7 @@ import {
   useVolumes,
 } from "../../data/queries";
 import type { Service, ServiceRef, SettingChange } from "../../data/types";
-import { Button, ErrorText, SectionHead } from "../../ui/kit";
+import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
 import { ApplyBox } from "../variables/ApplyBox";
@@ -91,7 +94,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </Item>
         <Item label="Volumes">
           {volumes.length === 0 ? (
-            <span className="text-mut">none</span>
+            <span className="mr-4 text-mut">none</span>
           ) : (
             volumes.map((v) => (
               <span key={v.name} className="mr-4 font-mono">
@@ -119,6 +122,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               </span>
             ))
           )}
+          <AddVolume serviceRef={ref} />
         </Item>
         <Item label="Server">
           <EnvServer name={environment.server} />{" "}
@@ -129,7 +133,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         Click a value to edit it. Edits are staged until applied.
       </p>
 
-      <ApplyBox env={envPath(ref)} reveal={false} />
+      <ApplyBox env={envPath(ref)} reveal={false} service={ref.service} />
 
       <SourceSection serviceRef={ref} />
 
@@ -137,6 +141,105 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
       <Archive serviceRef={ref} />
     </>
+  );
+}
+
+/**
+ * Stages a volume (POST .../volumes), applied with the environment's other
+ * staged changes or, with apply, at once.
+ */
+const useAddVolume = () =>
+  useAction(
+    ({
+      ref,
+      ...volume
+    }: {
+      ref: ServiceRef;
+      name: string;
+      mount_path: string;
+      apply: boolean;
+    }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/volumes",
+          { params: { path: servicePath(ref) }, body: volume },
+        ),
+      ),
+    // The environment's subtree holds the service's volumes too.
+    ({ ref }) => staging(ref),
+  );
+
+/** "+ Add volume", then a name, a mount path and whether to apply now. */
+function AddVolume({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const add = useAddVolume();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [path, setPath] = useState("");
+  const [apply, setApply] = useState(false);
+  if (!open) {
+    return (
+      <button type="button" className="lnk" onClick={() => setOpen(true)}>
+        + Add volume
+      </button>
+    );
+  }
+  const cli = `dock volume add ${name.trim() || "<name>"} ${path.trim() || "<path>"}${apply ? " --deploy" : ""} -s ${ref.service} -e ${ref.environment}`;
+  return (
+    <form
+      aria-label="Add volume"
+      className="mt-1.5 flex flex-wrap items-center gap-2"
+      onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+      onSubmit={(e) => {
+        e.preventDefault();
+        add.mutate(
+          { ref, name: name.trim(), mount_path: path.trim(), apply },
+          {
+            onSuccess: () => {
+              setOpen(false);
+              setName("");
+              setPath("");
+            },
+          },
+        );
+      }}
+    >
+      <input
+        // biome-ignore lint/a11y/noAutofocus: opened on request
+        autoFocus
+        aria-label="Volume name"
+        placeholder="data"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="field w-32 py-0.5 font-mono text-xs"
+      />
+      <span className="text-mut">at</span>
+      <input
+        aria-label="Mount path"
+        placeholder="/var/lib/data"
+        value={path}
+        onChange={(e) => setPath(e.target.value)}
+        className="field w-44 py-0.5 font-mono text-xs"
+      />
+      <Check label="apply now" checked={apply} onChange={setApply} />
+      <Act
+        small
+        primary
+        type="submit"
+        cli={cli}
+        disabled={add.isPending || !name.trim() || !path.startsWith("/")}
+        title={
+          path && !path.startsWith("/")
+            ? "The path must be absolute"
+            : undefined
+        }
+      >
+        {apply ? "Add and apply" : "Stage volume"}
+      </Act>
+      <Button small onClick={() => setOpen(false)}>
+        Cancel
+      </Button>
+      <ErrorText error={add.error} />
+    </form>
   );
 }
 
@@ -393,8 +496,9 @@ function Archive({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </span>
         {confirming ? (
           <>
-            <Button
+            <Act
               danger
+              cli={`dock service archive ${ref.service} -e ${ref.environment} -p ${ref.project}`}
               disabled={archive.isPending}
               onClick={() =>
                 archive.mutate(ref, {
@@ -407,7 +511,7 @@ function Archive({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               }
             >
               Archive {ref.service} now
-            </Button>
+            </Act>
             <Button onClick={() => setConfirming(false)}>Cancel</Button>
           </>
         ) : (

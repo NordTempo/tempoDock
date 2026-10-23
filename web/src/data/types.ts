@@ -115,6 +115,8 @@ export type AuditFilter = {
   service?: string;
   /** Action prefix, like "release." or "domain.add". */
   action?: string;
+  /** How many, newest first: 100 unless set, at most 500. */
+  limit?: number;
 };
 
 /** One line in a log view: container output or build output. */

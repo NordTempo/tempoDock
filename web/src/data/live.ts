@@ -87,8 +87,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "release": {
       const release = event.release;
       if (!ref || !release) return;
-      queryClient.setQueryData<Release[]>(keys.releases(ref), (list) =>
-        upsertRelease(list, release),
+      // Every cached length of the list (20, or 100 on the Releases tab).
+      queryClient.setQueriesData<Release[]>(
+        { queryKey: keys.releases(ref) },
+        (list) => upsertRelease(list, release),
       );
       queryClient.setQueryData<Release>(
         keys.release(ref, release.number),
@@ -489,12 +491,23 @@ function useLineStream<T>(
 const serviceUrl = (ref: ServiceRef) =>
   `/api/v1/projects/${ref.project}/environments/${ref.environment}/services/${ref.service}`;
 
-/** Follows a release's container output (tail 500, then live). */
-export const useServiceLogs = (ref: ServiceRef, release: number | null) =>
+/**
+ * How much backlog a log view starts with, like `dock logs`: the last
+ * `tail` lines (0 for all), only those newer than `since` (10m, 1h, an
+ * RFC 3339 time) when set.
+ */
+export type Backlog = { tail: number; since?: string };
+
+/** Follows a release's container output: its backlog, then live. */
+export const useServiceLogs = (
+  ref: ServiceRef,
+  release: number | null,
+  { tail, since }: Backlog = { tail: 500 },
+) =>
   useLineStream<components["schemas"]["LogLine"]>(
     release === null
       ? null
-      : `${serviceUrl(ref)}/logs?follow=true&tail=500&release=${release}`,
+      : `${serviceUrl(ref)}/logs?follow=true&tail=${tail}&release=${release}${since ? `&since=${encodeURIComponent(since)}` : ""}`,
     (line, n) => ({
       key: `${release}:${n}`,
       time: line.time,

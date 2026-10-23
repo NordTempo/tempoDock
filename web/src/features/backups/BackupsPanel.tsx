@@ -119,27 +119,40 @@ function Schedule({
 }) {
   const update = useBackupSchedule();
   const busy = disabled || update.isPending;
+  const cli = `dock backup schedule ${ref.service} -e ${ref.environment}`;
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <Check
-        label="daily"
-        checked={schedule.enabled}
-        disabled={busy}
-        onChange={(enabled) => update.mutate({ ref, enabled })}
-      />
+      <span title={`${cli} --${schedule.enabled ? "off" : "on"}`}>
+        <Check
+          label="daily"
+          checked={schedule.enabled}
+          disabled={busy}
+          onChange={(enabled) => update.mutate({ ref, enabled })}
+        />
+      </span>
       {schedule.enabled && (
         <>
           <label className="flex items-center gap-1.5">
             <span className="text-mut">at</span>
             <select
               aria-label="Hour"
+              title={`${cli} --hour N, or --default-hour`}
               className="field py-0.5 font-mono text-xs"
-              value={schedule.hour}
+              value={schedule.default_hour ? "default" : schedule.hour}
               disabled={busy}
               onChange={(e) =>
-                update.mutate({ ref, hour: Number(e.target.value) })
+                update.mutate(
+                  e.target.value === "default"
+                    ? { ref, default_hour: true }
+                    : { ref, hour: Number(e.target.value) },
+                )
               }
             >
+              <option value="default">
+                {schedule.default_hour
+                  ? `${hourLabel(schedule.hour)}, the default`
+                  : "the default hour"}
+              </option>
               {Array.from({ length: 24 }, (_, h) => (
                 <option key={h} value={h}>
                   {hourLabel(h)}
@@ -147,7 +160,6 @@ function Schedule({
               ))}
             </select>
           </label>
-          {schedule.default_hour && <span className="text-mut">default</span>}
           {schedule.next_at && (
             <span className="text-mut">next in {until(schedule.next_at)}</span>
           )}
@@ -363,13 +375,15 @@ function RestoreForm({
         onChange={(e) => setName(e.target.value)}
         className="field py-[5px] font-mono"
       />
-      <button
+      <Act
+        primary
+        small
         type="submit"
-        className="btn pri sm"
+        cli={`dock backup restore ${ref.service} --snapshot ${snapshot.slice(0, 8)} --as ${name.trim() || "<name>"} -e ${ref.environment}`}
         disabled={restore.isPending || !name.trim()}
       >
         Restore
-      </button>
+      </Act>
       <Button small onClick={onCancel}>
         Cancel
       </Button>

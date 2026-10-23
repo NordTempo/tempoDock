@@ -1,5 +1,10 @@
 import { memo, useEffect, useMemo, useRef } from "react";
-import { type LogStream, useBuildLog, useServiceLogs } from "../../data/live";
+import {
+  LOG_CAP,
+  type LogStream,
+  useBuildLog,
+  useServiceLogs,
+} from "../../data/live";
 import { useReleases, useService } from "../../data/queries";
 import type { LogLine, ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
@@ -16,6 +21,10 @@ export type LogFilter = {
   query: string;
   /** Keep the newest line in view. */
   follow: boolean;
+  /** Lines of backlog to start with; 0 for all (`dock logs -n`). */
+  tail: number;
+  /** Only lines newer than this: 10m, 1h, 24h (`dock logs --since`). */
+  since: string;
 };
 
 export const noFilter: LogFilter = {
@@ -24,7 +33,12 @@ export const noFilter: LogFilter = {
   errors: false,
   query: "",
   follow: true,
+  tail: 500,
+  since: "",
 };
+
+const tails = [100, 500, 2000, 0];
+const sinces = ["", "10m", "1h", "6h", "24h"];
 
 /** Rendered lines are capped; the stream keeps more for filtering. */
 const VISIBLE = 500;
@@ -72,7 +86,10 @@ export function LogsPane({
     (filter.build
       ? (deploying?.number ?? releases[0]?.number ?? null)
       : (deploying?.number ?? active));
-  const app = useServiceLogs(ref, filter.build ? null : release);
+  const app = useServiceLogs(ref, filter.build ? null : release, {
+    tail: filter.tail,
+    since: filter.since || undefined,
+  });
   const build = useBuildLog(ref, filter.build ? release : null);
   const stream: LogStream = filter.build ? build : app;
 
@@ -165,6 +182,38 @@ export function LogsPane({
             className="field min-w-0 flex-1 py-1 font-mono text-xs"
           />
         </label>
+        {!filter.build && (
+          <span className="flex items-center gap-1.5 text-xs text-sec">
+            <select
+              aria-label="Backlog lines"
+              title={`dock logs -n; the view keeps the newest ${LOG_CAP}`}
+              value={filter.tail}
+              onChange={(e) =>
+                onFilter({ ...filter, tail: Number(e.target.value) })
+              }
+              className="field py-0.5 text-xs"
+            >
+              {tails.map((n) => (
+                <option key={n} value={n}>
+                  {n ? `last ${n}` : "all lines"}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Since"
+              title="dock logs --since"
+              value={filter.since}
+              onChange={(e) => onFilter({ ...filter, since: e.target.value })}
+              className="field py-0.5 text-xs"
+            >
+              {sinces.map((s) => (
+                <option key={s} value={s}>
+                  {s ? `since ${s}` : "any time"}
+                </option>
+              ))}
+            </select>
+          </span>
+        )}
         <label className="flex items-center gap-1.5 text-xs text-sec">
           <input
             type="checkbox"

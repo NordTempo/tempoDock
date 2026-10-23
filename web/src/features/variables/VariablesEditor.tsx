@@ -15,6 +15,7 @@ import { plural } from "../../ui/format";
 import {
   Act,
   Button,
+  Check,
   ErrorText,
   Glyph,
   PageBar,
@@ -26,6 +27,10 @@ import { parseDotenv } from "./dotenv";
 import { hasReference, maskUrlPasswords, resolve } from "./references";
 
 const MASK = "••••••••••••";
+
+/** The CLI's flags for a service's variables, or the shared ones. */
+const scopeFlags = (env: EnvRef, service: string | null) =>
+  `${service ? `-s ${service}` : "--shared"} -e ${env.environment}`;
 
 /** Identifies a variable across lists: scope, owning service and key. */
 const idOf = (v: { key: string; scope: string; service?: string }) =>
@@ -224,7 +229,12 @@ export function VariablesEditor({
             points at another service, → resolved
           </p>
 
-          <ApplyBox env={env} reveal={revealAll} variables={all} />
+          <ApplyBox
+            env={env}
+            reveal={revealAll}
+            variables={all}
+            service={service}
+          />
         </div>
       </div>
     </>
@@ -353,6 +363,7 @@ function Line({
                 },
               })
             }
+            title={`dock discard ${v.key} ${service ? `-s ${service}` : "--shared"} -e ${env.environment}`}
           >
             Discard
           </button>
@@ -362,6 +373,7 @@ function Line({
               <button
                 type="button"
                 className="lnk"
+                title={`dock env set ${v.key}=… ${scopeFlags(env, service)}`}
                 onClick={() => setEditing(true)}
               >
                 Edit
@@ -369,6 +381,7 @@ function Line({
               <button
                 type="button"
                 className="lnk"
+                title={`dock env unset ${v.key} ${scopeFlags(env, service)}`}
                 disabled={stage.isPending}
                 onClick={() => stage.mutate({ env, service, unset: [v.key] })}
               >
@@ -448,6 +461,7 @@ function NewLine({
         }}
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
+        title={`dock env set NAME=value ${scopeFlags(env, service)}`}
         className="col-span-2 min-w-0 bg-transparent outline-none"
       />
       <span className="font-sans text-2xs text-faint">
@@ -457,7 +471,10 @@ function NewLine({
   );
 }
 
-/** Bulk paste of a .env file, staged as one change set. */
+/**
+ * Bulk paste of a .env file (or one picked from disk), staged as one
+ * change set, or applied at once with everything else staged.
+ */
 function PasteEnv({
   env,
   service,
@@ -469,9 +486,24 @@ function PasteEnv({
 }) {
   const stage = useStageVariables();
   const [text, setText] = useState("");
+  const [file, setFile] = useState(".env");
+  const [apply, setApply] = useState(false);
   const parsed = parseDotenv(text);
   return (
     <div className="flex flex-col gap-2">
+      <label className="btn sm self-start focus-within:ring-1 focus-within:ring-info">
+        Read a .env file
+        <input
+          type="file"
+          className="sr-only"
+          onChange={async (e) => {
+            const picked = e.target.files?.[0];
+            if (!picked) return;
+            setFile(picked.name);
+            setText(await picked.text());
+          }}
+        />
+      </label>
       <textarea
         // biome-ignore lint/a11y/noAutofocus: opened on request
         autoFocus
@@ -486,7 +518,7 @@ function PasteEnv({
       <div className="flex flex-wrap items-start gap-2.5">
         <Act
           primary
-          cli={`dock env import .env -e ${env.environment}${service ? ` -s ${service}` : ""}`}
+          cli={`dock env import ${file} ${scopeFlags(env, service)}${apply ? " --deploy" : ""}`}
           disabled={parsed.length === 0 || stage.isPending}
           onClick={() =>
             stage.mutate(
@@ -494,14 +526,22 @@ function PasteEnv({
                 env,
                 service,
                 set: Object.fromEntries(parsed.map((v) => [v.name, v.value])),
+                apply,
               },
               { onSuccess: onDone },
             )
           }
         >
-          Stage {plural(parsed.length, "variable")} for{" "}
+          {apply ? "Apply" : "Stage"} {plural(parsed.length, "variable")} for{" "}
           {service ?? "the environment"}
         </Act>
+        <span className="self-center">
+          <Check
+            label="apply now, with everything staged"
+            checked={apply}
+            onChange={setApply}
+          />
+        </span>
         <Button onClick={onDone}>Cancel</Button>
         <span className="self-center">
           <ErrorText error={stage.error} />

@@ -1,6 +1,7 @@
 /**
  * Parses .env text: KEY=value lines, `export` prefixes, # comments, and
- * single- or double-quoted values (double quotes understand \n).
+ * single- or double-quoted values (double quotes understand \n, \t, \"
+ * and \\), like `dock env import`.
  */
 export function parseDotenv(text: string) {
   const out: Array<{ name: string; value: string }> = [];
@@ -19,7 +20,9 @@ export function parseDotenv(text: string) {
     ) {
       value = value.slice(1, -1);
       if (quote === '"')
-        value = value.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+        value = value.replace(/\\([nt"\\])/g, (_, c: string) =>
+          c === "n" ? "\n" : c === "t" ? "\t" : c,
+        );
     } else {
       value = value.replace(/\s+#.*$/, "");
     }

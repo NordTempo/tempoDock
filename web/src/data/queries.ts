@@ -171,14 +171,19 @@ export const queries = {
           }),
         ).then(toOverview),
     }),
-  releases: (ref: ServiceRef) =>
+  /**
+   * The newest releases: 20 everywhere, up to 100 on the Releases tab
+   * (`dock release list -n`). Release events patch every length.
+   */
+  releases: (ref: ServiceRef, limit = 20) =>
     queryOptions({
-      queryKey: keys.releases(ref),
+      queryKey:
+        limit === 20 ? keys.releases(ref) : [...keys.releases(ref), limit],
       queryFn: () =>
         list(
           api.GET(
             "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases",
-            { params: { path: servicePath(ref), query: { limit: 20 } } },
+            { params: { path: servicePath(ref), query: { limit } } },
           ),
         ),
     }),
@@ -340,7 +345,7 @@ export const queries = {
       queryFn: () =>
         list(
           api.GET("/api/v1/audit", {
-            params: { query: { ...filter, limit: 100 } },
+            params: { query: { limit: 100, ...filter } },
           }),
         ),
     }),
@@ -390,8 +395,8 @@ export function findService(overview: ProjectOverview, ref: ServiceRef) {
     ?.services.find((s) => s.service.name === ref.service);
 }
 
-export const useReleases = (ref: ServiceRef) =>
-  useSuspenseQuery(queries.releases(ref)).data;
+export const useReleases = (ref: ServiceRef, limit?: number) =>
+  useSuspenseQuery(queries.releases(ref, limit)).data;
 export const useRelease = (ref: ServiceRef, number: number) =>
   useSuspenseQuery(queries.release(ref, number)).data;
 export const useVolumes = (ref: ServiceRef) =>

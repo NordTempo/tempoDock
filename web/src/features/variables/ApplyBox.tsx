@@ -6,7 +6,12 @@ import {
   useEnvironment,
   useRevealedChanges,
 } from "../../data/queries";
-import type { EnvRef, Variable, VariableChange } from "../../data/types";
+import type {
+  DiscardSelection,
+  EnvRef,
+  Variable,
+  VariableChange,
+} from "../../data/types";
 import { modKey, useKeydown } from "../../shell/keys";
 import { plural } from "../../ui/format";
 import { Act, ErrorText } from "../../ui/kit";
@@ -31,12 +36,15 @@ export function ApplyBox({
   env,
   reveal,
   variables = [],
+  service,
 }: {
   env: EnvRef;
   /** Show old and new values (admin, on request). */
   reveal: boolean;
   /** All variables of the environment, to name overriding services. */
   variables?: Variable[];
+  /** The service on screen: its own changes can be discarded alone. */
+  service?: string | null;
 }) {
   const changes = useChanges(env);
   const revealed = useRevealedChanges(env, reveal).data;
@@ -73,6 +81,23 @@ export function ApplyBox({
       </p>
     );
   }
+
+  // The service's own changes, as `dock discard -s` selects them.
+  const own: DiscardSelection = {
+    variables: changes.variables
+      .filter((c) => c.scope === "service" && c.service === service)
+      .map((c) => ({ key: c.key, service: c.service })),
+    settings: changes.settings
+      .filter((c) => c.service === service)
+      .map((c) => ({ service: c.service, field: c.field })),
+    volumes: changes.volumes
+      .filter((c) => c.service === service)
+      .map((c) => ({ service: c.service, name: c.name })),
+  };
+  const ownCount =
+    (own.variables?.length ?? 0) +
+    (own.settings?.length ?? 0) +
+    (own.volumes?.length ?? 0);
 
   const values = new Map(
     (revealed?.variables ?? []).map((c) => [`${c.service ?? ""}:${c.key}`, c]),
@@ -203,6 +228,15 @@ export function ApplyBox({
         >
           Discard all
         </Act>
+        {service && ownCount > 0 && ownCount < changes.count && (
+          <Act
+            cli={`dock discard -s ${service} -e ${env.environment}`}
+            disabled={busy}
+            onClick={() => discard.mutate({ env, selection: own })}
+          >
+            Discard {service}'s {ownCount}
+          </Act>
+        )}
         <span className="self-center">
           {applyBlocked && (
             <span className="text-fail">Disabled: {applyBlocked}. </span>

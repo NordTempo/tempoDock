@@ -9,6 +9,7 @@ import { listenPort, useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
 import { ago, since } from "../../ui/format";
 import {
+  Act,
   Button,
   CopyButton,
   ErrorText,
@@ -83,6 +84,9 @@ function AddDomain({
   const add = useAddDomain();
   const generate = useGenerateDomain();
   const [hostname, setHostname] = useState("");
+  const [redirect, setRedirect] = useState("");
+  const flags = `-s ${ref.service} -e ${ref.environment}`;
+  const target = redirect.trim();
   return (
     <form
       aria-label="Add domain"
@@ -90,8 +94,17 @@ function AddDomain({
       onSubmit={(e) => {
         e.preventDefault();
         add.mutate(
-          { ref, hostname: hostname.trim() },
-          { onSuccess: () => setHostname("") },
+          {
+            ref,
+            hostname: hostname.trim(),
+            ...(target && { redirect_to: target }),
+          },
+          {
+            onSuccess: () => {
+              setHostname("");
+              setRedirect("");
+            },
+          },
         );
       }}
     >
@@ -103,26 +116,33 @@ function AddDomain({
         value={hostname}
         onChange={(e) => setHostname(e.target.value)}
         placeholder="app.example.com"
-        className="field min-w-0 flex-[1_1_320px] py-[7px] font-mono"
+        className="field min-w-0 flex-[1_1_240px] py-[7px] font-mono"
       />
-      <button
+      <input
+        aria-label="Redirect to, optional"
+        title="Permanently redirect to this hostname instead of serving the service"
+        value={redirect}
+        onChange={(e) => setRedirect(e.target.value)}
+        placeholder="redirect to, optional"
+        className="field min-w-0 flex-[1_1_180px] py-[7px] font-mono"
+      />
+      <Act
+        primary
         type="submit"
-        className="btn pri"
+        cli={`dock domain add ${hostname.trim() || "<host>"}${target ? ` --redirect-to ${target}` : ""} ${flags}`}
         disabled={add.isPending || !hostname.trim()}
       >
-        Add domain
-      </button>
+        {target ? "Add redirect" : "Add domain"}
+      </Act>
       {!hasGenerated && (
-        <Button
+        <Act
+          cli={`dock domain generate ${flags}`}
           disabled={generate.isPending}
           onClick={() => generate.mutate(ref)}
         >
           Generate one
-        </Button>
+        </Act>
       )}
-      <span className="font-mono text-2xs text-mut">
-        dock domain add {"<host>"} -s {ref.service} -e {ref.environment}
-      </span>
       <ErrorText error={add.error ?? generate.error} />
     </form>
   );
@@ -235,6 +255,16 @@ function DnsCard({ domain }: { domain: Domain }) {
   );
 }
 
+/**
+ * When the server last looked the hostname up and what it found, as
+ * `dock domain list --wide` shows it.
+ */
+function lastCheck(d: Domain) {
+  if (!d.checked_at) return "";
+  const ips = d.resolved_ips ?? [];
+  return ` · checked ${ago(d.checked_at)}, resolved to ${ips.length ? ips.join(", ") : "nothing"}`;
+}
+
 function detail(d: Domain) {
   switch (d.status) {
     case "active":
@@ -286,20 +316,22 @@ function DomainRow({
       >
         {detail(d)}
         {d.redirect_to ? ` · redirects to ${d.redirect_to}` : ` · to :${port}`}
+        <span className="text-faint">{lastCheck(d)}</span>
       </td>
       <td className="text-mut">{since(d.created_at)}</td>
       <td className="py-1">
         {confirming ? (
           <span className="flex items-center gap-2">
             <span className="text-mut">Traffic to it stops.</span>
-            <Button
+            <Act
               small
               danger
+              cli={`dock domain remove ${d.hostname} -s ${ref.service} -e ${ref.environment}`}
               disabled={remove.isPending}
               onClick={() => remove.mutate({ ref, hostname: d.hostname })}
             >
               Remove
-            </Button>
+            </Act>
             <Button small onClick={() => setConfirming(false)}>
               Cancel
             </Button>
