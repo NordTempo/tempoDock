@@ -124,7 +124,7 @@ function Users() {
 
 const roleText: Record<Scope, string> = {
   admin:
-    "Everything: users, tokens, alerts, data access, servers and the rest of the platform console. Reveals secret values.",
+    "Everything in the organization: members, tokens and data access. Reveals secret values. Operators also run the platform console.",
   deploy:
     "Deploy, roll back, restart, edit variables and settings. Values stay hidden.",
   read: "Status, deploys, logs and metrics. Read only.",
@@ -285,7 +285,10 @@ const UserRow = memo(function UserRow({
             </span>
           </span>
         </td>
-        <td className="py-2.5 font-mono">{u.role}</td>
+        <td className="py-2.5 font-mono">
+          {u.role}
+          {u.operator && <span className="text-warn"> · operator</span>}
+        </td>
         <td className="py-2.5">
           {disabled && u.disabled_at ? (
             `disabled ${day(u.disabled_at)}`
@@ -392,6 +395,7 @@ function AddUser() {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Scope>("deploy");
+  const [operator, setOperator] = useState(false);
   return (
     <form
       aria-label="Add a user"
@@ -399,12 +403,13 @@ function AddUser() {
       onSubmit={(e) => {
         e.preventDefault();
         create.mutate(
-          { email: email.trim(), name: name.trim(), password, role },
+          { email: email.trim(), name: name.trim(), password, role, operator },
           {
             onSuccess: () => {
               setEmail("");
               setName("");
               setPassword("");
+              setOperator(false);
             },
           },
         );
@@ -446,10 +451,19 @@ function AddUser() {
           <option key={r}>{r}</option>
         ))}
       </select>
+      <label className="flex items-center gap-1.5 text-xs text-sec">
+        <input
+          type="checkbox"
+          className="accent-fg"
+          checked={operator}
+          onChange={(e) => setOperator(e.target.checked)}
+        />
+        Operator
+      </label>
       <Act
         primary
         type="submit"
-        cli={`dock user create --email ${email.trim() || "<email>"} --name ${JSON.stringify(name.trim() || "<name>")} --role ${role}`}
+        cli={`dock user create --email ${email.trim() || "<email>"} --name ${JSON.stringify(name.trim() || "<name>")} --role ${role}${operator ? " --operator" : ""}`}
         disabled={create.isPending || !email || !name || !password}
       >
         Add user

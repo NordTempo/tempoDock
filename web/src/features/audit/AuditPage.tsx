@@ -10,6 +10,8 @@ const MAX = 500;
 
 /** The audit log's filters, kept in the URL by the route that shows it. */
 export type AuditSearch = {
+  /** The platform's log instead of the organization's (operators). */
+  platform?: true;
   project?: string;
   /** Needs project. */
   environment?: string;
@@ -29,6 +31,7 @@ const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 export const validateAuditSearch = (
   s: Record<string, unknown>,
 ): AuditSearch => ({
+  platform: s.platform === true || s.platform === "true" ? true : undefined,
   project: str(s.project),
   environment: str(s.project) && str(s.environment),
   action: str(s.action),
@@ -84,15 +87,18 @@ function download(name: string, text: string) {
 
 /**
  * The audit log with its filters: the workspace's Activity (/audit) and the
- * console's Audit (/console/audit). The route owns the URL; onSearch
- * replaces its search params.
+ * console's Audit (/console/audit), which can show the platform's log too
+ * (withPlatform). The route owns the URL; onSearch replaces its search
+ * params.
  */
 export function AuditPage({
   search,
   onSearch,
+  withPlatform = false,
 }: {
   search: AuditSearch;
   onSearch: (search: AuditSearch) => void;
+  withPlatform?: boolean;
 }) {
   const projects = useProjects().map((p) => p.name);
   // An archived project's link lands here too; keep it selectable.
@@ -106,6 +112,7 @@ export function AuditPage({
       select: (o) => o.environments.map((e) => e.environment.name),
     }).data ?? [];
   const events = useAuditLog({
+    platform: search.platform,
     project: search.project,
     environment: search.environment,
     action: search.action,
@@ -115,6 +122,7 @@ export function AuditPage({
     onSearch({ ...search, ...patch });
   const cli = [
     "dock audit",
+    search.platform && "--platform",
     search.project && `-p ${search.project}`,
     search.environment && `-e ${search.environment}`,
     search.action && `--action ${search.action}`,
@@ -159,6 +167,25 @@ export function AuditPage({
         className="flex flex-wrap items-center gap-2.5"
         onSubmit={(e) => e.preventDefault()}
       >
+        {withPlatform && (
+          <fieldset aria-label="Log" className="seg">
+            {(
+              [
+                [undefined, "Organization"],
+                [true, "Platform"],
+              ] as const
+            ).map(([platform, label]) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={search.platform === platform}
+                onClick={() => onSearch({ platform })}
+              >
+                {label}
+              </button>
+            ))}
+          </fieldset>
+        )}
         <fieldset aria-label="Actor type" className="seg">
           {(
             [
@@ -201,22 +228,24 @@ export function AuditPage({
             </option>
           ))}
         </select>
-        <select
-          aria-label="Project"
-          value={search.project ?? ""}
-          onChange={(e) =>
-            set({
-              project: e.target.value || undefined,
-              environment: undefined,
-            })
-          }
-          className="field py-[5px]"
-        >
-          <option value="">all projects</option>
-          {projects.map((p) => (
-            <option key={p}>{p}</option>
-          ))}
-        </select>
+        {!search.platform && (
+          <select
+            aria-label="Project"
+            value={search.project ?? ""}
+            onChange={(e) =>
+              set({
+                project: e.target.value || undefined,
+                environment: undefined,
+              })
+            }
+            className="field py-[5px]"
+          >
+            <option value="">all projects</option>
+            {projects.map((p) => (
+              <option key={p}>{p}</option>
+            ))}
+          </select>
+        )}
         {search.project && (
           <select
             aria-label="Environment"

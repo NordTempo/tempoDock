@@ -10,6 +10,33 @@ export const api = createFetchClient<paths>({
   credentials: "include",
 });
 
+// The organization the UI acts in, sent as the `org` parameter of every
+// call (ADR 0025). Unset lets the daemon use the user's only one.
+let org: string | undefined;
+
+/** Acts in the organization named by slug from now on (unset: none). */
+export function setOrg(slug: string | undefined) {
+  org = slug;
+}
+
+/** url with the current organization as its `org` parameter. */
+export function withOrg(url: string) {
+  if (!org) return url;
+  const u = new URL(url, window.location.origin);
+  if (!u.searchParams.has("org")) u.searchParams.set("org", org);
+  return u.pathname + u.search;
+}
+
+api.use({
+  onRequest({ request }) {
+    if (!org) return undefined;
+    const url = new URL(request.url);
+    if (url.searchParams.has("org")) return undefined;
+    url.searchParams.set("org", org);
+    return new Request(url, request);
+  },
+});
+
 type Problem = components["schemas"]["Error"];
 
 /** A failed API call: the problem document's status, code and message. */

@@ -13,7 +13,7 @@ import { ErrorText, Page, SectionHead, TitleRow } from "../../ui/kit";
 const roleNote: Record<Scope, string> = {
   read: "see status, releases, logs",
   deploy: "also deploy, restart, roll back, stage variables",
-  admin: "everything, including members, tokens and the platform",
+  admin: "everything in the organization, including members and tokens",
 };
 
 /** The API's minimum for a new password. */
@@ -49,11 +49,32 @@ export function AccountPage() {
             <dd className="font-mono">{me.email}</dd>
           </>
         )}
-        <dt>Role</dt>
-        <dd>
-          <b className="font-medium">{me.scope}</b>{" "}
-          <span className="text-mut">{roleNote[me.scope]}</span>
-        </dd>
+        {me.org && (
+          <>
+            <dt>Organization</dt>
+            <dd className="font-mono">{me.org}</dd>
+          </>
+        )}
+        {me.scope && (
+          <>
+            <dt>Role</dt>
+            <dd>
+              <b className="font-medium">{me.scope}</b>{" "}
+              <span className="text-mut">{roleNote[me.scope]}</span>
+            </dd>
+          </>
+        )}
+        {me.operator && (
+          <>
+            <dt>Platform</dt>
+            <dd>
+              <b className="font-medium">operator</b>{" "}
+              <span className="text-mut">
+                Runs servers, backups and accounts in the console.
+              </span>
+            </dd>
+          </>
+        )}
         {me.project && (
           <>
             <dt>Limited to</dt>

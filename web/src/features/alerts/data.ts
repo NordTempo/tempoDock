@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
-import { useIsAdmin } from "../../data/queries";
+import { useIsOperator } from "../../data/queries";
 
 // Alerts and alert channels (ADR 0020), for admins. Open alerts stay live
 // through `alert` events (applyAlertEvent); nothing polls.
@@ -63,8 +63,8 @@ export const useAlertChannels = () =>
  * empty for everyone else, who can't read alerts.
  */
 export function useOpenAlertsIfAdmin(): Alert[] {
-  const admin = useIsAdmin();
-  return useQuery({ ...alertQueries.open(), enabled: admin }).data ?? [];
+  const operator = useIsOperator();
+  return useQuery({ ...alertQueries.open(), enabled: operator }).data ?? [];
 }
 
 const rank = (s: Severity) => (s === "critical" ? 0 : 1);

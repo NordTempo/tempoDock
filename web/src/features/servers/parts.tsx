@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useIsAdmin, useServers } from "../../data/queries";
+import { useIsOperator, useServers } from "../../data/queries";
 import type { Server } from "../../data/types";
 import { ago } from "../../ui/format";
 import { StateText } from "../../ui/kit";
@@ -20,8 +20,8 @@ export function statusTitle(s: Server) {
  */
 export function EnvServer({ name }: { name: string }) {
   const server = useServers().find((s) => s.name === name);
-  const admin = useIsAdmin();
-  const label = admin ? (
+  const operator = useIsOperator();
+  const label = operator ? (
     <Link
       to="/console/servers/$server"
       params={{ server: name }}

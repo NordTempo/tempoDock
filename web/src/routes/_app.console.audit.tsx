@@ -2,11 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { queries } from "../data/queries";
 import { AuditPage, validateAuditSearch } from "../features/audit/AuditPage";
 
-// Every project's audit log, in the platform console. The same page as
-// the workspace's Activity (/audit), under the console's sidebar.
+// The organization's audit log, or the platform's, in the platform
+// console. The same page as the workspace's Activity (/audit), under the
+// console's sidebar.
 export const Route = createFileRoute("/_app/console/audit")({
   validateSearch: validateAuditSearch,
   loaderDeps: ({ search }) => ({
+    platform: search.platform,
     project: search.project,
     environment: search.environment,
     action: search.action,
@@ -23,6 +25,7 @@ function Audit() {
     <AuditPage
       search={Route.useSearch()}
       onSearch={(search) => navigate({ search, replace: true })}
+      withPlatform
     />
   );
 }

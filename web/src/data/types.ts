@@ -121,6 +121,8 @@ export type AuditFilter = {
   action?: string;
   /** How many, newest first: 100 unless set, at most 500. */
   limit?: number;
+  /** The platform's events instead of the organization's (operators). */
+  platform?: true;
 };
 
 /** One line in a log view: container output or build output. */

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useCreateToken, useRevokeToken } from "../../data/mutations";
 import {
   useIsAdmin,
+  useIsOperator,
   useProjects,
   useProjectTree,
   useTokens,
@@ -204,6 +205,7 @@ function McpConfig({ secret }: { secret?: string }) {
 function TokenRow({ token }: { token: Token }) {
   const revoke = useRevokeToken();
   const admin = useIsAdmin();
+  const operator = useIsOperator();
   const [confirming, setConfirming] = useState(false);
   const [editingData, setEditingData] = useState(false);
   const saveData = useSaveTokenData();
@@ -250,7 +252,7 @@ function TokenRow({ token }: { token: Token }) {
         <td className="w-full py-1.5 text-right">
           <span className="inline-flex items-center gap-3">
             <Link
-              to={admin ? "/console/audit" : "/audit"}
+              to={operator ? "/console/audit" : "/audit"}
               search={{ actor: token.name }}
             >
               Activity
@@ -316,7 +318,10 @@ const scopes: Array<{ scope: Scope; note: string }> = [
     scope: "deploy",
     note: "also deploy, restart, roll back, stage variables. Cannot reveal secrets or manage tokens and users.",
   },
-  { scope: "admin", note: "everything, including tokens and users" },
+  {
+    scope: "admin",
+    note: "everything in the organization, including tokens and members",
+  },
 ];
 
 const expiries = [
@@ -338,6 +343,7 @@ function CreateToken({
   }) => void;
 }) {
   const create = useCreateToken();
+  const operatorCaller = useIsOperator();
   const projects = useProjects();
   const tree = useProjectTree();
   const [name, setName] = useState("");
@@ -349,6 +355,9 @@ function CreateToken({
   const [customDays, setCustomDays] = useState("14");
   const expires = days < 0 ? Math.max(0, Math.floor(Number(customDays))) : days;
   const [data, setData] = useState<DataTokenAccess>(null);
+  // Operator tokens are unlimited admin tokens (ADR 0027).
+  const [operatorToken, setOperatorToken] = useState(false);
+  const operator = operatorToken && scope === "admin" && !project;
   const environments =
     tree
       .find((p) => p.project.name === project)
@@ -358,6 +367,7 @@ function CreateToken({
     project && `-p ${project}`,
     project && environment && `-e ${environment}`,
     expires > 0 && `--expires ${expires}d`,
+    operator && "--operator",
     tokenDataFlags(data),
   ]
     .filter(Boolean)
@@ -383,6 +393,7 @@ function CreateToken({
               ...(project && environment && { environment }),
               ...(expires > 0 && { expires_in_days: expires }),
               ...(data && { data }),
+              ...(operator && { operator }),
             },
             {
               onSuccess: ({ token, secret }) => {
@@ -423,6 +434,24 @@ function CreateToken({
                 </span>
               </label>
             ))}
+            {operatorCaller && scope === "admin" && (
+              <label className="flex items-baseline gap-2">
+                <input
+                  type="checkbox"
+                  className="accent-fg"
+                  checked={operatorToken}
+                  disabled={!!project}
+                  onChange={(e) => setOperatorToken(e.target.checked)}
+                />
+                <span>
+                  <b className="font-medium">operator</b>{" "}
+                  <span className="text-mut">
+                    also runs the platform: servers, backups, accounts. No
+                    project limit
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
         </fieldset>
         <div className="flex flex-wrap gap-3">

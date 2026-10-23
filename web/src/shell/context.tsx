@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import {
-  useIsAdmin,
+  useIsOperator,
   useProjectOverview,
   useProjectTree,
   useServers,
@@ -117,7 +117,7 @@ export function ServerDots({
 }) {
   const servers = useServers();
   const tree = useProjectTree();
-  const admin = useIsAdmin();
+  const operator = useIsOperator();
   const environments =
     tree.find((p) => p.project.name === project)?.environments ?? [];
   const names = new Set(
@@ -141,8 +141,8 @@ export function ServerDots({
             )}
           </>
         );
-        // Server pages are in the console, for admins.
-        return admin ? (
+        // Server pages are in the console, for operators.
+        return operator ? (
           <Link
             key={s.id}
             to="/console/servers/$server"

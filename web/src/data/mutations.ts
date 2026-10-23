@@ -5,8 +5,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
-import { api, body, done } from "../api/client";
-import { envPath, keys, servicePath } from "./queries";
+import { api, body, done, setOrg } from "../api/client";
+import { currentMe, envPath, keys, servicePath } from "./queries";
 import type {
   DiscardSelection,
   EnvironmentKind,
@@ -517,8 +517,10 @@ export const usePinPlacement = () =>
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (credentials: { email: string; password: string }) =>
-      body(api.POST("/api/v1/auth/login", { body: credentials })),
+    mutationFn: async (credentials: { email: string; password: string }) => {
+      await body(api.POST("/api/v1/auth/login", { body: credentials }));
+      return currentMe();
+    },
     onSuccess: (session) => queryClient.setQueryData(keys.session, session),
   });
 }
@@ -542,6 +544,7 @@ export async function signedOut(
   redirect?: string,
 ) {
   queryClient.setQueryData(keys.session, null);
+  setOrg(undefined);
   await router.navigate({ to: "/login", search: { redirect } });
   queryClient.removeQueries({
     predicate: (query) => query.queryKey[0] !== "session",

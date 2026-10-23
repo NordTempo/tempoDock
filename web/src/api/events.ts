@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent } from "react";
+import { withOrg } from "./client";
 
 export type StreamOptions = {
   /** Close for good on the server's `end` event (logs, build logs). */
@@ -38,7 +39,7 @@ export function useEventStream<T>(
 
   useEffect(() => {
     if (!url) return;
-    const source = new EventSource(url, { withCredentials: true });
+    const source = new EventSource(withOrg(url), { withCredentials: true });
     let opened = false;
     source.addEventListener("open", () => {
       if (opened) reconnected();

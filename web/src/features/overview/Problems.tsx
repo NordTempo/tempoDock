@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useApplyChanges } from "../../data/mutations";
 import { useProblems } from "../../data/problems";
-import { serviceRef, useChanges, useIsAdmin } from "../../data/queries";
+import { serviceRef, useChanges, useIsOperator } from "../../data/queries";
 import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { plural, since } from "../../ui/format";
@@ -81,7 +81,7 @@ type RowProps = { n: number; problem: Problem; project: string };
 
 function ProblemRow({ n, problem: p, project }: RowProps) {
   const key = n <= 9 ? String(n) : undefined;
-  const admin = useIsAdmin();
+  const operator = useIsOperator();
   switch (p.kind) {
     case "crashed": {
       const { status, active_release } = p.service.service;
@@ -291,7 +291,7 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           where={p.server.name}
           time={p.server.last_seen_at && since(p.server.last_seen_at)}
           action={
-            admin && (
+            operator && (
               <Link
                 to="/console/servers/$server"
                 params={{ server: p.server.name }}

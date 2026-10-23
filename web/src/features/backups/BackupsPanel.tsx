@@ -5,7 +5,7 @@ import {
   useRestoreBackup,
   useRunBackup,
 } from "../../data/mutations";
-import { useBackups, useCanDeploy } from "../../data/queries";
+import { useBackups, useCanDeploy, useIsOperator } from "../../data/queries";
 import type { BackupRun, ServiceBackups, ServiceRef } from "../../data/types";
 import { ago, clock, day, size, until } from "../../ui/format";
 import { Act, Button, Check, ErrorText, Panel, StateText } from "../../ui/kit";
@@ -20,6 +20,8 @@ import { backupHow, exportOf, hourLabel } from "./backups";
 export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const backups = useBackups(ref);
   const canDeploy = useCanDeploy(ref);
+  // Backups are the platform's: operators set schedules (ADR 0027).
+  const operator = useIsOperator();
   const run = useRunBackup();
   const running = backups.runs.some((r) => r.status === "running");
   const flags = `-s ${ref.service} -e ${ref.environment}`;
@@ -48,7 +50,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           )}
         </Item>
         <Item label="Schedule">
-          <Schedule serviceRef={ref} backups={backups} disabled={!canDeploy} />
+          <Schedule serviceRef={ref} backups={backups} disabled={!operator} />
         </Item>
       </dl>
       <div className="flex flex-wrap items-center gap-2.5">

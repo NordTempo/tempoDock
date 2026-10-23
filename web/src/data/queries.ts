@@ -5,7 +5,7 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { notFound } from "@tanstack/react-router";
-import { api, body, isUnauthorized, list } from "../api/client";
+import { api, body, isUnauthorized, list, setOrg } from "../api/client";
 import type { components } from "../api/schema";
 import type {
   AuditFilter,
@@ -152,6 +152,20 @@ function toChanges(c: components["schemas"]["PendingChanges"]): PendingChanges {
   };
 }
 
+/**
+ * The caller in the organization the UI acts in. A user with several has
+ * none until one is chosen; until the switcher (ADR 0027 phase 2) the UI
+ * acts in their first.
+ */
+export async function currentMe() {
+  const me = await body(api.GET("/api/v1/me"));
+  if (me.org || me.kind !== "user") return me;
+  const [first] = await list(api.GET("/api/v1/orgs"));
+  if (!first) return me;
+  setOrg(first.slug);
+  return body(api.GET("/api/v1/me"));
+}
+
 // Query options double as route-loader prefetches:
 //   loader: ({ context }) => context.queryClient.ensureQueryData(queries.projects())
 export const queries = {
@@ -160,7 +174,7 @@ export const queries = {
     queryOptions({
       queryKey: keys.session,
       queryFn: () =>
-        body(api.GET("/api/v1/me")).catch((error: unknown) => {
+        currentMe().catch((error: unknown) => {
           if (isUnauthorized(error)) return null;
           throw error;
         }),
@@ -382,6 +396,8 @@ export const queries = {
 // rarely suspend in practice.
 export const useSession = () => useSuspenseQuery(queries.session()).data;
 export const useIsAdmin = () => useSession()?.scope === "admin";
+/** Platform operators run the console: servers, backups, accounts (ADR 0027). */
+export const useIsOperator = () => useSession()?.operator === true;
 export const useProjects = () => useSuspenseQuery(queries.projects()).data;
 export const useProjectOverview = (project: string) =>
   useSuspenseQuery(queries.overview(project)).data;

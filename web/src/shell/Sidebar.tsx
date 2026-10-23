@@ -12,7 +12,7 @@ import {
   isDatabase,
   queries,
   serviceRef,
-  useIsAdmin,
+  useIsOperator,
   useProjectTree,
   useServers,
   useSession,
@@ -128,7 +128,7 @@ const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
 
 function AppNav() {
   const openPalette = usePalette();
-  const admin = useIsAdmin();
+  const operator = useIsOperator();
   return (
     <>
       <Workspace />
@@ -150,14 +150,14 @@ function AppNav() {
       <NavLink to="/audit" icon="activity">
         Activity
       </NavLink>
-      {!admin && (
+      {!operator && (
         <NavLink to="/tokens" icon="key">
           Tokens
         </NavLink>
       )}
       <div className="mx-1 mt-2 mb-1.5 border-t border-line" />
       <Me />
-      {admin && (
+      {operator && (
         <Link
           to="/console"
           className="mx-1 mt-1.5 flex items-center gap-2 rounded-ctl border border-dashed border-dash px-2 py-1.5 text-xs text-warn hover:bg-warn-bg"
@@ -536,14 +536,14 @@ function ServiceLink({ view }: { view: ServiceView }) {
 }
 
 function SettingsNav() {
-  const admin = useIsAdmin();
+  const operator = useIsOperator();
   return (
     <>
       <Link to="/" className="nav-row mb-1 text-mut">
         <Icon name="chevronLeft" /> Back to projects
       </Link>
       <div className={groupLabel}>Workspace</div>
-      {!admin && <NavLink to="/tokens">Tokens</NavLink>}
+      {!operator && <NavLink to="/tokens">Tokens</NavLink>}
       <NavLink to="/audit">Audit log</NavLink>
       <div className="min-h-6 flex-1" />
       <Me />

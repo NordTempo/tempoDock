@@ -351,7 +351,7 @@ function Placements({ detail }: { detail: ServerDetail }) {
                 )}
               </td>
               <td className="w-full text-mut">
-                {p.pinned ? "pinned by an admin" : "automatically"}
+                {p.pinned ? "pinned by an operator" : "automatically"}
               </td>
             </tr>
           ))}

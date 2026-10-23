@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { usePinPlacement } from "../../data/mutations";
 import {
-  useIsAdmin,
+  useIsOperator,
   usePlacements,
   useProjectOverview,
   useServers,
@@ -16,12 +16,12 @@ const kinds: EnvironmentKind[] = ["production", "non_production"];
 /**
  * Which server each kind of the project's environments lives on. A kind
  * with nothing placed yet goes to the emptiest eligible server on its
- * first environment; admins can pin it before that.
+ * first environment; operators can pin it before that.
  */
 export function Placements({ project }: { project: string }) {
   const placements = usePlacements(project);
   const { environments } = useProjectOverview(project);
-  const admin = useIsAdmin();
+  const operator = useIsOperator();
   return (
     <section aria-labelledby="placement" className="min-w-0">
       <SectionHead id="placement" aside="each kind stays on one server">
@@ -48,7 +48,7 @@ export function Placements({ project }: { project: string }) {
                   <td>{kindLabel[kind]}</td>
                   <td className="font-mono">
                     {placed ? (
-                      admin ? (
+                      operator ? (
                         <Link
                           to="/console/servers/$server"
                           params={{ server: placed.server }}
@@ -70,11 +70,11 @@ export function Placements({ project }: { project: string }) {
                   <td className="w-full whitespace-normal text-mut">
                     {placed ? (
                       placed.pinned ? (
-                        "pinned by an admin"
+                        "pinned by an operator"
                       ) : (
                         "chosen automatically"
                       )
-                    ) : admin ? (
+                    ) : operator ? (
                       <Pin project={project} kind={kind} />
                     ) : (
                       "The first one goes to the server with the most free memory."

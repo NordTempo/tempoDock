@@ -12,7 +12,7 @@ import {
   isDatabase,
   queries,
   serviceRef,
-  useIsAdmin,
+  useIsOperator,
   useProjectTree,
   useServers,
   useSession,
@@ -65,7 +65,7 @@ export function useCommands(): Command[] {
   const restart = useRestart();
   const rollback = useRollback();
   const logout = useLogout();
-  const admin = useIsAdmin();
+  const operator = useIsOperator();
   const session = useSession();
   const servers = useServers();
   const blockOf = (server: string) =>
@@ -327,9 +327,9 @@ export function useCommands(): Command[] {
     });
   }
 
-  // Admins reach the platform console's pages; everyone else their own
+  // Operators reach the platform console's pages; everyone else their own
   // tokens and the activity they may see.
-  const org = admin
+  const org = operator
     ? ([
         ["Platform console", "/console", ""],
         ["Servers", "/console/servers", "dock server list"],
@@ -358,7 +358,7 @@ export function useCommands(): Command[] {
     });
   }
   // Server pages (statistics, placement) are in the console.
-  for (const { name } of admin ? servers : []) {
+  for (const { name } of operator ? servers : []) {
     add({
       id: `go:server:${name}`,
       group: "Go to",
