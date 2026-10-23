@@ -22,6 +22,7 @@ func newGitConnectCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var req apitypes.GitConnectRequest
 	var tokenStdin, removeToken, status bool
+	var mode string
 	cmd := &cobra.Command{
 		Use:   "connect <owner/repo>",
 		Short: "Connect a GitHub repository: pushes to the branch deploy the service",
@@ -32,19 +33,23 @@ branches, tags, and (with --dir) pushes that change nothing in the directory
 are ignored. A push that arrives while a deploy runs waits; a newer push
 replaces it.
 
-Prints the webhook to add on GitHub, with its secret: shown only now. Run it
-again to change the branch, directory, token or statuses; the webhook stays
-the same unless --rotate-secret.
+When Dock's GitHub App is installed for the org (` + "`dock github`" + `), the
+connection goes through it: nothing to set up on GitHub, private
+repositories work, and commit statuses are on. Otherwise (or with
+--mode webhook) it prints a webhook to add on GitHub, with its secret: shown
+only now. Run it again to change the branch, directory, token or statuses;
+the webhook stays the same unless --rotate-secret.
 
-Private repositories need a fine-grained token with Contents read access
-(and Commit statuses read and write for --status), from stdin. It is stored
-encrypted and never shown again.`,
+With a webhook, private repositories need a fine-grained token with
+Contents read access (and Commit statuses read and write for --status),
+from stdin. It is stored encrypted and never shown again.`,
 		Example: `  dock git connect acme/shop --branch main
   dock git connect acme/monorepo --branch main --dir apps/web
-  printf %s "$GITHUB_TOKEN" | dock git connect acme/shop --branch main --token-stdin --status`,
+  dock git connect acme/shop --mode webhook
+  printf %s "$GITHUB_TOKEN" | dock git connect acme/shop --mode webhook --token-stdin --status`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			req.Repo = args[0]
+			req.Repo, req.Mode = args[0], apitypes.GitMode(mode)
 			switch {
 			case tokenStdin && removeToken:
 				return usageError("pass --token-stdin or --remove-token, not both", "")
@@ -78,6 +83,9 @@ encrypted and never shown again.`,
 				if res.HooksHint != "" {
 					g.io.Warnf("%s", res.HooksHint)
 				}
+				if conn.Mode == apitypes.GitModeApp {
+					return g.io.Fields("through", "the GitHub App", "statuses", onOff(conn.Status))
+				}
 				if res.Secret == "" {
 					return g.io.Fields("webhook", dash(conn.WebhookURL), "token", setText(conn.TokenSet), "statuses", onOff(conn.Status))
 				}
@@ -105,6 +113,7 @@ encrypted and never shown again.`,
 	}
 	f.add(cmd, needService)
 	fl := cmd.Flags()
+	fl.StringVar(&mode, "mode", "", "app (Dock's GitHub App) or webhook (its own webhook and token); default: the App when installed for the org, else webhook, or the connection's current one")
 	fl.StringVar(&req.Branch, "branch", "main", "the branch whose pushes deploy")
 	fl.StringVar(&req.Dir, "dir", "", "subdirectory to build, for monorepos (default: the repository root)")
 	fl.BoolVar(&tokenStdin, "token-stdin", false, "read a GitHub token from stdin (private repositories, statuses)")
@@ -159,15 +168,16 @@ func newGitStatusCmd(g *globals) *cobra.Command {
 				if last != "" {
 					last += " (" + agoPtr(conn.LastEventAt) + ")"
 				}
-				return g.io.Fields(
-					"source", gitTargetText(*conn),
-					"webhook", dash(conn.WebhookURL),
-					"token", setText(conn.TokenSet),
+				through := []string{"webhook", dash(conn.WebhookURL), "token", setText(conn.TokenSet)}
+				if conn.Mode == apitypes.GitModeApp {
+					through = []string{"through", "the GitHub App"}
+				}
+				return g.io.Fields(append(append([]string{"source", gitTargetText(*conn)}, through...),
 					"statuses", onOff(conn.Status),
 					"queued", queued,
 					"last push", dash(last),
 					"connected", ago(conn.CreatedAt)+" by "+conn.CreatedBy,
-				)
+				)...)
 			})
 		},
 	}
@@ -229,7 +239,7 @@ func newGitDisconnectCmd(g *globals) *cobra.Command {
 			return g.io.Print(struct {
 				Disconnected bool `json:"disconnected"`
 			}{true}, func() error {
-				g.io.Successf("Disconnected %s; delete the webhook on GitHub too", t)
+				g.io.Successf("Disconnected %s; if it had a webhook, delete it on GitHub too", t)
 				return nil
 			})
 		},

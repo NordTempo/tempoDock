@@ -170,3 +170,35 @@ func TestHooksHandler(t *testing.T) {
 		}
 	}
 }
+
+// Creating the GitHub App is for operators; its link opens a page, with
+// no session, that posts the manifest to GitHub and nothing else. GitHub's
+// redirect back needs a state Dock issued.
+func TestGitHubAppPages(t *testing.T) {
+	f := newFixture(t)
+	if res, body := f.do("operator", http.MethodPost, "/api/v1/github/app", apitypes.GitHubAppRequest{}); res.StatusCode != http.StatusBadRequest || !bytes.Contains(body, []byte("dock address set")) {
+		t.Fatalf("without a public address: %d %s", res.StatusCode, body)
+	}
+	if _, err := f.core.SetAddress(context.Background(), sys, apitypes.SetAddressRequest{Hostname: "dock.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := f.do("admin", http.MethodPost, "/api/v1/github/app", apitypes.GitHubAppRequest{}); res.StatusCode != http.StatusForbidden {
+		t.Fatalf("org admin: %d", res.StatusCode)
+	}
+	res, body := f.do("operator", http.MethodPost, "/api/v1/github/app", apitypes.GitHubAppRequest{})
+	var link apitypes.GitHubLink
+	_ = json.Unmarshal(body, &link)
+	if res.StatusCode != http.StatusOK || !strings.HasPrefix(link.URL, "/api/v1/github/app/new?state=") {
+		t.Fatalf("create: %d %s", res.StatusCode, body)
+	}
+	res, body = f.do("", http.MethodGet, link.URL, nil)
+	page := string(body)
+	if res.StatusCode != http.StatusOK || !strings.Contains(res.Header.Get("Content-Security-Policy"), "form-action https://github.com;") ||
+		!strings.Contains(page, `action="https://github.com/settings/apps/new?state=`) ||
+		!strings.Contains(page, "https://dock.example.com/hooks/github/") || !strings.Contains(page, `&#34;redirect_url&#34;:&#34;https://dock.example.com/api/v1/github/app/callback&#34;`) {
+		t.Fatalf("manifest page: %d %s", res.StatusCode, page)
+	}
+	if res, body := f.do("", http.MethodGet, "/api/v1/github/app/callback?code=x&state=forged", nil); res.StatusCode != http.StatusUnauthorized || !bytes.Contains(body, []byte("expired or was already used")) {
+		t.Fatalf("forged callback: %d %s", res.StatusCode, body)
+	}
+}

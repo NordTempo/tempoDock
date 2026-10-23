@@ -87,6 +87,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.consumeJoinTokenStmt, err = db.PrepareContext(ctx, consumeJoinToken); err != nil {
 		return nil, fmt.Errorf("error preparing query ConsumeJoinToken: %w", err)
 	}
+	if q.countInstallationConnectionsStmt, err = db.PrepareContext(ctx, countInstallationConnections); err != nil {
+		return nil, fmt.Errorf("error preparing query CountInstallationConnections: %w", err)
+	}
 	if q.countKindEnvironmentsStmt, err = db.PrepareContext(ctx, countKindEnvironments); err != nil {
 		return nil, fmt.Errorf("error preparing query CountKindEnvironments: %w", err)
 	}
@@ -198,6 +201,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteGitConnectionStmt, err = db.PrepareContext(ctx, deleteGitConnection); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteGitConnection: %w", err)
 	}
+	if q.deleteGitHubAppStmt, err = db.PrepareContext(ctx, deleteGitHubApp); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteGitHubApp: %w", err)
+	}
+	if q.deleteGitHubInstallationStmt, err = db.PrepareContext(ctx, deleteGitHubInstallation); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteGitHubInstallation: %w", err)
+	}
+	if q.deleteGitHubInstallationsStmt, err = db.PrepareContext(ctx, deleteGitHubInstallations); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteGitHubInstallations: %w", err)
+	}
 	if q.deleteJoinTokenStmt, err = db.PrepareContext(ctx, deleteJoinToken); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteJoinToken: %w", err)
 	}
@@ -294,6 +306,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getAlertChannelByIDStmt, err = db.PrepareContext(ctx, getAlertChannelByID); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAlertChannelByID: %w", err)
 	}
+	if q.getAppGitConnectionsStmt, err = db.PrepareContext(ctx, getAppGitConnections); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAppGitConnections: %w", err)
+	}
 	if q.getAuditDetailStmt, err = db.PrepareContext(ctx, getAuditDetail); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuditDetail: %w", err)
 	}
@@ -342,6 +357,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getGitConnectionByServiceStmt, err = db.PrepareContext(ctx, getGitConnectionByService); err != nil {
 		return nil, fmt.Errorf("error preparing query GetGitConnectionByService: %w", err)
 	}
+	if q.getGitHubAppStmt, err = db.PrepareContext(ctx, getGitHubApp); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGitHubApp: %w", err)
+	}
+	if q.getGitHubInstallationStmt, err = db.PrepareContext(ctx, getGitHubInstallation); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGitHubInstallation: %w", err)
+	}
 	if q.getInFlightReleaseStmt, err = db.PrepareContext(ctx, getInFlightRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query GetInFlightRelease: %w", err)
 	}
@@ -365,6 +386,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getOrgStmt, err = db.PrepareContext(ctx, getOrg); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOrg: %w", err)
+	}
+	if q.getOrgBySlugStmt, err = db.PrepareContext(ctx, getOrgBySlug); err != nil {
+		return nil, fmt.Errorf("error preparing query GetOrgBySlug: %w", err)
 	}
 	if q.getOrgInviteStmt, err = db.PrepareContext(ctx, getOrgInvite); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOrgInvite: %w", err)
@@ -495,6 +519,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listFailedLatestReleasesStmt, err = db.PrepareContext(ctx, listFailedLatestReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListFailedLatestReleases: %w", err)
 	}
+	if q.listGitHubInstallationsStmt, err = db.PrepareContext(ctx, listGitHubInstallations); err != nil {
+		return nil, fmt.Errorf("error preparing query ListGitHubInstallations: %w", err)
+	}
 	if q.listGitPendingServicesStmt, err = db.PrepareContext(ctx, listGitPendingServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListGitPendingServices: %w", err)
 	}
@@ -515,6 +542,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listOpenAlertsStmt, err = db.PrepareContext(ctx, listOpenAlerts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOpenAlerts: %w", err)
+	}
+	if q.listOrgGitHubInstallationsStmt, err = db.PrepareContext(ctx, listOrgGitHubInstallations); err != nil {
+		return nil, fmt.Errorf("error preparing query ListOrgGitHubInstallations: %w", err)
 	}
 	if q.listOrgInvitesStmt, err = db.PrepareContext(ctx, listOrgInvites); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOrgInvites: %w", err)
@@ -728,6 +758,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setEnvironmentApplyErrorStmt, err = db.PrepareContext(ctx, setEnvironmentApplyError); err != nil {
 		return nil, fmt.Errorf("error preparing query SetEnvironmentApplyError: %w", err)
+	}
+	if q.setGitHubAppStmt, err = db.PrepareContext(ctx, setGitHubApp); err != nil {
+		return nil, fmt.Errorf("error preparing query SetGitHubApp: %w", err)
+	}
+	if q.setGitHubInstallationStmt, err = db.PrepareContext(ctx, setGitHubInstallation); err != nil {
+		return nil, fmt.Errorf("error preparing query SetGitHubInstallation: %w", err)
 	}
 	if q.setGitLastEventStmt, err = db.PrepareContext(ctx, setGitLastEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query SetGitLastEvent: %w", err)
@@ -959,6 +995,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing consumeJoinTokenStmt: %w", cerr)
 		}
 	}
+	if q.countInstallationConnectionsStmt != nil {
+		if cerr := q.countInstallationConnectionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countInstallationConnectionsStmt: %w", cerr)
+		}
+	}
 	if q.countKindEnvironmentsStmt != nil {
 		if cerr := q.countKindEnvironmentsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countKindEnvironmentsStmt: %w", cerr)
@@ -1144,6 +1185,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteGitConnectionStmt: %w", cerr)
 		}
 	}
+	if q.deleteGitHubAppStmt != nil {
+		if cerr := q.deleteGitHubAppStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteGitHubAppStmt: %w", cerr)
+		}
+	}
+	if q.deleteGitHubInstallationStmt != nil {
+		if cerr := q.deleteGitHubInstallationStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteGitHubInstallationStmt: %w", cerr)
+		}
+	}
+	if q.deleteGitHubInstallationsStmt != nil {
+		if cerr := q.deleteGitHubInstallationsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteGitHubInstallationsStmt: %w", cerr)
+		}
+	}
 	if q.deleteJoinTokenStmt != nil {
 		if cerr := q.deleteJoinTokenStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteJoinTokenStmt: %w", cerr)
@@ -1304,6 +1360,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getAlertChannelByIDStmt: %w", cerr)
 		}
 	}
+	if q.getAppGitConnectionsStmt != nil {
+		if cerr := q.getAppGitConnectionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAppGitConnectionsStmt: %w", cerr)
+		}
+	}
 	if q.getAuditDetailStmt != nil {
 		if cerr := q.getAuditDetailStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAuditDetailStmt: %w", cerr)
@@ -1384,6 +1445,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getGitConnectionByServiceStmt: %w", cerr)
 		}
 	}
+	if q.getGitHubAppStmt != nil {
+		if cerr := q.getGitHubAppStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGitHubAppStmt: %w", cerr)
+		}
+	}
+	if q.getGitHubInstallationStmt != nil {
+		if cerr := q.getGitHubInstallationStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGitHubInstallationStmt: %w", cerr)
+		}
+	}
 	if q.getInFlightReleaseStmt != nil {
 		if cerr := q.getInFlightReleaseStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getInFlightReleaseStmt: %w", cerr)
@@ -1422,6 +1493,11 @@ func (q *Queries) Close() error {
 	if q.getOrgStmt != nil {
 		if cerr := q.getOrgStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getOrgStmt: %w", cerr)
+		}
+	}
+	if q.getOrgBySlugStmt != nil {
+		if cerr := q.getOrgBySlugStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getOrgBySlugStmt: %w", cerr)
 		}
 	}
 	if q.getOrgInviteStmt != nil {
@@ -1639,6 +1715,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listFailedLatestReleasesStmt: %w", cerr)
 		}
 	}
+	if q.listGitHubInstallationsStmt != nil {
+		if cerr := q.listGitHubInstallationsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listGitHubInstallationsStmt: %w", cerr)
+		}
+	}
 	if q.listGitPendingServicesStmt != nil {
 		if cerr := q.listGitPendingServicesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listGitPendingServicesStmt: %w", cerr)
@@ -1672,6 +1753,11 @@ func (q *Queries) Close() error {
 	if q.listOpenAlertsStmt != nil {
 		if cerr := q.listOpenAlertsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listOpenAlertsStmt: %w", cerr)
+		}
+	}
+	if q.listOrgGitHubInstallationsStmt != nil {
+		if cerr := q.listOrgGitHubInstallationsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listOrgGitHubInstallationsStmt: %w", cerr)
 		}
 	}
 	if q.listOrgInvitesStmt != nil {
@@ -2029,6 +2115,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setEnvironmentApplyErrorStmt: %w", cerr)
 		}
 	}
+	if q.setGitHubAppStmt != nil {
+		if cerr := q.setGitHubAppStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setGitHubAppStmt: %w", cerr)
+		}
+	}
+	if q.setGitHubInstallationStmt != nil {
+		if cerr := q.setGitHubInstallationStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setGitHubInstallationStmt: %w", cerr)
+		}
+	}
 	if q.setGitLastEventStmt != nil {
 		if cerr := q.setGitLastEventStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setGitLastEventStmt: %w", cerr)
@@ -2289,6 +2385,7 @@ type Queries struct {
 	clearGitPendingStmt                 *sql.Stmt
 	clearReleaseHostPortStmt            *sql.Stmt
 	consumeJoinTokenStmt                *sql.Stmt
+	countInstallationConnectionsStmt    *sql.Stmt
 	countKindEnvironmentsStmt           *sql.Stmt
 	countOrgAdminsStmt                  *sql.Stmt
 	countOrgProjectsStmt                *sql.Stmt
@@ -2326,6 +2423,9 @@ type Queries struct {
 	deleteExpiredCLILoginsStmt          *sql.Stmt
 	deleteExpiredSessionsStmt           *sql.Stmt
 	deleteGitConnectionStmt             *sql.Stmt
+	deleteGitHubAppStmt                 *sql.Stmt
+	deleteGitHubInstallationStmt        *sql.Stmt
+	deleteGitHubInstallationsStmt       *sql.Stmt
 	deleteJoinTokenStmt                 *sql.Stmt
 	deleteOrgStmt                       *sql.Stmt
 	deleteOrgDataPolicyStmt             *sql.Stmt
@@ -2358,6 +2458,7 @@ type Queries struct {
 	getAlertStmt                        *sql.Stmt
 	getAlertChannelStmt                 *sql.Stmt
 	getAlertChannelByIDStmt             *sql.Stmt
+	getAppGitConnectionsStmt            *sql.Stmt
 	getAuditDetailStmt                  *sql.Stmt
 	getAuditEventByDetailStmt           *sql.Stmt
 	getBackupStmt                       *sql.Stmt
@@ -2374,6 +2475,8 @@ type Queries struct {
 	getEnvironmentByNameStmt            *sql.Stmt
 	getGitConnectionByHookStmt          *sql.Stmt
 	getGitConnectionByServiceStmt       *sql.Stmt
+	getGitHubAppStmt                    *sql.Stmt
+	getGitHubInstallationStmt           *sql.Stmt
 	getInFlightReleaseStmt              *sql.Stmt
 	getInstallIDStmt                    *sql.Stmt
 	getInviteByHashStmt                 *sql.Stmt
@@ -2382,6 +2485,7 @@ type Queries struct {
 	getMemberRoleByEmailStmt            *sql.Stmt
 	getMembershipStmt                   *sql.Stmt
 	getOrgStmt                          *sql.Stmt
+	getOrgBySlugStmt                    *sql.Stmt
 	getOrgInviteStmt                    *sql.Stmt
 	getPlacementStmt                    *sql.Stmt
 	getProjectStmt                      *sql.Stmt
@@ -2425,6 +2529,7 @@ type Queries struct {
 	listEnvironmentsStmt                *sql.Stmt
 	listExpiredReleaseHistoryStmt       *sql.Stmt
 	listFailedLatestReleasesStmt        *sql.Stmt
+	listGitHubInstallationsStmt         *sql.Stmt
 	listGitPendingServicesStmt          *sql.Stmt
 	listInFlightReleasesStmt            *sql.Stmt
 	listKeptDigestsStmt                 *sql.Stmt
@@ -2432,6 +2537,7 @@ type Queries struct {
 	listLatestScheduledBackupsStmt      *sql.Stmt
 	listOldestAuditEventsStmt           *sql.Stmt
 	listOpenAlertsStmt                  *sql.Stmt
+	listOrgGitHubInstallationsStmt      *sql.Stmt
 	listOrgInvitesStmt                  *sql.Stmt
 	listOrgMembersStmt                  *sql.Stmt
 	listOrgServerIDsStmt                *sql.Stmt
@@ -2503,6 +2609,8 @@ type Queries struct {
 	setAlertChannelSentStmt             *sql.Stmt
 	setDataGrantsSyncedHashStmt         *sql.Stmt
 	setEnvironmentApplyErrorStmt        *sql.Stmt
+	setGitHubAppStmt                    *sql.Stmt
+	setGitHubInstallationStmt           *sql.Stmt
 	setGitLastEventStmt                 *sql.Stmt
 	setGitPendingStmt                   *sql.Stmt
 	setJoinTokenServerStmt              *sql.Stmt
@@ -2570,6 +2678,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		clearGitPendingStmt:                 q.clearGitPendingStmt,
 		clearReleaseHostPortStmt:            q.clearReleaseHostPortStmt,
 		consumeJoinTokenStmt:                q.consumeJoinTokenStmt,
+		countInstallationConnectionsStmt:    q.countInstallationConnectionsStmt,
 		countKindEnvironmentsStmt:           q.countKindEnvironmentsStmt,
 		countOrgAdminsStmt:                  q.countOrgAdminsStmt,
 		countOrgProjectsStmt:                q.countOrgProjectsStmt,
@@ -2607,6 +2716,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteExpiredCLILoginsStmt:          q.deleteExpiredCLILoginsStmt,
 		deleteExpiredSessionsStmt:           q.deleteExpiredSessionsStmt,
 		deleteGitConnectionStmt:             q.deleteGitConnectionStmt,
+		deleteGitHubAppStmt:                 q.deleteGitHubAppStmt,
+		deleteGitHubInstallationStmt:        q.deleteGitHubInstallationStmt,
+		deleteGitHubInstallationsStmt:       q.deleteGitHubInstallationsStmt,
 		deleteJoinTokenStmt:                 q.deleteJoinTokenStmt,
 		deleteOrgStmt:                       q.deleteOrgStmt,
 		deleteOrgDataPolicyStmt:             q.deleteOrgDataPolicyStmt,
@@ -2639,6 +2751,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getAlertStmt:                        q.getAlertStmt,
 		getAlertChannelStmt:                 q.getAlertChannelStmt,
 		getAlertChannelByIDStmt:             q.getAlertChannelByIDStmt,
+		getAppGitConnectionsStmt:            q.getAppGitConnectionsStmt,
 		getAuditDetailStmt:                  q.getAuditDetailStmt,
 		getAuditEventByDetailStmt:           q.getAuditEventByDetailStmt,
 		getBackupStmt:                       q.getBackupStmt,
@@ -2655,6 +2768,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getEnvironmentByNameStmt:            q.getEnvironmentByNameStmt,
 		getGitConnectionByHookStmt:          q.getGitConnectionByHookStmt,
 		getGitConnectionByServiceStmt:       q.getGitConnectionByServiceStmt,
+		getGitHubAppStmt:                    q.getGitHubAppStmt,
+		getGitHubInstallationStmt:           q.getGitHubInstallationStmt,
 		getInFlightReleaseStmt:              q.getInFlightReleaseStmt,
 		getInstallIDStmt:                    q.getInstallIDStmt,
 		getInviteByHashStmt:                 q.getInviteByHashStmt,
@@ -2663,6 +2778,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getMemberRoleByEmailStmt:            q.getMemberRoleByEmailStmt,
 		getMembershipStmt:                   q.getMembershipStmt,
 		getOrgStmt:                          q.getOrgStmt,
+		getOrgBySlugStmt:                    q.getOrgBySlugStmt,
 		getOrgInviteStmt:                    q.getOrgInviteStmt,
 		getPlacementStmt:                    q.getPlacementStmt,
 		getProjectStmt:                      q.getProjectStmt,
@@ -2706,6 +2822,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listEnvironmentsStmt:                q.listEnvironmentsStmt,
 		listExpiredReleaseHistoryStmt:       q.listExpiredReleaseHistoryStmt,
 		listFailedLatestReleasesStmt:        q.listFailedLatestReleasesStmt,
+		listGitHubInstallationsStmt:         q.listGitHubInstallationsStmt,
 		listGitPendingServicesStmt:          q.listGitPendingServicesStmt,
 		listInFlightReleasesStmt:            q.listInFlightReleasesStmt,
 		listKeptDigestsStmt:                 q.listKeptDigestsStmt,
@@ -2713,6 +2830,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listLatestScheduledBackupsStmt:      q.listLatestScheduledBackupsStmt,
 		listOldestAuditEventsStmt:           q.listOldestAuditEventsStmt,
 		listOpenAlertsStmt:                  q.listOpenAlertsStmt,
+		listOrgGitHubInstallationsStmt:      q.listOrgGitHubInstallationsStmt,
 		listOrgInvitesStmt:                  q.listOrgInvitesStmt,
 		listOrgMembersStmt:                  q.listOrgMembersStmt,
 		listOrgServerIDsStmt:                q.listOrgServerIDsStmt,
@@ -2784,6 +2902,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setAlertChannelSentStmt:             q.setAlertChannelSentStmt,
 		setDataGrantsSyncedHashStmt:         q.setDataGrantsSyncedHashStmt,
 		setEnvironmentApplyErrorStmt:        q.setEnvironmentApplyErrorStmt,
+		setGitHubAppStmt:                    q.setGitHubAppStmt,
+		setGitHubInstallationStmt:           q.setGitHubInstallationStmt,
 		setGitLastEventStmt:                 q.setGitLastEventStmt,
 		setGitPendingStmt:                   q.setGitPendingStmt,
 		setJoinTokenServerStmt:              q.setJoinTokenServerStmt,

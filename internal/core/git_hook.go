@@ -26,7 +26,9 @@ const gitMaxPushCommits = 2048
 // GitDelivery is one webhook request from GitHub, as the hooks listener
 // received it.
 type GitDelivery struct {
-	HookID string // the last path segment of the webhook URL
+	// HookID is the last path segment of the webhook URL: a connection's
+	// hook ID or the GitHub App's.
+	HookID string
 	// Event, ID and Signature are the X-GitHub-Event, X-GitHub-Delivery
 	// and X-Hub-Signature-256 headers.
 	Event, ID, Signature string
@@ -39,8 +41,13 @@ type pushPayload struct {
 	After      string `json:"after"`
 	Deleted    bool   `json:"deleted"`
 	Repository struct {
+		ID       int64  `json:"id"`
 		FullName string `json:"full_name"`
 	} `json:"repository"`
+	// Installation is set on deliveries to the GitHub App.
+	Installation struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
 	Pusher struct {
 		Name string `json:"name"`
 	} `json:"pusher"`
@@ -63,18 +70,42 @@ type pushCommit struct {
 // hookIDRe matches the hook IDs GitConnect makes (randomHex(16)).
 var hookIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
-// GitHookExists reports not_found unless hookID is a connection's
-// webhook. The hooks listener asks before it reads a body, so nobody
-// without a webhook URL can hold its few read slots.
+// GitHookExists reports not_found unless hookID is a webhook connection's
+// hook or the GitHub App's. The hooks listener asks before it reads a
+// body, so nobody without a webhook URL can hold its few read slots.
 func (c *Core) GitHookExists(ctx context.Context, hookID string) error {
-	if !hookIDRe.MatchString(hookID) {
-		return notFound("no such webhook")
-	}
-	_, err := c.store.GetGitConnectionByHook(ctx, hookID)
-	if store.IsNotFound(err) {
-		return notFound("no such webhook")
-	}
+	_, _, err := c.hookTarget(ctx, hookID)
 	return err
+}
+
+// hookTarget is what a webhook URL delivers to: a webhook connection, or
+// the GitHub App (app is set). Errors: not_found.
+func (c *Core) hookTarget(ctx context.Context, hookID string) (store.GitConnection, *store.GithubApp, error) {
+	if !hookIDRe.MatchString(hookID) {
+		return store.GitConnection{}, nil, notFound("no such webhook")
+	}
+	conn, err := c.webhookConnection(ctx, hookID)
+	if err == nil || !store.IsNotFound(err) && CodeOf(err) != apitypes.CodeNotFound {
+		return conn, nil, err
+	}
+	app, err := c.store.GetGitHubApp(ctx)
+	switch {
+	case err == nil && app.HookID == hookID:
+		return conn, &app, nil
+	case err == nil || store.IsNotFound(err):
+		return conn, nil, notFound("no such webhook")
+	}
+	return conn, nil, err
+}
+
+// webhookConnection is the webhook connection with hookID. App
+// connections keep a hook ID, unused, which is not found here.
+func (c *Core) webhookConnection(ctx context.Context, hookID string) (store.GitConnection, error) {
+	conn, err := c.store.GetGitConnectionByHook(ctx, hookID)
+	if err == nil && conn.InstallationID != 0 {
+		return conn, notFound("no such webhook")
+	}
+	return conn, err
 }
 
 // GitWebhook handles a delivery: it checks the signature, ignores what
@@ -83,14 +114,15 @@ func (c *Core) GitHookExists(ctx context.Context, hookID string) error {
 // rate_limited, unauthorized (bad or missing signature), validation.
 //
 // The webhook's own secret is its authority: the release it starts acts
-// as "github:<pusher>" with deploy scope on that one service.
+// as "github:<pusher>" with deploy scope on that one service. The App's
+// deliveries go to gitAppWebhook.
 func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
-	conn, err := c.store.GetGitConnectionByHook(ctx, d.HookID)
-	if store.IsNotFound(err) {
-		return "", notFound("no such webhook")
-	}
+	conn, app, err := c.hookTarget(ctx, d.HookID)
 	if err != nil {
 		return "", err
+	}
+	if app != nil {
+		return c.gitAppWebhook(ctx, *app, d)
 	}
 	// Hook IDs are unguessable, so only someone who has the URL can spend
 	// this; the bound keeps a leaked URL from costing more.
@@ -112,22 +144,116 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 	default:
 		return fmt.Sprintf("ignored: %q events don't deploy; send only pushes", d.Event), nil
 	}
-	if !deliveryRe.MatchString(d.ID) {
+	if seen, err := c.gitDelivery(ctx, d.ID); seen != "" || err != nil {
+		return seen, err
+	}
+	var p pushPayload
+	if err := json.Unmarshal(d.Body, &p); err != nil {
+		return "", invalid("push payload is not JSON: %v; set the webhook's content type to application/json", err)
+	}
+	return c.queuePush(ctx, conn, p)
+}
+
+// gitDelivery records a delivery ID; a non-empty answer means it was seen
+// before and the delivery has no effect.
+func (c *Core) gitDelivery(ctx context.Context, id string) (string, error) {
+	if !deliveryRe.MatchString(id) {
 		return "", invalid("X-GitHub-Delivery header missing or malformed")
 	}
 	t := now()
-	if err := c.store.AddGitDelivery(ctx, store.AddGitDeliveryParams{DeliveryID: d.ID, CreatedAt: t}); store.IsUnique(err) {
-		return "ignored: delivery " + d.ID + " was already received", nil
+	if err := c.store.AddGitDelivery(ctx, store.AddGitDeliveryParams{DeliveryID: id, CreatedAt: t}); store.IsUnique(err) {
+		return "ignored: delivery " + id + " was already received", nil
 	} else if err != nil {
 		return "", err
 	}
 	if err := c.store.PruneGitDeliveries(ctx, t.Add(-gitReplayWindow)); err != nil {
 		c.log.Warn("prune webhook deliveries", "err", err)
 	}
+	return "", nil
+}
+
+// gitAppWebhook handles a delivery to the GitHub App's webhook (ADR
+// 0030): pushes go to every App connection of the repository (by its
+// GitHub ID, so renames don't matter), each deciding by its branch and
+// directory; an uninstalled App's installation is unassigned. The App's
+// webhook secret is the authority, as a connection's is for its own hook.
+func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDelivery) (string, error) {
+	if !c.git.appLimit.Allow(app.HookID, time.Now()) {
+		return "", errf(apitypes.CodeRateLimited, "too many deliveries for the GitHub App; try again in a minute")
+	}
+	secret, err := c.box.Open(app.WebhookSecret)
+	if err != nil {
+		return "", fmt.Errorf("open the GitHub App's webhook secret: %w", err)
+	}
+	if !validSignature(secret, d.Body, d.Signature) {
+		return "", errf(apitypes.CodeUnauthorized, "signature missing or wrong; the GitHub App's webhook secret must be the one Dock registered it with")
+	}
+	switch d.Event {
+	case "ping":
+		return "pong", nil
+	case "installation":
+		return c.gitAppInstallation(ctx, d.Body)
+	case "push":
+	default:
+		return fmt.Sprintf("ignored: %q events don't deploy", d.Event), nil
+	}
+	if seen, err := c.gitDelivery(ctx, d.ID); seen != "" || err != nil {
+		return seen, err
+	}
 	var p pushPayload
 	if err := json.Unmarshal(d.Body, &p); err != nil {
-		return "", invalid("push payload is not JSON: %v; set the webhook's content type to application/json", err)
+		return "", invalid("push payload is not JSON: %v", err)
 	}
+	conns, err := c.store.GetAppGitConnections(ctx, store.GetAppGitConnectionsParams{RepoID: p.Repository.ID, InstallationID: p.Installation.ID})
+	if err != nil {
+		return "", err
+	}
+	if len(conns) == 0 {
+		return "ignored: no service deploys " + cleanLine(p.Repository.FullName, 140), nil
+	}
+	msgs := make([]string, 0, len(conns))
+	for _, conn := range conns {
+		msg, err := c.queuePush(ctx, conn, p)
+		if err != nil {
+			return "", err
+		}
+		if ss, err := c.scopeOf(ctx, conn.ServiceID); err == nil {
+			msg = ss.String() + ": " + msg
+		}
+		msgs = append(msgs, msg)
+	}
+	return strings.Join(msgs, "\n"), nil
+}
+
+// gitAppInstallation handles the App's installation events: an
+// uninstalled App's installation is unassigned, so the console doesn't
+// list it as assigned. Its connections then fail to fetch with a reason.
+func (c *Core) gitAppInstallation(ctx context.Context, body []byte) (string, error) {
+	var e struct {
+		Action       string `json:"action"`
+		Installation struct {
+			ID int64 `json:"id"`
+		} `json:"installation"`
+	}
+	if err := json.Unmarshal(body, &e); err != nil {
+		return "", invalid("installation payload is not JSON: %v", err)
+	}
+	id := e.Installation.ID
+	if e.Action != "deleted" {
+		return fmt.Sprintf("installation %d: %s", id, cleanLine(e.Action, 40)), nil
+	}
+	if err := c.store.DeleteGitHubInstallation(ctx, id); err != nil {
+		return "", err
+	}
+	c.git.app.forgetTokens(id)
+	c.log.Info("GitHub App uninstalled", "installation", id)
+	return fmt.Sprintf("installation %d removed", id), nil
+}
+
+// queuePush queues the push's commit on a connection, unless the
+// connection doesn't deploy it or it is already live or deploying, and
+// returns what happened.
+func (c *Core) queuePush(ctx context.Context, conn store.GitConnection, p pushPayload) (string, error) {
 	commit, ignored := pushDecision(conn, p)
 	if ignored != "" {
 		c.gitEvent(conn.ID, ignored)
@@ -178,10 +304,11 @@ func validSignature(secret, body []byte, header string) bool {
 }
 
 // pushDecision returns the commit a push deploys, or why it is ignored:
-// another repository or branch, a tag, a deleted branch, or (with a
+// another repository (for a webhook connection) or branch, a tag, a deleted branch, or (with a
 // directory) no changed file inside it.
 func pushDecision(conn store.GitConnection, p pushPayload) (apitypes.Commit, string) {
-	if !strings.EqualFold(p.Repository.FullName, conn.Repo) {
+	// App connections were routed by repository ID, which survives renames.
+	if conn.RepoID == 0 && !strings.EqualFold(p.Repository.FullName, conn.Repo) {
 		return apitypes.Commit{}, fmt.Sprintf("ignored: push to %s, connected to %s", cleanLine(p.Repository.FullName, 140), conn.Repo)
 	}
 	if p.Ref != "refs/heads/"+conn.Branch {

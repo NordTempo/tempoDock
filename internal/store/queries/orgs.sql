@@ -128,3 +128,6 @@ JOIN environments ON environments.project_id = projects.id
 JOIN variables ON variables.environment_id = environments.id
 LEFT JOIN services ON services.id = variables.service_id
 WHERE projects.org_id = +? AND projects.archived_at IS NULL;
+
+-- name: GetOrgBySlug :one
+SELECT * FROM orgs WHERE slug = +?;

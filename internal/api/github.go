@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -58,19 +59,30 @@ func registerGit(s *Server, a huma.API) {
 // KB; ones listing thousands of changed files can reach a few MB.
 const maxHookBody = 4 << 20
 
+// hookReadTimeout bounds reading a delivery's body. GitHub gives up on a
+// delivery after 10 seconds.
+const hookReadTimeout = 15 * time.Second
+
 // maxHookReads bounds deliveries being read at once, so concurrent large
 // bodies can't add up to more than maxHookReads × maxHookBody of memory.
 const maxHookReads = 2
 
-// Hooks returns the handler for [hooks] listen, the loopback listener the
-// control plane's Caddy proxies https://<public_host>/hooks/github/ to
-// (ADR 0018). It serves only:
+// hooksPath is the prefix of every webhook URL.
+const hooksPath = "/hooks/github/"
+
+// Hooks returns the webhook handler: for [hooks] listen, the loopback
+// listener the control plane's Caddy proxies https://<public_host>/hooks/github/
+// to (ADR 0018), and for the same paths on Dock's public address (Public).
+// Build it once and share it, so both share the read slots. It serves only:
 //
-//	POST /hooks/github/{id}  a GitHub webhook delivery (core.GitWebhook)
+//	POST /hooks/github/{id}  a delivery to a connection's webhook, or to the
+//	                         GitHub App's (ADR 0030) (core.GitWebhook)
 //
 // Answers are plain text, which GitHub shows in the delivery log. The
 // webhook must exist, and the body fit, before a read slot is taken: the
 // listener is public, and slots held by strangers would stall deliveries.
+// A slot is held for at most hookReadTimeout, also on the public listener,
+// which has no read timeout of its own.
 func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 	sem := make(chan struct{}, maxHookReads)
 	mux := http.NewServeMux()
@@ -83,7 +95,7 @@ func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 		}
 		http.Error(w, ce.Msg, statusForCode(ce.Code))
 	}
-	mux.HandleFunc("POST /hooks/github/{id}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST "+hooksPath+"{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		if err := c.GitHookExists(r.Context(), r.PathValue("id")); err != nil {
@@ -94,6 +106,7 @@ func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 			http.Error(w, "payload larger than 4 MB", http.StatusRequestEntityTooLarge)
 			return
 		}
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(hookReadTimeout))
 		select {
 		case sem <- struct{}{}:
 			defer func() { <-sem }()

@@ -18,7 +18,8 @@ func TestGitQueryPlans(t *testing.T) {
 	checkPlans(t, s, []planCase{
 		{"GetGitConnectionByService", getGitConnectionByService, []any{1}},
 		{"GetGitConnectionByHook", getGitConnectionByHook, []any{"h"}},
-		{"UpdateGitConnection", updateGitConnection, []any{"r", "b", "", nil, false, "h", []byte{1}, 1}},
+		{"UpdateGitConnection", updateGitConnection, []any{"r", "b", "", nil, false, "h", []byte{1}, 0, 0, 1}},
+		{"GetAppGitConnections", getAppGitConnections, []any{42, 7}},
 		{"DeleteGitConnection", deleteGitConnection, []any{1}},
 		{"SetGitPending", setGitPending, []any{"s", "m", "a", "b", false, 1}},
 		{"ClearGitPending", clearGitPending, []any{1, "s"}},
@@ -26,5 +27,22 @@ func TestGitQueryPlans(t *testing.T) {
 		{"ListGitPendingServices", listGitPendingServices, nil},
 		{"PruneGitDeliveries", pruneGitDeliveries, []any{now}},
 		{"SetReleaseCommit", setReleaseCommit, []any{"s", "m", "a", 1}},
+	})
+}
+
+// Every GitHub App query reads through an index.
+func TestGitHubQueryPlans(t *testing.T) {
+	s, err := Open(context.Background(), filepath.Join(t.TempDir(), "g.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	checkPlans(t, s, []planCase{
+		{"GetGitHubApp", getGitHubApp, nil},
+		{"ListOrgGitHubInstallations", listOrgGitHubInstallations, []any{1}},
+		{"GetGitHubInstallation", getGitHubInstallation, []any{7}},
+		{"DeleteGitHubInstallation", deleteGitHubInstallation, []any{7}},
+		{"GetOrgBySlug", getOrgBySlug, []any{"x"}},
+		{"CountInstallationConnections", countInstallationConnections, nil},
 	})
 }

@@ -31,8 +31,9 @@ const (
 )
 
 // githubClient is the little of GitHub's REST API push-to-deploy uses:
-// a commit's metadata, its tarball, and commit statuses. Tokens go in the
-// Authorization header only, and never into errors or logs.
+// a commit's metadata, its tarball, and commit statuses, plus the GitHub
+// App's calls (github_app_api.go). Tokens go in the Authorization header
+// only, and never into errors or logs.
 type githubClient struct {
 	api    string
 	client *http.Client
@@ -45,10 +46,25 @@ func newGitHubClient(api string) githubClient {
 	return githubClient{api: strings.TrimSuffix(api, "/"), client: &http.Client{}}
 }
 
+// githubCred is how a request authenticates, which decides what an error
+// tells the user to fix.
+type githubCred struct {
+	token string
+	kind  credKind
+}
+
+type credKind int
+
+const (
+	credToken   credKind = iota // a webhook connection's own token, or none
+	credInstall                 // a GitHub App installation token (ADR 0030)
+	credApp                     // the GitHub App's JWT
+)
+
 // do sends a request and returns the response if it is a 2xx; anything
 // else becomes an error that says what to fix. what names the object for
 // a 404 ("commit abc1234").
-func (g githubClient) do(ctx context.Context, method, path, token, what string, body any) (*http.Response, error) {
+func (g githubClient) do(ctx context.Context, method, path string, cred githubCred, what string, body any) (*http.Response, error) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -67,8 +83,8 @@ func (g githubClient) do(ctx context.Context, method, path, token, what string, 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	if cred.token != "" {
+		req.Header.Set("Authorization", "Bearer "+cred.token)
 	}
 	resp, err := g.client.Do(req)
 	if err != nil {
@@ -81,31 +97,43 @@ func (g githubClient) do(ctx context.Context, method, path, token, what string, 
 		return resp, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return nil, githubError(resp, what, token != "")
+	return nil, githubError(resp, what, cred)
 }
 
-// githubError explains a non-2xx GitHub response.
-func githubError(resp *http.Response, what string, withToken bool) error {
+// githubError explains a non-2xx GitHub response, with a hint that fits
+// how the request authenticated.
+func githubError(resp *http.Response, what string, cred githubCred) error {
 	var e struct {
 		Message string `json:"message"`
 	}
 	_ = json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&e)
 	msg := cleanLine(e.Message, 200)
 	switch {
+	case resp.StatusCode == http.StatusUnauthorized && cred.kind == credApp:
+		return invalid("GitHub rejected the GitHub App's key (401: %s); if the App was deleted on GitHub, remove it with `dock github app remove` and create a new one", msg)
+	case resp.StatusCode == http.StatusUnauthorized && cred.kind == credInstall:
+		return invalid("GitHub rejected the GitHub App's installation token (401: %s); check the installation with `dock github status`", msg)
 	case resp.StatusCode == http.StatusUnauthorized:
 		return invalid("GitHub rejected the token (401: %s); set a new one with `dock git connect ... --token-stdin`", msg)
 	case resp.StatusCode == http.StatusTooManyRequests,
 		resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0":
 		hint := "wait and try again"
-		if !withToken {
+		if cred.token == "" {
 			hint = "add a token (`dock git connect ... --token-stdin`) for a higher limit, or wait"
 		}
 		return errf(apitypes.CodeRateLimited, "GitHub's API rate limit was reached; %s", hint)
+	case resp.StatusCode == http.StatusForbidden && cred.kind != credToken:
+		return invalid("GitHub refused the GitHub App access to %s (403: %s); accept the App's requested permissions on GitHub", what, msg)
 	case resp.StatusCode == http.StatusForbidden:
 		return invalid("GitHub refused access to %s (403: %s); the token needs Contents read access, and Commit statuses write for statuses", what, msg)
 	case resp.StatusCode == http.StatusNotFound:
 		hint := "check the repository and ref; a private repository needs a token with Contents read access (`dock git connect ... --token-stdin`)"
-		if withToken {
+		switch {
+		case cred.kind == credInstall:
+			hint = "check the repository and ref, and that the GitHub App is installed on the repository"
+		case cred.kind == credApp:
+			hint = "check the name, and that the GitHub App is installed there"
+		case cred.token != "":
 			hint = "check the repository and ref, and that the token can read the repository"
 		}
 		return notFound("GitHub has no %s, or can't show it (404); %s", what, hint)
@@ -126,12 +154,12 @@ func redactURL(err error) error {
 }
 
 // commit looks up ref (a SHA, branch or tag) in repo.
-func (g githubClient) commit(ctx context.Context, repo, ref, token string) (apitypes.Commit, error) {
+func (g githubClient) commit(ctx context.Context, repo, ref string, cred githubCred) (apitypes.Commit, error) {
 	ctx, cancel := context.WithTimeout(ctx, githubCallTimeout)
 	defer cancel()
 	// The list endpoint, unlike /commits/{ref}, leaves out the files and
 	// their patches.
-	resp, err := g.do(ctx, http.MethodGet, "/repos/"+repo+"/commits?per_page=1&sha="+url.QueryEscape(ref), token, fmt.Sprintf("ref %s in %s", ref, repo), nil)
+	resp, err := g.do(ctx, http.MethodGet, "/repos/"+repo+"/commits?per_page=1&sha="+url.QueryEscape(ref), cred, fmt.Sprintf("ref %s in %s", ref, repo), nil)
 	if err != nil {
 		return apitypes.Commit{}, err
 	}
@@ -165,9 +193,9 @@ func (g githubClient) commit(ctx context.Context, repo, ref, token string) (apit
 // tarball fetches a commit's source and returns it as a plain tar with
 // dir (or the repository root) at its root, streamed: nothing is held in
 // memory or written to disk here.
-func (g githubClient) tarball(ctx context.Context, repo, sha, token, dir string) (io.ReadCloser, error) {
+func (g githubClient) tarball(ctx context.Context, repo, sha string, cred githubCred, dir string) (io.ReadCloser, error) {
 	//nolint:bodyclose // closed by tarballReader.Close and by the goroutine below
-	resp, err := g.do(ctx, http.MethodGet, "/repos/"+repo+"/tarball/"+sha, token, "commit "+shortSHA(sha)+" in "+repo, nil)
+	resp, err := g.do(ctx, http.MethodGet, "/repos/"+repo+"/tarball/"+sha, cred, "commit "+shortSHA(sha)+" in "+repo, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -207,9 +235,9 @@ type githubStatus struct {
 
 // status posts a commit status. GitHub caps descriptions at 140
 // characters.
-func (g githubClient) status(ctx context.Context, repo, sha, token string, st githubStatus) error {
+func (g githubClient) status(ctx context.Context, repo, sha string, cred githubCred, st githubStatus) error {
 	st.Description = cleanLine(st.Description, 140)
-	resp, err := g.do(ctx, http.MethodPost, "/repos/"+repo+"/statuses/"+sha, token, "commit "+shortSHA(sha)+" in "+repo, st)
+	resp, err := g.do(ctx, http.MethodPost, "/repos/"+repo+"/statuses/"+sha, cred, "commit "+shortSHA(sha)+" in "+repo, st)
 	if err != nil {
 		return err
 	}

@@ -308,6 +308,22 @@ func (q *Queries) GetOrg(ctx context.Context, id int64) (Org, error) {
 	return i, err
 }
 
+const getOrgBySlug = `-- name: GetOrgBySlug :one
+SELECT id, slug, name, created_at FROM orgs WHERE slug = +?
+`
+
+func (q *Queries) GetOrgBySlug(ctx context.Context, slug string) (Org, error) {
+	row := q.queryRow(ctx, q.getOrgBySlugStmt, getOrgBySlug, slug)
+	var i Org
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getOrgInvite = `-- name: GetOrgInvite :one
 SELECT id, org_id, email, role, hash, created_by, created_at, expires_at, accepted_at, revoked_at FROM org_invites WHERE id = +? AND org_id = +?
 `
