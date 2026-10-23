@@ -359,13 +359,11 @@ function ProjectTree() {
       New project
     </button>
   );
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const toggle = (name: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(name)) next.add(name);
-      return next;
-    });
+  // Folds the reader chose, by project. A project without one is open
+  // only while current, so moving on folds what it opened by itself.
+  const [folds, setFolds] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const setFold = (name: string, expanded: boolean) =>
+    setFolds((prev) => new Map(prev).set(name, expanded));
   if (tree.length === 0) {
     return (
       <>
@@ -378,7 +376,7 @@ function ProjectTree() {
     <ul className="flex flex-col gap-0.5">
       {tree.map(({ project, environments }) => {
         const current = project.name === here.project;
-        const expanded = current !== open.has(project.name);
+        const expanded = folds.get(project.name) ?? current;
         const env =
           (current &&
             environments.find(
@@ -396,7 +394,7 @@ function ProjectTree() {
                 type="button"
                 aria-expanded={expanded}
                 aria-label={`${expanded ? "Hide" : "Show"} the services of ${project.name}`}
-                onClick={() => toggle(project.name)}
+                onClick={() => setFold(project.name, !expanded)}
                 className="grid h-7 w-6 flex-none place-items-center rounded-ctl text-mut hover:text-fg"
               >
                 <Icon
@@ -409,6 +407,7 @@ function ProjectTree() {
                 params={{ org, project: project.name }}
                 activeOptions={{ exact: true }}
                 activeProps={{ "aria-current": "page" }}
+                onClick={() => setFold(project.name, true)}
                 className={`flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-2 ${current ? "font-medium text-fg" : "text-sec"}`}
               >
                 <span className="flex-1 truncate">{project.name}</span>
