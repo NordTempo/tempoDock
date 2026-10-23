@@ -7,6 +7,7 @@ import {
 import { type ReactNode, useState } from "react";
 import { useLogout } from "../data/mutations";
 import {
+  canDeploy,
   isDatabase,
   serviceRef,
   useIsAdmin,
@@ -16,6 +17,11 @@ import {
 } from "../data/queries";
 import type { ServiceView } from "../data/types";
 import { useOpenAlertsIfAdmin } from "../features/alerts/data";
+import {
+  canCreateEnvironment,
+  canCreateProject,
+} from "../features/create/access";
+import { openCreate } from "../features/create/open";
 import type { FileRoutesById } from "../routeTree.gen";
 import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
@@ -258,10 +264,24 @@ function OpenAlertCount() {
 /**
  * Projects, each with the services of one environment: the one in view,
  * else production. The current project is open; others open on demand.
+ * "New project" sits under the last one for those who may create one.
  */
 function ProjectTree() {
   const tree = useProjectTree();
   const here = useCurrentContext();
+  const session = useSession();
+  const newProject = canCreateProject(session) && (
+    <button
+      type="button"
+      onClick={() => openCreate({ kind: "project" })}
+      className="flex w-full items-center rounded-ctl text-faint hover:bg-panel hover:text-sec"
+    >
+      <span className="grid h-7 w-6 flex-none place-items-center">
+        <Icon name="plus" size={12} />
+      </span>
+      New project
+    </button>
+  );
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const toggle = (name: string) =>
     setOpen((prev) => {
@@ -270,7 +290,12 @@ function ProjectTree() {
       return next;
     });
   if (tree.length === 0) {
-    return <p className="px-2.5 py-1 text-xs text-faint">No projects yet</p>;
+    return (
+      <>
+        <p className="px-2.5 py-1 text-xs text-faint">No projects yet</p>
+        {newProject}
+      </>
+    );
   }
   return (
     <ul className="flex flex-col gap-0.5">
@@ -288,7 +313,7 @@ function ProjectTree() {
         return (
           <li key={project.id}>
             <div
-              className={`flex items-center rounded-ctl hover:bg-panel ${current && !here.environment ? "bg-sel" : ""}`}
+              className={`group flex items-center rounded-ctl hover:bg-panel ${current && !here.environment ? "bg-sel" : ""}`}
             >
               <button
                 type="button"
@@ -312,6 +337,10 @@ function ProjectTree() {
                 <span className="flex-1 truncate">{project.name}</span>
                 <ProjectNote services={all} />
               </Link>
+              <NewInProject
+                project={project.name}
+                environment={env?.environment.name}
+              />
             </div>
             {expanded && env && (
               <ul className="flex flex-col gap-px pb-1">
@@ -335,7 +364,67 @@ function ProjectTree() {
           </li>
         );
       })}
+      {newProject && <li>{newProject}</li>}
     </ul>
+  );
+}
+
+/**
+ * The + on a project row: a new service in the environment the tree
+ * shows, or a new environment. Shown on hover or focus on wide screens.
+ */
+function NewInProject({
+  project,
+  environment,
+}: {
+  project: string;
+  environment: string | undefined;
+}) {
+  const session = useSession();
+  const env = environment && { project, environment };
+  const service = env && canDeploy(session, env) ? env : undefined;
+  const newEnv = canCreateEnvironment(session, project);
+  if (!service && !newEnv) return null;
+  return (
+    <Menu
+      label={`New in ${project}`}
+      right
+      className="flex-none"
+      button={
+        <span className="grid h-7 w-6 place-items-center text-faint group-focus-within:opacity-100 group-hover:opacity-100 hover:text-fg in-aria-expanded:opacity-100 lg:opacity-0">
+          <Icon name="plus" size={12} />
+        </span>
+      }
+    >
+      {(close) => (
+        <>
+          {service && (
+            <button
+              type="button"
+              className={menuItem}
+              onClick={() => {
+                close();
+                openCreate({ kind: "service", env: service });
+              }}
+            >
+              New service in {service.environment}
+            </button>
+          )}
+          {newEnv && (
+            <button
+              type="button"
+              className={menuItem}
+              onClick={() => {
+                close();
+                openCreate({ kind: "environment", project });
+              }}
+            >
+              New environment
+            </button>
+          )}
+        </>
+      )}
+    </Menu>
   );
 }
 

@@ -2,7 +2,9 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useArchiveProject } from "../data/mutations";
-import { queries, serviceRef, useIsAdmin } from "../data/queries";
+import { queries, serviceRef, useIsAdmin, useSession } from "../data/queries";
+import { canCreateEnvironment } from "../features/create/access";
+import { openCreate } from "../features/create/open";
 import { DeployBanner } from "../features/overview/DeployBanner";
 import { EnvironmentTable } from "../features/overview/EnvironmentTable";
 import { Activity } from "../features/overview/Live";
@@ -13,7 +15,7 @@ import { useShortcuts } from "../shell/keys";
 import { rememberProject } from "../shell/location";
 import { usePalette } from "../shell/palette";
 import { plural } from "../ui/format";
-import { Button, ErrorText, Glyph, Page, PageBar } from "../ui/kit";
+import { Act, Button, ErrorText, Glyph, Page, PageBar } from "../ui/kit";
 
 export const Route = createFileRoute("/_app/$project/")({
   loader: async ({ context: { queryClient }, params }) => {
@@ -56,6 +58,8 @@ function Overview() {
   const deploying = services.filter((s) => s.deploying);
   const varsEnv =
     environments.find((e) => e.pending_changes > 0) ?? environments[0];
+  const canNewEnv = canCreateEnvironment(useSession(), project);
+  const newEnvironment = () => openCreate({ kind: "environment", project });
 
   useEffect(() => rememberProject(project), [project]);
 
@@ -115,6 +119,14 @@ function Overview() {
         }
         actions={
           <>
+            {canNewEnv && (
+              <Act
+                cli={`dock environment create <name> -p ${project}`}
+                onClick={newEnvironment}
+              >
+                New environment
+              </Act>
+            )}
             {environments.length > 1 && (
               <Link to="/$project/compare" params={{ project }} className="btn">
                 Compare <kbd>C</kbd>
@@ -151,9 +163,13 @@ function Overview() {
         ))}
 
         {environments.length === 0 && (
-          <p className="text-mut">
-            No environments yet. Create one with{" "}
-            <code className="font-mono text-fg">dock environment create</code>.
+          <p className="flex flex-wrap items-center gap-2.5 text-mut">
+            No environments yet.
+            {canNewEnv && (
+              <Button small primary onClick={newEnvironment}>
+                New environment
+              </Button>
+            )}
           </p>
         )}
 

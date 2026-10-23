@@ -17,6 +17,11 @@ import {
   useServers,
   useSession,
 } from "../data/queries";
+import {
+  canCreateEnvironment,
+  canCreateProject,
+} from "../features/create/access";
+import { openCreate } from "../features/create/open";
 import { promoteCli, promotionPairs } from "../features/promote/plan";
 import { rollbackTarget } from "../features/service/releases";
 import { serviceState, type Tone } from "../ui/status";
@@ -103,6 +108,17 @@ export function useCommands(): Command[] {
       weight: inProject ? 1 : 0,
       run: () => navigate({ to: "/$project", params: { project } }),
     });
+    if (canCreateEnvironment(session, project)) {
+      add({
+        id: `new-env:${project}`,
+        group: "Actions",
+        label: `New environment in ${project}`,
+        strong: project,
+        cli: `dock environment create${pFlag}`,
+        weight: inProject ? 0 : -1,
+        run: () => openCreate({ kind: "environment", project }),
+      });
+    }
     if (environments.length > 1) {
       add({
         id: `compare:${project}`,
@@ -153,6 +169,30 @@ export function useCommands(): Command[] {
       const blockedNote = blocked
         ? { text: blocked, tone: "fail" as const }
         : undefined;
+      if (canDeploy(session, { project, environment })) {
+        const ref = { project, environment };
+        const at = inProject ? environment : `${project} ${environment}`;
+        const weight = (inProject ? 0 : -1) + (inEnv ? 0.5 : 0);
+        add({
+          id: `new-service:${project}/${environment}`,
+          group: "Actions",
+          label: `New service in ${at}`,
+          strong: environment,
+          cli: `dock service create -e ${environment}${pFlag}`,
+          weight,
+          run: () => openCreate({ kind: "service", env: ref }),
+        });
+        add({
+          id: `new-db:${project}/${environment}`,
+          group: "Actions",
+          label: `New database in ${at}`,
+          strong: environment,
+          cli: `dock service create --template postgres -e ${environment}${pFlag}`,
+          weight: weight - 0.1,
+          run: () =>
+            openCreate({ kind: "service", env: ref, source: "database" }),
+        });
+      }
       add({
         id: `vars:${project}/${environment}`,
         group: "Go to",
@@ -274,6 +314,17 @@ export function useCommands(): Command[] {
         }
       }
     }
+  }
+
+  if (canCreateProject(session)) {
+    add({
+      id: "new-project",
+      group: "Actions",
+      label: "New project",
+      cli: "dock project create",
+      weight: -0.5,
+      run: () => openCreate({ kind: "project" }),
+    });
   }
 
   const org = [
