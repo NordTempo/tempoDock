@@ -1,6 +1,5 @@
 // Open /tests/overflow.html under `pnpm dev`; no backend or test dependencies.
-import type { ReactNode } from "react";
-import { flushSync } from "react-dom";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { AuditEvent } from "../data/types";
 import { AuditTable } from "../features/audit/AuditTable";
@@ -13,19 +12,23 @@ function check(ok: boolean, message: string) {
   if (!ok) throw new Error(message);
 }
 
+if (new URLSearchParams(location.search).has("scrollbar")) {
+  const style = document.createElement("style");
+  style.textContent =
+    "html { overflow-y: scroll; scrollbar-gutter: stable; } ::-webkit-scrollbar { width: 16px; }";
+  document.head.append(style);
+}
+
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing test root");
 const root = createRoot(host);
-const render = (content: ReactNode) => flushSync(() => root.render(content));
-/** React batches continuous pointer events until the next frame. */
-async function interact(action: () => void) {
-  flushSync(action);
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-}
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+const render = (content: ReactNode) => act(() => root.render(content));
+const interact = (action: () => void) => act(action);
 
 const noOverflow = () =>
   check(
-    document.documentElement.scrollWidth ===
+    document.documentElement.scrollWidth <=
       document.documentElement.clientWidth,
     "The document must not scroll horizontally",
   );
@@ -38,7 +41,7 @@ await document.fonts.ready;
 const cli = `dock deploy --image registry.example.com/${"long-image".repeat(60)}`;
 for (const Action of [Act, DataAct]) {
   for (const right of [false, true]) {
-    render(
+    await render(
       <div className={`g flex p-2 ${right ? "justify-end" : "justify-start"}`}>
         <Action cli={cli}>Deploy</Action>
       </div>,
@@ -54,7 +57,10 @@ for (const Action of [Act, DataAct]) {
     const hint = document.querySelector(".cli");
     if (!hint) throw new Error("Hover must reveal the CLI hint");
     const box = hint.getBoundingClientRect();
-    check(box.left >= 0 && box.right <= innerWidth, "Hint must fit both edges");
+    check(
+      box.left >= 0 && box.right <= document.documentElement.clientWidth,
+      "Hint must fit both edges",
+    );
     check(hint.textContent === cli, "Long commands must remain readable");
     noOverflow();
     await interact(() =>
@@ -93,7 +99,7 @@ const event: AuditEvent = {
   summary: "Deploy a service",
 };
 for (const compact of [false, true]) {
-  render(
+  await render(
     <Page>
       <AuditTable events={[event]} compact={compact} />
     </Page>,
@@ -109,6 +115,6 @@ for (const compact of [false, true]) {
   scroll.scrollLeft = 100;
   check(scroll.scrollLeft > 0, "Wide audit rows must remain scrollable");
 }
-render(<p>Passed: action hints and audit tables at {innerWidth}px.</p>);
+await render(<p>Passed: action hints and audit tables at {innerWidth}px.</p>);
 document.title = "PASS: horizontal overflow";
 console.log(document.title, innerWidth);

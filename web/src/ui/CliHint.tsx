@@ -21,8 +21,10 @@ export function CliHint({
 
   useLayoutEffect(() => {
     if (!anchor || !hint.current) return;
-    const { width, height } = hint.current.getBoundingClientRect();
     const { clientWidth, clientHeight } = document.documentElement;
+    // clientWidth excludes classic scrollbars, unlike CSS viewport units.
+    hint.current.style.maxWidth = `${Math.max(0, Math.min(600, clientWidth - 16))}px`;
+    const { width, height } = hint.current.getBoundingClientRect();
     hint.current.style.left = `${Math.max(8, Math.min(anchor.left, clientWidth - width - 8))}px`;
     hint.current.style.top = `${
       anchor.bottom + height + 12 <= clientHeight
@@ -70,7 +72,7 @@ export function CliHint({
       {anchor && (
         <span
           ref={hint}
-          className="cli pointer-events-none fixed z-50 w-max max-w-[min(600px,calc(100vw-16px))] [overflow-wrap:anywhere]"
+          className="cli pointer-events-none fixed z-50 w-max [overflow-wrap:anywhere]"
           style={{ left: 8, top: 8 }}
         >
           {cli}

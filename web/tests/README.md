@@ -8,5 +8,6 @@ Check at 320, 390, 768, 1280 and 1920px. The fixture exercises the real Dock
 and data-panel action buttons with long CLI hints at both viewport edges,
 using hover, keyboard focus, Escape and scrolling. It also verifies both
 audit-table variants keep wide rows scrollable without widening the page.
+Append `?scrollbar` to exercise classic scrollbars as well.
 
 The fixture is a dev-only entry, not part of either production build.
