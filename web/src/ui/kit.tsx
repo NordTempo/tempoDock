@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import type { AuditEvent } from "../data/types";
+import { CliHint } from "./CliHint";
 import { type GlyphChar, type State, toneText } from "./status";
 
 /**
@@ -90,10 +91,9 @@ export function Button({
 export function Act({ cli, ...props }: ButtonProps & { cli?: string }) {
   if (cli === undefined) return <Button {...props} />;
   return (
-    <span className="act">
+    <CliHint cli={cli} className="act">
       <Button {...props} />
-      <span className="cli">{cli}</span>
-    </span>
+    </CliHint>
   );
 }
 
