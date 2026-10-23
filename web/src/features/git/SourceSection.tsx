@@ -1,11 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { keys, useSession } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
-import { since } from "../../ui/format";
+import { ago, since } from "../../ui/format";
 import {
+  Act,
   Button,
   Check,
   Confirm,
@@ -13,21 +14,20 @@ import {
   ErrorText,
   SectionHead,
 } from "../../ui/kit";
+import {
+  commitText,
+  type GitConnection,
+  gitDeployCli,
+  gitPath,
+  targetText,
+  useGitDeploy,
+  useGitSource,
+} from "./api";
 
 type Schemas = components["schemas"];
 type GitSource = Schemas["GitSource"];
-type GitConnection = Schemas["GitConnection"];
 type ConnectRequest = Schemas["GitConnectRequest"];
 type ConnectResult = Schemas["GitConnectResult"];
-
-const gitPath =
-  "/api/v1/projects/{project}/environments/{environment}/services/{service}/git";
-
-const shortSha = (sha: string) => sha.slice(0, 7);
-
-/** "acme/shop@main in apps/web/". */
-const targetText = (c: GitConnection) =>
-  `${c.repo}@${c.branch}${c.dir ? ` in ${c.dir}/` : ""}`;
 
 /**
  * The service's GitHub source (ADR 0018): pushes to a branch deploy it
@@ -39,10 +39,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const scope = useSession()?.scope;
   const canEdit = scope === "deploy" || scope === "admin";
   const path = { params: { path: ref } };
-  const source = useQuery({
-    queryKey: keys.git(ref),
-    queryFn: () => body(api.GET(gitPath, path)),
-  });
+  const source = useGitSource(ref);
   // The secret of a new or rotated webhook: shown until dismissed.
   const [created, setCreated] = useState<ConnectResult | null>(null);
   const [editing, setEditing] = useState(false);
@@ -66,10 +63,9 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       if (res.secret) setCreated(res);
     },
   });
-  const deploy = useMutation({
-    mutationFn: () =>
-      body(api.POST(`${gitPath}/deploy`, { ...path, body: {} })),
-  });
+  const deploy = useGitDeploy(ref);
+  // A commit SHA, branch or tag to deploy; empty for the branch's head.
+  const [gitRef, setGitRef] = useState("");
   const disconnect = useMutation({
     mutationFn: () => done(api.DELETE(gitPath, path)),
     onSuccess: () => {
@@ -133,8 +129,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             </Item>
             {conn.pending && (
               <Item label="Queued">
-                <span className="font-mono">{shortSha(conn.pending.sha)}</span>{" "}
-                {conn.pending.message}{" "}
+                {commitText(conn.pending)}{" "}
                 <span className="text-mut">waits for the current deploy</span>
               </Item>
             )}
@@ -153,18 +148,35 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 <span className="text-mut">nothing received yet</span>
               )}
             </Item>
+            <Item label="Connected">
+              {ago(conn.created_at)} by {conn.created_by}
+            </Item>
           </dl>
           {canEdit && !confirming && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
+            <form
+              aria-label="Deploy from GitHub"
+              className="mt-2.5 flex flex-wrap items-start gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                deploy.mutate(gitRef.trim());
+              }}
+            >
+              <input
+                aria-label="Commit, branch or tag"
+                value={gitRef}
+                placeholder={`${conn.branch} head`}
+                onChange={(e) => setGitRef(e.target.value)}
+                className="field w-40 py-0.5 font-mono text-xs"
+              />
+              <Act
                 small
                 primary
+                type="submit"
                 disabled={deploy.isPending}
-                title={`dock git deploy ${flags}`}
-                onClick={() => deploy.mutate()}
+                cli={gitDeployCli(ref, gitRef.trim())}
               >
-                Deploy {conn.branch} now
-              </Button>
+                Deploy {gitRef.trim() || conn.branch} now
+              </Act>
               <Button small onClick={() => setEditing(true)}>
                 Edit
               </Button>
@@ -174,14 +186,15 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <Button small danger onClick={() => setConfirming("disconnect")}>
                 Disconnect
               </Button>
-              {deploy.data && (
-                <span className="text-mut">
-                  queued {shortSha(deploy.data.commit.sha)}{" "}
-                  {deploy.data.commit.message}
-                </span>
-              )}
-              <ErrorText error={deploy.error ?? connect.error} />
-            </div>
+              <span className="self-center">
+                {deploy.data && (
+                  <span className="text-mut">
+                    queued {commitText(deploy.data.commit)}
+                  </span>
+                )}
+                <ErrorText error={deploy.error ?? connect.error} />
+              </span>
+            </form>
           )}
           {confirming === "rotate" && (
             <Confirm
