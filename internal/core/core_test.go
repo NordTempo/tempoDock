@@ -764,3 +764,14 @@ func TestNamesAvoidUIPages(t *testing.T) {
 		t.Fatalf("creating org console: got %v, want a validation error", err)
 	}
 }
+
+// eventually fails the test unless ok becomes true within 5 seconds.
+func eventually(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !ok(); {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

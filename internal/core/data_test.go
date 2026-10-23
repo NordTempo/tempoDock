@@ -371,6 +371,9 @@ func TestDataConnection(t *testing.T) {
 
 	h.setVars(db, map[string]string{"POSTGRES_USER": "app", "POSTGRES_PASSWORD": "pw"})
 	h.deploy(db, "postgres:17")
+	// The service turns running when its container's start event is
+	// handled, which can trail the release going live.
+	eventually(t, "the database to run", func() bool { _, err := conn(); return !errors.Is(err, errNotRunning) })
 	got, err := conn()
 	if err != nil || got.owner.User != "app" || got.owner.Password != "pw" || got.database != "app" || got.port != 5432 || got.containerID == "" || got.serverID != h.c.local.ID {
 		t.Fatalf("from POSTGRES_*: %+v %v", got, err)

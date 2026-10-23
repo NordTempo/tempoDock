@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
@@ -92,17 +91,6 @@ func (h *harness) platformAudit(action string) []apitypes.AuditEvent {
 		h.t.Fatal(err)
 	}
 	return evs
-}
-
-// eventually fails the test unless ok becomes true within 5 seconds.
-func eventually(t *testing.T, what string, ok func() bool) {
-	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); !ok(); {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
 }
 
 func TestUpdateStatus(t *testing.T) {
