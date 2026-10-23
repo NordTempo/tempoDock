@@ -498,6 +498,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listPromotableReleasesStmt, err = db.PrepareContext(ctx, listPromotableReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPromotableReleases: %w", err)
 	}
+	if q.listRegistryServicesStmt, err = db.PrepareContext(ctx, listRegistryServices); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRegistryServices: %w", err)
+	}
 	if q.listReleaseEventsStmt, err = db.PrepareContext(ctx, listReleaseEvents); err != nil {
 		return nil, fmt.Errorf("error preparing query ListReleaseEvents: %w", err)
 	}
@@ -1536,6 +1539,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listPromotableReleasesStmt: %w", cerr)
 		}
 	}
+	if q.listRegistryServicesStmt != nil {
+		if cerr := q.listRegistryServicesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRegistryServicesStmt: %w", cerr)
+		}
+	}
 	if q.listReleaseEventsStmt != nil {
 		if cerr := q.listReleaseEventsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listReleaseEventsStmt: %w", cerr)
@@ -2138,6 +2146,7 @@ type Queries struct {
 	listProjectVolumesStmt              *sql.Stmt
 	listProjectsStmt                    *sql.Stmt
 	listPromotableReleasesStmt          *sql.Stmt
+	listRegistryServicesStmt            *sql.Stmt
 	listReleaseEventsStmt               *sql.Stmt
 	listReleasesStmt                    *sql.Stmt
 	listRetiredPortHoldersStmt          *sql.Stmt
@@ -2383,6 +2392,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listProjectVolumesStmt:              q.listProjectVolumesStmt,
 		listProjectsStmt:                    q.listProjectsStmt,
 		listPromotableReleasesStmt:          q.listPromotableReleasesStmt,
+		listRegistryServicesStmt:            q.listRegistryServicesStmt,
 		listReleaseEventsStmt:               q.listReleaseEventsStmt,
 		listReleasesStmt:                    q.listReleasesStmt,
 		listRetiredPortHoldersStmt:          q.listRetiredPortHoldersStmt,

@@ -416,6 +416,87 @@ func (q *Queries) ListPromotableReleases(ctx context.Context, environmentID int6
 	return items, nil
 }
 
+const listRegistryServices = `-- name: ListRegistryServices :many
+SELECT
+    projects.name AS project,
+    environments.name AS environment,
+    services.name AS service,
+    projects.id AS project_id,
+    environments.id AS environment_id,
+    services.id AS service_id,
+    services.archived_at,
+    CAST(count(DISTINCT CASE
+        WHEN services.archived_at IS NULL
+         AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')
+              OR releases.number > (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
+                                   - CAST(?1 AS INTEGER))
+        THEN releases.image_digest END) AS INTEGER) AS kept,
+    CAST(max(releases.number) AS INTEGER) AS newest,
+    CAST(coalesce((SELECT active.number FROM releases active
+                   WHERE active.service_id = services.id AND active.status = 'active'), 0) AS INTEGER) AS active_number
+FROM releases
+JOIN services ON services.id = releases.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE releases.image_digest != ''
+GROUP BY services.id
+ORDER BY projects.name, environments.name, services.name
+`
+
+type ListRegistryServicesRow struct {
+	Project       string
+	Environment   string
+	Service       string
+	ProjectID     int64
+	EnvironmentID int64
+	ServiceID     int64
+	ArchivedAt    *time.Time
+	Kept          int64
+	Newest        int64
+	ActiveNumber  int64
+}
+
+// Every service that pushed an image to the registry, for the console's
+// registry page: how many distinct images it keeps there (as
+// ListKeptDigests counts them: none once archived), its newest release
+// with an image, and its active release. It scans services (it lists them
+// all; an admin opening the page runs it) and reads each one's releases
+// through the (service_id, number) key, its active release through
+// releases_one_active.
+func (q *Queries) ListRegistryServices(ctx context.Context, keep int64) ([]ListRegistryServicesRow, error) {
+	rows, err := q.query(ctx, q.listRegistryServicesStmt, listRegistryServices, keep)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRegistryServicesRow
+	for rows.Next() {
+		var i ListRegistryServicesRow
+		if err := rows.Scan(
+			&i.Project,
+			&i.Environment,
+			&i.Service,
+			&i.ProjectID,
+			&i.EnvironmentID,
+			&i.ServiceID,
+			&i.ArchivedAt,
+			&i.Kept,
+			&i.Newest,
+			&i.ActiveNumber,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const moveArchivedEnvironments = `-- name: MoveArchivedEnvironments :exec
 UPDATE environments SET server_id = ?1
 WHERE server_id = +?2 AND EXISTS (

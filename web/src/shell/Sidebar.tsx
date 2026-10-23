@@ -421,6 +421,9 @@ function ConsoleNav() {
           </Link>
         );
       })}
+      <NavLink to="/console/registry" icon="box">
+        Registry
+      </NavLink>
       <NavLink to="/console/backups" icon="history">
         Backups
       </NavLink>

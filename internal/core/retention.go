@@ -118,7 +118,7 @@ func (c *Core) pruneServer(ctx context.Context, srv store.Server) {
 		return
 	}
 	started := time.Now()
-	keep, err := c.store.ListKeptImageIDs(ctx, store.ListKeptImageIDsParams{ServerID: srv.ID, Keep: int64(max(c.cfg.Defaults.KeepReleases, 1))})
+	keep, err := c.store.ListKeptImageIDs(ctx, store.ListKeptImageIDsParams{ServerID: srv.ID, Keep: int64(c.keepReleases())})
 	if err != nil {
 		c.log.Warn("prune: list kept images", "server", srv.Name, "err", err)
 		return
@@ -184,7 +184,7 @@ func days(n int) time.Duration { return time.Duration(n) * 24 * time.Hour }
 // leaves the release untrimmed, and the next pass finishes it.
 func (c *Core) trimReleaseHistory(ctx context.Context, now time.Time) (int, error) {
 	cutoff := now.Add(-days(c.cfg.Retention.BuildLogDays)).UTC()
-	keep := int64(max(c.cfg.Defaults.KeepReleases, 1))
+	keep := int64(c.keepReleases())
 	n := 0
 	for range retentionBatches {
 		ids, err := c.store.ListExpiredReleaseHistory(ctx, store.ListExpiredReleaseHistoryParams{Cutoff: cutoff, Keep: keep, MaxRows: retentionBatch})

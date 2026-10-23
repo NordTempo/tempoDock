@@ -32,6 +32,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0022](0022-clone-and-export.md) | Clone an environment, export a project's config | accepted |
 | [0023](0023-connect-tunnels.md) | `dock connect`: tunnels to private services through the API | accepted |
 | [0024](0024-tempobase-standalone.md) | tempoBase: a standalone build of the Data panel from this codebase | accepted |
+| [0025](0025-platform-console.md) | The platform console is Dock's admin panel; the registry gets an API | accepted |
 
 ## Template
 

@@ -43,7 +43,9 @@ starts from these files.
 | G9 Activity | `t3-style/data/G9-activity.html` |
 
 B1 and B2 are structure references (what the operator console holds, which
-navigation each role sees); style them as A.
+navigation each role sees); style them as A. The console Dock builds is
+B2 without tenants or an operator flag ([ADR
+0025](../decisions/0025-platform-console.md)).
 
 ## Tokens
 

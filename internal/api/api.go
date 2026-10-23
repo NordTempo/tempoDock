@@ -91,6 +91,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerData(s, a)
 	registerGit(s, a)
 	registerBackups(s, a)
+	registerRegistry(s, a)
 	registerConnect(s, a, mux)
 	return a
 }

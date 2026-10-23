@@ -3,6 +3,8 @@ package registry
 import (
 	"context"
 	"io"
+	"io/fs"
+	"path/filepath"
 
 	"github.com/moby/moby/client"
 )
@@ -24,6 +26,9 @@ type Platform struct {
 	Container string
 	// Logs receives the collector's output; nil discards it.
 	Logs io.Writer
+	// StorageDir is the registry's storage on this host ([registry]
+	// storage_dir), which Stored measures.
+	StorageDir string
 }
 
 // Host implements core.Registry.
@@ -56,4 +61,25 @@ func (p *Platform) GarbageCollect(ctx context.Context) error {
 		name = ContainerName
 	}
 	return GarbageCollect(ctx, p.Docker, name, p.Logs)
+}
+
+// Stored implements core.Registry: the size of the registry's blobs, the
+// files under StorageDir's blob store (Distribution's filesystem driver).
+// Manifests are blobs too, and the repositories tree holds only links, so
+// this is what the registry takes on disk. One walk, no cache: the console
+// asks when an admin opens it.
+func (p *Platform) Stored() (int64, error) {
+	var n int64
+	root := filepath.Join(p.StorageDir, "docker", "registry", "v2", "blobs")
+	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return err
+		}
+		info, err := d.Info()
+		if err == nil {
+			n += info.Size()
+		}
+		return err
+	})
+	return n, err
 }
