@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   Link,
   type LinkProps,
@@ -9,6 +10,7 @@ import { useLogout } from "../data/mutations";
 import {
   canDeploy,
   isDatabase,
+  queries,
   serviceRef,
   useIsAdmin,
   useProjectTree,
@@ -25,7 +27,7 @@ import { openCreate } from "../features/create/open";
 import type { FileRoutesById } from "../routeTree.gen";
 import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
-import { Glyph, Menu, menuItem } from "../ui/kit";
+import { ErrorText, Glyph, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, toneText } from "../ui/status";
 import { modKey } from "./keys";
 import { useCurrentContext } from "./location";
@@ -147,6 +149,7 @@ function AppNav() {
         Projects
       </div>
       <ProjectTree />
+      <ArchivedProjects />
       <div className="min-h-6 flex-1" />
       <NavLink to="/audit" icon="activity">
         Activity
@@ -376,6 +379,70 @@ function ProjectTree() {
       })}
       {newProject && <li>{newProject}</li>}
     </ul>
+  );
+}
+
+/**
+ * "Archived" under the project tree: a fold listing archived projects
+ * (`dock project list --all`), fetched once opened. It opens by itself on
+ * an archived project's page.
+ */
+function ArchivedProjects() {
+  const here = useCurrentContext().project;
+  const onArchived =
+    useQuery({
+      ...queries.overview(here ?? ""),
+      enabled: !!here,
+      select: (o) => !!o.project.archived_at,
+    }).data ?? false;
+  const [open, setOpen] = useState<boolean>();
+  const shown = open ?? onArchived;
+  const archived = useQuery({
+    ...queries.archivedProjects(),
+    enabled: shown,
+  });
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={shown}
+        onClick={() => setOpen(!shown)}
+        className="flex w-full items-center rounded-ctl text-faint hover:bg-panel hover:text-sec"
+      >
+        <span className="grid h-7 w-6 flex-none place-items-center">
+          <Icon name={shown ? "chevronDown" : "chevronRight"} size={12} />
+        </span>
+        Archived
+      </button>
+      {shown && archived.error && (
+        <p className="pl-[30px] text-2xs">
+          <ErrorText error={archived.error} />
+        </p>
+      )}
+      {shown && archived.data?.length === 0 && (
+        <p className="py-1 pl-[30px] text-2xs text-faint">None</p>
+      )}
+      {shown && !!archived.data?.length && (
+        <ul className="flex flex-col gap-px pb-1">
+          {archived.data.map((p) => (
+            <li key={p.id}>
+              <Link
+                to="/$project"
+                params={{ project: p.name }}
+                activeOptions={{ exact: true }}
+                activeProps={{ "aria-current": "page" }}
+                className="nav-row py-[5px] pl-[30px] text-faint"
+              >
+                <span className="flex-1 truncate">{p.name}</span>
+                <span className="text-2xs" title={p.archived_at}>
+                  archived {since(p.archived_at)}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

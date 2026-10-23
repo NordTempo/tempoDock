@@ -67,10 +67,14 @@ export type ServiceView = Omit<Schemas["ServiceOverview"], "domains"> & {
   domains: Domain[];
 };
 
+/**
+ * An environment on the overview. `services` are the live ones that
+ * navigation shows; `archived` are kept apart (`dock service list --all`).
+ */
 export type EnvironmentView = Omit<
   Schemas["EnvironmentOverview"],
   "services"
-> & { services: ServiceView[] };
+> & { services: ServiceView[]; archived: ServiceView[] };
 
 export type ProjectOverview = {
   project: Project;
