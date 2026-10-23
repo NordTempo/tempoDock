@@ -421,6 +421,9 @@ function ConsoleNav() {
           </Link>
         );
       })}
+      <NavLink to="/console/backups" icon="history">
+        Backups
+      </NavLink>
       <div className={groupLabel}>Access</div>
       <NavLink to="/console/users" icon="users">
         Users

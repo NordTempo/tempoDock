@@ -282,6 +282,7 @@ export function useCommands(): Command[] {
     ? ([
         ["Platform console", "/console", ""],
         ["Servers", "/console/servers", "dock server list"],
+        ["Backups", "/console/backups", "dock backup status"],
         ["Users", "/console/users", "dock user list"],
         ["Tokens", "/console/tokens", "dock token list"],
         ["Data access policy", "/console/data-access", "dock db policy show"],

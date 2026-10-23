@@ -21,6 +21,7 @@ import { Route as AppProjectCompareRouteImport } from './routes/_app.$project.co
 import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
 import { Route as AppConsoleAlertsRouteImport } from './routes/_app.console.alerts'
 import { Route as AppConsoleAuditRouteImport } from './routes/_app.console.audit'
+import { Route as AppConsoleBackupsRouteImport } from './routes/_app.console.backups'
 import { Route as AppConsoleDataAccessRouteImport } from './routes/_app.console.data-access'
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
 import { Route as AppConsoleTokensRouteImport } from './routes/_app.console.tokens'
@@ -97,6 +98,11 @@ const AppConsoleAlertsRoute = AppConsoleAlertsRouteImport.update({
 const AppConsoleAuditRoute = AppConsoleAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleBackupsRoute = AppConsoleBackupsRouteImport.update({
+  id: '/backups',
+  path: '/backups',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleDataAccessRoute = AppConsoleDataAccessRouteImport.update({
@@ -213,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/$project/compare': typeof AppProjectCompareRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/audit': typeof AppConsoleAuditRoute
+  '/console/backups': typeof AppConsoleBackupsRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/tokens': typeof AppConsoleTokensRoute
@@ -243,6 +250,7 @@ export interface FileRoutesByTo {
   '/$project/compare': typeof AppProjectCompareRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/audit': typeof AppConsoleAuditRoute
+  '/console/backups': typeof AppConsoleBackupsRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/tokens': typeof AppConsoleTokensRoute
@@ -275,6 +283,7 @@ export interface FileRoutesById {
   '/_app/$project/compare': typeof AppProjectCompareRoute
   '/_app/console/alerts': typeof AppConsoleAlertsRoute
   '/_app/console/audit': typeof AppConsoleAuditRoute
+  '/_app/console/backups': typeof AppConsoleBackupsRoute
   '/_app/console/data-access': typeof AppConsoleDataAccessRoute
   '/_app/console/servers': typeof AppConsoleServersRoute
   '/_app/console/tokens': typeof AppConsoleTokensRoute
@@ -308,6 +317,7 @@ export interface FileRouteTypes {
     | '/$project/compare'
     | '/console/alerts'
     | '/console/audit'
+    | '/console/backups'
     | '/console/data-access'
     | '/console/servers'
     | '/console/tokens'
@@ -338,6 +348,7 @@ export interface FileRouteTypes {
     | '/$project/compare'
     | '/console/alerts'
     | '/console/audit'
+    | '/console/backups'
     | '/console/data-access'
     | '/console/servers'
     | '/console/tokens'
@@ -369,6 +380,7 @@ export interface FileRouteTypes {
     | '/_app/$project/compare'
     | '/_app/console/alerts'
     | '/_app/console/audit'
+    | '/_app/console/backups'
     | '/_app/console/data-access'
     | '/_app/console/servers'
     | '/_app/console/tokens'
@@ -481,6 +493,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/console/audit'
       preLoaderRoute: typeof AppConsoleAuditRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/backups': {
+      id: '/_app/console/backups'
+      path: '/backups'
+      fullPath: '/console/backups'
+      preLoaderRoute: typeof AppConsoleBackupsRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/data-access': {
@@ -615,6 +634,7 @@ declare module '@tanstack/react-router' {
 interface AppConsoleRouteChildren {
   AppConsoleAlertsRoute: typeof AppConsoleAlertsRoute
   AppConsoleAuditRoute: typeof AppConsoleAuditRoute
+  AppConsoleBackupsRoute: typeof AppConsoleBackupsRoute
   AppConsoleDataAccessRoute: typeof AppConsoleDataAccessRoute
   AppConsoleServersRoute: typeof AppConsoleServersRoute
   AppConsoleTokensRoute: typeof AppConsoleTokensRoute
@@ -626,6 +646,7 @@ interface AppConsoleRouteChildren {
 const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleAlertsRoute: AppConsoleAlertsRoute,
   AppConsoleAuditRoute: AppConsoleAuditRoute,
+  AppConsoleBackupsRoute: AppConsoleBackupsRoute,
   AppConsoleDataAccessRoute: AppConsoleDataAccessRoute,
   AppConsoleServersRoute: AppConsoleServersRoute,
   AppConsoleTokensRoute: AppConsoleTokensRoute,

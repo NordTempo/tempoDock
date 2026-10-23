@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
+import { backupSettingsKey } from "../features/backups/settings";
 import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
 import { keys, queries } from "./queries";
@@ -318,6 +319,8 @@ function invalidateForAudit(
   // Channels added, removed or alerts resolved (from the CLI too).
   if (kind === "alert") invalidate(["alerts"]);
   if (kind === "data") return invalidateForData(queryClient, audit);
+  // The install's settings and the control plane's own backups.
+  if (kind === "backup" && !audit.project) invalidate(backupSettingsKey);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;
