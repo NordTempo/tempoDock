@@ -16,6 +16,7 @@ import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as AppAccountRouteImport } from './routes/_app.account'
 import { Route as AppAlertsRouteImport } from './routes/_app.alerts'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
+import { Route as AppBackupsRouteImport } from './routes/_app.backups'
 import { Route as AppDataPolicyRouteImport } from './routes/_app.data-policy'
 import { Route as AppServersRouteImport } from './routes/_app.servers'
 import { Route as AppTokensRouteImport } from './routes/_app.tokens'
@@ -69,6 +70,11 @@ const AppAlertsRoute = AppAlertsRouteImport.update({
 const AppAuditRoute = AppAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBackupsRoute = AppBackupsRouteImport.update({
+  id: '/backups',
+  path: '/backups',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDataPolicyRoute = AppDataPolicyRouteImport.update({
@@ -192,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRoute
   '/alerts': typeof AppAlertsRoute
   '/audit': typeof AppAuditRoute
+  '/backups': typeof AppBackupsRoute
   '/data-policy': typeof AppDataPolicyRoute
   '/servers': typeof AppServersRoute
   '/tokens': typeof AppTokensRoute
@@ -219,6 +226,7 @@ export interface FileRoutesByTo {
   '/account': typeof AppAccountRoute
   '/alerts': typeof AppAlertsRoute
   '/audit': typeof AppAuditRoute
+  '/backups': typeof AppBackupsRoute
   '/data-policy': typeof AppDataPolicyRoute
   '/servers': typeof AppServersRoute
   '/tokens': typeof AppTokensRoute
@@ -248,6 +256,7 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRoute
   '/_app/alerts': typeof AppAlertsRoute
   '/_app/audit': typeof AppAuditRoute
+  '/_app/backups': typeof AppBackupsRoute
   '/_app/data-policy': typeof AppDataPolicyRoute
   '/_app/servers': typeof AppServersRoute
   '/_app/tokens': typeof AppTokensRoute
@@ -279,6 +288,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/alerts'
     | '/audit'
+    | '/backups'
     | '/data-policy'
     | '/servers'
     | '/tokens'
@@ -306,6 +316,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/alerts'
     | '/audit'
+    | '/backups'
     | '/data-policy'
     | '/servers'
     | '/tokens'
@@ -334,6 +345,7 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/_app/alerts'
     | '/_app/audit'
+    | '/_app/backups'
     | '/_app/data-policy'
     | '/_app/servers'
     | '/_app/tokens'
@@ -412,6 +424,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/audit'
       preLoaderRoute: typeof AppAuditRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/backups': {
+      id: '/_app/backups'
+      path: '/backups'
+      fullPath: '/backups'
+      preLoaderRoute: typeof AppBackupsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/data-policy': {
@@ -603,6 +622,7 @@ interface AppRouteChildren {
   AppAccountRoute: typeof AppAccountRoute
   AppAlertsRoute: typeof AppAlertsRoute
   AppAuditRoute: typeof AppAuditRoute
+  AppBackupsRoute: typeof AppBackupsRoute
   AppDataPolicyRoute: typeof AppDataPolicyRoute
   AppServersRoute: typeof AppServersRoute
   AppTokensRoute: typeof AppTokensRoute
@@ -620,6 +640,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAccountRoute: AppAccountRoute,
   AppAlertsRoute: AppAlertsRoute,
   AppAuditRoute: AppAuditRoute,
+  AppBackupsRoute: AppBackupsRoute,
   AppDataPolicyRoute: AppDataPolicyRoute,
   AppServersRoute: AppServersRoute,
   AppTokensRoute: AppTokensRoute,

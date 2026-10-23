@@ -317,6 +317,8 @@ function invalidateForAudit(
   if (kind === "user") invalidate(keys.users);
   // Channels added, removed or alerts resolved (from the CLI too).
   if (kind === "alert") invalidate(["alerts"]);
+  // Backup settings and control plane runs (features/cpbackup).
+  if (kind === "backup" && !audit.project) invalidate(["backup"]);
   if (kind === "data") return invalidateForData(queryClient, audit);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);

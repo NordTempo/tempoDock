@@ -39,6 +39,7 @@ const modes: Partial<Record<keyof FileRoutesById, ShellMode>> = {
   "/_app/audit": "settings",
   "/_app/servers": "console",
   "/_app/servers_/$server": "console",
+  "/_app/backups": "console",
   "/_app/account": "settings",
 };
 
@@ -168,7 +169,7 @@ function AppNav() {
         >
           <Icon name="console" size={13} />
           <span className="flex-1">Platform console</span>
-          <span className="text-2xs text-faint">servers</span>
+          <span className="text-2xs text-faint">servers, backups</span>
         </Link>
       )}
     </>
@@ -416,7 +417,7 @@ function SettingsNav() {
   );
 }
 
-/** The operator side: servers, with each one's link status. */
+/** The operator side: servers with each one's link status, and backups. */
 function ConsoleNav() {
   const servers = useServers();
   const admin = useIsAdmin();
@@ -452,6 +453,14 @@ function ConsoleNav() {
           </Link>
         ) : null;
       })}
+      {admin && (
+        <>
+          <div className={groupLabel}>System</div>
+          <NavLink to="/backups" icon="database">
+            Backups
+          </NavLink>
+        </>
+      )}
       <div className="min-h-6 flex-1" />
       <Me />
     </>
