@@ -41,6 +41,8 @@ const actions = [
   ["service.", "services"],
   ["token.", "tokens"],
   ["user.", "users and logins"],
+  ["backup.", "backups"],
+  ["data.", "data access"],
 ] as const;
 
 function toCsv(events: AuditEvent[]) {
