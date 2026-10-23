@@ -416,19 +416,13 @@
     color: var(--g-add);
   }
 
-  /* Hover-revealed CLI equivalent under an action button (Dock only). */
+  /* Viewport-positioned CLI hints share their behavior with Dock's kit. */
   .g-act {
-    position: relative;
     display: inline-flex;
   }
 
   .g-act > .cli {
-    position: absolute;
-    left: 0;
-    top: 100%;
-    margin-top: 4px;
-    z-index: 10;
-    white-space: nowrap;
+    white-space: normal;
     font-family: var(--g-mono);
     font-size: 11px;
     color: var(--g-mut);
@@ -436,12 +430,6 @@
     border: 1px solid var(--g-edge);
     border-radius: 6px;
     padding: 2px 6px;
-    visibility: hidden;
-  }
-
-  .g-act:hover > .cli,
-  .g-act:focus-within > .cli {
-    visibility: visible;
   }
 
   /* Initials in a circle (people); square for agents. */

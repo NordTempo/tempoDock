@@ -457,28 +457,17 @@
 
   /* The CLI equivalent of an action button, shown under it on hover or focus. */
   .act {
-    position: relative;
     display: inline-flex;
   }
 
   .act > .cli {
-    position: absolute;
-    left: 0;
-    top: calc(100% + 4px);
-    z-index: 20;
     padding: 2px 6px;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-ctl);
     background: var(--color-side);
-    white-space: nowrap;
+    white-space: normal;
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--color-faint);
-    visibility: hidden;
-  }
-
-  .act:hover > .cli,
-  .act:focus-within > .cli {
-    visibility: visible;
   }
 }

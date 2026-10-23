@@ -1,4 +1,5 @@
 import { type ComponentProps, type ReactNode, useState } from "react";
+import { CliHint } from "../../ui/CliHint";
 import "./g.css";
 
 // Style G's small parts (./g.css), for the data panel in Dock and for
@@ -43,10 +44,9 @@ export function Btn({
 export function Act({ cli, ...props }: BtnProps & { cli?: string }) {
   if (cli === undefined) return <Btn {...props} />;
   return (
-    <span className="g-act">
+    <CliHint cli={cli} className="g-act">
       <Btn {...props} />
-      <span className="cli">{cli}</span>
-    </span>
+    </CliHint>
   );
 }
 
