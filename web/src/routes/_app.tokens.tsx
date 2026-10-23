@@ -17,11 +17,13 @@ import {
   tokenDataText,
 } from "../features/data/TokenData";
 import type { DataTokenAccess } from "../features/data/types";
-import { isoDay, plural, since } from "../ui/format";
+import { ago, isoDay, plural } from "../ui/format";
 import {
+  Act,
   Actor,
   actorKind,
   Button,
+  Check,
   CopyButton,
   ErrorText,
   Page,
@@ -77,6 +79,7 @@ function Tokens() {
             export DOCK_TOKEN=… then: dock deploy
             {created.project ? ` -p ${created.project}` : ""}
           </p>
+          <McpConfig secret={created.secret} />
           <div>
             <Button small onClick={() => setCreated(undefined)}>
               I've saved it
@@ -112,7 +115,92 @@ function Tokens() {
       </section>
 
       <CreateToken onCreated={setCreated} />
+      {!created && (
+        <section
+          aria-labelledby="mcp"
+          className="flex max-w-[760px] flex-col gap-2.5"
+        >
+          <SectionHead id="mcp">Connect an agent</SectionHead>
+          <McpConfig />
+        </section>
+      )}
     </Page>
+  );
+}
+
+/**
+ * What `dock mcp` prints: the MCP endpoint and how Claude Code or another
+ * MCP client reaches it with a token. Without `secret` the token is
+ * ${DOCK_TOKEN}, which Claude Code expands, so the config can be
+ * committed; with it (a token just created) it can be written in, like
+ * `dock mcp --show-token`.
+ */
+function McpConfig({ secret }: { secret?: string }) {
+  const [name, setName] = useState("dock");
+  const [inline, setInline] = useState(false);
+  const url = `${window.location.origin}/api/v1/mcp`;
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal placeholder, Claude Code expands it from the environment
+  const token = secret && inline ? secret : "${DOCK_TOKEN}";
+  const header = `Authorization: Bearer ${token}`;
+  const server = name.trim() || "dock";
+  const claude = `claude mcp add --transport http --scope project ${server} ${url} --header '${header}'`;
+  const json = JSON.stringify(
+    {
+      mcpServers: {
+        [server]: {
+          type: "http",
+          url,
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      },
+    },
+    null,
+    2,
+  );
+  const block = (label: string, text: string) => (
+    <div className="flex flex-col gap-1">
+      <span className="flex items-center gap-2 text-xs text-mut">
+        {label} <CopyButton text={text} />
+      </span>
+      <pre className="overflow-x-auto rounded-ctl border border-line bg-side px-3 py-2 font-mono text-xs">
+        {text}
+      </pre>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <label className="flex items-center gap-2">
+          <span className="text-mut">Name in the config</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="field w-32 py-0.5 font-mono text-xs"
+          />
+        </label>
+        {secret && (
+          <Check
+            label="write this token in (don't commit it)"
+            checked={inline}
+            onChange={setInline}
+          />
+        )}
+        <span className="font-mono text-2xs text-faint">
+          dock mcp
+          {name.trim() && name.trim() !== "dock" ? ` --name ${server}` : ""}
+          {secret && inline ? " --show-token" : ""}
+        </span>
+      </div>
+      {block("Claude Code, writes .mcp.json", claude)}
+      {block(".mcp.json, or another client's mcp.json", json)}
+      {!(secret && inline) && (
+        <p className="text-xs text-mut">
+          Set <span className="font-mono">DOCK_TOKEN</span> to a scoped token
+          for the agent, never your own login. The agent gets the token's
+          permissions.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -149,7 +237,7 @@ function TokenRow({ token }: { token: Token }) {
           {tokenDataText(token.data)}
         </td>
         <td className={`py-2.5 ${token.last_used_at ? "" : "text-mut"}`}>
-          {token.last_used_at ? `${since(token.last_used_at)} ago` : "never"}
+          {token.last_used_at ? ago(token.last_used_at) : "never"}
         </td>
         <td className="py-2.5 font-mono">
           {token.revoked_at ? (
@@ -175,14 +263,15 @@ function TokenRow({ token }: { token: Token }) {
             {!token.revoked_at &&
               (confirming ? (
                 <>
-                  <Button
+                  <Act
                     small
                     danger
+                    cli={`dock token revoke ${token.id}`}
                     disabled={revoke.isPending}
                     onClick={() => revoke.mutate(token.id)}
                   >
                     Revoke now
-                  </Button>
+                  </Act>
                   <Button small onClick={() => setConfirming(false)}>
                     Cancel
                   </Button>
@@ -233,8 +322,10 @@ const scopes: Array<{ scope: Scope; note: string }> = [
 const expiries = [
   { days: 90, label: "in 90 days" },
   { days: 30, label: "in 30 days" },
+  { days: 7, label: "in 7 days" },
   { days: 365, label: "in a year" },
   { days: 0, label: "never" },
+  { days: -1, label: "in … days" },
 ];
 
 function CreateToken({
@@ -254,6 +345,9 @@ function CreateToken({
   const [project, setProject] = useState("");
   const [environment, setEnvironment] = useState("");
   const [days, setDays] = useState(90);
+  // Any number of days when "in … days" is picked (days -1).
+  const [customDays, setCustomDays] = useState("14");
+  const expires = days < 0 ? Math.max(0, Math.floor(Number(customDays))) : days;
   const [data, setData] = useState<DataTokenAccess>(null);
   const environments =
     tree
@@ -263,6 +357,7 @@ function CreateToken({
     `dock token create ${name || "<name>"} --scope ${scope}`,
     project && `-p ${project}`,
     project && environment && `-e ${environment}`,
+    expires > 0 && `--expires ${expires}d`,
     tokenDataFlags(data),
   ]
     .filter(Boolean)
@@ -286,7 +381,7 @@ function CreateToken({
               scope,
               ...(project && { project }),
               ...(project && environment && { environment }),
-              ...(days > 0 && { expires_in_days: days }),
+              ...(expires > 0 && { expires_in_days: expires }),
               ...(data && { data }),
             },
             {
@@ -374,6 +469,16 @@ function CreateToken({
                 </option>
               ))}
             </select>
+            {days < 0 && (
+              <input
+                type="number"
+                min={1}
+                aria-label="Expires in days"
+                value={customDays}
+                onChange={(e) => setCustomDays(e.target.value)}
+                className="field py-[5px] font-mono"
+              />
+            )}
           </label>
         </div>
         <TokenDataFields value={data} onChange={setData} cap={tokenCap} />

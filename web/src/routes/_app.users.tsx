@@ -10,6 +10,7 @@ import { queries, useIsAdmin, useSession, useUsers } from "../data/queries";
 import type { Scope, User } from "../data/types";
 import { day, plural } from "../ui/format";
 import {
+  Act,
   Button,
   Confirm,
   CopyButton,
@@ -188,11 +189,14 @@ const UserRow = memo(function UserRow({
   const remove = useDeleteUser();
   const resetPassword = useResetPassword();
   const [asking, setAsking] = useState<Asking>(null);
+  // A password to set instead of a generated one (--password).
+  const [password, setPassword] = useState("");
   const disabled = !!u.disabled_at;
   const close = () => {
     setDisabled.reset();
     remove.reset();
     resetPassword.reset();
+    setPassword("");
     setAsking(null);
   };
   const sessions = u.sessions
@@ -242,24 +246,39 @@ const UserRow = memo(function UserRow({
     reset: (
       <Confirm
         action="Reset password"
-        cli={`dock user reset-password ${u.email}`}
+        cli={`dock user reset-password ${u.email}${password ? " --password …" : ""}`}
         pending={resetPassword.isPending}
         error={resetPassword.error}
         onConfirm={() =>
-          resetPassword.mutate(u.id, {
-            onSuccess: (r) => {
-              close();
-              if (r.password) onReset({ email: u.email, password: r.password });
+          resetPassword.mutate(
+            { id: u.id, password },
+            {
+              onSuccess: (r) => {
+                close();
+                if (r.password)
+                  onReset({ email: u.email, password: r.password });
+              },
             },
-          })
+          )
         }
         onCancel={close}
       >
         Reset the password of <b className="font-semibold">{u.email}</b>?{" "}
         <span className="text-mut">
-          A new one is generated and shown once. {sessions} Their dock login
-          tokens are revoked.
+          {password
+            ? "They sign in with the one typed here."
+            : "A new one is generated and shown once."}{" "}
+          {sessions} Their dock login tokens are revoked.
         </span>
+        <input
+          type="password"
+          aria-label="New password, optional"
+          placeholder="or type one, 12+ characters"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="field mt-2 block w-64 py-[5px]"
+        />
       </Confirm>
     ),
   };
@@ -442,13 +461,14 @@ function AddUser() {
           <option key={r}>{r}</option>
         ))}
       </select>
-      <button
+      <Act
+        primary
         type="submit"
-        className="btn pri"
+        cli={`dock user create --email ${email.trim() || "<email>"} --name ${JSON.stringify(name.trim() || "<name>")} --role ${role}`}
         disabled={create.isPending || !email || !name || !password}
       >
         Add member
-      </button>
+      </Act>
       <ErrorText error={create.error} />
     </form>
   );

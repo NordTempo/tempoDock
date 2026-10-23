@@ -1,6 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { api, list } from "../../api/client";
 import { since } from "../../ui/format";
 import {
+  Act,
   Button,
   CopyButton,
   ErrorText,
@@ -28,14 +31,31 @@ import {
 // The Alerts page: open alerts (worst first), recent history, and the
 // channels alerts are sent to. Admins only; the route says so to others.
 
-/** Resolved alerts shown under the open ones. */
+/** Resolved alerts shown under the open ones, and on request. */
 const HISTORY = 50;
+const MAX = 500;
+
+/** Up to MAX alerts (`dock alerts --all --limit 500`), fetched on request. */
+const useOlderAlerts = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["alerts", "all", MAX],
+    queryFn: () =>
+      list(
+        api.GET("/api/v1/alerts", {
+          params: { query: { all: true, limit: MAX } },
+        }),
+      ),
+    enabled,
+  });
 
 export function AlertsPage() {
   const open = useOpenAlerts();
-  const resolved = useAllAlerts()
+  const recent = useAllAlerts();
+  const [more, setMore] = useState(false);
+  const older = useOlderAlerts(more);
+  const resolved = (older.data ?? recent)
     .filter((a) => a.resolved_at)
-    .slice(0, HISTORY);
+    .slice(0, more ? MAX : HISTORY);
   const critical = open.filter((a) => a.severity === "critical").length;
   return (
     <Page>
@@ -59,7 +79,22 @@ export function AlertsPage() {
         </section>
       )}
       <section aria-labelledby="history">
-        <SectionHead id="history" aside={`last ${HISTORY}`}>
+        <SectionHead
+          id="history"
+          aside={`last ${more ? MAX : HISTORY}`}
+          right={
+            !more &&
+            resolved.length === HISTORY && (
+              <Act
+                small
+                cli={`dock alerts --all --limit ${MAX}`}
+                onClick={() => setMore(true)}
+              >
+                Show up to {MAX}
+              </Act>
+            )
+          }
+        >
           Resolved
         </SectionHead>
         {resolved.length > 0 ? (
@@ -67,6 +102,7 @@ export function AlertsPage() {
         ) : (
           <p className="py-2 text-mut">None yet.</p>
         )}
+        <ErrorText error={older.error} />
       </section>
       <Channels />
     </Page>
@@ -138,14 +174,15 @@ function AlertRow({
         {resolvable && (
           <span className="inline-flex items-center gap-3">
             <ErrorText error={resolve.error} />
-            <Button
+            <Act
               small
+              cli={`dock alerts resolve ${a.id}`}
               disabled={resolve.isPending}
               title="Close it by hand; it opens again if the condition is still there"
               onClick={() => resolve.mutate(a.id)}
             >
               Resolve
-            </Button>
+            </Act>
           </span>
         )}
       </td>
@@ -247,23 +284,25 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
             </span>
           )}
           <ErrorText error={test.error ?? remove.error} />
-          <Button
+          <Act
             small
+            cli={`dock alerts channel test ${ch.name}`}
             disabled={test.isPending}
             onClick={() => test.mutate(ch.name)}
           >
             Send test
-          </Button>
+          </Act>
           {confirming ? (
             <>
-              <Button
+              <Act
                 small
                 danger
+                cli={`dock alerts channel remove ${ch.name}`}
                 disabled={remove.isPending}
                 onClick={() => remove.mutate(ch.name)}
               >
                 Remove now
-              </Button>
+              </Act>
               <Button small onClick={() => setConfirming(false)}>
                 Cancel
               </Button>
@@ -292,6 +331,8 @@ function AddChannel({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<Kind>("slack");
   const [url, setUrl] = useState("");
+  // A webhook's own signing secret; one is generated when left empty.
+  const [signing, setSigning] = useState("");
   const [severity, setSeverity] = useState<Severity>("warning");
   const [hours, setHours] = useState("4");
   const [smtp, setSmtp] = useState({
@@ -335,8 +376,17 @@ function AddChannel({ onClose }: { onClose: () => void }) {
   const cli = [
     `dock alerts channel add ${name.trim() || "<name>"}`,
     kind === "email"
-      ? "--email <to> --from <address> --smtp-host <host>"
+      ? [
+          `--email ${smtp.to.replace(/\s/g, "") || "<to>"}`,
+          `--from ${smtp.from.trim() || "<address>"}`,
+          `--smtp-host ${smtp.host.trim() || "<host>"}`,
+          smtp.port !== "587" && `--smtp-port ${smtp.port}`,
+          smtp.username && `--smtp-user ${smtp.username} --smtp-password-stdin`,
+        ]
+          .filter(Boolean)
+          .join(" ")
       : `--${kind} -`,
+    kind === "webhook" && signing && "--secret …",
     severity === "critical" && "--min-severity critical",
     hours !== "4" && `--renotify ${Number(hours) || 0}h`,
   ]
@@ -371,6 +421,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
           };
         } else {
           input.url = url.trim();
+          if (kind === "webhook" && signing) input.secret = signing;
         }
         create.mutate(input, {
           onSuccess: (created) =>
@@ -472,16 +523,33 @@ function AddChannel({ onClose }: { onClose: () => void }) {
           />
         </label>
       )}
+      {kind === "webhook" && (
+        <label className="flex flex-col gap-1.5">
+          <span>
+            Signing secret{" "}
+            <span className="text-mut">
+              optional, generated and shown once when empty
+            </span>
+          </span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={signing}
+            onChange={(e) => setSigning(e.target.value)}
+            className={`${field} font-mono`}
+          />
+        </label>
+      )}
       <div className="flex flex-wrap items-center gap-2.5">
-        <Button
+        <Act
           primary
           type="submit"
+          cli={cli}
           disabled={create.isPending || !name.trim()}
         >
           Add channel
-        </Button>
+        </Act>
         <Button onClick={onClose}>Cancel</Button>
-        <span className="font-mono text-2xs text-mut">{cli}</span>
         <ErrorText error={create.error} />
       </div>
     </form>
