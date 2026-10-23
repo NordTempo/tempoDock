@@ -278,6 +278,13 @@ type OrgVariable struct {
 	UpdatedBy string
 }
 
+type PlatformSetting struct {
+	ID         int64
+	PublicHost string
+	UpdatedBy  string
+	UpdatedAt  time.Time
+}
+
 type Project struct {
 	ID         int64
 	OrgID      int64

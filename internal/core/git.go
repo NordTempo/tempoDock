@@ -1,23 +1,20 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
-	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/httpkit"
-	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -159,44 +156,13 @@ func (c *Core) toGitConnection(conn store.GitConnection) apitypes.GitConnection 
 }
 
 // hookURL is the webhook's public URL, or "" without [hooks] public_host.
-// It is served by the control plane's own Caddy (withHookRoute).
+// It is served by the control plane's own Caddy (withControlRoutes).
 func (c *Core) hookURL(hookID string) string {
 	host := c.cfg.Hooks.PublicHost
 	if host == "" {
 		return ""
 	}
-	scheme, port := "https", c.cfg.Caddy.HTTPSPort
-	switch {
-	case c.cfg.Ingress.Mode == config.IngressCloudflareTunnel:
-		port = 443
-	case c.cfg.Caddy.DisableTLS:
-		scheme, port = "http", c.cfg.Caddy.HTTPPort
-	}
-	if (scheme == "https" && port != 443) || (scheme == "http" && port != 80) {
-		host = net.JoinHostPort(host, strconv.Itoa(port))
-	}
-	return scheme + "://" + host + gitHookPath + hookID
-}
-
-// withHookRoute adds the webhook route to the control plane's routes: on
-// [hooks] public_host, only paths under gitHookPath, proxied to the
-// loopback hooks listener, which serves nothing else. A domain with the
-// same hostname (added before public_host was set) keeps it, and the
-// route is left out.
-func (c *Core) withHookRoute(serverID int64, routes []node.Route) []node.Route {
-	host := c.cfg.Hooks.PublicHost
-	if host == "" || serverID != c.local.ID {
-		return routes
-	}
-	for _, r := range routes {
-		for _, h := range r.Hostnames {
-			if h == host {
-				c.log.Warn("webhook hostname is also a domain; webhooks are not routed", "host", host)
-				return routes
-			}
-		}
-	}
-	return append(routes, node.Route{Hostnames: []string{host}, Upstream: c.cfg.Hooks.Listen, PathPrefix: gitHookPath})
+	return c.controlURL(host) + gitHookPath + hookID
 }
 
 // GitConnect connects a service to a GitHub repository and branch, or
@@ -614,8 +580,11 @@ func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Re
 		sha = conn.PendingSha
 	}
 	st := githubStatus{State: state, Description: desc, Context: "dock/" + ss.String()}
-	if c.cfg.Hooks.UIURL != "" && rel.Number != 0 {
-		st.TargetURL = fmt.Sprintf("%s/%s/releases/%d", c.cfg.Hooks.UIURL, ss.String(), rel.Number)
+	// The release's page: on [hooks] ui_url, else Dock's public address.
+	if ui := cmp.Or(c.cfg.Hooks.UIURL, c.publicURL()); ui != "" && rel.Number != 0 {
+		if org, err := c.store.GetOrg(c.ctx, ss.project.OrgID); err == nil {
+			st.TargetURL = fmt.Sprintf("%s/%s/%s/releases/%d", ui, org.Slug, ss.String(), rel.Number)
+		}
 	}
 	id, done := ss.svc.ID, make(chan struct{})
 	c.git.statusMu.Lock()

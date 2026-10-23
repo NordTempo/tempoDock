@@ -718,6 +718,9 @@ function ConsoleNav() {
         Audit
       </NavLink>
       <div className={groupLabel}>System</div>
+      <NavLink to="/console/address" icon="globe">
+        Address
+      </NavLink>
       <NavLink to="/console/updates" icon="upload">
         <span className="flex-1">Updates</span>
         <UpdateBadge />

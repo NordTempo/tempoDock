@@ -593,3 +593,35 @@ func runCaddy(t *testing.T, bin, dir string, opts Options) (cmd *exec.Cmd, portT
 	})
 	return cmd, false
 }
+
+// TestIntegrationClientIPHeader checks that Caddy accepts the header edit
+// and replaces a client's own value with its address.
+func TestIntegrationClientIPHeader(t *testing.T) {
+	tc := startCaddy(t, "", true)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, r.Header.Get("X-Dock-Client-Ip"))
+	}))
+	t.Cleanup(s.Close)
+	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
+		{Hostnames: []string{"dock.test"}, Upstream: strings.TrimPrefix(s.URL, "http://"), ClientIPHeader: "X-Dock-Client-Ip"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, tc.url("http", "dock.test", "/"), nil)
+	req.Header.Set("X-Dock-Client-Ip", "203.0.113.66")
+	var resp *http.Response
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if resp, err = tc.client.Do(req); err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if b, _ := io.ReadAll(resp.Body); string(b) != "127.0.0.1" {
+		t.Fatalf("upstream saw %q, want the client's 127.0.0.1", b)
+	}
+}

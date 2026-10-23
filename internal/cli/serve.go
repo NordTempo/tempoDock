@@ -62,14 +62,17 @@ func openState(ctx context.Context, cfg config.Config) (*store.Store, *secrets.B
 	return st, box, nil
 }
 
-// serve runs the control plane until ctx ends: the API and UI, the
-// loopback-only internal endpoints and, with [node] listen set, the port
-// nodes connect to. It holds the data dir's lock while it runs, and
+// serve runs the control plane until ctx ends: the API and UI (on
+// [listen], and on [public_listen] for Caddy), the loopback-only internal
+// endpoints and, with [node] listen set, the port nodes connect to. It holds the data dir's lock while it runs, and
 // refuses to start a control plane that moved to another server (ADR
 // 0021). configPath is archived by the control plane's own backups.
 func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := checkLoopback(cfg.InternalListen); err != nil {
+	if err := checkLoopback("internal_listen", cfg.InternalListen); err != nil {
+		return err
+	}
+	if err := checkLoopback("public_listen", cfg.PublicListen); err != nil {
 		return err
 	}
 	if err := checkNodeListen(cfg.Node.Listen); err != nil {
@@ -126,12 +129,12 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	if signer != nil {
 		registryToken = signer.Handler()
 	}
+	handler := api.New(c, api.Options{MaxUploadBytes: int64(cfg.MaxUploadMB) << 20, Logger: log})
 	servers := []*http.Server{
-		{
-			Addr:              cfg.Listen,
-			Handler:           api.New(c, api.Options{MaxUploadBytes: int64(cfg.MaxUploadMB) << 20, Logger: log}),
-			ReadHeaderTimeout: 10 * time.Second,
-		},
+		{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second},
+		// Dock's public address, through Caddy (ADR 0029). Served whether
+		// or not one is set, so setting one needs no restart.
+		{Addr: cfg.PublicListen, Handler: api.Public(handler), ReadHeaderTimeout: 10 * time.Second},
 		{
 			Addr:              cfg.InternalListen,
 			Handler:           api.Internal(c, log, registryToken),
@@ -156,7 +159,7 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 		}
 		go func() { errc <- hub.Serve(ctx, ln) }()
 	}
-	log.Info("dock daemon listening", "version", version.Version, "api", cfg.Listen, "internal", cfg.InternalListen,
+	log.Info("dock daemon listening", "version", version.Version, "api", cfg.Listen, "internal", cfg.InternalListen, "public", cfg.PublicListen,
 		"nodes", cfg.Node.Listen, "link_key", linkID.Fingerprint(), "data", cfg.DataDir)
 
 	select {
@@ -208,17 +211,18 @@ func startCore(ctx context.Context, opts core.Options, linkID remote.Identity) (
 	return c, hub, nil
 }
 
-// checkLoopback refuses to serve internal endpoints anywhere but loopback.
-func checkLoopback(addr string) error {
+// checkLoopback refuses to serve internal endpoints, or the listener
+// only Caddy may reach, anywhere but loopback. key names the setting.
+func checkLoopback(key, addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return fmt.Errorf("internal_listen %q: %w", addr, err)
+		return fmt.Errorf("%s %q: %w", key, addr, err)
 	}
 	if host == "localhost" {
 		return nil
 	}
 	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("internal_listen %q must be a loopback address (127.0.0.1 or ::1)", addr)
+		return fmt.Errorf("%s %q must be a loopback address (127.0.0.1 or ::1)", key, addr)
 	}
 	return nil
 }

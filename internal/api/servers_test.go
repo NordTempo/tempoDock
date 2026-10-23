@@ -51,6 +51,9 @@ func TestPlatformEndpointsNeedOperator(t *testing.T) {
 		{"POST", user + "/disable", nil, 200},
 		{"POST", user + "/enable", nil, 200},
 		{"DELETE", user, nil, 204},
+		{"GET", "/api/v1/address", nil, 200},
+		{"PUT", "/api/v1/address", apitypes.SetAddressRequest{Hostname: "dock.example.com"}, 200},
+		{"DELETE", "/api/v1/address", nil, 200},
 	}
 	refused := func(token, method, path string, body any, detail string) {
 		t.Helper()

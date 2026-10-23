@@ -163,7 +163,8 @@ Details in [ADR 0015](decisions/0015-server-pools-and-placement.md).
 - Services with a domain publish their port on `127.0.0.1` only. Caddy proxies
   to it, so app containers are never directly exposed.
 - Public firewall: 22, 80, 443. The daemon API and UI listen on Tailscale by
-  default.
+  default. An operator can also give Dock a public address: Caddy serves it
+  over HTTPS and proxies it to a loopback listener ([ADR 0029](decisions/0029-public-address.md)).
 
 ## Domains
 

@@ -148,6 +148,9 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 	if host == c.cfg.Hooks.PublicHost {
 		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is this server's webhook hostname ([hooks] public_host); use another hostname", host)
 	}
+	if host == c.publicHost() {
+		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is Dock's own address (`dock address`); use another hostname", host)
+	}
 	d, err := c.store.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: ss.svc.ID, Generated: generated, RedirectTo: redirect})
 	if store.IsUnique(err) {
 		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is already in use by a service; a hostname can belong to only one service", host)
@@ -232,8 +235,8 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	if err != nil {
 		return false, nil
 	}
-	if host == c.cfg.Hooks.PublicHost {
-		return true, nil // the webhook route (ADR 0018)
+	if host == c.cfg.Hooks.PublicHost || host == c.publicHost() {
+		return true, nil // the webhook route (ADR 0018), Dock's address (ADR 0029)
 	}
 	d, err := c.store.GetDomainByHostname(ctx, host)
 	if store.IsNotFound(err) {

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -146,6 +147,8 @@ type Core struct {
 	git gitState
 	// updates is updating Dock (update.go).
 	updates updates
+	// address is Dock's public address, "" for none (address.go).
+	address atomic.Pointer[string]
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -203,6 +206,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		return nil, fmt.Errorf("read install ID: %w", err)
 	}
 	if err := c.registerLocalServer(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.loadPublicHost(ctx); err != nil {
 		return nil, err
 	}
 	return c, nil

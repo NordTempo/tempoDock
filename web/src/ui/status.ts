@@ -144,7 +144,8 @@ const domainStates: Record<Domain["status"], State> = {
   error: { tone: "fail", glyph: "✕", label: "error" },
 };
 
-export const domainState = (d: Domain) => domainStates[d.status];
+export const domainState = (d: Pick<Domain, "status">) =>
+  domainStates[d.status];
 
 /** "sha256:4be1c0ffee…" as "4be1c0f". */
 export const shortId = (id: string) => id.replace(/^sha256:/, "").slice(0, 7);

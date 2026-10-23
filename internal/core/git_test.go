@@ -314,8 +314,8 @@ func TestGitWebhookDeploys(t *testing.T) {
 	statuses, auth, tarballs := gh.seen()
 	ctx := "dock/shop/production/web"
 	want := []string{
-		"aaaaaaa pending " + ctx + " https://dock.example.com/shop/production/web/releases/1",
-		"aaaaaaa success " + ctx + " https://dock.example.com/shop/production/web/releases/1",
+		"aaaaaaa pending " + ctx + " https://dock.example.com/test/shop/production/web/releases/1",
+		"aaaaaaa success " + ctx + " https://dock.example.com/test/shop/production/web/releases/1",
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for !slices.Equal(statuses, want) && time.Now().Before(deadline) {

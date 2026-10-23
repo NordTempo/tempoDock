@@ -40,7 +40,8 @@ func TestWireRoundTrip(t *testing.T) {
 		toWireEvent, wireEvent.node)
 	check(t, node.Route{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", RedirectTo: "b.example.com", PathPrefix: "/p/"},
 		func(r node.Route) []wireRoute { return toWireRoutes([]node.Route{r}) },
-		func(w []wireRoute) node.Route { return fromWireRoutes(w)[0] })
+		func(w []wireRoute) node.Route { return fromWireRoutes(w)[0] },
+		"ClientIPHeader") // only on the control plane's own server (ADR 0029)
 	check(t, node.DomainCheck{ExpectedIPs: []string{"1.2.3.4"}, ResolvedIPs: []string{"5.6.7.8"}, DNSOK: true, CertificateOK: true, Error: "x"},
 		toWireDomainCheck, wireDomainCheck.node)
 	check(t, node.HostStats{

@@ -108,6 +108,9 @@ type CreatedInvite struct {
 	Invite Invite `json:"invite"`
 	// Code is the secret in the invite link, /invite/<code> on the web UI.
 	Code string `json:"code"`
+	// URL is the invite link on Dock's public address (ADR 0029); empty
+	// without one, when clients build it from the address they use.
+	URL string `json:"url,omitempty"`
 }
 
 // InviteInfo is an invite as the person invited sees it before accepting.

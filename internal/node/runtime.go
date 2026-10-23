@@ -496,6 +496,10 @@ type Route struct {
 	// "/hooks/github/"); other paths on the hostnames get the 404 page.
 	// The control plane's webhook route uses it (ADR 0018).
 	PathPrefix string
+	// ClientIPHeader, when set, is a request header Caddy sets to the
+	// client's address as it determined it, replacing any the client
+	// sent. Dock's public address uses it (ADR 0029). Local server only.
+	ClientIPHeader string
 }
 
 // DomainCheck is the observed state of one hostname on this server.

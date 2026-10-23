@@ -288,6 +288,7 @@ and `DOCK_TOKEN`.
       --project shop --environment staging --service web --json
 ```
 
-The runner must reach the API: join it to the tailnet (e.g.
-`tailscale/github-action`) rather than exposing the API port.
+The runner must reach the API: use Dock's [public address](install.md#public-address)
+as `DOCK_URL`, or join the runner to the tailnet (e.g.
+`tailscale/github-action`). Never expose the API port itself.
 <!-- verify: how the server authenticates to private registries (not implemented as of 56c9cfa). -->

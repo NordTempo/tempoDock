@@ -267,3 +267,16 @@ func TestRenderPathPrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderClientIPHeader(t *testing.T) {
+	cfg := render(t, testOptions(), []node.Route{
+		{Hostnames: []string{"dock.example.com"}, Upstream: "127.0.0.1:7073", ClientIPHeader: "X-Dock-Client-Ip"},
+	})
+	hs := cfg.Apps.HTTP.Servers["https"].Routes[0].Handle
+	if len(hs) != 2 || hs[0].Handler != "headers" || hs[0].Request == nil || hs[0].Response != nil || hs[1].Handler != "reverse_proxy" {
+		t.Fatalf("handlers = %+v", hs)
+	}
+	if got := hs[0].Request.Set["X-Dock-Client-Ip"]; len(got) != 1 || got[0] != "{http.vars.client_ip}" {
+		t.Fatalf("set = %v", hs[0].Request.Set)
+	}
+}

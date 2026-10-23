@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -141,7 +142,8 @@ run ` + "`dock org join <link>`" + `.`,
 			if err != nil {
 				return err
 			}
-			v := inviteView{created, strings.TrimRight(s.server.Server, "/") + "/invite/" + created.Code}
+			link := cmp.Or(created.URL, strings.TrimRight(s.server.Server, "/")+"/invite/"+created.Code)
+			v := inviteView{created, link}
 			return g.io.Print(v, func() error {
 				g.io.Successf("Invited %s as %s", created.Invite.Email, created.Invite.Role)
 				_, err := fmt.Fprintln(g.io.Out, v.URL)
