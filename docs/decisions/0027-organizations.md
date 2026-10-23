@@ -91,9 +91,12 @@ SSE (`EventSource` can't set headers) and MCP. Vercel's API does the same
 with `teamId`.
 
 The CLI gets `--org`, `dock org list | create | use`, and records the org
-in `dock link`. The web UI sends the selected org on every request; the
-org switcher and putting the org in the UI's URLs come with the org UI
-(phase 2), designed with mocks first.
+in `dock link`. The web UI puts the org in its URLs (`/<org>/<project>/...`;
+`/console`, `/account` and `/login` stay outside any org, so org slugs
+can't take those names) and sends it as the `Dock-Org` header, since
+adding a parameter means rebuilding the browser's request, which loses
+its body. The switcher is the menu at the top of the sidebar (mock A,
+picked by the owner): your orgs with your role in each, and a new one.
 
 ### What else becomes per org
 
@@ -123,8 +126,8 @@ platform channels. Fresh installs create their first org at bootstrap.
    use`), MCP (`/api/v1/mcp?org=`). The web UI sends the org and, for a
    user with several, acts in their first until the switcher exists. One
    org per install in practice.
-2. **Org UI and membership**: org switcher and org in UI URLs (mocks
-   first), invites by email, leave and remove, role changes, org
+2. **Org UI and membership**: org switcher and org in UI URLs (done),
+   org settings (mocks first), invites by email, leave and remove, role changes, org
    variables referenced as `${{org.KEY}}` (explicit only, never
    auto-injected, one value per key), bring-your-own servers per org.
 3. **Signup**: an install setting `signup = closed | invite | open`

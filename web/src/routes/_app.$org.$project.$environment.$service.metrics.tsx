@@ -21,7 +21,7 @@ const MiB = 1024 * 1024;
 // A service's CPU and memory: live while open, and history across
 // releases. /shop/production/web/metrics?range=24h
 export const Route = createFileRoute(
-  "/_app/$project/$environment/$service/metrics",
+  "/_app/$org/$project/$environment/$service/metrics",
 )({
   validateSearch: validateRange,
   loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),

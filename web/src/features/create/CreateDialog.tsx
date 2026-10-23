@@ -1,12 +1,13 @@
 import { Dialog } from "../../ui/Dialog";
 import { NewEnvironment } from "./NewEnvironment";
+import { NewOrg } from "./NewOrg";
 import { NewProject } from "./NewProject";
 import { NewService } from "./NewService";
 import type { CreateRequest } from "./open";
 
 /**
  * The create dialog for a request (open.tsx loads this lazily): new
- * project, environment or service, in the shared modal.
+ * organization, project, environment or service, in the shared modal.
  */
 export default function CreateDialog({
   request,
@@ -16,6 +17,12 @@ export default function CreateDialog({
   onClose: () => void;
 }) {
   switch (request.kind) {
+    case "org":
+      return (
+        <Dialog title="New organization" onClose={onClose}>
+          <NewOrg onClose={onClose} />
+        </Dialog>
+      );
     case "project":
       return (
         <Dialog title="New project" onClose={onClose}>

@@ -22,6 +22,7 @@ import {
   rangeMs,
   validateRange,
 } from "../features/stats/series";
+import { useOrg } from "../shell/location";
 import { ago, bytes, pct, plural, size } from "../ui/format";
 import {
   ErrorText,
@@ -322,6 +323,7 @@ const peak = (points: Point[]) => Math.max(1, ...points.map((p) => p.v)) * 1.2;
 
 /** Projects and environments placed here, per kind. */
 function Placements({ detail }: { detail: ServerDetail }) {
+  const org = useOrg();
   if (detail.placements.length === 0) {
     return <p className="text-mut">No projects are placed here yet.</p>;
   }
@@ -340,7 +342,7 @@ function Placements({ detail }: { detail: ServerDetail }) {
           {detail.placements.map((p) => (
             <tr key={`${p.project}:${p.kind}`}>
               <td>
-                <Link to="/$project" params={{ project: p.project }}>
+                <Link to="/$org/$project" params={{ org, project: p.project }}>
                   {p.project}
                 </Link>
               </td>
@@ -417,6 +419,7 @@ const ServiceRow = memo(function ServiceRow({
 }: {
   service: ServerService;
 }) {
+  const org = useOrg();
   const ref = {
     project: s.project,
     environment: s.environment,
@@ -425,7 +428,10 @@ const ServiceRow = memo(function ServiceRow({
   return (
     <tr>
       <td>
-        <Link to="/$project/$environment/$service/metrics" params={ref}>
+        <Link
+          to="/$org/$project/$environment/$service/metrics"
+          params={{ org, ...ref }}
+        >
           {ref.service}
         </Link>
       </td>

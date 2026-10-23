@@ -6,6 +6,7 @@ export type ServiceSource = "image" | "source" | "github" | "database";
 
 /** Which create dialog is open, and for what. */
 export type CreateRequest =
+  | { kind: "org" }
   | { kind: "project" }
   | { kind: "environment"; project: string; cloneFrom?: string }
   | { kind: "service"; env: EnvRef; source?: ServiceSource };

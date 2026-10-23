@@ -17,7 +17,7 @@ import { serviceSource } from "../features/data/source";
 // A line above the panel shows `dock connect` for the service.
 
 export const Route = createFileRoute(
-  "/_app/$project/$environment/$service/data",
+  "/_app/$org/$project/$environment/$service/data",
 )({
   validateSearch: validateDataSearch,
   component: DataTab,

@@ -30,6 +30,15 @@ function useCreate<Vars, Data>(
   });
 }
 
+/** Creates an organization with the caller as its admin. */
+export function useCreateOrg() {
+  return useCreate(
+    (req: { slug: string; name?: string }) =>
+      body(api.POST("/api/v1/orgs", { body: req })),
+    () => [keys.orgs],
+  );
+}
+
 /**
  * Creates a project (and its production environment). Its overview is
  * loaded before it joins the project list, so the sidebar tree and the

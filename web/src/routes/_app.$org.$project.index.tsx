@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { withOrg } from "../api/client";
 import { useArchiveProject } from "../data/mutations";
 import { queries, serviceRef, useIsAdmin, useSession } from "../data/queries";
 import { canCreateEnvironment } from "../features/create/access";
@@ -13,12 +14,12 @@ import { Placements } from "../features/overview/Placements";
 import { Problems } from "../features/overview/Problems";
 import { ServerDots } from "../shell/context";
 import { useShortcuts } from "../shell/keys";
-import { rememberProject } from "../shell/location";
+import { rememberProject, useOrg } from "../shell/location";
 import { usePalette } from "../shell/palette";
 import { plural } from "../ui/format";
 import { Act, Button, ErrorText, Glyph, Page, PageBar } from "../ui/kit";
 
-export const Route = createFileRoute("/_app/$project/")({
+export const Route = createFileRoute("/_app/$org/$project/")({
   loader: async ({ context: { queryClient }, params }) => {
     const [overview] = await Promise.all([
       queryClient.ensureQueryData(queries.overview(params.project)),
@@ -66,6 +67,7 @@ function Overview() {
 }
 
 function LiveOverview() {
+  const org = useOrg();
   const { project } = Route.useParams();
   // CPU and memory columns show the latest minute sample; usage events
   // patch it (data/live.ts).
@@ -89,7 +91,10 @@ function LiveOverview() {
             key: "c",
             label: "compare",
             run: () =>
-              navigate({ to: "/$project/compare", params: { project } }),
+              navigate({
+                to: "/$org/$project/compare",
+                params: { org, project },
+              }),
           },
         ]
       : []),
@@ -100,8 +105,8 @@ function LiveOverview() {
             label: "variables",
             run: () =>
               navigate({
-                to: "/$project/$environment",
-                params: { project, environment: varsEnv.environment.name },
+                to: "/$org/$project/$environment",
+                params: { org, project, environment: varsEnv.environment.name },
               }),
           },
         ]
@@ -114,8 +119,8 @@ function LiveOverview() {
             label: "watch deploy",
             run: () =>
               navigate({
-                to: "/$project/$environment/$service",
-                params: serviceRef(watch.service),
+                to: "/$org/$project/$environment/$service",
+                params: { org, ...serviceRef(watch.service) },
               }),
           },
         ]
@@ -146,14 +151,18 @@ function LiveOverview() {
               </Act>
             )}
             {environments.length > 1 && (
-              <Link to="/$project/compare" params={{ project }} className="btn">
+              <Link
+                to="/$org/$project/compare"
+                params={{ org, project }}
+                className="btn"
+              >
                 Compare <kbd>C</kbd>
               </Link>
             )}
             {varsEnv && (
               <Link
-                to="/$project/$environment"
-                params={{ project, environment: varsEnv.environment.name }}
+                to="/$org/$project/$environment"
+                params={{ org, project, environment: varsEnv.environment.name }}
                 className="btn"
               >
                 Variables <kbd>V</kbd>
@@ -225,7 +234,7 @@ function Export({ project }: { project: string }) {
     <p className="flex flex-wrap items-baseline gap-x-3 text-xs text-faint">
       Export config
       <a
-        href={`${path}.toml`}
+        href={withOrg(`${path}.toml`)}
         download
         className="lnk font-mono"
         title={`dock project export ${project} > ${project}.dock.toml`}
@@ -233,7 +242,7 @@ function Export({ project }: { project: string }) {
         {project}.dock.toml
       </a>
       <a
-        href={path}
+        href={withOrg(path)}
         download={`${project}.dock.json`}
         className="lnk font-mono"
         title={`dock project export ${project} --format json`}

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { type FeedItem, useFeed } from "../../data/feed";
 import { useAuditLog } from "../../data/queries";
 import type { AuditEvent } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { clockSec } from "../../ui/format";
 import { Actor, Glyph, SectionHead } from "../../ui/kit";
 import { pastLabel } from "../audit/AuditTable";
@@ -61,6 +62,7 @@ function feedEntry(item: FeedItem): Entry {
  * the audit log merged with live deploy and container events.
  */
 export function Activity({ project }: { project: string }) {
+  const org = useOrg();
   const audit = useAuditLog({ project });
   const feed = useFeed(project);
   const entries = [
@@ -76,7 +78,7 @@ export function Activity({ project }: { project: string }) {
         id="activity"
         aside="people and agents"
         right={
-          <Link to="/audit" search={{ project }}>
+          <Link to="/$org/audit" params={{ org }} search={{ project }}>
             All activity
           </Link>
         }

@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useOrg } from "../../shell/location";
 import { plural, since, size } from "../../ui/format";
 import {
   Act,
@@ -17,6 +18,7 @@ import { type Registry, usePruneRegistry, useRegistry } from "./data";
 // in it (ADR 0014 section 4).
 
 export function RegistryPage() {
+  const org = useOrg();
   const registry = useRegistry();
   const prune = usePruneRegistry();
   if (!registry.enabled) {
@@ -115,8 +117,9 @@ export function RegistryPage() {
                         </span>
                       ) : (
                         <Link
-                          to="/$project/$environment/$service/releases"
+                          to="/$org/$project/$environment/$service/releases"
                           params={{
+                            org,
                             project: s.project,
                             environment: s.environment,
                             service: s.service,

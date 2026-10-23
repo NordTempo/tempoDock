@@ -6,6 +6,7 @@ import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { registryKey } from "../features/registry/data";
+import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
 import { keys, queries } from "./queries";
@@ -376,12 +377,16 @@ function invalidateForData(
   });
 }
 
-/** Keeps the cache live while the app shell is mounted. */
+/**
+ * Keeps the cache live while the app shell is mounted. The stream carries
+ * one organization's events, so it reconnects when the org changes.
+ */
 export function useLiveUpdates() {
   const queryClient = useQueryClient();
   const router = useRouter();
+  const org = useOrg();
   useEventStream<LiveEvent>(
-    "/api/v1/events",
+    org ? `/api/v1/events?org=${encodeURIComponent(org)}` : "/api/v1/events",
     busEvents,
     (_, event) => {
       applyLiveEvent(queryClient, event);

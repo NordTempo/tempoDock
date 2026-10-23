@@ -8,6 +8,7 @@ type Schemas = components["schemas"];
 
 export type Scope = Schemas["User"]["role"];
 export type Session = Schemas["Me"];
+export type Org = Schemas["Org"];
 export type Project = Schemas["Project"];
 export type Server = Schemas["Server"];
 export type ServerStatus = Server["status"];

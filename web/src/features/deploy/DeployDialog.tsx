@@ -21,6 +21,7 @@ import {
   useService,
 } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
 import { plural, size } from "../../ui/format";
 import { Act, Button, ErrorText, StateText } from "../../ui/kit";
@@ -579,6 +580,7 @@ function Following({
   number: number;
   onClose: () => void;
 }) {
+  const org = useOrg();
   const release = useReleases(ref).find((r) => r.number === number);
   const log = useBuildLog(ref, number);
   // Newest first in the stream; the last lines, oldest first, here.
@@ -619,16 +621,16 @@ function Following({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Link
-          to="/$project/$environment/$service/releases/$number"
-          params={{ ...ref, number: String(number) }}
+          to="/$org/$project/$environment/$service/releases/$number"
+          params={{ org, ...ref, number: String(number) }}
           className="btn"
           onClick={onClose}
         >
           Open release
         </Link>
         <Link
-          to="/$project/$environment/$service/logs"
-          params={ref}
+          to="/$org/$project/$environment/$service/logs"
+          params={{ org, ...ref }}
           search={{ release: number, build: true }}
           className="btn"
           onClick={onClose}

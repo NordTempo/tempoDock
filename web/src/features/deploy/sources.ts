@@ -1,4 +1,4 @@
-import { ApiError } from "../../api/client";
+import { ApiError, currentOrg } from "../../api/client";
 import type { Release, ServiceRef } from "../../data/types";
 import type { Entry, List } from "./pack";
 
@@ -114,6 +114,8 @@ export function uploadSource(
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.setRequestHeader("Content-Type", type);
+    const org = currentOrg();
+    if (org) xhr.setRequestHeader("Dock-Org", org);
     xhr.responseType = "json";
     xhr.upload.onprogress = (e) =>
       onProgress({ loaded: e.loaded, total: e.total || archive.size });

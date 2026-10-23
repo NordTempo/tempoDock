@@ -53,13 +53,14 @@ func validName(kind, name string) error {
 	return nil
 }
 
-// reservedProjectNames are the web UI's top-level paths (web/src/routes,
-// public/ and assets/): a project's page is /<name>, so a project with one
-// of these names could not be opened.
-var reservedProjectNames = []string{
-	"account", "api", "assets", "audit", "cli-login", "console", "fonts",
-	"login", "tokens",
-}
+// The web UI's paths (web/src/routes, public/ and assets/) that names must
+// not shadow. An org's page is /<org> and a project's /<org>/<project>,
+// so an org can't be named like a top-level page, nor a project like a
+// page of an org.
+var (
+	reservedOrgSlugs     = []string{"account", "api", "assets", "cli-login", "console", "fonts", "login"}
+	reservedProjectNames = []string{"audit", "tokens"}
+)
 
 // loadProject loads a project of one org by name.
 func (c *Core) loadProject(ctx context.Context, orgID int64, name string) (store.Project, error) {

@@ -4,7 +4,7 @@ import { AuditPage, validateAuditSearch } from "../features/audit/AuditPage";
 
 // The workspace's Activity: the audit log as the caller may see it. Admins
 // also get it in the platform console (/console/audit).
-export const Route = createFileRoute("/_app/audit")({
+export const Route = createFileRoute("/_app/$org/audit")({
   validateSearch: validateAuditSearch,
   loaderDeps: ({ search }) => ({
     project: search.project,

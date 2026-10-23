@@ -10,6 +10,7 @@ import { statusTitle } from "../features/servers/parts";
 import { Icon } from "../ui/icons";
 import { Glyph, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, type Tone, toneText } from "../ui/status";
+import { useOrg } from "./location";
 
 // What a PageBar shows next to the title inside a project: the environment
 // switch and the servers in view.
@@ -36,6 +37,7 @@ export function EnvSwitch({
   environment: string;
   service?: string;
 }) {
+  const org = useOrg();
   const { environments } = useProjectOverview(project);
   const here = environments.find((e) => e.environment.name === environment);
   const others = environments.filter(
@@ -72,8 +74,13 @@ export function EnvSwitch({
           return service && twin ? (
             <Link
               key={e.environment.id}
-              to="/$project/$environment/$service"
-              params={{ project, environment: e.environment.name, service }}
+              to="/$org/$project/$environment/$service"
+              params={{
+                org,
+                project,
+                environment: e.environment.name,
+                service,
+              }}
               onClick={close}
               className={menuItem}
             >
@@ -88,8 +95,8 @@ export function EnvSwitch({
           ) : (
             <Link
               key={e.environment.id}
-              to="/$project/$environment"
-              params={{ project, environment: e.environment.name }}
+              to="/$org/$project/$environment"
+              params={{ org, project, environment: e.environment.name }}
               onClick={close}
               className={menuItem}
             >

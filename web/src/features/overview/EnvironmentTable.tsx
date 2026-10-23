@@ -10,6 +10,7 @@ import {
   useSession,
 } from "../../data/queries";
 import type { EnvironmentView, ServiceView } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { plural } from "../../ui/format";
 import { Button, Panel, SectionHead, StateText } from "../../ui/kit";
 import { kindLabel, serviceState } from "../../ui/status";
@@ -22,6 +23,7 @@ import { ArchivedServices } from "./Archived";
 
 /** One environment on the project overview: a row per service. */
 export function EnvironmentTable({ env }: { env: EnvironmentView }) {
+  const org = useOrg();
   const { environment, services, pending_changes: staged } = env;
   const ref = { project: environment.project, environment: environment.name };
   const canDeploy = useCanDeploy(ref);
@@ -43,14 +45,18 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
           <>
             {staged > 0 && (
               <Link
-                to="/$project/$environment"
-                params={ref}
+                to="/$org/$project/$environment"
+                params={{ org, ...ref }}
                 className="text-warn hover:text-warn-text"
               >
                 ▲ {plural(staged, "staged change")}
               </Link>
             )}
-            <Link to="/$project/$environment" params={ref} className={links}>
+            <Link
+              to="/$org/$project/$environment"
+              params={{ org, ...ref }}
+              className={links}
+            >
               Variables
             </Link>
             {canDeploy && (
@@ -126,6 +132,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
 }
 
 const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
+  const org = useOrg();
   const {
     service,
     deploying,
@@ -146,8 +153,8 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
     <tr className={deploying ? "bg-prog-bg" : "hover:bg-hover"}>
       <td className="py-2.5">
         <Link
-          to="/$project/$environment/$service"
-          params={ref}
+          to="/$org/$project/$environment/$service"
+          params={{ org, ...ref }}
           className="font-medium hover:underline"
         >
           {service.name}
@@ -171,8 +178,8 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
         {failed ? (
           <>
             <Link
-              to="/$project/$environment/$service/releases/$number"
-              params={{ ...ref, number: String(failed.number) }}
+              to="/$org/$project/$environment/$service/releases/$number"
+              params={{ org, ...ref, number: String(failed.number) }}
               className="text-fail hover:underline"
             >
               ✕ r{failed.number} failed

@@ -11,15 +11,26 @@ export const api = createFetchClient<paths>({
 });
 
 // The organization the UI acts in, sent as the `org` parameter of every
-// call (ADR 0025). Unset lets the daemon use the user's only one.
-let org: string | undefined;
+// call (ADR 0027): the one in the URL (/$org/...), remembered for pages
+// outside any org (the console, your account) and the next visit. Unset
+// lets the daemon use the user's only one.
+const orgKey = "dock.org";
+let org = localStorage.getItem(orgKey) ?? undefined;
+
+/** The organization the UI acts in. */
+export const currentOrg = () => org;
 
 /** Acts in the organization named by slug from now on (unset: none). */
 export function setOrg(slug: string | undefined) {
   org = slug;
+  if (slug) localStorage.setItem(orgKey, slug);
+  else localStorage.removeItem(orgKey);
 }
 
-/** url with the current organization as its `org` parameter. */
+/**
+ * url with the current organization as its `org` parameter, for what
+ * can't send a header (EventSource, plain links).
+ */
 export function withOrg(url: string) {
   if (!org) return url;
   const u = new URL(url, window.location.origin);
@@ -27,13 +38,12 @@ export function withOrg(url: string) {
   return u.pathname + u.search;
 }
 
+// The org rides in a header: adding the `org` parameter would mean
+// rebuilding the request, and a rebuilt request loses its body.
 api.use({
   onRequest({ request }) {
-    if (!org) return undefined;
-    const url = new URL(request.url);
-    if (url.searchParams.has("org")) return undefined;
-    url.searchParams.set("org", org);
-    return new Request(url, request);
+    if (org) request.headers.set("Dock-Org", org);
+    return undefined;
   },
 });
 

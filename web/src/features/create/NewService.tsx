@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { queries, useEnvironment } from "../../data/queries";
 import type { EnvRef, Service, TemplateInfo } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { Button, CopyButton, ErrorText } from "../../ui/kit";
 import {
   autofocus,
@@ -84,6 +85,7 @@ export function NewService({
   source?: ServiceSource;
   onClose: () => void;
 }) {
+  const org = useOrg();
   const { services } = useEnvironment(env);
   const templates = useQuery(queries.templates());
   const create = useCreateService();
@@ -204,8 +206,8 @@ export function NewService({
       }
     } else {
       await navigate({
-        to: "/$project/$environment/$service",
-        params: { ...env, service: service.name },
+        to: "/$org/$project/$environment/$service",
+        params: { org, ...env, service: service.name },
       });
       onClose();
     }
@@ -465,12 +467,13 @@ function Created({
   done: Done;
   onClose: () => void;
 }) {
+  const org = useOrg();
   const { service } = done;
   const ref = { ...env, service: service.name };
   const open = (
     <Link
-      to="/$project/$environment/$service"
-      params={ref}
+      to="/$org/$project/$environment/$service"
+      params={{ org, ...ref }}
       className="btn pri"
       ref={autofocus}
       onClick={onClose}
@@ -509,8 +512,8 @@ function Created({
         <ErrorText error={done.error} />
         <div className="flex gap-2">
           <Link
-            to="/$project/$environment/$service/settings"
-            params={ref}
+            to="/$org/$project/$environment/$service/settings"
+            params={{ org, ...ref }}
             className="btn pri"
             ref={autofocus}
             onClick={onClose}

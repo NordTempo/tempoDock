@@ -25,7 +25,7 @@ import { openCreate } from "../features/create/open";
 import { promoteCli, promotionPairs } from "../features/promote/plan";
 import { rollbackTarget } from "../features/service/releases";
 import { serviceState, type Tone } from "../ui/status";
-import { useCurrentContext } from "./location";
+import { useCurrentContext, useOrg } from "./location";
 
 export type Command = {
   id: string;
@@ -60,6 +60,7 @@ const serviceTabs = [
 export function useCommands(): Command[] {
   const projects = useProjectTree();
   const here = useCurrentContext();
+  const org = useOrg();
   const navigate = useNavigate();
   const deploy = useDeploy();
   const restart = useRestart();
@@ -106,7 +107,7 @@ export function useCommands(): Command[] {
       strong: project,
       cli: `dock status${pFlag}`,
       weight: inProject ? 1 : 0,
-      run: () => navigate({ to: "/$project", params: { project } }),
+      run: () => navigate({ to: "/$org/$project", params: { org, project } }),
     });
     if (canCreateEnvironment(session, project)) {
       add({
@@ -127,7 +128,8 @@ export function useCommands(): Command[] {
         strong: project,
         cli: inProject ? "C" : "",
         weight: inProject ? 1 : 0,
-        run: () => navigate({ to: "/$project/compare", params: { project } }),
+        run: () =>
+          navigate({ to: "/$org/$project/compare", params: { org, project } }),
       });
     }
     // Promote opens the compare page's promote panel, which previews it.
@@ -145,8 +147,8 @@ export function useCommands(): Command[] {
         weight: inProject ? 1.5 : 0,
         run: () =>
           navigate({
-            to: "/$project/compare",
-            params: { project },
+            to: "/$org/$project/compare",
+            params: { org, project },
             search: {
               from: from.environment.name,
               to: to.environment.name,
@@ -202,8 +204,8 @@ export function useCommands(): Command[] {
         weight: (inProject ? 1 : 0) + (inEnv ? 1 : 0),
         run: () =>
           navigate({
-            to: "/$project/$environment",
-            params: { project, environment },
+            to: "/$org/$project/$environment",
+            params: { org, project, environment },
           }),
       });
 
@@ -225,7 +227,10 @@ export function useCommands(): Command[] {
               }
             : undefined;
         const open = () =>
-          navigate({ to: "/$project/$environment/$service", params });
+          navigate({
+            to: "/$org/$project/$environment/$service",
+            params: { org, ...params },
+          });
         const busy =
           blockedNote ??
           (svc.deploying
@@ -327,9 +332,9 @@ export function useCommands(): Command[] {
     });
   }
 
-  // Operators reach the platform console's pages; everyone else their own
-  // tokens and the activity they may see.
-  const org = operator
+  // Operators reach the platform console's pages; everyone else their
+  // organization's tokens and the activity they may see.
+  const pages = operator
     ? ([
         ["Platform console", "/console", ""],
         ["Servers", "/console/servers", "dock server list"],
@@ -342,12 +347,8 @@ export function useCommands(): Command[] {
         ["Audit log", "/console/audit", "dock audit"],
         ["Account", "/account", "dock whoami"],
       ] as const)
-    : ([
-        ["Tokens", "/tokens", "dock token list"],
-        ["Audit log", "/audit", "dock audit"],
-        ["Account", "/account", "dock whoami"],
-      ] as const);
-  for (const [label, to, cli] of org) {
+    : ([["Account", "/account", "dock whoami"]] as const);
+  for (const [label, to, cli] of pages) {
     add({
       id: `go:${to}`,
       group: "Go to",
@@ -356,6 +357,21 @@ export function useCommands(): Command[] {
       weight: 0,
       run: () => navigate({ to }),
     });
+  }
+  if (!operator) {
+    for (const [label, to, cli] of [
+      ["Tokens", "/$org/tokens", "dock token list"],
+      ["Audit log", "/$org/audit", "dock audit"],
+    ] as const) {
+      add({
+        id: `go:${to}`,
+        group: "Go to",
+        label,
+        cli,
+        weight: 0,
+        run: () => navigate({ to, params: { org } }),
+      });
+    }
   }
   // Server pages (statistics, placement) are in the console.
   for (const { name } of operator ? servers : []) {

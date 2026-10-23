@@ -44,8 +44,9 @@ starts from these files.
 
 B1 and B2 are structure references (what the operator console holds, which
 navigation each role sees); style them as A. The console Dock builds is
-B2 without tenants or an operator flag ([ADR
-0025](../decisions/0025-platform-console.md)).
+B2 for operators ([ADR 0025](../decisions/0025-platform-console.md),
+[ADR 0027](../decisions/0027-organizations.md)); the workspace switcher
+of the boards is the organization switcher.
 
 ## Tokens
 

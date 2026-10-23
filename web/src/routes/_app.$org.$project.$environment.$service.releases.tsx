@@ -10,7 +10,7 @@ const MAX = 100;
 
 // The release history: the newest 20, up to 100 on request.
 export const Route = createFileRoute(
-  "/_app/$project/$environment/$service/releases",
+  "/_app/$org/$project/$environment/$service/releases",
 )({
   component: ReleasesTab,
 });

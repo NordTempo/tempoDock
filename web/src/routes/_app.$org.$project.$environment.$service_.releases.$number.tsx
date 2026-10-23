@@ -21,6 +21,7 @@ import { LogRow } from "../features/service/LogsPane";
 import { copiedConfig, imageLabel } from "../features/service/releases";
 import { deploySteps, StepTable } from "../features/service/Steps";
 import { useShortcuts } from "../shell/keys";
+import { useOrg } from "../shell/location";
 import { ago, plural } from "../ui/format";
 import {
   Act,
@@ -38,7 +39,7 @@ import { failurePhrase, inFlight, releaseWhat } from "../ui/status";
 // One release: why it failed (or how far it got), its steps, its last lines.
 // Outside the service layout, like a document of its own: /shop/staging/web/releases/61.
 export const Route = createFileRoute(
-  "/_app/$project/$environment/$service_/releases/$number",
+  "/_app/$org/$project/$environment/$service_/releases/$number",
 )({
   loader: async ({ context: { queryClient }, params }) => {
     const number = Number(params.number);
@@ -57,6 +58,7 @@ export const Route = createFileRoute(
 });
 
 function ReleasePage() {
+  const org = useOrg();
   const params = Route.useParams();
   const ref = servicePath(params);
   const view = useService(ref);
@@ -85,8 +87,8 @@ function ReleasePage() {
       label: "build log",
       run: () =>
         navigate({
-          to: "/$project/$environment/$service/logs",
-          params: ref,
+          to: "/$org/$project/$environment/$service/logs",
+          params: { org, ...ref },
           search: buildLog,
         }),
     },
@@ -98,8 +100,8 @@ function ReleasePage() {
         parent={
           <span className="flex items-center gap-1.5">
             <Link
-              to="/$project"
-              params={{ project: ref.project }}
+              to="/$org/$project"
+              params={{ org, project: ref.project }}
               className="hover:text-fg"
             >
               {ref.project}
@@ -108,8 +110,8 @@ function ReleasePage() {
               /
             </span>
             <Link
-              to="/$project/$environment/$service"
-              params={ref}
+              to="/$org/$project/$environment/$service"
+              params={{ org, ...ref }}
               className="hover:text-fg"
             >
               {ref.service}
@@ -171,8 +173,8 @@ function ReleasePage() {
               cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
                 navigate({
-                  to: "/$project/$environment/$service/logs",
-                  params: ref,
+                  to: "/$org/$project/$environment/$service/logs",
+                  params: { org, ...ref },
                   search: buildLog,
                 })
               }
@@ -188,8 +190,8 @@ function ReleasePage() {
                   deploy.mutate(ref, {
                     onSuccess: () =>
                       navigate({
-                        to: "/$project/$environment/$service",
-                        params: ref,
+                        to: "/$org/$project/$environment/$service",
+                        params: { org, ...ref },
                       }),
                   })
                 }
@@ -202,8 +204,8 @@ function ReleasePage() {
               cli={`dock env set -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
                 navigate({
-                  to: "/$project/$environment",
-                  params: ref,
+                  to: "/$org/$project/$environment",
+                  params: { org, ...ref },
                   search: { service: ref.service },
                 })
               }
@@ -244,8 +246,8 @@ function ReleasePage() {
                   {
                     onSuccess: () =>
                       navigate({
-                        to: "/$project/$environment/$service",
-                        params: ref,
+                        to: "/$org/$project/$environment/$service",
+                        params: { org, ...ref },
                       }),
                   },
                 )
@@ -363,6 +365,7 @@ function Changes({ from, to }: { from: Release; to: Release }) {
 
 /** The release's last container lines; for a failed one, why it stopped. */
 function LastLines({ release }: { release: Release }) {
+  const org = useOrg();
   const params = Route.useParams();
   const ref = servicePath(params);
   const logs = useServiceLogs(ref, release.number);
@@ -375,8 +378,8 @@ function LastLines({ release }: { release: Release }) {
         id="lines"
         right={
           <Link
-            to="/$project/$environment/$service/logs"
-            params={ref}
+            to="/$org/$project/$environment/$service/logs"
+            params={{ org, ...ref }}
             search={{ release: release.number }}
             className="text-mut"
           >

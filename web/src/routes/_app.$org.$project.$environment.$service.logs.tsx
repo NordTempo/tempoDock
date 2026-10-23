@@ -20,7 +20,7 @@ type LogSearch = {
 
 // Full-height logs. Filters live in the URL so a filtered view can be shared.
 export const Route = createFileRoute(
-  "/_app/$project/$environment/$service/logs",
+  "/_app/$org/$project/$environment/$service/logs",
 )({
   validateSearch: (search: Record<string, unknown>): LogSearch => ({
     release:

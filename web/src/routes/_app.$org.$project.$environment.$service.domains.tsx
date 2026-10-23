@@ -3,7 +3,7 @@ import { servicePath } from "../data/queries";
 import { DomainsPanel } from "../features/service/DomainsPanel";
 
 export const Route = createFileRoute(
-  "/_app/$project/$environment/$service/domains",
+  "/_app/$org/$project/$environment/$service/domains",
 )({
   component: DomainsTab,
 });

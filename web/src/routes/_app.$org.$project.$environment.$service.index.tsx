@@ -16,16 +16,20 @@ import {
   StatusSentence,
 } from "../features/service/ServiceHeader";
 import { deploySteps, StepTable } from "../features/service/Steps";
+import { useOrg } from "../shell/location";
 import { elapsed } from "../ui/format";
 import { Actor, actorKind, SectionHead } from "../ui/kit";
 
 // A service at a glance (A2): status, facts, the deploy in flight and
 // recent releases, with live logs beside them.
-export const Route = createFileRoute("/_app/$project/$environment/$service/")({
+export const Route = createFileRoute(
+  "/_app/$org/$project/$environment/$service/",
+)({
   component: ServiceOverview,
 });
 
 function ServiceOverview() {
+  const org = useOrg();
   const ref = servicePath(Route.useParams());
   const service = useService(ref);
   const releases = useReleases(ref);
@@ -54,8 +58,8 @@ function ServiceOverview() {
             right={
               releases.length > 5 && (
                 <Link
-                  to="/$project/$environment/$service/releases"
-                  params={ref}
+                  to="/$org/$project/$environment/$service/releases"
+                  params={{ org, ...ref }}
                 >
                   All {releases[0]?.number}
                 </Link>
@@ -99,6 +103,7 @@ function DeployProgress({
   serviceRef: ServiceRef;
   number: number;
 }) {
+  const org = useOrg();
   const { service } = useService(ref);
   const release = useRelease(ref, number);
   const steps = deploySteps(
@@ -123,8 +128,8 @@ function DeployProgress({
         }
         right={
           <Link
-            to="/$project/$environment/$service/logs"
-            params={ref}
+            to="/$org/$project/$environment/$service/logs"
+            params={{ org, ...ref }}
             search={{ release: number, build: true }}
           >
             Build log

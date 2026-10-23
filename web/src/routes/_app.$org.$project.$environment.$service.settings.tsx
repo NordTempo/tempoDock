@@ -3,7 +3,7 @@ import { servicePath } from "../data/queries";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 
 export const Route = createFileRoute(
-  "/_app/$project/$environment/$service/settings",
+  "/_app/$org/$project/$environment/$service/settings",
 )({
   component: SettingsTab,
 });

@@ -15,6 +15,7 @@ import {
 import type { ServiceRef, ServiceView } from "../../data/types";
 import { EnvSwitch } from "../../shell/context";
 import { type Shortcut, useShortcuts } from "../../shell/keys";
+import { useOrg } from "../../shell/location";
 import { ago, since } from "../../ui/format";
 import {
   Act,
@@ -36,42 +37,54 @@ import { copiedConfig, errorSummary, rollbackTarget } from "./releases";
 import { CpuUsage, MemoryUsage } from "./Usage";
 
 const tabs = [
-  { label: "Overview", to: "/$project/$environment/$service", key: "g o" },
+  { label: "Overview", to: "/$org/$project/$environment/$service", key: "g o" },
   // Database services only (isDatabase). G B, "base": G D is Domains.
-  { label: "Data", to: "/$project/$environment/$service/data", key: "g b" },
+  {
+    label: "Data",
+    to: "/$org/$project/$environment/$service/data",
+    key: "g b",
+  },
   // Stateful services only. G K, "keep": G B is Data.
   {
     label: "Backups",
-    to: "/$project/$environment/$service/backups",
+    to: "/$org/$project/$environment/$service/backups",
     key: "g k",
   },
-  { label: "Logs", to: "/$project/$environment/$service/logs", key: "g l" },
+  {
+    label: "Logs",
+    to: "/$org/$project/$environment/$service/logs",
+    key: "g l",
+  },
   {
     label: "Metrics",
-    to: "/$project/$environment/$service/metrics",
+    to: "/$org/$project/$environment/$service/metrics",
     key: "g m",
   },
   {
     label: "Releases",
-    to: "/$project/$environment/$service/releases",
+    to: "/$org/$project/$environment/$service/releases",
     key: "g r",
   },
   {
     label: "Domains",
-    to: "/$project/$environment/$service/domains",
+    to: "/$org/$project/$environment/$service/domains",
     key: "g d",
   },
   {
     label: "Variables",
-    to: "/$project/$environment/$service/variables",
+    to: "/$org/$project/$environment/$service/variables",
     key: "g v",
   },
   {
     label: "Settings",
-    to: "/$project/$environment/$service/settings",
+    to: "/$org/$project/$environment/$service/settings",
     key: "g s",
   },
-  { label: "Audit", to: "/$project/$environment/$service/audit", key: "g a" },
+  {
+    label: "Audit",
+    to: "/$org/$project/$environment/$service/audit",
+    key: "g a",
+  },
 ] as const;
 
 /**
@@ -89,6 +102,7 @@ export function ServiceBar({
   /** Opens the Deploy window (folder, image or GitHub). */
   onDeploy: () => void;
 }) {
+  const org = useOrg();
   const view = useService(ref);
   const state = serviceState(view);
   const serving = view.service.active_release;
@@ -96,8 +110,8 @@ export function ServiceBar({
     <PageBar
       parent={
         <Link
-          to="/$project"
-          params={{ project: ref.project }}
+          to="/$org/$project"
+          params={{ org, project: ref.project }}
           className="hover:text-fg"
         >
           {ref.project}
@@ -129,6 +143,7 @@ export function ServiceBar({
  * waits. G then a letter switches tabs.
  */
 export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
   const view = useService(ref);
   const changes = useChanges(ref);
   const navigate = useNavigate();
@@ -141,7 +156,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   useShortcuts(
     shown.map((tab) => ({
       key: tab.key,
-      run: () => navigate({ to: tab.to, params: ref }),
+      run: () => navigate({ to: tab.to, params: { org, ...ref } }),
     })),
   );
   const mine = (c: { service?: string }) =>
@@ -163,7 +178,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Link
           key={tab.to}
           to={tab.to}
-          params={ref}
+          params={{ org, ...ref }}
           activeOptions={{ exact: true, includeSearch: false }}
           title={`${tab.label} (${tab.key.toUpperCase()})`}
         >
@@ -177,6 +192,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
 /** Source, address, resources, port and server: the Overview's facts. */
 export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
   const view = useService(ref);
   const { server } = useEnvironment(ref).environment;
   const { service } = view;
@@ -202,8 +218,8 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       ) : (
         <Link
           key="a"
-          to="/$project/$environment/$service/domains"
-          params={ref}
+          to="/$org/$project/$environment/$service/domains"
+          params={{ org, ...ref }}
           className="text-info hover:underline"
         >
           + Add domain
@@ -214,8 +230,8 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       "Resources",
       <Link
         key="r"
-        to="/$project/$environment/$service/metrics"
-        params={ref}
+        to="/$org/$project/$environment/$service/metrics"
+        params={{ org, ...ref }}
         title="Memory and CPU, latest sample against the limit"
         className="hover:text-fg"
       >

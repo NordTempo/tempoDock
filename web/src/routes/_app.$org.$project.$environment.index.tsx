@@ -6,7 +6,7 @@ import { rememberProject } from "../shell/location";
 
 // An environment's variables: its shared lines, or (?service=web) what one
 // service sees at runtime.
-export const Route = createFileRoute("/_app/$project/$environment/")({
+export const Route = createFileRoute("/_app/$org/$project/$environment/")({
   validateSearch: (search: Record<string, unknown>): { service?: string } =>
     typeof search.service === "string" && search.service
       ? { service: search.service }

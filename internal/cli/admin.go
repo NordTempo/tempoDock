@@ -57,8 +57,10 @@ func newBootstrapCmd() *cobra.Command {
 	email := "admin@localhost"
 	cmd := &cobra.Command{
 		Use:   "bootstrap",
-		Short: "Create the first admin user and token",
-		Long: `Creates the first admin user and an admin API token if no users exist yet.
+		Short: "Create the first user and token",
+		Long: `Creates the first user (the platform's operator and the admin of its
+first organization, default) and an operator API token if no users exist
+yet.
 
 The token is printed to stdout (and only the token, for scripts); the
 user's generated UI password goes to stderr. Both are shown once. When an

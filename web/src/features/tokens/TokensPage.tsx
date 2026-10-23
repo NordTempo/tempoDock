@@ -9,6 +9,7 @@ import {
   useTokens,
 } from "../../data/queries";
 import type { Scope, Token } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { ago, isoDay, plural } from "../../ui/format";
 import {
   Act,
@@ -205,6 +206,7 @@ function McpConfig({ secret }: { secret?: string }) {
 function TokenRow({ token }: { token: Token }) {
   const revoke = useRevokeToken();
   const admin = useIsAdmin();
+  const org = useOrg();
   const operator = useIsOperator();
   const [confirming, setConfirming] = useState(false);
   const [editingData, setEditingData] = useState(false);
@@ -252,7 +254,8 @@ function TokenRow({ token }: { token: Token }) {
         <td className="w-full py-1.5 text-right">
           <span className="inline-flex items-center gap-3">
             <Link
-              to={operator ? "/console/audit" : "/audit"}
+              to={operator ? "/console/audit" : "/$org/audit"}
+              params={{ org }}
               search={{ actor: token.name }}
             >
               Activity

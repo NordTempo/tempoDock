@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useCloneEnvironment } from "../../data/mutations";
 import { useProjectOverview, useSession } from "../../data/queries";
 import type { Clone, EnvironmentKind } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { plural } from "../../ui/format";
 import { Button, Check } from "../../ui/kit";
 import { kindLabel } from "../../ui/status";
@@ -44,6 +45,7 @@ export function NewEnvironment({
   cloneFrom?: string;
   onClose: () => void;
 }) {
+  const org = useOrg();
   const environments = useProjectOverview(project).environments.map(
     (e) => e.environment,
   );
@@ -102,7 +104,10 @@ export function NewEnvironment({
           { project, name, kind: effective },
           {
             onSuccess: async () => {
-              await navigate({ to: "/$project", params: { project } });
+              await navigate({
+                to: "/$org/$project",
+                params: { org, project },
+              });
               onClose();
             },
           },
@@ -210,6 +215,7 @@ function Cloned({
   result: Clone;
   onClose: () => void;
 }) {
+  const org = useOrg();
   const e = result.environment;
   const skipped = names(result.skipped);
   const copied = names(result.copied_across_kinds);
@@ -219,8 +225,8 @@ function Cloned({
       <p>
         Cloned {result.from} into{" "}
         <Link
-          to="/$project/$environment"
-          params={{ project, environment: e.name }}
+          to="/$org/$project/$environment"
+          params={{ org, project, environment: e.name }}
           className="font-mono"
           onClick={onClose}
         >

@@ -7,6 +7,7 @@ import {
 } from "../../data/mutations";
 import { useBackups, useCanDeploy, useIsOperator } from "../../data/queries";
 import type { BackupRun, ServiceBackups, ServiceRef } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { ago, clock, day, size, until } from "../../ui/format";
 import { Act, Button, Check, ErrorText, Panel, StateText } from "../../ui/kit";
 import type { State } from "../../ui/status";
@@ -18,6 +19,7 @@ import { backupHow, exportOf, hourLabel } from "./backups";
  * template databases.
  */
 export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
   const backups = useBackups(ref);
   const canDeploy = useCanDeploy(ref);
   // Backups are the platform's: operators set schedules (ADR 0027).
@@ -75,8 +77,8 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <p>
           Restoring into{" "}
           <Link
-            to="/$project/$environment/$service"
-            params={{ ...ref, service: restored }}
+            to="/$org/$project/$environment/$service"
+            params={{ org, ...ref, service: restored }}
             className="font-mono"
           >
             {restored}
@@ -254,6 +256,7 @@ function RunRows({
   onOpen: (open: boolean) => void;
   onRestored: (service: string) => void;
 }) {
+  const org = useOrg();
   const restore = r.operation === "restore";
   return (
     <>
@@ -294,8 +297,8 @@ function RunRows({
             <>
               into{" "}
               <Link
-                to="/$project/$environment/$service"
-                params={{ ...ref, service: r.restored_to }}
+                to="/$org/$project/$environment/$service"
+                params={{ org, ...ref, service: r.restored_to }}
                 className="font-mono"
               >
                 {r.restored_to}

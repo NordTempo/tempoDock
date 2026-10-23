@@ -27,6 +27,7 @@ import {
 import { EnvServer } from "../features/servers/parts";
 import { imageLabel } from "../features/service/releases";
 import { useShortcuts } from "../shell/keys";
+import { useOrg } from "../shell/location";
 import { limits } from "../ui/format";
 import { Act, Glyph, Page, PageBar, Panel } from "../ui/kit";
 import { serviceState, toneText } from "../ui/status";
@@ -43,7 +44,7 @@ type CompareSearch = {
 // Two environments side by side, service by service: release, image,
 // limits, variable names (values for admins who ask) and volumes. P
 // promotes the source's images to the target.
-export const Route = createFileRoute("/_app/$project/compare")({
+export const Route = createFileRoute("/_app/$org/$project/compare")({
   validateSearch: (s: Record<string, unknown>): CompareSearch => ({
     from: typeof s.from === "string" ? s.from : undefined,
     to: typeof s.to === "string" ? s.to : undefined,
@@ -70,6 +71,7 @@ export const Route = createFileRoute("/_app/$project/compare")({
 });
 
 function Compare() {
+  const org = useOrg();
   const { project } = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -149,7 +151,11 @@ function Compare() {
     <>
       <PageBar
         parent={
-          <Link to="/$project" params={{ project }} className="hover:text-fg">
+          <Link
+            to="/$org/$project"
+            params={{ org, project }}
+            className="hover:text-fg"
+          >
             {project}
           </Link>
         }
@@ -357,6 +363,7 @@ function Side({
   project: string;
   diff: boolean;
 }) {
+  const org = useOrg();
   if (!view) return <span className="text-mut">not in this environment</span>;
   const state = serviceState(view);
   const active = view.active_release;
@@ -366,8 +373,8 @@ function Side({
       : undefined;
   return (
     <Link
-      to="/$project/$environment/$service"
-      params={{ ...serviceRef(view.service), project }}
+      to="/$org/$project/$environment/$service"
+      params={{ org, ...serviceRef(view.service), project }}
       className="block no-underline"
     >
       {failed ? (

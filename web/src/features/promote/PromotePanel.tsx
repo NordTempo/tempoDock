@@ -8,6 +8,7 @@ import type {
   Promotion,
   SkippedService,
 } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { Button, Check, ErrorText, Panel, StateText } from "../../ui/kit";
 import { inFlight, releaseState, stepPhrase } from "../../ui/status";
 import { imageLabel } from "../service/releases";
@@ -186,6 +187,7 @@ function Progress({
   result: Promotion;
   onDone: () => void;
 }) {
+  const org = useOrg();
   const target = to.environment.name;
   const promoted = result.promoted ?? [];
   const skipped = result.skipped ?? [];
@@ -228,8 +230,9 @@ function Progress({
                   <td className="font-medium">{service}</td>
                   <td className="font-mono">
                     <Link
-                      to="/$project/$environment/$service/releases/$number"
+                      to="/$org/$project/$environment/$service/releases/$number"
                       params={{
+                        org,
                         project,
                         environment: target,
                         service,

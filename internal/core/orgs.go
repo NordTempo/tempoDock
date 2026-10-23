@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -42,6 +43,9 @@ func (c *Core) CreateOrg(ctx context.Context, a Actor, req apitypes.CreateOrgReq
 	}
 	if err := validName("organization", req.Slug); err != nil {
 		return apitypes.Org{}, err
+	}
+	if slices.Contains(reservedOrgSlugs, req.Slug) {
+		return apitypes.Org{}, invalid("%q is the address of a page in the web UI; pick another organization slug", req.Slug)
 	}
 	var org store.Org
 	err := c.store.Tx(ctx, func(q *store.Queries) error {

@@ -752,10 +752,15 @@ func TestSourceDeployUsesRepoFile(t *testing.T) {
 	}
 }
 
-func TestProjectNamesAvoidUIPages(t *testing.T) {
+// /console is a page and /<org>/audit an org's page, so neither can be
+// an org's or a project's address.
+func TestNamesAvoidUIPages(t *testing.T) {
 	h := newHarness(t)
-	_, err := h.c.CreateProject(h.ctx, testSystem, apitypes.CreateProjectRequest{Name: "console"})
-	if CodeOf(err) != apitypes.CodeValidation {
-		t.Fatalf("creating project console: got %v, want a validation error", err)
+	if _, err := h.c.CreateProject(h.ctx, testSystem, apitypes.CreateProjectRequest{Name: "audit"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("creating project audit: got %v, want a validation error", err)
+	}
+	ada := h.in(h.member("ada@x", map[string]apitypes.Scope{"test": apitypes.ScopeRead}), "")
+	if _, err := h.c.CreateOrg(h.ctx, ada, apitypes.CreateOrgRequest{Slug: "console"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("creating org console: got %v, want a validation error", err)
 	}
 }

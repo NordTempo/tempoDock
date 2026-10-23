@@ -8,33 +8,39 @@ import { useEffect } from "react";
 import { queries, useProjects, useServers, useSession } from "../data/queries";
 import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
-import { lastProject } from "../shell/location";
+import { lastProject, useOrg } from "../shell/location";
 import { Button, CopyButton, Page } from "../ui/kit";
 
-// "/" lands on the last project looked at (or the first); with no projects
-// yet, it offers to create one here or says how to deploy from a terminal.
-export const Route = createFileRoute("/_app/")({
-  beforeLoad: async ({ context }) => {
+// An organization's home lands on the last project looked at (or the
+// first); with no projects yet, it offers to create one here or says how
+// to deploy from a terminal.
+export const Route = createFileRoute("/_app/$org/")({
+  beforeLoad: async ({ context, params: { org } }) => {
     const projects = await context.queryClient.ensureQueryData(
       queries.projects(),
     );
     const last = lastProject();
     const project = projects.find((p) => p.name === last) ?? projects[0];
     if (project) {
-      throw redirect({ to: "/$project", params: { project: project.name } });
+      throw redirect({
+        to: "/$org/$project",
+        params: { org, project: project.name },
+      });
     }
   },
   component: NoProjects,
 });
 
 function NoProjects() {
+  const org = useOrg();
   const server = useServers().find((s) => s.local)?.name;
   const first = useProjects()[0]?.name;
   const canCreate = canCreateProject(useSession());
   const navigate = useNavigate();
   // Live events refresh the project list; follow the first one in.
   useEffect(() => {
-    if (first) navigate({ to: "/$project", params: { project: first } });
+    if (first)
+      navigate({ to: "/$org/$project", params: { org, project: first } });
   }, [first, navigate]);
   const steps = [
     [`dock login ${window.location.origin}`, "Sign in from your terminal."],
@@ -90,7 +96,11 @@ function NoProjects() {
       </ol>
       <p className="text-mut">
         This page updates when the first project appears. Letting an agent do
-        it? <Link to="/tokens">Create a deploy token</Link>.
+        it?{" "}
+        <Link to="/$org/tokens" params={{ org }}>
+          Create a deploy token
+        </Link>
+        .
       </p>
     </Page>
   );

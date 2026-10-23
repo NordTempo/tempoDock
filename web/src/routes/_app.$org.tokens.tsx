@@ -4,7 +4,7 @@ import { TokensPage } from "../features/tokens/TokensPage";
 
 // The organization's tokens, for its admins. Operators manage them in the
 // platform console.
-export const Route = createFileRoute("/_app/tokens")({
+export const Route = createFileRoute("/_app/$org/tokens")({
   beforeLoad: async ({ context }) => {
     const session = await context.queryClient.ensureQueryData(
       queries.session(),

@@ -23,6 +23,7 @@ import {
   useVolumes,
 } from "../../data/queries";
 import type { Service, ServiceRef, SettingChange } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
@@ -481,6 +482,7 @@ function DatabaseSettings({
 }
 
 function Archive({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
   const isAdmin = useIsAdmin();
   const archive = useArchiveService();
   const navigate = useNavigate();
@@ -504,8 +506,8 @@ function Archive({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 archive.mutate(ref, {
                   onSuccess: () =>
                     navigate({
-                      to: "/$project",
-                      params: { project: ref.project },
+                      to: "/$org/$project",
+                      params: { org, project: ref.project },
                     }),
                 })
               }

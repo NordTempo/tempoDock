@@ -5,6 +5,7 @@ import { useProblems } from "../../data/problems";
 import { serviceRef, useChanges, useIsOperator } from "../../data/queries";
 import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
+import { useOrg } from "../../shell/location";
 import { plural, since } from "../../ui/format";
 import { Button, ErrorText, Glyph, SectionHead } from "../../ui/kit";
 import {
@@ -80,6 +81,7 @@ function problemKey(p: Problem) {
 type RowProps = { n: number; problem: Problem; project: string };
 
 function ProblemRow({ n, problem: p, project }: RowProps) {
+  const org = useOrg();
   const key = n <= 9 ? String(n) : undefined;
   const operator = useIsOperator();
   switch (p.kind) {
@@ -108,8 +110,8 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
                 />
               ) : (
                 <Link
-                  to="/$project/$environment/$service/logs"
-                  params={ref}
+                  to="/$org/$project/$environment/$service/logs"
+                  params={{ org, ...ref }}
                   className={actionClass}
                   data-problem={n}
                 >
@@ -139,8 +141,8 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           time={time}
           action={
             <Link
-              to="/$project/$environment/$service/releases"
-              params={ref}
+              to="/$org/$project/$environment/$service/releases"
+              params={{ org, ...ref }}
               className={actionClass}
               data-problem={n}
             >
@@ -166,8 +168,8 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           time={since(p.release.created_at)}
           action={
             <Link
-              to="/$project/$environment/$service/releases/$number"
-              params={{ ...ref, number: String(p.release.number) }}
+              to="/$org/$project/$environment/$service/releases/$number"
+              params={{ org, ...ref, number: String(p.release.number) }}
               className={actionClass}
               data-problem={n}
             >
@@ -199,8 +201,8 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           time={since(at)}
           action={
             <Link
-              to="/$project/$environment/$service/backups"
-              params={ref}
+              to="/$org/$project/$environment/$service/backups"
+              params={{ org, ...ref }}
               className={actionClass}
               data-problem={n}
             >
@@ -232,8 +234,8 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           time={since(p.domain.created_at)}
           action={
             <Link
-              to="/$project/$environment/$service/domains"
-              params={ref}
+              to="/$org/$project/$environment/$service/domains"
+              params={{ org, ...ref }}
               className={actionClass}
               data-problem={n}
             >
@@ -321,6 +323,7 @@ function StagedRow({
   environment: EnvironmentView;
   project: string;
 }) {
+  const org = useOrg();
   const ref = { project, environment: env.environment.name };
   const changes = useChanges(ref);
   const releases = affectedServices(changes, env.services).map(nextRelease);
@@ -333,8 +336,8 @@ function StagedRow({
       where={env.environment.name}
       action={
         <Link
-          to="/$project/$environment"
-          params={ref}
+          to="/$org/$project/$environment"
+          params={{ org, ...ref }}
           className={actionClass}
           data-problem={n}
         >

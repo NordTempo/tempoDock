@@ -5,7 +5,15 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { notFound } from "@tanstack/react-router";
-import { api, body, isUnauthorized, list, setOrg } from "../api/client";
+import {
+  ApiError,
+  api,
+  body,
+  currentOrg,
+  isUnauthorized,
+  list,
+  setOrg,
+} from "../api/client";
 import type { components } from "../api/schema";
 import type {
   AuditFilter,
@@ -32,6 +40,7 @@ const serviceKey = (s: ServiceRef) => [...envKey(s), "service", s.service];
 
 export const keys = {
   session: ["session"],
+  orgs: ["orgs"],
   projects: ["projects"],
   project: (project: string) => ["project", project],
   /** Under projects, so project.* audit events refetch it. */
@@ -153,13 +162,23 @@ function toChanges(c: components["schemas"]["PendingChanges"]): PendingChanges {
 }
 
 /**
- * The caller in the organization the UI acts in. A user with several has
- * none until one is chosen; until the switcher (ADR 0027 phase 2) the UI
+ * The caller in the organization the UI acts in. A remembered one they
+ * no longer belong to is forgotten; a user with several and none chosen
  * acts in their first.
  */
 export async function currentMe() {
-  const me = await body(api.GET("/api/v1/me"));
-  if (me.org || me.kind !== "user") return me;
+  const me = await body(api.GET("/api/v1/me")).catch((error: unknown) => {
+    if (!(error instanceof ApiError && error.status === 404 && currentOrg())) {
+      throw error;
+    }
+    setOrg(undefined);
+    return body(api.GET("/api/v1/me"));
+  });
+  if (me.org) {
+    if (me.kind === "user") setOrg(me.org);
+    return me;
+  }
+  if (me.kind !== "user") return me;
   const [first] = await list(api.GET("/api/v1/orgs"));
   if (!first) return me;
   setOrg(first.slug);
@@ -178,6 +197,13 @@ export const queries = {
           if (isUnauthorized(error)) return null;
           throw error;
         }),
+      staleTime: Number.POSITIVE_INFINITY,
+    }),
+  /** The caller's organizations, with their role in each. */
+  orgs: () =>
+    queryOptions({
+      queryKey: keys.orgs,
+      queryFn: () => list(api.GET("/api/v1/orgs")),
       staleTime: Number.POSITIVE_INFINITY,
     }),
   projects: () =>
@@ -398,6 +424,7 @@ export const useSession = () => useSuspenseQuery(queries.session()).data;
 export const useIsAdmin = () => useSession()?.scope === "admin";
 /** Platform operators run the console: servers, backups, accounts (ADR 0027). */
 export const useIsOperator = () => useSession()?.operator === true;
+export const useOrgs = () => useSuspenseQuery(queries.orgs()).data;
 export const useProjects = () => useSuspenseQuery(queries.projects()).data;
 export const useProjectOverview = (project: string) =>
   useSuspenseQuery(queries.overview(project)).data;

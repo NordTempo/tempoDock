@@ -11,6 +11,7 @@ import {
 import type { EnvRef, Variable } from "../../data/types";
 import { EnvSwitch } from "../../shell/context";
 import { useShortcuts } from "../../shell/keys";
+import { useOrg } from "../../shell/location";
 import { plural } from "../../ui/format";
 import {
   Act,
@@ -50,6 +51,7 @@ export function VariablesEditor({
   /** The service whose runtime view to show; null for shared lines only. */
   service: string | null;
 }) {
+  const org = useOrg();
   const all = useVariables(env, null);
   const { services } = useEnvironment(env);
   const isAdmin = useIsAdmin();
@@ -92,8 +94,8 @@ export function VariablesEditor({
       <PageBar
         parent={
           <Link
-            to="/$project"
-            params={{ project: env.project }}
+            to="/$org/$project"
+            params={{ org, project: env.project }}
             className="hover:text-fg"
           >
             {env.project}
@@ -126,8 +128,8 @@ export function VariablesEditor({
         >
           <div className="px-2 pb-1.5 text-2xs text-faint">Applies to</div>
           <Link
-            to="/$project/$environment"
-            params={env}
+            to="/$org/$project/$environment"
+            params={{ org, ...env }}
             search={{}}
             activeOptions={{ exact: true }}
             className="nav-row"
@@ -144,8 +146,8 @@ export function VariablesEditor({
             return (
               <Link
                 key={s.service.id}
-                to="/$project/$environment"
-                params={env}
+                to="/$org/$project/$environment"
+                params={{ org, ...env }}
                 search={{ service: name }}
                 activeOptions={{ exact: true }}
                 className="nav-row"

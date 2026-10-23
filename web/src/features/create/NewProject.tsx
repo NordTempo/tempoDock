@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useProjects } from "../../data/queries";
+import { useOrg } from "../../shell/location";
 import {
   autofocus,
   Field,
@@ -17,6 +18,7 @@ import { useCreateProject } from "./mutations";
  * environment. Opens the new project.
  */
 export function NewProject({ onClose }: { onClose: () => void }) {
+  const org = useOrg();
   const projects = useProjects();
   const create = useCreateProject();
   const navigate = useNavigate();
@@ -33,7 +35,10 @@ export function NewProject({ onClose }: { onClose: () => void }) {
         e.preventDefault();
         create.mutate(name, {
           onSuccess: async (p) => {
-            await navigate({ to: "/$project", params: { project: p.name } });
+            await navigate({
+              to: "/$org/$project",
+              params: { org, project: p.name },
+            });
             onClose();
           },
         });

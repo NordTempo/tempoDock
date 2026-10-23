@@ -23,7 +23,9 @@ import { Page } from "../ui/kit";
 
 // Service layout: header bar and tabs stay put while tabs swap below.
 // Addressed by name, like the API: /shop/production/api.
-export const Route = createFileRoute("/_app/$project/$environment/$service")({
+export const Route = createFileRoute(
+  "/_app/$org/$project/$environment/$service",
+)({
   loader: async ({ context: { queryClient }, params }) => {
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),
@@ -45,7 +47,7 @@ export const Route = createFileRoute("/_app/$project/$environment/$service")({
 function ServiceLayout() {
   const ref = servicePath(Route.useParams());
   const tab = useMatches({ select: (matches) => matches.at(-1)?.routeId });
-  const onOverview = tab === "/_app/$project/$environment/$service/";
+  const onOverview = tab === "/_app/$org/$project/$environment/$service/";
   useEffect(() => rememberProject(ref.project), [ref.project]);
   // The open Deploy window; each drop opens a fresh one.
   const [deploy, setDeploy] = useState<{ start: DeployStart; n: number }>();
@@ -68,7 +70,7 @@ function ServiceLayout() {
       ) : (
         <Page
           width={
-            tab === "/_app/$project/$environment/$service/data"
+            tab === "/_app/$org/$project/$environment/$service/data"
               ? "max-w-none"
               : undefined
           }

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useRollback } from "../../data/mutations";
 import type { Release, ServiceRef } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
 import {
   Act,
@@ -26,6 +27,7 @@ export function ReleasesTable({
   /** Rollback is locked while a deploy is in flight. */
   deploying: boolean;
 }) {
+  const org = useOrg();
   const rollback = useRollback();
   // A rollback first shows the image and config it brings back.
   const [confirming, setConfirming] = useState<number | null>(null);
@@ -51,8 +53,8 @@ export function ReleasesTable({
               <tr key={r.id}>
                 <td className="font-mono">
                   <Link
-                    to="/$project/$environment/$service/releases/$number"
-                    params={{ ...ref, number: String(r.number) }}
+                    to="/$org/$project/$environment/$service/releases/$number"
+                    params={{ org, ...ref, number: String(r.number) }}
                     className="no-underline hover:underline"
                   >
                     r{r.number}
@@ -80,8 +82,8 @@ export function ReleasesTable({
                   )}
                   {r.status === "failed" && (
                     <Link
-                      to="/$project/$environment/$service/releases/$number"
-                      params={{ ...ref, number: String(r.number) }}
+                      to="/$org/$project/$environment/$service/releases/$number"
+                      params={{ org, ...ref, number: String(r.number) }}
                     >
                       Why
                     </Link>

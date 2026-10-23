@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { serviceRef } from "../../data/queries";
 import type { ServiceView } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
 import { Actor, actorKind, Glyph } from "../../ui/kit";
 import { stepPhrase } from "../../ui/status";
@@ -13,14 +14,15 @@ export function DeployBanner({
   service: ServiceView;
   watchKey?: boolean;
 }) {
+  const org = useOrg();
   const release = service.deploying;
   if (!release) return null;
   const { name, environment } = service.service;
   const serving = service.service.active_release;
   return (
     <Link
-      to="/$project/$environment/$service"
-      params={serviceRef(service.service)}
+      to="/$org/$project/$environment/$service"
+      params={{ org, ...serviceRef(service.service) }}
       className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-panel border border-warn-edge bg-prog-bg px-3.5 py-2.5 hover:border-warn/50"
     >
       <span className="text-prog">

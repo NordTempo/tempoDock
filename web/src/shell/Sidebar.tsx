@@ -3,6 +3,7 @@ import {
   Link,
   type LinkProps,
   useMatches,
+  useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -13,11 +14,12 @@ import {
   queries,
   serviceRef,
   useIsOperator,
+  useOrgs,
   useProjectTree,
   useServers,
   useSession,
 } from "../data/queries";
-import type { ServiceView } from "../data/types";
+import type { Org, ServiceView } from "../data/types";
 import { useOpenAlertsIfAdmin } from "../features/alerts/data";
 import {
   canCreateEnvironment,
@@ -30,19 +32,19 @@ import { Icon, type IconName } from "../ui/icons";
 import { ErrorText, Glyph, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, toneText } from "../ui/status";
 import { modKey } from "./keys";
-import { useCurrentContext } from "./location";
+import { useCurrentContext, useOrg } from "./location";
 import { usePalette } from "./palette";
 
 /**
- * Which sidebar a page gets: the project tree, workspace settings (the
- * caller's tokens and activity), or the platform console (admins: every
- * page under /console).
+ * Which sidebar a page gets: the project tree, organization settings (its
+ * tokens and activity, your account), or the platform console (operators:
+ * every page under /console).
  */
 export type ShellMode = "app" | "settings" | "console";
 
 const settings = new Set<keyof FileRoutesById>([
-  "/_app/tokens",
-  "/_app/audit",
+  "/_app/$org/tokens",
+  "/_app/$org/audit",
   "/_app/account",
 ]);
 
@@ -75,7 +77,7 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
           ? "Platform"
           : mode === "settings"
             ? "Settings"
-            : "Workspace"
+            : "Organization"
       }
       className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky lg:w-[248px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 ${
         // Under the console's sticky amber bar.
@@ -131,7 +133,7 @@ function AppNav() {
   const operator = useIsOperator();
   return (
     <>
-      <Workspace />
+      <OrgSwitcher />
       <button
         type="button"
         onClick={() => openPalette()}
@@ -147,11 +149,11 @@ function AppNav() {
       <ProjectTree />
       <ArchivedProjects />
       <div className="min-h-6 flex-1" />
-      <NavLink to="/audit" icon="activity">
+      <NavLink to="/$org/audit" icon="activity">
         Activity
       </NavLink>
       {!operator && (
-        <NavLink to="/tokens" icon="key">
+        <NavLink to="/$org/tokens" icon="key">
           Tokens
         </NavLink>
       )}
@@ -171,36 +173,82 @@ function AppNav() {
   );
 }
 
-/**
- * The workspace this Dock is. One Dock is one workspace today, so the menu
- * holds it and signing out.
- */
-function Workspace() {
-  const logout = useLogout();
-  const host = window.location.hostname;
-  const badge = (
-    <span className="grid size-5 flex-none place-items-center rounded-[5px] bg-fg text-2xs font-semibold text-side">
-      D
+// Badge colours tell organizations apart in the switcher.
+const badgeColours = ["bg-fg", "bg-info", "bg-ok", "bg-warn"];
+
+/** An organization's badge: its initial, in a colour of its own. */
+function OrgBadge({ org }: { org: Org }) {
+  let h = 0;
+  for (const c of org.slug) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return (
+    <span
+      className={`grid size-5 flex-none place-items-center rounded-[5px] text-2xs font-semibold text-side ${badgeColours[h % badgeColours.length]}`}
+    >
+      {(org.name || org.slug).charAt(0).toUpperCase()}
     </span>
   );
+}
+
+/**
+ * The organization switcher (ADR 0027): the org the page acts in, your
+ * others with your role in each, a new one, and signing out.
+ */
+function OrgSwitcher() {
+  const logout = useLogout();
+  const orgs = useOrgs();
+  const slug = useOrg();
+  const navigate = useNavigate();
+  const current = orgs.find((o) => o.slug === slug) ?? orgs[0];
   return (
     <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-2">
       <Menu
-        label="Workspace"
+        label="Organization"
         className="min-w-0 flex-1"
         button={
           <span className="flex min-w-0 flex-1 items-center gap-2 rounded-ctl p-1.5 hover:bg-panel">
-            {badge}
-            <span className="truncate font-semibold">{host}</span>
+            {current && <OrgBadge org={current} />}
+            <span className="truncate font-semibold">
+              {current?.name ?? "No organization"}
+            </span>
             <Icon name="chevronDown" size={12} className="text-mut" />
           </span>
         }
       >
-        {() => (
+        {(close) => (
           <>
-            <span className={menuItem} aria-current="page">
-              {badge} {host}
-            </span>
+            <div className="px-2.5 pt-1 pb-0.5 text-2xs text-faint">
+              Organizations
+            </div>
+            {orgs.map((o) => (
+              <button
+                key={o.slug}
+                type="button"
+                className={menuItem}
+                aria-current={o.slug === current?.slug ? "page" : undefined}
+                onClick={() => {
+                  close();
+                  navigate({ to: "/$org", params: { org: o.slug } });
+                }}
+              >
+                <OrgBadge org={o} />
+                <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                <span className="text-2xs text-faint">{o.role}</span>
+                <span className="w-3 text-fg">
+                  {o.slug === current?.slug ? "✓" : ""}
+                </span>
+              </button>
+            ))}
+            <button
+              type="button"
+              className={menuItem}
+              title="dock org create"
+              onClick={() => {
+                close();
+                openCreate({ kind: "org" });
+              }}
+            >
+              <Icon name="plus" className="text-mut" /> New organization
+            </button>
             <div className="my-1 border-t border-line" />
             <button
               type="button"
@@ -266,6 +314,7 @@ function OpenAlertCount() {
  * "New project" sits under the last one for those who may create one.
  */
 function ProjectTree() {
+  const org = useOrg();
   const tree = useProjectTree();
   const here = useCurrentContext();
   const session = useSession();
@@ -327,8 +376,8 @@ function ProjectTree() {
                 />
               </button>
               <Link
-                to="/$project"
-                params={{ project: project.name }}
+                to="/$org/$project"
+                params={{ org, project: project.name }}
                 activeOptions={{ exact: true }}
                 activeProps={{ "aria-current": "page" }}
                 className={`flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-2 ${current ? "font-medium text-fg" : "text-sec"}`}
@@ -374,6 +423,7 @@ function ProjectTree() {
  * an archived project's page.
  */
 function ArchivedProjects() {
+  const org = useOrg();
   const here = useCurrentContext().project;
   const onArchived =
     useQuery({
@@ -413,8 +463,8 @@ function ArchivedProjects() {
           {archived.data.map((p) => (
             <li key={p.id}>
               <Link
-                to="/$project"
-                params={{ project: p.name }}
+                to="/$org/$project"
+                params={{ org, project: p.name }}
                 activeOptions={{ exact: true }}
                 activeProps={{ "aria-current": "page" }}
                 className="nav-row py-[5px] pl-[30px] text-faint"
@@ -504,6 +554,7 @@ function ProjectNote({ services }: { services: ServiceView[] }) {
 }
 
 function ServiceLink({ view }: { view: ServiceView }) {
+  const org = useOrg();
   const state = serviceState(view);
   const { service } = view;
   const note =
@@ -516,8 +567,8 @@ function ServiceLink({ view }: { view: ServiceView }) {
         : state.label;
   return (
     <Link
-      to="/$project/$environment/$service"
-      params={serviceRef(service)}
+      to="/$org/$project/$environment/$service"
+      params={{ org, ...serviceRef(service) }}
       activeProps={{ "aria-current": "page" }}
       className="nav-row py-[5px] pl-[30px]"
       title={state.label}
@@ -542,9 +593,9 @@ function SettingsNav() {
       <Link to="/" className="nav-row mb-1 text-mut">
         <Icon name="chevronLeft" /> Back to projects
       </Link>
-      <div className={groupLabel}>Workspace</div>
-      {!operator && <NavLink to="/tokens">Tokens</NavLink>}
-      <NavLink to="/audit">Audit log</NavLink>
+      <div className={groupLabel}>Organization</div>
+      {!operator && <NavLink to="/$org/tokens">Tokens</NavLink>}
+      <NavLink to="/$org/audit">Audit log</NavLink>
       <div className="min-h-6 flex-1" />
       <Me />
     </>
