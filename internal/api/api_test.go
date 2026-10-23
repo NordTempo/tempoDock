@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/core"
@@ -353,4 +355,28 @@ func TestLoginSessionAndEvents(t *testing.T) {
 		}
 	}
 	t.Fatal("stream ended without the audit event")
+}
+
+// The TOML export is the CLI's output as a download, and the same config
+// as the JSON export.
+func TestExportTOML(t *testing.T) {
+	f := newFixture(t)
+	resp, body := f.do("read", "GET", "/api/v1/projects/shop/export.toml", nil)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Disposition") != `attachment; filename="shop.dock.toml"` {
+		t.Fatalf("status %d, headers %v: %s", resp.StatusCode, resp.Header, body)
+	}
+	var fromTOML, fromJSON apitypes.ProjectExport
+	if err := toml.Unmarshal(body, &fromTOML); err != nil {
+		t.Fatal(err)
+	}
+	_, jsonBody := f.do("read", "GET", "/api/v1/projects/shop/export", nil)
+	if err := json.Unmarshal(jsonBody, &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	if len(fromTOML.Environments) != 1 || len(fromTOML.Environments[0].Services) != 2 || fromTOML.Project != fromJSON.Project || len(fromJSON.Environments[0].Services) != 2 {
+		t.Fatalf("toml %+v, json %+v", fromTOML, fromJSON)
+	}
+	if resp, _ := f.do("shop-deploy", "GET", "/api/v1/projects/blog/export.toml", nil); resp.StatusCode != 403 {
+		t.Fatalf("another project's token: status %d", resp.StatusCode)
+	}
 }

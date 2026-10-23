@@ -1,5 +1,12 @@
 package apitypes
 
+import (
+	"bytes"
+	"fmt"
+
+	"github.com/pelletier/go-toml/v2"
+)
+
 // ExportVersion is the version of the export manifest's format.
 const ExportVersion = 1
 
@@ -66,4 +73,18 @@ type GitExport struct {
 	Branch     string `json:"branch" toml:"branch"`
 	Directory  string `json:"directory,omitempty" toml:"directory,omitempty"`
 	Statuses   bool   `json:"statuses,omitempty" toml:"statuses,omitempty"`
+}
+
+// TOML renders the export as `dock project export` prints it and the UI
+// downloads it: a header saying what it is, then the manifest.
+func (ex ProjectExport) TOML() ([]byte, error) {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "# Tempo Dock project %s, exported with `dock project export`.\n", ex.Project)
+	b.WriteString("# Settings as they are live. Variables are names only: values are never exported.\n\n")
+	enc := toml.NewEncoder(&b)
+	enc.SetIndentTables(true)
+	if err := enc.Encode(ex); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }

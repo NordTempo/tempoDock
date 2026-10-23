@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -130,6 +131,32 @@ func registerProjects(s *Server, a huma.API) {
 		Description: "The project's environments, services and non-secret settings as they are live, sorted by name. Variables are names only; values are never included. Scope: read.",
 	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[apitypes.ProjectExport], error) {
 		return reply(s.core.ExportProject(ctx, actor, in.Project))
+	})
+	// The same export as TOML, as `dock project export` prints it, so the
+	// UI can download it without a TOML encoder of its own.
+	authed(s, a, huma.Operation{
+		OperationID: "export-project-toml", Method: http.MethodGet, Path: projectPathT + "/export.toml",
+		Summary: "Export a project's config as TOML", Tags: []string{"projects"},
+		Description: "The export as a `<project>.dock.toml` attachment, exactly as `dock project export` prints it. Scope: read.",
+		Responses: map[string]*huma.Response{"200": {
+			Description: "Export",
+			Content:     map[string]*huma.MediaType{"application/toml": {Schema: &huma.Schema{Type: huma.TypeString}}},
+		}},
+	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*huma.StreamResponse, error) {
+		ex, err := s.core.ExportProject(ctx, actor, in.Project)
+		if err != nil {
+			return nil, err
+		}
+		b, err := ex.TOML()
+		if err != nil {
+			return nil, err
+		}
+		return &huma.StreamResponse{Body: func(hctx huma.Context) {
+			hctx.SetHeader("Content-Type", "application/toml; charset=utf-8")
+			hctx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", ex.Project+".dock.toml"))
+			hctx.SetStatus(http.StatusOK)
+			_, _ = hctx.BodyWriter().Write(b)
+		}}, nil
 	})
 
 	authed(s, a, huma.Operation{
