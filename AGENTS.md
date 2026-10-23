@@ -52,6 +52,7 @@ Go version: `go.mod`. Node 24, pnpm. Run `make lint`, `go vet ./...`,
 
 ```
 cmd/dock/              entry point
+cmd/tempobase/         tempoBase's entry point (ADR 0024)
 internal/apitypes/     the API's JSON contract; the CLI imports it, no server deps
 internal/api/          Huma handlers, auth, SSE streams, loopback endpoints
 internal/mcp/          the MCP endpoint for agents (ADR 0017): tools over core
@@ -60,13 +61,25 @@ internal/core/         domain logic: projects, services, variables, releases,
 internal/store/        SQLite: migrations/*.sql, queries/*.sql, sqlc output (*.sql.go)
 internal/node/         runtime interface; docker/, build/, caddy/, remote/, fake/
 internal/cli/          Cobra commands, human and --json output
+internal/datapanel/    the Data panel's rules, shared by core and tempoBase
+internal/data/         database engines for the panel (data/pg)
+internal/tempobase/    tempoBase's server: App, tbhttp, tbstore, tbmcp
+internal/httpkit/      HTTP plumbing shared by both servers; mcpkit the same for MCP
+internal/registry/     the platform image registry next to the control plane
+internal/update*/      finding and applying Dock releases (ADR 0028)
+internal/backup/       restic jobs for stateful services; cpbackup the control plane's
+internal/secrets/      AES-GCM for values at rest
 internal/pack/         source archive for `dock deploy`
 internal/repoconfig/   dock.toml parsing
-web/                   React + Vite + Tailwind + TanStack Router/Query
+web/                   React + Vite + Tailwind + TanStack Router/Query; web/tempobase
 scripts/perf/          the `make perf` budget checker and baseline
 docs/                  design docs; decisions/ holds the ADRs
-e2e/                   scenarios against a live server
+e2e/                   scenarios against a live server (see e2e/run.sh)
 ```
+
+Some directories have their own AGENTS.md with the rules for working
+there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
+`internal/tempobase` and `web`. Read the one for the directory you change.
 
 - `core` depends on `store` and the `node.Runtime` interface, never on
   Docker or HTTP. Every core operation takes the calling `Actor` and checks
