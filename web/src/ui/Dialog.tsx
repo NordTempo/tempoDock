@@ -2,7 +2,8 @@ import { type ReactNode, useEffect, useRef } from "react";
 
 /**
  * A modal window on the native <dialog>: focus trap, Esc to close and the
- * top layer come from the browser. Render it only while open; closing
+ * top layer come from the browser; the element marked autofocus, else
+ * the first field, gets focus. Render it only while open; closing
  * (Esc, the backdrop, or the caller's own buttons) calls onClose, and the
  * caller unmounts it. Forms inside use their own submit button.
  */
@@ -18,9 +19,16 @@ export function Dialog({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // React's autoFocus runs before showModal, which then focuses the first
+  // focusable element (the close button). Focus the first field instead.
   useEffect(() => {
     const d = ref.current;
-    if (d && !d.open) d.showModal();
+    if (!d || d.open) return;
+    d.showModal();
+    (
+      d.querySelector<HTMLElement>("[autofocus], [data-autofocus]") ??
+      d.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea")
+    )?.focus();
   }, []);
   return (
     <dialog
