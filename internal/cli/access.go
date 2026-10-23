@@ -79,13 +79,16 @@ func tokenStatus(t apitypes.Token) string {
 
 func newTokenCreateCmd(g *globals) *cobra.Command {
 	var scope, project, env, expires string
+	var operator bool
 	var data dataFlags
 	cmd := &cobra.Command{
 		Use:   "create <name> --scope read|deploy|admin",
 		Short: "Create a token; its secret is shown once",
 		Long: `Create a token. The secret is printed once (also with --json) and can't be
-shown again. --project and --environment limit the token; they are never
-taken from the directory's link.`,
+shown again. The token belongs to the organization in use. --project and
+--environment limit the token; they are never taken from the directory's
+link. --operator (operators only) makes an admin token that may also run
+the platform: servers, backups, accounts.`,
 		Example: `  dock token create ci --scope deploy --project shop --environment staging --expires 90d`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -103,7 +106,7 @@ taken from the directory's link.`,
 			if err != nil {
 				return err
 			}
-			req := apitypes.CreateTokenRequest{Name: args[0], Scope: apitypes.Scope(scope), Project: project, Environment: env, ExpiresInDays: days}
+			req := apitypes.CreateTokenRequest{Name: args[0], Scope: apitypes.Scope(scope), Project: project, Environment: env, ExpiresInDays: days, Operator: operator}
 			if req.Data, err = data.access(cmd, nil); err != nil {
 				return err
 			}
@@ -130,6 +133,7 @@ taken from the directory's link.`,
 	cmd.Flags().StringVarP(&project, "project", "p", "", "limit the token to this project")
 	cmd.Flags().StringVarP(&env, "environment", "e", "", "limit the token to this environment of --project")
 	cmd.Flags().StringVar(&expires, "expires", "", "lifetime: days like 90d, or a duration like 720h (default: never)")
+	cmd.Flags().BoolVar(&operator, "operator", false, "a platform operator token (operators only; needs --scope admin)")
 	data.add(cmd)
 	return cmd
 }
@@ -356,6 +360,9 @@ func newUserCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(u, func() error {
 				g.io.Successf("Created user %s <%s> with role %s", u.Name, u.Email, u.Role)
+				if u.Operator {
+					g.io.Successf("%s is a platform operator", u.Email)
+				}
 				return nil
 			})
 		},
@@ -363,6 +370,7 @@ func newUserCmd(g *globals) *cobra.Command {
 	create.Flags().StringVar(&req.Email, "email", "", "login email")
 	create.Flags().StringVar(&req.Name, "name", "", "display name")
 	create.Flags().StringVar(&role, "role", "", "read, deploy or admin")
+	create.Flags().BoolVar(&req.Operator, "operator", false, "make them a platform operator too")
 	create.Flags().StringVar(&req.Password, "password", "", "password (prompted for on a terminal)")
 
 	cmd.AddCommand(list, create,
@@ -489,17 +497,23 @@ and printed once. Change your own with ` + "`dock me password`" + `.`,
 func newAuditCmd(g *globals) *cobra.Command {
 	var project, env, service, action string
 	var limit int
+	var platform bool
 	cmd := &cobra.Command{
 		Use:   "audit",
 		Short: "Show the audit log, newest first",
-		Long:  "Every mutating action with who did it. Filters are explicit flags; the directory's link is not used.",
-		Args:  cobra.NoArgs,
+		Long: `Every mutating action in the organization with who did it. Filters are
+explicit flags; the directory's link is not used. --platform shows the
+platform's log instead (servers, accounts, backup settings; operators).`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.connect()
 			if err != nil {
 				return err
 			}
 			q := url.Values{"limit": {strconv.Itoa(limit)}}
+			if platform {
+				q.Set("platform", "true")
+			}
 			for k, v := range map[string]string{"project": project, "environment": env, "service": service, "action": action} {
 				if v != "" {
 					q.Set(k, v)
@@ -523,5 +537,6 @@ func newAuditCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVarP(&service, "service", "s", "", "only events targeting this service of --project and --environment")
 	cmd.Flags().StringVar(&action, "action", "", "action prefix, e.g. release. or domain.add")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "how many events (max 500)")
+	cmd.Flags().BoolVar(&platform, "platform", false, "the platform's log instead of the organization's (operators)")
 	return cmd
 }

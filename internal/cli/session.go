@@ -46,10 +46,14 @@ func (g *globals) connect() (*session, error) {
 			Hint:    fmt.Sprintf("Run `dock login %s`, or set %s and %s.", r.Server, clientconfig.EnvURL, clientconfig.EnvToken),
 		}
 	}
+	if g.org != "" {
+		r.Org = g.org
+	}
 	api, err := apiclient.New(r.Server, r.Token)
 	if err != nil {
 		return nil, err
 	}
+	api.Org = r.Org
 	return &session{api: api, cfg: cfg, server: r, link: link}, nil
 }
 

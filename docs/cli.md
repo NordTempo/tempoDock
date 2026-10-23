@@ -94,8 +94,9 @@ to create or paste:
    can't approve their login. The page then shows the CLI's host, OS and
    IP: deny a login you didn't start. A few wrong codes lock code entry
    for a few minutes.
-3. The CLI gets its own token: named `cli: <hostname>`, your role as
-   scope, valid for 90 days, listed on the Tokens page as from `dock login`.
+3. The CLI gets its own token: named `cli: <hostname>`, acting with your
+   role in each organization, valid for 90 days, listed on the Tokens page
+   as from `dock login`.
    Codes expire after 10 minutes; Ctrl-C cancels.
 
 The token acts for you, so it is only as good as your account: it stops
@@ -117,6 +118,22 @@ dock login https://dock.example.com --token-stdin < token-file
 
 `--token <token>` still works but is not recommended. Without a terminal
 and without a token flag (or `--no-browser`), `dock login` is a usage error.
+
+## Organizations
+
+Projects and API tokens belong to an organization, and every command acts
+in one, with your role there ([ADR 0027](decisions/0027-organizations.md)).
+The organization comes from, in order:
+
+1. `--org <slug>`.
+2. `DOCK_ORG`.
+3. The linked directory's: `dock link` records the organization the
+   project is in.
+4. The context's, chosen with `dock org use <slug>`.
+5. None: an API token acts in its own organization, and a user in their
+   only one. A user in several gets a usage error naming `--org`.
+
+An API token never acts in another organization than its own.
 
 ## Config file and links
 
@@ -142,7 +159,8 @@ keeps the linked service, so it means "this service, in staging".
 | `login [url] [--no-browser \| --token-stdin]` | Log in through the browser (on a terminal, or with `--no-browser`), or verify a token from stdin; store it as a context and use it. Warns when the server runs another version |
 | `version` | The CLI's version and, when a server is configured, the server's (one unauthenticated request; nothing without a server), with the command that installs the matching CLI when they differ |
 | `logout` | Remove the context's token; revoke it on the server if it came from a browser login |
-| `whoami` | Who the token belongs to and its scope |
+| `whoami` | Who the token belongs to, the organization it acts in and its scope there |
+| `org list\|create <slug> [--name N]\|use <slug>` | Your organizations and your role in each; create one (users, not tokens) with you as its admin; act in one from now on, in the context in use |
 | `mcp [--show-token] [--name N]` | Print the MCP client config for the context's server ([agents](guide/agents.md#mcp)): the endpoint URL, a `claude mcp add` command and an `mcp.json` entry. The token is `${DOCK_TOKEN}` unless `--show-token` |
 | `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions and other browser-login tokens end; the CLI's own token stays valid |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
@@ -163,21 +181,21 @@ keeps the linked service, so it means "this service, in staging".
 | `domain list [-w]\|add HOST [--redirect-to]\|generate\|remove HOST` | Domains; `list -w` adds the URL, last DNS check and what the hostname resolved to; `add` prints the DNS record and waits (`--timeout`, default 5m) for DNS and the certificate, then prints the URL |
 | `volume list\|add NAME PATH` | Volumes (staged) |
 | `service list\|create\|show\|update\|archive` | Services; `update` stages only the settings passed. `create NAME --template postgres\|redis` creates a database from a template and deploys it ([guide](guide/databases.md)) |
-| `backup list\|run [-d] [--control-plane]\|restore --snapshot ID [--as NAME] [-d]\|schedule [--hour H\|--default-hour] [--on\|--off]` | A stateful service's backups: list runs and snapshots, back up now (waits; `--detach` doesn't), restore into a new service (template databases), change the daily schedule. `run --control-plane` (admin) backs up the control plane itself into the repository, as it does daily. Exit 1 when the awaited run fails |
-| `backup status [--reveal]`, `backup configure [--repository URL] [--access-key-id ID] [--secret-access-key-stdin] [--region R] [--keep-daily N] [--keep-weekly N] [--keep-monthly N] [--hour H]` | Where backups go, retention and the default hour; `configure` (admin) sets them and prints the repository password the first time; `--reveal` (admin) shows it again |
+| `backup list\|run [-d] [--control-plane]\|restore --snapshot ID [--as NAME] [-d]\|schedule [--hour H\|--default-hour] [--on\|--off]` | A stateful service's backups, which run on their own: list runs and snapshots, back up now (waits; `--detach` doesn't), restore into a new service (template databases), change the daily schedule (operator). `run --control-plane` (operator) backs up the control plane itself into the repository, as it does daily. Exit 1 when the awaited run fails |
+| `backup status [--reveal]`, `backup configure [--repository URL] [--access-key-id ID] [--secret-access-key-stdin] [--region R] [--keep-daily N] [--keep-weekly N] [--keep-monthly N] [--hour H]` | Where backups go, retention and the default hour, for the whole platform; `configure` (operator) sets them and prints the repository password the first time; `--reveal` (operator) shows it again |
 | `project list [--all]\|create\|archive <name>`, `environment list\|create [--kind]` | Projects and environments (`env` is variables). `project archive` (admin) archives every service in the project, removes its environments' networks and hides it from `project list` (`--all` shows it). An environment's kind (production or non-production) defaults from its name and never changes |
 | `environment clone FROM TO [--kind] [--deploy] [--copy-values] [-d]` (also `env clone`) | A new environment with FROM's services, settings, variables and new, empty volumes, placed like `environment create`. Reference-only values are always copied; other values only for admins, and between production and non-production only with `--copy-values` (admin, listed in the output); otherwise templates get new credentials and the rest are listed. Domains, git connections, releases, backups and staged changes are not copied. `--deploy` deploys FROM's images like `promote` ([ADR 0022](decisions/0022-clone-and-export.md)) |
 | `project export [NAME] [--format toml\|json]` | The project's live config: environments, services, settings, volumes, domains, git connections and variable names, never values. Sorted, so it diffs well in git |
-| `project pin <project> --kind production\|non-production --server NAME` | Admin: choose the server a project's environments of a kind go to, before any exist |
-| `server list`, `server show NAME` | Servers: link status (`online`, `offline`, `incompatible`, `joining`, `revoked`), version, ingress, accepted kinds, whether it builds, memory reserved; `show` (admin) adds base domain, DNS target, what's placed and current usage |
-| `server add NAME [--production] [--non-production] [--builder]` | Admin: create a one-time join token (valid for an hour) and print the exact `install.sh --node` command to run on the new server. The token is shown once |
-| `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement] [--builder\|--no-builder] [--base-domain D]` | Admin: what the server accepts, whether it builds, and the base domain of generated hostnames (`""` removes it) |
-| `server revoke NAME`, `server rotate-key NAME`, `server remove NAME` | Admin: forget a server's key and drop its link (it must join again; its apps keep running); have an online server switch to a new key; remove a server no live project uses (archived projects' environments move to the control plane's server) |
-| `registry`, `registry prune` | Admin: the image registry's size on disk, the last prune (since the daemon started) and every service with images, with how many its rollback window keeps; `prune` deletes the images no release keeps and collects their layers now, in the background (409 while builds or pulls use the registry) ([ADR 0025](decisions/0025-platform-console.md)) |
-| `token list\|create NAME --scope\|update ID\|revoke ID` | Tokens (admin). `create` and `update` take `--data-production`, `--data-non-production` (`none`, `schema`, `read`, `propose`, `write`) and `--data-sensitive` (`masked`, `visible`): the token's own database access instead of the data policy's tokens rule; `update --data-clear` removes it |
-| `user list\|create\|disable\|enable\|delete\|reset-password` | Users (admin). Users are named by email or id. `list` shows status, live sessions and usable tokens; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions and browser-login tokens (your own: `me password`). `disable` and `delete` end them too; tokens the user created by hand stay |
-| `audit [-p -e -s] [--action prefix]` | Audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e` |
-| `serve`, `admin bootstrap\|caddy-config\|registry-config --out DIR\|firewall apply\|remove\|backup [-o FILE\|-] [--include-registry] [--move]\|restore ARCHIVE [--old-server-becomes-node] [--print-config]` | Server side, run on the server with `--config`: the control plane daemon, the first admin token, Caddy's initial config (works before a node joins), the image registry's `config.yml` and `jwks.json` (deterministic for a given key), the app firewall (root; installed as `dock-firewall.service`), and the control plane's state as one 0600 archive and back (ADR 0021; `--move` needs the daemon stopped and retires it, `restore` is run by `install.sh --restore`). `serve` exits 9 on a control plane that moved away |
+| `project pin <project> --kind production\|non-production --server NAME` | Operator: choose the server a project's environments of a kind go to, before any exist |
+| `server list`, `server show NAME` | Servers: link status (`online`, `offline`, `incompatible`, `joining`, `revoked`), version, ingress, accepted kinds, whether it builds, memory reserved; operators see every server, others the ones their organization's environments run on. `show` (operator) adds base domain, DNS target, what's placed and current usage |
+| `server add NAME [--production] [--non-production] [--builder]` | Operator: create a one-time join token (valid for an hour) and print the exact `install.sh --node` command to run on the new server. The token is shown once |
+| `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement] [--builder\|--no-builder] [--base-domain D]` | Operator: what the server accepts, whether it builds, and the base domain of generated hostnames (`""` removes it) |
+| `server revoke NAME`, `server rotate-key NAME`, `server remove NAME` | Operator: forget a server's key and drop its link (it must join again; its apps keep running); have an online server switch to a new key; remove a server no live project uses (archived projects' environments move to the control plane's server) |
+| `registry`, `registry prune` | Operator: the image registry's size on disk, the last prune (since the daemon started) and every service with images, with how many its rollback window keeps; `prune` deletes the images no release keeps and collects their layers now, in the background (409 while builds or pulls use the registry) ([ADR 0025](decisions/0025-platform-console.md)) |
+| `token list\|create NAME --scope [--operator]\|update ID\|revoke ID` | The organization's tokens and its members' browser-login tokens (admin). `create --operator` (operator, scope admin) makes a token that may also run the platform. `create` and `update` take `--data-production`, `--data-non-production` (`none`, `schema`, `read`, `propose`, `write`) and `--data-sensitive` (`masked`, `visible`): the token's own database access instead of the data policy's tokens rule; `update --data-clear` removes it |
+| `user list\|create [--operator]\|disable\|enable\|delete\|reset-password` | Users. `list` (admin) shows the organization's members with their role, status, live sessions and usable tokens; the rest manage accounts, which are the platform's (operator), and `create` adds the new user to the organization in use. Users are named by email or id; `reset-password` sets `--password` or prints a generated one once, and ends the user's sessions and browser-login tokens (your own: `me password`). `disable` and `delete` end them too; tokens the user created by hand stay |
+| `audit [-p -e -s] [--action prefix] [--platform]` | The organization's audit log; the filters are explicit flags (the link isn't used), `-s` needs `-p` and `-e`. `--platform` (operator) shows the platform's instead: servers, accounts, logins, backup settings, alert channels |
+| `serve`, `admin bootstrap\|caddy-config\|registry-config --out DIR\|firewall apply\|remove\|backup [-o FILE\|-] [--include-registry] [--move]\|restore ARCHIVE [--old-server-becomes-node] [--print-config]` | Server side, run on the server with `--config`: the control plane daemon, the first operator token, Caddy's initial config (works before a node joins), the image registry's `config.yml` and `jwks.json` (deterministic for a given key), the app firewall (root; installed as `dock-firewall.service`), and the control plane's state as one 0600 archive and back (ADR 0021; `--move` needs the daemon stopped and retires it, `restore` is run by `install.sh --restore`). `serve` exits 9 on a control plane that moved away |
 | `node`, `node join TOKEN\|--token-file FILE`, `node set-control-plane HOST:PORT` | On a server that joins a control plane, with `--config`: the node daemon (`dock-node.service`: the link, the registry proxy on `127.0.0.1:5000`, Caddy's `ask`; no API, UI or database), and joining once with a token from `server add` (writes `node.key` and `node.toml` into the data dir, prints the assigned server name). `--token-file -` reads the token from stdin, keeping it out of the process list. `install.sh --node` runs both. `node set-control-plane HOST:PORT` points a joined node at a control plane that moved; the running daemon follows within 30 s |
 
 Commands that start releases (`deploy`, `promote`, `rollback`, `restart`, `apply`,

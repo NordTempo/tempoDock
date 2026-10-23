@@ -86,6 +86,13 @@ func (g *globals) pickLink(ctx context.Context, s *session, f targetFlags) (clie
 		return l, err
 	}
 	l.Project = clientconfig.Ref{ID: itoa(p.ID), Name: p.Name}
+	// The org the project was found in, so this directory keeps acting
+	// there whichever org the context uses later.
+	me, err := get[apitypes.Me](ctx, s, apiPrefix+"/me")
+	if err != nil {
+		return l, err
+	}
+	l.Org = me.Org
 
 	envs, err := get[[]apitypes.Environment](ctx, s, t.projectPath()+"/environments")
 	if err != nil {

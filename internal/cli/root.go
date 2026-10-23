@@ -31,6 +31,9 @@ func Execute() int {
 type globals struct {
 	io   *output.IO
 	json bool
+	// org is --org: the organization to act in, over DOCK_ORG, the link's
+	// and the context's.
+	org string
 	// started is set once flags and arguments were accepted, so errors
 	// before that point are usage errors.
 	started bool
@@ -51,12 +54,13 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 		},
 	}
 	root.PersistentFlags().BoolVar(&g.json, "json", false, "print stable, machine-readable JSON (see docs/cli.md)")
+	root.PersistentFlags().StringVar(&g.org, "org", "", "organization to act in (default: the linked one, then `dock org use`'s)")
 	root.SetArgs(args)
 	root.SetIn(io.In)
 	root.SetOut(io.Out)
 	root.SetErr(io.Err)
 	addGroup(root, "start", "Getting started:",
-		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newMeCmd(g), newContextCmd(g), newLogoutCmd(g), newVersionCmd(g),
+		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newMeCmd(g), newContextCmd(g), newOrgCmd(g), newLogoutCmd(g), newVersionCmd(g),
 		newMCPCmd(g))
 	addGroup(root, "ship", "Deploy and operate:",
 		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g),

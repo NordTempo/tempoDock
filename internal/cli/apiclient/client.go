@@ -26,6 +26,9 @@ var UserAgent = "dock-cli/" + version.Version
 
 // Client talks to one server with one token.
 type Client struct {
+	// Org, when set, is sent as the `org` parameter of every request: the
+	// organization to act in.
+	Org   string
 	base  *url.URL
 	token string
 	http  *http.Client
@@ -76,6 +79,10 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body io.Re
 	u := *c.base
 	u.Path = strings.TrimRight(c.base.Path, "/") + "/" + strings.TrimLeft(ref.Path, "/")
 	u.RawQuery = ref.RawQuery
+	if q := ref.Query(); c.Org != "" && !q.Has("org") {
+		q.Set("org", c.Org)
+		u.RawQuery = q.Encode()
+	}
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, err

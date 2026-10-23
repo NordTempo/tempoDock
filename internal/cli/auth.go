@@ -215,6 +215,12 @@ var nonNameChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 // describeMe is "token, scope deploy, limited to shop/staging".
 func describeMe(me apitypes.Me) string {
 	s := me.Kind + ", scope " + string(me.Scope)
+	if me.Scope == "" {
+		s = me.Kind + ", no organization chosen (see `dock org list`)"
+	}
+	if me.Operator {
+		s += ", platform operator"
+	}
 	if me.Project != "" {
 		s += ", limited to " + me.Project
 		if me.Environment != "" {
@@ -246,6 +252,7 @@ func newWhoamiCmd(g *globals) *cobra.Command {
 				return g.io.Fields(
 					"name", me.Name,
 					"email", me.Email,
+					"organization", me.Org,
 					"access", describeMe(me),
 					"server", s.server.Server,
 					"context", ctxName,

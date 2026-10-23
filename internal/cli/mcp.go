@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -69,7 +70,10 @@ token (see ` + "`dock token create --help`" + `), never your own login.
 				}
 				token = r.Token
 			}
-			c := newMCPConfig(name, r.Server, token)
+			if g.org != "" {
+				r.Org = g.org
+			}
+			c := newMCPConfig(name, r.Server, token, r.Org)
 			return g.io.Print(c, func() error {
 				entry, _ := json.MarshalIndent(map[string]any{"mcpServers": c.MCPJSON}, "", "  ")
 				_, err := fmt.Fprintf(g.io.Out, "MCP endpoint: %s\n\nClaude Code (writes .mcp.json):\n  %s\n\n.mcp.json or another client's mcp.json:\n%s\n",
@@ -92,9 +96,12 @@ token (see ` + "`dock token create --help`" + `), never your own login.
 }
 
 // newMCPConfig builds the config for the server at serverURL, sending
-// token (or the placeholder) as the bearer token.
-func newMCPConfig(name, serverURL, token string) mcpConfig {
+// token (or the placeholder) as the bearer token, acting in org when set.
+func newMCPConfig(name, serverURL, token, org string) mcpConfig {
 	u := strings.TrimRight(serverURL, "/") + apiPrefix + "/mcp"
+	if org != "" {
+		u += "?org=" + url.QueryEscape(org)
+	}
 	header := "Authorization: Bearer " + token
 	return mcpConfig{
 		URL:    u,

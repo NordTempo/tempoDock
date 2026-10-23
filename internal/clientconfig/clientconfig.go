@@ -23,6 +23,7 @@ const (
 	EnvContext = "DOCK_CONTEXT" // selects a context by name
 	EnvURL     = "DOCK_URL"     // server URL; ignores contexts entirely
 	EnvToken   = "DOCK_TOKEN"   // API token for DOCK_URL; only valid with it
+	EnvOrg     = "DOCK_ORG"     // organization slug to act in
 )
 
 // Errors returned by Resolve.
@@ -50,11 +51,16 @@ type Context struct {
 	// LoginToken marks a token that `dock login` got in the browser. It is
 	// this machine's own, so logging out revokes it on the server.
 	LoginToken bool `json:"loginToken,omitempty"`
+	// Org is the organization `dock org use` chose; empty acts in the
+	// token's own, or the user's only one.
+	Org string `json:"org,omitempty"`
 }
 
 // Link is what a directory is linked to with `dock link`.
 type Link struct {
-	Context     string `json:"context"`
+	Context string `json:"context"`
+	// Org is the organization the project is in.
+	Org         string `json:"org,omitempty"`
 	Project     Ref    `json:"project"`
 	Environment Ref    `json:"environment"`
 	// Service is empty for a directory linked to a whole environment.
@@ -158,13 +164,17 @@ const (
 	SourceCurrent    Source = "current"
 )
 
-// Resolved is the server and token a command should use.
+// Resolved is the server, token and organization a command should use.
 type Resolved struct {
 	// Name is the context name; empty when DOCK_URL is in use.
 	Name   string
 	Server string
 	// Token is empty when none is configured.
-	Token  string
+	Token string
+	// Org is the organization to act in: DOCK_ORG, else the link's (when
+	// it is the context's), else the context's. Empty lets the server
+	// pick the token's or the user's only one.
+	Org    string
 	Source Source
 }
 
@@ -181,8 +191,9 @@ type Resolved struct {
 // whichever context's server is picked. Other errors wrap ErrNoContext or
 // ErrContextNotFound.
 func (c *Config) Resolve(link *Link) (Resolved, error) {
+	org := os.Getenv(EnvOrg)
 	if u := os.Getenv(EnvURL); u != "" {
-		return Resolved{Server: u, Token: os.Getenv(EnvToken), Source: SourceEnvURL}, nil
+		return Resolved{Server: u, Token: os.Getenv(EnvToken), Org: org, Source: SourceEnvURL}, nil
 	}
 	if os.Getenv(EnvToken) != "" {
 		return Resolved{}, ErrTokenWithoutURL
@@ -201,7 +212,13 @@ func (c *Config) Resolve(link *Link) (Resolved, error) {
 	if !ok {
 		return Resolved{}, fmt.Errorf("%w: %q (from %s)", ErrContextNotFound, name, src)
 	}
-	return Resolved{Name: name, Server: ctx.Server, Token: ctx.Token, Source: src}, nil
+	if org == "" && link != nil && link.Context == name {
+		org = link.Org
+	}
+	if org == "" {
+		org = ctx.Org
+	}
+	return Resolved{Name: name, Server: ctx.Server, Token: ctx.Token, Org: org, Source: src}, nil
 }
 
 // SetLink links dir (and everything below it) to l.
