@@ -1,13 +1,22 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { queries, useAuditLog, useProjects } from "../data/queries";
 import type { AuditEvent } from "../data/types";
 import { AuditTable } from "../features/audit/AuditTable";
-import { Button, Page, TitleRow } from "../ui/kit";
+import { Act, Button, Page, TitleRow } from "../ui/kit";
+
+/** The API's default page of events, and the most it returns at once. */
+const PAGE = 100;
+const MAX = 500;
 
 type AuditSearch = {
   project?: string;
+  /** Needs project. */
+  environment?: string;
   /** Action prefix, filtered by the API. */
   action?: string;
+  /** Up to MAX events instead of PAGE (`dock audit -n 500`). */
+  limit?: typeof MAX;
   /** The rest filter the loaded page of events. */
   kind?: "token" | "user";
   actor?: string;
@@ -19,14 +28,18 @@ const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 export const Route = createFileRoute("/_app/audit")({
   validateSearch: (s: Record<string, unknown>): AuditSearch => ({
     project: str(s.project),
+    environment: str(s.project) && str(s.environment),
     action: str(s.action),
+    limit: Number(s.limit) === MAX ? MAX : undefined,
     kind: s.kind === "token" || s.kind === "user" ? s.kind : undefined,
     actor: str(s.actor),
     q: str(s.q),
   }),
   loaderDeps: ({ search }) => ({
     project: search.project,
+    environment: search.environment,
     action: search.action,
+    limit: search.limit,
   }),
   loader: ({ context, deps }) =>
     context.queryClient.ensureQueryData(queries.audit(deps)),
@@ -80,13 +93,34 @@ function download(name: string, text: string) {
 function Audit() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const projects = useProjects();
+  const projects = useProjects().map((p) => p.name);
+  // An archived project's link lands here too; keep it selectable.
+  if (search.project && !projects.includes(search.project)) {
+    projects.push(search.project);
+  }
+  const environments =
+    useQuery({
+      ...queries.overview(search.project ?? ""),
+      enabled: !!search.project,
+      select: (o) => o.environments.map((e) => e.environment.name),
+    }).data ?? [];
   const events = useAuditLog({
     project: search.project,
+    environment: search.environment,
     action: search.action,
+    limit: search.limit,
   });
   const set = (patch: Partial<AuditSearch>) =>
     navigate({ search: { ...search, ...patch }, replace: true });
+  const cli = [
+    "dock audit",
+    search.project && `-p ${search.project}`,
+    search.environment && `-e ${search.environment}`,
+    search.action && `--action ${search.action}`,
+    `-n ${MAX}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const q = search.q?.toLowerCase();
   const shown = events.filter(
@@ -169,14 +203,32 @@ function Audit() {
         <select
           aria-label="Project"
           value={search.project ?? ""}
-          onChange={(e) => set({ project: e.target.value || undefined })}
+          onChange={(e) =>
+            set({
+              project: e.target.value || undefined,
+              environment: undefined,
+            })
+          }
           className="field py-[5px]"
         >
           <option value="">all projects</option>
           {projects.map((p) => (
-            <option key={p.id}>{p.name}</option>
+            <option key={p}>{p}</option>
           ))}
         </select>
+        {search.project && (
+          <select
+            aria-label="Environment"
+            value={search.environment ?? ""}
+            onChange={(e) => set({ environment: e.target.value || undefined })}
+            className="field py-[5px]"
+          >
+            <option value="">all environments</option>
+            {environments.map((e) => (
+              <option key={e}>{e}</option>
+            ))}
+          </select>
+        )}
         <input
           aria-label="Search"
           placeholder="search target"
@@ -189,7 +241,11 @@ function Audit() {
         </Link>
       </form>
       <p>
-        Last 24h{search.project ? ` in ${search.project}` : ""}:{" "}
+        Last 24h
+        {search.project
+          ? ` in ${search.project}${search.environment ? `/${search.environment}` : ""}`
+          : ""}
+        :{" "}
         <b className="font-semibold">
           {deploys.length} {deploys.length === 1 ? "deploy" : "deploys"}
           {byTokens > 0 && `, ${byTokens} by tokens`}
@@ -197,11 +253,18 @@ function Audit() {
         , {byPeople} {byPeople === 1 ? "change" : "changes"} by people.
       </p>
       <AuditTable events={shown} />
-      <p className="text-xs text-mut">
-        <span className="text-info">◇</span> token · ○ person · the newest 100
-        events
-        {search.action ? " of this kind" : ""}
-      </p>
+      <div className="flex flex-wrap items-center gap-3 text-xs text-mut">
+        <span>
+          <span className="text-info">◇</span> token · ○ person · the newest{" "}
+          {search.limit ?? PAGE} events
+          {search.action ? " of this kind" : ""}
+        </span>
+        {!search.limit && events.length === PAGE && (
+          <Act small cli={cli} onClick={() => set({ limit: MAX })}>
+            Show up to {MAX}
+          </Act>
+        )}
+      </div>
     </Page>
   );
 }

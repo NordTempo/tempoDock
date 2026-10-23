@@ -372,7 +372,7 @@ export const queries = {
       queryFn: () =>
         list(
           api.GET("/api/v1/audit", {
-            params: { query: { limit: 100, ...filter } },
+            params: { query: { ...filter, limit: filter.limit ?? 100 } },
           }),
         ),
     }),
