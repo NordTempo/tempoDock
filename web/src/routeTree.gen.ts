@@ -28,6 +28,7 @@ import { Route as AppConsoleAlertsRouteImport } from './routes/_app.console.aler
 import { Route as AppConsoleAuditRouteImport } from './routes/_app.console.audit'
 import { Route as AppConsoleBackupsRouteImport } from './routes/_app.console.backups'
 import { Route as AppConsoleDataAccessRouteImport } from './routes/_app.console.data-access'
+import { Route as AppConsoleGithubRouteImport } from './routes/_app.console.github'
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
 import { Route as AppConsoleTokensRouteImport } from './routes/_app.console.tokens'
@@ -146,6 +147,11 @@ const AppConsoleBackupsRoute = AppConsoleBackupsRouteImport.update({
 const AppConsoleDataAccessRoute = AppConsoleDataAccessRouteImport.update({
   id: '/data-access',
   path: '/data-access',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleGithubRoute = AppConsoleGithubRouteImport.update({
+  id: '/github',
+  path: '/github',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleRegistryRoute = AppConsoleRegistryRouteImport.update({
@@ -304,6 +310,7 @@ export interface FileRoutesByFullPath {
   '/console/audit': typeof AppConsoleAuditRoute
   '/console/backups': typeof AppConsoleBackupsRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
+  '/console/github': typeof AppConsoleGithubRoute
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/tokens': typeof AppConsoleTokensRoute
@@ -347,6 +354,7 @@ export interface FileRoutesByTo {
   '/console/audit': typeof AppConsoleAuditRoute
   '/console/backups': typeof AppConsoleBackupsRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
+  '/console/github': typeof AppConsoleGithubRoute
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/tokens': typeof AppConsoleTokensRoute
@@ -393,6 +401,7 @@ export interface FileRoutesById {
   '/_app/console/audit': typeof AppConsoleAuditRoute
   '/_app/console/backups': typeof AppConsoleBackupsRoute
   '/_app/console/data-access': typeof AppConsoleDataAccessRoute
+  '/_app/console/github': typeof AppConsoleGithubRoute
   '/_app/console/registry': typeof AppConsoleRegistryRoute
   '/_app/console/servers': typeof AppConsoleServersRoute
   '/_app/console/tokens': typeof AppConsoleTokensRoute
@@ -440,6 +449,7 @@ export interface FileRouteTypes {
     | '/console/audit'
     | '/console/backups'
     | '/console/data-access'
+    | '/console/github'
     | '/console/registry'
     | '/console/servers'
     | '/console/tokens'
@@ -483,6 +493,7 @@ export interface FileRouteTypes {
     | '/console/audit'
     | '/console/backups'
     | '/console/data-access'
+    | '/console/github'
     | '/console/registry'
     | '/console/servers'
     | '/console/tokens'
@@ -528,6 +539,7 @@ export interface FileRouteTypes {
     | '/_app/console/audit'
     | '/_app/console/backups'
     | '/_app/console/data-access'
+    | '/_app/console/github'
     | '/_app/console/registry'
     | '/_app/console/servers'
     | '/_app/console/tokens'
@@ -699,6 +711,13 @@ declare module '@tanstack/react-router' {
       path: '/data-access'
       fullPath: '/console/data-access'
       preLoaderRoute: typeof AppConsoleDataAccessRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/github': {
+      id: '/_app/console/github'
+      path: '/github'
+      fullPath: '/console/github'
+      preLoaderRoute: typeof AppConsoleGithubRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/registry': {
@@ -962,6 +981,7 @@ interface AppConsoleRouteChildren {
   AppConsoleAuditRoute: typeof AppConsoleAuditRoute
   AppConsoleBackupsRoute: typeof AppConsoleBackupsRoute
   AppConsoleDataAccessRoute: typeof AppConsoleDataAccessRoute
+  AppConsoleGithubRoute: typeof AppConsoleGithubRoute
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
   AppConsoleServersRoute: typeof AppConsoleServersRoute
   AppConsoleTokensRoute: typeof AppConsoleTokensRoute
@@ -977,6 +997,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleAuditRoute: AppConsoleAuditRoute,
   AppConsoleBackupsRoute: AppConsoleBackupsRoute,
   AppConsoleDataAccessRoute: AppConsoleDataAccessRoute,
+  AppConsoleGithubRoute: AppConsoleGithubRoute,
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,
   AppConsoleServersRoute: AppConsoleServersRoute,
   AppConsoleTokensRoute: AppConsoleTokensRoute,

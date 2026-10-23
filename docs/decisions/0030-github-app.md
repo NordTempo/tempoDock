@@ -88,5 +88,5 @@ and at most 16 pending links.
   installed. Recreating the App doesn't move connections over, because
   installation IDs change.
 - The `dock github` commands are operator commands except `repos`. The
-  console's GitHub page and the repository picker in Settings → Source
-  follow.
+  console has the same under System → GitHub, and Settings → Source
+  suggests the org's repositories when connecting.

@@ -219,6 +219,11 @@ func (c *Core) GitHubStatus(ctx context.Context, a Actor) (apitypes.GitHubStatus
 		return apitypes.GitHubStatus{}, err
 	}
 	out := apitypes.GitHubStatus{HooksHint: c.hooksHint(), Installations: []apitypes.GitHubInstallation{}}
+	orgs, err := c.store.ListOrgSlugs(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.Orgs = orgs
 	app, err := c.store.GetGitHubApp(ctx)
 	if store.IsNotFound(err) {
 		return out, nil

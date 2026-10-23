@@ -3475,13 +3475,23 @@
           "installations_error": {
             "type": "string"
           },
+          "orgs": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "webhook_url": {
             "type": "string"
           }
         },
         "required": [
           "webhook_url",
-          "installations"
+          "installations",
+          "orgs"
         ],
         "type": "object"
       },

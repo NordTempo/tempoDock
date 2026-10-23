@@ -3426,6 +3426,7 @@ export interface components {
             hooks_hint?: string;
             installations: components["schemas"]["GitHubInstallation"][] | null;
             installations_error?: string;
+            orgs: string[] | null;
             webhook_url: string;
         };
         GitSource: {

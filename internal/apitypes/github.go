@@ -19,6 +19,8 @@ type GitHubStatus struct {
 	// InstallationsError says why GitHub couldn't be asked; Installations
 	// then holds only what Dock has assigned.
 	InstallationsError string `json:"installations_error,omitempty"`
+	// Orgs are every org's slug, to assign installations to.
+	Orgs []string `json:"orgs"`
 }
 
 // GitHubApp is the install's GitHub App. Its private key and webhook

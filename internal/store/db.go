@@ -555,6 +555,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listOrgServerIDsStmt, err = db.PrepareContext(ctx, listOrgServerIDs); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOrgServerIDs: %w", err)
 	}
+	if q.listOrgSlugsStmt, err = db.PrepareContext(ctx, listOrgSlugs); err != nil {
+		return nil, fmt.Errorf("error preparing query ListOrgSlugs: %w", err)
+	}
 	if q.listOrgTokensStmt, err = db.PrepareContext(ctx, listOrgTokens); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOrgTokens: %w", err)
 	}
@@ -1775,6 +1778,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listOrgServerIDsStmt: %w", cerr)
 		}
 	}
+	if q.listOrgSlugsStmt != nil {
+		if cerr := q.listOrgSlugsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listOrgSlugsStmt: %w", cerr)
+		}
+	}
 	if q.listOrgTokensStmt != nil {
 		if cerr := q.listOrgTokensStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listOrgTokensStmt: %w", cerr)
@@ -2541,6 +2549,7 @@ type Queries struct {
 	listOrgInvitesStmt                  *sql.Stmt
 	listOrgMembersStmt                  *sql.Stmt
 	listOrgServerIDsStmt                *sql.Stmt
+	listOrgSlugsStmt                    *sql.Stmt
 	listOrgTokensStmt                   *sql.Stmt
 	listOrgVariableUsesStmt             *sql.Stmt
 	listOrgVariablesStmt                *sql.Stmt
@@ -2834,6 +2843,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listOrgInvitesStmt:                  q.listOrgInvitesStmt,
 		listOrgMembersStmt:                  q.listOrgMembersStmt,
 		listOrgServerIDsStmt:                q.listOrgServerIDsStmt,
+		listOrgSlugsStmt:                    q.listOrgSlugsStmt,
 		listOrgTokensStmt:                   q.listOrgTokensStmt,
 		listOrgVariableUsesStmt:             q.listOrgVariableUsesStmt,
 		listOrgVariablesStmt:                q.listOrgVariablesStmt,

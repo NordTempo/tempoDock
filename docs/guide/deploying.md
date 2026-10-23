@@ -269,6 +269,9 @@ dock github status                    # the App, its webhook, installations and 
 dock github repos                     # what the org can connect
 ```
 
+The console does the same under **System → GitHub**, and **Settings →
+Source** suggests the org's repositories when connecting.
+
 The App is private: only the GitHub account that owns it (yours, or
 `--owner acme`) can install it. Each installation is assigned to one org,
 and only that org's services can read its repositories. GitHub sends the

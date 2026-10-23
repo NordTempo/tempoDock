@@ -188,7 +188,7 @@ func TestGitHubAppSetup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.App == nil || st.WebhookURL != m.HookAttributes.URL || st.InstallationsError != "" ||
+	if st.App == nil || st.WebhookURL != m.HookAttributes.URL || st.InstallationsError != "" || !slices.Equal(st.Orgs, []string{"test"}) ||
 		len(st.Installations) != 1 || st.Installations[0].Account != "acme" || st.Installations[0].Org != "" {
 		t.Fatalf("status before install: %+v", st)
 	}

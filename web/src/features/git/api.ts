@@ -26,6 +26,18 @@ export const useGitSource = (ref: ServiceRef, enabled = true) =>
   });
 
 /**
+ * The repositories the org can connect through Dock's GitHub App (ADR
+ * 0030), for the connect form; fetched when the form opens.
+ */
+export const useGitHubRepos = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["github", "repos"],
+    queryFn: () => body(api.GET("/api/v1/github/repos")),
+    enabled,
+    staleTime: 60_000,
+  });
+
+/**
  * Queues a commit as if pushed: `ref` (a SHA, branch or tag), or the
  * connected branch's head when empty.
  */

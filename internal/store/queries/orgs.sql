@@ -131,3 +131,7 @@ WHERE projects.org_id = +? AND projects.archived_at IS NULL;
 
 -- name: GetOrgBySlug :one
 SELECT * FROM orgs WHERE slug = +?;
+
+-- name: ListOrgSlugs :many
+-- Every org's slug, for operators choosing one (the GitHub App console).
+SELECT slug FROM orgs ORDER BY slug;

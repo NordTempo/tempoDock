@@ -424,6 +424,34 @@ func (q *Queries) ListOrgServerIDs(ctx context.Context, orgID int64) ([]int64, e
 	return items, nil
 }
 
+const listOrgSlugs = `-- name: ListOrgSlugs :many
+SELECT slug FROM orgs ORDER BY slug
+`
+
+// Every org's slug, for operators choosing one (the GitHub App console).
+func (q *Queries) ListOrgSlugs(ctx context.Context) ([]string, error) {
+	rows, err := q.query(ctx, q.listOrgSlugsStmt, listOrgSlugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgVariableUses = `-- name: ListOrgVariableUses :many
 SELECT variables.environment_id, variables.service_id, variables.value, variables.pending_value,
     projects.name AS project_name, environments.name AS environment_name,
