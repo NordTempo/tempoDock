@@ -73,6 +73,16 @@ func connectFixture(t *testing.T) (*harness, ServiceRef, ServiceRef, <-chan stru
 		t.Fatal(err)
 	}
 	h.deploy(web, "nginx:1")
+	// Tunnels need the service running, which the runtime's events report
+	// after the release went active.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(2 * time.Millisecond) {
+		if svc, err := h.c.GetService(h.ctx, testSystem, web); err == nil && svc.Status.State == apitypes.ServiceRunning {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("web never reported running")
+		}
+	}
 	return h, db, web, ended
 }
 
