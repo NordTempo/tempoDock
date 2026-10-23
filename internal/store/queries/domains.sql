@@ -21,13 +21,19 @@ DELETE FROM domains WHERE id = +?;
 
 -- name: ListRoutableDomains :many
 -- Every domain of a non-archived service in an environment on one server,
--- with the host port of the service's active release (0 if none).
+-- with the host port of the service's active release (0 if none) and the
+-- service's access protection (mode '' when public).
 SELECT domains.hostname, domains.redirect_to, domains.service_id,
        CAST(coalesce((SELECT releases.host_port FROM releases
-                      WHERE releases.service_id = services.id AND releases.status = 'active'), 0) AS INTEGER) AS host_port
+                      WHERE releases.service_id = services.id AND releases.status = 'active'), 0) AS INTEGER) AS host_port,
+       CAST(coalesce(service_access.mode, '') AS TEXT) AS access_mode,
+       CAST(coalesce(service_access.username, '') AS TEXT) AS access_username,
+       CAST(coalesce(service_access.password_hash, '') AS TEXT) AS access_password_hash,
+       service_access.key AS access_key
 FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
+LEFT JOIN service_access ON service_access.service_id = services.id
 WHERE environments.server_id = +? AND services.archived_at IS NULL
 ORDER BY domains.service_id, domains.id;
 

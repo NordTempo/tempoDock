@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AccessRouteImport } from './routes/access'
 import { Route as CliLoginRouteImport } from './routes/cli-login'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as NoOrgRouteImport } from './routes/no-org'
@@ -55,6 +56,11 @@ import { Route as AppOrgProjectEnvironmentServiceReleasesNumberRouteImport } fro
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccessRoute = AccessRouteImport.update({
+  id: '/access',
+  path: '/access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CliLoginRoute = CliLoginRouteImport.update({
@@ -283,6 +289,7 @@ const AppOrgProjectEnvironmentServiceReleasesNumberRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/access': typeof AccessRoute
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/no-org': typeof NoOrgRoute
@@ -326,6 +333,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
 }
 export interface FileRoutesByTo {
+  '/access': typeof AccessRoute
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/no-org': typeof NoOrgRoute
@@ -369,6 +377,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/access': typeof AccessRoute
   '/cli-login': typeof CliLoginRoute
   '/login': typeof LoginRoute
   '/no-org': typeof NoOrgRoute
@@ -416,6 +425,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/access'
     | '/cli-login'
     | '/login'
     | '/no-org'
@@ -459,6 +469,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/releases/$number'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/access'
     | '/cli-login'
     | '/login'
     | '/no-org'
@@ -501,6 +512,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_app'
+    | '/access'
     | '/cli-login'
     | '/login'
     | '/no-org'
@@ -547,6 +559,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  AccessRoute: typeof AccessRoute
   CliLoginRoute: typeof CliLoginRoute
   LoginRoute: typeof LoginRoute
   NoOrgRoute: typeof NoOrgRoute
@@ -560,6 +573,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/access': {
+      id: '/access'
+      path: '/access'
+      fullPath: '/access'
+      preLoaderRoute: typeof AccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cli-login': {
@@ -988,6 +1008,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  AccessRoute: AccessRoute,
   CliLoginRoute: CliLoginRoute,
   LoginRoute: LoginRoute,
   NoOrgRoute: NoOrgRoute,

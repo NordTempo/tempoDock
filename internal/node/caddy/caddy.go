@@ -35,6 +35,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -78,6 +80,11 @@ type Options struct {
 	// http://127.0.0.1:7071/internal/caddy/ask. Required in direct mode
 	// unless DisableTLS is set.
 	AskURL string
+	// AccessURL is the access check (AccessHandler) Caddy asks on every
+	// request to a route that needs a Dock login, e.g.
+	// http://127.0.0.1:7071/internal/caddy/access. Required for such
+	// routes.
+	AccessURL string
 	// PublicIPs are the addresses DNS records should point at, used by
 	// CheckDomain in direct mode.
 	PublicIPs []string
@@ -90,6 +97,9 @@ type Options struct {
 	// <tunnel-id>.cfargotunnel.com. Optional; tunnel-mode CheckDomain names
 	// it in its instructions.
 	TunnelHostname string
+
+	// accessCheck is AccessURL taken apart; set by validate.
+	accessCheck accessCheck
 
 	// internalCA makes Caddy issue certificates from its own local CA
 	// instead of ACME. Tests only, so they never contact a real CA.
@@ -108,7 +118,19 @@ func (o Options) tunnel() bool { return o.Ingress == IngressCloudflareTunnel }
 // certificates of its own.
 func (o Options) plainHTTP() bool { return o.DisableTLS || o.tunnel() }
 
-func (o Options) validate() error {
+// accessCheck is where Caddy reaches the access check: a host:port to
+// dial and the path to ask.
+type accessCheck struct{ dial, path string }
+
+// validate checks the options and sets accessCheck from AccessURL.
+func (o *Options) validate() error {
+	if o.AccessURL != "" {
+		u, err := url.Parse(o.AccessURL)
+		if err != nil || u.Scheme != "http" || u.Host == "" || !strings.HasPrefix(u.Path, "/") || u.RawQuery != "" {
+			return fmt.Errorf("caddy: access URL %q must look like http://127.0.0.1:7071/internal/caddy/access", o.AccessURL)
+		}
+		o.accessCheck = accessCheck{dial: u.Host, path: u.Path}
+	}
 	switch {
 	case o.AdminSocket == "":
 		return errors.New("caddy: admin socket path is required")

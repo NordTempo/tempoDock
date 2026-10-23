@@ -234,6 +234,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteServerPlacementsStmt, err = db.PrepareContext(ctx, deleteServerPlacements); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteServerPlacements: %w", err)
 	}
+	if q.deleteServiceAccessStmt, err = db.PrepareContext(ctx, deleteServiceAccess); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteServiceAccess: %w", err)
+	}
 	if q.deleteSessionStmt, err = db.PrepareContext(ctx, deleteSession); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSession: %w", err)
 	}
@@ -395,6 +398,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getServiceStmt, err = db.PrepareContext(ctx, getService); err != nil {
 		return nil, fmt.Errorf("error preparing query GetService: %w", err)
+	}
+	if q.getServiceAccessStmt, err = db.PrepareContext(ctx, getServiceAccess); err != nil {
+		return nil, fmt.Errorf("error preparing query GetServiceAccess: %w", err)
 	}
 	if q.getServiceByNameStmt, err = db.PrepareContext(ctx, getServiceByName); err != nil {
 		return nil, fmt.Errorf("error preparing query GetServiceByName: %w", err)
@@ -767,6 +773,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setServerNextKeyStmt, err = db.PrepareContext(ctx, setServerNextKey); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServerNextKey: %w", err)
+	}
+	if q.setServiceAccessStmt, err = db.PrepareContext(ctx, setServiceAccess); err != nil {
+		return nil, fmt.Errorf("error preparing query SetServiceAccess: %w", err)
 	}
 	if q.setServiceCopiedSettingsStmt, err = db.PrepareContext(ctx, setServiceCopiedSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServiceCopiedSettings: %w", err)
@@ -1195,6 +1204,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteServerPlacementsStmt: %w", cerr)
 		}
 	}
+	if q.deleteServiceAccessStmt != nil {
+		if cerr := q.deleteServiceAccessStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteServiceAccessStmt: %w", cerr)
+		}
+	}
 	if q.deleteSessionStmt != nil {
 		if cerr := q.deleteSessionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSessionStmt: %w", cerr)
@@ -1463,6 +1477,11 @@ func (q *Queries) Close() error {
 	if q.getServiceStmt != nil {
 		if cerr := q.getServiceStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getServiceStmt: %w", cerr)
+		}
+	}
+	if q.getServiceAccessStmt != nil {
+		if cerr := q.getServiceAccessStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getServiceAccessStmt: %w", cerr)
 		}
 	}
 	if q.getServiceByNameStmt != nil {
@@ -2085,6 +2104,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setServerNextKeyStmt: %w", cerr)
 		}
 	}
+	if q.setServiceAccessStmt != nil {
+		if cerr := q.setServiceAccessStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setServiceAccessStmt: %w", cerr)
+		}
+	}
 	if q.setServiceCopiedSettingsStmt != nil {
 		if cerr := q.setServiceCopiedSettingsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setServiceCopiedSettingsStmt: %w", cerr)
@@ -2314,6 +2338,7 @@ type Queries struct {
 	deleteSensitiveColumnsStmt          *sql.Stmt
 	deleteServerStmt                    *sql.Stmt
 	deleteServerPlacementsStmt          *sql.Stmt
+	deleteServiceAccessStmt             *sql.Stmt
 	deleteSessionStmt                   *sql.Stmt
 	deleteUserStmt                      *sql.Stmt
 	deleteUserSessionsStmt              *sql.Stmt
@@ -2368,6 +2393,7 @@ type Queries struct {
 	getServerByFingerprintStmt          *sql.Stmt
 	getServerByNameStmt                 *sql.Stmt
 	getServiceStmt                      *sql.Stmt
+	getServiceAccessStmt                *sql.Stmt
 	getServiceByNameStmt                *sql.Stmt
 	getSessionUserStmt                  *sql.Stmt
 	getTokenStmt                        *sql.Stmt
@@ -2492,6 +2518,7 @@ type Queries struct {
 	setServerHelloStmt                  *sql.Stmt
 	setServerMemoryStmt                 *sql.Stmt
 	setServerNextKeyStmt                *sql.Stmt
+	setServiceAccessStmt                *sql.Stmt
 	setServiceCopiedSettingsStmt        *sql.Stmt
 	setServiceDatabaseSettingsStmt      *sql.Stmt
 	setServiceTemplateStmt              *sql.Stmt
@@ -2592,6 +2619,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteSensitiveColumnsStmt:          q.deleteSensitiveColumnsStmt,
 		deleteServerStmt:                    q.deleteServerStmt,
 		deleteServerPlacementsStmt:          q.deleteServerPlacementsStmt,
+		deleteServiceAccessStmt:             q.deleteServiceAccessStmt,
 		deleteSessionStmt:                   q.deleteSessionStmt,
 		deleteUserStmt:                      q.deleteUserStmt,
 		deleteUserSessionsStmt:              q.deleteUserSessionsStmt,
@@ -2646,6 +2674,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getServerByFingerprintStmt:          q.getServerByFingerprintStmt,
 		getServerByNameStmt:                 q.getServerByNameStmt,
 		getServiceStmt:                      q.getServiceStmt,
+		getServiceAccessStmt:                q.getServiceAccessStmt,
 		getServiceByNameStmt:                q.getServiceByNameStmt,
 		getSessionUserStmt:                  q.getSessionUserStmt,
 		getTokenStmt:                        q.getTokenStmt,
@@ -2770,6 +2799,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setServerHelloStmt:                  q.setServerHelloStmt,
 		setServerMemoryStmt:                 q.setServerMemoryStmt,
 		setServerNextKeyStmt:                q.setServerNextKeyStmt,
+		setServiceAccessStmt:                q.setServiceAccessStmt,
 		setServiceCopiedSettingsStmt:        q.setServiceCopiedSettingsStmt,
 		setServiceDatabaseSettingsStmt:      q.setServiceDatabaseSettingsStmt,
 		setServiceTemplateStmt:              q.setServiceTemplateStmt,

@@ -145,6 +145,11 @@
       "bytes_op": 15813,
       "allocs_op": 241
     },
+    "node/caddy.BenchmarkAccessHandler": {
+      "ns_op": 2782,
+      "bytes_op": 2152,
+      "allocs_op": 25
+    },
     "node/caddy.BenchmarkRender/routes=500,tls=false": {
       "ns_op": 388691,
       "bytes_op": 491838,

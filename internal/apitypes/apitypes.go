@@ -669,6 +669,51 @@ type DomainChange struct {
 	Release *Release `json:"release,omitempty"`
 }
 
+// AccessMode is who can open a service's domains (ADR 0030).
+type AccessMode string
+
+// Access modes: anyone, visitors with the password, or members signed in
+// to Dock who can read the service.
+const (
+	AccessPublic   AccessMode = "public"
+	AccessPassword AccessMode = "password"
+	AccessLogin    AccessMode = "login"
+)
+
+// Access is who can open a service's domains. It covers every domain of
+// the service, generated ones included; redirects only redirect.
+type Access struct {
+	Mode AccessMode `json:"mode" enum:"public,password,login"`
+	// Username is what visitors type with the password (password mode).
+	Username  string     `json:"username,omitempty"`
+	UpdatedBy string     `json:"updated_by,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+// SetAccessRequest changes who can open a service's domains.
+type SetAccessRequest struct {
+	Mode     AccessMode `json:"mode" enum:"public,password,login"`
+	Username string     `json:"username,omitempty" maxLength:"64" doc:"Password mode: the username visitors type"`
+	Password string     `json:"password,omitempty" maxLength:"72" doc:"Password mode: at least 12 characters, kept only as a hash. Empty keeps the current password"`
+}
+
+// AccessGrantRequest asks to open a login-protected domain as the caller.
+type AccessGrantRequest struct {
+	Hostname string `json:"hostname" maxLength:"253"`
+	// To is the path to open on it, "/" by default.
+	To string `json:"to,omitempty" maxLength:"4096"`
+}
+
+// AccessGrant is where to send the browser to sign in to a protected
+// domain: the domain's sign-in callback with a one-minute grant.
+type AccessGrant struct {
+	URL         string `json:"url"`
+	Hostname    string `json:"hostname"`
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+	Service     string `json:"service"`
+}
+
 // Volume is a named Docker volume mounted into a service. Volumes are never
 // deleted as a side effect.
 type Volume struct {

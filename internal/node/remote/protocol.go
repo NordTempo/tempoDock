@@ -51,8 +51,9 @@ const (
 	// 2 added run-job (ADR 0019) and the health check's port; 3 made
 	// prune-images only remove the platform's own images and added
 	// remove-network (ADR 0020 amendment); 4 added update and the
-	// node's arch and last update in hello (ADR 0028).
-	Protocol = 4
+	// node's arch and last update in hello (ADR 0028); 5 added access
+	// protection to routes (ADR 0030).
+	Protocol = 5
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

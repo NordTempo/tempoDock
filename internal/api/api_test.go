@@ -196,7 +196,7 @@ func TestPermissionMatrix(t *testing.T) {
 
 func TestCaddyAsk(t *testing.T) {
 	f := newFixture(t)
-	ask := httptest.NewServer(Internal(f.core, slog.Default(), nil))
+	ask := httptest.NewServer(Internal(f.core, slog.Default(), nil, http.NotFoundHandler()))
 	defer ask.Close()
 	check := func(host string) int {
 		resp, err := http.Get(ask.URL + "/internal/caddy/ask?domain=" + host)

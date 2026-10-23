@@ -62,6 +62,8 @@ export const keys = {
     number,
   ],
   volumes: (s: ServiceRef) => [...serviceKey(s), "volumes"],
+  /** Who can open the service's domains; service.access audits refetch it. */
+  access: (s: ServiceRef) => [...serviceKey(s), "access"],
   /** The GitHub source (push-to-deploy); release events refetch it. */
   git: (s: ServiceRef) => [...serviceKey(s), "git"],
   /** Under the service, so backup.* audit events refetch it. */

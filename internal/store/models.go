@@ -409,6 +409,16 @@ type Service struct {
 	Template                  string
 }
 
+type ServiceAccess struct {
+	ServiceID    int64
+	Mode         string
+	Username     string
+	PasswordHash string
+	Key          []byte
+	UpdatedBy    string
+	UpdatedAt    time.Time
+}
+
 type ServiceStat struct {
 	Res       int64
 	At        int64

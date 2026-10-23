@@ -93,6 +93,11 @@ const buildkitNetwork = "dock_buildkit"
 // listener: by core on the control plane, by the proxy itself on a node.
 const askPath = "/internal/caddy/ask"
 
+// accessPath is where the access check for login-protected routes
+// (caddy.AccessHandler, ADR 0030) is served on the internal listener, on
+// the control plane and on nodes alike.
+const accessPath = "/internal/caddy/access"
+
 // unjoinedMarker stands in for a server's marker where Caddy needs one
 // before the server knows its own: `dock admin caddy-config` on a tunnel
 // node that hasn't joined yet. The daemon replaces the whole config with
@@ -114,6 +119,7 @@ func caddyOptions(cfg config.Config, marker string) caddy.Options {
 		ACMEEmail:      cfg.Caddy.ACMEEmail,
 		DisableTLS:     cfg.Caddy.DisableTLS,
 		AskURL:         "http://" + cfg.InternalListen + askPath,
+		AccessURL:      "http://" + cfg.InternalListen + accessPath,
 		PublicIPs:      publicIPs(cfg),
 		ServerMarker:   marker,
 		TunnelHostname: cfg.Ingress.TunnelHostname,

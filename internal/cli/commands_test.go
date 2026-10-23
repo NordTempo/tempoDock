@@ -171,6 +171,20 @@ func TestDeployFlow(t *testing.T) {
 	if code != 0 || !strings.Contains(stdout, "Point DNS:  A  shop.example.com  →  203.0.113.10") || !strings.Contains(stdout, "https://shop.example.com is live.") {
 		t.Fatalf("domain add = %d\n%s\n%s", code, stdout, stderr)
 	}
+
+	// Protect the service with a password from stdin, then open it again.
+	code, stdout, stderr = execStdin(t, "correct horse battery\n", "access", "password", "--username", "team", "--password-stdin", "--json")
+	var acc apitypes.Access
+	_ = json.Unmarshal([]byte(stdout), &acc)
+	if code != 0 || acc.Mode != apitypes.AccessPassword || acc.Username != "team" {
+		t.Fatalf("access password = %d %+v\n%s", code, acc, stderr)
+	}
+	if a := ok[apitypes.Access](t, "access"); a.Mode != apitypes.AccessPassword || a.UpdatedBy == "" {
+		t.Fatalf("access = %+v", a)
+	}
+	if a := ok[apitypes.Access](t, "access", "public"); a.Mode != apitypes.AccessPublic {
+		t.Fatalf("access public = %+v", a)
+	}
 }
 
 // execStdin is exec with stdin (still not a terminal).

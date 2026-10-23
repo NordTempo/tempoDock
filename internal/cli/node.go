@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/node/caddy"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/node/stats"
 	"github.com/NordTempo/tempoDock/internal/update"
@@ -207,6 +208,7 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	mux := http.NewServeMux()
 	if proxy != nil {
 		mux.Handle("GET "+askPath, proxy.AskHandler())
+		mux.Handle("GET "+accessPath, caddy.AccessHandler())
 	}
 	internal := &http.Server{Addr: cfg.InternalListen, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { errc <- internal.ListenAndServe() }()

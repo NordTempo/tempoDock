@@ -19,6 +19,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/cpbackup"
+	"github.com/NordTempo/tempoDock/internal/node/caddy"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/registry"
 	"github.com/NordTempo/tempoDock/internal/secrets"
@@ -137,7 +138,7 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 		{Addr: cfg.PublicListen, Handler: api.Public(handler), ReadHeaderTimeout: 10 * time.Second},
 		{
 			Addr:              cfg.InternalListen,
-			Handler:           api.Internal(c, log, registryToken),
+			Handler:           api.Internal(c, log, registryToken, caddy.AccessHandler()),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}
