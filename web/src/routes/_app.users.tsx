@@ -122,9 +122,11 @@ function Users() {
           </Panel>
           <p className="text-2xs text-faint">
             Your own account can't be disabled, deleted or reset here. Change
-            your password with{" "}
-            <span className="font-mono">dock me password</span>. Tokens for
-            agents, CI and scripts are on{" "}
+            your password on{" "}
+            <Link to="/account" className="text-info hover:underline">
+              your account
+            </Link>
+            . Tokens for agents, CI and scripts are on{" "}
             <Link to="/tokens" className="text-info hover:underline">
               Tokens
             </Link>

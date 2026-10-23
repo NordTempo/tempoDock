@@ -7,6 +7,7 @@ import {
   useService,
 } from "../data/queries";
 import type { ServiceRef } from "../data/types";
+import { ConnectHint } from "../features/connect/ConnectHint";
 import { LogsPane, noFilter } from "../features/service/LogsPane";
 import { ReleasesTable } from "../features/service/ReleasesTable";
 import { imageLabel } from "../features/service/releases";
@@ -36,6 +37,10 @@ function ServiceOverview() {
       <div className="@container flex min-w-0 flex-[1_1_480px] flex-col gap-7 px-7 pt-6 pb-10">
         <StatusSentence view={service} />
         <ServiceFacts serviceRef={ref} />
+        {/* `dock connect` reaches a set port, or a database's own. */}
+        {(service.service.port > 0 || !!service.service.template) && (
+          <ConnectHint serviceRef={ref} />
+        )}
         {current && (
           <DeployProgress
             key={current.number}
