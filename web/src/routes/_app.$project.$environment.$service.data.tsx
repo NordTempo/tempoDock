@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { ConnectHint } from "../features/connect/ConnectHint";
 import { DataSourceContext } from "../features/data/api";
 import { DataPanel } from "../features/data/DataPanel";
 import {
@@ -13,6 +14,7 @@ import { serviceSource } from "../features/data/source";
 // and the panel are one lazy chunk; CodeMirror is another, loaded by the
 // SQL tab. Everything the panel shows is in the URL:
 // /shop/staging/postgres/data?table=public.orders&order=-total&filter=[...]
+// A line above the panel shows `dock connect` for the service.
 
 export const Route = createFileRoute(
   "/_app/$project/$environment/$service/data",
@@ -31,11 +33,16 @@ function DataTab() {
     [project, environment, service],
   );
   return (
-    <DataSourceContext value={source}>
-      <DataPanel
-        view={searchView(search)}
-        onView={(next) => navigate({ search: viewSearch(next) })}
-      />
-    </DataSourceContext>
+    <div className="flex flex-col gap-3">
+      <ConnectHint serviceRef={{ project, environment, service }} />
+      <DataSourceContext value={source}>
+        <DataPanel
+          view={searchView(search)}
+          onView={(next) => navigate({ search: viewSearch(next) })}
+          // The default height, less the connect line.
+          className="h-[calc(100vh-276px)] min-h-[480px]"
+        />
+      </DataSourceContext>
+    </div>
   );
 }
