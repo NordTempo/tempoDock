@@ -127,3 +127,11 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
   performance changes.
 - One logical change per commit. Don't commit `bin/`, `web/dist` (except
   `.gitkeep`) or `.data/`.
+- Changes reach `main` through a pull request, never a direct push. Agents
+  may open and merge their own PRs: branch from the latest `main`, run the
+  local checks above, open the PR (a real one, not a draft), wait for CI
+  to pass, then squash-merge. A CI failure is fixed or shown to be a known
+  flake before merging, never merged over.
+- PR titles follow the commit convention. The description opens with the
+  problem, then how it was solved, and ends with the model and harness
+  that made the change.
