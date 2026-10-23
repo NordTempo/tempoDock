@@ -14,8 +14,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
-// tunnelCheckTimeout bounds one tunnel-mode CheckDomain request.
-const tunnelCheckTimeout = 15 * time.Second
+// visitTimeout bounds one visit request.
+const visitTimeout = 15 * time.Second
 
 // cloudflareCode finds Cloudflare's error code in its error pages: "error
 // code: 1033" in plain-text bodies, "Error 1033" in HTML ones.
@@ -29,25 +29,9 @@ var cloudflareCode = regexp.MustCompile(`[Ee]rror(?: code:)? ?(1\d{3})\b`)
 // and carry the marker too.
 func (p *Proxy) checkTunnel(ctx context.Context, hostname string) (node.DomainCheck, error) {
 	var dc node.DomainCheck
-	reqCtx, cancel := context.WithTimeout(ctx, tunnelCheckTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, visitTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "https://"+hostname+"/", nil)
-	if err != nil {
-		dc.Error = fmt.Sprintf("%s is not a valid hostname: %v", hostname, err)
-		return dc, nil
-	}
-	req.Header.Set("User-Agent", "dock-domain-check")
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext:     p.dialPublic,
-			TLSClientConfig: &tls.Config{RootCAs: p.rootCAs},
-			// Checks are rare; keep no idle connection around.
-			DisableKeepAlives: true,
-			ForceAttemptHTTP2: true,
-		},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	resp, err := client.Do(req)
+	resp, err := p.visit(reqCtx, hostname)
 	if err != nil {
 		if ctx.Err() != nil {
 			return dc, ctx.Err()
@@ -94,6 +78,29 @@ func (p *Proxy) checkTunnel(ctx context.Context, hostname string) (node.DomainCh
 			hostname, resp.Status, MarkerHeader, target)
 	}
 	return dc, nil
+}
+
+// visit requests https://<hostname>/ the way a visitor would, through
+// public DNS and whatever proxy sits in front, so CheckDomain can look for
+// this server's marker header on the response. Redirects are not followed.
+// The caller closes the body.
+func (p *Proxy) visit(ctx context.Context, hostname string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+hostname+"/", nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s is not a valid hostname: %w", hostname, err)
+	}
+	req.Header.Set("User-Agent", "dock-domain-check")
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext:     p.dialPublic,
+			TLSClientConfig: &tls.Config{RootCAs: p.rootCAs},
+			// Checks are rare; keep no idle connection around.
+			DisableKeepAlives: true,
+			ForceAttemptHTTP2: true,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	return client.Do(req)
 }
 
 // tunnelRequestError explains why the request to hostname failed.

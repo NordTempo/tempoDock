@@ -29,6 +29,14 @@ resolves to (an old `A` or an `AAAA`) as "not this server; remove that
 record", because a CA may validate against it. Without `public_ip` in the
 server config, no `A` record is shown and DNS can't be checked.
 
+Records proxied by Cloudflare (orange cloud) or another CDN resolve to the
+proxy, not the server. When the addresses don't match, the check requests
+`https://<hostname>/` like a visitor and looks for the server's
+`Dock-Server` header; if it comes back, the domain is `active`. Set
+Cloudflare's SSL/TLS mode to Full (strict): in Flexible mode Cloudflare
+talks plain HTTP to the server, which redirects back to HTTPS in a loop,
+and the check reports that as an `error`.
+
 ### Status
 
 ```
