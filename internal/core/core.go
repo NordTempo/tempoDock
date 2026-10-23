@@ -83,8 +83,10 @@ type Core struct {
 	reg        Registry
 	log        *slog.Logger
 	bus        *bus
-	local      store.Server
-	drain      time.Duration
+	// renameMu keeps committed renames and their live events in order.
+	renameMu sync.Mutex
+	local    store.Server
+	drain    time.Duration
 	// install is this control plane's install ID, the dock.control_plane
 	// label on everything it creates (see labels and foreign).
 	install string

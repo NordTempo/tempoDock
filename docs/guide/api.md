@@ -191,3 +191,20 @@ Tail logs:
 ```sh
 curl -N -H "$auth" "$svc/logs?follow=true&tail=50"
 ```
+
+### Project identity and renaming
+
+`PATCH /api/v1/projects/{project}` with `{"name":"new-name","id":123}` renames
+an active project. The optional `id` guards against renaming a reused name.
+Admin access to the whole project is required. The response is the project with
+its unchanged ID. Old-name paths do not redirect.
+
+`GET /api/v1/project-ids/{id}` resolves the current name within the caller's
+organization and scope. Linked clients use it before name-based requests and
+send `Dock-Project-ID: <id>` on project paths. A different identity is rejected
+with `409 conflict`; clients must not silently fall back to a reused name.
+
+The `project_renamed` SSE event carries `previous_name` and the updated `project`
+inside `project_renamed`. Filtered subscriptions keep following the stable
+project identity. A missed rename is recovered by comparing project-list IDs
+on reconnection.

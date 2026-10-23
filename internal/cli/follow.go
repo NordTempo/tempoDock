@@ -126,6 +126,12 @@ func (w *watcher) follow(ctx context.Context, rels []apitypes.Release) ([]apityp
 				continue
 			}
 			switch ev.Type {
+			case apitypes.EventProjectRenamed:
+				if rename := ev.ProjectRenamed; rename != nil {
+					for i := range rels {
+						rels[i].Project = rename.Project.Name
+					}
+				}
 			case apitypes.EventBuildLog:
 				if _, ok := open[releaseKey{ev.Service, ev.BuildLog.ReleaseNumber}]; ok {
 					io.Detail(prefix(ev.Service) + ev.BuildLog.Text)

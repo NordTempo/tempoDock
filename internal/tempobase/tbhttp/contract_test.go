@@ -17,7 +17,7 @@ import (
 // and return exactly the same shapes in both (ADR 0024 section 3): the
 // same query parameters, request bodies, response statuses and schemas,
 // with every $ref followed. Only the path differs (a service in Dock, a
-// connection in tempoBase).
+// connection in tempoBase), apart from Dock's optional project identity guard.
 func TestDataContractMatchesDock(t *testing.T) {
 	dock, tb := loadSpec(t, api.Spec), loadSpec(t, tbhttp.Spec)
 
@@ -115,7 +115,8 @@ var locators = map[string]bool{"project": true, "environment": true, "service": 
 // shape is what the client sees of an operation: its parameters but the
 // locators and Dock's `org` (which every Dock operation takes and its
 // client adds to every call, ADR 0027), request body and responses, with
-// every $ref resolved.
+// every $ref resolved. Dock's optional identity header is also a locator, not
+// part of the shared data operation.
 func (s *spec) shape(op map[string]any, requestOnly bool) map[string]any {
 	var params []any
 	list, _ := op["parameters"].([]any)
@@ -123,7 +124,8 @@ func (s *spec) shape(op map[string]any, requestOnly bool) map[string]any {
 		p := p.(map[string]any)
 		locator := p["in"] == "path" && locators[p["name"].(string)]
 		org := p["in"] == "query" && p["name"] == "org"
-		if !locator && !org {
+		identity := p["in"] == "header" && p["name"] == "Dock-Project-ID"
+		if !locator && !org && !identity {
 			params = append(params, p)
 		}
 	}

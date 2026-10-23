@@ -35,6 +35,11 @@
       "bytes_op": 1329,
       "allocs_op": 24
     },
+    "core.BenchmarkBusRenamedProject": {
+      "ns_op": 1653.4,
+      "bytes_op": 1537,
+      "allocs_op": 5
+    },
     "core.BenchmarkCoreReads/Changes/services=20,staged": {
       "ns_op": 669514,
       "bytes_op": 411652,

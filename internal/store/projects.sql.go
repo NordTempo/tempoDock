@@ -664,6 +664,28 @@ func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
 	return items, nil
 }
 
+const renameProject = `-- name: RenameProject :one
+UPDATE projects SET name = ? WHERE id = +? RETURNING id, org_id, name, created_at, archived_at
+`
+
+type RenameProjectParams struct {
+	Name string
+	ID   int64
+}
+
+func (q *Queries) RenameProject(ctx context.Context, arg RenameProjectParams) (Project, error) {
+	row := q.queryRow(ctx, q.renameProjectStmt, renameProject, arg.Name, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
 const setServerMemory = `-- name: SetServerMemory :exec
 UPDATE servers SET memory_bytes = ? WHERE id = +? AND memory_bytes != +?
 `

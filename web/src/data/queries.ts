@@ -230,13 +230,18 @@ export const queries = {
           )
           .sort((a, b) => b.archived_at.localeCompare(a.archived_at)),
     }),
-  overview: (project: string) =>
+  overview: (project: string, expectedID?: number) =>
     queryOptions({
       queryKey: keys.overview(project),
       queryFn: () =>
         body(
           api.GET("/api/v1/projects/{project}/overview", {
-            params: { path: { project } },
+            params: {
+              path: { project },
+              header: expectedID
+                ? { "Dock-Project-ID": expectedID }
+                : undefined,
+            },
           }),
         ).then(toOverview),
     }),

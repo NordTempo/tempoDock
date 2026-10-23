@@ -726,6 +726,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.renameOrgStmt, err = db.PrepareContext(ctx, renameOrg); err != nil {
 		return nil, fmt.Errorf("error preparing query RenameOrg: %w", err)
 	}
+	if q.renameProjectStmt, err = db.PrepareContext(ctx, renameProject); err != nil {
+		return nil, fmt.Errorf("error preparing query RenameProject: %w", err)
+	}
+	if q.renameProjectAlertsStmt, err = db.PrepareContext(ctx, renameProjectAlerts); err != nil {
+		return nil, fmt.Errorf("error preparing query RenameProjectAlerts: %w", err)
+	}
 	if q.resolveAlertStmt, err = db.PrepareContext(ctx, resolveAlert); err != nil {
 		return nil, fmt.Errorf("error preparing query ResolveAlert: %w", err)
 	}
@@ -2063,6 +2069,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing renameOrgStmt: %w", cerr)
 		}
 	}
+	if q.renameProjectStmt != nil {
+		if cerr := q.renameProjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing renameProjectStmt: %w", cerr)
+		}
+	}
+	if q.renameProjectAlertsStmt != nil {
+		if cerr := q.renameProjectAlertsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing renameProjectAlertsStmt: %w", cerr)
+		}
+	}
 	if q.resolveAlertStmt != nil {
 		if cerr := q.resolveAlertStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing resolveAlertStmt: %w", cerr)
@@ -2606,6 +2622,8 @@ type Queries struct {
 	registerNodeServerStmt              *sql.Stmt
 	removeOrgMemberStmt                 *sql.Stmt
 	renameOrgStmt                       *sql.Stmt
+	renameProjectStmt                   *sql.Stmt
+	renameProjectAlertsStmt             *sql.Stmt
 	resolveAlertStmt                    *sql.Stmt
 	restoreVariableStmt                 *sql.Stmt
 	revokeOrgInviteStmt                 *sql.Stmt
@@ -2900,6 +2918,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		registerNodeServerStmt:              q.registerNodeServerStmt,
 		removeOrgMemberStmt:                 q.removeOrgMemberStmt,
 		renameOrgStmt:                       q.renameOrgStmt,
+		renameProjectStmt:                   q.renameProjectStmt,
+		renameProjectAlertsStmt:             q.renameProjectAlertsStmt,
 		resolveAlertStmt:                    q.resolveAlertStmt,
 		restoreVariableStmt:                 q.restoreVariableStmt,
 		revokeOrgInviteStmt:                 q.revokeOrgInviteStmt,

@@ -10,7 +10,7 @@ import (
 )
 
 func newProjectCmd(g *globals) *cobra.Command {
-	cmd := group(&cobra.Command{Use: "project", Short: "List, create, export and archive projects"})
+	cmd := group(&cobra.Command{Use: "project", Short: "List, create, rename, export and archive projects"})
 	var all bool
 	list := &cobra.Command{
 		Use:     "list",
@@ -47,6 +47,7 @@ func newProjectCmd(g *globals) *cobra.Command {
 	cmd.AddCommand(
 		list,
 		newProjectArchiveCmd(g),
+		newProjectRenameCmd(g),
 		newProjectPinCmd(g),
 		newProjectExportCmd(g),
 		&cobra.Command{
@@ -174,4 +175,32 @@ eligible server with the most free memory.`,
 	create.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
 	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g))
 	return cmd
+}
+
+// newProjectRenameCmd renames an explicit project without changing its identity.
+func newProjectRenameCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use: "rename <current> <new>", Short: "Rename a project and its address, keeping services and domains unchanged",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			t := target{Project: args[0]}
+			current, err := get[apitypes.Project](cmd.Context(), s, t.projectPath())
+			if err != nil {
+				return err
+			}
+			p, err := send[apitypes.Project](cmd.Context(), s, http.MethodPatch, t.projectPath(), apitypes.RenameProjectRequest{Name: args[1], ID: current.ID})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(p, func() error {
+				g.io.Successf("Renamed project %s to %s", args[0], p.Name)
+				g.io.Progressf("Update old project links and explicit --project flags. Linked directories follow the same project; services and domains are unchanged.")
+				return nil
+			})
+		},
+	}
 }

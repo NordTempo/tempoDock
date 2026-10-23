@@ -869,6 +869,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/project-ids/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a project by stable ID */
+        get: operations["get-project-by-id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -907,7 +924,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename a project
+         * @description Changes its name and address, not its ID. Running services and domains are unchanged. Old-name URLs and scripts need updating. Scope: admin, whole project.
+         */
+        patch: operations["rename-project"];
         trace?: never;
     };
     "/api/v1/projects/{project}/archive": {
@@ -3303,6 +3324,7 @@ export interface components {
             environment?: string;
             message?: string;
             project?: string;
+            project_renamed?: components["schemas"]["ProjectRenamed"];
             release?: components["schemas"]["Release"];
             release_event?: components["schemas"]["ReleaseEvent"];
             server?: components["schemas"]["Server"];
@@ -3311,7 +3333,7 @@ export interface components {
             /** Format: date-time */
             time: string;
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "server" | "alert" | "update";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "server" | "alert" | "update" | "project_renamed";
             update?: components["schemas"]["UpdateStatus"];
             usage?: components["schemas"]["UsageUpdate"];
         };
@@ -3555,6 +3577,10 @@ export interface components {
             environments: components["schemas"]["EnvironmentOverview"][] | null;
             project: components["schemas"]["Project"];
         };
+        ProjectRenamed: {
+            previous_name: string;
+            project: components["schemas"]["Project"];
+        };
         PromoteRequest: {
             from: string;
             services?: string[] | null;
@@ -3671,6 +3697,15 @@ export interface components {
             source: "upload" | "image" | "config" | "rollback" | "restart" | "promote";
             /** @enum {string} */
             status: "queued" | "building" | "starting" | "health_checking" | "active" | "failed" | "superseded";
+        };
+        RenameProjectRequest: {
+            /**
+             * Format: int64
+             * @description Expected project ID; prevents renaming a reused name
+             */
+            id?: number;
+            /** @description New DNS-safe name */
+            name: string;
         };
         ResetPasswordRequest: {
             /** @description New password; omit to generate one */
@@ -6313,7 +6348,7 @@ export interface operations {
                     "text/event-stream": {
                         data: components["schemas"]["Event"];
                         /** @enum {string} */
-                        event: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "ready" | "end" | "error";
+                        event: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "project_renamed" | "ready" | "end" | "error";
                         id?: string;
                     }[];
                 };
@@ -8733,6 +8768,94 @@ export interface operations {
             };
         };
     };
+    "get-project-by-id": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-projects": {
         parameters: {
             query?: {
@@ -8917,7 +9040,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9000,13 +9126,112 @@ export interface operations {
             };
         };
     };
+    "rename-project": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "archive-project": {
         parameters: {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9095,7 +9320,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9184,7 +9412,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9277,7 +9508,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9366,7 +9600,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9459,7 +9696,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9552,7 +9792,10 @@ export interface operations {
                 /** @description Include secret values (admin only) */
                 reveal?: boolean;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9643,7 +9886,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9734,7 +9980,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9829,7 +10078,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -9933,7 +10185,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10024,7 +10279,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10119,7 +10377,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10210,7 +10471,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10305,7 +10569,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10398,7 +10665,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10495,7 +10765,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10588,7 +10861,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10685,7 +10961,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10778,7 +11057,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10871,7 +11153,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -10964,7 +11249,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11061,7 +11349,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11162,7 +11453,10 @@ export interface operations {
                 /** @description Add the connection URL with its password; audited as data.reveal */
                 reveal?: boolean;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11264,7 +11558,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11368,7 +11665,10 @@ export interface operations {
                 /** @description Only changesets with this status */
                 status?: "pending" | "committed" | "rejected" | "expired" | "conflict";
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11470,7 +11770,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11576,7 +11879,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11680,7 +11986,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11788,7 +12097,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -11899,7 +12211,10 @@ export interface operations {
                 before?: number;
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12001,7 +12316,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12107,7 +12425,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12209,7 +12530,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12315,7 +12639,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12423,7 +12750,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12525,7 +12855,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12627,7 +12960,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12733,7 +13069,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12839,7 +13178,10 @@ export interface operations {
                 /** @description Rows per foreign key; 0 means 10 */
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -12957,7 +13299,10 @@ export interface operations {
                 /** @description Show the table's sensitive columns instead of masking them. Needs sensitive visible (403 otherwise); audited as data.reveal */
                 reveal?: boolean;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13061,7 +13406,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13158,7 +13506,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13251,7 +13602,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13348,7 +13702,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13441,7 +13798,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13533,7 +13893,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13626,7 +13989,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13723,7 +14089,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13814,7 +14183,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -13919,7 +14291,10 @@ export interface operations {
                 /** @description RFC 3339 time or a duration like 10m */
                 since?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14018,7 +14393,10 @@ export interface operations {
                 org?: string;
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14111,7 +14489,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14208,7 +14589,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14315,7 +14699,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14410,7 +14797,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14505,7 +14895,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14605,7 +14998,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14700,7 +15096,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14795,7 +15194,10 @@ export interface operations {
                 /** @description 1h and 24h: a point per minute; 7d: a point per 10 minutes */
                 range?: "1h" | "24h" | "7d";
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14888,7 +15290,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -14995,7 +15400,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15088,7 +15496,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15189,7 +15600,10 @@ export interface operations {
                 /** @description Only shared variables and this service's */
                 service?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15280,7 +15694,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15375,7 +15792,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15464,7 +15884,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15553,7 +15976,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15642,7 +16068,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15731,7 +16160,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;
@@ -15825,7 +16257,10 @@ export interface operations {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
             path: {
                 /** @description Project name */
                 project: string;

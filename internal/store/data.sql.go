@@ -529,20 +529,22 @@ SELECT audit_events.id AS audit_id, audit_events.created_at, audit_details.id, a
 FROM audit_events
 JOIN audit_details ON audit_details.id = audit_events.detail_id
 WHERE audit_events.action = 'data.query'
-  AND audit_events.target = +?1
-  AND audit_events.user_id IS +CAST(?2 AS INTEGER)
-  AND audit_events.token_id IS +CAST(?3 AS INTEGER)
-  AND audit_events.id < ?4
+  AND audit_events.environment_id = +?1
+  AND substr(audit_events.target, instr(audit_events.target, '/') + 1) = +?2
+  AND audit_events.user_id IS +CAST(?3 AS INTEGER)
+  AND audit_events.token_id IS +CAST(?4 AS INTEGER)
+  AND audit_events.id < ?5
 ORDER BY audit_events.id DESC
-LIMIT +?5
+LIMIT +?6
 `
 
 type ListDataQueryHistoryParams struct {
-	Target   string
-	UserID   *int64
-	TokenID  *int64
-	BeforeID int64
-	MaxRows  int64
+	EnvironmentID *int64
+	Target        string
+	UserID        *int64
+	TokenID       *int64
+	BeforeID      int64
+	MaxRows       int64
 }
 
 type ListDataQueryHistoryRow struct {
@@ -554,9 +556,11 @@ type ListDataQueryHistoryRow struct {
 // One actor's queries on one database (target "project/environment/service"),
 // newest first, from their data.query audit events: user_id for a user,
 // token_id for a token, the other NULL. Pages back with before_id (pass
-// math.MaxInt64 for the newest).
+// math.MaxInt64 for the newest). The stable environment and target suffix keep
+// this history available after a project rename, isolated from other orgs.
 func (q *Queries) ListDataQueryHistory(ctx context.Context, arg ListDataQueryHistoryParams) ([]ListDataQueryHistoryRow, error) {
 	rows, err := q.query(ctx, q.listDataQueryHistoryStmt, listDataQueryHistory,
+		arg.EnvironmentID,
 		arg.Target,
 		arg.UserID,
 		arg.TokenID,

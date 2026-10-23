@@ -150,6 +150,12 @@ Project, environment and service come from the link, and `--project/-p`,
 the linked one drops the linked environment and service; `-e staging` alone
 keeps the linked service, so it means "this service, in staging".
 
+A linked directory resolves its project by stable ID before a targeted command.
+After a project rename it follows the same project, even if someone reuses the
+old name. Explicit `-p` flags still address names. If the identity is missing or
+inaccessible, run `dock link -p <project>` rather than falling back to the old
+name. Update older CLI clients before renaming projects they use.
+
 ## Commands
 
 `dock <command> --help` has the details.
@@ -192,6 +198,7 @@ keeps the linked service, so it means "this service, in staging".
 | `backup status [--reveal]`, `backup configure [--repository URL] [--access-key-id ID] [--secret-access-key-stdin] [--region R] [--keep-daily N] [--keep-weekly N] [--keep-monthly N] [--hour H]` | Where backups go, retention and the default hour, for the whole platform; `configure` (operator) sets them and prints the repository password the first time; `--reveal` (operator) shows it again |
 | `project list [--all]\|create\|archive <name>`, `environment list\|create [--kind]` | Projects and environments (`env` is variables). `project archive` (admin) archives every service in the project, removes its environments' networks and hides it from `project list` (`--all` shows it). An environment's kind (production or non-production) defaults from its name and never changes |
 | `environment clone FROM TO [--kind] [--deploy] [--copy-values] [-d]` (also `env clone`) | A new environment with FROM's services, settings, variables and new, empty volumes, placed like `environment create`. Reference-only values are always copied; other values only for admins, and between production and non-production only with `--copy-values` (admin, listed in the output); otherwise templates get new credentials and the rest are listed. Domains, git connections, releases, backups and staged changes are not copied. `--deploy` deploys FROM's images like `promote` ([ADR 0022](decisions/0022-clone-and-export.md)) |
+| `project rename <current> <new>` | Rename an active project and its address (admin with whole-project access). IDs, running services, domains, volumes and release history stay unchanged. Old project URLs and explicit names in scripts need updating; linked directories follow the project |
 | `project export [NAME] [--format toml\|json]` | The project's live config: environments, services, settings, volumes, domains, git connections and variable names, never values. Sorted, so it diffs well in git |
 | `project pin <project> --kind production\|non-production --server NAME` | Operator: choose the server a project's environments of a kind go to, before any exist |
 | `server list`, `server show NAME` | Servers: link status (`online`, `offline`, `incompatible`, `joining`, `revoked`), version, ingress, accepted kinds, whether it builds, memory reserved; operators see every server, others the ones their organization's environments run on. `show` (operator) adds base domain, DNS target, what's placed and current usage |

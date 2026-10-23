@@ -4,6 +4,8 @@ import { withOrg } from "./client";
 export type StreamOptions = {
   /** Close for good on the server's `end` event (logs, build logs). */
   finite?: boolean;
+  /** The server is subscribed; true after a connection was lost. */
+  onReady?: (reconnected: boolean) => void;
   /** The browser reconnected after a drop; events may have been missed. */
   onReconnect?: () => void;
   /** The stream is over: `end`, a problem event, or a refused connection. */
@@ -24,13 +26,14 @@ export function useEventStream<T>(
   url: string | null,
   names: readonly string[],
   onEvent: (name: string, data: T) => void,
-  { finite = false, onReconnect, onClose }: StreamOptions = {},
+  { finite = false, onReady, onReconnect, onClose }: StreamOptions = {},
 ) {
   const dispatch = useEffectEvent((name: string, raw: string) => {
     // The spec types every event payload; JSON.parse can't check it.
     const data: T = JSON.parse(raw);
     onEvent(name, data);
   });
+  const ready = useEffectEvent((again: boolean) => onReady?.(again));
   const reconnected = useEffectEvent(() => onReconnect?.());
   const closed = useEffectEvent((error: string | null) => onClose?.(error));
 
@@ -41,6 +44,11 @@ export function useEventStream<T>(
     if (!url) return;
     const source = new EventSource(withOrg(url), { withCredentials: true });
     let opened = false;
+    let wasReady = false;
+    source.addEventListener("ready", () => {
+      ready(wasReady);
+      wasReady = true;
+    });
     source.addEventListener("open", () => {
       if (opened) reconnected();
       opened = true;

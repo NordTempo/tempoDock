@@ -28,10 +28,12 @@ var UserAgent = "dock-cli/" + version.Version
 type Client struct {
 	// Org, when set, is sent as the `org` parameter of every request: the
 	// organization to act in.
-	Org   string
-	base  *url.URL
-	token string
-	http  *http.Client
+	// ProjectID constrains project-path requests from an ID-linked directory.
+	ProjectID string
+	Org       string
+	base      *url.URL
+	token     string
+	http      *http.Client
 	// upgrades is the HTTP/1.1-only client of Upgrade, made on first use.
 	upgrades     *http.Client
 	upgradesOnce sync.Once
@@ -88,6 +90,9 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body io.Re
 		return nil, err
 	}
 	req.Header.Set("User-Agent", UserAgent)
+	if c.ProjectID != "" {
+		req.Header.Set("Dock-Project-ID", c.ProjectID)
+	}
 	req.Header.Set("Accept", "application/json, application/problem+json")
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)

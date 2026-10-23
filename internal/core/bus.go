@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +34,8 @@ type LiveEvent struct{ *liveEvent }
 
 type liveEvent struct {
 	apitypes.Event
+	projectID int64
+	serviceID int64
 	// signal is the event's alertSignal, for the alert engine.
 	signal *alertSignal
 	once   sync.Once
@@ -56,6 +59,9 @@ func (e LiveEvent) JSON() ([]byte, error) {
 type bus struct {
 	mu   sync.RWMutex
 	subs map[*subscription]struct{}
+	// names has at most one entry per project renamed during this process.
+	// No historical aliases: long-running work only needs its current name.
+	names map[int64]string
 }
 
 type subscription struct {
@@ -68,7 +74,7 @@ type subscription struct {
 
 const subscriptionBuffer = 256
 
-func newBus() *bus { return &bus{subs: map[*subscription]struct{}{}} }
+func newBus() *bus { return &bus{subs: map[*subscription]struct{}{}, names: map[int64]string{}} }
 
 func (b *bus) subscribe(match func(busEvent) bool) *subscription {
 	s := &subscription{ch: make(chan LiveEvent, subscriptionBuffer), match: match, bus: b}
@@ -82,10 +88,11 @@ func (b *bus) publish(e busEvent) {
 	if e.ev.Time.IsZero() {
 		e.ev.Time = time.Now().UTC()
 	}
-	live := newLiveEvent(e.ev)
-	live.signal = e.alert
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+	e.ev = currentProjectEvent(e.ev, b.names[e.projectID])
+	live := newLiveEvent(e.ev)
+	live.signal, live.projectID, live.serviceID = e.alert, e.projectID, e.serviceID
 	for s := range b.subs {
 		if !s.match(e) {
 			continue
@@ -130,4 +137,53 @@ func (s *subscription) close() {
 		delete(s.bus.subs, s)
 		s.bus.mu.Unlock()
 	})
+}
+
+// renameProject remembers only the latest name for work already in flight.
+func (b *bus) renameProject(id int64, name string) {
+	b.mu.Lock()
+	b.names[id] = name
+	b.mu.Unlock()
+}
+
+// projectName canonicalizes an in-flight operation's label without a DB read.
+func (b *bus) projectName(id int64, fallback string) string {
+	b.mu.RLock()
+	name := b.names[id]
+	b.mu.RUnlock()
+	if name != "" {
+		return name
+	}
+	return fallback
+}
+
+// currentProjectEvent copies only payloads whose captured name is out of date;
+// callers may still be using the original payload values.
+func currentProjectEvent(ev apitypes.Event, name string) apitypes.Event {
+	if name == "" || name == ev.Project {
+		return ev
+	}
+	ev.Project = name
+	if ev.Release != nil {
+		r := *ev.Release
+		r.Project = name
+		ev.Release = &r
+	}
+	if ev.Domain != nil {
+		d := *ev.Domain
+		d.Project = name
+		ev.Domain = &d
+	}
+	if ev.Alert != nil && ev.Alert.ResolvedAt == nil {
+		a := *ev.Alert
+		a.Title = strings.Replace(a.Title, a.Project+"/", name+"/", 1)
+		a.Project = name
+		ev.Alert = &a
+	}
+	if ev.Audit != nil {
+		a := *ev.Audit
+		a.Project = name
+		ev.Audit = &a
+	}
+	return ev
 }

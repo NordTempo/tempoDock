@@ -38,6 +38,9 @@ optional and links the whole environment when left out.`,
 			// Re-linking keeps what's already linked: `dock link -s api` in a
 			// linked directory only adds the service.
 			if s.link != nil && s.link.Context == s.server.Name && f.project == "" {
+				if err := s.refreshLinkedProject(cmd.Context()); err != nil {
+					return err
+				}
 				f.project = s.link.Project.Name
 				if f.environment == "" {
 					f.environment = s.link.Environment.Name

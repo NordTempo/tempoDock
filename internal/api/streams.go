@@ -252,6 +252,7 @@ func registerStreams(s *Server, a huma.API) {
 		string(apitypes.EventRelease), string(apitypes.EventReleaseEvent), string(apitypes.EventBuildLog),
 		string(apitypes.EventServiceStatus), string(apitypes.EventDomain), string(apitypes.EventAudit),
 		string(apitypes.EventDrift), string(apitypes.EventLagged), string(apitypes.EventUsage),
+		string(apitypes.EventProjectRenamed),
 	}
 	sse(s, a, huma.Operation{
 		OperationID: "events", Method: http.MethodGet, Path: Prefix + "/events",

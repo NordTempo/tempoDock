@@ -11,6 +11,7 @@ const verbs: Record<string, string> = {
   "domain.add": "add domain",
   "domain.remove": "remove domain",
   "environment.create": "create environment",
+  "project.rename": "rename project",
   "project.create": "create project",
   "project.archive": "archive project",
   "release.deploy": "deploy",

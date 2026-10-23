@@ -217,7 +217,11 @@ func authed[I, O any](s *Server, a huma.API, op huma.Operation, h func(context.C
 		op.Errors = []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict}
 	}
 	huma.Register(a, op, func(ctx context.Context, in *I) (*O, error) {
-		o, err := h(ctx, actorFrom(ctx), in)
+		actor := actorFrom(ctx)
+		if p, ok := any(in).(interface{ expectedProjectID() int64 }); ok {
+			actor.ExpectedProjectID = p.expectedProjectID()
+		}
+		o, err := h(ctx, actor, in)
 		if err != nil {
 			return nil, s.problem(err)
 		}

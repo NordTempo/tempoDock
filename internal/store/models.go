@@ -22,6 +22,8 @@ type Alert struct {
 	OpenedAt    time.Time
 	UpdatedAt   time.Time
 	ResolvedAt  *time.Time
+	ProjectID   *int64
+	ServiceID   *int64
 }
 
 type AlertChannel struct {
