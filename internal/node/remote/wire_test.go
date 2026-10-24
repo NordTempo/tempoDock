@@ -47,7 +47,8 @@ func TestWireRoundTrip(t *testing.T) {
 		toWireDomainCheck, wireDomainCheck.node)
 	check(t, node.HostStats{
 		CPUBusy: 1, CPUTotal: 2, CPUs: 3, MemoryTotal: 4, MemoryAvailable: 5, Load1: 0.5,
-		Disks: []node.Disk{{Paths: []string{"/var/lib/docker"}, Total: 6, Used: 7}},
+		Disks:       []node.Disk{{Paths: []string{"/var/lib/docker"}, Total: 6, Used: 7}},
+		MemoryParts: []node.MemoryPart{{Group: node.MemoryApps, Name: "web-1", Service: "3", Bytes: 8}},
 	}, toWireHostStats, wireHostStats.node)
 	check(t, node.ContainerStats{ID: "abc", Time: at, CPUUsec: 1, Memory: 2, MemoryLimit: 3, IORead: 4, IOWrite: 5},
 		func(s node.ContainerStats) []wireContainerStats {

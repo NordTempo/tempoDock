@@ -21,3 +21,6 @@ func open(path []byte) (int, syscall.Errno) {
 
 // disks isn't reported outside Linux.
 func disks([]string) []node.Disk { return nil }
+
+// eachDir isn't implemented outside Linux, which has no cgroup v2 tree.
+func (r *Reader) eachDir(string, func([]byte)) error { return errors.ErrUnsupported }

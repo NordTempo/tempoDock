@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -41,6 +42,9 @@ type statsState struct {
 	mu      sync.Mutex
 	server  map[int64]apitypes.ServerUsage
 	service map[int64]apitypes.ServiceUsage
+	// names are the collector's latest service names (collector.names),
+	// for naming apps in memory breakdowns. Replaced, never changed.
+	names map[int64]store.ListStatsNamesRow
 
 	// Live watchers, and whether the live sampler runs. closed stops new
 	// samplers once Core is closing.
@@ -137,6 +141,31 @@ func (s *sampler) endRound() {
 
 func toInt64(v uint64) int64 { return int64(min(v, math.MaxInt64)) }
 
+// memoryParts converts a server's memory breakdown, naming app containers
+// after their services. One whose service isn't known (yet) keeps its
+// container's name.
+func (c *Core) memoryParts(parts []node.MemoryPart) []apitypes.MemoryPart {
+	if len(parts) == 0 {
+		return nil
+	}
+	c.stats.mu.Lock()
+	names := c.stats.names
+	c.stats.mu.Unlock()
+	out := make([]apitypes.MemoryPart, len(parts))
+	for i, p := range parts {
+		out[i] = apitypes.MemoryPart{Group: apitypes.MemoryGroup(p.Group), Name: p.Name, Bytes: toInt64(p.Bytes)}
+		if p.Group != node.MemoryApps {
+			continue
+		}
+		id, err := strconv.ParseInt(p.Service, 10, 64)
+		if n, ok := names[id]; ok && err == nil {
+			out[i].Name = n.ServiceName
+			out[i].Environment = c.bus.projectName(n.ProjectID, n.ProjectName) + "/" + n.EnvironmentName
+		}
+	}
+	return out
+}
+
 // collector is the minute tick's state; only collectStats' goroutine uses it.
 type collector struct {
 	sampler *sampler
@@ -154,7 +183,7 @@ type collector struct {
 	// events are the tick's usage events, published once its points are
 	// stored.
 	events []busEvent
-	// names are the targets' names by service, for the events; reloaded
+	// names are the targets' names by service, for the events; replaced
 	// when the set of targets changes. The bus canonicalizes renamed projects.
 	names map[int64]store.ListStatsNamesRow
 }
@@ -230,7 +259,8 @@ func (col *collector) loadNames(ctx context.Context, q *store.Queries, targets [
 	if err != nil {
 		return err
 	}
-	clear(col.names)
+	// A new map, as the old one may be in use (statsState.names).
+	col.names = make(map[int64]store.ListStatsNamesRow, len(rows))
 	for _, r := range rows {
 		col.names[r.ID] = r
 	}
@@ -280,6 +310,9 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 		c.log.Warn("stats: name containers", "err", err)
 		return
 	}
+	c.stats.mu.Lock()
+	c.stats.names = col.names
+	c.stats.mu.Unlock()
 	// A point covers the minute before the tick and is stamped with its start.
 	at := now.Truncate(time.Minute).Unix() - statsMinute
 	col.servers, col.services = col.servers[:0], col.services[:0]
@@ -298,6 +331,7 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 			memory = append(memory, store.SetServerMemoryParams{MemoryBytes: mem, ID: srv.ID, MemoryBytes_2: mem})
 		}
 		if u, ok := col.sampler.hostUsage(srv.ID, h, now); ok {
+			u.MemoryParts = c.memoryParts(h.MemoryParts)
 			hosts[srv.ID] = u
 			col.servers = append(col.servers, store.AddServerStatsParams{
 				Res: statsMinute, At: at, ServerID: srv.ID, Cpu: hundredths(u.CPUPercent),
@@ -672,6 +706,7 @@ func (c *Core) liveRound(ctx context.Context, smp *sampler) {
 	for _, n := range online {
 		if n.hostOK {
 			if u, ok := smp.hostUsage(n.id, n.h, now); ok {
+				u.MemoryParts = c.memoryParts(n.h.MemoryParts)
 				hosts[n.id] = u
 			}
 		}

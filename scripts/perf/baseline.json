@@ -165,6 +165,16 @@
       "bytes_op": 520278,
       "allocs_op": 2386
     },
+    "node/stats.BenchmarkContainerStats50": {
+      "ns_op": 764486.0,
+      "bytes_op": 4096,
+      "allocs_op": 1
+    },
+    "node/stats.BenchmarkHostStats": {
+      "ns_op": 390654.2,
+      "bytes_op": 6453,
+      "allocs_op": 4
+    },
     "pack.BenchmarkWrite": {
       "ns_op": 8073444,
       "bytes_op": 2982858,

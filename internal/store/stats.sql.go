@@ -196,7 +196,7 @@ func (q *Queries) ListServiceStats(ctx context.Context, arg ListServiceStatsPara
 }
 
 const listStatsNames = `-- name: ListStatsNames :many
-SELECT services.id, projects.org_id, projects.name AS project_name, environments.name AS environment_name, services.name AS service_name
+SELECT services.id, projects.org_id, projects.id AS project_id, projects.name AS project_name, environments.name AS environment_name, services.name AS service_name
 FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
@@ -207,14 +207,16 @@ WHERE releases.status = 'active' AND releases.container_id != ''
 type ListStatsNamesRow struct {
 	ID              int64
 	OrgID           int64
+	ProjectID       int64
 	ProjectName     string
 	EnvironmentName string
 	ServiceName     string
 }
 
 // ListStatsNames names the services ListStatsTargets lists, with their
-// org, for usage events. Names never change, so the collector reads them only when its
-// set of services does.
+// org and project, for usage events and memory breakdowns. The collector
+// reads them only when its set of services changes; the bus has the names
+// of projects renamed since.
 func (q *Queries) ListStatsNames(ctx context.Context) ([]ListStatsNamesRow, error) {
 	rows, err := q.query(ctx, q.listStatsNamesStmt, listStatsNames)
 	if err != nil {
@@ -227,6 +229,7 @@ func (q *Queries) ListStatsNames(ctx context.Context) ([]ListStatsNamesRow, erro
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrgID,
+			&i.ProjectID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 			&i.ServiceName,

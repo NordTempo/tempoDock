@@ -11,6 +11,7 @@ import type {
   StatsRange,
 } from "../data/types";
 import { LinkSection } from "../features/servers/LinkSection";
+import { MemoryBreakdown } from "../features/servers/MemoryBreakdown";
 import { useServerSwitches } from "../features/servers/switches";
 import { CpuUsage, MemoryUsage } from "../features/service/Usage";
 import { LineChart } from "../features/stats/LineChart";
@@ -35,8 +36,8 @@ import {
 } from "../ui/kit";
 import { containerState, kindLabel } from "../ui/status";
 
-// One server: live usage, history, what is placed on it and the services
-// there by memory. /console/servers/homelab?range=24h
+// One server: live usage, history, what is placed on it, where its memory
+// goes and the services there by memory. /console/servers/homelab?range=24h
 export const Route = createFileRoute("/_app/console/servers_/$server")({
   validateSearch: validateRange,
   loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),
@@ -136,6 +137,8 @@ function ServerPage() {
         </p>
         <Placements detail={detail} />
       </section>
+
+      <MemoryBreakdown usage={server.usage} />
 
       <Services name={name} services={detail.services} />
     </Page>

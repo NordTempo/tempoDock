@@ -3512,6 +3512,14 @@ export interface components {
             /** @enum {string} */
             scope?: "read" | "deploy" | "admin";
         };
+        MemoryPart: {
+            /** Format: int64 */
+            bytes: number;
+            environment?: string;
+            /** @enum {string} */
+            group: "apps" | "platform" | "kernel" | "system";
+            name: string;
+        };
         Org: {
             /** Format: date-time */
             created_at: string;
@@ -3857,6 +3865,8 @@ export interface components {
             disks: components["schemas"]["DiskUsage"][] | null;
             /** Format: double */
             load1: number;
+            /** @description Where the used memory goes, the biggest first */
+            memory_parts?: components["schemas"]["MemoryPart"][] | null;
             /** Format: int64 */
             memory_total_bytes: number;
             /**

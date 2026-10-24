@@ -85,6 +85,12 @@
   --color-fail-edge: #4a2020;
   --color-info-bg: #1e293b;
 
+  /* Memory breakdown groups: apps, platform, other system, kernel. */
+  --color-mem-apps: #93c5fd;
+  --color-mem-platform: #c4b5fd;
+  --color-mem-system: #8b8b94;
+  --color-mem-kernel: #5eead4;
+
   /* Diff rows: added, changed, removed. */
   --color-add-bg: #0f1f15;
   --color-change-bg: #221d0e;

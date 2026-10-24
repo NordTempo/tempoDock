@@ -21,6 +21,7 @@ export type NewClone = Schemas["CloneEnvironmentRequest"];
 export type Clone = Schemas["CloneResult"];
 export type SkippedService = Schemas["SkippedService"];
 export type ServerUsage = Schemas["ServerUsage"];
+export type MemoryPart = Schemas["MemoryPart"];
 export type ServiceUsage = Schemas["ServiceUsage"];
 export type Placement = Schemas["Placement"];
 export type EnvironmentKind = Schemas["Environment"]["kind"];

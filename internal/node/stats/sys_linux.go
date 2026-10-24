@@ -1,6 +1,10 @@
 package stats
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
+	"io/fs"
 	"syscall"
 	"unsafe"
 
@@ -47,4 +51,43 @@ func indexFsid(ids []syscall.Fsid, id syscall.Fsid) int {
 		}
 	}
 	return -1
+}
+
+// eachDir makes dir the current directory and calls fn with the name of
+// each directory in it. A name is valid during its call only.
+func (r *Reader) eachDir(dir string, fn func(name []byte)) error {
+	r.setDir(dir)
+	r.path = append(r.path[:r.dirLen], 0)
+	fd, errno := open(r.path)
+	if errno != 0 {
+		return r.pathError("open", errno)
+	}
+	defer func() { _ = syscall.Close(fd) }()
+	for {
+		n, err := syscall.ReadDirent(fd, r.dirBuf)
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		if err != nil {
+			return &fs.PathError{Op: "readdirent", Path: dir, Err: err}
+		}
+		if n <= 0 {
+			return nil
+		}
+		// linux_dirent64: ino (8), off (8), reclen (2), type (1), name.
+		for b := r.dirBuf[:n]; len(b) > 19; {
+			reclen := int(binary.NativeEndian.Uint16(b[16:18]))
+			if reclen <= 19 || reclen > len(b) {
+				break
+			}
+			typ, name := b[18], b[19:reclen]
+			if i := bytes.IndexByte(name, 0); i >= 0 {
+				name = name[:i]
+			}
+			b = b[reclen:]
+			if (typ == syscall.DT_DIR || typ == syscall.DT_UNKNOWN) && string(name) != "." && string(name) != ".." {
+				fn(name)
+			}
+		}
+	}
 }

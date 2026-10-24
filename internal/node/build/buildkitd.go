@@ -31,7 +31,7 @@ const (
 	// config change recreates it.
 	labelConfig = "dock.buildkit.config"
 	// roleBuildKit is the container's node.LabelRole.
-	roleBuildKit = "buildkit"
+	roleBuildKit = node.RoleBuildKit
 
 	// cpuShares is a quarter of Docker's default weight, so app containers
 	// win any CPU contention with a build.

@@ -111,6 +111,13 @@ type Containers interface {
 // RoleJob is the LabelRole value of RunJob's containers.
 const RoleJob = "job"
 
+// RoleBuildKit is the LabelRole value of the BuildKit container.
+const RoleBuildKit = "buildkit"
+
+// RoleRegistryGC is the LabelRole value of the registry's garbage
+// collection container.
+const RoleRegistryGC = "registry-gc"
+
 // MaxJobOutput caps JobResult.Output: the tail of the job's output is kept.
 const MaxJobOutput = 256 << 10
 
@@ -222,6 +229,38 @@ type HostStats struct {
 	// Disks are the filesystems of Docker's data root (first) and dock's
 	// data dir, once each when they are the same filesystem.
 	Disks []Disk
+	// MemoryParts say where MemoryTotal-MemoryAvailable goes, the biggest
+	// first. Empty when the server can't tell (no cgroup v2).
+	MemoryParts []MemoryPart
+}
+
+// MemoryGroup sorts what uses a server's memory, for the console.
+type MemoryGroup string
+
+const (
+	// MemoryApps are the containers of services.
+	MemoryApps MemoryGroup = "apps"
+	// MemoryPlatform is Dock's own infrastructure: the daemon, Caddy,
+	// cloudflared, Docker itself, BuildKit, the registry and jobs.
+	MemoryPlatform MemoryGroup = "platform"
+	// MemoryKernel is kernel memory no process is charged for, and what
+	// is left over.
+	MemoryKernel MemoryGroup = "kernel"
+	// MemorySystem is everything else on the server: other systemd units,
+	// login sessions and containers Dock didn't create.
+	MemorySystem MemoryGroup = "system"
+)
+
+// MemoryPart is one user of a server's memory. For processes it is what
+// they hold that can't be reclaimed (anonymous memory and shmem/tmpfs);
+// page cache is left out, as MemAvailable leaves it out of "used".
+type MemoryPart struct {
+	Group MemoryGroup
+	Name  string
+	// Service is the LabelService of an app's container: the service's
+	// ID, which the control plane turns into its name.
+	Service string
+	Bytes   uint64
 }
 
 // Disk is the usage of one filesystem.

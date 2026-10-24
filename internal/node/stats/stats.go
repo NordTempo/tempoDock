@@ -1,7 +1,8 @@
 // Package stats implements node.Stats by reading the kernel's own files:
 // /proc for the host and cgroup v2 files for containers. No Docker API
-// calls, so a sample of a server with 50 containers is a few hundred small
-// file reads and nothing else.
+// calls per sample, so a sample of a server with 50 containers is a few
+// hundred small file reads and nothing else. The memory breakdown
+// (memory.go) asks Docker about a container once, when it first sees it.
 package stats
 
 import (
@@ -27,6 +28,11 @@ type Options struct {
 	// Docker's data root first (what server disk usage means), then the
 	// data dir.
 	Disks []string
+	// Container describes a container for the memory breakdown by its
+	// full ID: its group, name and, for an app, service (Bytes is
+	// ignored). It is asked once per container, while it exists. Nil, or
+	// an error, puts the container under MemorySystem by its ID.
+	Container func(ctx context.Context, id string) (node.MemoryPart, error)
 }
 
 // Reader samples a server. It is safe for concurrent use; samples are
@@ -44,6 +50,15 @@ type Reader struct {
 	// layout is how Docker names container cgroups here, found from the
 	// first container that exists.
 	layout layout
+
+	// The memory breakdown's state (memory.go): describe is
+	// Options.Container, units and ctrs remember unit names and described
+	// containers until a walk (gen) doesn't see them, and dirBuf holds
+	// directory entries.
+	describe    func(ctx context.Context, id string) (node.MemoryPart, error)
+	units, ctrs map[string]*owner
+	gen         uint32
+	dirBuf      []byte
 }
 
 type layout int
@@ -67,11 +82,14 @@ func New(o Options) *Reader {
 	if o.Cgroup == "" {
 		o.Cgroup = "/sys/fs/cgroup"
 	}
-	return &Reader{proc: o.Proc, cgroup: o.Cgroup, disks: o.Disks, buf: make([]byte, 8192), path: make([]byte, 0, 256)}
+	return &Reader{
+		proc: o.Proc, cgroup: o.Cgroup, disks: o.Disks, buf: make([]byte, 8192), path: make([]byte, 0, 256),
+		describe: o.Container, units: map[string]*owner{}, ctrs: map[string]*owner{}, dirBuf: make([]byte, 8192),
+	}
 }
 
 // HostStats implements node.Stats.
-func (r *Reader) HostStats(context.Context) (node.HostStats, error) {
+func (r *Reader) HostStats(ctx context.Context) (node.HostStats, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var h node.HostStats
@@ -85,11 +103,13 @@ func (r *Reader) HostStats(context.Context) (node.HostStats, error) {
 		return h, err
 	}
 	h.MemoryTotal, h.MemoryAvailable = parseMeminfo(b)
+	kernel := parseKernelMemory(b)
 	if b, err = r.read("/loadavg"); err != nil {
 		return h, err
 	}
 	h.Load1 = parseLoad1(b)
 	h.Disks = disks(r.disks)
+	h.MemoryParts = r.memoryParts(ctx, h.MemoryTotal-min(h.MemoryAvailable, h.MemoryTotal), kernel)
 	return h, nil
 }
 
