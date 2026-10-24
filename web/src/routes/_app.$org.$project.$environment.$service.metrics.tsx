@@ -11,6 +11,7 @@ import {
   type Point,
   rangeLabel,
   rangeMs,
+  ranges,
   validateRange,
 } from "../features/stats/series";
 import { cpus, pct, size } from "../ui/format";
@@ -52,6 +53,7 @@ function MetricsTab() {
           right={
             <RangeSwitch
               value={range}
+              options={ranges}
               onChange={(r) =>
                 navigate({
                   search: r === "1h" ? {} : { range: r },

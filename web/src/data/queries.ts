@@ -27,9 +27,11 @@ import type {
   ServiceBackups,
   ServiceRef,
   ServiceStats,
+  ServiceTraffic,
   Session,
   StatsRange,
   TemplateInfo,
+  TrafficRange,
 } from "./types";
 
 // Query keys are hierarchical so one invalidation covers a subtree:
@@ -85,6 +87,14 @@ export const keys = {
   serviceStats: (s: ServiceRef, range: StatsRange) => [
     "stats",
     "service",
+    s.project,
+    s.environment,
+    s.service,
+    range,
+  ],
+  serviceTraffic: (s: ServiceRef, range: TrafficRange) => [
+    "stats",
+    "traffic",
     s.project,
     s.environment,
     s.service,
@@ -400,6 +410,20 @@ export const queries = {
           ),
         );
         return { ...s, points: s.points ?? [] };
+      },
+      staleTime: 60_000,
+    }),
+  serviceTraffic: (ref: ServiceRef, range: TrafficRange) =>
+    queryOptions({
+      queryKey: keys.serviceTraffic(ref, range),
+      queryFn: async (): Promise<ServiceTraffic> => {
+        const t = await body(
+          api.GET(
+            "/api/v1/projects/{project}/environments/{environment}/services/{service}/traffic",
+            { params: { path: servicePath(ref), query: { range } } },
+          ),
+        );
+        return { ...t, points: t.points ?? [], paths: t.paths ?? [] };
       },
       staleTime: 60_000,
     }),

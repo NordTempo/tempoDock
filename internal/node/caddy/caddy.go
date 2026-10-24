@@ -36,6 +36,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,6 +86,10 @@ type Options struct {
 	// http://127.0.0.1:7071/internal/caddy/access. Required for such
 	// routes.
 	AccessURL string
+	// TrafficAddr is the loopback host:port the node's traffic counter
+	// listens on (traffic.Listen). When set, Caddy sends it the access log
+	// of routes with Traffic set (ADR 0033); empty turns counting off.
+	TrafficAddr string
 	// PublicIPs are the addresses DNS records should point at, used by
 	// CheckDomain in direct mode.
 	PublicIPs []string
@@ -138,6 +143,8 @@ func (o *Options) validate() error {
 		return fmt.Errorf("caddy: unknown ingress %q; use direct or cloudflare_tunnel", o.Ingress)
 	case o.HTTPPort <= 0:
 		return errors.New("caddy: an HTTP port is required")
+	case o.TrafficAddr != "" && !validTrafficAddr(o.TrafficAddr):
+		return fmt.Errorf("caddy: traffic address %q must be a loopback host:port like 127.0.0.1:7074", o.TrafficAddr)
 	case o.ServerMarker != "" && !validMarker(o.ServerMarker):
 		return fmt.Errorf("caddy: server marker %q may only use letters, digits, '.', '_' and '-' (at most 128)", o.ServerMarker)
 	case o.tunnel() && o.ServerMarker == "":
@@ -150,6 +157,15 @@ func (o *Options) validate() error {
 		return errors.New("caddy: an ask URL is required when TLS is enabled")
 	}
 	return nil
+}
+
+// validTrafficAddr accepts a loopback IP and port: access log lines carry
+// client addresses and must not leave the server.
+func validTrafficAddr(addr string) bool {
+	host, port, err := net.SplitHostPort(addr)
+	ip := net.ParseIP(host)
+	n, perr := strconv.Atoi(port)
+	return err == nil && ip != nil && ip.IsLoopback() && perr == nil && n > 0 && n < 1<<16
 }
 
 // validMarker keeps the marker a plain header value: no spaces, and no "{"

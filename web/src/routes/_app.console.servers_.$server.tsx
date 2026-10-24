@@ -21,6 +21,7 @@ import {
   type Point,
   rangeLabel,
   rangeMs,
+  ranges,
   validateRange,
 } from "../features/stats/series";
 import { useOrg } from "../shell/location";
@@ -100,6 +101,7 @@ function ServerPage() {
           right={
             <RangeSwitch
               value={range}
+              options={ranges}
               onChange={(r) =>
                 navigate({
                   search: r === "1h" ? {} : { range: r },

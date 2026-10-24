@@ -252,12 +252,12 @@ func registerStreams(s *Server, a huma.API) {
 		string(apitypes.EventRelease), string(apitypes.EventReleaseEvent), string(apitypes.EventBuildLog),
 		string(apitypes.EventServiceStatus), string(apitypes.EventDomain), string(apitypes.EventAudit),
 		string(apitypes.EventDrift), string(apitypes.EventLagged), string(apitypes.EventUsage),
-		string(apitypes.EventProjectRenamed),
+		string(apitypes.EventTraffic), string(apitypes.EventProjectRenamed),
 	}
 	sse(s, a, huma.Operation{
 		OperationID: "events", Method: http.MethodGet, Path: Prefix + "/events",
 		Summary: "Live events", Tags: []string{"events"},
-		Description: "Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage and platform events: operators only). " +
+		Description: "Release progress, build logs, service status, domain status, audit events and each minute's resource usage and traffic the caller may see (server usage and platform events: operators only). " +
 			"The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.",
 	}, eventNames, sseFormat[core.LiveEvent]{
 		name: func(e core.LiveEvent) string { return string(e.Type) }, id: eventID,

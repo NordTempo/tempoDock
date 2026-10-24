@@ -186,6 +186,9 @@ type (
 	containerStatsResult struct {
 		Stats capped[wireContainerStats] `json:"stats"`
 	}
+	trafficResult struct {
+		Hosts capped[wireHostTraffic] `json:"hosts"`
+	}
 	dialRequest struct {
 		ContainerID string `json:"container_id"`
 		Port        int    `json:"port"`
@@ -459,6 +462,9 @@ type wireRoute struct {
 	PathPrefix string   `json:"path_prefix,omitempty"`
 	// Access is new in protocol 5 (AccessProtocol).
 	Access *wireAccess `json:"access,omitempty"`
+	// Traffic is new in protocol 6 (TrafficProtocol); older nodes don't
+	// count.
+	Traffic bool `json:"traffic,omitempty"`
 }
 
 // wireAccess is node.Access; the key travels as base64.
@@ -472,7 +478,7 @@ type wireAccess struct {
 func toWireRoutes(rs []node.Route) []wireRoute {
 	out := make([]wireRoute, len(rs))
 	for i, r := range rs {
-		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix}
+		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic}
 		if a := r.Access; a != nil {
 			out[i].Access = &wireAccess{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
@@ -483,7 +489,7 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 func fromWireRoutes(ws []wireRoute) []node.Route {
 	out := make([]node.Route, len(ws))
 	for i, w := range ws {
-		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix}
+		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic}
 		if a := w.Access; a != nil {
 			out[i].Access = &node.Access{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
@@ -505,6 +511,52 @@ func toWireDomainCheck(d node.DomainCheck) wireDomainCheck {
 
 func (w wireDomainCheck) node() node.DomainCheck {
 	return node.DomainCheck{ExpectedIPs: w.ExpectedIPs, ResolvedIPs: w.ResolvedIPs, DNSOK: w.DNSOK, CertificateOK: w.CertificateOK, Error: w.Error}
+}
+
+// wireHostTraffic is node.HostTraffic; the duration travels as
+// milliseconds and the visitor sketch as base64.
+type wireHostTraffic struct {
+	Host       string                `json:"host"`
+	Requests   uint64                `json:"requests"`
+	Status     [4]uint64             `json:"status"`
+	Bytes      uint64                `json:"bytes"`
+	DurationMS int64                 `json:"duration_ms"`
+	Visitors   []byte                `json:"visitors,omitempty"`
+	Paths      capped[wirePathCount] `json:"paths,omitempty"`
+}
+
+type wirePathCount struct {
+	Method   string `json:"method"`
+	Path     string `json:"path"`
+	Requests uint64 `json:"requests"`
+}
+
+func toWireTraffic(hs []node.HostTraffic) []wireHostTraffic {
+	out := make([]wireHostTraffic, len(hs))
+	for i, h := range hs {
+		out[i] = wireHostTraffic{
+			Host: h.Host, Requests: h.Requests, Status: h.Status, Bytes: h.Bytes,
+			DurationMS: h.Duration.Milliseconds(), Visitors: h.Visitors, Paths: make([]wirePathCount, len(h.Paths)),
+		}
+		for j, p := range h.Paths {
+			out[i].Paths[j] = wirePathCount(p)
+		}
+	}
+	return out
+}
+
+func fromWireTraffic(ws []wireHostTraffic) []node.HostTraffic {
+	out := make([]node.HostTraffic, len(ws))
+	for i, w := range ws {
+		out[i] = node.HostTraffic{
+			Host: w.Host, Requests: w.Requests, Status: w.Status, Bytes: w.Bytes,
+			Duration: time.Duration(w.DurationMS) * time.Millisecond, Visitors: w.Visitors, Paths: make([]node.PathCount, len(w.Paths)),
+		}
+		for j, p := range w.Paths {
+			out[i].Paths[j] = node.PathCount(p)
+		}
+	}
+	return out
 }
 
 type wireDisk struct {

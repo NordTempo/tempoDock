@@ -60,6 +60,12 @@ const tabs = [
     to: "/$org/$project/$environment/$service/metrics",
     key: "g m",
   },
+  // Services with a domain only: what their domains served (ADR 0033).
+  {
+    label: "Traffic",
+    to: "/$org/$project/$environment/$service/traffic",
+    key: "g t",
+  },
   {
     label: "Releases",
     to: "/$org/$project/$environment/$service/releases",
@@ -151,7 +157,8 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const shown = tabs.filter(
     (tab) =>
       (tab.label !== "Data" || isDatabase(service)) &&
-      (tab.label !== "Backups" || service.stateful),
+      (tab.label !== "Backups" || service.stateful) &&
+      (tab.label !== "Traffic" || view.domains.length > 0),
   );
   useShortcuts(
     shown.map((tab) => ({

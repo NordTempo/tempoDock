@@ -23,8 +23,10 @@ import type {
   ServerStats,
   ServiceRef,
   ServiceStats,
+  ServiceTraffic,
   ServiceView,
   StatsRange,
+  TrafficPoint,
 } from "./types";
 
 // Live updates from the daemon over Server-Sent Events. Nothing polls:
@@ -42,6 +44,7 @@ const busEvents = [
   "drift",
   "lagged",
   "usage",
+  "traffic",
   "server",
   "alert",
   "update",
@@ -153,6 +156,9 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "usage":
       applyUsage(queryClient, event);
       return;
+    case "traffic":
+      applyTraffic(queryClient, event);
+      return;
     case "server":
       // A server connected, disconnected, joined, changed or went away.
       applyServer(queryClient, event.server, event.message === "removed");
@@ -227,6 +233,49 @@ function appendPoint<
   const keep = stats.points.findIndex((p) => Date.parse(p.time) > from);
   const points = keep < 0 ? [] : stats.points.slice(keep);
   return { ...stats, points: [...points, point] };
+}
+
+/**
+ * A minute's traffic of an environment's services (ADR 0033): a new point
+ * on each open 24h view, added to its totals. Visitors and paths can't be
+ * added up, and hour points may already hold the minute, so those stay as
+ * loaded until the view is fetched again.
+ */
+function applyTraffic(queryClient: QueryClient, event: LiveEvent) {
+  const { project, environment, traffic } = event;
+  if (!project || !environment || !traffic?.services) return;
+  for (const { service, point } of traffic.services) {
+    queryClient.setQueryData<ServiceTraffic>(
+      keys.serviceTraffic({ project, environment, service }, "24h"),
+      (t) => {
+        const next = appendPoint(t, 86_400_000, point);
+        return next === t || !next
+          ? t
+          : { ...next, totals: plus(next.totals, point) };
+      },
+    );
+  }
+}
+
+/** Traffic counts with a minute's added; visitors stay (not additive). */
+function plus(
+  t: ServiceTraffic["totals"],
+  p: TrafficPoint,
+): ServiceTraffic["totals"] {
+  const requests = t.requests + p.requests;
+  return {
+    ...t,
+    requests,
+    status_2xx: t.status_2xx + p.status_2xx,
+    status_3xx: t.status_3xx + p.status_3xx,
+    status_4xx: t.status_4xx + p.status_4xx,
+    status_5xx: t.status_5xx + p.status_5xx,
+    bytes: t.bytes + p.bytes,
+    avg_duration_ms: requests
+      ? (t.avg_duration_ms * t.requests + p.avg_duration_ms * p.requests) /
+        requests
+      : 0,
+  };
 }
 
 /**

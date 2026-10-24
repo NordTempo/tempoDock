@@ -20,6 +20,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/docker"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/node/stats"
+	"github.com/NordTempo/tempoDock/internal/node/traffic"
 )
 
 // newRuntime builds this server's node runtime from Docker, BuildKit and
@@ -41,7 +42,18 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	} else if n > 0 {
 		log.Info("upgraded container swap limits", "containers", n)
 	}
-	proxy, err := caddy.New(caddyOptions(cfg, marker))
+	opts := caddyOptions(cfg, marker)
+	var counter node.Traffic = noTraffic{}
+	if opts.TrafficAddr != "" {
+		// Apps are served either way; only their traffic goes uncounted.
+		if c, err := traffic.Listen(ctx, opts.TrafficAddr, log); err != nil {
+			log.Error("traffic statistics are off", "traffic_listen", opts.TrafficAddr, "err", err)
+			opts.TrafficAddr = ""
+		} else {
+			counter = c
+		}
+	}
+	proxy, err := caddy.New(opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -66,7 +78,7 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		builder = b
 	}
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
-	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st}, proxy, nil
+	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter}, proxy, nil
 }
 
 // dockerRoot asks Docker once where it keeps images, volumes and logs, for
@@ -123,8 +135,15 @@ func caddyOptions(cfg config.Config, marker string) caddy.Options {
 		PublicIPs:      publicIPs(cfg),
 		ServerMarker:   marker,
 		TunnelHostname: cfg.Ingress.TunnelHostname,
+		TrafficAddr:    cfg.Caddy.TrafficListen,
 	}
 }
+
+// noTraffic is the counter of a server whose traffic_listen is off or
+// taken: it never counts anything.
+type noTraffic struct{}
+
+func (noTraffic) DrainTraffic(context.Context) ([]node.HostTraffic, error) { return nil, nil }
 
 // publicIPs are the addresses DNS should point at: public_ip on a direct
 // server, none behind a tunnel.

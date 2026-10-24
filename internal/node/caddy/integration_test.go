@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/access"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/traffic"
 )
 
 // These tests run a real `caddy run` (from PATH) with a temp config, socket
@@ -709,5 +711,57 @@ func TestIntegrationAccess(t *testing.T) {
 	})
 	if code != 200 || body != `POST /api?q=1 user=ada@example.com body={"n":1} key=` {
 		t.Fatalf("signed in: %d %q", code, body)
+	}
+}
+
+// Caddy accepts the traffic log config and sends a line per request of a
+// counted route to the counter, and none for other hostnames.
+func TestIntegrationTraffic(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	port := freePorts(t, 1)[0]
+	counter, err := traffic.Listen(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc := startCaddyWith(t, func(o *Options) {
+		o.DisableTLS, o.TrafficAddr = true, net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	})
+	up := backend(t, "app")
+	err = tc.proxy.ApplyRoutes(ctx, []node.Route{
+		{Hostnames: []string{"counted.test"}, Upstream: up, Traffic: true},
+		{Hostnames: []string{"quiet.test"}, Upstream: up},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		req, _ := http.NewRequest(http.MethodGet, tc.url("http", "counted.test", "/items/7?x=1"), nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 test")
+		resp, err := tc.client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+	tc.get(t, tc.url("http", "quiet.test", "/"))
+
+	var got []node.HostTraffic
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		d, _ := counter.DrainTraffic(ctx)
+		got = append(got, d...)
+		if len(got) > 0 && got[0].Requests == 3 {
+			break
+		}
+	}
+	if len(got) != 1 || got[0].Host != "counted.test" || got[0].Requests != 3 || got[0].Status[0] != 3 {
+		t.Fatalf("counted %+v; want 3 requests to counted.test", got)
+	}
+	if p := got[0].Paths; len(p) != 1 || p[0].Path != "/items/:id" || p[0].Method != "GET" {
+		t.Errorf("paths = %+v", p)
+	}
+	var s traffic.Sketch
+	if err := s.UnmarshalBinary(got[0].Visitors); err != nil || s.Estimate() != 1 {
+		t.Errorf("visitors = %d, %v; want 1 (the user agent reached the counter)", s.Estimate(), err)
 	}
 }

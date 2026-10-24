@@ -63,6 +63,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addServiceStatsStmt, err = db.PrepareContext(ctx, addServiceStats); err != nil {
 		return nil, fmt.Errorf("error preparing query AddServiceStats: %w", err)
 	}
+	if q.addTrafficStmt, err = db.PrepareContext(ctx, addTraffic); err != nil {
+		return nil, fmt.Errorf("error preparing query AddTraffic: %w", err)
+	}
+	if q.addTrafficPathStmt, err = db.PrepareContext(ctx, addTrafficPath); err != nil {
+		return nil, fmt.Errorf("error preparing query AddTrafficPath: %w", err)
+	}
 	if q.applyVariableStmt, err = db.PrepareContext(ctx, applyVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query ApplyVariable: %w", err)
 	}
@@ -525,6 +531,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listGitPendingServicesStmt, err = db.PrepareContext(ctx, listGitPendingServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListGitPendingServices: %w", err)
 	}
+	if q.listHourVisitorsStmt, err = db.PrepareContext(ctx, listHourVisitors); err != nil {
+		return nil, fmt.Errorf("error preparing query ListHourVisitors: %w", err)
+	}
 	if q.listInFlightReleasesStmt, err = db.PrepareContext(ctx, listInFlightReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListInFlightReleases: %w", err)
 	}
@@ -666,6 +675,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listStatsTargetsStmt, err = db.PrepareContext(ctx, listStatsTargets); err != nil {
 		return nil, fmt.Errorf("error preparing query ListStatsTargets: %w", err)
 	}
+	if q.listTrafficHostsStmt, err = db.PrepareContext(ctx, listTrafficHosts); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTrafficHosts: %w", err)
+	}
+	if q.listTrafficStatsStmt, err = db.PrepareContext(ctx, listTrafficStats); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTrafficStats: %w", err)
+	}
+	if q.listTrafficVisitorsStmt, err = db.PrepareContext(ctx, listTrafficVisitors); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTrafficVisitors: %w", err)
+	}
 	if q.listUnprunedBackupsStmt, err = db.PrepareContext(ctx, listUnprunedBackups); err != nil {
 		return nil, fmt.Errorf("error preparing query ListUnprunedBackups: %w", err)
 	}
@@ -716,6 +734,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.pruneServiceStatsStmt, err = db.PrepareContext(ctx, pruneServiceStats); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneServiceStats: %w", err)
+	}
+	if q.pruneTrafficPathsStmt, err = db.PrepareContext(ctx, pruneTrafficPaths); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneTrafficPaths: %w", err)
+	}
+	if q.pruneTrafficStatsStmt, err = db.PrepareContext(ctx, pruneTrafficStats); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneTrafficStats: %w", err)
+	}
+	if q.pruneTrafficVisitorsStmt, err = db.PrepareContext(ctx, pruneTrafficVisitors); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneTrafficVisitors: %w", err)
 	}
 	if q.registerNodeServerStmt, err = db.PrepareContext(ctx, registerNodeServer); err != nil {
 		return nil, fmt.Errorf("error preparing query RegisterNodeServer: %w", err)
@@ -834,6 +861,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setTokenDataAccessStmt, err = db.PrepareContext(ctx, setTokenDataAccess); err != nil {
 		return nil, fmt.Errorf("error preparing query SetTokenDataAccess: %w", err)
 	}
+	if q.setTrafficVisitorsStmt, err = db.PrepareContext(ctx, setTrafficVisitors); err != nil {
+		return nil, fmt.Errorf("error preparing query SetTrafficVisitors: %w", err)
+	}
 	if q.setUserDisabledStmt, err = db.PrepareContext(ctx, setUserDisabled); err != nil {
 		return nil, fmt.Errorf("error preparing query SetUserDisabled: %w", err)
 	}
@@ -849,11 +879,20 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.supersedeReleaseStmt, err = db.PrepareContext(ctx, supersedeRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query SupersedeRelease: %w", err)
 	}
+	if q.topTrafficPathsStmt, err = db.PrepareContext(ctx, topTrafficPaths); err != nil {
+		return nil, fmt.Errorf("error preparing query TopTrafficPaths: %w", err)
+	}
 	if q.touchLocalServerStmt, err = db.PrepareContext(ctx, touchLocalServer); err != nil {
 		return nil, fmt.Errorf("error preparing query TouchLocalServer: %w", err)
 	}
 	if q.touchTokenStmt, err = db.PrepareContext(ctx, touchToken); err != nil {
 		return nil, fmt.Errorf("error preparing query TouchToken: %w", err)
+	}
+	if q.trafficTotalsStmt, err = db.PrepareContext(ctx, trafficTotals); err != nil {
+		return nil, fmt.Errorf("error preparing query TrafficTotals: %w", err)
+	}
+	if q.trimTrafficPathsStmt, err = db.PrepareContext(ctx, trimTrafficPaths); err != nil {
+		return nil, fmt.Errorf("error preparing query TrimTrafficPaths: %w", err)
 	}
 	if q.unapplyVolumeStmt, err = db.PrepareContext(ctx, unapplyVolume); err != nil {
 		return nil, fmt.Errorf("error preparing query UnapplyVolume: %w", err)
@@ -962,6 +1001,16 @@ func (q *Queries) Close() error {
 	if q.addServiceStatsStmt != nil {
 		if cerr := q.addServiceStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addServiceStatsStmt: %w", cerr)
+		}
+	}
+	if q.addTrafficStmt != nil {
+		if cerr := q.addTrafficStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addTrafficStmt: %w", cerr)
+		}
+	}
+	if q.addTrafficPathStmt != nil {
+		if cerr := q.addTrafficPathStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addTrafficPathStmt: %w", cerr)
 		}
 	}
 	if q.applyVariableStmt != nil {
@@ -1734,6 +1783,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listGitPendingServicesStmt: %w", cerr)
 		}
 	}
+	if q.listHourVisitorsStmt != nil {
+		if cerr := q.listHourVisitorsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listHourVisitorsStmt: %w", cerr)
+		}
+	}
 	if q.listInFlightReleasesStmt != nil {
 		if cerr := q.listInFlightReleasesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listInFlightReleasesStmt: %w", cerr)
@@ -1969,6 +2023,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listStatsTargetsStmt: %w", cerr)
 		}
 	}
+	if q.listTrafficHostsStmt != nil {
+		if cerr := q.listTrafficHostsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTrafficHostsStmt: %w", cerr)
+		}
+	}
+	if q.listTrafficStatsStmt != nil {
+		if cerr := q.listTrafficStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTrafficStatsStmt: %w", cerr)
+		}
+	}
+	if q.listTrafficVisitorsStmt != nil {
+		if cerr := q.listTrafficVisitorsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTrafficVisitorsStmt: %w", cerr)
+		}
+	}
 	if q.listUnprunedBackupsStmt != nil {
 		if cerr := q.listUnprunedBackupsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listUnprunedBackupsStmt: %w", cerr)
@@ -2052,6 +2121,21 @@ func (q *Queries) Close() error {
 	if q.pruneServiceStatsStmt != nil {
 		if cerr := q.pruneServiceStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing pruneServiceStatsStmt: %w", cerr)
+		}
+	}
+	if q.pruneTrafficPathsStmt != nil {
+		if cerr := q.pruneTrafficPathsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneTrafficPathsStmt: %w", cerr)
+		}
+	}
+	if q.pruneTrafficStatsStmt != nil {
+		if cerr := q.pruneTrafficStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneTrafficStatsStmt: %w", cerr)
+		}
+	}
+	if q.pruneTrafficVisitorsStmt != nil {
+		if cerr := q.pruneTrafficVisitorsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneTrafficVisitorsStmt: %w", cerr)
 		}
 	}
 	if q.registerNodeServerStmt != nil {
@@ -2249,6 +2333,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setTokenDataAccessStmt: %w", cerr)
 		}
 	}
+	if q.setTrafficVisitorsStmt != nil {
+		if cerr := q.setTrafficVisitorsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setTrafficVisitorsStmt: %w", cerr)
+		}
+	}
 	if q.setUserDisabledStmt != nil {
 		if cerr := q.setUserDisabledStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setUserDisabledStmt: %w", cerr)
@@ -2274,6 +2363,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing supersedeReleaseStmt: %w", cerr)
 		}
 	}
+	if q.topTrafficPathsStmt != nil {
+		if cerr := q.topTrafficPathsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing topTrafficPathsStmt: %w", cerr)
+		}
+	}
 	if q.touchLocalServerStmt != nil {
 		if cerr := q.touchLocalServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing touchLocalServerStmt: %w", cerr)
@@ -2282,6 +2376,16 @@ func (q *Queries) Close() error {
 	if q.touchTokenStmt != nil {
 		if cerr := q.touchTokenStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing touchTokenStmt: %w", cerr)
+		}
+	}
+	if q.trafficTotalsStmt != nil {
+		if cerr := q.trafficTotalsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing trafficTotalsStmt: %w", cerr)
+		}
+	}
+	if q.trimTrafficPathsStmt != nil {
+		if cerr := q.trimTrafficPathsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing trimTrafficPathsStmt: %w", cerr)
 		}
 	}
 	if q.unapplyVolumeStmt != nil {
@@ -2401,6 +2505,8 @@ type Queries struct {
 	addSensitiveColumnStmt              *sql.Stmt
 	addServerStatsStmt                  *sql.Stmt
 	addServiceStatsStmt                 *sql.Stmt
+	addTrafficStmt                      *sql.Stmt
+	addTrafficPathStmt                  *sql.Stmt
 	applyVariableStmt                   *sql.Stmt
 	applyVolumeStmt                     *sql.Stmt
 	archiveProjectStmt                  *sql.Stmt
@@ -2555,6 +2661,7 @@ type Queries struct {
 	listFailedLatestReleasesStmt        *sql.Stmt
 	listGitHubInstallationsStmt         *sql.Stmt
 	listGitPendingServicesStmt          *sql.Stmt
+	listHourVisitorsStmt                *sql.Stmt
 	listInFlightReleasesStmt            *sql.Stmt
 	listKeptDigestsStmt                 *sql.Stmt
 	listKeptImageIDsStmt                *sql.Stmt
@@ -2602,6 +2709,9 @@ type Queries struct {
 	listServicesStmt                    *sql.Stmt
 	listStatsNamesStmt                  *sql.Stmt
 	listStatsTargetsStmt                *sql.Stmt
+	listTrafficHostsStmt                *sql.Stmt
+	listTrafficStatsStmt                *sql.Stmt
+	listTrafficVisitorsStmt             *sql.Stmt
 	listUnprunedBackupsStmt             *sql.Stmt
 	listUsedHostPortsStmt               *sql.Stmt
 	listUserOrgsStmt                    *sql.Stmt
@@ -2619,6 +2729,9 @@ type Queries struct {
 	pruneResolvedAlertsStmt             *sql.Stmt
 	pruneServerStatsStmt                *sql.Stmt
 	pruneServiceStatsStmt               *sql.Stmt
+	pruneTrafficPathsStmt               *sql.Stmt
+	pruneTrafficStatsStmt               *sql.Stmt
+	pruneTrafficVisitorsStmt            *sql.Stmt
 	registerNodeServerStmt              *sql.Stmt
 	removeOrgMemberStmt                 *sql.Stmt
 	renameOrgStmt                       *sql.Stmt
@@ -2658,13 +2771,17 @@ type Queries struct {
 	setServiceDatabaseSettingsStmt      *sql.Stmt
 	setServiceTemplateStmt              *sql.Stmt
 	setTokenDataAccessStmt              *sql.Stmt
+	setTrafficVisitorsStmt              *sql.Stmt
 	setUserDisabledStmt                 *sql.Stmt
 	setUserPasswordStmt                 *sql.Stmt
 	setVariablePendingStmt              *sql.Stmt
 	startControlPlaneBackupStmt         *sql.Stmt
 	supersedeReleaseStmt                *sql.Stmt
+	topTrafficPathsStmt                 *sql.Stmt
 	touchLocalServerStmt                *sql.Stmt
 	touchTokenStmt                      *sql.Stmt
+	trafficTotalsStmt                   *sql.Stmt
+	trimTrafficPathsStmt                *sql.Stmt
 	unapplyVolumeStmt                   *sql.Stmt
 	updateAlertStmt                     *sql.Stmt
 	updateDomainStatusStmt              *sql.Stmt
@@ -2697,6 +2814,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addSensitiveColumnStmt:              q.addSensitiveColumnStmt,
 		addServerStatsStmt:                  q.addServerStatsStmt,
 		addServiceStatsStmt:                 q.addServiceStatsStmt,
+		addTrafficStmt:                      q.addTrafficStmt,
+		addTrafficPathStmt:                  q.addTrafficPathStmt,
 		applyVariableStmt:                   q.applyVariableStmt,
 		applyVolumeStmt:                     q.applyVolumeStmt,
 		archiveProjectStmt:                  q.archiveProjectStmt,
@@ -2851,6 +2970,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listFailedLatestReleasesStmt:        q.listFailedLatestReleasesStmt,
 		listGitHubInstallationsStmt:         q.listGitHubInstallationsStmt,
 		listGitPendingServicesStmt:          q.listGitPendingServicesStmt,
+		listHourVisitorsStmt:                q.listHourVisitorsStmt,
 		listInFlightReleasesStmt:            q.listInFlightReleasesStmt,
 		listKeptDigestsStmt:                 q.listKeptDigestsStmt,
 		listKeptImageIDsStmt:                q.listKeptImageIDsStmt,
@@ -2898,6 +3018,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listServicesStmt:                    q.listServicesStmt,
 		listStatsNamesStmt:                  q.listStatsNamesStmt,
 		listStatsTargetsStmt:                q.listStatsTargetsStmt,
+		listTrafficHostsStmt:                q.listTrafficHostsStmt,
+		listTrafficStatsStmt:                q.listTrafficStatsStmt,
+		listTrafficVisitorsStmt:             q.listTrafficVisitorsStmt,
 		listUnprunedBackupsStmt:             q.listUnprunedBackupsStmt,
 		listUsedHostPortsStmt:               q.listUsedHostPortsStmt,
 		listUserOrgsStmt:                    q.listUserOrgsStmt,
@@ -2915,6 +3038,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		pruneResolvedAlertsStmt:             q.pruneResolvedAlertsStmt,
 		pruneServerStatsStmt:                q.pruneServerStatsStmt,
 		pruneServiceStatsStmt:               q.pruneServiceStatsStmt,
+		pruneTrafficPathsStmt:               q.pruneTrafficPathsStmt,
+		pruneTrafficStatsStmt:               q.pruneTrafficStatsStmt,
+		pruneTrafficVisitorsStmt:            q.pruneTrafficVisitorsStmt,
 		registerNodeServerStmt:              q.registerNodeServerStmt,
 		removeOrgMemberStmt:                 q.removeOrgMemberStmt,
 		renameOrgStmt:                       q.renameOrgStmt,
@@ -2954,13 +3080,17 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setServiceDatabaseSettingsStmt:      q.setServiceDatabaseSettingsStmt,
 		setServiceTemplateStmt:              q.setServiceTemplateStmt,
 		setTokenDataAccessStmt:              q.setTokenDataAccessStmt,
+		setTrafficVisitorsStmt:              q.setTrafficVisitorsStmt,
 		setUserDisabledStmt:                 q.setUserDisabledStmt,
 		setUserPasswordStmt:                 q.setUserPasswordStmt,
 		setVariablePendingStmt:              q.setVariablePendingStmt,
 		startControlPlaneBackupStmt:         q.startControlPlaneBackupStmt,
 		supersedeReleaseStmt:                q.supersedeReleaseStmt,
+		topTrafficPathsStmt:                 q.topTrafficPathsStmt,
 		touchLocalServerStmt:                q.touchLocalServerStmt,
 		touchTokenStmt:                      q.touchTokenStmt,
+		trafficTotalsStmt:                   q.trafficTotalsStmt,
+		trimTrafficPathsStmt:                q.trimTrafficPathsStmt,
 		unapplyVolumeStmt:                   q.unapplyVolumeStmt,
 		updateAlertStmt:                     q.updateAlertStmt,
 		updateDomainStatusStmt:              q.updateDomainStatusStmt,
