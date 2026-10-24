@@ -38,13 +38,18 @@ func TestWireRoundTrip(t *testing.T) {
 	check(t, node.LogLine{Time: at, Stream: "stderr", Text: "boom"}, toWireLogLine, wireLogLine.node)
 	check(t, node.ContainerEvent{ContainerID: "abc", Labels: labels, Action: "die", ExitCode: 1, Time: at},
 		toWireEvent, wireEvent.node)
-	check(t, node.Route{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", RedirectTo: "b.example.com", PathPrefix: "/p/",
+	check(t, node.Route{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", RedirectTo: "b.example.com", PathPrefix: "/p/", Traffic: true,
 		Access: &node.Access{Username: "u", PasswordHash: "$2a$06$x", Key: []byte{1}, LoginURL: "https://dock.example.com/access"}},
 		func(r node.Route) []wireRoute { return toWireRoutes([]node.Route{r}) },
 		func(w []wireRoute) node.Route { return fromWireRoutes(w)[0] },
 		"ClientIPHeader") // only on the control plane's own server (ADR 0029)
 	check(t, node.DomainCheck{ExpectedIPs: []string{"1.2.3.4"}, ResolvedIPs: []string{"5.6.7.8"}, DNSOK: true, CertificateOK: true, Error: "x"},
 		toWireDomainCheck, wireDomainCheck.node)
+	check(t, node.HostTraffic{
+		Host: "a.example.com", Requests: 1, Status: [4]uint64{2, 3, 4, 5}, Bytes: 6, Duration: 7 * time.Millisecond,
+		Visitors: []byte{1, 0, 0, 1}, Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 8}},
+	}, func(h node.HostTraffic) []wireHostTraffic { return toWireTraffic([]node.HostTraffic{h}) },
+		func(w []wireHostTraffic) node.HostTraffic { return fromWireTraffic(w)[0] })
 	check(t, node.HostStats{
 		CPUBusy: 1, CPUTotal: 2, CPUs: 3, MemoryTotal: 4, MemoryAvailable: 5, Load1: 0.5,
 		Disks:       []node.Disk{{Paths: []string{"/var/lib/docker"}, Total: 6, Used: 7}},

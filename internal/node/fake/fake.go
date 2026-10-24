@@ -54,6 +54,7 @@ type Runtime struct {
 	onJob       func(node.JobSpec) (node.JobResult, error)
 	jobs        []node.JobSpec
 
+	traffic    []node.HostTraffic
 	host       node.HostStats
 	hostSet    bool
 	ctrStats   map[string]node.ContainerStats
@@ -701,6 +702,23 @@ func (r *Runtime) SetContainerStats(s node.ContainerStats) {
 	r.mu.Lock()
 	r.ctrStats[s.ID] = s
 	r.mu.Unlock()
+}
+
+// AddTraffic queues what the next DrainTraffic returns.
+func (r *Runtime) AddTraffic(t ...node.HostTraffic) {
+	r.mu.Lock()
+	r.traffic = append(r.traffic, t...)
+	r.mu.Unlock()
+}
+
+// DrainTraffic implements node.Traffic: what AddTraffic queued since the
+// last call.
+func (r *Runtime) DrainTraffic(context.Context) ([]node.HostTraffic, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t := r.traffic
+	r.traffic = nil
+	return t, nil
 }
 
 // StatsCalls counts HostStats and ContainerStats calls, so tests can see

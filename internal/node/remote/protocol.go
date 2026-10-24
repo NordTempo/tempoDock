@@ -52,8 +52,9 @@ const (
 	// prune-images only remove the platform's own images and added
 	// remove-network (ADR 0020 amendment); 4 added update and the
 	// node's arch and last update in hello (ADR 0028); 5 added access
-	// protection to routes (ADR 0030).
-	Protocol = 5
+	// protection to routes (ADR 0030); 6 added drain-traffic and the
+	// routes' traffic flag (ADR 0033).
+	Protocol = 6
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -132,8 +133,9 @@ const (
 	opCheckDomain   = "check-domain"
 	opHostStats     = "host-stats"
 	opCtrStats      = "container-stats"
-	opDial          = "dial"    // full duplex, raw bytes: see dial.go
-	opRunJob        = "run-job" // protocol 2
+	opDrainTraffic  = "drain-traffic" // protocol 6
+	opDial          = "dial"          // full duplex, raw bytes: see dial.go
+	opRunJob        = "run-job"       // protocol 2
 	opRotate        = "rotate"
 	opUpdate        = "update" // protocol 4
 	// Joining mode (join.go) only.

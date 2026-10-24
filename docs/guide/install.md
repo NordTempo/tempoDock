@@ -170,6 +170,7 @@ running).
 | `[caddy] https_port` | `443` | |
 | `[caddy] acme_email` | empty | Contact email for the certificate authority |
 | `[caddy] disable_tls` | `false` | Serve every route over plain HTTP |
+| `[caddy] traffic_listen` | `127.0.0.1:7074` | Loopback UDP address where Caddy sends the access log of service domains, counted for [traffic statistics](../decisions/0033-traffic-statistics.md). Must be a loopback IP; empty turns counting off |
 | `[buildkit] enabled` | `true` | This server builds images. `false`: source deploys fail; deploy images instead |
 | `[buildkit] image` | `moby/buildkit:v0.34.1@sha256:9936…` | BuildKit image, pinned by digest |
 | `[buildkit] memory_mb` | `2048` | Hard memory cap for builds (no swap). Builds over it fail; apps are unaffected |

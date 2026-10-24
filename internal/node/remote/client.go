@@ -328,6 +328,27 @@ func (c *Client) ContainerStats(ctx context.Context, ids []string) ([]node.Conta
 	return fromWireContainerStats(r.Stats), nil
 }
 
+// TrafficProtocol is the first protocol whose nodes count traffic (ADR
+// 0033).
+const TrafficProtocol = 6
+
+// DrainTraffic implements node.Traffic. An older node counts nothing, so
+// it isn't asked: it has no traffic to report.
+func (c *Client) DrainTraffic(ctx context.Context) ([]node.HostTraffic, error) {
+	s, err := c.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.hello.Protocol < TrafficProtocol {
+		return nil, nil
+	}
+	r, err := unaryCall[trafficResult](ctx, c, opDrainTraffic, empty{})
+	if err != nil {
+		return nil, err
+	}
+	return fromWireTraffic(r.Hosts), nil
+}
+
 // unaryCall makes a control call, bounded by the hub's call timeout.
 func unaryCall[R any](ctx context.Context, c *Client, op string, args any) (R, error) {
 	return callWithLogs[R](ctx, c, op, c.hub.callTimeout(), args, nil, nil)

@@ -150,6 +150,10 @@ type Caddy struct {
 	// off: Caddy is plain HTTP there anyway, and apps are https:// at
 	// Cloudflare's edge.
 	DisableTLS bool `toml:"disable_tls"`
+	// TrafficListen is the loopback UDP address the daemon (or node)
+	// counts Caddy's access log on, for traffic statistics (ADR 0033).
+	// Empty turns them off.
+	TrafficListen string `toml:"traffic_listen"`
 }
 
 // BuildKit configures the capped build container.
@@ -272,9 +276,10 @@ func Default() Config {
 		MaxUploadMB:    512,
 		HostPorts:      PortRange{Min: 20000, Max: 29999},
 		Caddy: Caddy{
-			AdminSocket: "/run/dock-caddy/admin.sock",
-			HTTPPort:    80,
-			HTTPSPort:   443,
+			AdminSocket:   "/run/dock-caddy/admin.sock",
+			HTTPPort:      80,
+			HTTPSPort:     443,
+			TrafficListen: "127.0.0.1:7074",
 		},
 		BuildKit: BuildKit{
 			Enabled:        true,
@@ -363,6 +368,12 @@ func (c *Config) validate() error {
 	}
 	if err := c.Hooks.validate(); err != nil {
 		return err
+	}
+	if t := c.Caddy.TrafficListen; t != "" {
+		host, _, err := net.SplitHostPort(t)
+		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("[caddy] traffic_listen %q must be a loopback IP and port, like 127.0.0.1:7074 (or empty to turn traffic statistics off)", t)
+		}
 	}
 	if err := c.Retention.validate(); err != nil {
 		return err

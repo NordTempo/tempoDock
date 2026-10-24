@@ -20,6 +20,11 @@ type RangeQuery struct {
 	Range apitypes.StatsRange `query:"range" enum:"1h,24h,7d" default:"1h" doc:"1h and 24h: a point per minute; 7d: a point per 10 minutes"`
 }
 
+// TrafficRangeQuery is the range of a service's traffic statistics.
+type TrafficRangeQuery struct {
+	Range apitypes.TrafficRange `query:"range" enum:"24h,7d,30d" default:"24h" doc:"24h: a point per minute; 7d and 30d: a point per hour"`
+}
+
 const serverPathT = Prefix + "/servers/{server}"
 
 // withOffline adds 503 server_offline to the documented errors.
@@ -105,6 +110,18 @@ func registerServers(s *Server, a huma.API) {
 		RangeQuery
 	}) (*out[apitypes.ServiceStats], error) {
 		return reply(s.core.ServiceStats(ctx, actor, in.ref(), in.Range))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "service-traffic", Method: http.MethodGet, Path: servicePathT + "/traffic",
+		Summary: "Service traffic",
+		Description: "Requests to the service's domains, counted from the proxy's access log: points over the range, totals, distinct visitors " +
+			"(estimated; bots left out) and the most requested paths, with IDs in paths replaced by `:id`.",
+		Tags: []string{"services"},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		TrafficRangeQuery
+	}) (*out[apitypes.ServiceTraffic], error) {
+		return reply(s.core.ServiceTraffic(ctx, actor, in.ref(), in.Range))
 	})
 	sse(s, a, huma.Operation{
 		OperationID: "service-stats-live", Method: http.MethodGet, Path: servicePathT + "/stats/live",

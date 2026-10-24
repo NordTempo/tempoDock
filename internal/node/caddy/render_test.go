@@ -212,6 +212,8 @@ func TestRenderRejectsBadInput(t *testing.T) {
 		"unknown ingress":    {opts: func(o *Options) { o.Ingress = "tailscale" }},
 		"tunnel, no marker":  {opts: func(o *Options) { o.Ingress = IngressCloudflareTunnel }},
 		"marker placeholder": {opts: func(o *Options) { o.ServerMarker = "{env.HOME}" }},
+		"public traffic":     {opts: func(o *Options) { o.TrafficAddr = "0.0.0.0:7074" }},
+		"traffic, no port":   {opts: func(o *Options) { o.TrafficAddr = "127.0.0.1" }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			opts := testOptions()
@@ -339,5 +341,49 @@ func TestRenderAccess(t *testing.T) {
 	login1 := []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", Access: &node.Access{Key: []byte{1}, LoginURL: "https://d/access"}}}
 	if _, err := Render(testOptions(), login1); err == nil {
 		t.Error("login access without an access URL rendered")
+	}
+}
+
+// Counted routes get their access log sent to the traffic counter, with
+// the user agent appended; other hostnames aren't logged at all.
+func TestRenderTraffic(t *testing.T) {
+	opts := testOptions()
+	opts.TrafficAddr = "127.0.0.1:7074"
+	cfg := render(t, opts, []node.Route{
+		{Hostnames: []string{"shop.example.com", "shop.test"}, Upstream: "127.0.0.1:1", Traffic: true},
+		{Hostnames: []string{"www.shop.example.com"}, RedirectTo: "shop.example.com", Traffic: true},
+		{Hostnames: []string{"dock.example.com"}, Upstream: "127.0.0.1:2"},
+	})
+	https := cfg.Apps.HTTP.Servers["https"]
+	logs := https.Logs
+	if logs == nil || !logs.SkipUnmappedHosts || len(logs.LoggerNames) != 2 || logs.LoggerNames["shop.test"][0] != "dock" {
+		t.Fatalf("https logs = %+v; want the shop hostnames only", logs)
+	}
+	if h := https.Routes[0].Handle[0]; h.Handler != "log_append" || h.Key != "ua" || h.Value != "{http.request.header.User-Agent}" {
+		t.Errorf("counted route starts with %+v, want log_append of the user agent", h)
+	}
+	if h := https.Routes[2].Handle[0]; h.Handler != "reverse_proxy" {
+		t.Errorf("uncounted route starts with %+v", h)
+	}
+	if cfg.Apps.HTTP.Servers["http"].Logs != nil {
+		t.Error("the redirecting http server logs")
+	}
+	dock := cfg.Logging.Logs["dock"]
+	if dock.Writer.Address != "udp/127.0.0.1:7074" || !dock.Writer.SoftStart || dock.Include[0] != "http.log.access.dock" {
+		t.Errorf("dock log = %+v", dock)
+	}
+	if _, ok := dock.Encoder.Fields["request>headers"]; !ok {
+		t.Error("request headers are encoded")
+	}
+	if ex := cfg.Logging.Logs["default"].Exclude; len(ex) != 1 || ex[0] != "http.log.access.dock" {
+		t.Errorf("default log excludes %v", ex)
+	}
+
+	// Without an address, or without counted routes, nothing is logged.
+	for _, o := range []Options{testOptions(), opts} {
+		cfg := render(t, o, []node.Route{{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", Traffic: o.TrafficAddr == ""}})
+		if cfg.Logging != nil || cfg.Apps.HTTP.Servers["https"].Logs != nil {
+			t.Errorf("logging rendered with %+v", o)
+		}
 	}
 }

@@ -21,8 +21,48 @@ import (
 // See https://caddyserver.com/docs/json/.
 
 type caddyConfig struct {
-	Admin admin `json:"admin"`
-	Apps  apps  `json:"apps"`
+	Admin   admin    `json:"admin"`
+	Logging *logging `json:"logging,omitempty"`
+	Apps    apps     `json:"apps"`
+}
+
+// logging sends the access log of counted routes to the node's traffic
+// counter (trafficLogging).
+type logging struct {
+	Logs map[string]logConfig `json:"logs"`
+}
+
+type logConfig struct {
+	Writer  *logWriter  `json:"writer,omitempty"`
+	Encoder *logEncoder `json:"encoder,omitempty"`
+	Include []string    `json:"include,omitempty"`
+	Exclude []string    `json:"exclude,omitempty"`
+}
+
+type logWriter struct {
+	Output  string `json:"output"`
+	Address string `json:"address"`
+	// SoftStart lets Caddy start while the address can't be dialed.
+	SoftStart bool `json:"soft_start"`
+}
+
+// logEncoder is the filter encoder around JSON: Fields are deleted before
+// encoding, so Caddy doesn't spend time on what isn't counted.
+type logEncoder struct {
+	Format string                 `json:"format"`
+	Wrap   map[string]string      `json:"wrap"`
+	Fields map[string]fieldFilter `json:"fields"`
+}
+
+type fieldFilter struct {
+	Filter string `json:"filter"`
+}
+
+// serverLogs turns on a server's access log for the hostnames in
+// LoggerNames only.
+type serverLogs struct {
+	LoggerNames       map[string][]string `json:"logger_names"`
+	SkipUnmappedHosts bool                `json:"skip_unmapped_hosts"`
 }
 
 type admin struct {
@@ -63,6 +103,8 @@ type server struct {
 	// ClientIPHeaders are read, first present wins, for the client IP of
 	// requests from a trusted proxy (logs and matchers).
 	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
+	// Logs logs the requests of counted routes (ADR 0033).
+	Logs *serverLogs `json:"logs,omitempty"`
 }
 
 // ipRanges is Caddy's static IP source module.
@@ -113,6 +155,10 @@ type handler struct {
 	HandleResponse []responseHandler `json:"handle_response,omitempty"`
 	// Providers configure the authentication handler (passwordAccess).
 	Providers *authProviders `json:"providers,omitempty"`
+	// Key and Value add a field to the request's access log line
+	// (log_append).
+	Key   string `json:"key,omitempty"`
+	Value string `json:"value,omitempty"`
 }
 
 // rewrite changes the request a reverse_proxy sends upstream. With method
@@ -279,6 +325,7 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		main = append(main, markerRoute(opts.ServerMarker))
 	}
 	var hostnames []string
+	var counted map[string][]string // hostname → access logger, for counted routes
 	for _, r := range routes {
 		hostnames = append(hostnames, r.Hostnames...)
 		h := handler{
@@ -294,6 +341,17 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 			m.Path = []string{r.PathPrefix + "*"}
 		}
 		var handle []handler
+		if r.Traffic && r.RedirectTo == "" && opts.TrafficAddr != "" {
+			// Caddy's access log has the request headers, which the
+			// filter drops; the user agent is all the counter needs.
+			handle = append(handle, handler{Handler: "log_append", Key: "ua", Value: "{http.request.header.User-Agent}"})
+			if counted == nil {
+				counted = map[string][]string{}
+			}
+			for _, h := range r.Hostnames {
+				counted[h] = []string{trafficLogger}
+			}
+		}
 		if r.ClientIPHeader != "" && r.RedirectTo == "" {
 			// The client's address as this server determined it: the peer,
 			// or CF-Connecting-IP from the local cloudflared on a tunnel.
@@ -326,11 +384,18 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		}},
 	}
 
+	var logs *serverLogs
+	if counted != nil {
+		cfg.Logging = trafficLogging(opts.TrafficAddr)
+		logs = &serverLogs{LoggerNames: counted, SkipUnmappedHosts: true}
+	}
+
 	if opts.plainHTTP() {
 		srv := server{
 			Listen:         []string{listenAddr(opts.HTTPPort)},
 			Routes:         main,
 			AutomaticHTTPS: automaticHTTPS{Disable: true},
+			Logs:           logs,
 		}
 		if opts.tunnel() {
 			// Only the local cloudflared connects; nothing is public.
@@ -361,6 +426,7 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 			Routes:                main,
 			TLSConnectionPolicies: []struct{}{{}},
 			AutomaticHTTPS:        automaticHTTPS{Disable: true},
+			Logs:                  logs,
 		},
 		"http": {
 			Listen:         []string{listenAddr(opts.HTTPPort)},
@@ -379,6 +445,32 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		OnDemand: onDemand{Permission: permission{Module: "http", Endpoint: opts.AskURL}},
 	}}
 	return json.Marshal(cfg)
+}
+
+// trafficLogger names the access logger of counted routes; Caddy calls it
+// http.log.access.dock.
+const trafficLogger = "dock"
+
+// trafficLogging sends the access log of counted routes to addr over UDP,
+// one line per datagram, and keeps it out of Caddy's own log. Only what
+// the traffic counter reads is encoded: the request line, client address,
+// status, size, duration and the user agent. While nothing listens at addr
+// (the node restarting), Caddy writes the lines it can't send to its
+// stderr, the journal.
+func trafficLogging(addr string) *logging {
+	const access = "http.log.access." + trafficLogger
+	drop := fieldFilter{Filter: "delete"}
+	return &logging{Logs: map[string]logConfig{
+		"default": {Exclude: []string{access}},
+		trafficLogger: {
+			Writer: &logWriter{Output: "net", Address: "udp/" + addr, SoftStart: true},
+			Encoder: &logEncoder{Format: "filter", Wrap: map[string]string{"format": "json"}, Fields: map[string]fieldFilter{
+				"request>headers": drop, "request>tls": drop, "request>remote_port": drop, "request>proto": drop,
+				"resp_headers": drop, "user_id": drop, "bytes_read": drop,
+			}},
+			Include: []string{access},
+		},
+	}}
 }
 
 // Request headers the access check reads, set by Caddy from the route

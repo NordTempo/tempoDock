@@ -104,6 +104,19 @@ export type ServiceStats = Omit<Schemas["ServiceStats"], "points"> & {
   points: Schemas["ServiceStatsPoint"][];
 };
 
+/** How far back traffic goes: a point a minute for 24h, an hour for 7d and 30d. */
+export type TrafficRange = Schemas["ServiceTraffic"]["range"];
+export type TrafficPoint = Schemas["TrafficPoint"];
+export type TrafficPath = Schemas["TrafficPath"];
+/** What a service's domains served over a range (ADR 0033). */
+export type ServiceTraffic = Omit<
+  Schemas["ServiceTraffic"],
+  "points" | "paths"
+> & {
+  points: TrafficPoint[];
+  paths: TrafficPath[];
+};
+
 export type PendingChanges = Omit<
   Schemas["PendingChanges"],
   "variables" | "settings" | "volumes" | "affected"

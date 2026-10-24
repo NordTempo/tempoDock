@@ -71,10 +71,11 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   that name. They cover the hot paths: project overview, service and release
   lists, audit log, variable resolution, event bus fan-out, SSE writes,
   Caddy config rendering, source packing, `dock.toml` parsing, prepared
-  SQLite queries, the retention pass, the alert engine's event handling and
-  the access check for login-protected services. Use `b.Loop()` and `b.ReportAllocs()`, seed realistic data
-  (the core benchmarks use a 60-service project), and add one for every new
-  hot path.
+  SQLite queries, the retention pass, the alert engine's event handling,
+  the access check for login-protected services and traffic counting. Use
+  `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
+  benchmarks use a 60-service project), and add one for every new hot
+  path.
 - **Comparing across machines.** A fixed pure-Go workload is timed next to
   the benchmarks; ns/op is compared relative to it, so a slower CI runner
   doesn't read as a regression. The fastest of 5 runs counts (noise only
@@ -109,6 +110,11 @@ event driven: Docker's event stream, the in-process event bus and SSE.
 - Prefer a timer to the next deadline over a fixed ticker; prefer backoff
   over a fixed retry interval.
 - Resource stats and logs are read only while someone is viewing them.
+- Traffic counting ([ADR 0033](decisions/0033-traffic-statistics.md))
+  has no timer: the counter blocks on its UDP socket until Caddy sends a
+  line, and the stats tick drains it. Caddy never waits for it.
+  `BenchmarkCounterAdd` is the cost per request, `BenchmarkTrafficTick50`
+  the tick's traffic step.
 - Release checks ([ADR 0028](decisions/0028-updates-from-the-console.md))
   run when an operator opens the console or runs `dock update`, and are
   reused for 15 minutes. Nothing checks in the background.
@@ -118,6 +124,7 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | What | Where | Interval | Runs only while | Cost |
 |---|---|---|---|---|
 | Statistics tick | `internal/core/stats.go` | 1 min, on the minute | always (ADR 0015) | a few file reads per server and container, plus one `memory.stat` per systemd unit and container for the memory breakdown (ADR 0032, `BenchmarkHostStats`), one transaction, one `usage` event per server and per environment (`BenchmarkStatsTick50`) |
+| Traffic on the tick | `internal/core/traffic.go` | with the statistics tick | always (ADR 0033) | one drain per server; with requests, one transaction and one `traffic` event per environment (`BenchmarkTrafficTick50`, ~8 ms for 50 busy services); at each new hour a trim and prune |
 | Alerts on the tick | `internal/core/alerts.go` | with the statistics tick | always (ADR 0020) | in memory: disk use and offline time per server, quiet crash loops; one reminder query only while alerts are open (part of `BenchmarkStatsTick50`) |
 | Retention pass | `internal/core/retention.go` | at most hourly, on the statistics tick | always (ADR 0020) | three indexed reads when nothing is due (`BenchmarkRetentionPass`, ~50 µs); otherwise batches of 200 deletes, 10 per kind |
 | Disk prune | `internal/core/retention.go` | at most hourly per server, on the statistics tick | a server's Docker disk is past `prune_disk_percent` | one image list and removals, a BuildKit prune on builders, in the background |

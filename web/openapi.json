@@ -3086,6 +3086,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "traffic": {
+            "$ref": "#/components/schemas/TrafficUpdate"
+          },
           "type": {
             "enum": [
               "release",
@@ -3097,6 +3100,7 @@
               "drift",
               "lagged",
               "usage",
+              "traffic",
               "server",
               "alert",
               "update",
@@ -5504,6 +5508,87 @@
         ],
         "type": "object"
       },
+      "ServiceTraffic": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "paths": {
+            "description": "The most requested methods and paths, most first; IDs in paths are :id",
+            "items": {
+              "$ref": "#/components/schemas/TrafficPath"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/TrafficPoint"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "range": {
+            "enum": [
+              "24h",
+              "7d",
+              "30d"
+            ],
+            "type": "string"
+          },
+          "resolution_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "since": {
+            "description": "Start of Totals and Paths",
+            "format": "date-time",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/TrafficCounts"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "service",
+          "range",
+          "resolution_seconds",
+          "since",
+          "totals",
+          "points",
+          "paths"
+        ],
+        "type": "object"
+      },
+      "ServiceTrafficPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "point": {
+            "$ref": "#/components/schemas/TrafficPoint"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "point"
+        ],
+        "type": "object"
+      },
       "ServiceUsage": {
         "additionalProperties": false,
         "properties": {
@@ -5868,6 +5953,156 @@
           "created_by",
           "created_at",
           "origin"
+        ],
+        "type": "object"
+      },
+      "TrafficCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "avg_duration_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "bytes": {
+            "description": "Response bytes sent",
+            "format": "int64",
+            "type": "integer"
+          },
+          "requests": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status_2xx": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status_3xx": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status_4xx": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status_5xx": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "visitors": {
+            "description": "Distinct visitors (client address and user agent, bots left out), estimated within about 3%",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requests",
+          "status_2xx",
+          "status_3xx",
+          "status_4xx",
+          "status_5xx",
+          "bytes",
+          "avg_duration_ms",
+          "visitors"
+        ],
+        "type": "object"
+      },
+      "TrafficPath": {
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "requests": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "requests"
+        ],
+        "type": "object"
+      },
+      "TrafficPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "avg_duration_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "bytes": {
+            "description": "Response bytes sent",
+            "format": "int64",
+            "type": "integer"
+          },
+          "requests": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status_2xx": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status_3xx": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status_4xx": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status_5xx": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "time": {
+            "description": "Start of the interval",
+            "format": "date-time",
+            "type": "string"
+          },
+          "visitors": {
+            "description": "Distinct visitors (client address and user agent, bots left out), estimated within about 3%",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "time",
+          "requests",
+          "status_2xx",
+          "status_3xx",
+          "status_4xx",
+          "status_5xx",
+          "bytes",
+          "avg_duration_ms",
+          "visitors"
+        ],
+        "type": "object"
+      },
+      "TrafficUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "point": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceTrafficPoint"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "point",
+          "services"
         ],
         "type": "object"
       },
@@ -9311,7 +9546,7 @@
     },
     "/api/v1/events": {
       "get": {
-        "description": "Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage and platform events: operators only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
+        "description": "Release progress, build logs, service status, domain status, audit events and each minute's resource usage and traffic the caller may see (server usage and platform events: operators only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.\n\nServer-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.",
         "operationId": "events",
         "parameters": [
           {
@@ -9372,6 +9607,7 @@
                           "drift",
                           "lagged",
                           "usage",
+                          "traffic",
                           "project_renamed",
                           "ready",
                           "end",
@@ -23121,6 +23357,173 @@
           }
         ],
         "summary": "Live service statistics",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/traffic": {
+      "get": {
+        "description": "Requests to the service's domains, counted from the proxy's access log: points over the range, totals, distinct visitors (estimated; bots left out) and the most requested paths, with IDs in paths replaced by `:id`.",
+        "operationId": "service-traffic",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "24h: a point per minute; 7d and 30d: a point per hour",
+            "explode": false,
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "default": "24h",
+              "description": "24h: a point per minute; 7d and 30d: a point per hour",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTraffic"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Service traffic",
         "tags": [
           "services"
         ]

@@ -484,6 +484,34 @@ type Token struct {
 	Operator          bool
 }
 
+type TrafficPath struct {
+	ServiceID int64
+	At        int64
+	Method    string
+	Path      string
+	Requests  int64
+}
+
+type TrafficStat struct {
+	ServiceID  int64
+	Res        int64
+	At         int64
+	Requests   int64
+	Status2xx  int64
+	Status3xx  int64
+	Status4xx  int64
+	Status5xx  int64
+	Bytes      int64
+	DurationMs int64
+	Visitors   int64
+}
+
+type TrafficVisitor struct {
+	ServiceID int64
+	At        int64
+	Sketch    []byte
+}
+
 type User struct {
 	ID           int64
 	Email        string

@@ -172,6 +172,17 @@ func TestDeployFlow(t *testing.T) {
 		t.Fatalf("domain add = %d\n%s\n%s", code, stdout, stderr)
 	}
 
+	// Traffic before anyone visited, and a range the API doesn't know.
+	if tr := ok[apitypes.ServiceTraffic](t, "traffic", "--range", "7d"); tr.Range != apitypes.TrafficRange7d || tr.ResolutionSeconds != 3600 || tr.Totals.Requests != 0 {
+		t.Fatalf("traffic = %+v", tr)
+	}
+	if code, stdout, _ := exec(t, "traffic"); code != 0 || !strings.Contains(stdout, "served no requests in the last 24h") {
+		t.Fatalf("traffic = %d\n%s", code, stdout)
+	}
+	if code, _, _ := exec(t, "traffic", "--range", "1y"); code != int(output.ExitUsage) {
+		t.Errorf("traffic --range 1y: exit %d, want %d", code, output.ExitUsage)
+	}
+
 	// Protect the service with a password from stdin, then open it again.
 	code, stdout, stderr = execStdin(t, "correct horse battery\n", "access", "password", "--username", "team", "--password-stdin", "--json")
 	var acc apitypes.Access

@@ -410,7 +410,7 @@ export interface paths {
         };
         /**
          * Live events
-         * @description Release progress, build logs, service status, domain status, audit events and each minute's resource usage the caller may see (server usage and platform events: operators only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.
+         * @description Release progress, build logs, service status, domain status, audit events and each minute's resource usage and traffic the caller may see (server usage and platform events: operators only). The `event:` name equals the payload's `type`. After a `lagged` event the client missed events and should refetch.
          *
          *     Server-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.
          */
@@ -1914,6 +1914,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/traffic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Service traffic
+         * @description Requests to the service's domains, counted from the proxy's access log: points over the range, totals, distinct visitors (estimated; bots left out) and the most requested paths, with IDs in paths replaced by `:id`.
+         */
+        get: operations["service-traffic"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/volumes": {
         parameters: {
             query?: never;
@@ -3332,8 +3352,9 @@ export interface components {
             service_status?: components["schemas"]["ServiceStatus"];
             /** Format: date-time */
             time: string;
+            traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "server" | "alert" | "update" | "project_renamed";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed";
             update?: components["schemas"]["UpdateStatus"];
             usage?: components["schemas"]["UsageUpdate"];
         };
@@ -4016,6 +4037,28 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
+        ServiceTraffic: {
+            environment: string;
+            /** @description The most requested methods and paths, most first; IDs in paths are :id */
+            paths: components["schemas"]["TrafficPath"][] | null;
+            points: components["schemas"]["TrafficPoint"][] | null;
+            project: string;
+            /** @enum {string} */
+            range: "24h" | "7d" | "30d";
+            /** Format: int64 */
+            resolution_seconds: number;
+            service: string;
+            /**
+             * Format: date-time
+             * @description Start of Totals and Paths
+             */
+            since: string;
+            totals: components["schemas"]["TrafficCounts"];
+        };
+        ServiceTrafficPoint: {
+            point: components["schemas"]["TrafficPoint"];
+            service: string;
+        };
         ServiceUsage: {
             /** Format: double */
             cpu_percent: number;
@@ -4121,6 +4164,70 @@ export interface components {
             revoked_at?: string;
             /** @enum {string} */
             scope: "read" | "deploy" | "admin";
+        };
+        TrafficCounts: {
+            /** Format: double */
+            avg_duration_ms: number;
+            /**
+             * Format: int64
+             * @description Response bytes sent
+             */
+            bytes: number;
+            /** Format: int64 */
+            requests: number;
+            /** Format: int64 */
+            status_2xx: number;
+            /** Format: int64 */
+            status_3xx: number;
+            /** Format: int64 */
+            status_4xx: number;
+            /** Format: int64 */
+            status_5xx: number;
+            /**
+             * Format: int64
+             * @description Distinct visitors (client address and user agent, bots left out), estimated within about 3%
+             */
+            visitors: number;
+        };
+        TrafficPath: {
+            method: string;
+            path: string;
+            /** Format: int64 */
+            requests: number;
+        };
+        TrafficPoint: {
+            /** Format: double */
+            avg_duration_ms: number;
+            /**
+             * Format: int64
+             * @description Response bytes sent
+             */
+            bytes: number;
+            /** Format: int64 */
+            requests: number;
+            /** Format: int64 */
+            status_2xx: number;
+            /** Format: int64 */
+            status_3xx: number;
+            /** Format: int64 */
+            status_4xx: number;
+            /** Format: int64 */
+            status_5xx: number;
+            /**
+             * Format: date-time
+             * @description Start of the interval
+             */
+            time: string;
+            /**
+             * Format: int64
+             * @description Distinct visitors (client address and user agent, bots left out), estimated within about 3%
+             */
+            visitors: number;
+        };
+        TrafficUpdate: {
+            /** Format: date-time */
+            point: string;
+            services: components["schemas"]["ServiceTrafficPoint"][] | null;
         };
         UpdateBackupScheduleRequest: {
             default_hour?: boolean;
@@ -6358,7 +6465,7 @@ export interface operations {
                     "text/event-stream": {
                         data: components["schemas"]["Event"];
                         /** @enum {string} */
-                        event: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "project_renamed" | "ready" | "end" | "error";
+                        event: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "project_renamed" | "ready" | "end" | "error";
                         id?: string;
                     }[];
                 };
@@ -15395,6 +15502,104 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "service-traffic": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description 24h: a point per minute; 7d and 30d: a point per hour */
+                range?: "24h" | "7d" | "30d";
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceTraffic"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

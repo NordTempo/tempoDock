@@ -1,19 +1,19 @@
 import type { ReactNode } from "react";
-import type { StatsRange } from "../../data/types";
 import type { LiveState } from "./live";
-import { ranges } from "./series";
 
-/** 1h · 24h · 7d, one row above the charts it scopes. */
-export function RangeSwitch({
+/** 1h · 24h · 7d (or other ranges), one row above the charts it scopes. */
+export function RangeSwitch<R extends string>({
   value,
+  options,
   onChange,
 }: {
-  value: StatsRange;
-  onChange: (range: StatsRange) => void;
+  value: R;
+  options: readonly R[];
+  onChange: (range: R) => void;
 }) {
   return (
     <fieldset className="seg" aria-label="Time range">
-      {ranges.map((r) => (
+      {options.map((r) => (
         <button
           key={r}
           type="button"

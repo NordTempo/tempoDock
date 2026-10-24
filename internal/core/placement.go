@@ -354,3 +354,4 @@ func (o offlineRuntime) HostStats(context.Context) (node.HostStats, error) {
 func (o offlineRuntime) ContainerStats(context.Context, []string) ([]node.ContainerStats, error) {
 	return nil, o.err
 }
+func (o offlineRuntime) DrainTraffic(context.Context) ([]node.HostTraffic, error) { return nil, o.err }

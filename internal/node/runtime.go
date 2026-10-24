@@ -21,6 +21,7 @@ type Runtime interface {
 	Builder
 	Proxy
 	Stats
+	Traffic
 }
 
 // Containers manages platform-owned containers, networks and volumes.
@@ -212,6 +213,40 @@ type Stats interface {
 	// ContainerStats samples the given containers (full IDs). Containers
 	// that don't exist (any more) are left out of the result.
 	ContainerStats(ctx context.Context, ids []string) ([]ContainerStats, error)
+}
+
+// Traffic counts the requests Caddy proxies to routes with Traffic set,
+// from its access log (ADR 0033). Counts are kept in memory per hostname
+// until the control plane drains them, once a minute.
+type Traffic interface {
+	// DrainTraffic returns what was counted per hostname since the last
+	// call, and starts over. Hostnames without requests are left out.
+	DrainTraffic(ctx context.Context) ([]HostTraffic, error)
+}
+
+// HostTraffic is what one hostname served between two drains.
+type HostTraffic struct {
+	Host     string
+	Requests uint64
+	// Status counts responses by class: 1xx and 2xx, 3xx, 4xx, 5xx.
+	Status [4]uint64
+	// Bytes is the response bytes sent.
+	Bytes uint64
+	// Duration is the time the requests took, summed.
+	Duration time.Duration
+	// Visitors is a sketch of the distinct visitors (client address and
+	// user agent; known bots left out), encoded by traffic.Sketch.
+	Visitors []byte
+	// Paths are the most requested method and path pairs, most first,
+	// with IDs in paths replaced by ":id".
+	Paths []PathCount
+}
+
+// PathCount is how often one method and path was requested.
+type PathCount struct {
+	Method   string
+	Path     string
+	Requests uint64
 }
 
 // HostStats is one sample of a server's resources.
@@ -542,6 +577,9 @@ type Route struct {
 	// Access, when set, keeps the route's hostnames from the public
 	// (ADR 0030). Redirect routes ignore it.
 	Access *Access
+	// Traffic, when set, counts the route's requests for traffic
+	// statistics (ADR 0033). Redirect routes ignore it.
+	Traffic bool
 }
 
 // Access is how a route is protected: a password (PasswordHash set) or a

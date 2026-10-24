@@ -130,6 +130,11 @@
       "bytes_op": 73180,
       "allocs_op": 876
     },
+    "core.BenchmarkTrafficTick50": {
+      "ns_op": 8130000,
+      "bytes_op": 2292259,
+      "allocs_op": 37638
+    },
     "data/pg.BenchmarkAppendRow": {
       "ns_op": 69106,
       "bytes_op": 115,
@@ -174,6 +179,11 @@
       "ns_op": 390654.2,
       "bytes_op": 6453,
       "allocs_op": 4
+    },
+    "node/traffic.BenchmarkCounterAdd": {
+      "ns_op": 1830,
+      "bytes_op": 248,
+      "allocs_op": 6
     },
     "pack.BenchmarkWrite": {
       "ns_op": 8073444,

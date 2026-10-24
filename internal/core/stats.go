@@ -15,7 +15,8 @@ import (
 
 // Resource statistics (ADR 0015). Once a minute the collector samples every
 // online server and the containers of active releases (node.Stats reads
-// /proc and cgroup files, nothing else), stores a 1-minute point per server
+// /proc and cgroup files, nothing else) and drains each server's traffic
+// counts (traffic.go, ADR 0033), stores a 1-minute point per server
 // and service in one transaction, and at each 10-minute boundary averages
 // the last ten into a 10-minute point and prunes old points. It then
 // publishes the samples as usage events, so clients patch what they show
@@ -186,6 +187,8 @@ type collector struct {
 	// names are the targets' names by service, for the events; replaced
 	// when the set of targets changes. The bus canonicalizes renamed projects.
 	names map[int64]store.ListStatsNamesRow
+	// traffic is what traffic statistics keep between ticks (traffic.go).
+	traffic trafficState
 }
 
 // serverSample is what one server answered in a tick.
@@ -197,6 +200,9 @@ type serverSample struct {
 	hostErr  error
 	stats    []node.ContainerStats
 	statsErr error
+	// traffic is what the server's counter drained (ADR 0033).
+	traffic    []node.HostTraffic
+	trafficErr error
 }
 
 // statsServerTimeout bounds sampling one server, so a server that doesn't
@@ -235,13 +241,15 @@ func (c *Core) sample(ctx context.Context, col *collector, servers []store.Serve
 		if len(s.ids) > 0 {
 			s.stats, s.statsErr = s.rt.ContainerStats(ctx, s.ids)
 		}
+		s.traffic, s.trafficErr = s.rt.DrainTraffic(ctx)
 	})
 }
 
 func newCollector() *collector {
 	return &collector{
 		sampler: newSampler(), targetOf: map[string]int{}, latest: map[int64]apitypes.ServiceUsage{},
-		names: map[int64]store.ListStatsNamesRow{},
+		names:   map[int64]store.ListStatsNamesRow{},
+		traffic: trafficState{services: map[int64]*serviceTraffic{}},
 	}
 }
 
@@ -400,6 +408,8 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	}
 	clear(col.events)
 	col.events = col.events[:0]
+
+	c.trafficTick(ctx, col, now, at)
 
 	// Alerts and retention ride on the tick (ADR 0020).
 	c.alertTick(ctx, now, servers, hosts)

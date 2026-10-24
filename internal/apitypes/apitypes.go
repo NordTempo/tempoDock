@@ -1199,6 +1199,74 @@ type ServiceStatsPoint struct {
 	IOWriteBytesPerSec int64     `json:"io_write_bytes_per_sec"`
 }
 
+// TrafficRange is how far back traffic statistics go: 24h has a point per
+// minute, 7d and 30d one per hour (ADR 0033).
+type TrafficRange string
+
+// Traffic ranges.
+const (
+	TrafficRange24h TrafficRange = "24h"
+	TrafficRange7d  TrafficRange = "7d"
+	TrafficRange30d TrafficRange = "30d"
+)
+
+// ServiceTraffic is what a service's domains served over a range: the
+// requests Caddy proxied to it, counted from its access log (ADR 0033).
+// Totals, Visitors and Paths cover whole hours, from the start of the hour
+// the range starts in (Since).
+type ServiceTraffic struct {
+	Project           string         `json:"project"`
+	Environment       string         `json:"environment"`
+	Service           string         `json:"service"`
+	Range             TrafficRange   `json:"range" enum:"24h,7d,30d"`
+	ResolutionSeconds int            `json:"resolution_seconds"`
+	Since             time.Time      `json:"since" doc:"Start of Totals and Paths"`
+	Totals            TrafficCounts  `json:"totals"`
+	Points            []TrafficPoint `json:"points"`
+	Paths             []TrafficPath  `json:"paths" doc:"The most requested methods and paths, most first; IDs in paths are :id"`
+}
+
+// TrafficCounts are the requests of an interval.
+type TrafficCounts struct {
+	Requests int64 `json:"requests"`
+	// Status2xx counts 1xx responses too.
+	Status2xx     int64   `json:"status_2xx"`
+	Status3xx     int64   `json:"status_3xx"`
+	Status4xx     int64   `json:"status_4xx"`
+	Status5xx     int64   `json:"status_5xx"`
+	Bytes         int64   `json:"bytes" doc:"Response bytes sent"`
+	AvgDurationMS float64 `json:"avg_duration_ms"`
+	Visitors      int64   `json:"visitors" doc:"Distinct visitors (client address and user agent, bots left out), estimated within about 3%"`
+}
+
+// TrafficPoint is a service's traffic in one interval.
+type TrafficPoint struct {
+	Time time.Time `json:"time" doc:"Start of the interval"`
+	TrafficCounts
+}
+
+// TrafficPath is how often one method and path was requested.
+type TrafficPath struct {
+	Method   string `json:"method"`
+	Path     string `json:"path"`
+	Requests int64  `json:"requests"`
+}
+
+// TrafficUpdate is one minute tick's traffic of the services of one
+// environment that had requests (the event names the project and
+// environment). Point is the start of the minute they were stored as, so
+// open 24h charts append them.
+type TrafficUpdate struct {
+	Point    time.Time             `json:"point"`
+	Services []ServiceTrafficPoint `json:"services"`
+}
+
+// ServiceTrafficPoint is one service's minute in a TrafficUpdate.
+type ServiceTrafficPoint struct {
+	Service string       `json:"service"`
+	Point   TrafficPoint `json:"point"`
+}
+
 // ProjectOverview is everything a project page needs in one call.
 type ProjectOverview struct {
 	Project      Project               `json:"project"`
@@ -1261,6 +1329,9 @@ const (
 	// EventUsage carries a minute's resource samples of a server or of an
 	// environment's services.
 	EventUsage EventType = "usage"
+	// EventTraffic carries a minute's traffic of an environment's
+	// services (ADR 0033).
+	EventTraffic EventType = "traffic"
 	// EventServer carries a server whose status or facts changed: it
 	// connected, disconnected, joined, was revoked, changed or removed
 	// (Message "removed").
@@ -1275,7 +1346,7 @@ const (
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType       `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,server,alert,update,project_renamed"`
+	Type           EventType       `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed"`
 	Time           time.Time       `json:"time"`
 	ProjectRenamed *ProjectRenamed `json:"project_renamed,omitempty"`
 	Project        string          `json:"project,omitempty"`
@@ -1288,6 +1359,7 @@ type Event struct {
 	Domain         *Domain         `json:"domain,omitempty"`
 	Audit          *AuditEvent     `json:"audit,omitempty"`
 	Usage          *UsageUpdate    `json:"usage,omitempty"`
+	Traffic        *TrafficUpdate  `json:"traffic,omitempty"`
 	Server         *Server         `json:"server,omitempty"`
 	Alert          *Alert          `json:"alert,omitempty"`
 	Update         *UpdateStatus   `json:"update,omitempty"`

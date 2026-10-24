@@ -163,6 +163,12 @@ func TestCalls(t *testing.T) {
 	if err != nil || len(cs) != 1 || cs[0].CPUUsec != 1500 || cs[0].MemoryLimit != 128<<20 || cs[0].IOWrite != 2 || !cs[0].Time.Equal(sampled) {
 		t.Fatalf("container stats = %+v, %v", cs, err)
 	}
+
+	tr := node.HostTraffic{Host: "web.example.com", Requests: 3, Status: [4]uint64{3}, Duration: time.Second, Visitors: []byte{1, 0, 7, 2}, Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 3}}}
+	h.rt.AddTraffic(tr)
+	if got, err := h.client.DrainTraffic(ctx); err != nil || len(got) != 1 || !equalJSON(got[0], tr) {
+		t.Fatalf("drain traffic = %+v, %v", got, err)
+	}
 }
 
 func TestLogsStreamAndCancel(t *testing.T) {
