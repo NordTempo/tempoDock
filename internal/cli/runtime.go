@@ -65,7 +65,7 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		}
 		builder = b
 	}
-	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}})
+	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
 	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st}, proxy, nil
 }
 

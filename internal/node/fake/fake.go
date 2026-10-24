@@ -7,6 +7,7 @@
 package fake
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -685,7 +686,8 @@ func (r *Runtime) CheckDomain(_ context.Context, hostname string) (node.DomainCh
 }
 
 // SetHostStats fixes what HostStats returns. Until it is called, every
-// sample adds a quarter-busy second of CPU on a 4-CPU, 8 GiB host.
+// sample adds a quarter-busy second of CPU on a 4-CPU, 8 GiB host whose
+// used memory is broken down as on a real server (fakeMemoryParts).
 func (r *Runtime) SetHostStats(h node.HostStats) {
 	r.mu.Lock()
 	r.host, r.hostSet = h, true
@@ -711,11 +713,43 @@ func (r *Runtime) HostStats(context.Context) (node.HostStats, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.hostSet {
-		r.host.CPUs, r.host.MemoryTotal, r.host.MemoryAvailable = 4, 8<<30, 6<<30
+		r.host.CPUs, r.host.MemoryTotal = 4, 8<<30
 		r.host.CPUBusy += 25
 		r.host.CPUTotal += 100
+		var used uint64
+		r.host.MemoryParts, used = r.fakeMemoryParts()
+		r.host.MemoryAvailable = r.host.MemoryTotal - used
 	}
 	return r.host, nil
+}
+
+// fakeMemoryParts makes up a breakdown of used memory and its total: 48
+// MiB per running app container, typical platform and system units and
+// kernel memory. r.mu is held.
+func (r *Runtime) fakeMemoryParts() (parts []node.MemoryPart, used uint64) {
+	parts = []node.MemoryPart{
+		{Group: node.MemoryPlatform, Name: "BuildKit", Bytes: 412 << 20},
+		{Group: node.MemoryPlatform, Name: "Docker engine", Bytes: 118 << 20},
+		{Group: node.MemoryPlatform, Name: "Caddy", Bytes: 46 << 20},
+		{Group: node.MemoryPlatform, Name: "dock", Bytes: 24 << 20},
+		{Group: node.MemorySystem, Name: "snapd", Bytes: 61 << 20},
+		{Group: node.MemorySystem, Name: "multipathd", Bytes: 27 << 20},
+		{Group: node.MemorySystem, Name: "systemd-journald", Bytes: 24 << 20},
+		{Group: node.MemorySystem, Name: "login sessions", Bytes: 9 << 20},
+		{Group: node.MemoryKernel, Name: "slab", Bytes: 196 << 20},
+		{Group: node.MemoryKernel, Name: "page tables", Bytes: 24 << 20},
+		{Group: node.MemoryKernel, Name: "reserves and other", Bytes: 96 << 20},
+	}
+	for id, c := range r.containers {
+		if c.State == node.StateRunning {
+			parts = append(parts, node.MemoryPart{Group: node.MemoryApps, Name: id, Service: c.Labels.Service, Bytes: 48 << 20})
+		}
+	}
+	for _, p := range parts {
+		used += p.Bytes
+	}
+	slices.SortStableFunc(parts, func(a, b node.MemoryPart) int { return cmp.Compare(b.Bytes, a.Bytes) })
+	return parts, used
 }
 
 // ContainerStats implements node.Stats.

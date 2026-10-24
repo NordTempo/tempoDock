@@ -10,7 +10,7 @@ local.go     Local: the control plane's own server, composed of the below
 docker/      containers, networks, volumes, logs, events, health checks, jobs
 build/       BuildKit and Railpack builds, image pushes
 caddy/       renders the full Caddy config from routes, the TLS ask endpoint
-stats/       /proc and cgroup v2 reads (no Docker API calls)
+stats/       /proc and cgroup v2 reads (Docker only to name a new container)
 remote/      the node link (ADR 0014): Hub and Client on the control
              plane, Node on the server, wire types, join
 fake/        in-memory Runtime for core tests and `make dev`
@@ -44,7 +44,8 @@ durations travel as milliseconds.
   volumes are ignored, never removed. Volumes are never removed by the
   runtime.
 - No polling: follow Docker's event stream. Stats are the one periodic
-  job and read files, not the Docker API.
+  job and read files, not the Docker API (except once per new container,
+  to name it in the memory breakdown).
 - Stream logs, build output and image layers; never read them whole.
 - Real-Docker tests are `integration_test.go` / `*_integration_test.go`
   behind `//go:build integration` (`make test-integration`).

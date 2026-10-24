@@ -1098,6 +1098,34 @@ type ServerUsage struct {
 	// Disks are the filesystems dock uses: Docker's data root first, then
 	// dock's data dir when it is on another filesystem.
 	Disks []DiskUsage `json:"disks"`
+	// MemoryParts say where memory_used_bytes goes; empty when the server
+	// can't tell (no cgroup v2).
+	MemoryParts []MemoryPart `json:"memory_parts,omitempty" doc:"Where the used memory goes, the biggest first"`
+}
+
+// MemoryGroup sorts what uses a server's memory.
+type MemoryGroup string
+
+// Memory groups.
+const (
+	MemoryApps     MemoryGroup = "apps"
+	MemoryPlatform MemoryGroup = "platform"
+	MemoryKernel   MemoryGroup = "kernel"
+	MemorySystem   MemoryGroup = "system"
+)
+
+// MemoryPart is one user of a server's memory. For processes it is the
+// memory they hold that can't be reclaimed (anonymous and shmem, no page
+// cache), so an app's part is smaller than its usage, which counts
+// active page cache like docker stats does.
+type MemoryPart struct {
+	Group MemoryGroup `json:"group" enum:"apps,platform,kernel,system"`
+	// Name is an app's service, a part of Dock (BuildKit, Caddy, ...), a
+	// systemd unit or a kind of kernel memory.
+	Name string `json:"name"`
+	// Environment is project/environment, for an app's service.
+	Environment string `json:"environment,omitempty"`
+	Bytes       int64  `json:"bytes"`
 }
 
 // DiskUsage is one filesystem dock uses.

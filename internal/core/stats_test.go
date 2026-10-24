@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -362,5 +364,40 @@ func TestLiveStatsStopWhenUnwatched(t *testing.T) {
 	// would have made dozens.
 	if n := h.rt.StatsCalls() - before; n > 2 {
 		t.Fatalf("%d stats calls after the last watcher left", n)
+	}
+}
+
+// A server's memory breakdown names app containers after their services,
+// with the project's current name, and keeps the container's name for one
+// it doesn't know.
+func TestMemoryPartsNameApps(t *testing.T) {
+	h := newHarness(t)
+	ref := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.deploy(ref, "app:1")
+	svc := strconv.FormatInt(h.serviceID(ref), 10)
+	before, _ := h.c.GetProject(h.ctx, testSystem, "shop")
+	if _, err := h.c.RenameProject(h.ctx, testSystem, "shop", apitypes.RenameProjectRequest{ID: before.ID, Name: "storefront"}); err != nil {
+		t.Fatal(err)
+	}
+	parts := []node.MemoryPart{
+		{Group: node.MemoryApps, Name: "shop-production-web-1", Service: svc, Bytes: 48 << 20},
+		{Group: node.MemoryApps, Name: "gone-1", Service: "999", Bytes: 8 << 20},
+		{Group: node.MemoryPlatform, Name: "BuildKit", Bytes: 300 << 20},
+	}
+	base := time.Date(2031, 1, 1, 10, 0, 0, 0, time.UTC)
+	col := newCollector()
+	for i := range 2 { // the first sample has no CPU use and isn't kept
+		n := uint64(i)
+		h.rt.SetHostStats(node.HostStats{CPUs: 4, CPUBusy: 50 * n, CPUTotal: 100 * n, MemoryTotal: 8 << 30, MemoryAvailable: 6 << 30, MemoryParts: parts})
+		h.c.statsTick(h.ctx, col, base.Add(time.Duration(i)*time.Minute))
+	}
+	u, ok := h.c.stats.serverUsage(h.c.local.ID)
+	want := []apitypes.MemoryPart{
+		{Group: apitypes.MemoryApps, Name: "web", Environment: "storefront/production", Bytes: 48 << 20},
+		{Group: apitypes.MemoryApps, Name: "gone-1", Bytes: 8 << 20},
+		{Group: apitypes.MemoryPlatform, Name: "BuildKit", Bytes: 300 << 20},
+	}
+	if !ok || !slices.Equal(u.MemoryParts, want) {
+		t.Fatalf("parts = %+v, want %+v", u.MemoryParts, want)
 	}
 }

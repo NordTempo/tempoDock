@@ -521,6 +521,15 @@ type wireHostStats struct {
 	MemoryAvailable uint64           `json:"memory_available"`
 	Load1           float64          `json:"load1"`
 	Disks           capped[wireDisk] `json:"disks,omitempty"`
+	// MemoryParts is the memory breakdown; nodes before it send none.
+	MemoryParts capped[wireMemoryPart] `json:"memory_parts,omitempty"`
+}
+
+type wireMemoryPart struct {
+	Group   string `json:"group"`
+	Name    string `json:"name"`
+	Service string `json:"service,omitempty"`
+	Bytes   uint64 `json:"bytes"`
 }
 
 func toWireHostStats(h node.HostStats) wireHostStats {
@@ -530,6 +539,9 @@ func toWireHostStats(h node.HostStats) wireHostStats {
 	}
 	for _, d := range h.Disks {
 		w.Disks = append(w.Disks, wireDisk{Paths: d.Paths, Total: d.Total, Used: d.Used})
+	}
+	for _, p := range h.MemoryParts {
+		w.MemoryParts = append(w.MemoryParts, wireMemoryPart{Group: string(p.Group), Name: p.Name, Service: p.Service, Bytes: p.Bytes})
 	}
 	return w
 }
@@ -541,6 +553,9 @@ func (w wireHostStats) node() node.HostStats {
 	}
 	for _, d := range w.Disks {
 		h.Disks = append(h.Disks, node.Disk{Paths: d.Paths, Total: d.Total, Used: d.Used})
+	}
+	for _, p := range w.MemoryParts {
+		h.MemoryParts = append(h.MemoryParts, node.MemoryPart{Group: node.MemoryGroup(p.Group), Name: p.Name, Service: p.Service, Bytes: p.Bytes})
 	}
 	return h
 }

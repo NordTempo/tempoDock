@@ -549,6 +549,40 @@ func TestUnmanagedIsInvisible(t *testing.T) {
 	}
 }
 
+// MemoryOwner sorts containers into the memory breakdown's groups by their
+// labels, without naming containers Dock didn't create.
+func TestMemoryOwner(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	create := func(name string, labels map[string]string) string {
+		created, err := e.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+			Name:   e.name(name),
+			Config: &container.Config{Image: shellImage, Cmd: []string{"sleep", "300"}, Labels: labels},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created.ID
+	}
+	app := node.Labels{ControlPlane: "a", Project: "1", Environment: "2", Service: "3", Release: "4"}.Map()
+	for name, tc := range map[string]struct {
+		labels map[string]string
+		want   node.MemoryPart
+	}{
+		"app":      {app, node.MemoryPart{Group: node.MemoryApps, Name: e.name("app"), Service: "3"}},
+		"buildkit": {map[string]string{node.LabelManaged: "true", node.LabelRole: node.RoleBuildKit}, node.MemoryPart{Group: node.MemoryPlatform, Name: "BuildKit"}},
+		"job":      {map[string]string{node.LabelManaged: "true", node.LabelRole: node.RoleJob}, node.MemoryPart{Group: node.MemoryPlatform, Name: "jobs"}},
+		"foreign":  {nil, node.MemoryPart{Group: node.MemorySystem, Name: "other containers"}},
+	} {
+		if got, err := e.MemoryOwner(ctx, create(name, tc.labels)); err != nil || got != tc.want {
+			t.Errorf("%s: MemoryOwner = %+v, %v; want %+v", name, got, err, tc.want)
+		}
+	}
+	if _, err := e.MemoryOwner(ctx, "missing"); !cerrdefs.IsNotFound(err) {
+		t.Errorf("missing container err = %v", err)
+	}
+}
+
 func containsID(list []node.Container, id string) bool {
 	for _, c := range list {
 		if c.ID == id {

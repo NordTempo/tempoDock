@@ -39,6 +39,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0029](0029-public-address.md) | Dock's public address | accepted |
 | [0030](0030-access-protection.md) | Access protection for a service's domains | accepted |
 | [0031](0031-github-app.md) | Dock's GitHub App | accepted |
+| [0032](0032-server-memory-breakdown.md) | Where a server's memory goes | accepted |
 
 ## Template
 

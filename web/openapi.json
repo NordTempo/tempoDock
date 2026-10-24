@@ -3718,6 +3718,36 @@
         ],
         "type": "object"
       },
+      "MemoryPart": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "group": {
+            "enum": [
+              "apps",
+              "platform",
+              "kernel",
+              "system"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "name",
+          "bytes"
+        ],
+        "type": "object"
+      },
       "Org": {
         "additionalProperties": false,
         "properties": {
@@ -4985,6 +5015,16 @@
           "load1": {
             "format": "double",
             "type": "number"
+          },
+          "memory_parts": {
+            "description": "Where the used memory goes, the biggest first",
+            "items": {
+              "$ref": "#/components/schemas/MemoryPart"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "memory_total_bytes": {
             "format": "int64",

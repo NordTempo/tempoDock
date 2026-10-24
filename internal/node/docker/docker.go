@@ -547,6 +547,38 @@ func (r *Runtime) Inspect(ctx context.Context, id string) (node.Container, error
 	return toContainer(c), nil
 }
 
+// MemoryOwner describes a container for the memory breakdown
+// (stats.Options.Container). Containers Dock didn't create are counted as
+// "other containers", without their names.
+func (r *Runtime) MemoryOwner(ctx context.Context, id string) (node.MemoryPart, error) {
+	res, err := r.cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		return node.MemoryPart{}, fmt.Errorf("inspect container %s: %w", id, err)
+	}
+	c := res.Container
+	var labels map[string]string
+	if c.Config != nil {
+		labels = c.Config.Labels
+	}
+	name := strings.TrimPrefix(c.Name, "/")
+	switch role := labels[node.LabelRole]; {
+	case name == registryContainer, isManaged(labels) && role == node.RoleRegistryGC:
+		return node.MemoryPart{Group: node.MemoryPlatform, Name: "registry"}, nil
+	case !isManaged(labels):
+		return node.MemoryPart{Group: node.MemorySystem, Name: "other containers"}, nil
+	case role == "":
+		return node.MemoryPart{Group: node.MemoryApps, Name: name, Service: labels[node.LabelService]}, nil
+	case role == node.RoleBuildKit:
+		return node.MemoryPart{Group: node.MemoryPlatform, Name: "BuildKit"}, nil
+	default:
+		return node.MemoryPart{Group: node.MemoryPlatform, Name: "jobs"}, nil
+	}
+}
+
+// registryContainer is the platform registry deploy/install.sh runs
+// (registry.ContainerName, which this package can't import).
+const registryContainer = "dock-registry"
+
 // UpgradeSwapLimits gives app containers created with Docker's plain "no
 // swap" (MemorySwap == Memory) the NoSwap setting, which systemd keeps
 // across a daemon-reload: one `docker update` per such container, a few at

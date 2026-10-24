@@ -59,7 +59,7 @@ func GarbageCollect(ctx context.Context, docker *client.Client, registry string,
 		Config: &container.Config{
 			Image:  inspect.Container.Image, // the registry's own image ID
 			Cmd:    []string{"garbage-collect", "--delete-untagged", configPath},
-			Labels: map[string]string{node.LabelManaged: "true", node.LabelRole: "registry-gc"},
+			Labels: map[string]string{node.LabelManaged: "true", node.LabelRole: node.RoleRegistryGC},
 		},
 		HostConfig: &container.HostConfig{
 			VolumesFrom: []string{registry},
