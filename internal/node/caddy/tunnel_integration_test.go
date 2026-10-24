@@ -48,7 +48,15 @@ func cloudflaredRequest(t *testing.T, url string) *http.Request {
 
 func do(t *testing.T, c *http.Client, req *http.Request) (int, http.Header, string) {
 	t.Helper()
+	// Like testCaddy.get, retry transport errors for a few seconds: right
+	// after a config load Caddy may still be closing the old listener (EOF,
+	// reset). The requests here have no body, so they can be sent again.
+	deadline := time.Now().Add(5 * time.Second)
 	resp, err := c.Do(req)
+	for err != nil && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+		resp, err = c.Do(req)
+	}
 	if err != nil {
 		t.Fatalf("%s %s: %v", req.Method, req.URL, err)
 	}
