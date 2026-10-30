@@ -268,7 +268,7 @@ per builder (`buildSem` keyed by server).
 | Column | Owner | Meaning |
 |---|---|---|
 | `ingress` | node fact: set by the installer in `node.toml`, reported in hello, read-only on the CP | `direct` or `cloudflare_tunnel`. Decides the node's Caddy mode: on tunnel servers plain HTTP behind `cloudflared`, forwarding headers trusted from loopback only, a marker header for `CheckDomain`. |
-| `base_domain` | CP setting: `dock server set homelab --base-domain up.example.dev` | Generated hostnames are `<service>-<env>.<base_domain>` of the environment's server. |
+| `base_domain` | CP setting: `dock server set homelab --base-domain up.example.dev` | Generated hostnames are `<service>-<project>[-<env>].<base_domain>` of the environment's server. |
 | `public_ips` | node fact (direct only), from hello | What DNS should point at; used by domain checks and instructions. |
 | `tunnel_hostname` | node fact (tunnel only), from hello | `<tunnel-id>.cfargotunnel.com`, the CNAME target shown for custom domains. |
 

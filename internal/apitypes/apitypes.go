@@ -657,7 +657,8 @@ type Domain struct {
 	Status       DomainStatus `json:"status" enum:"added,waiting_for_dns,issuing_certificate,active,error"`
 	StatusReason string       `json:"status_reason,omitempty"`
 	// DNSRecords are the records to create; any one of them is enough.
-	// Empty for generated domains (covered by the wildcard record).
+	// Empty for generated domains under their server's base domain
+	// (covered by its wildcard record).
 	DNSRecords []DNSRecord `json:"dns_records"`
 	// CheckedAt is when the daemon last checked the domain's DNS and
 	// certificate, and ResolvedIPs what the hostname resolved to then.

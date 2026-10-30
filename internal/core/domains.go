@@ -272,7 +272,7 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, in
 		out.CheckedAt, out.ResolvedIPs = &check.at, check.resolved
 	}
 	c.checksMu.Unlock()
-	if d.Generated {
+	if d.Generated && ing.baseDomain != "" && strings.HasSuffix(d.Hostname, "."+ing.baseDomain) {
 		return out // covered by the wildcard record for the base domain
 	}
 	if ing.mode == apitypes.IngressCloudflareTunnel {
@@ -281,11 +281,7 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, in
 		}
 	} else {
 		for _, ip := range ing.publicIPs {
-			typ := "A"
-			if strings.Contains(ip, ":") {
-				typ = "AAAA"
-			}
-			out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: typ, Name: d.Hostname, Value: ip})
+			out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: ipRecordType(ip), Name: d.Hostname, Value: ip})
 		}
 	}
 	// Subdomains can CNAME to a generated domain instead (apexes can't).
@@ -461,4 +457,13 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 	siblings, _ := c.store.ListDomainsByService(ctx, d.ServiceID)
 	dom := c.toDomain(ss, d, siblings, ing)
 	c.publish(ss, apitypes.Event{Type: apitypes.EventDomain, Domain: &dom})
+}
+
+// ipRecordType is the DNS record type pointing at ip: AAAA for IPv6, A
+// otherwise.
+func ipRecordType(ip string) string {
+	if strings.Contains(ip, ":") {
+		return "AAAA"
+	}
+	return "A"
 }

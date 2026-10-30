@@ -42,7 +42,8 @@ type Config struct {
 	PublicListen string `toml:"public_listen"`
 	// PublicIP is the address users point DNS records at.
 	PublicIP string `toml:"public_ip"`
-	// BaseDomain enables generated hostnames (<service>-<env>.<base>).
+	// BaseDomain enables generated hostnames
+	// (<service>-<project>[-<env>].<base>).
 	// Requires a wildcard DNS record pointing at PublicIP.
 	BaseDomain string `toml:"base_domain"`
 	// MaxUploadMB caps source uploads (`dock deploy` tarballs).
