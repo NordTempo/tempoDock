@@ -66,14 +66,23 @@ func (c *Core) readDisk(ctx context.Context, srv store.Server) (apitypes.ServerD
 			registry, _ = c.reg.Stored(ctx)
 		}
 	}
-	return c.diskParts(srv, du, host, registry), nil
+	services, err := c.store.ListServerServices(ctx, srv.ID)
+	if err != nil {
+		return apitypes.ServerDisk{}, err
+	}
+	names := make(map[string]string, len(services))
+	for _, s := range services {
+		names[strconv.FormatInt(s.ID, 10)] = s.ProjectName + "/" + s.EnvironmentName + "/" + s.Name
+	}
+	return c.diskParts(srv, du, host, registry, names), nil
 }
 
 // diskParts groups a server's disk usage into the console's parts.
 // registry is the registry's storage on this server's disk (the control
-// plane's, while its images aren't in a bucket). Everything Docker and
+// plane's, while its images aren't in a bucket); names are the server's
+// services (project/environment/service) by ID. Everything Docker and
 // dock don't account for on the data root's filesystem is "the rest".
-func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStats, registry int64) apitypes.ServerDisk {
+func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStats, registry int64, names map[string]string) apitypes.ServerDisk {
 	out := apitypes.ServerDisk{Server: srv.Name, ReadAt: now().UTC().Truncate(time.Second)}
 	// Disks[0] is the filesystem of Docker's data root; a second one
 	// means dock's data dir is elsewhere.
@@ -88,22 +97,19 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		}
 	}
 
-	c.stats.mu.Lock()
-	names := c.stats.names
-	c.stats.mu.Unlock()
-	var backups, dockVolumes, cacheBytes int64
+	var backups, dockVolumes, cacheBytes, otherVolumes int64
 	for _, v := range du.Volumes {
 		switch {
+		case v.ControlPlane != "" && v.ControlPlane != c.install:
+			otherVolumes += v.Bytes // another install's, on a shared Docker host
 		case v.Name == node.BuildCacheVolume:
 			cacheBytes += v.Bytes
 		case strings.HasPrefix(v.Name, backup.LocalVolumePrefix):
 			backups += v.Bytes
 		case v.Service != "":
-			name := v.Name
-			if id, err := strconv.ParseInt(v.Service, 10, 64); err == nil {
-				if n, ok := names[id]; ok {
-					name = c.bus.projectName(n.ProjectID, n.ProjectName) + "/" + n.EnvironmentName + "/" + n.ServiceName
-				}
+			name, ok := names[v.Service]
+			if !ok {
+				name = "archived or moved service"
 			}
 			add(apitypes.DiskApps, name, "volume "+v.Name, v.Bytes, 0)
 		default:
@@ -124,13 +130,16 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		}
 		add(apitypes.DiskBuild, "BuildKit cache", fmt.Sprintf("a prune keeps %d MB", c.cfg.Retention.BuildCacheKeepMB), cacheBytes, free)
 	}
+	// With dock's data dir on the root filesystem, the registry's dir
+	// (under /var/lib too) most likely is; on a split layout neither is
+	// counted against Docker's filesystem.
 	if sameFS {
 		add(apitypes.DiskDock, "data dir", "database, keys, build logs, tool caches", du.DataDir, 0)
+		add(apitypes.DiskDock, "registry", "the image registry's storage dir", registry, 0)
 	}
 	add(apitypes.DiskDock, "local backups", "restic repository on this server, not off-box", backups, 0)
-	add(apitypes.DiskDock, "registry", "the image registry's storage dir", registry, 0)
 	add(apitypes.DiskDock, "other volumes", "Dock's other volumes", dockVolumes, 0)
-	add(apitypes.DiskOther, "volumes not Dock's", "", du.OtherVolumes, 0)
+	add(apitypes.DiskOther, "volumes not Dock's", "", du.OtherVolumes+otherVolumes, 0)
 
 	var known int64
 	for _, p := range out.Parts {
@@ -151,7 +160,9 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 
 // PruneServer frees what a full disk's prune frees, now: images Dock made
 // that no release needs, and on a builder BuildKit's cache above what is
-// kept. Running apps and rollback images are never touched. Refused while
+// kept. Running apps and rollback images are never touched. It runs to
+// the end even if the caller goes away. A prune that partly failed
+// answers with what it freed and the error in the result. Refused while
 // the server is being pruned. Operators only.
 func (c *Core) PruneServer(ctx context.Context, a Actor, name string) (apitypes.ServerPruneResult, error) {
 	if err := a.requireOperator("managing servers"); err != nil {
@@ -169,18 +180,30 @@ func (c *Core) PruneServer(ctx context.Context, a Actor, name string) (apitypes.
 	if busy {
 		return apitypes.ServerPruneResult{}, conflict("server %s is being pruned already; wait for it to finish", srv.Name)
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pruneTimeout)
+	defer cancel()
 	images, cache, err := c.pruneServer(ctx, srv)
 	r.mu.Lock()
 	r.pruning[srv.ID] = false
-	r.pruned[srv.ID] = time.Now()
+	if err == nil {
+		// A failed prune doesn't hold back the automatic one.
+		r.pruned[srv.ID] = time.Now()
+	}
 	r.mu.Unlock()
+	if err != nil && images.Removed == 0 && cache.ReclaimedBytes == 0 {
+		return apitypes.ServerPruneResult{}, err
+	}
 	out := apitypes.ServerPruneResult{
 		Server: srv.Name, ImagesRemoved: images.Removed, ImageBytes: images.ReclaimedBytes, CacheBytes: cache.ReclaimedBytes,
 	}
 	summary := fmt.Sprintf("pruned server %s: %d images (%s), %s of build cache", srv.Name, images.Removed, humanBytes(images.ReclaimedBytes), humanBytes(cache.ReclaimedBytes))
 	if err != nil {
+		out.Error = err.Error()
 		summary += fmt.Sprintf("; %v", err)
 	}
-	c.audit(ctx, a.platform(), "server.prune", nil, nil, srv.Name, summary)
-	return out, err
+	c.audit(ctx, a.platform(), "server.prune", nil, nil, "server "+srv.Name, summary)
+	return out, nil
 }
+
+// pruneTimeout bounds a prune someone started.
+const pruneTimeout = 10 * time.Minute

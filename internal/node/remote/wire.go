@@ -202,9 +202,10 @@ type (
 		DataDir           int64                   `json:"data_dir"`
 	}
 	wireVolumeUsage struct {
-		Name    string `json:"name"`
-		Service string `json:"service,omitempty"`
-		Bytes   int64  `json:"bytes"`
+		Name         string `json:"name"`
+		Service      string `json:"service,omitempty"`
+		ControlPlane string `json:"control_plane,omitempty"`
+		Bytes        int64  `json:"bytes"`
 	}
 	dialRequest struct {
 		ContainerID string `json:"container_id"`

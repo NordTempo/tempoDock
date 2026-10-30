@@ -47,7 +47,9 @@ func (r *Runtime) DiskUsage(ctx context.Context, req node.PruneImagesRequest) (n
 			size = max(v.UsageData.Size, 0)
 		}
 		if isManaged(v.Labels) {
-			out.Volumes = append(out.Volumes, node.VolumeUsage{Name: v.Name, Service: v.Labels[node.LabelService], Bytes: size})
+			out.Volumes = append(out.Volumes, node.VolumeUsage{
+				Name: v.Name, Service: v.Labels[node.LabelService], ControlPlane: v.Labels[node.LabelControlPlane], Bytes: size,
+			})
 		} else {
 			out.OtherVolumes += size
 		}

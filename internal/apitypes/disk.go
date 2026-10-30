@@ -55,4 +55,6 @@ type ServerPruneResult struct {
 	ImagesRemoved int    `json:"images_removed"`
 	ImageBytes    int64  `json:"image_bytes"`
 	CacheBytes    int64  `json:"cache_bytes"`
+	// Error says why part of the prune failed; what was freed is above.
+	Error string `json:"error,omitempty"`
 }

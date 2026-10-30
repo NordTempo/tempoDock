@@ -5067,6 +5067,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "error": {
+            "type": "string"
+          },
           "image_bytes": {
             "format": "int64",
             "type": "integer"
@@ -26324,7 +26327,7 @@
     },
     "/api/v1/servers/{server}/prune": {
       "post": {
-        "description": "Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. 409 while the server is being pruned. Operators only.",
+        "description": "Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.",
         "operationId": "prune-server",
         "parameters": [
           {

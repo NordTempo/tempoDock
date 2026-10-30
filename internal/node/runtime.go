@@ -223,7 +223,10 @@ type VolumeUsage struct {
 	// Service is the volume's LabelService (a service's ID), empty for
 	// the platform's own volumes.
 	Service string
-	Bytes   int64
+	// ControlPlane is its LabelControlPlane: on a Docker host shared by
+	// two installs, the other's volumes aren't this one's.
+	ControlPlane string
+	Bytes        int64
 }
 
 // PruneResult is what a prune removed.

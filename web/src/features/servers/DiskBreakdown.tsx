@@ -106,6 +106,11 @@ export function DiskBreakdown({ server }: { server: string }) {
           {done.image_bytes + done.cache_bytes > 0
             ? `Freed ${size(done.image_bytes + done.cache_bytes)}: ${plural(done.images_removed, "image")} (${size(done.image_bytes)}), ${size(done.cache_bytes)} of build cache.`
             : "Nothing was freed: no image or cache could go."}
+          {done.error && (
+            <span className="block text-fail">
+              Part of it failed: {done.error}
+            </span>
+          )}
         </p>
       )}
       {d && (
@@ -185,7 +190,7 @@ export function DiskBreakdown({ server }: { server: string }) {
                       </tr>
                       {opened &&
                         g.parts.map((p) => (
-                          <tr key={p.name}>
+                          <tr key={`${p.name}/${p.detail ?? ""}`}>
                             <td className="pl-9 font-mono text-sec">
                               {p.name}
                             </td>

@@ -91,6 +91,9 @@ apps, rollback images and volumes are never touched.`,
 			return g.io.Print(r, func() error {
 				g.io.Successf("Freed %s on %s: %s in %s, %s of build cache", bytesize(r.ImageBytes+r.CacheBytes), r.Server,
 					bytesize(r.ImageBytes), plural(r.ImagesRemoved, "image"), bytesize(r.CacheBytes))
+				if r.Error != "" {
+					g.io.Warnf("Part of the prune failed: %s", r.Error)
+				}
 				return nil
 			})
 		},

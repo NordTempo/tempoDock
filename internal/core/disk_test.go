@@ -24,6 +24,7 @@ func TestServerDisk(t *testing.T) {
 		ImagesRunning: 3 * gb, ImagesKept: 4 * gb, ImagesReclaimable: 2 * gb, ImagesShared: 1 * gb,
 		Volumes: []node.VolumeUsage{
 			{Name: "dock_v1", Service: "1", Bytes: 2 * gb},
+			{Name: "theirs", Service: "1", ControlPlane: "another-install", Bytes: gb / 8},
 			{Name: node.BuildCacheVolume, Bytes: 3 * gb},
 			{Name: "dock_backups_abc", Bytes: gb / 2},
 		},
@@ -53,8 +54,14 @@ func TestServerDisk(t *testing.T) {
 	if d.ReclaimableBytes != 3*gb {
 		t.Errorf("reclaimable = %d, want unused images and cache above the kept amount", d.ReclaimableBytes)
 	}
-	if got["other/rest of the filesystem"].Bytes != 20*gb-(3+4+2+1+2+3)*gb-gb/2-gb/4-gb/4 {
+	if got["other/volumes not Dock's"].Bytes != gb/8 {
+		t.Errorf("another install's volume = %+v", got["other/volumes not Dock's"])
+	}
+	if got["other/rest of the filesystem"].Bytes != 20*gb-(3+4+2+1+2+3)*gb-gb/2-gb/4-gb/4-gb/8 {
 		t.Errorf("rest = %+v", got["other/rest of the filesystem"])
+	}
+	if got["apps/shop/production/web"].Detail != "volume dock_v1" {
+		t.Errorf("the service's volume isn't named after it: %+v", d.Parts)
 	}
 	if got["dock/local backups"].Bytes != gb/2 || got["apps/container layers"].Bytes != gb/4 {
 		t.Errorf("parts = %+v", d.Parts)

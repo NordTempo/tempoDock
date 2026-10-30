@@ -26,11 +26,10 @@ once the disk passes `prune_disk_percent`.
 |---|---|
 | Reading | `Containers.DiskUsage` (node protocol 7, `disk-usage`): Docker's `system df -v`, and a walk of dock's data dir. Read when someone asks: `GET /servers/{server}/disk`, the server page (its own query, not one the page waits for, kept a minute), `dock server disk`. Concurrent requests for one server share one read (singleflight). No cache, no timer |
 | Images | Each image's unique bytes (size less shared size), so they add up: running (a container uses it), for rollbacks (Dock made it and a release may need it), reclaimable (what `PruneImages` removes: dangling, Dock's, unused, not kept), not Dock's. Layers no single image owns are one "shared layers" part |
-| Volumes | Dock's volumes by service (the service's name), BuildKit's cache volume, the local backup repository (`dock_backups_*`), Dock's other volumes; volumes Dock didn't make go to Other |
+| Volumes | Dock's volumes by service (named with one query of the server's services, stopped ones too), BuildKit's cache volume, the local backup repository (`dock_backups_*`), Dock's other volumes; volumes Dock didn't make, and another install's on a shared Docker host, go to Other |
 | Groups | App data (service volumes, container layers), Images kept, Reclaimable, Build cache, Dock (data dir, local backups, the registry's dir while its images are on disk), Other (volumes not Dock's and the rest of the filesystem, so the parts add up to "used") |
-| Prune | `POST /servers/{server}/prune`, `dock server prune <name>`, the section's Prune button: the full-disk prune of 0020 run now (images as above, build cache above `build_cache_keep_mb` on a builder). Refused while that server is being pruned. Audited as `server.prune` with what it freed |
+| Prune | `POST /servers/{server}/prune`, `dock server prune <name>`, the section's Prune button: the full-disk prune of 0020 run now (images as above, build cache above `build_cache_keep_mb` on a builder). It runs to the end if the caller goes away (10 minutes at most), and a partly failed prune answers with what it freed and the error. Refused while that server is being pruned. Audited as `server.prune` with what it freed |
 | UI | Mock A: one bar split by group, a legend, and a table whose groups open to their parts, with a Reclaimable column whose sum is the Prune button's amount |
-| Slow answers | The disk read and the prune may take longer than the API listener's 30 s write timeout; those two operations extend their own deadline to 3 minutes |
 
 ## Consequences
 
@@ -45,7 +44,8 @@ once the disk passes `prune_disk_percent`.
   compressed numbers for the same images.
 - "Rest of the filesystem" is what is used minus everything counted:
   container logs, the system, and anything else on that filesystem. If
-  dock's data dir is on another filesystem, it isn't shown.
+  dock's data dir is on another filesystem, neither it nor the registry's
+  storage dir is shown.
 - A prune never touches running images, images a rollback may need,
   volumes or backups; images other work on the server pulled are never
   counted as reclaimable.

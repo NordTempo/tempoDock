@@ -2242,7 +2242,7 @@ export interface paths {
         put?: never;
         /**
          * Prune a server's disk now
-         * @description Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. 409 while the server is being pruned. Operators only.
+         * @description Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.
          */
         post: operations["prune-server"];
         delete?: never;
@@ -4009,6 +4009,7 @@ export interface components {
         ServerPruneResult: {
             /** Format: int64 */
             cache_bytes: number;
+            error?: string;
             /** Format: int64 */
             image_bytes: number;
             /** Format: int64 */
