@@ -1,9 +1,5 @@
-import { useState } from "react";
-import {
-  useAddDomain,
-  useGenerateDomain,
-  useRemoveDomain,
-} from "../../data/mutations";
+import { lazy, Suspense, useState } from "react";
+import { useGenerateDomain, useRemoveDomain } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import { listenPort, useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
@@ -19,6 +15,9 @@ import {
 } from "../../ui/kit";
 import { domainState } from "../../ui/status";
 import { AccessLine } from "./AccessLine";
+
+// Loads when it opens.
+const AddDomainDialog = lazy(() => import("./AddDomainDialog"));
 
 /**
  * Add form, who can open the domains, a card per domain that needs a
@@ -86,59 +85,14 @@ function AddDomain({
   serviceRef: ServiceRef;
   hasGenerated: boolean;
 }) {
-  const add = useAddDomain();
   const generate = useGenerateDomain();
-  const [hostname, setHostname] = useState("");
-  const [redirect, setRedirect] = useState("");
+  const [open, setOpen] = useState(false);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
-  const target = redirect.trim();
   return (
-    <form
-      aria-label="Add domain"
-      className="flex flex-wrap items-center gap-2.5"
-      onSubmit={(e) => {
-        e.preventDefault();
-        add.mutate(
-          {
-            ref,
-            hostname: hostname.trim(),
-            ...(target && { redirect_to: target }),
-          },
-          {
-            onSuccess: () => {
-              setHostname("");
-              setRedirect("");
-            },
-          },
-        );
-      }}
-    >
-      <label htmlFor="hostname" className="text-mut">
-        Add a hostname
-      </label>
-      <input
-        id="hostname"
-        value={hostname}
-        onChange={(e) => setHostname(e.target.value)}
-        placeholder="app.example.com"
-        className="field min-w-0 flex-[1_1_240px] py-[7px] font-mono"
-      />
-      <input
-        aria-label="Redirect to, optional"
-        title="Permanently redirect to this hostname instead of serving the service"
-        value={redirect}
-        onChange={(e) => setRedirect(e.target.value)}
-        placeholder="redirect to, optional"
-        className="field min-w-0 flex-[1_1_180px] py-[7px] font-mono"
-      />
-      <Act
-        primary
-        type="submit"
-        cli={`dock domain add ${hostname.trim() || "<host>"}${target ? ` --redirect-to ${target}` : ""} ${flags}`}
-        disabled={add.isPending || !hostname.trim()}
-      >
-        {target ? "Add redirect" : "Add domain"}
-      </Act>
+    <div className="flex flex-wrap items-center gap-2.5">
+      <Button primary onClick={() => setOpen(true)}>
+        Add domain
+      </Button>
       {!hasGenerated && (
         <Act
           cli={`dock domain generate ${flags}`}
@@ -148,9 +102,30 @@ function AddDomain({
           Generate one
         </Act>
       )}
-      <ErrorText error={add.error ?? generate.error} />
-    </form>
+      <ErrorText error={generate.error} />
+      {open && (
+        <Suspense fallback={null}>
+          <AddDomainDialog serviceRef={ref} onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
+    </div>
   );
+}
+
+/** How Dock routes a domain added from Cloudflare, in words. */
+function routedWords(dns: NonNullable<Domain["dns"]>) {
+  switch (dns.status) {
+    case "pending":
+      return "Dock is setting up its route through the server's Cloudflare tunnel.";
+    case "ready":
+      return "Dock routed it through the server's Cloudflare tunnel.";
+    case "external":
+      return "Its CNAME, made outside Dock, already points at the server's tunnel.";
+    case "error":
+      return `Dock couldn't route it through the server's tunnel: ${dns.reason ?? "an operator can retry in Console › Cloudflare"}`;
+    case "deleting":
+      return "Dock is removing its route.";
+  }
 }
 
 /** The DNS record to create, what the name resolves to now, and progress. */
@@ -183,7 +158,17 @@ function DnsCard({ domain }: { domain: Domain }) {
           </span>
         )}
       </div>
-      {error ? (
+      {domain.dns ? (
+        <p
+          className={`text-md ${domain.dns.status === "error" ? "text-fail" : ""}`}
+        >
+          {routedWords(domain.dns)}{" "}
+          <span className="text-mut">Zone {domain.dns.zone}.</span>
+          {error && domain.status_reason && (
+            <span className="block text-fail">{domain.status_reason}</span>
+          )}
+        </p>
+      ) : error ? (
         <p className="text-md text-fail">
           {domain.status_reason ?? "The certificate could not be issued."}
         </p>
@@ -194,7 +179,7 @@ function DnsCard({ domain }: { domain: Domain }) {
           issued automatically once it resolves.
         </p>
       )}
-      {records.length > 0 && (
+      {records.length > 0 && !domain.dns && (
         <Panel>
           <table className="font-mono">
             <thead>
@@ -271,8 +256,15 @@ function lastCheck(d: Domain) {
 }
 
 function detail(d: Domain) {
+  if (d.dns && d.status !== "active") {
+    if (d.dns.status === "error")
+      return `Cloudflare: ${d.dns.reason ?? "error"}`;
+    if (d.status === "error") return d.status_reason ?? "error";
+    return `through the tunnel · Cloudflare ${d.dns.status}`;
+  }
   switch (d.status) {
     case "active":
+      if (d.dns) return "through the server's Cloudflare tunnel";
       return d.generated
         ? "generated · certificate issued"
         : "certificate issued";

@@ -173,6 +173,7 @@ export const useAddDomain = () =>
       ref: ServiceRef;
       hostname: string;
       redirect_to?: string;
+      cloudflare?: boolean;
     }) =>
       body(
         api.POST(

@@ -27,6 +27,7 @@ import { Route as AppConsoleAddressRouteImport } from './routes/_app.console.add
 import { Route as AppConsoleAlertsRouteImport } from './routes/_app.console.alerts'
 import { Route as AppConsoleAuditRouteImport } from './routes/_app.console.audit'
 import { Route as AppConsoleBackupsRouteImport } from './routes/_app.console.backups'
+import { Route as AppConsoleCloudflareRouteImport } from './routes/_app.console.cloudflare'
 import { Route as AppConsoleDataAccessRouteImport } from './routes/_app.console.data-access'
 import { Route as AppConsoleGithubRouteImport } from './routes/_app.console.github'
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
@@ -144,6 +145,11 @@ const AppConsoleAuditRoute = AppConsoleAuditRouteImport.update({
 const AppConsoleBackupsRoute = AppConsoleBackupsRouteImport.update({
   id: '/backups',
   path: '/backups',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleCloudflareRoute = AppConsoleCloudflareRouteImport.update({
+  id: '/cloudflare',
+  path: '/cloudflare',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleDataAccessRoute = AppConsoleDataAccessRouteImport.update({
@@ -322,6 +328,7 @@ export interface FileRoutesByFullPath {
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/audit': typeof AppConsoleAuditRoute
   '/console/backups': typeof AppConsoleBackupsRoute
+  '/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
   '/console/github': typeof AppConsoleGithubRoute
   '/console/registry': typeof AppConsoleRegistryRoute
@@ -368,6 +375,7 @@ export interface FileRoutesByTo {
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/audit': typeof AppConsoleAuditRoute
   '/console/backups': typeof AppConsoleBackupsRoute
+  '/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
   '/console/github': typeof AppConsoleGithubRoute
   '/console/registry': typeof AppConsoleRegistryRoute
@@ -417,6 +425,7 @@ export interface FileRoutesById {
   '/_app/console/alerts': typeof AppConsoleAlertsRoute
   '/_app/console/audit': typeof AppConsoleAuditRoute
   '/_app/console/backups': typeof AppConsoleBackupsRoute
+  '/_app/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/_app/console/data-access': typeof AppConsoleDataAccessRoute
   '/_app/console/github': typeof AppConsoleGithubRoute
   '/_app/console/registry': typeof AppConsoleRegistryRoute
@@ -467,6 +476,7 @@ export interface FileRouteTypes {
     | '/console/alerts'
     | '/console/audit'
     | '/console/backups'
+    | '/console/cloudflare'
     | '/console/data-access'
     | '/console/github'
     | '/console/registry'
@@ -513,6 +523,7 @@ export interface FileRouteTypes {
     | '/console/alerts'
     | '/console/audit'
     | '/console/backups'
+    | '/console/cloudflare'
     | '/console/data-access'
     | '/console/github'
     | '/console/registry'
@@ -561,6 +572,7 @@ export interface FileRouteTypes {
     | '/_app/console/alerts'
     | '/_app/console/audit'
     | '/_app/console/backups'
+    | '/_app/console/cloudflare'
     | '/_app/console/data-access'
     | '/_app/console/github'
     | '/_app/console/registry'
@@ -729,6 +741,13 @@ declare module '@tanstack/react-router' {
       path: '/backups'
       fullPath: '/console/backups'
       preLoaderRoute: typeof AppConsoleBackupsRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/cloudflare': {
+      id: '/_app/console/cloudflare'
+      path: '/cloudflare'
+      fullPath: '/console/cloudflare'
+      preLoaderRoute: typeof AppConsoleCloudflareRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/data-access': {
@@ -1022,6 +1041,7 @@ interface AppConsoleRouteChildren {
   AppConsoleAlertsRoute: typeof AppConsoleAlertsRoute
   AppConsoleAuditRoute: typeof AppConsoleAuditRoute
   AppConsoleBackupsRoute: typeof AppConsoleBackupsRoute
+  AppConsoleCloudflareRoute: typeof AppConsoleCloudflareRoute
   AppConsoleDataAccessRoute: typeof AppConsoleDataAccessRoute
   AppConsoleGithubRoute: typeof AppConsoleGithubRoute
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
@@ -1039,6 +1059,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleAlertsRoute: AppConsoleAlertsRoute,
   AppConsoleAuditRoute: AppConsoleAuditRoute,
   AppConsoleBackupsRoute: AppConsoleBackupsRoute,
+  AppConsoleCloudflareRoute: AppConsoleCloudflareRoute,
   AppConsoleDataAccessRoute: AppConsoleDataAccessRoute,
   AppConsoleGithubRoute: AppConsoleGithubRoute,
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,
