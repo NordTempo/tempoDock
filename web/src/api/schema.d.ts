@@ -2946,6 +2946,8 @@ export interface components {
             /** Format: date-time */
             finished_at?: string;
             /** Format: int64 */
+            gone: number;
+            /** Format: int64 */
             moved: number;
             path: string;
             running: boolean;
@@ -2957,7 +2959,7 @@ export interface components {
         BackupMoveSource: {
             error?: string;
             repository: string;
-            server: string;
+            server?: string;
             /** @enum {string} */
             status: "waiting" | "copying" | "copied" | "emptied" | "failed";
         };

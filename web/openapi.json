@@ -506,6 +506,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "gone": {
+            "format": "int64",
+            "type": "integer"
+          },
           "moved": {
             "format": "int64",
             "type": "integer"
@@ -539,6 +543,7 @@
           "running",
           "sources",
           "moved",
+          "gone",
           "started_at"
         ],
         "type": "object"
@@ -568,7 +573,6 @@
         },
         "required": [
           "repository",
-          "server",
           "status"
         ],
         "type": "object"
