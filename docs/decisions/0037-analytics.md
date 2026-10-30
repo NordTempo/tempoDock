@@ -43,7 +43,7 @@ public dashboards, in phases A0 to A4.
 
 | Topic | Decision |
 |---|---|
-| Model | `sites` (an environment, a name, settings as JSON overrides), `site_hostnames` (a hostname, its site, the service it last served) and `site_markers` (added, moved, removed). Migration 0032. A site lives in one environment, so staging and production never mix |
+| Model | `sites` (an environment, a name, settings as JSON overrides), `site_hostnames` (a hostname, its site, the service it last served) and `site_markers` (added, moved, removed). Migration 0034. A site lives in one environment, so staging and production never mix |
 | Turning it on | `dock analytics enable <hostname>` (deploy on its environment): it joins `--site`, or its service's other hostnames' site, or a new site named after it. The first site starts the store |
 | Moves | A hostname stays with its site when its domain is removed. Added back on another service of the environment, the site follows it and gets a "moved" marker; `domain add --analytics new` starts a new site instead, archiving the old one if it is left empty. In another environment the site comes along only if it was the hostname's alone and the actor can read it there |
 | Routing | Each route carries its analytics hostnames with the tag `site.service.release`; a cutover retags with the new release before it goes active |
