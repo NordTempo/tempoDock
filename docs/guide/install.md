@@ -195,7 +195,7 @@ running).
 | `[registry] enabled` | `false` | Control plane: run the image registry |
 | `[registry] listen` | `127.0.0.1:5000` | Control plane: host address the `dock-registry` container is published on. Node: where `dock node` serves the registry over the link. Image references use it on every server |
 | `[registry] storage_dir` | `/var/lib/dock-registry` | Registry blobs and manifests, unless they are in a bucket ([Images in object storage](#images-in-object-storage)) |
-| `[registry] config_dir` | `/etc/dock/registry` | The registry's `config.yml` and `jwks.json`, written by dock (owned by `dock`, setgid `dock-registry`) |
+| `[registry] config_dir` | `/etc/dock/registry` | The registry's `config.yml` and `jwks.json`, written by dock (owned by `dock`, setgid `dock-registry`). `dock.service` may write only there: another dir needs a `ReadWritePaths=` drop-in |
 | `[registry] public_name` | empty | The registry's name: the audience of its tokens. Required when enabled |
 | `[hooks] public_host` | empty | Control plane: a public hostname GitHub delivers pushes to, e.g. `hooks.example.com`, with DNS pointing at this server like an app domain. Not needed when Dock has a public address, which serves `/hooks/github/` too; set it to keep the API off the internet. Caddy routes only `/hooks/github/` on it, to `[hooks] listen`. Empty, and no public address: [push-to-deploy](deploying.md#deploy-on-git-push) can be connected but receives nothing |
 | `[hooks] listen` | `127.0.0.1:7072` | Loopback listener for webhook deliveries; serves nothing else. Must be loopback |
