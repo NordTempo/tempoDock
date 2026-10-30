@@ -149,14 +149,37 @@ func TestSiteStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, _ := analyticsRoute(h, "shop.example.com")
-	var siteID int64
-	_, _ = fmt.Sscanf(r.Tag, "%d.", &siteID)
+	var siteID, svcID, relID int64
+	_, _ = fmt.Sscanf(r.Tag, "%d.%d.%d", &siteID, &svcID, &relID)
 	ms := now().UnixMilli()
-	h.rt.AppendSpool(fmt.Appendf(nil, `{"t":%d,"s":%d,"k":1,"p":"/","v":1}`, ms-1000, siteID), fmt.Appendf(nil, `{"t":%d,"s":%d,"k":1,"p":"/a","v":2}`, ms-500, siteID))
+	h.rt.AppendSpool(fmt.Appendf(nil, `{"t":%d,"s":%d,"sv":%d,"rl":%d,"k":1,"p":"/","v":1}`, ms-1000, siteID, svcID, relID),
+		fmt.Appendf(nil, `{"t":%d,"s":%d,"sv":%d,"rl":%d,"k":1,"p":"/a","v":2}`, ms-500, siteID, svcID, relID))
+	var st apitypes.SiteStats
 	eventually(t, "the dashboard to count the visitors", func() bool {
-		st, err := h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", StatsQuery{Range: "24h"})
+		var err error
+		st, err = h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", StatsQuery{Range: "24h"})
 		return err == nil && st.StoreOnline && st.Overview.Visitors == 2 && st.Overview.Pageviews == 2 && st.Bucket == "hour"
 	})
+	// Services and releases are labelled; their values stay what filters take.
+	if rows := st.Breakdowns["service"]; len(rows) != 1 || rows[0].Label != "web" || rows[0].Value != fmt.Sprint(svcID) {
+		t.Errorf("service breakdown = %+v", rows)
+	}
+	if b, err := h.c.SiteBreakdown(h.ctx, testSystem, "shop", "shop.example.com", analytics.DimRelease, StatsQuery{Range: "24h"}, 10); err != nil || len(b.Rows) != 1 || b.Rows[0].Label != "web r1" {
+		t.Errorf("release breakdown = %+v, %v", b, err)
+	}
+	// A service filter may name the service.
+	byName := StatsQuery{Range: "24h", Filters: []analytics.Filter{{Dimension: analytics.DimService, Op: analytics.OpIs, Value: "web"}}}
+	if st, err := h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", byName); err != nil || st.Overview.Pageviews != 2 {
+		t.Errorf("service:is:web = %+v, %v", st.Overview, err)
+	}
+	byName.Filters[0].Value = "nope"
+	if _, err := h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", byName); CodeOf(err) != apitypes.CodeValidation {
+		t.Errorf("an unknown service in a filter: %v", err)
+	}
+	byName.Filters[0] = analytics.Filter{Dimension: analytics.DimService, Op: analytics.OpContains, Value: "we"}
+	if _, err := h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", byName); CodeOf(err) != apitypes.CodeValidation {
+		t.Errorf("service:contains, which can't match IDs: %v", err)
+	}
 	if _, err := h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", StatsQuery{Range: "1y"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("an unknown range: %v", err)
 	}

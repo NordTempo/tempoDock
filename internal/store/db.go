@@ -918,6 +918,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.relabelControlPlaneRepositoryStmt, err = db.PrepareContext(ctx, relabelControlPlaneRepository); err != nil {
 		return nil, fmt.Errorf("error preparing query RelabelControlPlaneRepository: %w", err)
 	}
+	if q.releaseNamesStmt, err = db.PrepareContext(ctx, releaseNames); err != nil {
+		return nil, fmt.Errorf("error preparing query ReleaseNames: %w", err)
+	}
 	if q.removeOrgMemberStmt, err = db.PrepareContext(ctx, removeOrgMember); err != nil {
 		return nil, fmt.Errorf("error preparing query RemoveOrgMember: %w", err)
 	}
@@ -2680,6 +2683,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing relabelControlPlaneRepositoryStmt: %w", cerr)
 		}
 	}
+	if q.releaseNamesStmt != nil {
+		if cerr := q.releaseNamesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing releaseNamesStmt: %w", cerr)
+		}
+	}
 	if q.removeOrgMemberStmt != nil {
 		if cerr := q.removeOrgMemberStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing removeOrgMemberStmt: %w", cerr)
@@ -3462,6 +3470,7 @@ type Queries struct {
 	registerNodeServerStmt              *sql.Stmt
 	relabelBackupRepositoryStmt         *sql.Stmt
 	relabelControlPlaneRepositoryStmt   *sql.Stmt
+	releaseNamesStmt                    *sql.Stmt
 	removeOrgMemberStmt                 *sql.Stmt
 	removeSiteHostnameStmt              *sql.Stmt
 	renameOrgStmt                       *sql.Stmt
@@ -3855,6 +3864,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		registerNodeServerStmt:              q.registerNodeServerStmt,
 		relabelBackupRepositoryStmt:         q.relabelBackupRepositoryStmt,
 		relabelControlPlaneRepositoryStmt:   q.relabelControlPlaneRepositoryStmt,
+		releaseNamesStmt:                    q.releaseNamesStmt,
 		removeOrgMemberStmt:                 q.removeOrgMemberStmt,
 		removeSiteHostnameStmt:              q.removeSiteHostnameStmt,
 		renameOrgStmt:                       q.renameOrgStmt,
