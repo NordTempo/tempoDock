@@ -181,6 +181,14 @@ func TestCalls(t *testing.T) {
 	if ops := h.rt.Ops(); ops[len(ops)-1] != "disk usage keep=sha256:k repos=r" {
 		t.Fatalf("the prune filter didn't reach the node: %v", ops[len(ops)-1])
 	}
+
+	tunnel := node.TunnelSpec{Token: "tunnel-token", Hostname: "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"}
+	if err := h.client.EnsureTunnel(ctx, &tunnel); err != nil || h.rt.Tunnel() == nil || *h.rt.Tunnel() != tunnel {
+		t.Fatalf("ensure tunnel: %v, node runs %+v", err, h.rt.Tunnel())
+	}
+	if err := h.client.EnsureTunnel(ctx, nil); err != nil || h.rt.Tunnel() != nil {
+		t.Fatalf("stop tunnel: %v, node runs %+v", err, h.rt.Tunnel())
+	}
 }
 
 func TestLogsStreamAndCancel(t *testing.T) {

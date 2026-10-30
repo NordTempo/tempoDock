@@ -122,10 +122,20 @@ func (p *Proxy) tunnelRequestError(hostname string, err error) string {
 	}
 }
 
+// SetTunnelHostname records the hostname of the tunnel the control plane
+// manages for this server (ADR 0035), for CheckDomain's instructions.
+func (p *Proxy) SetTunnelHostname(hostname string) {
+	p.tunnel.Store(&hostname)
+}
+
 // tunnelTarget names the CNAME target for instructions.
 func (p *Proxy) tunnelTarget() string {
-	if p.opts.TunnelHostname != "" {
-		return "this server's tunnel, " + p.opts.TunnelHostname
+	host := p.opts.TunnelHostname
+	if t := p.tunnel.Load(); t != nil && *t != "" {
+		host = *t
+	}
+	if host != "" {
+		return "this server's tunnel, " + host
 	}
 	return "this server's Cloudflare tunnel"
 }

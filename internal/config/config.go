@@ -253,8 +253,12 @@ type Ingress struct {
 	// Mode is direct or cloudflare_tunnel.
 	Mode IngressMode `toml:"mode"`
 	// TunnelHostname is "<tunnel-id>.cfargotunnel.com", the CNAME target
-	// for hostnames served through the tunnel. Tunnel mode only.
+	// for hostnames served through the tunnel. Tunnel mode only; empty
+	// when the control plane manages the tunnel (ADR 0035).
 	TunnelHostname string `toml:"tunnel_hostname"`
+	// CloudflaredImage is the cloudflared the server runs when the control
+	// plane manages its tunnel (ADR 0035). Pin it by digest.
+	CloudflaredImage string `toml:"cloudflared_image"`
 }
 
 // Hooks configures incoming webhooks for GitHub push-to-deploy (ADR 0018).
@@ -309,8 +313,11 @@ func Default() Config {
 			StorageDir: "/var/lib/dock-registry",
 			ConfigDir:  "/etc/dock/registry",
 		},
-		Ingress: Ingress{Mode: IngressDirect},
-		Hooks:   Hooks{Listen: "127.0.0.1:7072"},
+		Ingress: Ingress{
+			Mode:             IngressDirect,
+			CloudflaredImage: "cloudflare/cloudflared:2026.10.3@sha256:faa8e0a1475f137c910be6025f43c8e4092fdd35461b31e19fd1390657a1ff39",
+		},
+		Hooks: Hooks{Listen: "127.0.0.1:7072"},
 		Backup: Backup{
 			ResticImage: "restic/restic:0.18.1@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76",
 		},
@@ -401,7 +408,7 @@ func (c *Config) validate() error {
 			return errors.New("[ingress] mode cloudflare_tunnel serves apps over https:// at Cloudflare's edge; set [caddy] disable_tls = false (Caddy is plain HTTP on 127.0.0.1 either way)")
 		}
 		if t := c.Ingress.TunnelHostname; t != "" && !ValidTunnelHostname(t) {
-			return fmt.Errorf("[ingress] tunnel_hostname %q must be <tunnel-id>.cfargotunnel.com", t)
+			return fmt.Errorf("[ingress] tunnel_hostname %q must be <tunnel-id>.cfargotunnel.com (or empty when the control plane manages the tunnel)", t)
 		}
 	default:
 		return fmt.Errorf("[ingress] mode %q must be %q or %q", c.Ingress.Mode, IngressDirect, IngressCloudflareTunnel)
@@ -435,7 +442,6 @@ func (h *Hooks) validate() error {
 	return nil
 }
 
-// hostnameRe matches lower-case DNS names with at least two labels.
 // tunnelHostnameRe matches a Cloudflare tunnel's CNAME target.
 var tunnelHostnameRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.cfargotunnel\.com$`)
 
@@ -444,6 +450,7 @@ var tunnelHostnameRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-
 // at.
 func ValidTunnelHostname(h string) bool { return tunnelHostnameRe.MatchString(h) }
 
+// hostnameRe matches lower-case DNS names with at least two labels.
 var hostnameRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // CheckHostPort accepts "" (unset) or "host:port" with a port in 1-65535.
