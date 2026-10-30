@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +17,25 @@ func testOrg(t testing.TB, s *Store) int64 {
 		t.Fatal(err)
 	}
 	return o.ID
+}
+
+// Every migration has a number of its own: migrate skips one numbered at or
+// below the version already applied, so two branches that both add the
+// next number would leave one unapplied. Renumber the later one.
+func TestMigrationNumbersUnique(t *testing.T) {
+	names, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, name := range names {
+		base := strings.TrimPrefix(name, "migrations/")
+		num, _, _ := strings.Cut(base, "_")
+		if other, ok := seen[num]; ok {
+			t.Errorf("migrations %s and %s share number %s; give the newer one the next free number", other, base, num)
+		}
+		seen[num] = base
+	}
 }
 
 // The schema enforces one in-flight deploy per service; core relies on it.

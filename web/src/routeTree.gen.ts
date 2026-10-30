@@ -21,7 +21,6 @@ import { Route as AppConsoleRouteImport } from './routes/_app.console'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
 import { Route as AppOrgIndexRouteImport } from './routes/_app.$org.index'
 import { Route as AppOrgAuditRouteImport } from './routes/_app.$org.audit'
-import { Route as AppOrgTokensRouteImport } from './routes/_app.$org.tokens'
 import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
 import { Route as AppConsoleAddressRouteImport } from './routes/_app.console.address'
 import { Route as AppConsoleAlertsRouteImport } from './routes/_app.console.alerts'
@@ -33,7 +32,6 @@ import { Route as AppConsoleGithubRouteImport } from './routes/_app.console.gith
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
 import { Route as AppConsoleStorageRouteImport } from './routes/_app.console.storage'
-import { Route as AppConsoleTokensRouteImport } from './routes/_app.console.tokens'
 import { Route as AppConsoleUpdatesRouteImport } from './routes/_app.console.updates'
 import { Route as AppConsoleUsersRouteImport } from './routes/_app.console.users'
 import { Route as AppOrgProjectIndexRouteImport } from './routes/_app.$org.$project.index'
@@ -41,6 +39,7 @@ import { Route as AppOrgProjectCompareRouteImport } from './routes/_app.$org.$pr
 import { Route as AppOrgSettingsIndexRouteImport } from './routes/_app.$org.settings.index'
 import { Route as AppOrgSettingsGeneralRouteImport } from './routes/_app.$org.settings.general'
 import { Route as AppOrgSettingsMembersRouteImport } from './routes/_app.$org.settings.members'
+import { Route as AppOrgSettingsTokensRouteImport } from './routes/_app.$org.settings.tokens'
 import { Route as AppOrgSettingsVariablesRouteImport } from './routes/_app.$org.settings.variables'
 import { Route as AppConsoleServersServerRouteImport } from './routes/_app.console.servers_.$server'
 import { Route as AppOrgProjectEnvironmentIndexRouteImport } from './routes/_app.$org.$project.$environment.index'
@@ -117,11 +116,6 @@ const AppOrgAuditRoute = AppOrgAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AppOrgRoute,
 } as any)
-const AppOrgTokensRoute = AppOrgTokensRouteImport.update({
-  id: '/tokens',
-  path: '/tokens',
-  getParentRoute: () => AppOrgRoute,
-} as any)
 const AppConsoleIndexRoute = AppConsoleIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -177,11 +171,6 @@ const AppConsoleStorageRoute = AppConsoleStorageRouteImport.update({
   path: '/storage',
   getParentRoute: () => AppConsoleRoute,
 } as any)
-const AppConsoleTokensRoute = AppConsoleTokensRouteImport.update({
-  id: '/tokens',
-  path: '/tokens',
-  getParentRoute: () => AppConsoleRoute,
-} as any)
 const AppConsoleUpdatesRoute = AppConsoleUpdatesRouteImport.update({
   id: '/updates',
   path: '/updates',
@@ -215,6 +204,11 @@ const AppOrgSettingsGeneralRoute = AppOrgSettingsGeneralRouteImport.update({
 const AppOrgSettingsMembersRoute = AppOrgSettingsMembersRouteImport.update({
   id: '/settings/members',
   path: '/settings/members',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgSettingsTokensRoute = AppOrgSettingsTokensRouteImport.update({
+  id: '/settings/tokens',
+  path: '/settings/tokens',
   getParentRoute: () => AppOrgRoute,
 } as any)
 const AppOrgSettingsVariablesRoute = AppOrgSettingsVariablesRouteImport.update({
@@ -323,7 +317,6 @@ export interface FileRoutesByFullPath {
   '/console': typeof AppConsoleRouteWithChildren
   '/invite/$code': typeof InviteCodeRoute
   '/$org/audit': typeof AppOrgAuditRoute
-  '/$org/tokens': typeof AppOrgTokensRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/audit': typeof AppConsoleAuditRoute
@@ -334,7 +327,6 @@ export interface FileRoutesByFullPath {
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/storage': typeof AppConsoleStorageRoute
-  '/console/tokens': typeof AppConsoleTokensRoute
   '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
   '/$org/': typeof AppOrgIndexRoute
@@ -342,6 +334,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
+  '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project/': typeof AppOrgProjectIndexRoute
@@ -370,7 +363,6 @@ export interface FileRoutesByTo {
   '/invite/$code': typeof InviteCodeRoute
   '/': typeof AppIndexRoute
   '/$org/audit': typeof AppOrgAuditRoute
-  '/$org/tokens': typeof AppOrgTokensRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/audit': typeof AppConsoleAuditRoute
@@ -381,7 +373,6 @@ export interface FileRoutesByTo {
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/storage': typeof AppConsoleStorageRoute
-  '/console/tokens': typeof AppConsoleTokensRoute
   '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
   '/$org': typeof AppOrgIndexRoute
@@ -389,6 +380,7 @@ export interface FileRoutesByTo {
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
+  '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project': typeof AppOrgProjectIndexRoute
@@ -420,7 +412,6 @@ export interface FileRoutesById {
   '/invite/$code': typeof InviteCodeRoute
   '/_app/': typeof AppIndexRoute
   '/_app/$org/audit': typeof AppOrgAuditRoute
-  '/_app/$org/tokens': typeof AppOrgTokensRoute
   '/_app/console/address': typeof AppConsoleAddressRoute
   '/_app/console/alerts': typeof AppConsoleAlertsRoute
   '/_app/console/audit': typeof AppConsoleAuditRoute
@@ -431,7 +422,6 @@ export interface FileRoutesById {
   '/_app/console/registry': typeof AppConsoleRegistryRoute
   '/_app/console/servers': typeof AppConsoleServersRoute
   '/_app/console/storage': typeof AppConsoleStorageRoute
-  '/_app/console/tokens': typeof AppConsoleTokensRoute
   '/_app/console/updates': typeof AppConsoleUpdatesRoute
   '/_app/console/users': typeof AppConsoleUsersRoute
   '/_app/$org/': typeof AppOrgIndexRoute
@@ -439,6 +429,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/_app/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/_app/$org/settings/members': typeof AppOrgSettingsMembersRoute
+  '/_app/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/_app/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/_app/console/servers_/$server': typeof AppConsoleServersServerRoute
   '/_app/$org/$project/': typeof AppOrgProjectIndexRoute
@@ -471,7 +462,6 @@ export interface FileRouteTypes {
     | '/console'
     | '/invite/$code'
     | '/$org/audit'
-    | '/$org/tokens'
     | '/console/address'
     | '/console/alerts'
     | '/console/audit'
@@ -482,7 +472,6 @@ export interface FileRouteTypes {
     | '/console/registry'
     | '/console/servers'
     | '/console/storage'
-    | '/console/tokens'
     | '/console/updates'
     | '/console/users'
     | '/$org/'
@@ -490,6 +479,7 @@ export interface FileRouteTypes {
     | '/$org/$project/compare'
     | '/$org/settings/general'
     | '/$org/settings/members'
+    | '/$org/settings/tokens'
     | '/$org/settings/variables'
     | '/console/servers/$server'
     | '/$org/$project/'
@@ -518,7 +508,6 @@ export interface FileRouteTypes {
     | '/invite/$code'
     | '/'
     | '/$org/audit'
-    | '/$org/tokens'
     | '/console/address'
     | '/console/alerts'
     | '/console/audit'
@@ -529,7 +518,6 @@ export interface FileRouteTypes {
     | '/console/registry'
     | '/console/servers'
     | '/console/storage'
-    | '/console/tokens'
     | '/console/updates'
     | '/console/users'
     | '/$org'
@@ -537,6 +525,7 @@ export interface FileRouteTypes {
     | '/$org/$project/compare'
     | '/$org/settings/general'
     | '/$org/settings/members'
+    | '/$org/settings/tokens'
     | '/$org/settings/variables'
     | '/console/servers/$server'
     | '/$org/$project'
@@ -567,7 +556,6 @@ export interface FileRouteTypes {
     | '/invite/$code'
     | '/_app/'
     | '/_app/$org/audit'
-    | '/_app/$org/tokens'
     | '/_app/console/address'
     | '/_app/console/alerts'
     | '/_app/console/audit'
@@ -578,7 +566,6 @@ export interface FileRouteTypes {
     | '/_app/console/registry'
     | '/_app/console/servers'
     | '/_app/console/storage'
-    | '/_app/console/tokens'
     | '/_app/console/updates'
     | '/_app/console/users'
     | '/_app/$org/'
@@ -586,6 +573,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/compare'
     | '/_app/$org/settings/general'
     | '/_app/$org/settings/members'
+    | '/_app/$org/settings/tokens'
     | '/_app/$org/settings/variables'
     | '/_app/console/servers_/$server'
     | '/_app/$org/$project/'
@@ -701,13 +689,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgAuditRouteImport
       parentRoute: typeof AppOrgRoute
     }
-    '/_app/$org/tokens': {
-      id: '/_app/$org/tokens'
-      path: '/tokens'
-      fullPath: '/$org/tokens'
-      preLoaderRoute: typeof AppOrgTokensRouteImport
-      parentRoute: typeof AppOrgRoute
-    }
     '/_app/console/': {
       id: '/_app/console/'
       path: '/'
@@ -785,13 +766,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConsoleStorageRouteImport
       parentRoute: typeof AppConsoleRoute
     }
-    '/_app/console/tokens': {
-      id: '/_app/console/tokens'
-      path: '/tokens'
-      fullPath: '/console/tokens'
-      preLoaderRoute: typeof AppConsoleTokensRouteImport
-      parentRoute: typeof AppConsoleRoute
-    }
     '/_app/console/updates': {
       id: '/_app/console/updates'
       path: '/updates'
@@ -839,6 +813,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/members'
       fullPath: '/$org/settings/members'
       preLoaderRoute: typeof AppOrgSettingsMembersRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/settings/tokens': {
+      id: '/_app/$org/settings/tokens'
+      path: '/settings/tokens'
+      fullPath: '/$org/settings/tokens'
+      preLoaderRoute: typeof AppOrgSettingsTokensRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/$org/settings/variables': {
@@ -1003,11 +984,11 @@ const AppOrgProjectEnvironmentServiceRouteWithChildren =
 
 interface AppOrgRouteChildren {
   AppOrgAuditRoute: typeof AppOrgAuditRoute
-  AppOrgTokensRoute: typeof AppOrgTokensRoute
   AppOrgIndexRoute: typeof AppOrgIndexRoute
   AppOrgProjectCompareRoute: typeof AppOrgProjectCompareRoute
   AppOrgSettingsGeneralRoute: typeof AppOrgSettingsGeneralRoute
   AppOrgSettingsMembersRoute: typeof AppOrgSettingsMembersRoute
+  AppOrgSettingsTokensRoute: typeof AppOrgSettingsTokensRoute
   AppOrgSettingsVariablesRoute: typeof AppOrgSettingsVariablesRoute
   AppOrgProjectIndexRoute: typeof AppOrgProjectIndexRoute
   AppOrgSettingsIndexRoute: typeof AppOrgSettingsIndexRoute
@@ -1018,11 +999,11 @@ interface AppOrgRouteChildren {
 
 const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgAuditRoute: AppOrgAuditRoute,
-  AppOrgTokensRoute: AppOrgTokensRoute,
   AppOrgIndexRoute: AppOrgIndexRoute,
   AppOrgProjectCompareRoute: AppOrgProjectCompareRoute,
   AppOrgSettingsGeneralRoute: AppOrgSettingsGeneralRoute,
   AppOrgSettingsMembersRoute: AppOrgSettingsMembersRoute,
+  AppOrgSettingsTokensRoute: AppOrgSettingsTokensRoute,
   AppOrgSettingsVariablesRoute: AppOrgSettingsVariablesRoute,
   AppOrgProjectIndexRoute: AppOrgProjectIndexRoute,
   AppOrgSettingsIndexRoute: AppOrgSettingsIndexRoute,
@@ -1047,7 +1028,6 @@ interface AppConsoleRouteChildren {
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
   AppConsoleServersRoute: typeof AppConsoleServersRoute
   AppConsoleStorageRoute: typeof AppConsoleStorageRoute
-  AppConsoleTokensRoute: typeof AppConsoleTokensRoute
   AppConsoleUpdatesRoute: typeof AppConsoleUpdatesRoute
   AppConsoleUsersRoute: typeof AppConsoleUsersRoute
   AppConsoleIndexRoute: typeof AppConsoleIndexRoute
@@ -1065,7 +1045,6 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,
   AppConsoleServersRoute: AppConsoleServersRoute,
   AppConsoleStorageRoute: AppConsoleStorageRoute,
-  AppConsoleTokensRoute: AppConsoleTokensRoute,
   AppConsoleUpdatesRoute: AppConsoleUpdatesRoute,
   AppConsoleUsersRoute: AppConsoleUsersRoute,
   AppConsoleIndexRoute: AppConsoleIndexRoute,

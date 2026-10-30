@@ -293,7 +293,7 @@ not an error.`,
 			revoked := false
 			if hadToken && ctx.LoginToken {
 				if err := revokeOwnToken(cmd.Context(), ctx.Server, ctx.Token); err != nil {
-					g.io.Warnf("Could not revoke the token on %s (%v). It expires on its own; an admin can revoke it on the Tokens page.", ctx.Server, err)
+					g.io.Warnf("Could not revoke the token on %s (%v). It expires on its own; revoke it on your account page.", ctx.Server, err)
 				} else {
 					revoked = true
 				}

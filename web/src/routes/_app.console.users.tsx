@@ -8,6 +8,7 @@ import {
 } from "../data/mutations";
 import { queries, useSession, useUsers } from "../data/queries";
 import type { Scope, User } from "../data/types";
+import { useOrg } from "../shell/location";
 import { day, plural } from "../ui/format";
 import {
   Act,
@@ -37,6 +38,7 @@ type Reset = { email: string; password: string };
 function Users() {
   const users = useUsers();
   const me = useSession();
+  const org = useOrg();
   const [reset, setReset] = useState<Reset>();
   const active = users.filter((u) => !u.disabled_at).length;
 
@@ -109,9 +111,13 @@ function Users() {
             <Link to="/account" className="text-info hover:underline">
               your account
             </Link>
-            . Tokens for agents, CI and scripts are on{" "}
-            <Link to="/console/tokens" className="text-info hover:underline">
-              Tokens
+            . Tokens for agents, CI and scripts are in{" "}
+            <Link
+              to="/$org/settings/tokens"
+              params={{ org }}
+              className="text-info hover:underline"
+            >
+              the organization's settings
             </Link>
             .
           </p>

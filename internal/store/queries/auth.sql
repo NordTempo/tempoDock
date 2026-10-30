@@ -27,8 +27,8 @@ DELETE FROM sessions WHERE hash = +?;
 DELETE FROM sessions WHERE expires_at < +?;
 
 -- name: CreateToken :one
-INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment_id, created_by, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment_id, created_by, user_id, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- GetTokenByHash also returns the user a `dock login` token acts for and
@@ -50,6 +50,13 @@ SELECT * FROM tokens WHERE tokens.org_id = +sqlc.arg(org_id)
 UNION ALL
 SELECT tokens.* FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
 WHERE org_members.org_id = +sqlc.arg(org_id) AND tokens.origin = 'cli_login';
+
+-- ListUserTokens is a user's own tokens: their `dock login` tokens and
+-- the manual tokens they created in an org, through tokens_user.
+-- name: ListUserTokens :many
+SELECT * FROM tokens WHERE user_id = +sqlc.arg(user_id)
+    AND (origin = 'cli_login' OR org_id = +sqlc.arg(org_id))
+ORDER BY id;
 
 -- name: TouchToken :exec
 UPDATE tokens SET last_used_at = ? WHERE id = +?;
