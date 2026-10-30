@@ -256,9 +256,9 @@ func TestSiteRetention(t *testing.T) {
 	_, _ = fmt.Sscanf(r.Tag, "%d.", &siteID)
 	old := now().AddDate(0, 0, -40).UnixMilli()
 	h.rt.AppendSpool(fmt.Appendf(nil, `{"t":%d,"s":%d,"k":1,"p":"/","v":1}`, old, siteID), fmt.Appendf(nil, `{"t":%d,"s":%d,"k":1,"p":"/","v":2}`, now().UnixMilli(), siteID))
-	eventually(t, "both events in the store", func() bool { return len(h.rt.AnalyticsStore().Events()) == 2 })
+	eventually(t, "both events in the store", func() bool { return storeEvents(h) == 2 })
 	h.c.rotateSalts(h.ctx, now().AddDate(0, 0, 1)) // the next day's pass
-	eventually(t, "the old event pruned", func() bool { return len(h.rt.AnalyticsStore().Events()) == 1 })
+	eventually(t, "the old event pruned", func() bool { return storeEvents(h) == 1 })
 
 	// Filters over the year see only the kept 30 days, and say so.
 	filtered := StatsQuery{Range: "12m", Filters: []analytics.Filter{{Dimension: analytics.DimPage, Op: analytics.OpIs, Value: "/"}}}
