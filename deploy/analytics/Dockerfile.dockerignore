@@ -1,0 +1,7 @@
+# BuildKit reads this for deploy/analytics/Dockerfile: only what the store
+# is built from goes into the build context.
+*
+!go.mod
+!go.sum
+!internal/analytics
+!cmd/dock-analytics
