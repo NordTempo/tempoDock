@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
@@ -18,9 +19,9 @@ import (
 // of DataDir. An image is reclaimable when PruneImages would remove it:
 // dangling, made by the platform, unused and not in req.Keep.
 func (r *Runtime) DiskUsage(ctx context.Context, req node.PruneImagesRequest) (node.DiskUsage, error) {
-	res, err := r.cli.DiskUsage(ctx, client.DiskUsageOptions{Containers: true, Images: true, Volumes: true, Verbose: true})
+	res, err := r.systemDF(ctx)
 	if err != nil {
-		return node.DiskUsage{}, fmt.Errorf("docker disk usage: %w", err)
+		return node.DiskUsage{}, err
 	}
 	var out node.DiskUsage
 	var unique int64
@@ -56,6 +57,31 @@ func (r *Runtime) DiskUsage(ctx context.Context, req node.PruneImagesRequest) (n
 		out.DataDir = dirSize(r.DataDir)
 	}
 	return out, nil
+}
+
+// dfAttempts is how often systemDF asks Docker. Docker fails the whole
+// call when a container goes away while it is counted (a deploy's
+// cutover), which a second try a moment later doesn't hit.
+const dfAttempts = 3
+
+// systemDF is Docker's disk usage of containers, images and volumes,
+// asked again when a container went away meanwhile.
+func (r *Runtime) systemDF(ctx context.Context) (client.DiskUsageResult, error) {
+	var err error
+	for attempt := range dfAttempts {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return client.DiskUsageResult{}, ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+		var res client.DiskUsageResult
+		if res, err = r.cli.DiskUsage(ctx, client.DiskUsageOptions{Containers: true, Images: true, Volumes: true, Verbose: true}); err == nil {
+			return res, nil
+		}
+	}
+	return client.DiskUsageResult{}, fmt.Errorf("docker disk usage: %w", err)
 }
 
 // dangling reports whether an image has no tag left, as Docker's dangling
