@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -14,6 +15,10 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
+// GCTimeout bounds one garbage collection. Collecting a local registry
+// takes seconds; this only stops a collector that hangs.
+const GCTimeout = 15 * time.Minute
+
 // GarbageCollect removes the blobs no manifest references any more, after
 // Client.Prune deleted manifests, with Distribution's own
 // `registry garbage-collect --delete-untagged` in a one-shot container.
@@ -25,10 +30,14 @@ import (
 // those seconds; the caller schedules it when no build or pull is in
 // flight. The collector gets the registry's volumes and config
 // (VolumesFrom), no network, and a memory cap. Its output goes to logs.
+// A collector still running after GCTimeout is removed, so a hung one
+// can't keep the registry stopped.
 func GarbageCollect(ctx context.Context, docker *client.Client, registry string, logs io.Writer) (err error) {
 	if logs == nil {
 		logs = io.Discard
 	}
+	ctx, cancel := context.WithTimeout(ctx, GCTimeout)
+	defer cancel()
 	inspect, err := docker.ContainerInspect(ctx, registry, client.ContainerInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("garbage collect: inspect %s: %w", registry, err)
@@ -81,6 +90,9 @@ func GarbageCollect(ctx context.Context, docker *client.Client, registry string,
 	select {
 	case exit = <-wait.Result:
 	case err := <-wait.Error:
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("garbage collect: %s still ran after %s and was stopped", name, GCTimeout)
+		}
 		return fmt.Errorf("garbage collect: wait for %s: %w", name, err)
 	}
 	if out, err := docker.ContainerLogs(ctx, created.ID, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}); err == nil {
