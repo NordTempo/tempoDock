@@ -98,6 +98,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerCloudflare(s, a)
 	registerUpdate(s, a)
 	registerAddress(s, a)
+	registerAnalytics(s, a)
 	registerConnect(s, a, mux)
 	return a
 }

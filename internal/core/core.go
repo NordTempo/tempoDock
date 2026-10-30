@@ -152,6 +152,8 @@ type Core struct {
 
 	// git is GitHub push-to-deploy's state (git.go).
 	git gitState
+	// analytics is Dock Analytics' state (analytics.go).
+	analytics analyticsState
 	// updates is updating Dock (update.go).
 	updates updates
 	// address is Dock's public address, "" for none (address.go).
@@ -306,6 +308,10 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	c.loadLastUpdate()
 	c.UpdateFinished(ctx)
+	if err := c.startAnalytics(ctx); err != nil {
+		// Apps are served either way; only analytics waits.
+		c.log.Error("start analytics", "err", err)
+	}
 	c.wg.Add(6)
 	go c.watchRuntime(events)
 	go c.checkDomains()

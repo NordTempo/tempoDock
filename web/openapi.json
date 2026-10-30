@@ -374,6 +374,43 @@
         ],
         "type": "object"
       },
+      "AnalyticsStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "events": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "server": {
+            "type": "string"
+          },
+          "server_online": {
+            "type": "boolean"
+          },
+          "store_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "store_running": {
+            "type": "boolean"
+          },
+          "store_version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "server",
+          "server_online",
+          "store_running",
+          "events",
+          "store_bytes"
+        ],
+        "type": "object"
+      },
       "AppliedChanges": {
         "additionalProperties": false,
         "properties": {
@@ -6352,6 +6389,19 @@
         ],
         "type": "object"
       },
+      "SetAnalyticsServerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "server": {
+            "description": "The server the analytics store runs on; empty for the control plane's own",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "type": "object"
+      },
       "SetMemberRoleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8757,6 +8807,186 @@
         "summary": "Resolve an alert",
         "tags": [
           "alerts"
+        ]
+      }
+    },
+    "/api/v1/analytics": {
+      "get": {
+        "description": "Whether analytics is on, which server runs the store, and whether the store answers (asked now). Operators only.",
+        "operationId": "get-analytics",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Show Dock Analytics' state",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/server": {
+      "put": {
+        "description": "Runs the analytics store on the named server (empty: the control plane's own) and turns analytics on. Every server keeps its events in its spool until the store has them. A store on another server stops; its data stays on that server's volume, and the new store starts empty. Operators only.",
+        "operationId": "set-analytics-server",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAnalyticsServerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Choose the analytics server",
+        "tags": [
+          "analytics"
         ]
       }
     },

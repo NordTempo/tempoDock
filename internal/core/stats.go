@@ -304,6 +304,7 @@ func untilNextMinute(now time.Time) time.Duration {
 // publishes them as usage events: one per server (operators only) and one per
 // environment with its services.
 func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
+	c.rotateSalts(ctx, now)
 	servers, err := c.store.ListServers(ctx)
 	if err != nil {
 		c.log.Warn("stats: list servers", "err", err)

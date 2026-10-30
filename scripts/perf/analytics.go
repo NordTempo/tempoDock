@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/NordTempo/tempoDock/internal/analytics/ingest"
 )
 
 // Budgets of Dock Analytics' store (ADR 0037), run as the container runs
@@ -33,6 +35,8 @@ const (
 	analyticsIngestBudget = 5000
 	// analyticsPeakBudget is the container's memory limit.
 	analyticsPeakBudget = 512 << 20
+	// analyticsScriptBudget is the browser script, gzipped as served.
+	analyticsScriptBudget = 2 << 10
 )
 
 // analyticsResult is one line of `dock-analytics bench -json`.
@@ -48,6 +52,8 @@ type analyticsResult struct {
 // memory of all that.
 func checkAnalytics(o options, t *table) error {
 	const name = "analytics idle"
+	n := ingest.GzippedScriptSize()
+	t.within("analytics script (gzip)", kb(int64(n)), "≤ "+kb(analyticsScriptBudget), n <= analyticsScriptBudget)
 	if runtime.GOOS != "linux" {
 		t.add(name, "needs /proc (Linux)", "", warn)
 		return nil

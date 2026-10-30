@@ -59,10 +59,16 @@ func checkDaemon(o options, t *table) error {
 	}
 	defer d.stop()
 
-	// Let start-up work (migrations, reconcile, first GC) finish.
-	time.Sleep(3 * time.Second)
+	// Analytics on (ADR 0037): the store runs and every spool is tailed,
+	// which must cost nothing while no events arrive.
+	if err := d.call(http.MethodPut, "/analytics/server", map[string]string{"server": ""}, nil); err != nil {
+		return fmt.Errorf("turn analytics on: %w", err)
+	}
+	// Let start-up work (migrations, reconcile, starting the analytics
+	// store and its forwarder, the GC cycles they bring) finish.
+	time.Sleep(10 * time.Second)
 	betweenTicks(o.idle)
-	if err := d.idle(t, "daemon idle", o.idle, dockIdle(0)); err != nil {
+	if err := d.idle(t, "daemon idle, analytics on", o.idle, dockIdle(0)); err != nil {
 		return err
 	}
 

@@ -47,6 +47,20 @@ type AlertNotice struct {
 	NotifiedAt int64
 }
 
+type AnalyticsSalt struct {
+	Day  int64
+	Salt []byte
+}
+
+type AnalyticsSetting struct {
+	ID        int64
+	ServerID  *int64
+	Token     []byte
+	Enabled   bool
+	UpdatedBy string
+	UpdatedAt time.Time
+}
+
 type AuditDetail struct {
 	ID         int64
 	Sql        string

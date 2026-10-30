@@ -440,6 +440,9 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 	if srv.Local {
 		return invalid("server %s runs the control plane and can't be removed", srv.Name)
 	}
+	if st, err := c.store.GetAnalyticsSettings(ctx); err == nil && st.ServerID != nil && *st.ServerID == srv.ID {
+		return conflict("server %s runs the analytics store; move it first with `dock analytics server <another server>`", srv.Name)
+	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		// Dock deletes the tunnel it made for it (ADR 0036); the row
 		// outlives the server until then. Its domains went with their
