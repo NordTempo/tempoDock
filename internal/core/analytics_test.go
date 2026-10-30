@@ -13,6 +13,15 @@ func pageview(v int) []byte {
 	return fmt.Appendf(nil, `{"t":1798000000000,"s":3,"sv":40,"rl":981,"h":"shop.example.com","k":1,"p":"/","v":%d}`, v)
 }
 
+// storeEvents counts the fake analytics store's events; 0 until the
+// store has started, which happens in the background.
+func storeEvents(h *harness) int {
+	if s := h.rt.AnalyticsStore(); s != nil {
+		return len(s.Events())
+	}
+	return 0
+}
+
 func TestAnalyticsForwardsTheSpool(t *testing.T) {
 	h := newHarness(t)
 	// Events wait in the spool before analytics is even on.
@@ -25,12 +34,12 @@ func TestAnalyticsForwardsTheSpool(t *testing.T) {
 	if spec == nil || len(spec.Token) < 32 || spec.MemoryBytes != 512<<20 {
 		t.Fatalf("store spec = %+v", spec)
 	}
-	eventually(t, "the store to have the spool's events", func() bool { return len(h.rt.AnalyticsStore().Events()) == 2 })
+	eventually(t, "the store to have the spool's events", func() bool { return storeEvents(h) == 2 })
 	eventually(t, "the spool to be acknowledged", func() bool { return h.rt.SpoolAcked() == 2 })
 
 	// Live: an append reaches the store without anything polling.
 	h.rt.AppendSpool(pageview(3))
-	eventually(t, "a live event", func() bool { return len(h.rt.AnalyticsStore().Events()) == 3 })
+	eventually(t, "a live event", func() bool { return storeEvents(h) == 3 })
 
 	st, err := h.c.AnalyticsStatus(h.ctx, testSystem)
 	if err != nil || !st.Enabled || !st.StoreRunning || st.Events != 3 || st.Server != h.c.local.Name {
