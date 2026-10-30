@@ -198,7 +198,7 @@ func runPlan(ctx context.Context, in planInput) (planResult, error) {
 		return planResult{}, fmt.Errorf("generating the build plan took longer than %s; the source may contain symlink loops", planTimeout)
 	case ctx.Err() != nil:
 		return planResult{}, context.Cause(ctx)
-	case err != nil && strings.Contains(stderr.String(), "out of memory"):
+	case err != nil && outOfMemory(stderr.String()):
 		return planResult{}, fmt.Errorf("generating the build plan ran out of memory (%d MB); the source may contain symlink loops", planMemory>>20)
 	case err != nil:
 		return planResult{}, fmt.Errorf("generate build plan: %w: %s", err, strings.TrimSpace(stderr.String()))
@@ -208,6 +208,14 @@ func runPlan(ctx context.Context, in planInput) (planResult, error) {
 		return planResult{}, fmt.Errorf("generate build plan: %w", err)
 	}
 	return res, nil
+}
+
+// outOfMemory reports whether a Go process's crash output says it hit its
+// memory cap: "out of memory" when the heap can't grow, "cannot allocate
+// memory" when the address-space limit (limitMemory) refuses a mapping
+// first, which happens on some kernels and machines.
+func outOfMemory(stderr string) bool {
+	return strings.Contains(stderr, "out of memory") || strings.Contains(stderr, "cannot allocate memory")
 }
 
 // headWriter keeps the first max bytes written to it and drops the rest.
