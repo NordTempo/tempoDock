@@ -28,7 +28,7 @@ a follow-up of its restic backups.
 | Archive | One tar, gzipped as a file: `manifest.json` first, `config.toml` second, then `data/` (the database as a `VACUUM INTO` snapshot, the keys, build logs) and, on request, `registry/`. Left out: the live database and its WAL, `uploads/`, `builds/work/`, Railpack's cache, dot files, a node's own key and link. Files 0600 and directories 0700, inside the archive and wherever it is written or unpacked (`internal/cpbackup`) |
 | Snapshot | SQLite's `VACUUM INTO` from a connection that runs no migrations: one read transaction, so writers go on and the copy is consistent; checked with `quick_check` before it is used |
 | `dock admin backup` | On the control plane, as root or the dock user, while dock runs. `-o FILE` (default `./dock-backup-<host>-<time>.tar.gz`), created 0600 as `FILE.partial` and renamed when complete, never over an existing file; `-o -` streams it (refusing a terminal). It says what the archive holds |
-| Registry | Left out by default: images can be built or pushed again, and the storage can be many GB. `--include-registry` (root) adds it, so rollbacks and promotions of old releases work right after a move |
+| Registry | Left out by default: images can be built or pushed again, and the storage can be many GB. `--include-registry` (root) adds it, so rollbacks and promotions of old releases work right after a move. Not needed with the images in a bucket (amendment below) |
 | Scheduled | Daily at the install's hour, into the 0019 repository with its retention, as the restic snapshot tagged `dock-control-plane` holding `/dock-control-plane.tar`. The daemon streams the archive into the job's stdin; only the SQLite snapshot touches the disk. Never the registry. Failure: audit, alert `backup:control-plane`, `dock backup status` |
 | Restore | `install.sh --restore ARCHIVE` on a fresh server installs everything and runs `dock admin restore`, which unpacks into an empty data dir, checks the database, gives the files to `dock` (and `dock-registry`), then dock starts with the same identity |
 | Two shapes | Default: this server **replaces** the old one; environments placed on the old server are here now, to redeploy. `--old-server-becomes-node`: the old server **keeps its apps** and joins as a node under its name |
@@ -164,8 +164,20 @@ protocol change. A server that died and is restored elsewhere without
 - Archives hold every secret. They are written 0600 and every command that
   writes one says so; storing them encrypted is the operator's job.
 - Without `--include-registry`, rollbacks and promotions of releases built
-  before the move need their images built or pushed again.
+  before the move need their images built or pushed again, unless the
+  registry keeps them in a bucket ([0034](0034-registry-object-storage.md)).
 - Certificates (`/var/lib/dock-caddy`) aren't moved; Caddy issues new ones
   on demand.
 - One new migration (0021), one optional runtime field (`JobSpec.Stdin`),
   one exit code (9, `moved`), one CLI exit name.
+
+## Amendment (2026-10-30): registry in a bucket
+
+With the registry's images in an S3-compatible bucket
+([0034](0034-registry-object-storage.md)), `--include-registry` isn't
+needed: the restored database names the bucket, `install.sh --restore`
+writes the new registry's config for it, and rollbacks and promotions of
+old releases work from the first minute. The flag then archives only the
+(empty) storage dir. The old server's registry must not run on the same
+bucket once the new one does: a move retires it, and
+`--old-server-becomes-node` removes its container.

@@ -188,7 +188,8 @@ control plane's own binary over the link and restarts.
 **Where.** Distribution v3 (`registry:3`, Apache-2.0) on Hetzner, installed and
 capped like BuildKit (never deployed through the platform), bound to
 `127.0.0.1:5000` and published by Hetzner's Caddy as `registry.<cp-domain>`.
-Storage is a local volume (S3 later).
+Storage is a local volume, or an S3-compatible bucket since
+[0034](0034-registry-object-storage.md).
 
 **Auth.** Distribution's `token` auth with the control plane as the issuer
 (its signing key lives in the data dir). No long-lived registry credentials
@@ -444,3 +445,11 @@ agent; each has a focused test.
 Still open: `dock server add` prints the install command with the join
 token in an environment assignment on `sudo`'s command line. The token
 works once and only for an hour, and the window ends when the node joins.
+
+## Amendment (2026-10-30): images in object storage
+
+[0034](0034-registry-object-storage.md) lets the registry keep its images
+in an S3-compatible bucket (a storage connection) instead of the control
+plane's disk, and moves them either way with `dock registry migrate`.
+Pulls still go through the registry (`redirect: disable`), so the node
+link's registry proxy and the per-call tokens above are unchanged.

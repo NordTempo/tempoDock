@@ -132,3 +132,31 @@ Known limits found in the spike:
   therefore drain the old container for longer than that before stopping it.
 - Railpack downloads a 150 MB version-resolver binary to `/tmp/railpack` on
   the first zero-config build.
+
+## Measured: registry storage (ADR 0034)
+
+`scripts/registry-spike.sh` on the development VM (Debian 13, 8 vCPU,
+32 GB RAM, Docker 29), 2026-10-30. No real bucket was available, so the
+bucket is MinIO in a container on the same machine: these numbers show
+the registry's S3 driver overhead, not a network to a provider. Saile
+measures Hetzner Object Storage next with the same script (`S3_*`
+variables), from the Hetzner server and from the homelab.
+
+The image is `node:24-slim` plus 200 MB of random data (281 MB pushed);
+the one-layer change adds a few bytes. Pushes are `docker push`; pulls
+fetch the manifest's blobs over the registry API with curl, as a server
+without them would (Docker's local cache otherwise hides the registry).
+Median of three runs:
+
+| Registry storage | Push 281 MB | Pull 281 MB | Push one-layer change | Pull one-layer change |
+|---|---|---|---|---|
+| Local disk | 0.5 s | 0.15 s | 0.16 s | 0.01 s |
+| S3 (MinIO, same machine) | 1.2 s | 0.20 s | 0.12 s | 0.02 s |
+
+- Pushes into a bucket cost about 0.7 s more per 281 MB here: the driver
+  writes each layer in chunks and moves it into place with a copy at the
+  end. Pulls stay close to the disk, since every pull goes through the
+  registry either way (`redirect: disable`).
+- A one-layer deploy fetches one small blob and the manifest: well under
+  a second either way. Against a provider, expect a round trip per blob
+  on top, a second or two per deploy.
