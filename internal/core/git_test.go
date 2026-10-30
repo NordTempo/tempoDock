@@ -405,10 +405,14 @@ func TestGitQueuedPushSurvivesRestart(t *testing.T) {
 	}
 	h.crash() // release 2 is interrupted; the push stays queued
 	hold()
-	rels := h.waitReleases(web, 3)
-	if r := h.wait(web, rels[0].Number); r.Status != apitypes.ReleaseActive || r.Commit == nil || r.Commit.SHA != shaB {
-		t.Fatalf("release after restart: %s %+v", r.Status, r.Commit)
-	}
+	// The crashed daemon's goroutines still run here (a real one is gone,
+	// and the data dir's lock keeps two from running), so it may deploy
+	// the push too: what matters is that it ends up active.
+	eventually(t, "the queued push to deploy after the restart", func() bool {
+		rels, err := h.c.ListReleases(h.ctx, testSystem, web, 100)
+		return err == nil && len(rels) > 0 && rels[0].Status == apitypes.ReleaseActive &&
+			rels[0].Commit != nil && rels[0].Commit.SHA == shaB
+	})
 }
 
 // Manual deploys resolve the branch head on GitHub; a missing directory
