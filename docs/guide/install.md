@@ -176,6 +176,7 @@ running).
 | `[caddy] https_port` | `443` | |
 | `[caddy] acme_email` | empty | Contact email for the certificate authority |
 | `[caddy] disable_tls` | `false` | Serve every route over plain HTTP |
+| `[caddy] tunnel_port` | `7075` | Where a direct server's Caddy also serves its Cloudflare tunnel, on `127.0.0.1`, when Dock runs one next to the public IP ([Tunnels managed by Dock](#tunnels-managed-by-dock)). Only domains added from Cloudflare go that way, and Caddy listens there only while there are some. `0` turns it off. Changing it after a tunnel exists also needs the tunnel's route in Cloudflare changed |
 | `[caddy] traffic_listen` | `127.0.0.1:7074` | Loopback UDP address where Caddy sends the access log of service domains, counted for [traffic statistics](../decisions/0033-traffic-statistics.md). Must be a loopback IP; empty turns counting off |
 | `[buildkit] enabled` | `true` | This server builds images. `false`: source deploys fail; deploy images instead |
 | `[buildkit] image` | `moby/buildkit:v0.34.1@sha256:9936…` | BuildKit image, pinned by digest |
@@ -407,10 +408,18 @@ never points DNS at an IP and makes no wildcard record.
 5. **Domains:** `dock domain add shop.example-apps.dev -s web --cloudflare`
    (in the UI, Add domain → from Cloudflare). Dock routes the hostname
    through the server's tunnel and creates its proxied CNAME; both go
-   when the domain is removed or the service archived. The server must be
-   in tunnel mode. A name that already has a record Dock didn't make is
-   refused. Generated domains under a base domain in a connected zone get
-   the same.
+   when the domain is removed or the service archived. A name that
+   already has a record Dock didn't make is refused. Generated domains
+   under a base domain in a connected zone, on a tunnel server, get the
+   same.
+
+**A direct server can have both.** On a server with a public IP (like a
+VPS), adding a domain from Cloudflare has Dock create a tunnel there too:
+`cloudflared` runs next to Caddy and reaches it on `127.0.0.1:7075`
+(`[caddy] tunnel_port`). Domains you type keep their A records and
+certificates on the public IP; domains from Cloudflare are served only
+through the tunnel, never on the IP. Nothing changes for existing
+domains, and no port opens.
 
 A server that already runs a tunnel set up by hand (above) needs no step
 of its own: the first domain from Cloudflare (or `dock server tunnel

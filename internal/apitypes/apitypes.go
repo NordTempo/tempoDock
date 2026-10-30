@@ -680,7 +680,8 @@ type AddDomainRequest struct {
 	// Cloudflare adds a hostname in a zone a Cloudflare connection
 	// manages and has Dock set up all it needs: a route through the
 	// server's tunnel (created or adopted if Dock runs none) and its
-	// proxied CNAME. The server must be in tunnel mode (ADR 0036).
+	// proxied CNAME. On a direct server the tunnel serves such domains next
+	// to the public IP (ADR 0036).
 	Cloudflare bool `json:"cloudflare,omitempty"`
 }
 
@@ -950,6 +951,10 @@ type Server struct {
 	// Tunnel is the Cloudflare tunnel Dock manages for it (ADR 0036);
 	// unset when it manages none.
 	Tunnel *ServerTunnel `json:"tunnel,omitempty"`
+	// TunnelPort is the port on 127.0.0.1 its cloudflared would forward
+	// to; 0 when it can't take a tunnel now (a direct server without a
+	// tunnel listener, or a remote one that is offline).
+	TunnelPort int `json:"tunnel_port"`
 }
 
 // EffectiveLimits are the limits a service's releases get.

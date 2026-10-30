@@ -90,7 +90,7 @@ function ServerPage() {
       <StatusSentence detail={detail} />
 
       <LinkSection server={server} />
-      {(server.ingress === "cloudflare_tunnel" || server.tunnel) && (
+      {(server.tunnel || server.tunnel_port > 0) && (
         <TunnelSection server={server} />
       )}
 

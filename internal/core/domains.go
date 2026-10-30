@@ -81,7 +81,7 @@ func (c *Core) domainsOf(ctx context.Context, ss svcScope) ([]apitypes.Domain, e
 	out := make([]apitypes.Domain, 0, len(rows))
 	for _, d := range rows {
 		dom := c.toDomain(ss, d, rows, ing)
-		dom.DNS = c.domainDNS(byDomain[d.ID])
+		c.withRoute(&dom, byDomain[d.ID])
 		out = append(out, dom)
 	}
 	return out, nil
@@ -271,7 +271,7 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 	}
 	out.Domain = c.toDomain(ss, d, rows, ing)
 	if r, err := c.store.GetCloudflareRecord(ctx, host); err == nil {
-		out.Domain.DNS = c.domainDNS(&r)
+		c.withRoute(&out.Domain, &r)
 	}
 	c.publish(ss, apitypes.Event{Type: apitypes.EventDomain, Domain: &out.Domain})
 	return out, nil
@@ -340,7 +340,17 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	return ss.svc.ArchivedAt == nil && ss.env.ServerID == c.local.ID, nil
+	if ss.svc.ArchivedAt != nil || ss.env.ServerID != c.local.ID {
+		return false, nil
+	}
+	// Served to the Cloudflare tunnel only: Cloudflare's edge has its
+	// certificate (ADR 0036).
+	if r, err := c.store.GetCloudflareRecord(ctx, host); err == nil && r.Want == cfPresent {
+		return false, nil
+	} else if err != nil && !store.IsNotFound(err) {
+		return false, err
+	}
+	return true, nil
 }
 
 // toDomain converts a domain served by a server with ingress ing;
@@ -506,6 +516,11 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 		return
 	}
 	check, err := c.runtime(ss.env.ServerID).CheckDomain(ctx, d.Hostname)
+	// A domain Dock routes through the server's tunnel (ADR 0036).
+	var route *store.CloudflareRecord
+	if r, rerr := c.store.GetCloudflareRecord(ctx, d.Hostname); rerr == nil && r.Want == cfPresent {
+		route = &r
+	}
 	status := apitypes.DomainStatus(d.Status)
 	var reason string
 	switch {
@@ -517,7 +532,14 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 		*dnsOK = time.Time{}
 		status = apitypes.DomainWaitingForDNS
 		reason = check.Error
-		if reason == "" {
+		switch {
+		case route != nil && route.Status == "pending":
+			reason = "Dock is setting up its route through the server's Cloudflare tunnel"
+		case route != nil:
+			// The node's advice is for records to its IP; this one goes
+			// through the tunnel.
+			reason = fmt.Sprintf("%s doesn't reach this server through its Cloudflare tunnel yet; DNS can take a minute, else check that dock-cloudflared runs on it", d.Hostname)
+		case reason == "":
 			reason = fmt.Sprintf("%s resolves to %v; expected %v", d.Hostname, check.ResolvedIPs, check.ExpectedIPs)
 		}
 	case ing.plainHTTP || check.CertificateOK:
@@ -547,6 +569,7 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 	// Published after every check, so clients see when it last ran.
 	siblings, _ := c.store.ListDomainsByService(ctx, d.ServiceID)
 	dom := c.toDomain(ss, d, siblings, ing)
+	c.withRoute(&dom, route)
 	c.publish(ss, apitypes.Event{Type: apitypes.EventDomain, Domain: &dom})
 }
 

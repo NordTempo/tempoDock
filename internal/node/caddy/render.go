@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -320,21 +321,36 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		scheme, port = "http", opts.HTTPPort
 	}
 
-	var main []route
+	// main are the routes of the public listeners (all of them in tunnel
+	// mode); viaTunnel those of a direct server's tunnel listener, every
+	// route, TunnelOnly ones included.
+	// It exists only while some route is tunnel-only: a direct server that
+	// runs no tunnel gets no extra listener.
+	tunnelListener := !opts.tunnel() && opts.TunnelPort > 0 &&
+		slices.ContainsFunc(routes, func(r node.Route) bool { return r.TunnelOnly })
+	var main, viaTunnel []route
 	if opts.ServerMarker != "" {
 		main = append(main, markerRoute(opts.ServerMarker))
+		viaTunnel = append(viaTunnel, markerRoute(opts.ServerMarker))
 	}
 	var hostnames []string
 	var counted map[string][]string // hostname → access logger, for counted routes
 	for _, r := range routes {
-		hostnames = append(hostnames, r.Hostnames...)
+		public := !r.TunnelOnly || opts.tunnel()
+		if public {
+			hostnames = append(hostnames, r.Hostnames...)
+		}
 		h := handler{
 			Handler:          "reverse_proxy",
 			Upstreams:        []upstream{{Dial: r.Upstream}},
 			StreamCloseDelay: streamCloseDelay.String(),
 		}
+		// Through the tunnel, visitors are on https://, port 443, at
+		// Cloudflare's edge, whatever this server's own scheme and port.
+		ht := h
 		if r.RedirectTo != "" {
 			h = redirect(scheme + "://" + r.RedirectTo + portSuffix(scheme, port) + "{http.request.uri}")
+			ht = redirect("https://" + r.RedirectTo + "{http.request.uri}")
 		}
 		m := match{Host: r.Hostnames}
 		if r.PathPrefix != "" {
@@ -365,10 +381,15 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 				handle = append(handle, passwordAccess(r.Access)...)
 			}
 		}
-		handle = append(handle, h)
-		main = append(main, route{Match: []match{m}, Handle: handle, Terminal: true})
+		if public {
+			main = append(main, route{Match: []match{m}, Handle: append(slices.Clone(handle), h), Terminal: true})
+		}
+		if tunnelListener {
+			viaTunnel = append(viaTunnel, route{Match: []match{m}, Handle: append(slices.Clone(handle), ht), Terminal: true})
+		}
 	}
 	main = append(main, notFoundRoute())
+	viaTunnel = append(viaTunnel, notFoundRoute())
 
 	cfg := caddyConfig{
 		Admin: admin{
@@ -404,6 +425,7 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 			srv.ClientIPHeaders = []string{"CF-Connecting-IP", "X-Forwarded-For"}
 		}
 		cfg.Apps.HTTP.Servers = map[string]server{"http": srv}
+		addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, logs)
 		return json.Marshal(cfg)
 	}
 
@@ -435,6 +457,8 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		},
 	}
 
+	addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, logs)
+
 	iss := issuer{Module: "acme", Email: opts.ACMEEmail}
 	if opts.internalCA {
 		iss = issuer{Module: "internal"}
@@ -445,6 +469,26 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		OnDemand: onDemand{Permission: permission{Module: "http", Endpoint: opts.AskURL}},
 	}}
 	return json.Marshal(cfg)
+}
+
+// tunnelServer names a direct server's tunnel listener in Caddy's config.
+const tunnelServer = "tunnel"
+
+// addTunnelServer adds a direct server's tunnel listener (Options.
+// TunnelPort) when on is set: plain HTTP on loopback, where only the local
+// cloudflared connects, trusting its forwarding headers.
+func addTunnelServer(servers map[string]server, opts Options, on bool, routes []route, logs *serverLogs) {
+	if !on {
+		return
+	}
+	servers[tunnelServer] = server{
+		Listen:          []string{net.JoinHostPort(cmp.Or(opts.tunnelListenHost, "127.0.0.1"), strconv.Itoa(opts.TunnelPort))},
+		Routes:          routes,
+		AutomaticHTTPS:  automaticHTTPS{Disable: true},
+		Logs:            logs,
+		TrustedProxies:  &ipRanges{Source: "static", Ranges: loopback},
+		ClientIPHeaders: []string{"CF-Connecting-IP", "X-Forwarded-For"},
+	}
 }
 
 // trafficLogger names the access logger of counted routes; Caddy calls it

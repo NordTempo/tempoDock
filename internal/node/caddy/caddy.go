@@ -72,6 +72,13 @@ type Options struct {
 	HTTPPort int
 	// HTTPSPort is the TLS port. Direct mode only.
 	HTTPSPort int
+	// TunnelPort, in direct mode, adds a plain-HTTP listener on
+	// 127.0.0.1:<TunnelPort> for a Cloudflare tunnel the control plane
+	// runs on this server too (ADR 0036): every route, forwarding headers
+	// trusted from loopback, and routes with TunnelOnly only there. It is
+	// rendered while some route is TunnelOnly; 0 leaves it out. Tunnel
+	// mode uses HTTPPort.
+	TunnelPort int
 	// ACMEEmail is given to the certificate authority. Optional.
 	ACMEEmail string
 	// DisableTLS serves every route over plain HTTP on HTTPPort. Direct mode

@@ -55,8 +55,9 @@ const (
 	// protection to routes (ADR 0030); 6 added drain-traffic and the
 	// routes' traffic flag (ADR 0033); 7 added disk-usage (ADR 0035); 8
 	// added ensure-tunnel and the node's Caddy HTTP port in hello (ADR
-	// 0036).
-	Protocol = 8
+	// 0036); 9 added a direct server's tunnel listener: its port in hello
+	// and tunnel-only routes (ADR 0036).
+	Protocol = 9
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

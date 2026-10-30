@@ -765,3 +765,34 @@ func TestIntegrationTraffic(t *testing.T) {
 		t.Errorf("visitors = %d, %v; want 1 (the user agent reached the counter)", s.Estimate(), err)
 	}
 }
+
+// TestIntegrationTunnelListener runs a direct Caddy with a tunnel listener
+// (ADR 0036): the listener serves every route over plain HTTP, without
+// redirecting to HTTPS, while a tunnel-only route isn't on the public
+// listeners at all.
+func TestIntegrationTunnelListener(t *testing.T) {
+	ask := newAskServer(t, "a.test")
+	tunnelPort := freePorts(t, 1)[0]
+	tc := startCaddyWith(t, func(o *Options) {
+		o.AskURL, o.TunnelPort, o.ServerMarker = ask.url, tunnelPort, "srv-1"
+	})
+	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
+		{Hostnames: []string{"a.test"}, Upstream: backend(t, "A")},
+		{Hostnames: []string{"t.test"}, Upstream: backend(t, "T"), TunnelOnly: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viaTunnel := func(host string) string { return fmt.Sprintf("http://%s:%d/", host, tunnelPort) }
+	for host, want := range map[string]string{"a.test": "A", "t.test": "T"} {
+		if code, h, body := tc.get(t, viaTunnel(host)); code != 200 || body != want || h.Get(MarkerHeader) != "srv-1" {
+			t.Errorf("tunnel %s: got %d %q (marker %q), want 200 %q", host, code, body, h.Get(MarkerHeader), want)
+		}
+	}
+	if code, _, _ := tc.get(t, tc.url("http", "t.test", "/")); code != 404 {
+		t.Errorf("public http t.test: got %d, want 404 (tunnel only)", code)
+	}
+	if code, _, _ := tc.get(t, tc.url("http", "a.test", "/")); code != 308 {
+		t.Errorf("public http a.test: got %d, want the redirect to https", code)
+	}
+}

@@ -134,6 +134,7 @@ func caddyOptions(cfg config.Config, marker string) caddy.Options {
 		Ingress:        caddy.Ingress(cfg.Ingress.Mode),
 		HTTPPort:       cfg.Caddy.HTTPPort,
 		HTTPSPort:      cfg.Caddy.HTTPSPort,
+		TunnelPort:     cfg.Caddy.TunnelPort,
 		ACMEEmail:      cfg.Caddy.ACMEEmail,
 		DisableTLS:     cfg.Caddy.DisableTLS,
 		AskURL:         "http://" + cfg.InternalListen + askPath,

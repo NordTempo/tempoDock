@@ -467,3 +467,6 @@ control plane refuses a hello whose `tunnel_hostname` isn't a
 `<uuid>.cfargotunnel.com` or whose `public_ips` aren't addresses DNS can
 point at: section 6's facts end up in DNS. A tunnel the control plane
 runs is the server's `tunnel_hostname`, whatever the node reports.
+Protocol 9 lets a direct server run one next to its public IP: hello
+reports the port its cloudflared forwards to (`tunnel_port`), and
+routes may be `tunnel_only` (served on that listener alone).

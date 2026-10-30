@@ -46,6 +46,10 @@ type Facts struct {
 	// tunnel mode cloudflared forwards to 127.0.0.1 on it. 0 from nodes
 	// before protocol 8, which means 80.
 	HTTPPort int `json:"http_port,omitempty"`
+	// TunnelPort is the port on 127.0.0.1 the node's cloudflared forwards
+	// to: http_port in tunnel mode, the tunnel listener in direct mode
+	// (protocol 9; 0 in direct mode before it: no tunnel there).
+	TunnelPort int `json:"tunnel_port,omitempty"`
 	// BaseDomain is the node config's base_domain (BASE_DOMAIN at install).
 	// The control plane takes it when the server joins without one; after
 	// that `dock server update --base-domain` decides.
@@ -487,6 +491,9 @@ type wireRoute struct {
 	// Traffic is new in protocol 6 (TrafficProtocol); older nodes don't
 	// count.
 	Traffic bool `json:"traffic,omitempty"`
+	// TunnelOnly is new in protocol 9 (TunnelListenerProtocol); routes
+	// with it aren't sent to older nodes at all.
+	TunnelOnly bool `json:"tunnel_only,omitempty"`
 }
 
 // wireAccess is node.Access; the key travels as base64.
@@ -500,7 +507,7 @@ type wireAccess struct {
 func toWireRoutes(rs []node.Route) []wireRoute {
 	out := make([]wireRoute, len(rs))
 	for i, r := range rs {
-		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic}
+		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic, TunnelOnly: r.TunnelOnly}
 		if a := r.Access; a != nil {
 			out[i].Access = &wireAccess{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
@@ -511,7 +518,7 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 func fromWireRoutes(ws []wireRoute) []node.Route {
 	out := make([]node.Route, len(ws))
 	for i, w := range ws {
-		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic}
+		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic, TunnelOnly: w.TunnelOnly}
 		if a := w.Access; a != nil {
 			out[i].Access = &node.Access{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}

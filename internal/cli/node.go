@@ -242,6 +242,7 @@ func nodeFacts(ctx context.Context, cfg config.Config) remote.Facts {
 		PlainHTTP:  cfg.Caddy.DisableTLS && cfg.Ingress.Mode == config.IngressDirect,
 		BaseDomain: strings.TrimPrefix(cfg.BaseDomain, "*."),
 		HTTPPort:   cfg.Caddy.HTTPPort,
+		TunnelPort: cfg.CloudflaredPort(),
 	}
 	if cfg.Ingress.Mode == config.IngressCloudflareTunnel {
 		f.TunnelHostname = cfg.Ingress.TunnelHostname

@@ -282,10 +282,11 @@ func hasRule(rules []cloudflare.IngressRule, host string) bool {
 
 // TestCloudflareDomainRefused refuses a name Cloudflare already has a
 // record for that Dock didn't make, a name outside the connected zones,
-// and a server that serves on its public IP: Dock never points DNS at an
-// IP. Nothing is added then.
+// and a direct server without a tunnel listener. Nothing is added then.
 func TestCloudflareDomainRefused(t *testing.T) {
 	p, cf := cfPool(t, "tempo.run")
+	p.opts.Config.Caddy.TunnelPort = 0 // the control plane's server has no tunnel listener
+	p.restart()
 	cf.AddRecord("tempo.run", cloudflare.Record{Type: "A", Name: "www.tempo.run", Content: "198.51.100.1"})
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
 	if err := p.fromCloudflare(web, "www.tempo.run"); CodeOf(err) != apitypes.CodeHostnameTaken || !strings.Contains(err.Error(), "198.51.100.1") {
@@ -295,7 +296,7 @@ func TestCloudflareDomainRefused(t *testing.T) {
 		t.Fatalf("name outside the zones: %v", err)
 	}
 	direct := p.createService("production", "api", apitypes.CreateServiceRequest{})
-	if err := p.fromCloudflare(direct, "api.tempo.run"); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "public IP") {
+	if err := p.fromCloudflare(direct, "api.tempo.run"); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "tunnel_port") {
 		t.Fatalf("direct server: %v", err)
 	}
 	if doms, _ := p.c.ListDomains(p.ctx, testSystem, web); len(doms) != 0 {
@@ -404,4 +405,50 @@ func TestCloudflareRemovedWhileCreating(t *testing.T) {
 		list, _ := p.c.ListCloudflareRecords(p.ctx, testSystem)
 		return len(list) == 0 && len(cf.Named("shop.tempo.run")) == 0
 	})
+}
+
+// TestCloudflareDirectServerTunnel serves a direct server's domains both
+// ways (ADR 0036): one added from Cloudflare goes through a tunnel Dock
+// creates there, routed to the tunnel listener only and never given a
+// certificate of ours, while a typed one stays on the public IP.
+func TestCloudflareDirectServerTunnel(t *testing.T) {
+	p, cf := cfPool(t, "tempo.run")
+	api := p.createService("production", "api", apitypes.CreateServiceRequest{})
+	p.deploy(api, "api:1")
+	if err := p.fromCloudflare(api, "api.tempo.run"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.AddDomain(p.ctx, testSystem, api, apitypes.AddDomainRequest{Hostname: "api.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	r := p.record("api.tempo.run")
+	if r.Status != apitypes.DNSReady {
+		t.Fatalf("record = %+v", r)
+	}
+	waitFor(t, func() bool { return p.rt.Tunnel() != nil })
+	cf.Mu.Lock()
+	var routes []cloudflare.IngressRule
+	for _, tun := range cf.Tunnels {
+		if tun.Hostname() == r.Tunnel && tun.Config != nil {
+			routes = tun.Config.Ingress
+		}
+	}
+	cf.Mu.Unlock()
+	if len(routes) != 1 || routes[0].Service != "http://127.0.0.1:7075" {
+		t.Fatalf("tunnel routes = %+v; want everything to the tunnel listener", routes)
+	}
+	for host, want := range map[string]bool{"api.tempo.run": false, "api.example.com": true} {
+		if ok, err := p.c.AllowCertificate(p.ctx, host); err != nil || ok != want {
+			t.Errorf("certificate for %s: %v, %v", host, ok, err)
+		}
+	}
+	tunnelOnly := map[string]bool{}
+	for _, rt := range p.rt.Routes() {
+		for _, h := range rt.Hostnames {
+			tunnelOnly[h] = rt.TunnelOnly
+		}
+	}
+	if only, ok := tunnelOnly["api.tempo.run"]; !ok || !only || tunnelOnly["api.example.com"] {
+		t.Fatalf("tunnel-only routes = %v", tunnelOnly)
+	}
 }
