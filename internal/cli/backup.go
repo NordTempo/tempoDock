@@ -25,11 +25,12 @@ func newBackupCmd(g *globals) *cobra.Command {
 		Short: "Back up and restore stateful services",
 		Long: `Every service with a volume is backed up daily with restic: template databases
 with their own tool (pg_dump, Redis snapshots), other volumes file by file.
-Without a repository (dock backup configure) backups stay on each server,
-not off-box. Restores create a new service; the live one is never touched.`,
+Until they are moved to a bucket (dock backup move) backups stay on each
+server, not off-box. Restores create a new service; the live one is never
+touched.`,
 	})
 	cmd.AddCommand(newBackupListCmd(g), newBackupRunCmd(g), newBackupRestoreCmd(g),
-		newBackupScheduleCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g))
+		newBackupScheduleCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g), newBackupMoveCmd(g))
 	return cmd
 }
 
@@ -379,7 +380,9 @@ func newBackupStatusCmd(g *globals) *cobra.Command {
 
 func printBackupSettings(g *globals, set apitypes.BackupSettings) error {
 	repo := "local repository on each server (not off-box)"
-	if set.OffBox {
+	if set.Storage != "" {
+		repo = fmt.Sprintf("storage %s, folder %s (%s)", set.Storage, set.Path, set.Repository)
+	} else if set.OffBox {
 		repo = set.Repository
 	}
 	kv := []string{
@@ -398,10 +401,90 @@ func printBackupSettings(g *globals, set apitypes.BackupSettings) error {
 	if l := set.ControlPlane.Latest; l != nil && l.Status == apitypes.BackupFailed {
 		g.io.Warnf("The latest control plane backup failed: %s", l.Error)
 	}
+	if m := set.Move; m != nil {
+		switch {
+		case m.Running:
+			g.io.Warnf("Moving the backups to %s since %s; backups and restores wait for it.", m.To, ago(m.StartedAt))
+		case m.Error != "":
+			g.io.Warnf("Moving the backups to %s failed: %s", m.To, m.Error)
+		default:
+			g.io.Detail(fmt.Sprintf("Moved %s to %s %s.", plural(m.Moved, "backup"), m.To, ago(*m.FinishedAt)))
+		}
+		for _, s := range m.Sources {
+			if s.Error != "" {
+				g.io.Warnf("%s on %s: %s", s.Repository, s.Server, s.Error)
+			}
+		}
+	}
+	if len(set.Repositories) > 0 {
+		t := g.io.Table("repository", "server", "snapshots", "size", "new backups")
+		for _, r := range set.Repositories {
+			cur := "-"
+			if r.Current {
+				cur = "here"
+			}
+			t.Row(r.Repository, dash(r.Server), strconv.Itoa(r.Snapshots), bytesize(r.Bytes), cur)
+		}
+		if err := t.Flush(); err != nil {
+			return err
+		}
+	}
 	if !set.OffBox {
-		g.io.Warnf("Backups are not off-box: losing a server loses its backups. Configure S3 with `dock backup configure --repository s3:...`.")
+		g.io.Warnf("Backups are not off-box: losing a server loses its backups. Add a bucket with `dock storage add`, then `dock backup move --storage <name>`.")
 	}
 	return nil
+}
+
+// newBackupMoveCmd is `dock backup move`.
+func newBackupMoveCmd(g *globals) *cobra.Command {
+	var req apitypes.MoveBackupsRequest
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "move --storage <name> [--path <folder>]",
+		Short: "Move the backups to a storage connection's bucket (admin)",
+		Long: `Copy every repository holding backups (each server's local one, or the
+current bucket's) into a folder of the storage connection's bucket, check the
+copy, point every backup at its copy so it stays restorable, make the bucket
+where new backups go, and empty the old repositories. It runs in the
+background; ` + "`dock backup status`" + ` shows how it goes. Backups and restores
+started meanwhile are refused; scheduled ones wait. A failure before the
+switch changes nothing.
+
+From one bucket to another, both connections need the same endpoint and
+keys: restic copies with one set.`,
+		Example: `  dock storage add hetzner-backups ...     # once
+  dock backup move --storage hetzner-backups
+  dock backup move --storage hetzner-backups --path dock/backups`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if req.Storage == "" {
+				return usageError("--storage is required", "Name the storage connection: `dock storage` lists them.")
+			}
+			if !yes {
+				if err := g.io.Confirm(fmt.Sprintf("Move the backups to %s? The old repositories are emptied once the copy is checked.", req.Storage), "yes"); err != nil {
+					return err
+				}
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			set, err := send[apitypes.BackupSettings](cmd.Context(), s, http.MethodPost, apiPrefix+"/backup/move", req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(set, func() error {
+				g.io.Successf("Moving the backups to %s", req.Storage)
+				g.io.Detail("It finishes in the background; `dock backup status` shows the result.")
+				return nil
+			})
+		},
+	}
+	fs := cmd.Flags()
+	fs.StringVar(&req.Storage, "storage", "", "the storage connection")
+	fs.StringVar(&req.Path, "path", "", "folder in the bucket (default dock-backups)")
+	fs.BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
 }
 
 // controlPlaneText is the control plane backup's line in `dock backup
@@ -426,16 +509,13 @@ func newBackupConfigureCmd(g *globals) *cobra.Command {
 	var keepDaily, keepWeekly, keepMonthly, hour int
 	cmd := &cobra.Command{
 		Use:   "configure",
-		Short: "Set where backups go, retention and the default hour (admin)",
-		Long: `Set the install's backup repository (any S3-compatible store), its credentials,
-retention and the hour of daily backups. Flags left out stay as they are.
-The first configure prints the repository password: store it safely, since
-without it the backups can't be read after losing the server.`,
-		Example: `  printf %s "$SECRET" | dock backup configure --repository s3:https://s3.eu-central-1.amazonaws.com/my-bucket/dock \
-      --access-key-id AKIA... --secret-access-key-stdin
-  dock backup configure --keep-daily 14 --hour 2
-  dock backup configure --repository ""    # back to local repositories`,
-		Args: cobra.NoArgs,
+		Short: "Set backup retention and the default hour (admin)",
+		Long: `Set the install's backup retention and the hour of daily backups. Flags left
+out stay as they are. The first configure prints the repository password:
+store it safely, since without it the backups can't be read after losing
+the server. Where backups go is a storage connection: ` + "`dock backup move`" + `.`,
+		Example: `  dock backup configure --keep-daily 14 --hour 2`,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var req apitypes.ConfigureBackupRequest
 			fs := cmd.Flags()
@@ -496,5 +576,8 @@ without it the backups can't be read after losing the server.`,
 	fs.IntVar(&keepWeekly, "keep-weekly", 0, "weekly snapshots to keep per service")
 	fs.IntVar(&keepMonthly, "keep-monthly", 0, "monthly snapshots to keep per service")
 	fs.IntVar(&hour, "hour", 0, "hour of daily backups, 0-23 (the control plane's local time)")
+	for _, f := range []string{"repository", "access-key-id", "secret-access-key-stdin", "region"} {
+		_ = fs.MarkDeprecated(f, "buckets are storage connections: `dock storage add`, then `dock backup move --storage <name>`")
+	}
 	return cmd
 }

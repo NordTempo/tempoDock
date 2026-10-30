@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func TestBackupScript(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, w := range append(want,
-			"set -eu", "R=/dock-restic/restic", "$R init", `--tag "$DOCK_TAG"`, "--host dock", "--retry-lock 10m",
+			"set -eu", `R="/dock-restic/restic ${DOCK_RESTIC_OPTS:-}"`, "$R init", `--tag "$DOCK_TAG"`, "--host dock", "--retry-lock 10m",
 			`forget --quiet --retry-lock 10m --tag "$DOCK_TAG" --group-by tags --keep-daily "$DOCK_KEEP_DAILY"`, "--prune",
 			"echo "+SnapshotsMarker, `snapshots --json --retry-lock 10m --tag "$DOCK_TAG"`) {
 			if !strings.Contains(s, w) {
@@ -170,5 +171,64 @@ func TestNextDue(t *testing.T) {
 		if !got.Equal(at(c.want)) {
 			t.Errorf("%s: NextDue = %s, want %s", c.name, got, at(c.want))
 		}
+	}
+}
+
+// A repository URL splits into endpoint, bucket and folder, and builds
+// back the same; an endpoint without a scheme is https.
+func TestS3URL(t *testing.T) {
+	for u, want := range map[string][3]string{
+		"s3:https://hel1.your-objectstorage.com/backups/dock": {"https://hel1.your-objectstorage.com", "backups", "dock"},
+		"s3:http://127.0.0.1:9000/b":                          {"http://127.0.0.1:9000", "b", ""},
+		"s3:s3.amazonaws.com/b/a/b/":                          {"https://s3.amazonaws.com", "b", "a/b"},
+	} {
+		e, b, p, err := ParseS3URL(u)
+		if err != nil || [3]string{e, b, p} != want {
+			t.Errorf("ParseS3URL(%q) = %q %q %q, %v", u, e, b, p, err)
+		}
+	}
+	if u := S3URL("https://hel1.your-objectstorage.com/", "backups", "/dock/"); u != "s3:https://hel1.your-objectstorage.com/backups/dock" {
+		t.Errorf("S3URL = %q", u)
+	}
+	if _, _, _, err := ParseS3URL("s3:https://host"); err == nil {
+		t.Error("a URL without a bucket parsed")
+	}
+	for _, bad := range []string{"", "a//b", "../x", "a b"} {
+		if ValidPath(bad) == nil {
+			t.Errorf("ValidPath(%q) passed", bad)
+		}
+	}
+}
+
+// A move check's listing maps each copied snapshot's original to its new
+// ID; a snapshot that was a copy already keeps pointing at its first
+// original.
+func TestParseMoved(t *testing.T) {
+	out := "no errors were found\n" + MoveMarker + "\n" +
+		`[{"id":"new1","original":"old1","tags":["dock-s1"]},{"id":"new2","original":"first2"},{"id":"own3"}]` + "\n"
+	got, err := ParseMoved(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"old1": "new1", "first2": "new2", "own3": "own3"}
+	if !maps.Equal(got, want) {
+		t.Fatalf("ParseMoved = %v", got)
+	}
+	if _, err := ParseMoved("Fatal: wrong password"); err == nil {
+		t.Error("output without a listing parsed")
+	}
+}
+
+// Bucket addressing reaches restic as an option in DOCK_RESTIC_OPTS; a
+// local repository has none.
+func TestRepoEnvAddressing(t *testing.T) {
+	if env := (Repo{URL: "s3:https://e/b", PathStyle: true}).Env(); env["DOCK_RESTIC_OPTS"] != "-o s3.bucket-lookup=path" {
+		t.Errorf("path style: %q", env["DOCK_RESTIC_OPTS"])
+	}
+	if env := (Repo{URL: "s3:https://e/b"}).Env(); env["DOCK_RESTIC_OPTS"] != "-o s3.bucket-lookup=dns" {
+		t.Errorf("host style: %q", env["DOCK_RESTIC_OPTS"])
+	}
+	if env := (Repo{}).Env(); env["DOCK_RESTIC_OPTS"] != "" {
+		t.Errorf("local: %q", env["DOCK_RESTIC_OPTS"])
 	}
 }

@@ -45,6 +45,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0035](0035-server-disk-breakdown.md) | Where a server's disk goes | accepted |
 | [0036](0036-cloudflare-api.md) | Cloudflare tunnels, and domains through them, from Dock | accepted |
 | [0038](0038-own-tokens.md) | Tokens in organization settings, your own on your account | accepted |
+| [0039](0039-backups-on-storage-connections.md) | Backups on storage connections, and moving them | accepted |
 
 ## Template
 

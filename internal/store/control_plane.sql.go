@@ -126,6 +126,43 @@ func (q *Queries) GetControlPlaneBackup(ctx context.Context) (ControlPlaneBackup
 	return i, err
 }
 
+const moveControlPlaneSnapshot = `-- name: MoveControlPlaneSnapshot :exec
+UPDATE control_plane_backup SET repository = ?, snapshot_id = ? WHERE id = 1 AND repository = +? AND snapshot_id = +?
+`
+
+type MoveControlPlaneSnapshotParams struct {
+	Repository   string
+	SnapshotID   string
+	Repository_2 string
+	SnapshotID_2 string
+}
+
+// Points the control plane's latest backup at its copy in another
+// repository (a backup move).
+func (q *Queries) MoveControlPlaneSnapshot(ctx context.Context, arg MoveControlPlaneSnapshotParams) error {
+	_, err := q.exec(ctx, q.moveControlPlaneSnapshotStmt, moveControlPlaneSnapshot,
+		arg.Repository,
+		arg.SnapshotID,
+		arg.Repository_2,
+		arg.SnapshotID_2,
+	)
+	return err
+}
+
+const relabelControlPlaneRepository = `-- name: RelabelControlPlaneRepository :exec
+UPDATE control_plane_backup SET repository = ? WHERE id = 1 AND repository = +?
+`
+
+type RelabelControlPlaneRepositoryParams struct {
+	Repository   string
+	Repository_2 string
+}
+
+func (q *Queries) RelabelControlPlaneRepository(ctx context.Context, arg RelabelControlPlaneRepositoryParams) error {
+	_, err := q.exec(ctx, q.relabelControlPlaneRepositoryStmt, relabelControlPlaneRepository, arg.Repository, arg.Repository_2)
+	return err
+}
+
 const startControlPlaneBackup = `-- name: StartControlPlaneBackup :one
 INSERT INTO control_plane_backup (id, trigger, status, repository, created_by, started_at, scheduled_at)
 VALUES (1, ?1, 'running', ?2, ?3, ?4, ?5)

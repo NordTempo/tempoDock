@@ -33,3 +33,11 @@ DELETE FROM control_plane_backup WHERE status = 'running';
 UPDATE servers SET local = 0, key_fingerprint = NULL, next_key_fingerprint = NULL, revoked_at = ?
 WHERE local = 1
 RETURNING *;
+
+-- name: MoveControlPlaneSnapshot :exec
+-- Points the control plane's latest backup at its copy in another
+-- repository (a backup move).
+UPDATE control_plane_backup SET repository = ?, snapshot_id = ? WHERE id = 1 AND repository = +? AND snapshot_id = +?;
+
+-- name: RelabelControlPlaneRepository :exec
+UPDATE control_plane_backup SET repository = ? WHERE id = 1 AND repository = +?;

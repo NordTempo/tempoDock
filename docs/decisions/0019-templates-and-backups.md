@@ -168,3 +168,10 @@ volume of a generic service is still backed up from the restic image.
   `docker inspect` while it runs. Only root and the `docker` group can
   read it, and they can read the daemon's secrets key anyway; avoiding it
   needs a way to hand a job a secret file, a new runtime primitive.
+
+## Amendment (2026-10-30): storage connections
+
+Where backups go is a storage connection and a folder in its bucket, not
+a repository URL with its own keys, and moving them keeps every backup
+restorable ([0039](0039-backups-on-storage-connections.md)).
+

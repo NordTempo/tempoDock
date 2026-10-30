@@ -11,6 +11,7 @@ import {
   StateText,
   TitleRow,
 } from "../../ui/kit";
+import { BackupStorage } from "./BackupStorage";
 import { hourLabel } from "./backups";
 import {
   type BackupSettings,
@@ -28,33 +29,51 @@ import {
 export function BackupSettingsPage() {
   const settings = useBackupSettings();
   const run = useRunControlPlaneBackup();
+  const [moving, setMoving] = useState(false);
   const latest = settings.control_plane.latest;
+  const busy = settings.move?.running;
   return (
     <Page>
       <TitleRow
         title="Backups"
         context={
-          settings.off_box
-            ? `Off-box to ${settings.repository}`
-            : "Local repositories, one on each server"
+          busy
+            ? `Moving to ${settings.move?.to}`
+            : settings.storage
+              ? `Off-box in ${settings.storage}, folder ${settings.path}`
+              : settings.off_box
+                ? `Off-box to ${settings.repository}`
+                : "Local repositories, one on each server"
         }
         actions={
-          <Act
-            cli="dock backup run --control-plane"
-            disabled={run.isPending || latest?.status === "running"}
-            onClick={() => run.mutate()}
-          >
-            Back up the control plane now
-          </Act>
+          <>
+            {!moving && (
+              <Button disabled={busy} onClick={() => setMoving(true)}>
+                Move backups
+              </Button>
+            )}
+            <Act
+              cli="dock backup run --control-plane"
+              disabled={run.isPending || latest?.status === "running" || busy}
+              onClick={() => run.mutate()}
+            >
+              Back up the control plane now
+            </Act>
+          </>
         }
       />
       {!settings.off_box && (
         <p className="rounded-panel border border-warn-edge bg-warn-bg/60 px-3.5 py-3 text-warn-text">
           Backups stay on the server they were made on, so losing a server loses
-          its backups. Set an S3 repository below to send them off-box.
+          its backups. Move them to a bucket to send them off-box.
         </p>
       )}
       <ErrorText error={run.error} />
+      <BackupStorage
+        settings={settings}
+        moving={moving}
+        onMoved={() => setMoving(false)}
+      />
       <ControlPlane settings={settings} />
       <Settings settings={settings} />
       <Password />
@@ -137,16 +156,9 @@ function ControlPlane({ settings }: { settings: BackupSettings }) {
 
 const field = "field py-[7px]";
 
-/**
- * Repository, credentials, retention and hour in one form. Only changed
- * fields are sent; blank credentials keep the stored ones.
- */
+/** Retention and the hour in one form; only changed fields are sent. */
 function Settings({ settings }: { settings: BackupSettings }) {
   const configure = useConfigureBackups();
-  const [repository, setRepository] = useState(settings.repository);
-  const [keyId, setKeyId] = useState("");
-  const [secret, setSecret] = useState("");
-  const [region, setRegion] = useState("");
   const [keep, setKeep] = useState({
     daily: settings.keep_daily,
     weekly: settings.keep_weekly,
@@ -155,14 +167,7 @@ function Settings({ settings }: { settings: BackupSettings }) {
   const [hour, setHour] = useState(settings.hour);
   const [password, setPassword] = useState<string>();
 
-  const s3 = repository.trim() !== "";
   const changes: ConfigureBackup = {
-    ...(repository.trim() !== settings.repository && {
-      repository: repository.trim(),
-    }),
-    ...(s3 && keyId && { access_key_id: keyId }),
-    ...(s3 && secret && { secret_access_key: secret }),
-    ...(s3 && region && { region }),
     ...(keep.daily !== settings.keep_daily && { keep_daily: keep.daily }),
     ...(keep.weekly !== settings.keep_weekly && { keep_weekly: keep.weekly }),
     ...(keep.monthly !== settings.keep_monthly && {
@@ -176,9 +181,6 @@ function Settings({ settings }: { settings: BackupSettings }) {
     e.preventDefault();
     configure.mutate(changes, {
       onSuccess: (saved) => {
-        setKeyId("");
-        setSecret("");
-        setRegion("");
         if (saved.password) setPassword(saved.password);
       },
     });
@@ -208,59 +210,13 @@ function Settings({ settings }: { settings: BackupSettings }) {
           `changed by ${settings.updated_by} ${since(settings.updated_at)} ago`
         }
       >
-        Where and how long
+        How long
       </SectionHead>
       <form
         aria-label="Backup settings"
         className="flex max-w-[760px] flex-col gap-3.5"
         onSubmit={save}
       >
-        <label className="flex flex-col gap-1.5">
-          <span>
-            Repository{" "}
-            <span className="text-mut">empty keeps backups on each server</span>
-          </span>
-          <input
-            value={repository}
-            onChange={(e) => setRepository(e.target.value)}
-            placeholder="s3:https://s3.eu-central-1.amazonaws.com/bucket/dock"
-            className={`${field} font-mono`}
-          />
-        </label>
-        {s3 && (
-          <div className="flex flex-wrap gap-3">
-            <label className="flex flex-[1_1_180px] flex-col gap-1.5">
-              <span>Access key ID</span>
-              <input
-                value={keyId}
-                onChange={(e) => setKeyId(e.target.value)}
-                placeholder={settings.has_credentials ? "unchanged" : ""}
-                autoComplete="off"
-                className={`${field} font-mono`}
-              />
-            </label>
-            <label className="flex flex-[1_1_180px] flex-col gap-1.5">
-              <span>Secret access key</span>
-              <input
-                type="password"
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
-                placeholder={settings.has_credentials ? "unchanged" : ""}
-                autoComplete="new-password"
-                className={`${field} font-mono`}
-              />
-            </label>
-            <label className="flex flex-[1_1_120px] flex-col gap-1.5">
-              <span>Region</span>
-              <input
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                placeholder={settings.has_credentials ? "unchanged" : ""}
-                className={`${field} font-mono`}
-              />
-            </label>
-          </div>
-        )}
         <div className="flex flex-wrap gap-3">
           {count("Keep daily", "daily", 365)}
           {count("Keep weekly", "weekly", 520)}

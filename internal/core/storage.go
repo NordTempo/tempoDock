@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,13 +38,13 @@ func (c *Core) ListStorage(ctx context.Context, a Actor) ([]apitypes.Storage, er
 	if err != nil {
 		return nil, err
 	}
-	regID, err := c.registryStorageID(ctx)
+	uses, err := c.storageUses(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]apitypes.Storage, len(rows))
 	for i, r := range rows {
-		out[i] = toStorage(r, regID)
+		out[i] = toStorage(r, uses)
 	}
 	return out, nil
 }
@@ -101,14 +102,17 @@ func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apit
 	if err != nil {
 		return apitypes.Storage{}, err
 	}
-	regID, err := c.registryStorageID(ctx)
+	uses, err := c.storageUses(ctx)
 	if err != nil {
 		return apitypes.Storage{}, err
 	}
-	if c.registryMigrating(row.ID) {
-		return apitypes.Storage{}, conflict("the registry's images are moving to or from %s; change it once the migration finishes", name)
+	if c.registryMigrating(row.ID) || c.backupsMovingTo(row.ID) {
+		return apitypes.Storage{}, conflict("data is moving to or from %s; change it once the move finishes", name)
 	}
-	inUse := regID != nil && *regID == row.ID
+	// The registry follows new keys by restarting; backups read them on
+	// their next run. Neither can follow its data to another bucket.
+	inUse := slices.Contains(uses[row.ID], "registry")
+	usedBy := uses[row.ID]
 	// Keys keep every character but surrounding space: a secret may end
 	// in a slash, an endpoint loses its trailing one.
 	trim := func(v *string, cut string) *string {
@@ -125,8 +129,8 @@ func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apit
 	patch(&b.PathStyle, req.PathStyle)
 	patch(&b.AccessKeyID, trim(req.AccessKeyID, ""))
 	patch(&b.SecretAccessKey, trim(req.SecretAccessKey, ""))
-	if inUse && (b.Endpoint != old.Endpoint || b.Name != old.Name) {
-		return apitypes.Storage{}, conflict("the registry keeps its images in %s; move them with `dock registry migrate` before pointing it at another endpoint or bucket", name)
+	if len(usedBy) > 0 && (b.Endpoint != old.Endpoint || b.Name != old.Name) {
+		return apitypes.Storage{}, conflict("%s keeps its data in %s; move it elsewhere (`dock registry migrate`, `dock backup move`) before pointing it at another endpoint or bucket", strings.Join(usedBy, " and "), name)
 	}
 	newName := name
 	if req.Name != nil && *req.Name != name {
@@ -142,7 +146,7 @@ func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apit
 	}
 	changed := b != old
 	if !changed && newName == name {
-		return toStorage(row, regID), nil
+		return toStorage(row, uses), nil
 	}
 	keys := row.Credentials
 	if changed {
@@ -177,10 +181,10 @@ func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apit
 	c.audit(ctx, a.platform(), "storage.update", nil, nil, newName, strings.Join(did, "; "))
 	if changed && inUse && c.reg != nil {
 		if err := c.reg.UseStorage(ctx, &b); err != nil {
-			return toStorage(row, regID), fmt.Errorf("saved, but the registry didn't take the change (restarting the daemon retries): %w", err)
+			return toStorage(row, uses), fmt.Errorf("saved, but the registry didn't take the change (restarting the daemon retries): %w", err)
 		}
 	}
-	return toStorage(row, regID), nil
+	return toStorage(row, uses), nil
 }
 
 // RemoveStorage deletes a storage connection nothing uses. The bucket and
@@ -198,15 +202,18 @@ func (c *Core) RemoveStorage(ctx context.Context, a Actor, name string) error {
 	}
 	// Migrations first: one that commits after this check holds the
 	// setting the next check reads.
-	if c.registryMigrating(row.ID) {
-		return conflict("the registry's images are moving to or from %s; wait for the migration to finish", name)
+	if c.registryMigrating(row.ID) || c.backupsMovingTo(row.ID) {
+		return conflict("data is moving to or from %s; wait for the move to finish", name)
 	}
-	regID, err := c.registryStorageID(ctx)
+	uses, err := c.storageUses(ctx)
 	if err != nil {
 		return err
 	}
-	if regID != nil && *regID == row.ID {
+	switch {
+	case slices.Contains(uses[row.ID], "registry"):
 		return conflict("the registry keeps its images in %s; move them with `dock registry migrate --to local` (or to other storage) first", name)
+	case slices.Contains(uses[row.ID], "backups"):
+		return conflict("backups go to %s; move them to other storage with `dock backup move` first", name)
 	}
 	if err := c.store.DeleteStorageConnection(ctx, row.ID); err != nil {
 		return err
@@ -226,6 +233,15 @@ func (c *Core) storageByName(ctx context.Context, name string) (store.StorageCon
 	}
 	b, err := c.bucketOf(row)
 	return row, b, err
+}
+
+// storageByID loads the connection a setting points at.
+func (c *Core) storageByID(ctx context.Context, id int64) (store.StorageConnection, error) {
+	row, err := c.store.GetStorageConnectionByID(ctx, id)
+	if store.IsNotFound(err) {
+		return row, fmt.Errorf("storage connection %d is gone", id)
+	}
+	return row, err
 }
 
 // bucketOf is a connection's bucket with its keys opened.
@@ -290,13 +306,30 @@ func (c *Core) registryStorageID(ctx context.Context) (*int64, error) {
 
 // toStorage is a connection as the API shows it, with "registry" in
 // used_by when registryID is its ID. Keys stay out.
-func toStorage(r store.StorageConnection, registryID *int64) apitypes.Storage {
-	out := apitypes.Storage{
+func toStorage(r store.StorageConnection, uses map[int64][]string) apitypes.Storage {
+	return apitypes.Storage{
 		Name: r.Name, Endpoint: r.Endpoint, Region: r.Region, Bucket: r.Bucket, PathStyle: r.PathStyle,
-		UsedBy: []string{}, UpdatedAt: r.UpdatedAt, UpdatedBy: r.UpdatedBy,
+		UsedBy: append([]string{}, uses[r.ID]...), UpdatedAt: r.UpdatedAt, UpdatedBy: r.UpdatedBy,
 	}
-	if registryID != nil && *registryID == r.ID {
-		out.UsedBy = append(out.UsedBy, "registry")
+}
+
+// storageUses says what keeps data in each storage connection: "registry"
+// and "backups", by connection ID. Two reads, however many connections.
+func (c *Core) storageUses(ctx context.Context) (map[int64][]string, error) {
+	uses := map[int64][]string{}
+	regID, err := c.registryStorageID(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	if regID != nil {
+		uses[*regID] = append(uses[*regID], "registry")
+	}
+	set, err := c.store.GetBackupSettings(ctx)
+	if err != nil && !store.IsNotFound(err) {
+		return nil, err
+	}
+	if set.StorageID != nil {
+		uses[*set.StorageID] = append(uses[*set.StorageID], "backups")
+	}
+	return uses, nil
 }

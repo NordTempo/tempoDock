@@ -123,3 +123,12 @@ into a connection named after its bucket; `dock backup configure
 --storage NAME [--path P]` and the Backups page pick a connection;
 `backups.repository` keeps the derived URL, so the history and
 `markPruned` work as before.
+
+## Amendment (2026-10-30): backups follow
+
+The follow-up above is done in [0039](0039-backups-on-storage-connections.md):
+backups go to a storage connection and a folder, an old repository URL
+becomes a connection on start, and `dock backup move` moves the existing
+backups there and empties where they were. Moving between buckets needs
+the same endpoint and keys.
+

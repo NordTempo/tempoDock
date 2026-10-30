@@ -106,6 +106,8 @@ type BackupSetting struct {
 	Hour        int64
 	UpdatedAt   time.Time
 	UpdatedBy   string
+	StorageID   *int64
+	StoragePath string
 }
 
 type Changeset struct {

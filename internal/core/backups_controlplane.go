@@ -55,9 +55,14 @@ func (c *Core) startControlPlaneBackup(ctx context.Context, a Actor, trigger str
 		return store.ControlPlaneBackup{}, err
 	}
 	c.backups.mu.Lock()
-	busy := c.backups.controlPlane
-	c.backups.controlPlane = true
+	busy, moving := c.backups.controlPlane, c.backups.moving()
+	if !busy && !moving {
+		c.backups.controlPlane = true
+	}
 	c.backups.mu.Unlock()
+	if moving {
+		return store.ControlPlaneBackup{}, conflict("the backups are moving to other storage; back up the control plane once the move finishes")
+	}
 	if busy {
 		return store.ControlPlaneBackup{}, conflict("a control plane backup is already running; wait for it to finish")
 	}
@@ -84,7 +89,7 @@ func (c *Core) releaseControlPlane() {
 func (c *Core) controlPlaneBusy() bool {
 	c.backups.mu.Lock()
 	defer c.backups.mu.Unlock()
-	return c.backups.controlPlane
+	return c.backups.controlPlane || c.backups.moving()
 }
 
 // runControlPlaneBackup runs a recorded control plane backup to the end

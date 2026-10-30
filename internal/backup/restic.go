@@ -49,7 +49,10 @@ type Repo struct {
 	// URL is an s3: repository URL; empty is the server's local one.
 	URL                                  string
 	AccessKeyID, SecretAccessKey, Region string
-	Password                             string
+	// PathStyle addresses the bucket in the URL's path; false puts it in
+	// the host name (restic's s3.bucket-lookup).
+	PathStyle bool
+	Password  string
 }
 
 // Local reports whether r is a server's local repository (not off-box).
@@ -69,7 +72,60 @@ func (r Repo) Env() map[string]string {
 	if r.Region != "" {
 		env["AWS_DEFAULT_REGION"] = r.Region
 	}
+	lookup := "dns"
+	if r.PathStyle {
+		lookup = "path"
+	}
+	env["DOCK_RESTIC_OPTS"] = "-o s3.bucket-lookup=" + lookup
 	return env
+}
+
+// S3URL is the restic URL of the repository in folder path of bucket at
+// endpoint: s3:<endpoint>/<bucket>/<path>.
+func S3URL(endpoint, bucket, path string) string {
+	u := "s3:" + strings.TrimRight(endpoint, "/") + "/" + bucket
+	if p := strings.Trim(path, "/"); p != "" {
+		u += "/" + p
+	}
+	return u
+}
+
+// ParseS3URL splits an s3:<endpoint>/<bucket>[/path] repository URL. An
+// endpoint without a scheme is https, as restic takes it.
+func ParseS3URL(u string) (endpoint, bucket, path string, err error) {
+	rest, ok := strings.CutPrefix(u, "s3:")
+	if !ok || rest == "" {
+		return "", "", "", fmt.Errorf("%q is not an s3: repository URL", u)
+	}
+	scheme := "https://"
+	for _, s := range []string{"https://", "http://"} {
+		if r, ok := strings.CutPrefix(rest, s); ok {
+			scheme, rest = s, r
+			break
+		}
+	}
+	host, rest, _ := strings.Cut(rest, "/")
+	bucket, path, _ = strings.Cut(rest, "/")
+	if host == "" || bucket == "" {
+		return "", "", "", fmt.Errorf("%q names no bucket: s3:https://<endpoint>/<bucket>[/path]", u)
+	}
+	return scheme + host, bucket, strings.Trim(path, "/"), nil
+}
+
+// ValidPath checks a folder in a bucket for a repository: relative,
+// slash-separated names of letters, digits, dots, dashes and underscores.
+func ValidPath(p string) error {
+	if p == "" || len(p) > 200 {
+		return errors.New("the folder must be 1 to 200 characters, like dock-backups")
+	}
+	for part := range strings.SplitSeq(p, "/") {
+		if part == "" || part == "." || part == ".." || strings.ContainsFunc(part, func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != '_' && r != '.'
+		}) {
+			return fmt.Errorf("%q is not a folder: names of letters, digits, dots, dashes and underscores, separated by slashes", p)
+		}
+	}
+	return nil
 }
 
 // ValidateURL checks a repository URL: empty (local) or s3:<endpoint>/<bucket>[/path].
@@ -106,10 +162,12 @@ type Source struct {
 	User, Password, Database string
 }
 
-// prelude opens (or creates) the repository; pipefail where the shell has it.
+// prelude opens (or creates) the repository; pipefail where the shell has
+// it. $R is restic with the repository's options (DOCK_RESTIC_OPTS: the
+// bucket addressing), unquoted on use so they split into arguments.
 const prelude = `set -eu
 if (set -o pipefail) 2>/dev/null; then set -o pipefail; fi
-R=` + BinDir + `/restic
+R="` + BinDir + `/restic ${DOCK_RESTIC_OPTS:-}"
 `
 
 // initRepo creates the repository if it can't be opened. A wrong password
@@ -340,4 +398,78 @@ func NextDue(hour int, since, now time.Time, loc *time.Location) time.Time {
 		return at
 	}
 	return at.AddDate(0, 0, 1)
+}
+
+// Moving backups to another repository (ADR 0039): restic copy from each
+// source repository into the target, then one check and listing of the
+// target, then each source emptied.
+
+// MoveMarker precedes the target's snapshot list in a move check's output.
+const MoveMarker = "dock-move-snapshots:"
+
+// CopyScript copies every snapshot of the repository RESTIC_FROM_REPOSITORY
+// (password RESTIC_FROM_PASSWORD) into the target (the job's repository),
+// creating the target with the source's chunking parameters if it doesn't
+// exist, so their data deduplicates. Snapshots already copied are
+// skipped. It runs in the restic image.
+const CopyScript = prelude + `if ! $R cat config >/dev/null 2>&1; then
+  $R init --from-repo "$RESTIC_FROM_REPOSITORY" --copy-chunker-params >/dev/null
+fi
+$R copy --quiet --retry-lock ` + RetryLock + ` --from-repo "$RESTIC_FROM_REPOSITORY"
+`
+
+// CheckScript checks the target's structure and lists its snapshots after
+// MoveMarker, for ParseMoved.
+const CheckScript = prelude + `$R check --retry-lock ` + RetryLock + ` >&2
+echo ` + MoveMarker + `
+$R snapshots --json --retry-lock ` + RetryLock + `
+`
+
+// ClearLocalScript empties the local repository mounted at LocalPath,
+// once its snapshots were copied elsewhere. The volume stays.
+const ClearLocalScript = `set -eu
+find ` + LocalPath + ` -mindepth 1 -delete
+`
+
+// CopyEnv is the job environment for copying from into to: to is the
+// job's repository, from the source (the same password: Dock uses one for
+// every repository; mounted at LocalPath when local).
+func CopyEnv(from, to Repo) map[string]string {
+	env := to.Env()
+	env["RESTIC_FROM_REPOSITORY"] = LocalPath
+	if !from.Local() {
+		env["RESTIC_FROM_REPOSITORY"] = from.URL
+	}
+	env["RESTIC_FROM_PASSWORD"] = from.Password
+	return env
+}
+
+// ParseMoved reads a move check's output: the target's snapshots, as a
+// map from the snapshot each was copied from (restic's "original", or its
+// own ID) to its ID in the target.
+func ParseMoved(output string) (map[string]string, error) {
+	_, list, ok := strings.Cut(output, MoveMarker)
+	if !ok {
+		return nil, errors.New("the check listed no snapshots")
+	}
+	start := strings.IndexByte(list, '[')
+	if start < 0 {
+		return nil, errors.New("the check listed no snapshots")
+	}
+	var snaps []struct {
+		ID       string `json:"id"`
+		Original string `json:"original"`
+	}
+	if err := json.NewDecoder(strings.NewReader(list[start:])).Decode(&snaps); err != nil {
+		return nil, fmt.Errorf("read the snapshot list: %w", err)
+	}
+	out := make(map[string]string, len(snaps))
+	for _, s := range snaps {
+		orig := s.Original
+		if orig == "" {
+			orig = s.ID
+		}
+		out[orig] = s.ID
+	}
+	return out, nil
 }

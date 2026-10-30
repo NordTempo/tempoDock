@@ -120,14 +120,24 @@ type RestoreResult struct {
 
 // BackupSettings are the install's backup settings.
 type BackupSettings struct {
-	// Repository is the S3 repository URL; empty keeps backups in a local
-	// repository on each server (not off-box).
-	Repository     string `json:"repository"`
-	OffBox         bool   `json:"off_box"`
-	HasCredentials bool   `json:"has_credentials"`
-	KeepDaily      int    `json:"keep_daily"`
-	KeepWeekly     int    `json:"keep_weekly"`
-	KeepMonthly    int    `json:"keep_monthly"`
+	// Repository is the S3 repository URL backups go to; empty keeps them
+	// in a local repository on each server (not off-box).
+	Repository string `json:"repository"`
+	// Storage is the storage connection backups go to, and Path the folder
+	// in its bucket; empty for local repositories (ADR 0039).
+	Storage string `json:"storage,omitempty"`
+	Path    string `json:"path,omitempty"`
+	// Repositories are where the backups restores can use are now: each
+	// local repository by server, and the bucket's.
+	Repositories []BackupRepository `json:"repositories"`
+	// Move is the latest move of the backups to other storage since the
+	// daemon started.
+	Move           *BackupMove `json:"move,omitempty"`
+	OffBox         bool        `json:"off_box"`
+	HasCredentials bool        `json:"has_credentials"`
+	KeepDaily      int         `json:"keep_daily"`
+	KeepWeekly     int         `json:"keep_weekly"`
+	KeepMonthly    int         `json:"keep_monthly"`
 	// Hour is when scheduled backups run (0-23, the control plane's local
 	// time) unless a service sets its own.
 	Hour        int        `json:"hour"`
@@ -141,6 +151,53 @@ type BackupSettings struct {
 	Password string `json:"password,omitempty"`
 	// ControlPlane is the control plane's own daily backup (ADR 0021).
 	ControlPlane ControlPlaneBackup `json:"control_plane"`
+}
+
+// BackupRepository is one repository holding backups restores can use.
+type BackupRepository struct {
+	// Repository is "local" or the S3 repository URL.
+	Repository string `json:"repository"`
+	// Server holds a local repository; empty for a bucket.
+	Server string `json:"server,omitempty"`
+	// Current: new backups go here.
+	Current   bool  `json:"current"`
+	Snapshots int   `json:"snapshots"`
+	Bytes     int64 `json:"bytes"`
+}
+
+// BackupMove is a move of the backups to a storage connection (`dock
+// backup move`): each source repository is copied into the bucket,
+// checked, the backups are pointed at their copies, and the source is
+// emptied. Backups and restores started while it runs are refused;
+// scheduled ones wait for it.
+type BackupMove struct {
+	// To is the storage connection, Path the folder in its bucket.
+	To      string             `json:"to"`
+	Path    string             `json:"path"`
+	Running bool               `json:"running"`
+	Sources []BackupMoveSource `json:"sources"`
+	// Moved is how many backups now point at their copies.
+	Moved      int        `json:"moved"`
+	Error      string     `json:"error,omitempty"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// BackupMoveSource is one repository a move copies from.
+type BackupMoveSource struct {
+	// Repository is "local" or the S3 repository URL.
+	Repository string `json:"repository"`
+	// Server holds the local repository, or runs the copy for a bucket.
+	Server string `json:"server"`
+	Status string `json:"status" enum:"waiting,copying,copied,emptied,failed"`
+	// Error says why it failed, or why it couldn't be emptied.
+	Error string `json:"error,omitempty"`
+}
+
+// MoveBackupsRequest moves the backups into a storage connection's bucket.
+type MoveBackupsRequest struct {
+	Storage string `json:"storage" doc:"the storage connection"`
+	Path    string `json:"path,omitempty" doc:"folder in the bucket; default dock-backups"`
 }
 
 // ControlPlaneBackup is the control plane's own backup into the
@@ -169,10 +226,12 @@ type ControlPlaneBackupRun struct {
 // that aren't set stay as they are. Setting repository to "" goes back to
 // local repositories.
 type ConfigureBackupRequest struct {
-	Repository      *string `json:"repository,omitempty" doc:"s3:https://host/bucket/path, or empty for local repositories (not off-box)"`
-	AccessKeyID     *string `json:"access_key_id,omitempty"`
-	SecretAccessKey *string `json:"secret_access_key,omitempty"`
-	Region          *string `json:"region,omitempty"`
+	// Repository and the S3 keys are refused since ADR 0039: buckets are
+	// storage connections, and `dock backup move` takes backups there.
+	Repository      *string `json:"repository,omitempty" doc:"no longer settable: add the bucket as a storage connection and move the backups there (POST /backup/move)"`
+	AccessKeyID     *string `json:"access_key_id,omitempty" doc:"no longer settable, see repository"`
+	SecretAccessKey *string `json:"secret_access_key,omitempty" doc:"no longer settable, see repository"`
+	Region          *string `json:"region,omitempty" doc:"no longer settable, see repository"`
 	KeepDaily       *int    `json:"keep_daily,omitempty" minimum:"1" maximum:"365"`
 	KeepWeekly      *int    `json:"keep_weekly,omitempty" minimum:"0" maximum:"520"`
 	KeepMonthly     *int    `json:"keep_monthly,omitempty" minimum:"0" maximum:"240"`

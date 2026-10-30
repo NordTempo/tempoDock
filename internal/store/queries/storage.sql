@@ -27,3 +27,6 @@ SELECT registry_storage_id FROM platform_settings WHERE id = 1;
 INSERT INTO platform_settings (id, registry_storage_id, updated_by, updated_at) VALUES (1, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     registry_storage_id = excluded.registry_storage_id, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+
+-- name: GetStorageConnectionByID :one
+SELECT * FROM storage_connections WHERE id = +?;

@@ -58,19 +58,29 @@ failed backup is a problem on the project page until the next one succeeds.
 
 Out of the box each server keeps a local restic repository in a Docker
 volume: **not off-box**. Losing the server loses them. Send them to any
-S3-compatible store (AWS S3, Cloudflare R2, Backblaze B2, MinIO) once per
-install:
+S3-compatible bucket (AWS S3, Hetzner, Cloudflare R2, Backblaze B2, MinIO,
+Garage): add it once as a storage connection, then move the backups there
+([ADR 0039](../decisions/0039-backups-on-storage-connections.md)):
 
 ```sh
-printf %s "$SECRET" | dock backup configure \
-  --repository s3:https://s3.eu-central-1.amazonaws.com/my-bucket/dock \
-  --access-key-id AKIA... --secret-access-key-stdin
+printf %s "$SECRET" | dock storage add hetzner-backups --endpoint https://hel1.your-objectstorage.com \
+  --region hel1 --bucket backups-dock --access-key-id "$KEY_ID" --secret-access-key-stdin
+dock backup move --storage hetzner-backups          # folder dock-backups in the bucket
+dock backup status                                   # where the backups are, and how the move went
 ```
 
-The first `configure` prints the **repository password**. Store it in your
-password manager: without it nobody can read the backups, including you
-after losing the server. Operators can show it again with `dock backup status
---reveal`.
+The console has the same: the Storage page, and **Move backups** on the
+Backups page. A move copies every repository holding backups into the
+bucket, checks the copy, points each backup at its copy (restores keep
+working), makes the bucket where new backups go, and then empties the old
+repositories. Backups and restores wait while it runs; a failure before the
+switch changes nothing. Between two buckets, both connections need the same
+endpoint and keys. A repository URL set with `dock backup configure`
+before this became a storage connection on update.
+
+The repository password is made on first use; **store it** in your password
+manager: without it nobody can read the backups, including you after losing
+the server. Operators show it with `dock backup status --reveal`.
 
 Retention per service: 7 daily, 4 weekly and 6 monthly snapshots
 (`--keep-daily`, `--keep-weekly`, `--keep-monthly`). The default hour is
@@ -109,4 +119,4 @@ operator decides where they go and when.
 |---|---|
 | See backups and settings | read |
 | Back up now, restore | deploy |
-| Change a service's schedule, configure the repository, reveal its password | operator |
+| Change a service's schedule, configure retention, move the backups, reveal the repository password | operator |

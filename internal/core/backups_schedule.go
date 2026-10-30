@@ -229,7 +229,8 @@ func later(a, b time.Time) time.Time {
 func (c *Core) serviceBusy(serviceID int64) bool {
 	c.backups.mu.Lock()
 	defer c.backups.mu.Unlock()
-	return c.backups.running[serviceID]
+	// A move holds every backup back; its end kicks the scheduler.
+	return c.backups.running[serviceID] || c.backups.moving()
 }
 
 // scheduledBackup records and runs one scheduled backup. A failure to
