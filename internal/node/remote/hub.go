@@ -8,11 +8,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
@@ -356,10 +358,23 @@ func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey
 	return nil
 }
 
-// checkFacts rejects a hello the control plane can't act on.
+// checkFacts rejects a hello the control plane can't act on. What DNS
+// records point at (the tunnel hostname, the public IPs) must be what
+// it says it is: the control plane shows it as records to create, and
+// creates them in Cloudflare (ADR 0035), so a compromised node can't
+// point a domain somewhere else.
 func checkFacts(f Facts) error {
 	if f.Ingress != IngressDirect && f.Ingress != IngressCloudflareTunnel {
 		return fmt.Errorf("unknown ingress mode %q (want %s or %s); check ingress in the node's node.toml", f.Ingress, IngressDirect, IngressCloudflareTunnel)
+	}
+	if f.TunnelHostname != "" && !config.ValidTunnelHostname(f.TunnelHostname) {
+		return fmt.Errorf("tunnel hostname %q is not <tunnel-id>.cfargotunnel.com; check [ingress] tunnel_hostname in the node's config.toml", f.TunnelHostname)
+	}
+	for _, ip := range f.PublicIPs {
+		a, err := netip.ParseAddr(ip)
+		if err != nil || a.Zone() != "" || a.IsUnspecified() || a.IsLoopback() || a.IsMulticast() || a.IsLinkLocalUnicast() {
+			return fmt.Errorf("public IP %q is not an address DNS can point at; check public_ip in the node's config.toml", ip)
+		}
 	}
 	return nil
 }

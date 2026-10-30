@@ -30,7 +30,7 @@ const testKeepAlive = 300 * time.Millisecond
 
 // testFacts is what the test node reports in hello.
 var testFacts = Facts{
-	DockerVersion: "28.3.1", Ingress: IngressCloudflareTunnel, TunnelHostname: "abc.cfargotunnel.com",
+	DockerVersion: "28.3.1", Ingress: IngressCloudflareTunnel, TunnelHostname: "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com",
 	Builder: true, MemoryTotal: 16 << 30,
 }
 
@@ -1154,4 +1154,32 @@ func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// TestCheckFacts refuses a hello whose DNS targets aren't what they say:
+// the control plane creates records from them (ADR 0035).
+func TestCheckFacts(t *testing.T) {
+	ok := []Facts{
+		{Ingress: IngressDirect, PublicIPs: []string{"203.0.113.7", "2001:db8::1"}},
+		{Ingress: IngressCloudflareTunnel, TunnelHostname: "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"},
+		{Ingress: IngressCloudflareTunnel},
+	}
+	for _, f := range ok {
+		if err := checkFacts(f); err != nil {
+			t.Errorf("checkFacts(%+v) = %v", f, err)
+		}
+	}
+	bad := []Facts{
+		{Ingress: "other"},
+		{Ingress: IngressCloudflareTunnel, TunnelHostname: "evil.example.com"},
+		{Ingress: IngressCloudflareTunnel, TunnelHostname: "x.evil.example.com.cfargotunnel.com"},
+		{Ingress: IngressDirect, PublicIPs: []string{"example.com"}},
+		{Ingress: IngressDirect, PublicIPs: []string{"127.0.0.1"}},
+		{Ingress: IngressDirect, PublicIPs: []string{"0.0.0.0"}},
+	}
+	for _, f := range bad {
+		if err := checkFacts(f); err == nil {
+			t.Errorf("checkFacts(%+v) passed", f)
+		}
+	}
 }

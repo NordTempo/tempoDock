@@ -400,6 +400,9 @@ func (c *Config) validate() error {
 		if c.Caddy.DisableTLS {
 			return errors.New("[ingress] mode cloudflare_tunnel serves apps over https:// at Cloudflare's edge; set [caddy] disable_tls = false (Caddy is plain HTTP on 127.0.0.1 either way)")
 		}
+		if t := c.Ingress.TunnelHostname; t != "" && !ValidTunnelHostname(t) {
+			return fmt.Errorf("[ingress] tunnel_hostname %q must be <tunnel-id>.cfargotunnel.com", t)
+		}
 	default:
 		return fmt.Errorf("[ingress] mode %q must be %q or %q", c.Ingress.Mode, IngressDirect, IngressCloudflareTunnel)
 	}
@@ -433,6 +436,14 @@ func (h *Hooks) validate() error {
 }
 
 // hostnameRe matches lower-case DNS names with at least two labels.
+// tunnelHostnameRe matches a Cloudflare tunnel's CNAME target.
+var tunnelHostnameRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.cfargotunnel\.com$`)
+
+// ValidTunnelHostname reports whether h is <tunnel-id>.cfargotunnel.com,
+// what a server behind a Cloudflare tunnel reports and DNS records point
+// at.
+func ValidTunnelHostname(h string) bool { return tunnelHostnameRe.MatchString(h) }
+
 var hostnameRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // CheckHostPort accepts "" (unset) or "host:port" with a port in 1-65535.
