@@ -16,6 +16,10 @@ type Props = {
   /** Label of the top gridline when it means more than the value: "limit". */
   maxNote?: string;
   format: (v: number) => string;
+  /** Moments marked with a dashed line, like deploys; label is their title. */
+  markers?: readonly { t: number; label: string }[];
+  /** What an empty chart says. */
+  empty?: string;
 };
 
 // The plot's own coordinates; the SVG stretches to its box and strokes
@@ -38,6 +42,8 @@ export const LineChart = memo(function LineChart({
   max,
   maxNote,
   format,
+  markers,
+  empty = "No points yet. One is recorded every minute.",
 }: Props) {
   const span = Math.max(1, to - from);
   const { xOf, yOf } = useMemo(() => {
@@ -171,9 +177,17 @@ export const LineChart = memo(function LineChart({
               vectorEffect="non-scaling-stroke"
             />
           </svg>
+          {markers?.map((m) => (
+            <span
+              key={`${m.t} ${m.label}`}
+              title={m.label}
+              className="absolute -top-1 bottom-0 w-px border-l border-dashed border-dash"
+              style={{ left: `${(xOf(m.t) / W) * 100}%` }}
+            />
+          ))}
           {!shown.length && (
             <p className="absolute inset-0 grid place-items-center text-xs text-mut">
-              No points yet. One is recorded every minute.
+              {empty}
             </p>
           )}
           {point ? (

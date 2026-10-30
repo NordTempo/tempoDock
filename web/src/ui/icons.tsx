@@ -7,6 +7,8 @@ const paths = {
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-3.5-3.5",
   plus: "M12 5v14M5 12h14",
   activity: "M3 12h4l3-8 4 16 3-8h4",
+  // Bars rising: Dock Analytics.
+  bars: "M4 20V14M10 20V9M16 20V12M22 20V4",
   users:
     "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21v-1a6 6 0 0 1 12 0v1M16 3.5a4 4 0 0 1 0 7.5M22 21v-1a6 6 0 0 0-4-5.6",
   bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4",
