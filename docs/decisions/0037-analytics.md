@@ -49,8 +49,15 @@ public dashboards, in phases A0 to A4.
 | Routing | Each route carries its analytics hostnames with the tag `site.service.release`; a cutover retags with the new release before it goes active |
 | Settings | Per site, each a default or an override of the install's defaults (`dock analytics defaults`, operators). A1 applies excluded paths and ignored addresses (at the ingest, from the control plane with the salts) and event retention (daily, the store keeps daily totals); replay, errors, Web Vitals and public dashboards are stored for their phases |
 | Reading | One dashboard call: the overview and the period before, the series (hourly up to two days), the dashboard's breakdowns and the markers (hostname changes and the services' deploys). A store that can't be reached gives an empty dashboard that says so |
-| Live | Only while someone watches: the first viewer loads the last five minutes' visitors from the store, the forwarders feed the site's events as they pass, and a 30 s recount drops visitors who left |
+| Live | Only while someone watches. The store is the one source: a view is its last five minutes, loaded again within 2 s when the forwarders pass the site's events and every 30 s otherwise, so visitors who left drop out |
 | Locations | The store downloads DB-IP's City Lite (CC BY 4.0, credited wherever locations show) into its volume at start and on a month's first day, falling back to the month before |
+
+A1's done-when holds: `e2e/analytics-outage.sh` runs a control plane
+serving a production site and a joined server running the store, each in
+its own Docker-in-Docker container. With 200 page views before, during
+and after the store's server is off for two minutes (a reboot), the store
+ends with all 600. The 200 sent during the outage fall in the outage's
+own time window. Meanwhile they wait in the control plane's spool, 84 KB.
 
 ### Changed by the spike
 
