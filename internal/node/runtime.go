@@ -46,6 +46,12 @@ type Containers interface {
 	// so a server shared with other work keeps its own. Images in use are
 	// skipped, never forced.
 	PruneImages(ctx context.Context, req PruneImagesRequest) (PruneResult, error)
+	// DiskUsage says where Docker's data root and dock's data dir go on
+	// this server (ADR 0035). Images under req's prune filter count as
+	// reclaimable, as PruneImages would remove them. It asks Docker to
+	// size every image and volume, which takes seconds: call it when
+	// someone asks, never on a timer.
+	DiskUsage(ctx context.Context, req PruneImagesRequest) (DiskUsage, error)
 
 	// EnsureNetwork creates the bridge network, labelled with labels'
 	// project and environment, if it doesn't exist. An existing network
@@ -186,6 +192,38 @@ type PruneImagesRequest struct {
 	// under one was pulled from there by the platform. Docker's classic
 	// image store lists images pulled by digest as dangling.
 	Repos []string
+}
+
+// BuildCacheVolume holds BuildKit's state and build cache on a builder
+// (build.CacheVolume).
+const BuildCacheVolume = "dock-buildkit-cache"
+
+// DiskUsage is where a server's disk goes, as Containers.DiskUsage reads
+// it. Image bytes are unique to each image (its size less the layers it
+// shares with others); shared layers are counted once, in ImagesShared,
+// so the image fields add up to what images take.
+type DiskUsage struct {
+	// ImagesRunning are images containers use; ImagesKept other images
+	// the platform made; ImagesReclaimable those PruneImages would
+	// remove; ImagesOther images the platform didn't make.
+	ImagesRunning, ImagesKept, ImagesReclaimable, ImagesOther, ImagesShared int64
+	// Volumes are the platform's volumes, BuildCacheVolume included.
+	Volumes []VolumeUsage
+	// OtherVolumes are volumes the platform didn't make.
+	OtherVolumes int64
+	// Containers are containers' writable layers.
+	Containers int64
+	// DataDir is dock's data dir: database, keys, build logs, tool caches.
+	DataDir int64
+}
+
+// VolumeUsage is one platform volume's size.
+type VolumeUsage struct {
+	Name string
+	// Service is the volume's LabelService (a service's ID), empty for
+	// the platform's own volumes.
+	Service string
+	Bytes   int64
 }
 
 // PruneResult is what a prune removed.

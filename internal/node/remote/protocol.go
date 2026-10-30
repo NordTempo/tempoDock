@@ -53,8 +53,8 @@ const (
 	// remove-network (ADR 0020 amendment); 4 added update and the
 	// node's arch and last update in hello (ADR 0028); 5 added access
 	// protection to routes (ADR 0030); 6 added drain-traffic and the
-	// routes' traffic flag (ADR 0033).
-	Protocol = 6
+	// routes' traffic flag (ADR 0033); 7 added disk-usage (ADR 0035).
+	Protocol = 7
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -134,6 +134,7 @@ const (
 	opHostStats     = "host-stats"
 	opCtrStats      = "container-stats"
 	opDrainTraffic  = "drain-traffic" // protocol 6
+	opDiskUsage     = "disk-usage"    // protocol 7
 	opDial          = "dial"          // full duplex, raw bytes: see dial.go
 	opRunJob        = "run-job"       // protocol 2
 	opRotate        = "rotate"

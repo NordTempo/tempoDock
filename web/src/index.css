@@ -91,6 +91,14 @@
   --color-mem-system: #8b8b94;
   --color-mem-kernel: #5eead4;
 
+  /* Disk breakdown groups (ADR 0035). */
+  --color-disk-apps: #93c5fd;
+  --color-disk-images: #c4b5fd;
+  --color-disk-reclaimable: #fbbf24;
+  --color-disk-build: #f9a8d4;
+  --color-disk-dock: #4ade80;
+  --color-disk-other: #8b8b94;
+
   /* Diff rows: added, changed, removed. */
   --color-add-bg: #0f1f15;
   --color-change-bg: #221d0e;

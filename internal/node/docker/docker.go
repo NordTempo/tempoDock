@@ -40,6 +40,8 @@ type Runtime struct {
 	pool netip.Prefix
 	// netMu serialises picking a free subnet and creating the network.
 	netMu sync.Mutex
+	// DataDir is dock's data dir, which DiskUsage measures; "" skips it.
+	DataDir string
 }
 
 var _ node.Containers = (*Runtime)(nil)

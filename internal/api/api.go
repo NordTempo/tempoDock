@@ -13,6 +13,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -228,6 +229,20 @@ func authed[I, O any](s *Server, a huma.API, op huma.Operation, h func(context.C
 		}
 		return o, nil
 	})
+}
+
+// slowAnswerTimeout is how long slowAnswer operations may take to answer.
+const slowAnswerTimeout = 3 * time.Minute
+
+// slowAnswer lets an operation answer after the API listener's 30-second
+// write timeout, up to slowAnswerTimeout: for reads and actions on a
+// server that take long (a disk read sizes every image and volume).
+func slowAnswer() huma.Middlewares {
+	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		_, w := humago.Unwrap(ctx)
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(slowAnswerTimeout))
+		next(ctx)
+	}}
 }
 
 // public registers an operation that needs no credentials.

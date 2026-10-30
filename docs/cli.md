@@ -28,7 +28,7 @@ What scripts, CI and agents can rely on. The goals behind these are in
 - The CLI only prompts when stdin is a terminal. Otherwise missing input is a
   usage error naming the flag to pass, and commands that ask for
   confirmation (`discard`, `domain remove`, `service archive`, `project archive`,
-  `user delete`, `server revoke`, `server remove`, `alerts channel remove`, `storage remove`, `registry migrate`, `db setup`) need `--yes`, and commits to production data
+  `user delete`, `server revoke`, `server remove`, `alerts channel remove`, `storage remove`, `registry migrate`, `server prune`, `db setup`) need `--yes`, and commits to production data
   need `--confirm <environment>`.
 
 ## Exit codes
@@ -203,6 +203,7 @@ name. Update older CLI clients before renaming projects they use.
 | `project export [NAME] [--format toml\|json]` | The project's live config: environments, services, settings, volumes, domains, git connections and variable names, never values. Sorted, so it diffs well in git |
 | `project pin <project> --kind production\|non-production --server NAME` | Operator: choose the server a project's environments of a kind go to, before any exist |
 | `server list`, `server show NAME` | Servers: link status (`online`, `offline`, `incompatible`, `joining`, `revoked`), version, ingress, accepted kinds, whether it builds, memory reserved; operators see every server, others the ones their organization's environments run on. `show` (operator) adds base domain, DNS target, what's placed and current usage |
+| `server disk NAME`, `server prune NAME [--yes]` | Operator: where a server's disk goes (services' volumes, images by what keeps them, BuildKit's cache, Dock's own, the rest) and what a prune frees, read on demand (seconds); `prune` removes images no release needs and build cache above `build_cache_keep_mb` now ([ADR 0035](decisions/0035-server-disk-breakdown.md)) |
 | `server add NAME [--production] [--non-production] [--builder]` | Operator: create a one-time join token (valid for an hour) and print the exact `install.sh --node` command to run on the new server. The token is shown once |
 | `server update NAME [--production\|--no-production] [--non-production\|--no-non-production] [--disable-placement\|--enable-placement] [--builder\|--no-builder] [--base-domain D]` | Operator: what the server accepts, whether it builds, and the base domain of generated hostnames (`""` removes it) |
 | `server revoke NAME`, `server rotate-key NAME`, `server remove NAME` | Operator: forget a server's key and drop its link (it must join again; its apps keep running); have an online server switch to a new key; remove a server no live project uses (archived projects' environments move to the control plane's server) |

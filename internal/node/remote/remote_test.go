@@ -169,6 +169,18 @@ func TestCalls(t *testing.T) {
 	if got, err := h.client.DrainTraffic(ctx); err != nil || len(got) != 1 || !equalJSON(got[0], tr) {
 		t.Fatalf("drain traffic = %+v, %v", got, err)
 	}
+
+	du := node.DiskUsage{
+		ImagesRunning: 1, ImagesKept: 2, ImagesReclaimable: 3, ImagesOther: 4, ImagesShared: 5,
+		Volumes: []node.VolumeUsage{{Name: "dock_v1", Service: "7", Bytes: 6}}, OtherVolumes: 8, Containers: 9, DataDir: 10,
+	}
+	h.rt.SetDiskUsage(du)
+	if got, err := h.client.DiskUsage(ctx, node.PruneImagesRequest{Keep: []string{"sha256:k"}, Repos: []string{"r"}}); err != nil || !equalJSON(got, du) {
+		t.Fatalf("disk usage = %+v, %v", got, err)
+	}
+	if ops := h.rt.Ops(); ops[len(ops)-1] != "disk usage keep=sha256:k repos=r" {
+		t.Fatalf("the prune filter didn't reach the node: %v", ops[len(ops)-1])
+	}
 }
 
 func TestLogsStreamAndCancel(t *testing.T) {

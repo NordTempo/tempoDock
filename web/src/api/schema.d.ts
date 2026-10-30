@@ -2211,6 +2211,46 @@ export interface paths {
         patch: operations["update-server"];
         trace?: never;
     };
+    "/api/v1/servers/{server}/disk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where a server's disk goes
+         * @description The filesystem of Docker's data root split into parts: services' volumes, images (running, for rollbacks, shared layers, not Dock's), images a prune removes, BuildKit's cache, Dock's own data and the rest (ADR 0035). Read when asked: Docker sizes every image and volume, which takes seconds. Operators only.
+         */
+        get: operations["get-server-disk"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/prune": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prune a server's disk now
+         * @description Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. 409 while the server is being pruned. Operators only.
+         */
+        post: operations["prune-server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers/{server}/revoke": {
         parameters: {
             query?: never;
@@ -3339,6 +3379,17 @@ export interface components {
             variables?: components["schemas"]["VariableRef"][] | null;
             volumes?: components["schemas"]["VolumeRef"][] | null;
         };
+        DiskPart: {
+            /** Format: int64 */
+            bytes: number;
+            detail?: string;
+            /** @enum {string} */
+            group: "apps" | "images" | "reclaimable" | "build" | "dock" | "other";
+            /** @example shop/production/db */
+            name: string;
+            /** Format: int64 */
+            reclaimable: number;
+        };
         DiskUsage: {
             paths: string[] | null;
             /** Format: int64 */
@@ -3935,6 +3986,18 @@ export interface components {
             server: components["schemas"]["Server"];
             services: components["schemas"]["ServerService"][] | null;
         };
+        ServerDisk: {
+            parts: components["schemas"]["DiskPart"][] | null;
+            /** Format: date-time */
+            read_at: string;
+            /** Format: int64 */
+            reclaimable_bytes: number;
+            server: string;
+            /** Format: int64 */
+            total_bytes: number;
+            /** Format: int64 */
+            used_bytes: number;
+        };
         ServerPlacement: {
             environments: string[] | null;
             /** @enum {string} */
@@ -3942,6 +4005,15 @@ export interface components {
             /** @description Set by an admin rather than chosen automatically */
             pinned: boolean;
             project: string;
+        };
+        ServerPruneResult: {
+            /** Format: int64 */
+            cache_bytes: number;
+            /** Format: int64 */
+            image_bytes: number;
+            /** Format: int64 */
+            images_removed: number;
+            server: string;
         };
         ServerService: {
             /** Format: int64 */
@@ -17315,6 +17387,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Server"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-server-disk": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDisk"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "prune-server": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerPruneResult"];
                 };
             };
             /** @description Bad Request */
