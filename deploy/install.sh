@@ -564,21 +564,24 @@ if [[ "$tunnel" == true ]]; then
 fi
 
 # registry_storage creates the dock-registry user and the registry's
-# storage dir, and prints the dir.
+# storage dir, and prints the dir. The dock group may read it (the
+# registry writes 0755 dirs and 0644 files inside), so the console can
+# show its size; only the registry writes to it.
 registry_storage() {
   local storage
   storage="$(toml_get "$CONF" registry storage_dir)"
   storage="${storage:-/var/lib/dock-registry}"
   id dock-registry >/dev/null 2>&1 \
     || useradd --system --no-create-home --home-dir "$storage" --shell /usr/sbin/nologin dock-registry
-  install -d -m 0700 -o dock-registry -g dock-registry "$storage"
+  install -d -m 0750 -o dock-registry -g dock "$storage"
   printf '%s\n' "$storage"
 }
 
 # setup_registry runs CNCF Distribution as the dock-registry container
 # (ADR 0014). Docker's restart policy keeps it up across reboots, like the
-# apps; the control plane execs into it for garbage collection. It is
-# recreated only when its image, config or mounts change.
+# apps; the control plane stops it for garbage collection, which runs in a
+# one-shot container next to it. It is recreated only when its image,
+# config or mounts change.
 setup_registry() {
   local listen storage cfg_dir=/etc/dock/registry hash current
   listen="$(toml_get "$CONF" registry listen)"
