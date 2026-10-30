@@ -25,7 +25,7 @@ const (
 	// ContainerName is the long-lived BuildKit container on a builder server.
 	ContainerName = "dock-buildkit"
 	// CacheVolume holds BuildKit's state and build cache across restarts.
-	CacheVolume = "dock-buildkit-cache"
+	CacheVolume = node.BuildCacheVolume
 
 	// labelConfig records the settings the container was created with, so a
 	// config change recreates it.

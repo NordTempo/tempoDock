@@ -45,6 +45,20 @@ func registerServers(s *Server, a huma.API) {
 		return reply(s.core.GetServer(ctx, actor, in.Server))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-server-disk", Method: http.MethodGet, Path: serverPathT + "/disk",
+		Summary: "Where a server's disk goes", Tags: tags,
+		Description: "The filesystem of Docker's data root split into parts: services' volumes, images (running, for rollbacks, shared layers, not Dock's), images a prune removes, BuildKit's cache, Dock's own data and the rest (ADR 0035). Read when asked: Docker sizes every image and volume, which takes seconds. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.ServerDisk], error) {
+		return reply(s.core.ServerDisk(ctx, actor, in.Server))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "prune-server", Method: http.MethodPost, Path: serverPathT + "/prune",
+		Summary: "Prune a server's disk now", Tags: tags,
+		Description: "Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.ServerPruneResult], error) {
+		return reply(s.core.PruneServer(ctx, actor, in.Server))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "add-server", Method: http.MethodPost, Path: Prefix + "/servers",
 		Summary: "Add a server", Tags: tags, DefaultStatus: http.StatusCreated,
 		Description: "Creates a one-time join token for a new server, valid for an hour, and the install command to run on it. The token is returned once and never again; the server shows as joining until it connects. Operators only.",

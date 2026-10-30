@@ -312,6 +312,10 @@ func (o offlineRuntime) RemoveImage(context.Context, string) error      { return
 func (o offlineRuntime) PruneImages(context.Context, node.PruneImagesRequest) (node.PruneResult, error) {
 	return node.PruneResult{}, o.err
 }
+
+func (o offlineRuntime) DiskUsage(context.Context, node.PruneImagesRequest) (node.DiskUsage, error) {
+	return node.DiskUsage{}, o.err
+}
 func (o offlineRuntime) PruneBuildCache(context.Context, int64) (node.PruneResult, error) {
 	return node.PruneResult{}, o.err
 }

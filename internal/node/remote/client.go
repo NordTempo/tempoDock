@@ -349,6 +349,23 @@ func (c *Client) DrainTraffic(ctx context.Context) ([]node.HostTraffic, error) {
 	return fromWireTraffic(r.Hosts), nil
 }
 
+// DiskProtocol is the first protocol whose nodes report disk usage (ADR
+// 0035).
+const DiskProtocol = 7
+
+// diskUsageTimeout bounds DiskUsage: Docker sizes every image and volume,
+// which takes seconds on a busy server, more than a control call may.
+const diskUsageTimeout = 2 * time.Minute
+
+// DiskUsage implements node.Containers.
+func (c *Client) DiskUsage(ctx context.Context, req node.PruneImagesRequest) (node.DiskUsage, error) {
+	if err := c.needProtocol(ctx, DiskProtocol, "report its disk usage"); err != nil {
+		return node.DiskUsage{}, err
+	}
+	r, err := callWithLogs[wireDiskUsage](ctx, c, opDiskUsage, diskUsageTimeout, pruneImagesRequest{Keep: req.Keep, Repos: req.Repos}, nil, nil)
+	return fromWireDiskUsage(r), err
+}
+
 // unaryCall makes a control call, bounded by the hub's call timeout.
 func unaryCall[R any](ctx context.Context, c *Client, op string, args any) (R, error) {
 	return callWithLogs[R](ctx, c, op, c.hub.callTimeout(), args, nil, nil)

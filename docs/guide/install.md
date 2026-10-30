@@ -578,6 +578,21 @@ the `/stats/live` streams), it samples every 3 seconds, and stops when they
 leave. Service memory is the working set, the same number `docker stats`
 shows.
 
+A server's page in the console also shows where its disk goes
+([ADR 0035](../decisions/0035-server-disk-breakdown.md)): services'
+volumes, images (running, kept for rollbacks, shared layers, not Dock's),
+images a prune would remove, BuildKit's cache, Dock's own data and the
+rest. Docker sizes every image and volume for it, which takes a few
+seconds, so it is read when the page opens and never in the background.
+**Prune** frees what is reclaimable now instead of waiting for
+`[retention] prune_disk_percent`; running apps, rollback images and
+volumes are never touched.
+
+```sh
+dock server disk ubuntu-4gb-nbg1-1     # the same breakdown
+dock server prune ubuntu-4gb-nbg1-1    # unused images, build cache above build_cache_keep_mb
+```
+
 ## Upgrading
 
 The platform console's Updates page (under System) shows when a newer

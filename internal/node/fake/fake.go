@@ -55,6 +55,8 @@ type Runtime struct {
 	jobs        []node.JobSpec
 
 	traffic    []node.HostTraffic
+	disk       node.DiskUsage
+	diskSet    bool
 	host       node.HostStats
 	hostSet    bool
 	ctrStats   map[string]node.ContainerStats
@@ -297,6 +299,37 @@ func (r *Runtime) RemoveImage(_ context.Context, ref string) error {
 	}
 	delete(r.images, ref)
 	return nil
+}
+
+// SetDiskUsage sets what DiskUsage reports.
+func (r *Runtime) SetDiskUsage(d node.DiskUsage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.disk, r.diskSet = d, true
+}
+
+// DiskUsage implements node.Containers, recorded as "disk usage
+// keep=<ids> repos=<prefixes>": what SetDiskUsage set, or until then a
+// made-up breakdown for `make dev` (300 MiB per volume, 180 MiB of
+// images per container, a BuildKit cache).
+func (r *Runtime) DiskUsage(_ context.Context, req node.PruneImagesRequest) (node.DiskUsage, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.op("disk usage keep=%s repos=%s", strings.Join(req.Keep, ","), strings.Join(req.Repos, ","))
+	if !r.diskSet {
+		d := node.DiskUsage{
+			ImagesRunning: int64(len(r.containers)) * 180 << 20, ImagesKept: 1400 << 20, ImagesReclaimable: 620 << 20,
+			ImagesShared: 900 << 20, Containers: 64 << 20, DataDir: 96 << 20,
+			Volumes: []node.VolumeUsage{{Name: node.BuildCacheVolume, Bytes: 2900 << 20}},
+		}
+		for _, name := range slices.Sorted(maps.Keys(r.volumes)) {
+			d.Volumes = append(d.Volumes, node.VolumeUsage{Name: name, Service: r.volumes[name].Service, Bytes: 300 << 20})
+		}
+		return d, nil
+	}
+	d := r.disk
+	d.Volumes = slices.Clone(d.Volumes)
+	return d, nil
 }
 
 // PruneImages implements node.Containers, recorded as "prune images
@@ -732,6 +765,7 @@ func (r *Runtime) HostStats(context.Context) (node.HostStats, error) {
 	defer r.mu.Unlock()
 	if !r.hostSet {
 		r.host.CPUs, r.host.MemoryTotal = 4, 8<<30
+		r.host.Disks = []node.Disk{{Paths: []string{"/var/lib/docker", "/var/lib/dock"}, Total: 40 << 30, Used: 11 << 30}}
 		r.host.CPUBusy += 25
 		r.host.CPUTotal += 100
 		var used uint64

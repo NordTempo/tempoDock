@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/data"
@@ -155,6 +157,9 @@ type Core struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+	// diskReads shares one disk read (ServerDisk) per server between
+	// concurrent callers.
+	diskReads singleflight.Group
 }
 
 // New creates the control plane and makes sure the local server is

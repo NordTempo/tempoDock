@@ -36,6 +36,7 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	if err != nil {
 		return nil, nil, err
 	}
+	containers.DataDir = cfg.DataDir
 	// Apps keep running if this fails; only their swap limit stays loose.
 	if n, err := containers.UpgradeSwapLimits(ctx); err != nil {
 		log.Error("upgrade container swap limits", "err", err)

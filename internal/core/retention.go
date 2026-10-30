@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"sync"
@@ -100,7 +101,13 @@ func (c *Core) maybePrune(srv store.Server, now time.Time) {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		c.pruneServer(c.ctx, srv)
+		started := time.Now()
+		images, cache, err := c.pruneServer(c.ctx, srv)
+		if err != nil {
+			c.log.Warn("prune a full disk", "server", srv.Name, "err", err)
+		}
+		c.log.Info("pruned a full disk", "server", srv.Name, "images", images.Removed, "image_bytes", images.ReclaimedBytes,
+			"cache_records", cache.Removed, "cache_bytes", cache.ReclaimedBytes, "took", time.Since(started).Round(time.Millisecond))
 		r.mu.Lock()
 		r.pruning[srv.ID] = false
 		r.pruned[srv.ID] = time.Now()
@@ -111,40 +118,46 @@ func (c *Core) maybePrune(srv store.Server, now time.Time) {
 // pruneServer removes a server's dangling images that the platform made
 // (built, or pulled from its registry) except those a rollback may need,
 // and on a builder trims its own BuildKit's cache to [retention]
-// build_cache_keep_mb. Other images on the server are never touched.
-func (c *Core) pruneServer(ctx context.Context, srv store.Server) {
+// build_cache_keep_mb. Other images on the server are never touched. The
+// caller holds the server's retention.pruning.
+func (c *Core) pruneServer(ctx context.Context, srv store.Server) (images, cache node.PruneResult, err error) {
 	rt := c.connected(srv.ID)
 	if rt == nil {
-		return
+		return images, cache, errf(apitypes.CodeServerOffline, "server %s is offline; prune it once it is back", srv.Name)
 	}
-	started := time.Now()
-	keep, err := c.store.ListKeptImageIDs(ctx, store.ListKeptImageIDsParams{ServerID: srv.ID, Keep: int64(c.keepReleases())})
+	req, err := c.pruneRequest(ctx, srv.ID)
 	if err != nil {
-		c.log.Warn("prune: list kept images", "server", srv.Name, "err", err)
-		return
+		return images, cache, err
+	}
+	// The cache is pruned even if the images couldn't be.
+	var errs []error
+	if images, err = rt.PruneImages(ctx, req); err != nil {
+		errs = append(errs, fmt.Errorf("prune images: %w", c.nodeErr(srv.ID, err)))
+	}
+	if srv.Builder {
+		if cache, err = rt.PruneBuildCache(ctx, c.buildCacheKeep()); err != nil {
+			errs = append(errs, fmt.Errorf("prune build cache: %w", c.nodeErr(srv.ID, err)))
+		}
+	}
+	return images, cache, errors.Join(errs...)
+}
+
+// pruneRequest says which of a server's images a prune may remove: the
+// platform's own, except those a rollback may need.
+func (c *Core) pruneRequest(ctx context.Context, serverID int64) (node.PruneImagesRequest, error) {
+	keep, err := c.store.ListKeptImageIDs(ctx, store.ListKeptImageIDsParams{ServerID: serverID, Keep: int64(c.keepReleases())})
+	if err != nil {
+		return node.PruneImagesRequest{}, fmt.Errorf("list kept images: %w", err)
 	}
 	req := node.PruneImagesRequest{Keep: keep}
 	if c.reg != nil {
 		req.Repos = []string{c.reg.Host() + "/" + buildTagPrefix}
 	}
-	images, err := rt.PruneImages(ctx, req)
-	if err != nil {
-		c.log.Warn("prune images", "server", srv.Name, "err", err)
-	}
-	var cache struct {
-		Removed        int
-		ReclaimedBytes int64
-	}
-	if srv.Builder {
-		r, err := rt.PruneBuildCache(ctx, int64(c.cfg.Retention.BuildCacheKeepMB)<<20)
-		if err != nil {
-			c.log.Warn("prune build cache", "server", srv.Name, "err", err)
-		}
-		cache.Removed, cache.ReclaimedBytes = r.Removed, r.ReclaimedBytes
-	}
-	c.log.Info("pruned a full disk", "server", srv.Name, "images", images.Removed, "image_bytes", images.ReclaimedBytes,
-		"cache_records", cache.Removed, "cache_bytes", cache.ReclaimedBytes, "took", time.Since(started).Round(time.Millisecond))
+	return req, nil
 }
+
+// buildCacheKeep is how much BuildKit cache a prune leaves, in bytes.
+func (c *Core) buildCacheKeep() int64 { return int64(c.cfg.Retention.BuildCacheKeepMB) << 20 }
 
 // retained counts what one retention pass removed.
 type retained struct {

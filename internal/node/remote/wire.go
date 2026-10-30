@@ -189,6 +189,24 @@ type (
 	trafficResult struct {
 		Hosts capped[wireHostTraffic] `json:"hosts"`
 	}
+	// wireDiskUsage is node.DiskUsage.
+	wireDiskUsage struct {
+		ImagesRunning     int64                   `json:"images_running"`
+		ImagesKept        int64                   `json:"images_kept"`
+		ImagesReclaimable int64                   `json:"images_reclaimable"`
+		ImagesOther       int64                   `json:"images_other"`
+		ImagesShared      int64                   `json:"images_shared"`
+		Volumes           capped[wireVolumeUsage] `json:"volumes"`
+		OtherVolumes      int64                   `json:"other_volumes"`
+		Containers        int64                   `json:"containers"`
+		DataDir           int64                   `json:"data_dir"`
+	}
+	wireVolumeUsage struct {
+		Name         string `json:"name"`
+		Service      string `json:"service,omitempty"`
+		ControlPlane string `json:"control_plane,omitempty"`
+		Bytes        int64  `json:"bytes"`
+	}
 	dialRequest struct {
 		ContainerID string `json:"container_id"`
 		Port        int    `json:"port"`
@@ -636,4 +654,28 @@ func fromWireContainerStats(ws []wireContainerStats) []node.ContainerStats {
 		out[i] = node.ContainerStats{ID: w.ID, Time: w.Time, CPUUsec: w.CPUUsec, Memory: w.Memory, MemoryLimit: w.MemoryLimit, IORead: w.IORead, IOWrite: w.IOWrite}
 	}
 	return out
+}
+
+func toWireDiskUsage(d node.DiskUsage) wireDiskUsage {
+	w := wireDiskUsage{
+		ImagesRunning: d.ImagesRunning, ImagesKept: d.ImagesKept, ImagesReclaimable: d.ImagesReclaimable,
+		ImagesOther: d.ImagesOther, ImagesShared: d.ImagesShared, OtherVolumes: d.OtherVolumes,
+		Containers: d.Containers, DataDir: d.DataDir, Volumes: make(capped[wireVolumeUsage], len(d.Volumes)),
+	}
+	for i, v := range d.Volumes {
+		w.Volumes[i] = wireVolumeUsage(v)
+	}
+	return w
+}
+
+func fromWireDiskUsage(w wireDiskUsage) node.DiskUsage {
+	d := node.DiskUsage{
+		ImagesRunning: w.ImagesRunning, ImagesKept: w.ImagesKept, ImagesReclaimable: w.ImagesReclaimable,
+		ImagesOther: w.ImagesOther, ImagesShared: w.ImagesShared, OtherVolumes: w.OtherVolumes,
+		Containers: w.Containers, DataDir: w.DataDir, Volumes: make([]node.VolumeUsage, len(w.Volumes)),
+	}
+	for i, v := range w.Volumes {
+		d.Volumes[i] = node.VolumeUsage(v)
+	}
+	return d
 }

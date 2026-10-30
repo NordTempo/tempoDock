@@ -13,7 +13,9 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -672,6 +674,57 @@ func (e *testEnv) importDangling(content string, built bool) string {
 	}
 	e.t.Cleanup(func() { _, _ = e.cli.ImageRemove(context.Background(), status.Status, client.ImageRemoveOptions{}) })
 	return status.Status
+}
+
+// DiskUsage counts what PruneImages would remove as reclaimable, and
+// stops counting it once it is gone; platform volumes carry their
+// service, and the data dir is measured. Other work on the Docker host
+// adds images too, so the image numbers are compared, not pinned.
+func TestDiskUsage(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, 3*time.Minute)
+	e.DataDir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(e.DataDir, "dock.db"), make([]byte, 4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gone := e.importDangling(e.prefix+"-du-gone", true)
+	vol := e.name("du-vol")
+	if err := e.EnsureVolume(ctx, vol, node.Labels{ControlPlane: e.prefix, Service: "42"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = e.cli.VolumeRemove(context.Background(), vol, client.VolumeRemoveOptions{Force: true}) })
+	list, err := e.cli.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("dangling", "true")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keep []string
+	for _, img := range list.Items {
+		if img.ID != gone {
+			keep = append(keep, img.ID)
+		}
+	}
+	req := node.PruneImagesRequest{Keep: keep, Repos: []string{"127.0.0.1:5000/dock/p"}}
+	before, err := e.DiskUsage(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.ImagesReclaimable <= 0 || before.DataDir != 4096 {
+		t.Fatalf("before the prune: %+v", before)
+	}
+	if !slices.ContainsFunc(before.Volumes, func(v node.VolumeUsage) bool { return v.Name == vol && v.Service == "42" }) {
+		t.Errorf("the service's volume is missing: %+v", before.Volumes)
+	}
+	res, err := e.PruneImages(ctx, req)
+	if err != nil || res.Removed != 1 {
+		t.Fatalf("PruneImages = %+v, %v", res, err)
+	}
+	after, err := e.DiskUsage(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ImagesReclaimable >= before.ImagesReclaimable {
+		t.Errorf("reclaimable %d after the prune, %d before", after.ImagesReclaimable, before.ImagesReclaimable)
+	}
 }
 
 // PruneImages removes the platform's dangling images except the kept ones,

@@ -10,6 +10,7 @@ import type {
   ServerUsage,
   StatsRange,
 } from "../data/types";
+import { DiskBreakdown } from "../features/servers/DiskBreakdown";
 import { LinkSection } from "../features/servers/LinkSection";
 import { MemoryBreakdown } from "../features/servers/MemoryBreakdown";
 import { useServerSwitches } from "../features/servers/switches";
@@ -141,6 +142,7 @@ function ServerPage() {
       </section>
 
       <MemoryBreakdown usage={server.usage} />
+      {server.status === "online" && <DiskBreakdown server={name} />}
 
       <Services name={name} services={detail.services} />
     </Page>
