@@ -387,3 +387,48 @@ func TestRenderTraffic(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderTunnelListener adds a direct server's tunnel listener (ADR
+// 0036): every route on 127.0.0.1:TunnelPort, trusting forwarding headers
+// from loopback, while the public listeners leave tunnel-only routes out,
+// and so does the on-demand TLS check.
+func TestRenderTunnelListener(t *testing.T) {
+	opts := testOptions()
+	opts.TunnelPort = 7075
+	routes := []node.Route{
+		{Hostnames: []string{"app.example.com"}, Upstream: "127.0.0.1:32768"},
+		{Hostnames: []string{"app.tempo.run"}, Upstream: "127.0.0.1:32768", TunnelOnly: true},
+	}
+	cfg := render(t, opts, routes)
+	hosts := func(name string) []string {
+		var out []string
+		for _, r := range cfg.Apps.HTTP.Servers[name].Routes {
+			for _, m := range r.Match {
+				out = append(out, m.Host...)
+			}
+		}
+		return out
+	}
+	tunnel := cfg.Apps.HTTP.Servers[tunnelServer]
+	if len(tunnel.Listen) != 1 || tunnel.Listen[0] != "127.0.0.1:7075" || tunnel.TrustedProxies == nil {
+		t.Fatalf("tunnel server = %+v", tunnel)
+	}
+	if got := strings.Join(hosts(tunnelServer), ","); got != "app.example.com,app.tempo.run" {
+		t.Errorf("tunnel listener serves %s", got)
+	}
+	for _, name := range []string{"https", "http"} {
+		if got := strings.Join(hosts(name), ","); got != "app.example.com" {
+			t.Errorf("%s listener serves %s", name, got)
+		}
+	}
+	if s := routeHosts(routes); len(*s) != 1 {
+		t.Errorf("certificates asked for %v", *s)
+	}
+	if _, ok := render(t, opts, routes[:1]).Apps.HTTP.Servers[tunnelServer]; ok {
+		t.Error("a tunnel listener with no tunnel-only route")
+	}
+	opts.TunnelPort = 0
+	if _, ok := render(t, opts, routes).Apps.HTTP.Servers[tunnelServer]; ok {
+		t.Error("a tunnel listener without a tunnel port")
+	}
+}

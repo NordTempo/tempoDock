@@ -12,6 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cloudflare"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -267,10 +268,11 @@ func (c *Core) makeTunnel(ctx context.Context, cc *cfConn, t store.CloudflareTun
 	if err != nil {
 		return err
 	}
-	if ing := c.ingressOf(srv); ing.mode != apitypes.IngressCloudflareTunnel {
+	port := c.tunnelPort(srv)
+	if port == 0 {
 		_, err := c.store.UpdateCloudflareTunnel(ctx, store.UpdateCloudflareTunnelParams{
 			Token: t.Token, Status: "error", UpdatedAt: now(), ID: t.ID, Gen: t.Gen,
-			Reason: fmt.Sprintf("server %s reports %s ingress; install it in tunnel mode (INGRESS=cloudflare_tunnel) and it is retried when it reconnects", srv.Name, ing.mode),
+			Reason: c.noTunnelListener(srv) + "; it is retried when it reconnects",
 		})
 		return err
 	}
@@ -298,7 +300,7 @@ func (c *Core) makeTunnel(ctx context.Context, cc *cfConn, t store.CloudflareTun
 		}
 	}
 	if !t.Adopted {
-		if err := cc.client.SetTunnelConfig(ctx, acct, t.TunnelID, catchAll(c.httpPort(srv))); err != nil {
+		if err := cc.client.SetTunnelConfig(ctx, acct, t.TunnelID, catchAll(port)); err != nil {
 			return err
 		}
 	}
@@ -374,17 +376,41 @@ func catchAll(port int) cloudflare.TunnelConfig {
 	return cloudflare.TunnelConfig{Ingress: []cloudflare.IngressRule{{Service: "http://127.0.0.1:" + strconv.Itoa(port)}}}
 }
 
-// httpPort is the port a server's Caddy serves plain HTTP on.
-func (c *Core) httpPort(srv store.Server) int {
+// tunnelPort is the port on 127.0.0.1 a server's cloudflared forwards to:
+// its Caddy's plain-HTTP port in tunnel mode, its tunnel listener on a
+// direct server (ADR 0036). 0: a direct server without one (turned off,
+// or a node from before protocol 9), which can't take a tunnel.
+func (c *Core) tunnelPort(srv store.Server) int {
 	if srv.Local {
-		return c.cfg.Caddy.HTTPPort
+		return c.cfg.CloudflaredPort()
 	}
+	tunnelMode := c.ingressOf(srv).mode == apitypes.IngressCloudflareTunnel
+	var facts remote.Facts
 	if c.nodes != nil {
-		if p := c.nodes.State(srv.ID).Hello.HTTPPort; p > 0 {
-			return p
-		}
+		facts = c.nodes.State(srv.ID).Hello.Facts
+	}
+	switch {
+	case facts.TunnelPort > 0:
+		return facts.TunnelPort
+	case !tunnelMode:
+		return 0
+	case facts.HTTPPort > 0:
+		return facts.HTTPPort
 	}
 	return 80
+}
+
+// noTunnelListener explains why a server can't take a tunnel now: it is
+// offline (its hello facts aren't known), or a direct server without a
+// tunnel listener.
+func (c *Core) noTunnelListener(srv store.Server) string {
+	switch {
+	case srv.Local:
+		return fmt.Sprintf("server %s has no tunnel listener; set [caddy] tunnel_port in its config.toml and restart dock", srv.Name)
+	case c.connected(srv.ID) == nil:
+		return fmt.Sprintf("server %s is offline; try again once it is connected", srv.Name)
+	}
+	return fmt.Sprintf("server %s has no tunnel listener: upgrade dock on it (or set [caddy] tunnel_port in its config.toml)", srv.Name)
 }
 
 // runServerTunnel has a server that (re)connected run the tunnel Dock
@@ -426,8 +452,8 @@ func (c *Core) SetServerTunnel(ctx context.Context, a Actor, name string, req ap
 		return apitypes.Server{}, err
 	}
 	ing := c.ingressOf(srv)
-	if ing.mode != apitypes.IngressCloudflareTunnel {
-		return apitypes.Server{}, invalid("server %s uses direct ingress; a tunnel needs it installed in tunnel mode: run install.sh on it again with INGRESS=cloudflare_tunnel", srv.Name)
+	if c.tunnelPort(srv) == 0 {
+		return apitypes.Server{}, invalid("%s", c.noTunnelListener(srv))
 	}
 	conn, err := c.pickCloudflare(ctx, req.Cloudflare)
 	if err != nil {
@@ -481,7 +507,7 @@ func (c *Core) serverTunnelFor(ctx context.Context, a Actor, srv store.Server, c
 	return c.createTunnel(ctx, a, srv, conn)
 }
 
-// createTunnel has Dock create a tunnel for a server in tunnel mode, in
+// createTunnel has Dock create a tunnel for a server that can take one, in
 // the background.
 func (c *Core) createTunnel(ctx context.Context, a Actor, srv store.Server, conn store.CloudflareConnection) error {
 	if _, err := c.store.CreateCloudflareTunnel(ctx, store.CreateCloudflareTunnelParams{

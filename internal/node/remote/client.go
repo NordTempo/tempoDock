@@ -297,9 +297,24 @@ func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 			return err
 		}
 	}
+	if slices.ContainsFunc(routes, func(r node.Route) bool { return r.TunnelOnly }) {
+		s, err := c.session(ctx)
+		if err != nil {
+			return err
+		}
+		if s.hello.Protocol < TunnelListenerProtocol {
+			// It would serve them on its public IP: leave them out. It can't
+			// run a tunnel for them anyway.
+			routes = slices.DeleteFunc(slices.Clone(routes), func(r node.Route) bool { return r.TunnelOnly })
+		}
+	}
 	_, err := unaryCall[empty](ctx, c, opApplyRoutes, routesRequest{Routes: toWireRoutes(routes)})
 	return err
 }
+
+// TunnelListenerProtocol is the first protocol whose direct nodes run a
+// tunnel listener and know tunnel-only routes (ADR 0036).
+const TunnelListenerProtocol = 9
 
 // CheckDomain implements node.Proxy.
 func (c *Client) CheckDomain(ctx context.Context, hostname string) (node.DomainCheck, error) {

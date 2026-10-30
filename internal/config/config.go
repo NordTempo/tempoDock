@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -144,6 +145,10 @@ type Caddy struct {
 	AdminSocket string `toml:"admin_socket"`
 	HTTPPort    int    `toml:"http_port"`
 	HTTPSPort   int    `toml:"https_port"`
+	// TunnelPort is where a direct server's Caddy also serves its
+	// Cloudflare tunnel, on 127.0.0.1, when the control plane runs one
+	// there (ADR 0036). 0 turns that off. Tunnel mode uses http_port.
+	TunnelPort int `toml:"tunnel_port"`
 	// ACMEEmail is passed to the certificate authority. Optional.
 	ACMEEmail string `toml:"acme_email"`
 	// DisableTLS serves every route over plain HTTP. For local development
@@ -291,6 +296,7 @@ func Default() Config {
 			HTTPPort:      80,
 			HTTPSPort:     443,
 			TrafficListen: "127.0.0.1:7074",
+			TunnelPort:    7075,
 		},
 		BuildKit: BuildKit{
 			Enabled:        true,
@@ -384,6 +390,9 @@ func (c *Config) validate() error {
 	if err := c.Hooks.validate(); err != nil {
 		return err
 	}
+	if err := c.checkTunnelPort(); err != nil {
+		return err
+	}
 	if t := c.Caddy.TrafficListen; t != "" {
 		host, _, err := net.SplitHostPort(t)
 		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
@@ -435,6 +444,40 @@ func (h *Hooks) validate() error {
 			return fmt.Errorf("[hooks] ui_url %q must be an http(s) URL like https://dock.example.com", h.UIURL)
 		}
 		h.UIURL = strings.TrimSuffix(h.UIURL, "/")
+	}
+	return nil
+}
+
+// CloudflaredPort is the port on 127.0.0.1 this server's cloudflared
+// forwards to (ADR 0036): http_port in tunnel mode, tunnel_port (0: none)
+// on a direct server.
+func (c Config) CloudflaredPort() int {
+	if c.Ingress.Mode == IngressCloudflareTunnel {
+		return c.Caddy.HTTPPort
+	}
+	return c.Caddy.TunnelPort
+}
+
+// checkTunnelPort refuses a tunnel_port that another of this server's
+// listeners uses: Caddy couldn't load its config with it.
+func (c Config) checkTunnelPort() error {
+	p := c.Caddy.TunnelPort
+	if p == 0 {
+		return nil
+	}
+	if p < 0 || p > 65535 {
+		return fmt.Errorf("[caddy] tunnel_port %d is not a port (0 turns the tunnel listener off)", p)
+	}
+	taken := []int{c.Caddy.HTTPPort, c.Caddy.HTTPSPort}
+	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen} {
+		if _, port, err := net.SplitHostPort(addr); err == nil {
+			if n, err := strconv.Atoi(port); err == nil {
+				taken = append(taken, n)
+			}
+		}
+	}
+	if slices.Contains(taken, p) {
+		return fmt.Errorf("[caddy] tunnel_port %d is used by another of this server's listeners; pick a free one (or 0 to turn the tunnel listener off)", p)
 	}
 	return nil
 }

@@ -509,6 +509,7 @@ func (c *Core) toServer(r store.ListServerLoadsRow, usage bool, tunnels map[int6
 	if t, ok := tunnels[s.ID]; ok {
 		out.Tunnel = &t
 	}
+	out.TunnelPort = c.tunnelPort(s)
 	return out
 }
 
@@ -564,7 +565,7 @@ func (c *Core) ingressOf(s store.Server) serverIngress {
 	if ing.mode == "" {
 		ing.mode = apitypes.IngressDirect
 	}
-	if t := strings.ToLower(c.cfg.Ingress.TunnelHostname); ing.tunnel == "" && config.ValidTunnelHostname(t) {
+	if t := strings.ToLower(c.cfg.Ingress.TunnelHostname); ing.tunnel == "" && ing.mode == apitypes.IngressCloudflareTunnel && config.ValidTunnelHostname(t) {
 		ing.tunnel = t // only what DNS can point at, as for remote servers' hello
 	}
 	if ing.baseDomain == "" {

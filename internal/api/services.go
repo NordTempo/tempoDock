@@ -86,7 +86,7 @@ func registerDomains(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "add-domain", Method: http.MethodPost, Path: servicePathT + "/domains",
-		Summary: "Add a domain", Description: "Any hostname, unique across all services. DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0036): the server must be in tunnel mode, and a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.",
+		Summary: "Add a domain", Description: "Any hostname, unique across all services. DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0036): on a direct server it is served to the tunnel only, next to the public IP; a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.",
 		Tags: tags, DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath

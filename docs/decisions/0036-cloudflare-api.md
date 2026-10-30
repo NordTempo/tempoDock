@@ -47,7 +47,7 @@ when there is one.
 | Ownership | Records Dock makes carry the comment `dock:<install id>` (comments fit the Free plan; tags don't). Dock only edits or deletes those, and only the hostname routes it added. A proxied CNAME someone else made that already points at the tunnel is used as it is and never touched |
 | Queue | `cloudflare_tunnels` and `cloudflare_records` hold what Dock wants (`want` present or absent) and how far it is. One worker works through pending rows, one call at a time, then sleeps until kicked or until the earliest retry; nothing is triggered by the lossy event bus alone. Rows carry a generation every other writer bumps, and the worker saves a result only if it is unchanged, so a removal while it works isn't lost |
 | Failures | Cloudflare unreachable, too slow or 5xx: the row retries with backoff, 5 s doubling to 5 min. 429: the worker stops calling Cloudflare until `Retry-After` (5 min, Cloudflare's block, without one). A refused token: Dock verifies it; if Cloudflare refuses the token itself, the connection turns `invalid` and its rows wait, without retries, for `dock cloudflare set`; otherwise the row fails with the permission it needs, until `dock cloudflare retry` |
-| Not now | A records to IPs and wildcards (by choice), Cloudflare in front of direct servers (Hetzner would have to switch to tunnel mode), switching a running server's ingress (re-run install.sh), Access policies, load balancing, per-org connections or zones (an `org_id` like storage's when orgs need their own; today every org's members see the zones), an alert when a token turns invalid (the console shows it) |
+| Not now | A records to IPs and wildcards (by choice), switching a running server's ingress (re-run install.sh), Access policies, load balancing, per-org connections or zones (an `org_id` like storage's when orgs need their own; today every org's members see the zones), an alert when a token turns invalid (the console shows it) |
 
 ## Why this shape
 
@@ -93,3 +93,36 @@ catch-all would not.
   for its name check.
 - One migration (0030), protocol 8, `[ingress] cloudflared_image`, and an
   `INGRESS=cloudflare_tunnel` option in install.sh.
+
+## Amendment (2026-10-30): tunnels next to a public IP
+
+A direct server can run a tunnel too, so one server serves both ways:
+typed domains on its public IP, as before, and domains added from
+Cloudflare through the tunnel. Saile asked for both on the Hetzner
+server.
+
+- **Listener.** While it has domains through the tunnel, a direct
+  server's Caddy also listens on `127.0.0.1:<[caddy] tunnel_port>` (7075
+  by default, checked against Dock's other ports; 0 turns it off): plain
+  HTTP, every route, forwarding headers trusted from loopback, redirects
+  to `https://` on 443 as visitors at Cloudflare's edge use. The tunnel's
+  catch-all goes there; changing `tunnel_port` later needs the tunnel's
+  route changed too (or the tunnel removed with its server and made
+  again). In direct mode, sending the tunnel to the
+  public `:80` would loop on its redirect to HTTPS, and `:443` can't get a
+  certificate for a name that resolves to Cloudflare.
+- **Tunnel-only routes.** Domains Dock routes through the tunnel are
+  served on that listener only: the public listeners don't route them
+  (no bypassing Cloudflare through the IP), and on-demand TLS refuses
+  them. Their domain check finds the server's marker through Cloudflare,
+  as for any proxied record.
+- **Protocol 9.** Hello reports the port the node's cloudflared forwards
+  to (`tunnel_port`), and routes carry `tunnel_only`. A direct node that
+  reports no port (older, or turned off) can't take a tunnel: adding a
+  domain from Cloudflare there says to upgrade it. Tunnel-only routes are
+  never sent to a node before protocol 9, which would serve them on its
+  IP.
+- "From Cloudflare" and `dock server tunnel create` work on any server
+  that can take a tunnel; generated domains on a direct server stay on
+  its IP.
+

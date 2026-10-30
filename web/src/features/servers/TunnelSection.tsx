@@ -25,9 +25,10 @@ const tunnelState: Record<Tunnel["status"], State> = {
 };
 
 /**
- * A tunnel server's Cloudflare tunnel (ADR 0036): the one Dock runs, with
- * the cloudflared processes connected to it (read when the page opens),
- * or how to have Dock run it.
+ * A server's Cloudflare tunnel (ADR 0036), in tunnel mode or next to a
+ * direct server's public IP: the one Dock runs, with the cloudflared
+ * processes connected to it (read when the page opens), or how to have
+ * Dock run it.
  */
 export function TunnelSection({ server: s }: { server: Server }) {
   const t = s.tunnel;
@@ -68,7 +69,12 @@ function Managed({ server: s, tunnel: t }: { server: Server; tunnel: Tunnel }) {
         </Fact>
         <Fact label="Routes to">
           <span className="font-mono">dock-cloudflared</span>
-          <span className="text-mut"> on {s.name}, then Caddy</span>
+          <span className="text-mut">
+            {" "}
+            on {s.name}, then Caddy
+            {s.ingress === "direct" &&
+              "; only domains added from Cloudflare, the rest stay on the public IP"}
+          </span>
         </Fact>
       </dl>
       {connectors.length > 0 && (
@@ -124,6 +130,12 @@ function Unmanaged({ server: s }: { server: Server }) {
             <span className="font-mono text-fg">{s.tunnel_hostname}</span>{" "}
             itself. Dock takes it over, routes kept, when a domain is added from
             Cloudflare, or now.
+          </>
+        ) : s.ingress === "direct" ? (
+          <>
+            {s.name} serves its domains on its public IP. Dock can run a tunnel
+            next to it, for domains added from Cloudflare: it creates one when
+            the first is added, or now.
           </>
         ) : (
           <>

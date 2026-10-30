@@ -14,10 +14,13 @@ import (
 type hostSet map[string]struct{}
 
 // routeHosts collects the hostnames of routes, redirects included: they
-// need a certificate to redirect over HTTPS.
+// need a certificate to redirect over HTTPS. TunnelOnly routes don't.
 func routeHosts(routes []node.Route) *hostSet {
 	s := hostSet{}
 	for _, r := range routes {
+		if r.TunnelOnly {
+			continue // resolves to Cloudflare: no certificate of ours
+		}
 		for _, h := range r.Hostnames {
 			s[h] = struct{}{}
 		}
@@ -89,7 +92,10 @@ func (p *Proxy) runningHosts(ctx context.Context) (*hostSet, error) {
 		return nil, fmt.Errorf("caddy: read running config: %w", err)
 	}
 	s := hostSet{}
-	for _, srv := range servers {
+	for name, srv := range servers {
+		if name == tunnelServer {
+			continue // TunnelOnly routes: no certificate of ours
+		}
 		for _, r := range srv.Routes {
 			for _, m := range r.Match {
 				for _, h := range m.Host {

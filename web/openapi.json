@@ -5137,6 +5137,10 @@
             "description": "CNAME target of its Cloudflare tunnel",
             "type": "string"
           },
+          "tunnel_port": {
+            "format": "int64",
+            "type": "integer"
+          },
           "usage": {
             "$ref": "#/components/schemas/ServerUsage"
           },
@@ -5160,7 +5164,8 @@
           "memory_bytes",
           "reserved_memory_bytes",
           "projects",
-          "environments"
+          "environments",
+          "tunnel_port"
         ],
         "type": "object"
       },
@@ -21921,7 +21926,7 @@
         ]
       },
       "post": {
-        "description": "Any hostname, unique across all services. DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0036): the server must be in tunnel mode, and a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.",
+        "description": "Any hostname, unique across all services. DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0036): on a direct server it is served to the tunnel only, next to the public IP; a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.",
         "operationId": "add-domain",
         "parameters": [
           {
@@ -28219,7 +28224,7 @@
     },
     "/api/v1/servers/{server}/tunnel": {
       "post": {
-        "description": "For a server in tunnel mode (ADR 0036). create: Dock creates a tunnel in the background, routes it to the server's Caddy and has the server run it. adopt: Dock takes over the tunnel the server runs already; its routes stay. Adding a domain from Cloudflare does this when needed. Operators only.",
+        "description": "For a tunnel server, or a direct server next to its public IP (ADR 0036). create: Dock creates a tunnel in the background, routes it to the server's Caddy and has the server run it. adopt: Dock takes over the tunnel the server runs already; its routes stay. Adding a domain from Cloudflare does this when needed. Operators only.",
         "operationId": "set-server-tunnel",
         "parameters": [
           {

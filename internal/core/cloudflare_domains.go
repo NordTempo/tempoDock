@@ -15,8 +15,8 @@ import (
 )
 
 // Domains through tunnels (ADR 0036): a domain added "from Cloudflare"
-// (or generated under a base domain in a managed zone) on a tunnel
-// server is routed through the server's tunnel: a proxied CNAME to it,
+// (or generated under a base domain in a managed zone on a tunnel server)
+// is routed through the server's tunnel: a proxied CNAME to it,
 // and on an adopted tunnel whose catch-all doesn't go to Caddy a hostname
 // route. Dock never points DNS at an IP. The rows of cloudflare_records
 // are worked on by the Cloudflare worker (cloudflare_queue.go).
@@ -45,9 +45,9 @@ func (c *Core) ListCloudflareZones(ctx context.Context, a Actor) ([]apitypes.Clo
 
 // prepareCloudflareDomain checks that host can be added from Cloudflare
 // to a service on srv, and gets srv's tunnel ready for it (adopting the
-// one it runs, or creating one): host is in a managed zone, srv is a
-// tunnel server, and no record Dock didn't make is in the way. It
-// returns the zone.
+// one it runs, or creating one): host is in a managed zone, srv can take
+// a tunnel (tunnel mode, or a direct server with a tunnel listener), and
+// no record Dock didn't make is in the way. It returns the zone.
 func (c *Core) prepareCloudflareDomain(ctx context.Context, a Actor, srv store.Server, host string) (store.CloudflareZone, error) {
 	z, ok := c.zoneFor(host)
 	if !ok {
@@ -61,8 +61,8 @@ func (c *Core) prepareCloudflareDomain(ctx context.Context, a Actor, srv store.S
 		}
 		return z, invalid("%s isn't in a zone connected to Dock (%s)", host, strings.Join(names, ", "))
 	}
-	if ing := c.ingressOf(srv); ing.mode != apitypes.IngressCloudflareTunnel {
-		return z, invalid("server %s serves domains on its public IP; domains from Cloudflare go through a tunnel, so they need a server in tunnel mode (install.sh with INGRESS=cloudflare_tunnel)", srv.Name)
+	if c.tunnelPort(srv) == 0 {
+		return z, invalid("domains from Cloudflare go through a tunnel, and %s", c.noTunnelListener(srv))
 	}
 	conn, err := c.store.GetCloudflareConnectionByID(ctx, z.ConnectionID)
 	if err != nil {
@@ -232,7 +232,7 @@ func (c *Core) routeDomain(ctx context.Context, cc *cfConn, r store.CloudflareRe
 	target := cloudflare.Tunnel{ID: t.TunnelID}.Hostname()
 	res := routeResult{Content: target, RouteTunnel: r.RouteTunnel}
 	if t.Adopted {
-		added, err := c.addRoute(ctx, cc, t.TunnelID, r.Hostname, catchAll(c.httpPort(srv)).Ingress[0].Service)
+		added, err := c.addRoute(ctx, cc, t.TunnelID, r.Hostname, catchAll(c.tunnelPort(srv)).Ingress[0].Service)
 		if err != nil {
 			if e, ok := errors.AsType[routeTaken](err); ok {
 				return fail(string(e))
@@ -455,6 +455,20 @@ func recordStatus(r store.CloudflareRecord) apitypes.DNSRecordStatus {
 		return apitypes.DNSReady
 	}
 	return apitypes.DNSRecordStatus(r.Status)
+}
+
+// withRoute shows how Dock routes a domain through its server's tunnel:
+// its route's state, and the record it has (the CNAME to the tunnel)
+// instead of records to the server's IP. r nil leaves dom as it is.
+func (c *Core) withRoute(dom *apitypes.Domain, r *store.CloudflareRecord) {
+	dom.DNS = c.domainDNS(r)
+	if dom.DNS == nil {
+		return
+	}
+	dom.DNSRecords = []apitypes.DNSRecord{}
+	if dom.DNS.Tunnel != "" {
+		dom.DNSRecords = append(dom.DNSRecords, apitypes.DNSRecord{Type: "CNAME", Name: dom.Hostname, Value: dom.DNS.Tunnel})
+	}
 }
 
 // domainDNS is a domain's route through its tunnel for the API; nil for

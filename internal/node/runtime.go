@@ -646,6 +646,11 @@ type Route struct {
 	// Traffic, when set, counts the route's requests for traffic
 	// statistics (ADR 0033). Redirect routes ignore it.
 	Traffic bool
+	// TunnelOnly serves the route only to the server's Cloudflare tunnel,
+	// on a direct server that runs one (ADR 0036): its hostnames resolve
+	// to Cloudflare, so the public listeners neither serve them nor get
+	// certificates for them.
+	TunnelOnly bool
 }
 
 // Access is how a route is protected: a password (PasswordHash set) or a

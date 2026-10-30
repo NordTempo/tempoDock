@@ -107,8 +107,8 @@ that is not an error: the server keeps checking.
 --cloudflare adds a hostname in a zone connected to Dock (` + "`dock cloudflare zones`" + `)
 and has Dock set up all it needs: it routes the hostname through the
 server's Cloudflare tunnel (creating or adopting one) and creates its
-proxied CNAME. The server must be in tunnel mode; a record Dock didn't make
-at that name is refused.`,
+proxied CNAME. On a direct server, the tunnel runs next to the public IP and
+serves only such domains. A record Dock didn't make at that name is refused.`,
 		Example: `  dock domain add shop.example.com -s web
   dock domain add shop.tempo.run -s web --cloudflare`,
 		Args: cobra.ExactArgs(1),
