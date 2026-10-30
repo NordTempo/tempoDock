@@ -8,10 +8,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -135,7 +137,7 @@ func TestPushPullPrune(t *testing.T) {
 	}
 
 	var gcLog bytes.Buffer
-	if err := registry.GarbageCollect(ctx, docker, name, io.MultiWriter(&gcLog, testWriter{t})); err != nil {
+	if err := registry.GarbageCollect(ctx, docker, name, false, io.MultiWriter(&gcLog, testWriter{t})); err != nil {
 		t.Fatalf("garbage collect: %v\n%s", err, gcLog.String())
 	}
 	if !strings.Contains(gcLog.String(), "blob eligible for deletion: "+digest) {
@@ -145,13 +147,14 @@ func TestPushPullPrune(t *testing.T) {
 }
 
 // startRegistry runs registry:3 as name, configured by registry.WriteConfig
-// and locked down like install.sh runs it, and returns its URL on a
+// and locked down like install.sh runs it (as an unprivileged user that
+// can read the 0640 config: this test's), and returns its URL on a
 // loopback port.
 func startRegistry(t *testing.T, docker *client.Client, name string, signer *registry.Signer) string {
 	t.Helper()
 	ctx := t.Context()
 	dir := t.TempDir()
-	if _, err := registry.WriteConfig(dir, signer); err != nil {
+	if _, err := registry.WriteConfig(dir, signer, registry.Storage{}); err != nil {
 		t.Fatal(err)
 	}
 	// Fresh machines (CI) don't have the image yet.
@@ -169,11 +172,12 @@ func startRegistry(t *testing.T, docker *client.Client, name string, signer *reg
 		Name: name,
 		Config: &container.Config{
 			Image:        registry.Image,
+			User:         fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 			ExposedPorts: network.PortSet{port: {}},
 		},
 		HostConfig: &container.HostConfig{
 			PortBindings:   network.PortMap{port: {{HostIP: netip.MustParseAddr("127.0.0.1")}}},
-			Binds:          []string{dir + ":/etc/distribution:ro"},
+			Binds:          []string{dir + ":/etc/distribution:ro", t.TempDir() + ":/var/lib/registry"},
 			ReadonlyRootfs: true,
 			Tmpfs:          map[string]string{"/tmp": ""},
 			CapDrop:        []string{"ALL"},

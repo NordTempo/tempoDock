@@ -305,10 +305,11 @@ type OrgVariable struct {
 }
 
 type PlatformSetting struct {
-	ID         int64
-	PublicHost string
-	UpdatedBy  string
-	UpdatedAt  time.Time
+	ID                int64
+	PublicHost        string
+	UpdatedBy         string
+	UpdatedAt         time.Time
+	RegistryStorageID *int64
 }
 
 type Project struct {
@@ -461,6 +462,19 @@ type Session struct {
 	Hash      string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+}
+
+type StorageConnection struct {
+	ID          int64
+	Name        string
+	Endpoint    string
+	Region      string
+	Bucket      string
+	PathStyle   bool
+	Credentials []byte
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	UpdatedBy   string
 }
 
 type Token struct {

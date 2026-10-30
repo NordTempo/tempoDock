@@ -3,15 +3,20 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/api"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/registry"
 )
 
@@ -48,12 +53,14 @@ func platformRegistry(cfg config.Config, s *registry.Signer) (*registry.Platform
 		Client:     &registry.Client{URL: "http://" + cfg.Registry.Listen, Signer: s},
 		Docker:     docker,
 		StorageDir: cfg.Registry.StorageDir,
+		ConfigDir:  cfg.Registry.ConfigDir,
 	}, nil
 }
 
 // newRegistryConfigCmd writes the registry container's config.yml and
 // jwks.json. install.sh runs it as the dock user (it reads the signing
-// key) on every run and recreates the container only when they changed.
+// key and the database) on every run and recreates the container only
+// when they changed.
 func newRegistryConfigCmd() *cobra.Command {
 	configPath := config.DefaultPath
 	var out string
@@ -62,8 +69,10 @@ func newRegistryConfigCmd() *cobra.Command {
 		Short: "Write the image registry's config.yml and jwks.json",
 		Long: `Write the registry container's config.yml and jwks.json into a directory.
 Creates the control plane's registry signing key in the data dir on first
-use. The output only depends on the key and the [registry] config, so
-running it again writes the same files.`,
+use. The output only depends on the key, the [registry] config and where
+the registry keeps its images (the storage dir, or a storage connection's
+bucket), so running it again writes the same files. config.yml holds the
+bucket's keys: it is written 0640.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if out == "" {
@@ -77,7 +86,16 @@ running it again writes the same files.`,
 			if err != nil {
 				return err
 			}
-			if _, err := registry.WriteConfig(out, s); err != nil {
+			c, closeState, err := adminCore(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			defer closeState()
+			bucket, err := c.RegistryBucket(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if _, err := registry.WriteConfig(out, s, registry.Storage{Bucket: bucket}); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.ErrOrStderr(), "Wrote %s and %s\n", filepath.Join(out, "config.yml"), filepath.Join(out, "jwks.json"))
@@ -87,4 +105,80 @@ running it again writes the same files.`,
 	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
 	cmd.Flags().StringVar(&out, "out", "", "directory to write config.yml and jwks.json to")
 	return cmd
+}
+
+// newRegistryStorageCmd points a new registry at a bucket: install.sh runs
+// it (as the dock user, before starting the daemon) when the installer
+// chooses S3-compatible storage. Moving images that are already stored is
+// `dock registry migrate`.
+func newRegistryStorageCmd() *cobra.Command {
+	configPath := config.DefaultPath
+	var req apitypes.CreateStorageRequest
+	pathStyle := true
+	cmd := &cobra.Command{
+		Use:   "registry-storage <name> --endpoint <url> --bucket <bucket> < keys",
+		Short: "Keep a new registry's images in an S3-compatible bucket",
+		Long: `Save the storage connection <name> (or update it) and keep the registry's
+images in its bucket, under dock-registry/. Reads the access key ID and
+the secret access key from stdin, one per line. Dock lists the bucket
+first, so wrong keys or a wrong endpoint fail here. The daemon applies it
+on its next start; the registry's config follows from ` + "`dock admin registry-config`" + `.
+
+For a registry with no images yet: install.sh checks the storage dir is
+empty. Images already stored move with ` + "`dock registry migrate`" + `.`,
+		Example: `  printf '%s\n%s\n' "$KEY_ID" "$SECRET" | dock admin registry-storage hetzner \
+      --endpoint https://fsn1.your-objectstorage.com --region fsn1 --bucket dock-images`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			b, err := io.ReadAll(io.LimitReader(cmd.InOrStdin(), maxSecretInput))
+			if err != nil {
+				return err
+			}
+			id, secret, _ := strings.Cut(strings.TrimSpace(string(b)), "\n")
+			req.AccessKeyID, req.SecretAccessKey = strings.TrimSpace(id), strings.TrimSpace(secret)
+			if req.AccessKeyID == "" || req.SecretAccessKey == "" {
+				return usageError("expected the access key ID and the secret access key on stdin, one per line", "printf '%s\\n%s\\n' \"$KEY_ID\" \"$SECRET\" | dock admin registry-storage ...")
+			}
+			req.Name, req.PathStyle = args[0], &pathStyle
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return err
+			}
+			if !cfg.Registry.Enabled {
+				return usageError("the registry is off on this server", "Set [registry] enabled = true (install.sh: REGISTRY=1).")
+			}
+			c, closeState, err := adminCore(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			defer closeState()
+			if _, err := c.InstallRegistryStorage(cmd.Context(), core.System, req); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.ErrOrStderr(), "The registry keeps its images in bucket %s at %s (storage %s)\n", req.Bucket, req.Endpoint, req.Name)
+			return err
+		},
+	}
+	fs := cmd.Flags()
+	fs.StringVar(&configPath, "config", configPath, "path to the daemon config file")
+	fs.StringVar(&req.Endpoint, "endpoint", "", "the store's base URL, like https://fsn1.your-objectstorage.com")
+	fs.StringVar(&req.Region, "region", "", "region to sign requests for (default us-east-1)")
+	fs.StringVar(&req.Bucket, "bucket", "", "the bucket")
+	fs.BoolVar(&pathStyle, "path-style", pathStyle, "address the bucket in the URL's path; false puts it in the host name")
+	return cmd
+}
+
+// adminCore opens the state and a Core without a runtime, for admin
+// commands that run next to the daemon. close closes the state.
+func adminCore(ctx context.Context, cfg config.Config) (c *core.Core, closeState func(), err error) {
+	st, box, err := openState(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	c, err = core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box})
+	if err != nil {
+		_ = st.Close()
+		return nil, nil, err
+	}
+	return c, func() { _ = st.Close() }, nil
 }

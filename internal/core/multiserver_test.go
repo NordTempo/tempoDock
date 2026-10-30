@@ -17,6 +17,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
+	"github.com/NordTempo/tempoDock/internal/s3"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -26,6 +27,10 @@ type fakeRegistry struct {
 	mu     sync.Mutex
 	ops    []string
 	pruned int // what Prune reports deleting
+	// migrateErr fails Migrate before it commits; gate, if set, holds
+	// Migrate until it is closed.
+	migrateErr error
+	gate       chan struct{}
 }
 
 func (r *fakeRegistry) op(format string, args ...any) {
@@ -64,7 +69,40 @@ func (r *fakeRegistry) GarbageCollect(context.Context) error {
 	return nil
 }
 
-func (r *fakeRegistry) Stored() (int64, error) { return 1 << 30, nil }
+func (r *fakeRegistry) Stored(context.Context) (int64, error) { return 1 << 30, nil }
+
+func (r *fakeRegistry) UseStorage(_ context.Context, b *s3.Bucket) error {
+	r.op("use %s", bucketLabel(b))
+	return nil
+}
+
+func (r *fakeRegistry) Migrate(_ context.Context, to *s3.Bucket, commit func() error) (int, int64, error) {
+	r.op("migrate to %s", bucketLabel(to))
+	if r.gate != nil {
+		<-r.gate
+	}
+	if r.migrateErr != nil {
+		return 0, 0, r.migrateErr
+	}
+	if err := commit(); err != nil {
+		return 0, 0, err
+	}
+	return 3, 300, nil
+}
+
+func (r *fakeRegistry) Drop(_ context.Context, b *s3.Bucket) error {
+	r.op("drop %s", bucketLabel(b))
+	return nil
+}
+
+// bucketLabel names a storage in fakeRegistry's ops: local or the bucket
+// with its access key.
+func bucketLabel(b *s3.Bucket) string {
+	if b == nil {
+		return "local"
+	}
+	return b.Name + ":" + b.AccessKeyID
+}
 
 func digestOf(s string) string {
 	sum := sha256.Sum256([]byte(s))

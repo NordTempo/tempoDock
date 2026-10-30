@@ -15,9 +15,14 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
-// GCTimeout bounds one garbage collection. Collecting a local registry
-// takes seconds; this only stops a collector that hangs.
-const GCTimeout = 15 * time.Minute
+// GCTimeout bounds one garbage collection on disk, GCBucketTimeout one in
+// a bucket, where the collector lists every repository and blob over the
+// network. Collecting takes seconds to minutes; these only stop a
+// collector that hangs.
+const (
+	GCTimeout       = 15 * time.Minute
+	GCBucketTimeout = time.Hour
+)
 
 // GarbageCollect removes the blobs no manifest references any more, after
 // Client.Prune deleted manifests, with Distribution's own
@@ -29,18 +34,27 @@ const GCTimeout = 15 * time.Minute
 // started again afterwards, whatever happens. Pulls and pushes fail for
 // those seconds; the caller schedules it when no build or pull is in
 // flight. The collector gets the registry's volumes and config
-// (VolumesFrom), no network, and a memory cap. Its output goes to logs.
-// A collector still running after GCTimeout is removed, so a hung one
-// can't keep the registry stopped.
-func GarbageCollect(ctx context.Context, docker *client.Client, registry string, logs io.Writer) (err error) {
+// (VolumesFrom) and a memory cap. On disk it gets no network; with the
+// images in a bucket it gets the registry's network to reach it. Its
+// output goes to logs. A collector still running after GCTimeout
+// (GCBucketTimeout) is removed, so a hung one can't keep the registry
+// stopped.
+func GarbageCollect(ctx context.Context, docker *client.Client, registry string, bucket bool, logs io.Writer) (err error) {
 	if logs == nil {
 		logs = io.Discard
 	}
-	ctx, cancel := context.WithTimeout(ctx, GCTimeout)
+	limit, network := GCTimeout, container.NetworkMode("none")
+	if bucket {
+		limit = GCBucketTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	inspect, err := docker.ContainerInspect(ctx, registry, client.ContainerInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("garbage collect: inspect %s: %w", registry, err)
+	}
+	if h := inspect.Container.HostConfig; bucket && h != nil {
+		network = h.NetworkMode
 	}
 	if inspect.Container.State.Running {
 		timeout := 30
@@ -72,7 +86,7 @@ func GarbageCollect(ctx context.Context, docker *client.Client, registry string,
 		},
 		HostConfig: &container.HostConfig{
 			VolumesFrom: []string{registry},
-			NetworkMode: "none",
+			NetworkMode: network,
 			Resources:   container.Resources{Memory: mem, MemorySwap: mem},
 		},
 	})
@@ -91,7 +105,7 @@ func GarbageCollect(ctx context.Context, docker *client.Client, registry string,
 	case exit = <-wait.Result:
 	case err := <-wait.Error:
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("garbage collect: %s still ran after %s and was stopped", name, GCTimeout)
+			return fmt.Errorf("garbage collect: %s still ran after %s and was stopped", name, limit)
 		}
 		return fmt.Errorf("garbage collect: wait for %s: %w", name, err)
 	}

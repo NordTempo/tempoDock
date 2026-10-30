@@ -162,6 +162,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createSessionStmt, err = db.PrepareContext(ctx, createSession); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSession: %w", err)
 	}
+	if q.createStorageConnectionStmt, err = db.PrepareContext(ctx, createStorageConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateStorageConnection: %w", err)
+	}
 	if q.createTokenStmt, err = db.PrepareContext(ctx, createToken); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateToken: %w", err)
 	}
@@ -257,6 +260,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteSessionStmt, err = db.PrepareContext(ctx, deleteSession); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSession: %w", err)
+	}
+	if q.deleteStorageConnectionStmt, err = db.PrepareContext(ctx, deleteStorageConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteStorageConnection: %w", err)
 	}
 	if q.deleteUserStmt, err = db.PrepareContext(ctx, deleteUser); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteUser: %w", err)
@@ -411,6 +417,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPublicHostStmt, err = db.PrepareContext(ctx, getPublicHost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPublicHost: %w", err)
 	}
+	if q.getRegistryStorageIDStmt, err = db.PrepareContext(ctx, getRegistryStorageID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRegistryStorageID: %w", err)
+	}
 	if q.getReleaseStmt, err = db.PrepareContext(ctx, getRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRelease: %w", err)
 	}
@@ -437,6 +446,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getSessionUserStmt, err = db.PrepareContext(ctx, getSessionUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSessionUser: %w", err)
+	}
+	if q.getStorageConnectionStmt, err = db.PrepareContext(ctx, getStorageConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query GetStorageConnection: %w", err)
 	}
 	if q.getTokenStmt, err = db.PrepareContext(ctx, getToken); err != nil {
 		return nil, fmt.Errorf("error preparing query GetToken: %w", err)
@@ -675,6 +687,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listStatsTargetsStmt, err = db.PrepareContext(ctx, listStatsTargets); err != nil {
 		return nil, fmt.Errorf("error preparing query ListStatsTargets: %w", err)
 	}
+	if q.listStorageConnectionsStmt, err = db.PrepareContext(ctx, listStorageConnections); err != nil {
+		return nil, fmt.Errorf("error preparing query ListStorageConnections: %w", err)
+	}
 	if q.listTrafficHostsStmt, err = db.PrepareContext(ctx, listTrafficHosts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListTrafficHosts: %w", err)
 	}
@@ -819,6 +834,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setPublicHostStmt, err = db.PrepareContext(ctx, setPublicHost); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPublicHost: %w", err)
 	}
+	if q.setRegistryStorageStmt, err = db.PrepareContext(ctx, setRegistryStorage); err != nil {
+		return nil, fmt.Errorf("error preparing query SetRegistryStorage: %w", err)
+	}
 	if q.setReleaseCommitStmt, err = db.PrepareContext(ctx, setReleaseCommit); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseCommit: %w", err)
 	}
@@ -917,6 +935,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.updateServiceStmt, err = db.PrepareContext(ctx, updateService); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateService: %w", err)
+	}
+	if q.updateStorageConnectionStmt, err = db.PrepareContext(ctx, updateStorageConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateStorageConnection: %w", err)
 	}
 	if q.upsertBackupScheduleStmt, err = db.PrepareContext(ctx, upsertBackupSchedule); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertBackupSchedule: %w", err)
@@ -1168,6 +1189,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createSessionStmt: %w", cerr)
 		}
 	}
+	if q.createStorageConnectionStmt != nil {
+		if cerr := q.createStorageConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createStorageConnectionStmt: %w", cerr)
+		}
+	}
 	if q.createTokenStmt != nil {
 		if cerr := q.createTokenStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createTokenStmt: %w", cerr)
@@ -1326,6 +1352,11 @@ func (q *Queries) Close() error {
 	if q.deleteSessionStmt != nil {
 		if cerr := q.deleteSessionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSessionStmt: %w", cerr)
+		}
+	}
+	if q.deleteStorageConnectionStmt != nil {
+		if cerr := q.deleteStorageConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteStorageConnectionStmt: %w", cerr)
 		}
 	}
 	if q.deleteUserStmt != nil {
@@ -1583,6 +1614,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPublicHostStmt: %w", cerr)
 		}
 	}
+	if q.getRegistryStorageIDStmt != nil {
+		if cerr := q.getRegistryStorageIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRegistryStorageIDStmt: %w", cerr)
+		}
+	}
 	if q.getReleaseStmt != nil {
 		if cerr := q.getReleaseStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getReleaseStmt: %w", cerr)
@@ -1626,6 +1662,11 @@ func (q *Queries) Close() error {
 	if q.getSessionUserStmt != nil {
 		if cerr := q.getSessionUserStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getSessionUserStmt: %w", cerr)
+		}
+	}
+	if q.getStorageConnectionStmt != nil {
+		if cerr := q.getStorageConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getStorageConnectionStmt: %w", cerr)
 		}
 	}
 	if q.getTokenStmt != nil {
@@ -2023,6 +2064,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listStatsTargetsStmt: %w", cerr)
 		}
 	}
+	if q.listStorageConnectionsStmt != nil {
+		if cerr := q.listStorageConnectionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listStorageConnectionsStmt: %w", cerr)
+		}
+	}
 	if q.listTrafficHostsStmt != nil {
 		if cerr := q.listTrafficHostsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listTrafficHostsStmt: %w", cerr)
@@ -2263,6 +2309,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setPublicHostStmt: %w", cerr)
 		}
 	}
+	if q.setRegistryStorageStmt != nil {
+		if cerr := q.setRegistryStorageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setRegistryStorageStmt: %w", cerr)
+		}
+	}
 	if q.setReleaseCommitStmt != nil {
 		if cerr := q.setReleaseCommitStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setReleaseCommitStmt: %w", cerr)
@@ -2428,6 +2479,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateServiceStmt: %w", cerr)
 		}
 	}
+	if q.updateStorageConnectionStmt != nil {
+		if cerr := q.updateStorageConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateStorageConnectionStmt: %w", cerr)
+		}
+	}
 	if q.upsertBackupScheduleStmt != nil {
 		if cerr := q.upsertBackupScheduleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing upsertBackupScheduleStmt: %w", cerr)
@@ -2538,6 +2594,7 @@ type Queries struct {
 	createServerStmt                    *sql.Stmt
 	createServiceStmt                   *sql.Stmt
 	createSessionStmt                   *sql.Stmt
+	createStorageConnectionStmt         *sql.Stmt
 	createTokenStmt                     *sql.Stmt
 	createUserStmt                      *sql.Stmt
 	createVolumeStmt                    *sql.Stmt
@@ -2570,6 +2627,7 @@ type Queries struct {
 	deleteServerPlacementsStmt          *sql.Stmt
 	deleteServiceAccessStmt             *sql.Stmt
 	deleteSessionStmt                   *sql.Stmt
+	deleteStorageConnectionStmt         *sql.Stmt
 	deleteUserStmt                      *sql.Stmt
 	deleteUserSessionsStmt              *sql.Stmt
 	deleteVariableStmt                  *sql.Stmt
@@ -2621,6 +2679,7 @@ type Queries struct {
 	getProjectStmt                      *sql.Stmt
 	getProjectByNameStmt                *sql.Stmt
 	getPublicHostStmt                   *sql.Stmt
+	getRegistryStorageIDStmt            *sql.Stmt
 	getReleaseStmt                      *sql.Stmt
 	getReleaseByNumberStmt              *sql.Stmt
 	getServerStmt                       *sql.Stmt
@@ -2630,6 +2689,7 @@ type Queries struct {
 	getServiceAccessStmt                *sql.Stmt
 	getServiceByNameStmt                *sql.Stmt
 	getSessionUserStmt                  *sql.Stmt
+	getStorageConnectionStmt            *sql.Stmt
 	getTokenStmt                        *sql.Stmt
 	getTokenByHashStmt                  *sql.Stmt
 	getUserStmt                         *sql.Stmt
@@ -2709,6 +2769,7 @@ type Queries struct {
 	listServicesStmt                    *sql.Stmt
 	listStatsNamesStmt                  *sql.Stmt
 	listStatsTargetsStmt                *sql.Stmt
+	listStorageConnectionsStmt          *sql.Stmt
 	listTrafficHostsStmt                *sql.Stmt
 	listTrafficStatsStmt                *sql.Stmt
 	listTrafficVisitorsStmt             *sql.Stmt
@@ -2757,6 +2818,7 @@ type Queries struct {
 	setMemberRoleStmt                   *sql.Stmt
 	setPendingSettingsStmt              *sql.Stmt
 	setPublicHostStmt                   *sql.Stmt
+	setRegistryStorageStmt              *sql.Stmt
 	setReleaseCommitStmt                *sql.Stmt
 	setReleaseContainerStmt             *sql.Stmt
 	setReleaseDigestStmt                *sql.Stmt
@@ -2790,6 +2852,7 @@ type Queries struct {
 	updateServerPlacementStmt           *sql.Stmt
 	updateServerSettingsStmt            *sql.Stmt
 	updateServiceStmt                   *sql.Stmt
+	updateStorageConnectionStmt         *sql.Stmt
 	upsertBackupScheduleStmt            *sql.Stmt
 	upsertBackupSettingsStmt            *sql.Stmt
 	upsertDataAccessStmt                *sql.Stmt
@@ -2847,6 +2910,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createServerStmt:                    q.createServerStmt,
 		createServiceStmt:                   q.createServiceStmt,
 		createSessionStmt:                   q.createSessionStmt,
+		createStorageConnectionStmt:         q.createStorageConnectionStmt,
 		createTokenStmt:                     q.createTokenStmt,
 		createUserStmt:                      q.createUserStmt,
 		createVolumeStmt:                    q.createVolumeStmt,
@@ -2879,6 +2943,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteServerPlacementsStmt:          q.deleteServerPlacementsStmt,
 		deleteServiceAccessStmt:             q.deleteServiceAccessStmt,
 		deleteSessionStmt:                   q.deleteSessionStmt,
+		deleteStorageConnectionStmt:         q.deleteStorageConnectionStmt,
 		deleteUserStmt:                      q.deleteUserStmt,
 		deleteUserSessionsStmt:              q.deleteUserSessionsStmt,
 		deleteVariableStmt:                  q.deleteVariableStmt,
@@ -2930,6 +2995,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getProjectStmt:                      q.getProjectStmt,
 		getProjectByNameStmt:                q.getProjectByNameStmt,
 		getPublicHostStmt:                   q.getPublicHostStmt,
+		getRegistryStorageIDStmt:            q.getRegistryStorageIDStmt,
 		getReleaseStmt:                      q.getReleaseStmt,
 		getReleaseByNumberStmt:              q.getReleaseByNumberStmt,
 		getServerStmt:                       q.getServerStmt,
@@ -2939,6 +3005,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getServiceAccessStmt:                q.getServiceAccessStmt,
 		getServiceByNameStmt:                q.getServiceByNameStmt,
 		getSessionUserStmt:                  q.getSessionUserStmt,
+		getStorageConnectionStmt:            q.getStorageConnectionStmt,
 		getTokenStmt:                        q.getTokenStmt,
 		getTokenByHashStmt:                  q.getTokenByHashStmt,
 		getUserStmt:                         q.getUserStmt,
@@ -3018,6 +3085,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listServicesStmt:                    q.listServicesStmt,
 		listStatsNamesStmt:                  q.listStatsNamesStmt,
 		listStatsTargetsStmt:                q.listStatsTargetsStmt,
+		listStorageConnectionsStmt:          q.listStorageConnectionsStmt,
 		listTrafficHostsStmt:                q.listTrafficHostsStmt,
 		listTrafficStatsStmt:                q.listTrafficStatsStmt,
 		listTrafficVisitorsStmt:             q.listTrafficVisitorsStmt,
@@ -3066,6 +3134,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setMemberRoleStmt:                   q.setMemberRoleStmt,
 		setPendingSettingsStmt:              q.setPendingSettingsStmt,
 		setPublicHostStmt:                   q.setPublicHostStmt,
+		setRegistryStorageStmt:              q.setRegistryStorageStmt,
 		setReleaseCommitStmt:                q.setReleaseCommitStmt,
 		setReleaseContainerStmt:             q.setReleaseContainerStmt,
 		setReleaseDigestStmt:                q.setReleaseDigestStmt,
@@ -3099,6 +3168,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateServerPlacementStmt:           q.updateServerPlacementStmt,
 		updateServerSettingsStmt:            q.updateServerSettingsStmt,
 		updateServiceStmt:                   q.updateServiceStmt,
+		updateStorageConnectionStmt:         q.updateStorageConnectionStmt,
 		upsertBackupScheduleStmt:            q.upsertBackupScheduleStmt,
 		upsertBackupSettingsStmt:            q.upsertBackupSettingsStmt,
 		upsertDataAccessStmt:                q.upsertDataAccessStmt,

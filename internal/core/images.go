@@ -62,7 +62,15 @@ type imageUpkeep struct {
 	// console: how many manifests it deleted, and why it failed.
 	lastPruned int
 	lastErr    string
+	// migration is the latest move of the images to other storage, which
+	// holds inUse while it runs (MigrateRegistry); migrateIDs are its
+	// connections (nil: local).
+	migration  *apitypes.RegistryMigration
+	migrateIDs [2]*int64
 }
+
+// migrating reports whether a migration runs. The caller holds mu.
+func (u *imageUpkeep) migrating() bool { return u.migration != nil && u.migration.Running }
 
 // useRegistry marks a build or pull that uses the registry until release
 // is called. Uses may nest (a build's pull): the write side only ever

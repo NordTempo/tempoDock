@@ -270,6 +270,7 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.failInterruptedBackups(ctx); err != nil {
 		return fmt.Errorf("recover backups: %w", err)
 	}
+	c.applyRegistryStorage(ctx)
 	if err := c.reconcileServer(ctx, c.local.ID, c.rt, true); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
