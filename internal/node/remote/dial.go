@@ -198,6 +198,27 @@ func serveDial(rt node.Runtime) http.HandlerFunc {
 	}
 }
 
+// serveDialAnalytics connects a call to the analytics store's port on
+// this server (node.Analytics.DialAnalyticsStore): nothing else is
+// reachable through it.
+func serveDialAnalytics(rt node.Runtime) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, up, err := readArgs[empty](r)
+		if err != nil {
+			newResponder(w).fail(&Error{Code: codeBadRequest, Message: err.Error()})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), dialTimeout)
+		conn, err := rt.DialAnalyticsStore(ctx)
+		cancel()
+		if err != nil {
+			newResponder(w).fail(wireError(err))
+			return
+		}
+		pipeCall(w, r, up, conn)
+	}
+}
+
 // pipeCall answers 200 and copies both ways between the call and conn
 // until either side is done: up (the rest of the request body) into conn,
 // conn into the response.

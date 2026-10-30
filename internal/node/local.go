@@ -2,7 +2,8 @@ package node
 
 // Local is the in-process Runtime for the control plane's own server, composed
 // from the Docker, BuildKit, Caddy, /proc + cgroup (stats), access log
-// (traffic) and cloudflared (tunnel) implementations.
+// (traffic), cloudflared (tunnel) and analytics (spool and store)
+// implementations.
 type Local struct {
 	Containers
 	Builder
@@ -10,4 +11,5 @@ type Local struct {
 	Stats
 	Traffic
 	Tunnel
+	Analytics
 }

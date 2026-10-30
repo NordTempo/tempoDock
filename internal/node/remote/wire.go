@@ -494,6 +494,15 @@ type wireRoute struct {
 	// TunnelOnly is new in protocol 9 (TunnelListenerProtocol); routes
 	// with it aren't sent to older nodes at all.
 	TunnelOnly bool `json:"tunnel_only,omitempty"`
+	// Analytics is new in protocol 10 (AnalyticsProtocol); older nodes
+	// get routes without it.
+	Analytics []wireAnalyticsHosts `json:"analytics,omitempty"`
+}
+
+// wireAnalyticsHosts is node.AnalyticsHosts.
+type wireAnalyticsHosts struct {
+	Hostnames []string `json:"hostnames"`
+	Tag       string   `json:"tag"`
 }
 
 // wireAccess is node.Access; the key travels as base64.
@@ -511,6 +520,9 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 		if a := r.Access; a != nil {
 			out[i].Access = &wireAccess{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
+		for _, a := range r.Analytics {
+			out[i].Analytics = append(out[i].Analytics, wireAnalyticsHosts(a))
+		}
 	}
 	return out
 }
@@ -521,6 +533,9 @@ func fromWireRoutes(ws []wireRoute) []node.Route {
 		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic, TunnelOnly: w.TunnelOnly}
 		if a := w.Access; a != nil {
 			out[i].Access = &node.Access{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
+		}
+		for _, a := range w.Analytics {
+			out[i].Analytics = append(out[i].Analytics, node.AnalyticsHosts(a))
 		}
 	}
 	return out
@@ -701,4 +716,49 @@ type tunnelRequest struct {
 type wireTunnelSpec struct {
 	Token    string `json:"token"`
 	Hostname string `json:"hostname"`
+}
+
+// Analytics (ADR 0037).
+
+// setAnalyticsRequest is node.AnalyticsConfig.
+type setAnalyticsRequest struct {
+	Salts map[int64][]byte `json:"salts"`
+}
+
+type tailSpoolRequest struct {
+	After uint64 `json:"after"`
+}
+
+// wireSpoolBatch is node.SpoolBatch; the events travel as one string of
+// JSON lines.
+type wireSpoolBatch struct {
+	Position uint64 `json:"position"`
+	Events   string `json:"events"`
+	Count    int    `json:"count"`
+	Skipped  bool   `json:"skipped,omitempty"`
+}
+
+func toWireSpoolBatch(b node.SpoolBatch) wireSpoolBatch {
+	return wireSpoolBatch{Position: b.Position, Events: string(b.Events), Count: b.Count, Skipped: b.Skipped}
+}
+
+func (w wireSpoolBatch) node() node.SpoolBatch {
+	return node.SpoolBatch{Position: w.Position, Events: []byte(w.Events), Count: w.Count, Skipped: w.Skipped}
+}
+
+type ackSpoolRequest struct {
+	Position uint64 `json:"position"`
+	Events   int    `json:"events"`
+}
+
+// analyticsStoreRequest is EnsureAnalyticsStore's spec; nil removes the
+// store.
+type analyticsStoreRequest struct {
+	Spec *wireAnalyticsStoreSpec `json:"spec,omitempty"`
+}
+
+type wireAnalyticsStoreSpec struct {
+	Image       string `json:"image"`
+	Token       string `json:"token"`
+	MemoryBytes int64  `json:"memory_bytes"`
 }

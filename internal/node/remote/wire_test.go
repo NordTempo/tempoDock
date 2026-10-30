@@ -39,7 +39,8 @@ func TestWireRoundTrip(t *testing.T) {
 	check(t, node.ContainerEvent{ContainerID: "abc", Labels: labels, Action: "die", ExitCode: 1, Time: at},
 		toWireEvent, wireEvent.node)
 	check(t, node.Route{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", RedirectTo: "b.example.com", PathPrefix: "/p/", Traffic: true, TunnelOnly: true,
-		Access: &node.Access{Username: "u", PasswordHash: "$2a$06$x", Key: []byte{1}, LoginURL: "https://dock.example.com/access"}},
+		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"a.example.com"}, Tag: "3.40.981"}},
+		Access:    &node.Access{Username: "u", PasswordHash: "$2a$06$x", Key: []byte{1}, LoginURL: "https://dock.example.com/access"}},
 		func(r node.Route) []wireRoute { return toWireRoutes([]node.Route{r}) },
 		func(w []wireRoute) node.Route { return fromWireRoutes(w)[0] },
 		"ClientIPHeader") // only on the control plane's own server (ADR 0029)

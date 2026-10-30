@@ -432,3 +432,58 @@ func TestRenderTunnelListener(t *testing.T) {
 		t.Error("a tunnel listener without a tunnel port")
 	}
 }
+
+func TestRenderAnalytics(t *testing.T) {
+	opts := testOptions()
+	opts.AnalyticsAddr = "127.0.0.1:7077"
+	routes := []node.Route{{
+		Hostnames: []string{"shop.example.com", "www.shop.example.com", "admin.example.com"}, Upstream: "127.0.0.1:20001",
+		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"shop.example.com", "www.shop.example.com"}, Tag: "3.40.981"}},
+	}}
+	rs := render(t, opts, routes).Apps.HTTP.Servers["https"].Routes
+	// The analytics route comes before the service's, which is terminal.
+	if len(rs) != 3 || rs[0].Match[0].Path[0] != "/_dock/a/*" || len(rs[0].Match[0].Host) != 2 || rs[1].Handle[len(rs[1].Handle)-1].Upstreams[0].Dial != "127.0.0.1:20001" {
+		t.Fatalf("routes = %+v", rs)
+	}
+	hs := rs[0].Handle
+	if !hs[0].LogSkip || hs[1].Request.Set["X-Dock-Analytics"][0] != "3.40.981" || hs[1].Request.Set["X-Dock-Client-Ip"][0] != "{http.vars.client_ip}" || hs[2].Upstreams[0].Dial != "127.0.0.1:7077" {
+		t.Errorf("analytics handlers = %+v", hs)
+	}
+
+	// A tunnel-only route's visitors arrive on the tunnel listener, and
+	// are counted there.
+	opts.TunnelPort = 7075
+	tunnelOnly := []node.Route{{
+		Hostnames: []string{"shop.example.com"}, Upstream: "127.0.0.1:20001", TunnelOnly: true,
+		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"shop.example.com"}, Tag: "3.40.981"}},
+	}}
+	if rs := render(t, opts, tunnelOnly).Apps.HTTP.Servers[tunnelServer].Routes; len(rs) < 2 || len(rs[0].Match[0].Path) == 0 || rs[0].Match[0].Path[0] != "/_dock/a/*" {
+		t.Errorf("tunnel listener routes = %+v", rs)
+	}
+	opts.TunnelPort = 0
+
+	// Without an ingest address, nothing goes there.
+	if rs := render(t, testOptions(), routes).Apps.HTTP.Servers["https"].Routes; len(rs) != 2 {
+		t.Errorf("without an ingest: %d routes, want the service's and the 404", len(rs))
+	}
+
+	for name, a := range map[string]node.AnalyticsHosts{
+		"a placeholder in the tag":    {Hostnames: []string{"shop.example.com"}, Tag: "{http.request.host}"},
+		"two numbers":                 {Hostnames: []string{"shop.example.com"}, Tag: "3.40"},
+		"a hostname of another route": {Hostnames: []string{"evil.example.com"}, Tag: "3.40.981"},
+	} {
+		bad := []node.Route{{Hostnames: []string{"shop.example.com"}, Upstream: "127.0.0.1:20001", Analytics: []node.AnalyticsHosts{a}}}
+		if _, err := Render(opts, bad); err == nil {
+			t.Errorf("%s: rendered", name)
+		}
+	}
+}
+
+func TestRenderRefusesARouteWithoutHostnames(t *testing.T) {
+	// Not a panic: the access check reads the first hostname for its
+	// message.
+	_, err := Render(testOptions(), []node.Route{{Upstream: "127.0.0.1:1", Access: &node.Access{Username: "x"}}})
+	if err == nil {
+		t.Error("rendered a route without hostnames")
+	}
+}

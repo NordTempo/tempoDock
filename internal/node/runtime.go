@@ -23,6 +23,7 @@ type Runtime interface {
 	Stats
 	Traffic
 	Tunnel
+	Analytics
 }
 
 // Tunnel runs a server's Cloudflare Tunnel connector, cloudflared, when
@@ -145,6 +146,10 @@ const RoleBuildKit = "buildkit"
 // RoleCloudflared is the LabelRole value of the cloudflared container
 // (Tunnel).
 const RoleCloudflared = "cloudflared"
+
+// RoleAnalytics is the LabelRole value of the analytics store's
+// container (ADR 0037).
+const RoleAnalytics = "analytics"
 
 // RoleRegistryGC is the LabelRole value of the registry's garbage
 // collection container.
@@ -651,6 +656,19 @@ type Route struct {
 	// to Cloudflare, so the public listeners neither serve them nor get
 	// certificates for them.
 	TunnelOnly bool
+	// Analytics sends /_dock/a/* on some of the route's hostnames to the
+	// server's analytics ingest (ADR 0037), each group tagged with the
+	// IDs it stands for. Redirect routes ignore it.
+	Analytics []AnalyticsHosts
+}
+
+// AnalyticsHosts are hostnames of a route that collect analytics, and the
+// tag the ingest gets with their events: "site.service.release", the IDs
+// of the site the hostnames belong to and the service and release that
+// serve them.
+type AnalyticsHosts struct {
+	Hostnames []string
+	Tag       string
 }
 
 // Access is how a route is protected: a password (PasswordHash set) or a
@@ -688,3 +706,63 @@ type DomainCheck struct {
 // ErrNotFound is returned (wrapped) when a container, image or other resource
 // does not exist or is not platform-managed.
 var ErrNotFound = errors.New("not found")
+
+// Analytics is a server's part in Dock Analytics (ADR 0037). Every server
+// has an ingest that appends events to its spool; the control plane reads
+// spools (TailSpool), writes what it reads to the store and acknowledges
+// it (AckSpool). The store runs on one server, the analytics server.
+type Analytics interface {
+	// SetAnalytics hands the server what its ingest needs: the salts of
+	// today and tomorrow. A server without today's salt drops events.
+	SetAnalytics(ctx context.Context, cfg AnalyticsConfig) error
+	// TailSpool streams the spool's events after position, in batches of
+	// at most SpoolBatchEvents, oldest first: the backlog at once, then
+	// new events within a second of their arrival. The channel closes
+	// when ctx ends or the stream fails.
+	TailSpool(ctx context.Context, after uint64) (<-chan SpoolBatch, error)
+	// AckSpool records that the store has everything up to position,
+	// events in all; the spool deletes what it no longer needs.
+	AckSpool(ctx context.Context, position uint64, events int) error
+	// EnsureAnalyticsStore runs the store's container as spec says, or
+	// removes it when spec is nil (its volume stays). It returns once the
+	// container runs; the store may take a moment more to answer.
+	EnsureAnalyticsStore(ctx context.Context, spec *AnalyticsStoreSpec) error
+	// DialAnalyticsStore connects to the store's API on this server. On a
+	// remote server the bytes go over the node link.
+	DialAnalyticsStore(ctx context.Context) (net.Conn, error)
+}
+
+// SpoolBatchEvents caps a SpoolBatch.
+const SpoolBatchEvents = 1000
+
+// AnalyticsConfig is what SetAnalytics hands a server.
+type AnalyticsConfig struct {
+	// Salts are by UTC day number (days since 1970-01-01).
+	Salts map[int64][]byte
+}
+
+// SpoolBatch is events read from a spool.
+type SpoolBatch struct {
+	// Position is after the batch's last event; acknowledge it once the
+	// store has them.
+	Position uint64
+	// Events are JSON lines of analytics.Event, newline-separated.
+	Events []byte
+	// Count is how many events Events holds.
+	Count int
+	// Skipped is set when events before the batch were dropped at the
+	// spool's cap before they were read.
+	Skipped bool
+}
+
+// AnalyticsStoreSpec is how the analytics store's container runs.
+type AnalyticsStoreSpec struct {
+	// Image is the dock-analytics image, pinned by digest in releases.
+	Image string
+	// Token is the install's analytics token, which every call but its
+	// health check needs.
+	Token string
+	// MemoryBytes is the container's memory limit; the store's DuckDB
+	// limit and trim mark are derived from it.
+	MemoryBytes int64
+}

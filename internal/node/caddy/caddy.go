@@ -97,6 +97,10 @@ type Options struct {
 	// listens on (traffic.Listen). When set, Caddy sends it the access log
 	// of routes with Traffic set (ADR 0033); empty turns counting off.
 	TrafficAddr string
+	// AnalyticsAddr is the loopback host:port of the node's analytics
+	// ingest (ADR 0037). Routes' Analytics hostnames send /_dock/a/* there;
+	// empty leaves them out.
+	AnalyticsAddr string
 	// PublicIPs are the addresses DNS records should point at, used by
 	// CheckDomain in direct mode.
 	PublicIPs []string
@@ -152,6 +156,8 @@ func (o *Options) validate() error {
 		return errors.New("caddy: an HTTP port is required")
 	case o.TrafficAddr != "" && !validTrafficAddr(o.TrafficAddr):
 		return fmt.Errorf("caddy: traffic address %q must be a loopback host:port like 127.0.0.1:7074", o.TrafficAddr)
+	case o.AnalyticsAddr != "" && !validTrafficAddr(o.AnalyticsAddr):
+		return fmt.Errorf("caddy: analytics address %q must be a loopback host:port like 127.0.0.1:7077", o.AnalyticsAddr)
 	case o.ServerMarker != "" && !validMarker(o.ServerMarker):
 		return fmt.Errorf("caddy: server marker %q may only use letters, digits, '.', '_' and '-' (at most 128)", o.ServerMarker)
 	case o.tunnel() && o.ServerMarker == "":

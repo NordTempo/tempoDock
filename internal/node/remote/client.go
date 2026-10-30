@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"strconv"
@@ -308,6 +309,16 @@ func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 			routes = slices.DeleteFunc(slices.Clone(routes), func(r node.Route) bool { return r.TunnelOnly })
 		}
 	}
+	if slices.ContainsFunc(routes, func(r node.Route) bool { return len(r.Analytics) > 0 }) {
+		if s, err := c.session(ctx); err == nil && s.hello.Protocol < AnalyticsProtocol {
+			// An older node would route events to an ingest it doesn't
+			// have; its sites go uncounted until it is upgraded.
+			routes = slices.Clone(routes)
+			for i := range routes {
+				routes[i].Analytics = nil
+			}
+		}
+	}
 	_, err := unaryCall[empty](ctx, c, opApplyRoutes, routesRequest{Routes: toWireRoutes(routes)})
 	return err
 }
@@ -573,4 +584,79 @@ func cancelable(ctx context.Context, src io.Reader) (r io.Reader, release func()
 		stop()
 		_ = pr.Close()
 	}
+}
+
+// AnalyticsProtocol is the first protocol whose nodes collect analytics
+// (ADR 0037).
+const AnalyticsProtocol = 10
+
+// analyticsStoreTimeout bounds EnsureAnalyticsStore, which may pull the
+// store's image.
+const analyticsStoreTimeout = 10 * time.Minute
+
+// SetAnalytics implements node.Analytics.
+func (c *Client) SetAnalytics(ctx context.Context, cfg node.AnalyticsConfig) error {
+	if err := c.needProtocol(ctx, AnalyticsProtocol, "collect analytics"); err != nil {
+		return err
+	}
+	_, err := unaryCall[empty](ctx, c, opSetAnalytics, setAnalyticsRequest{Salts: cfg.Salts})
+	return err
+}
+
+// TailSpool implements node.Analytics. The channel closes when the
+// stream ends for any reason; the caller reads the store's cursor and
+// tails again.
+func (c *Client) TailSpool(ctx context.Context, after uint64) (<-chan node.SpoolBatch, error) {
+	if err := c.needProtocol(ctx, AnalyticsProtocol, "collect analytics"); err != nil {
+		return nil, err
+	}
+	s, err := c.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return streamOn(ctx, s, opTailSpool, tailSpoolRequest{After: after}, wireSpoolBatch.node)
+}
+
+// AckSpool implements node.Analytics.
+func (c *Client) AckSpool(ctx context.Context, position uint64, events int) error {
+	if err := c.needProtocol(ctx, AnalyticsProtocol, "collect analytics"); err != nil {
+		return err
+	}
+	_, err := unaryCall[empty](ctx, c, opAckSpool, ackSpoolRequest{Position: position, Events: events})
+	return err
+}
+
+// EnsureAnalyticsStore implements node.Analytics.
+func (c *Client) EnsureAnalyticsStore(ctx context.Context, spec *node.AnalyticsStoreSpec) error {
+	if err := c.needProtocol(ctx, AnalyticsProtocol, "run the analytics store"); err != nil {
+		return err
+	}
+	req := analyticsStoreRequest{}
+	if spec != nil {
+		req.Spec = &wireAnalyticsStoreSpec{Image: spec.Image, Token: spec.Token, MemoryBytes: spec.MemoryBytes}
+	}
+	_, err := callWithLogs[empty](ctx, c, opEnsureAnalytics, analyticsStoreTimeout, req, nil, io.Discard)
+	return err
+}
+
+// DialAnalyticsStore implements node.Analytics: a raw connection to the
+// store's port on the node, over the link like Dial.
+func (c *Client) DialAnalyticsStore(ctx context.Context) (net.Conn, error) {
+	if err := c.needProtocol(ctx, AnalyticsProtocol, "run the analytics store"); err != nil {
+		return nil, err
+	}
+	s, err := c.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.dials.Add(1) > maxDials {
+		s.dials.Add(-1)
+		return nil, fmt.Errorf("server %s: %w", s.name, errTooManyDials)
+	}
+	lc, err := openConn(ctx, s, opDialAnalytics, empty{}, s.name+"/analytics", func() { s.dials.Add(-1) })
+	if err != nil {
+		s.dials.Add(-1)
+		return nil, err
+	}
+	return lc, nil
 }

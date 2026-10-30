@@ -57,7 +57,9 @@ const (
 	// added ensure-tunnel and the node's Caddy HTTP port in hello (ADR
 	// 0036); 9 added a direct server's tunnel listener: its port in hello
 	// and tunnel-only routes (ADR 0036).
-	Protocol = 9
+	// 10 added set-analytics, tail-spool, ack-spool, ensure-analytics-store,
+	// dial-analytics and the routes' analytics hosts (ADR 0037).
+	Protocol = 10
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -140,9 +142,15 @@ const (
 	opDiskUsage     = "disk-usage"    // protocol 7
 	opEnsureTunnel  = "ensure-tunnel" // protocol 8
 	opDial          = "dial"          // full duplex, raw bytes: see dial.go
-	opRunJob        = "run-job"       // protocol 2
-	opRotate        = "rotate"
-	opUpdate        = "update" // protocol 4
+	// Analytics (ADR 0037), protocol 10.
+	opSetAnalytics    = "set-analytics"
+	opTailSpool       = "tail-spool"
+	opAckSpool        = "ack-spool"
+	opEnsureAnalytics = "ensure-analytics-store"
+	opDialAnalytics   = "dial-analytics" // raw bytes, like dial
+	opRunJob          = "run-job"        // protocol 2
+	opRotate          = "rotate"
+	opUpdate          = "update" // protocol 4
 	// Joining mode (join.go) only.
 	opJoin   = "join"
 	opJoined = "joined"
