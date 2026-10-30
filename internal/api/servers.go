@@ -90,6 +90,17 @@ func registerServers(s *Server, a huma.API) {
 		return reply(s.core.RotateServerKey(ctx, actor, in.Server))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "set-server-tunnel", Method: http.MethodPost, Path: serverPathT + "/tunnel",
+		Summary: "Have Dock run a server's Cloudflare tunnel", Tags: tags,
+		Description: "For a server in tunnel mode (ADR 0036). create: Dock creates a tunnel in the background, routes it to the server's Caddy and has the server run it. " +
+			"adopt: Dock takes over the tunnel the server runs already; its routes stay. Adding a domain from Cloudflare does this when needed. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServerPath
+		Body apitypes.ServerTunnelRequest
+	}) (*out[apitypes.Server], error) {
+		return reply(s.core.SetServerTunnel(ctx, actor, in.Server, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "remove-server", Method: http.MethodDelete, Path: serverPathT,
 		Summary: "Remove a server", Tags: tags, DefaultStatus: http.StatusNoContent,
 		Description: "Only a server no live project has environments on (archived projects' move to the control plane's server), and never the control plane's own. Operators only.",

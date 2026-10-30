@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -33,7 +34,8 @@ func (c *Core) ListServers(ctx context.Context, a Actor) ([]apitypes.Server, err
 	return slices.DeleteFunc(all, func(s apitypes.Server) bool { return s.ID == 0 || !slices.Contains(ids, s.ID) }), err
 }
 
-// listServers loads every server and pending join token in two queries.
+// listServers loads every server, pending join token and managed tunnel
+// in three queries.
 func (c *Core) listServers(ctx context.Context, usage bool) ([]apitypes.Server, error) {
 	rows, err := c.store.ListServerLoads(ctx, int64(c.cfg.Defaults.MemoryMB))
 	if err != nil {
@@ -43,9 +45,13 @@ func (c *Core) listServers(ctx context.Context, usage bool) ([]apitypes.Server, 
 	if err != nil {
 		return nil, err
 	}
+	tunnels, err := c.serverTunnels(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]apitypes.Server, 0, len(rows)+len(pending))
 	for _, r := range rows {
-		out = append(out, c.toServer(r, usage))
+		out = append(out, c.toServer(r, usage, tunnels))
 	}
 	// Tokens expire in order, so the last one of a name is the newest.
 	for _, t := range pending {
@@ -103,6 +109,10 @@ func (c *Core) GetServer(ctx context.Context, a Actor, name string) (apitypes.Se
 	srv := all[i]
 	if srv.ID == 0 {
 		return d, nil
+	}
+	if d.Server.Tunnel != nil && d.Server.Tunnel.Status == apitypes.TunnelReady {
+		// Asked of Cloudflare only while someone looks at the server.
+		d.Server.Tunnel.Connectors = c.tunnelConnectors(ctx, srv.ID)
 	}
 	if d.Services, err = c.serverServices(ctx, srv.ID, serverLink{name: srv.Name, status: srv.Status}); err != nil {
 		return d, err
@@ -234,9 +244,13 @@ func (c *Core) serverDetail(ctx context.Context, id int64) (apitypes.Server, err
 	if err != nil {
 		return apitypes.Server{}, err
 	}
+	tunnels, err := c.serverTunnels(ctx)
+	if err != nil {
+		return apitypes.Server{}, err
+	}
 	for _, r := range rows {
 		if r.Server.ID == id {
-			return c.toServer(r, true), nil
+			return c.toServer(r, true, tunnels), nil
 		}
 	}
 	return apitypes.Server{}, notFound("server %d not found", id)
@@ -246,8 +260,9 @@ func (c *Core) serverDetail(ctx context.Context, id int64) (apitypes.Server, err
 // one-time join token for it, valid for remote.JoinTokenTTL, and returns
 // the token (shown only this once) and the install command to run on the
 // new server. The server shows as joining until it joins. A revoked
-// server joins again under its name and keeps its environments. Admin
-// only.
+// server joins again under its name and keeps its environments. With
+// Tunnel, it installs in tunnel mode and Dock creates its Cloudflare
+// tunnel once it joins (ADR 0036). Admin only.
 func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerRequest) (apitypes.AddedServer, error) {
 	if err := a.requireOperator("adding a server"); err != nil {
 		return apitypes.AddedServer{}, err
@@ -263,6 +278,14 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 	} else if err != nil && !store.IsNotFound(err) {
 		return apitypes.AddedServer{}, err
 	}
+	var cloudflareID *int64
+	if req.Tunnel {
+		conn, err := c.pickCloudflare(ctx, req.Cloudflare)
+		if err != nil {
+			return apitypes.AddedServer{}, err
+		}
+		cloudflareID = &conn.ID
+	}
 	tok, err := c.nodes.MintJoinToken()
 	if err != nil {
 		return apitypes.AddedServer{}, invalid("%v", err)
@@ -270,7 +293,7 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 	t := now()
 	row, err := c.store.CreateJoinToken(ctx, store.CreateJoinTokenParams{
 		Hash: tok.SecretHash(), ServerName: req.Name, AcceptsProduction: req.AcceptsProduction,
-		AcceptsNonProduction: req.AcceptsNonProduction, Builder: req.Builder, CreatedBy: a.Name,
+		AcceptsNonProduction: req.AcceptsNonProduction, Builder: req.Builder, CloudflareID: cloudflareID, CreatedBy: a.Name,
 		CreatedAt: t, ExpiresAt: t.Add(remote.JoinTokenTTL),
 	})
 	if err != nil {
@@ -283,9 +306,14 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 	}
 	c.bus.publish(busEvent{ev: apitypes.Event{Type: apitypes.EventServer, Server: &srv}})
 	token := tok.String()
+	ingress := ""
+	if req.Tunnel {
+		// Dock creates the tunnel once the server joins (ADR 0036).
+		ingress = "INGRESS=cloudflare_tunnel "
+	}
 	return apitypes.AddedServer{
 		Server: srv, Token: token, ExpiresAt: row.ExpiresAt,
-		Command: "sudo DOCK_BINARY=./dock NODE_JOIN_TOKEN=" + token + " ./deploy/install.sh --node",
+		Command: "sudo DOCK_BINARY=./dock " + ingress + "NODE_JOIN_TOKEN=" + token + " ./deploy/install.sh --node",
 	}, nil
 }
 
@@ -387,7 +415,8 @@ func (c *Core) RotateServerKey(ctx context.Context, a Actor, name string) (apity
 // on, or cancels the join tokens of a server that hasn't joined yet. Its
 // project pins go with it, and archived projects' environments move to
 // the local server (nothing of theirs runs; containers an unreachable
-// server still had are left to it). Operators only.
+// server still had are left to it). Dock deletes the Cloudflare tunnel it
+// made for the server. Operators only.
 func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 	if err := a.requireOperator("removing a server"); err != nil {
 		return err
@@ -412,6 +441,12 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		return invalid("server %s runs the control plane and can't be removed", srv.Name)
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		// Dock deletes the tunnel it made for it (ADR 0036); the row
+		// outlives the server until then. Its domains went with their
+		// archived services.
+		if err := q.SetCloudflareTunnelAbsent(ctx, store.SetCloudflareTunnelAbsentParams{UpdatedAt: now(), ServerID: &srv.ID}); err != nil {
+			return err
+		}
 		if err := q.DeleteServerPlacements(ctx, srv.ID); err != nil {
 			return err
 		}
@@ -433,9 +468,17 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 	if _, err := c.cancelJoins(ctx, name); err != nil {
 		c.log.Warn("cancel join tokens of removed server", "server", name, "err", err)
 	}
+	if rt := c.connected(srv.ID); rt != nil && c.managedTunnel(srv.ID) != "" {
+		// Its tunnel is about to be deleted: stop running it there.
+		if err := rt.EnsureTunnel(ctx, nil); err != nil {
+			c.log.Warn("stop the Cloudflare tunnel of a removed server", "server", name, "err", err)
+		}
+	}
+	c.kickCloudflare()
 	if c.nodes != nil {
 		c.nodes.Disconnect(srv.ID)
 	}
+	c.setManagedTunnel(srv.ID, "") // its row lost the server ID; a new server may get it
 	c.forgetServer(srv.ID)
 	c.audit(ctx, a.platform(), "server.remove", nil, nil, "server "+srv.Name, "removed server "+srv.Name)
 	gone := apitypes.Server{ID: srv.ID, Name: srv.Name}
@@ -444,8 +487,9 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 }
 
 // toServer converts a server row; usage adds its latest sample, for
-// callers allowed to read server statistics.
-func (c *Core) toServer(r store.ListServerLoadsRow, usage bool) apitypes.Server {
+// callers allowed to read server statistics. tunnels are the tunnels Dock
+// manages, by server ID (serverTunnels).
+func (c *Core) toServer(r store.ListServerLoadsRow, usage bool, tunnels map[int64]apitypes.ServerTunnel) apitypes.Server {
 	s := r.Server
 	ing := c.ingressOf(s)
 	out := apitypes.Server{
@@ -461,6 +505,9 @@ func (c *Core) toServer(r store.ListServerLoadsRow, usage bool) apitypes.Server 
 		if u, ok := c.stats.serverUsage(s.ID); ok {
 			out.Usage = &u
 		}
+	}
+	if t, ok := tunnels[s.ID]; ok {
+		out.Tunnel = &t
 	}
 	return out
 }
@@ -501,10 +548,14 @@ type serverIngress struct {
 // ingressOf returns a server's ingress. Remote servers report it in
 // hello. The local server reports nothing, so its facts come from the
 // config; its base domain and public IP are the config's until set on
-// the server (the database wins once set).
+// the server (the database wins once set). A tunnel Dock runs for the
+// server is its tunnel, whatever the server reports.
 func (c *Core) ingressOf(s store.Server) serverIngress {
 	ing := serverIngress{mode: apitypes.Ingress(s.Ingress), tunnel: s.TunnelHostname, baseDomain: s.BaseDomain, publicIPs: []string{}}
 	_ = json.Unmarshal([]byte(s.PublicIps), &ing.publicIPs)
+	if t := c.managedTunnel(s.ID); t != "" {
+		ing.tunnel = t // the tunnel Dock runs for it (ADR 0036)
+	}
 	if !s.Local {
 		ing.plainHTTP = ing.mode == apitypes.IngressDirect && s.PlainHttp
 		return ing
@@ -513,8 +564,8 @@ func (c *Core) ingressOf(s store.Server) serverIngress {
 	if ing.mode == "" {
 		ing.mode = apitypes.IngressDirect
 	}
-	if ing.tunnel == "" {
-		ing.tunnel = c.cfg.Ingress.TunnelHostname
+	if t := strings.ToLower(c.cfg.Ingress.TunnelHostname); ing.tunnel == "" && config.ValidTunnelHostname(t) {
+		ing.tunnel = t // only what DNS can point at, as for remote servers' hello
 	}
 	if ing.baseDomain == "" {
 		ing.baseDomain = strings.TrimPrefix(c.cfg.BaseDomain, "*.")

@@ -40,6 +40,10 @@
 #                     (Caddy serves plain HTTP on 127.0.0.1:<http_port> only; apps are
 #                     https:// at Cloudflare's edge, so DISABLE_TLS doesn't apply)
 #   CLOUDFLARED_VERSION, CLOUDFLARED_SHA256  another cloudflared release and its checksum
+#   INGRESS           "cloudflare_tunnel" without a token: tunnel mode, with the tunnel
+#                     made and run by Dock through a Cloudflare connection (ADR 0036;
+#                     `dock server add --tunnel` prints it). Once Dock runs a tunnel
+#                     this script installed, a re-run removes dock-cloudflared.service
 # Control plane only:
 #   LISTEN            API/UI address (default: Tailscale IP:7070 if present, else 127.0.0.1:7070)
 #   NODE_LISTEN       accept nodes on this address, e.g. "$(tailscale ip -4):7443" → [node] listen
@@ -242,14 +246,27 @@ if [[ "$node_mode" == true ]]; then
   done
 fi
 
+# tunnel: the server is in tunnel mode. tunnel_unit: this script runs its
+# cloudflared (dock-cloudflared.service); without it, Dock does (ADR 0036).
 tunnel=false
+tunnel_unit=false
 tunnel_hostname=""
 if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
-  tunnel=true
+  tunnel=true tunnel_unit=true
   tid="$(tunnel_id "$CLOUDFLARE_TUNNEL_TOKEN")" \
     || die "CLOUDFLARE_TUNNEL_TOKEN is not a tunnel token; copy it from the tunnel's install command in the Cloudflare dashboard"
   tunnel_hostname="$tid.cfargotunnel.com"
 elif [[ -f "$TUNNEL_ENV" ]]; then
+  tunnel=true tunnel_unit=true
+fi
+case "${INGRESS:-}" in
+  "" | direct) ;;
+  cloudflare_tunnel) tunnel=true ;;
+  *) die "INGRESS must be direct or cloudflare_tunnel" ;;
+esac
+if [[ -f "$CONF" && -z "$restore" && "$(toml_get "$CONF" ingress mode)" == cloudflare_tunnel ]]; then
+  [[ "${INGRESS:-}" != direct ]] \
+    || die "this server is in tunnel mode; install.sh doesn't switch it to direct: set [ingress] mode = \"direct\" and public_ip in $CONF, then restart dock"
   tunnel=true
 fi
 
@@ -258,7 +275,7 @@ case "$CLOUDFLARED_VERSION/$ARCH" in
   2026.10.3/arm64) cloudflared_sha256=89297ebfb9e8c99c0dc013a1140601453cf3798d8306c5591651f4a3f5210be8 ;;
   *) cloudflared_sha256="${CLOUDFLARED_SHA256:-}" ;;
 esac
-if [[ "$tunnel" == true && -z "$cloudflared_sha256" ]]; then
+if [[ "$tunnel_unit" == true && -z "$cloudflared_sha256" ]]; then
   die "set CLOUDFLARED_SHA256 to the SHA-256 of cloudflared-linux-$ARCH from the $CLOUDFLARED_VERSION release notes"
 fi
 
@@ -266,6 +283,18 @@ command -v docker >/dev/null || die "Docker is not installed. Install Docker Eng
 docker info >/dev/null 2>&1 || die "Docker is installed but not running: systemctl enable --now docker"
 command -v systemctl >/dev/null || die "systemd is required"
 command -v iptables >/dev/null || die "iptables is required for the app firewall: apt install iptables"
+
+# Dock runs the tunnel in its dock-cloudflared container once it adopted it
+# (ADR 0036): this script's cloudflared is then a second connector of the
+# same tunnel, and goes.
+if [[ "$tunnel_unit" == true && -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] \
+  && [[ -n "$(docker ps -q --filter name=^dock-cloudflared\$ --filter label=dock.role=cloudflared)" ]]; then
+  say "==> cloudflare tunnel: Dock runs it now; removing dock-cloudflared.service"
+  systemctl disable --now dock-cloudflared.service 2>/dev/null || true
+  rm -f /etc/systemd/system/dock-cloudflared.service "$TUNNEL_ENV" /usr/local/bin/cloudflared
+  systemctl daemon-reload
+  tunnel_unit=false
+fi
 
 if [[ -z "${DOCK_BINARY:-}" ]]; then
   dock_version="${DOCK_VERSION:-$(cat "$SRC_DIR/VERSION" 2>/dev/null || echo latest)}"
@@ -315,7 +344,7 @@ if ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
 fi
 
 tunnel_changed=false
-if [[ "$tunnel" == true ]]; then
+if [[ "$tunnel_unit" == true ]]; then
   say "==> cloudflared $CLOUDFLARED_VERSION"
   if ! /usr/local/bin/cloudflared --version 2>/dev/null | grep -q "version $CLOUDFLARED_VERSION "; then
     tmp="$(mktemp -d)"
@@ -546,10 +575,10 @@ else
   daemon=dock.service
 fi
 units=("$daemon" dock-caddy.service dock-firewall.service dock-update.path dock-update.service)
-[[ "$tunnel" == false ]] || units+=(dock-cloudflared.service)
+[[ "$tunnel_unit" == false ]] || units+=(dock-cloudflared.service)
 caddy_unit_changed=false
 cmp -s "$SRC_DIR/systemd/dock-caddy.service" /etc/systemd/system/dock-caddy.service || caddy_unit_changed=true
-if [[ "$tunnel" == true ]]; then
+if [[ "$tunnel_unit" == true ]]; then
   cmp -s "$SRC_DIR/systemd/dock-cloudflared.service" /etc/systemd/system/dock-cloudflared.service || tunnel_changed=true
 fi
 for unit in "${units[@]}"; do
@@ -577,7 +606,7 @@ else
   systemctl start dock-caddy.service
 fi
 
-if [[ "$tunnel" == true ]]; then
+if [[ "$tunnel_unit" == true ]]; then
   say "==> cloudflare tunnel"
   systemctl enable dock-cloudflared.service
   if [[ "$tunnel_changed" == true ]]; then
@@ -802,7 +831,12 @@ else
   fi
 fi
 say ""
-if [[ "$tunnel" == true ]]; then
+if [[ "$tunnel" == true && "$tunnel_unit" == false ]]; then
+  say "Public traffic arrives through a Cloudflare Tunnel that Dock creates (or adopts) and runs"
+  say "in its dock-cloudflared container; no inbound ports are needed. On the control plane:"
+  say "  dock server tunnel create|adopt <server>   (automatic for dock server add --tunnel)"
+  say "Steps: docs/guide/install.md#cloudflare-tunnel"
+elif [[ "$tunnel" == true ]]; then
   say "Public traffic arrives through the Cloudflare Tunnel; no inbound ports are needed."
   http_port="$(toml_get "$CONF" caddy http_port)"
   say "In Cloudflare, route all of the tunnel's traffic to http://127.0.0.1:${http_port:-80}"

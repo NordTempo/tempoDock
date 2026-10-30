@@ -359,3 +359,4 @@ func (o offlineRuntime) ContainerStats(context.Context, []string) ([]node.Contai
 	return nil, o.err
 }
 func (o offlineRuntime) DrainTraffic(context.Context) ([]node.HostTraffic, error) { return nil, o.err }
+func (o offlineRuntime) EnsureTunnel(context.Context, *node.TunnelSpec) error     { return o.err }

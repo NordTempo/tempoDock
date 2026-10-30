@@ -54,6 +54,9 @@ type Runtime struct {
 	onJob       func(node.JobSpec) (node.JobResult, error)
 	jobs        []node.JobSpec
 
+	// tunnel is what EnsureTunnel last ran; nil when cloudflared isn't.
+	tunnel *node.TunnelSpec
+
 	traffic    []node.HostTraffic
 	disk       node.DiskUsage
 	diskSet    bool
@@ -657,6 +660,39 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 		}
 	}
 	return node.JobResult{}, nil
+}
+
+// EnsureTunnel implements node.Tunnel: it records the spec. Only a
+// change is recorded as an op ("tunnel <hostname>", "tunnel off").
+func (r *Runtime) EnsureTunnel(ctx context.Context, spec *node.TunnelSpec) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	switch {
+	case spec == nil && r.tunnel != nil:
+		r.op("tunnel off")
+	case spec != nil && (r.tunnel == nil || *r.tunnel != *spec):
+		r.op("tunnel %s", spec.Hostname)
+	}
+	if spec != nil {
+		cp := *spec
+		spec = &cp
+	}
+	r.tunnel = spec
+	return nil
+}
+
+// Tunnel returns what EnsureTunnel last ran; nil when cloudflared isn't.
+func (r *Runtime) Tunnel() *node.TunnelSpec {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.tunnel == nil {
+		return nil
+	}
+	cp := *r.tunnel
+	return &cp
 }
 
 // Build implements node.Builder. It reads the whole source stream. A push

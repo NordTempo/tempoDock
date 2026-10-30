@@ -22,6 +22,27 @@ type Runtime interface {
 	Proxy
 	Stats
 	Traffic
+	Tunnel
+}
+
+// Tunnel runs a server's Cloudflare Tunnel connector, cloudflared, when
+// the control plane manages its tunnel (ADR 0036).
+type Tunnel interface {
+	// EnsureTunnel runs cloudflared with spec's token, or stops and
+	// removes it when spec is nil. It does nothing when cloudflared
+	// already runs as spec says, so it is cheap enough for every
+	// reconnect.
+	EnsureTunnel(ctx context.Context, spec *TunnelSpec) error
+}
+
+// TunnelSpec is the tunnel a server's cloudflared runs.
+type TunnelSpec struct {
+	// Token is the tunnel's token from Cloudflare: a secret, which only
+	// runs this tunnel. Never log it.
+	Token string
+	// Hostname is the tunnel's CNAME target, <id>.cfargotunnel.com, for
+	// domain check messages.
+	Hostname string
 }
 
 // Containers manages platform-owned containers, networks and volumes.
@@ -120,6 +141,10 @@ const RoleJob = "job"
 
 // RoleBuildKit is the LabelRole value of the BuildKit container.
 const RoleBuildKit = "buildkit"
+
+// RoleCloudflared is the LabelRole value of the cloudflared container
+// (Tunnel).
+const RoleCloudflared = "cloudflared"
 
 // RoleRegistryGC is the LabelRole value of the registry's garbage
 // collection container.

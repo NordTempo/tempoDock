@@ -173,16 +173,36 @@ func (s nodeStore) Join(ctx context.Context, req remote.JoinRequest) (remote.Ser
 				return err
 			}
 		}
+		if err := wantJoinTunnel(ctx, q, srv, tok, t); err != nil {
+			return err
+		}
 		return q.SetJoinTokenServer(ctx, store.SetJoinTokenServerParams{ServerID: srv.ID, ID: tok.ID})
 	})
 	if err != nil {
 		return remote.Server{}, err
 	}
 	c.setRevoked(srv.ID, false) // a revoked server re-joins under its name
+	c.kickCloudflare()          // its tunnel, if the token asked for one
 	c.audit(ctx, System, "server.join", nil, nil, "server "+srv.Name,
 		fmt.Sprintf("server %s joined from %s with a token from %s (dock %s, key %s)", srv.Name, req.RemoteAddr, tok.CreatedBy, req.Hello.Version, req.Fingerprint))
 	c.publishServer(ctx, srv.ID)
 	return remote.Server{ID: srv.ID, Name: srv.Name}, nil
+}
+
+// wantJoinTunnel has Dock create a Cloudflare tunnel for a server that
+// joined with a token from `dock server add --tunnel` (ADR 0036), unless
+// it already has one (a revoked server joining again).
+func wantJoinTunnel(ctx context.Context, q *store.Queries, srv store.Server, tok store.JoinToken, t time.Time) error {
+	if tok.CloudflareID == nil {
+		return nil
+	}
+	if _, err := q.GetCloudflareTunnelByServer(ctx, &srv.ID); err == nil || !store.IsNotFound(err) {
+		return err
+	}
+	_, err := q.CreateCloudflareTunnel(ctx, store.CreateCloudflareTunnelParams{
+		ServerID: &srv.ID, ServerName: srv.Name, ConnectionID: *tok.CloudflareID, Status: "pending", UpdatedAt: t,
+	})
+	return err
 }
 
 // joinBaseDomain is the base domain a joining node's config names
@@ -351,8 +371,9 @@ func (c *Core) watchServer(ctx context.Context, serverID int64, kick <-chan stru
 // reconnected brings a server that just connected in line with the
 // database (ADR 0014 section 5): containers of failed and superseded
 // releases are removed, stateful releases cut short while it was away are
-// started again, service statuses are read, and its routes are applied
-// again (the control plane is the source of truth).
+// started again, service statuses are read, its routes are applied again
+// (the control plane is the source of truth), it runs the Cloudflare
+// tunnel Dock runs for it, and its domains in Cloudflare follow.
 func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	rt := c.connected(serverID)
 	if rt == nil {
@@ -375,6 +396,10 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	}
 	if err := c.applyRoutes(ctx, serverID); err != nil {
 		c.log.Error("server reconnected: apply routes", "server", serverID, "err", err)
+	}
+	c.runServerTunnel(ctx, serverID, rt)
+	if srv, err := c.store.GetServer(ctx, serverID); err == nil {
+		c.syncServerRecords(ctx, srv) // its tunnel may have changed
 	}
 	c.kickDomains()
 	c.kickBackups() // overdue backups run now

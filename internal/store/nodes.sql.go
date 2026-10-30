@@ -30,7 +30,7 @@ func (q *Queries) ClearArchivedHostPorts(ctx context.Context, serverID int64) er
 const consumeJoinToken = `-- name: ConsumeJoinToken :one
 UPDATE join_tokens SET used_at = ?1
 WHERE hash = +?2 AND used_at IS NULL AND expires_at > +?1
-RETURNING id, hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at, used_at, used_by_server_id
+RETURNING id, hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at, used_at, used_by_server_id, cloudflare_id
 `
 
 type ConsumeJoinTokenParams struct {
@@ -57,15 +57,16 @@ func (q *Queries) ConsumeJoinToken(ctx context.Context, arg ConsumeJoinTokenPara
 		&i.ExpiresAt,
 		&i.UsedAt,
 		&i.UsedByServerID,
+		&i.CloudflareID,
 	)
 	return i, err
 }
 
 const createJoinToken = `-- name: CreateJoinToken :one
 
-INSERT INTO join_tokens (hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at, used_at, used_by_server_id
+INSERT INTO join_tokens (hash, server_name, accepts_production, accepts_non_production, builder, cloudflare_id, created_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at, used_at, used_by_server_id, cloudflare_id
 `
 
 type CreateJoinTokenParams struct {
@@ -74,6 +75,7 @@ type CreateJoinTokenParams struct {
 	AcceptsProduction    bool
 	AcceptsNonProduction bool
 	Builder              bool
+	CloudflareID         *int64
 	CreatedBy            string
 	CreatedAt            time.Time
 	ExpiresAt            time.Time
@@ -84,7 +86,8 @@ type CreateJoinTokenParams struct {
 // re-prepare pitfall). Server rows themselves are read with GetServer,
 // GetServerByName, ListServers and ListServerLoads (projects.sql).
 // Records a join token for `dock server add`; the secret itself is only
-// ever shown once, to the admin.
+// ever shown once, to the admin. cloudflare_id: make the server a tunnel
+// with that connection once it joins (ADR 0036).
 func (q *Queries) CreateJoinToken(ctx context.Context, arg CreateJoinTokenParams) (JoinToken, error) {
 	row := q.queryRow(ctx, q.createJoinTokenStmt, createJoinToken,
 		arg.Hash,
@@ -92,6 +95,7 @@ func (q *Queries) CreateJoinToken(ctx context.Context, arg CreateJoinTokenParams
 		arg.AcceptsProduction,
 		arg.AcceptsNonProduction,
 		arg.Builder,
+		arg.CloudflareID,
 		arg.CreatedBy,
 		arg.CreatedAt,
 		arg.ExpiresAt,
@@ -109,6 +113,7 @@ func (q *Queries) CreateJoinToken(ctx context.Context, arg CreateJoinTokenParams
 		&i.ExpiresAt,
 		&i.UsedAt,
 		&i.UsedByServerID,
+		&i.CloudflareID,
 	)
 	return i, err
 }
@@ -314,7 +319,7 @@ func (q *Queries) ListKeptDigests(ctx context.Context, keep int64) ([]string, er
 }
 
 const listPendingJoinTokens = `-- name: ListPendingJoinTokens :many
-SELECT id, hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at, used_at, used_by_server_id FROM join_tokens WHERE used_at IS NULL AND expires_at > +?1 ORDER BY expires_at
+SELECT id, hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at, used_at, used_by_server_id, cloudflare_id FROM join_tokens WHERE used_at IS NULL AND expires_at > +?1 ORDER BY expires_at
 `
 
 // Unused, unexpired tokens: servers that are still "joining".
@@ -339,6 +344,7 @@ func (q *Queries) ListPendingJoinTokens(ctx context.Context, now time.Time) ([]J
 			&i.ExpiresAt,
 			&i.UsedAt,
 			&i.UsedByServerID,
+			&i.CloudflareID,
 		); err != nil {
 			return nil, err
 		}

@@ -14,6 +14,7 @@ import { DiskBreakdown } from "../features/servers/DiskBreakdown";
 import { LinkSection } from "../features/servers/LinkSection";
 import { MemoryBreakdown } from "../features/servers/MemoryBreakdown";
 import { useServerSwitches } from "../features/servers/switches";
+import { TunnelSection } from "../features/servers/TunnelSection";
 import { CpuUsage, MemoryUsage } from "../features/service/Usage";
 import { LineChart } from "../features/stats/LineChart";
 import { useLiveServer } from "../features/stats/live";
@@ -89,6 +90,9 @@ function ServerPage() {
       <StatusSentence detail={detail} />
 
       <LinkSection server={server} />
+      {(server.ingress === "cloudflare_tunnel" || server.tunnel) && (
+        <TunnelSection server={server} />
+      )}
 
       <section aria-label="Now" className="flex flex-col gap-2">
         <Now usage={server.usage} server={server} />

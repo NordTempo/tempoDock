@@ -93,6 +93,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.consumeJoinTokenStmt, err = db.PrepareContext(ctx, consumeJoinToken); err != nil {
 		return nil, fmt.Errorf("error preparing query ConsumeJoinToken: %w", err)
 	}
+	if q.countConnectionUseStmt, err = db.PrepareContext(ctx, countConnectionUse); err != nil {
+		return nil, fmt.Errorf("error preparing query CountConnectionUse: %w", err)
+	}
 	if q.countInstallationConnectionsStmt, err = db.PrepareContext(ctx, countInstallationConnections); err != nil {
 		return nil, fmt.Errorf("error preparing query CountInstallationConnections: %w", err)
 	}
@@ -125,6 +128,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.createChangesetStmt, err = db.PrepareContext(ctx, createChangeset); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateChangeset: %w", err)
+	}
+	if q.createCloudflareConnectionStmt, err = db.PrepareContext(ctx, createCloudflareConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateCloudflareConnection: %w", err)
+	}
+	if q.createCloudflareTunnelStmt, err = db.PrepareContext(ctx, createCloudflareTunnel); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateCloudflareTunnel: %w", err)
 	}
 	if q.createDomainStmt, err = db.PrepareContext(ctx, createDomain); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateDomain: %w", err)
@@ -194,6 +203,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteCLILoginStmt, err = db.PrepareContext(ctx, deleteCLILogin); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteCLILogin: %w", err)
+	}
+	if q.deleteCloudflareConnectionStmt, err = db.PrepareContext(ctx, deleteCloudflareConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteCloudflareConnection: %w", err)
+	}
+	if q.deleteCloudflareRecordStmt, err = db.PrepareContext(ctx, deleteCloudflareRecord); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteCloudflareRecord: %w", err)
+	}
+	if q.deleteCloudflareTunnelStmt, err = db.PrepareContext(ctx, deleteCloudflareTunnel); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteCloudflareTunnel: %w", err)
+	}
+	if q.deleteCloudflareZonesStmt, err = db.PrepareContext(ctx, deleteCloudflareZones); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteCloudflareZones: %w", err)
 	}
 	if q.deleteDataPolicyRulesStmt, err = db.PrepareContext(ctx, deleteDataPolicyRules); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteDataPolicyRules: %w", err)
@@ -347,6 +368,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getChangesetStmt, err = db.PrepareContext(ctx, getChangeset); err != nil {
 		return nil, fmt.Errorf("error preparing query GetChangeset: %w", err)
+	}
+	if q.getCloudflareConnectionStmt, err = db.PrepareContext(ctx, getCloudflareConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCloudflareConnection: %w", err)
+	}
+	if q.getCloudflareConnectionByIDStmt, err = db.PrepareContext(ctx, getCloudflareConnectionByID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCloudflareConnectionByID: %w", err)
+	}
+	if q.getCloudflareRecordStmt, err = db.PrepareContext(ctx, getCloudflareRecord); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCloudflareRecord: %w", err)
+	}
+	if q.getCloudflareTunnelByServerStmt, err = db.PrepareContext(ctx, getCloudflareTunnelByServer); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCloudflareTunnelByServer: %w", err)
 	}
 	if q.getControlPlaneBackupStmt, err = db.PrepareContext(ctx, getControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query GetControlPlaneBackup: %w", err)
@@ -504,6 +537,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listChangesetsStmt, err = db.PrepareContext(ctx, listChangesets); err != nil {
 		return nil, fmt.Errorf("error preparing query ListChangesets: %w", err)
 	}
+	if q.listCloudflareConnectionsStmt, err = db.PrepareContext(ctx, listCloudflareConnections); err != nil {
+		return nil, fmt.Errorf("error preparing query ListCloudflareConnections: %w", err)
+	}
+	if q.listCloudflareRecordsStmt, err = db.PrepareContext(ctx, listCloudflareRecords); err != nil {
+		return nil, fmt.Errorf("error preparing query ListCloudflareRecords: %w", err)
+	}
+	if q.listCloudflareTunnelsStmt, err = db.PrepareContext(ctx, listCloudflareTunnels); err != nil {
+		return nil, fmt.Errorf("error preparing query ListCloudflareTunnels: %w", err)
+	}
+	if q.listCloudflareZonesStmt, err = db.PrepareContext(ctx, listCloudflareZones); err != nil {
+		return nil, fmt.Errorf("error preparing query ListCloudflareZones: %w", err)
+	}
 	if q.listDataPolicyRulesStmt, err = db.PrepareContext(ctx, listDataPolicyRules); err != nil {
 		return nil, fmt.Errorf("error preparing query ListDataPolicyRules: %w", err)
 	}
@@ -512,6 +557,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listDomainsByServiceStmt, err = db.PrepareContext(ctx, listDomainsByService); err != nil {
 		return nil, fmt.Errorf("error preparing query ListDomainsByService: %w", err)
+	}
+	if q.listDueCloudflareRecordsStmt, err = db.PrepareContext(ctx, listDueCloudflareRecords); err != nil {
+		return nil, fmt.Errorf("error preparing query ListDueCloudflareRecords: %w", err)
+	}
+	if q.listDueCloudflareTunnelsStmt, err = db.PrepareContext(ctx, listDueCloudflareTunnels); err != nil {
+		return nil, fmt.Errorf("error preparing query ListDueCloudflareTunnels: %w", err)
 	}
 	if q.listDueRemindersStmt, err = db.PrepareContext(ctx, listDueReminders); err != nil {
 		return nil, fmt.Errorf("error preparing query ListDueReminders: %w", err)
@@ -654,6 +705,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listSensitiveColumnsStmt, err = db.PrepareContext(ctx, listSensitiveColumns); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSensitiveColumns: %w", err)
 	}
+	if q.listServerCloudflareRecordsStmt, err = db.PrepareContext(ctx, listServerCloudflareRecords); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServerCloudflareRecords: %w", err)
+	}
 	if q.listServerEnvironmentsStmt, err = db.PrepareContext(ctx, listServerEnvironments); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServerEnvironments: %w", err)
 	}
@@ -674,6 +728,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listServiceBackupsStmt, err = db.PrepareContext(ctx, listServiceBackups); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServiceBackups: %w", err)
+	}
+	if q.listServiceCloudflareRecordsStmt, err = db.PrepareContext(ctx, listServiceCloudflareRecords); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServiceCloudflareRecords: %w", err)
 	}
 	if q.listServiceStatsStmt, err = db.PrepareContext(ctx, listServiceStats); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServiceStats: %w", err)
@@ -722,6 +779,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.moveArchivedEnvironmentsStmt, err = db.PrepareContext(ctx, moveArchivedEnvironments); err != nil {
 		return nil, fmt.Errorf("error preparing query MoveArchivedEnvironments: %w", err)
+	}
+	if q.nextCloudflareRecordRetryStmt, err = db.PrepareContext(ctx, nextCloudflareRecordRetry); err != nil {
+		return nil, fmt.Errorf("error preparing query NextCloudflareRecordRetry: %w", err)
+	}
+	if q.nextCloudflareTunnelRetryStmt, err = db.PrepareContext(ctx, nextCloudflareTunnelRetry); err != nil {
+		return nil, fmt.Errorf("error preparing query NextCloudflareTunnelRetry: %w", err)
 	}
 	if q.nextReleaseNumberStmt, err = db.PrepareContext(ctx, nextReleaseNumber); err != nil {
 		return nil, fmt.Errorf("error preparing query NextReleaseNumber: %w", err)
@@ -780,6 +843,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.restoreVariableStmt, err = db.PrepareContext(ctx, restoreVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query RestoreVariable: %w", err)
 	}
+	if q.retryCloudflareRecordStmt, err = db.PrepareContext(ctx, retryCloudflareRecord); err != nil {
+		return nil, fmt.Errorf("error preparing query RetryCloudflareRecord: %w", err)
+	}
+	if q.retryCloudflareTunnelStmt, err = db.PrepareContext(ctx, retryCloudflareTunnel); err != nil {
+		return nil, fmt.Errorf("error preparing query RetryCloudflareTunnel: %w", err)
+	}
+	if q.retryFailedCloudflareStmt, err = db.PrepareContext(ctx, retryFailedCloudflare); err != nil {
+		return nil, fmt.Errorf("error preparing query RetryFailedCloudflare: %w", err)
+	}
+	if q.retryFailedCloudflareTunnelsStmt, err = db.PrepareContext(ctx, retryFailedCloudflareTunnels); err != nil {
+		return nil, fmt.Errorf("error preparing query RetryFailedCloudflareTunnels: %w", err)
+	}
 	if q.revokeOrgInviteStmt, err = db.PrepareContext(ctx, revokeOrgInvite); err != nil {
 		return nil, fmt.Errorf("error preparing query RevokeOrgInvite: %w", err)
 	}
@@ -795,6 +870,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.revokeUserLoginTokensStmt, err = db.PrepareContext(ctx, revokeUserLoginTokens); err != nil {
 		return nil, fmt.Errorf("error preparing query RevokeUserLoginTokens: %w", err)
 	}
+	if q.saveCloudflareRecordStmt, err = db.PrepareContext(ctx, saveCloudflareRecord); err != nil {
+		return nil, fmt.Errorf("error preparing query SaveCloudflareRecord: %w", err)
+	}
+	if q.saveCloudflareZoneStmt, err = db.PrepareContext(ctx, saveCloudflareZone); err != nil {
+		return nil, fmt.Errorf("error preparing query SaveCloudflareZone: %w", err)
+	}
 	if q.saveQueryStmt, err = db.PrepareContext(ctx, saveQuery); err != nil {
 		return nil, fmt.Errorf("error preparing query SaveQuery: %w", err)
 	}
@@ -804,8 +885,23 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setAlertChannelSentStmt, err = db.PrepareContext(ctx, setAlertChannelSent); err != nil {
 		return nil, fmt.Errorf("error preparing query SetAlertChannelSent: %w", err)
 	}
+	if q.setCloudflareConnectionStatusStmt, err = db.PrepareContext(ctx, setCloudflareConnectionStatus); err != nil {
+		return nil, fmt.Errorf("error preparing query SetCloudflareConnectionStatus: %w", err)
+	}
+	if q.setCloudflareTunnelAbsentStmt, err = db.PrepareContext(ctx, setCloudflareTunnelAbsent); err != nil {
+		return nil, fmt.Errorf("error preparing query SetCloudflareTunnelAbsent: %w", err)
+	}
+	if q.setCloudflareTunnelIDStmt, err = db.PrepareContext(ctx, setCloudflareTunnelID); err != nil {
+		return nil, fmt.Errorf("error preparing query SetCloudflareTunnelID: %w", err)
+	}
+	if q.setCloudflareTunnelReasonStmt, err = db.PrepareContext(ctx, setCloudflareTunnelReason); err != nil {
+		return nil, fmt.Errorf("error preparing query SetCloudflareTunnelReason: %w", err)
+	}
 	if q.setDataGrantsSyncedHashStmt, err = db.PrepareContext(ctx, setDataGrantsSyncedHash); err != nil {
 		return nil, fmt.Errorf("error preparing query SetDataGrantsSyncedHash: %w", err)
+	}
+	if q.setDomainRecordAbsentStmt, err = db.PrepareContext(ctx, setDomainRecordAbsent); err != nil {
+		return nil, fmt.Errorf("error preparing query SetDomainRecordAbsent: %w", err)
 	}
 	if q.setEnvironmentApplyErrorStmt, err = db.PrepareContext(ctx, setEnvironmentApplyError); err != nil {
 		return nil, fmt.Errorf("error preparing query SetEnvironmentApplyError: %w", err)
@@ -873,6 +969,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setServiceDatabaseSettingsStmt, err = db.PrepareContext(ctx, setServiceDatabaseSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServiceDatabaseSettings: %w", err)
 	}
+	if q.setServiceRecordsAbsentStmt, err = db.PrepareContext(ctx, setServiceRecordsAbsent); err != nil {
+		return nil, fmt.Errorf("error preparing query SetServiceRecordsAbsent: %w", err)
+	}
 	if q.setServiceTemplateStmt, err = db.PrepareContext(ctx, setServiceTemplate); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServiceTemplate: %w", err)
 	}
@@ -917,6 +1016,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.updateAlertStmt, err = db.PrepareContext(ctx, updateAlert); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateAlert: %w", err)
+	}
+	if q.updateCloudflareConnectionStmt, err = db.PrepareContext(ctx, updateCloudflareConnection); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateCloudflareConnection: %w", err)
+	}
+	if q.updateCloudflareRecordStmt, err = db.PrepareContext(ctx, updateCloudflareRecord); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateCloudflareRecord: %w", err)
+	}
+	if q.updateCloudflareTunnelStmt, err = db.PrepareContext(ctx, updateCloudflareTunnel); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateCloudflareTunnel: %w", err)
 	}
 	if q.updateDomainStatusStmt, err = db.PrepareContext(ctx, updateDomainStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateDomainStatus: %w", err)
@@ -1074,6 +1182,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing consumeJoinTokenStmt: %w", cerr)
 		}
 	}
+	if q.countConnectionUseStmt != nil {
+		if cerr := q.countConnectionUseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countConnectionUseStmt: %w", cerr)
+		}
+	}
 	if q.countInstallationConnectionsStmt != nil {
 		if cerr := q.countInstallationConnectionsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countInstallationConnectionsStmt: %w", cerr)
@@ -1127,6 +1240,16 @@ func (q *Queries) Close() error {
 	if q.createChangesetStmt != nil {
 		if cerr := q.createChangesetStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createChangesetStmt: %w", cerr)
+		}
+	}
+	if q.createCloudflareConnectionStmt != nil {
+		if cerr := q.createCloudflareConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createCloudflareConnectionStmt: %w", cerr)
+		}
+	}
+	if q.createCloudflareTunnelStmt != nil {
+		if cerr := q.createCloudflareTunnelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createCloudflareTunnelStmt: %w", cerr)
 		}
 	}
 	if q.createDomainStmt != nil {
@@ -1242,6 +1365,26 @@ func (q *Queries) Close() error {
 	if q.deleteCLILoginStmt != nil {
 		if cerr := q.deleteCLILoginStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteCLILoginStmt: %w", cerr)
+		}
+	}
+	if q.deleteCloudflareConnectionStmt != nil {
+		if cerr := q.deleteCloudflareConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteCloudflareConnectionStmt: %w", cerr)
+		}
+	}
+	if q.deleteCloudflareRecordStmt != nil {
+		if cerr := q.deleteCloudflareRecordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteCloudflareRecordStmt: %w", cerr)
+		}
+	}
+	if q.deleteCloudflareTunnelStmt != nil {
+		if cerr := q.deleteCloudflareTunnelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteCloudflareTunnelStmt: %w", cerr)
+		}
+	}
+	if q.deleteCloudflareZonesStmt != nil {
+		if cerr := q.deleteCloudflareZonesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteCloudflareZonesStmt: %w", cerr)
 		}
 	}
 	if q.deleteDataPolicyRulesStmt != nil {
@@ -1497,6 +1640,26 @@ func (q *Queries) Close() error {
 	if q.getChangesetStmt != nil {
 		if cerr := q.getChangesetStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getChangesetStmt: %w", cerr)
+		}
+	}
+	if q.getCloudflareConnectionStmt != nil {
+		if cerr := q.getCloudflareConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCloudflareConnectionStmt: %w", cerr)
+		}
+	}
+	if q.getCloudflareConnectionByIDStmt != nil {
+		if cerr := q.getCloudflareConnectionByIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCloudflareConnectionByIDStmt: %w", cerr)
+		}
+	}
+	if q.getCloudflareRecordStmt != nil {
+		if cerr := q.getCloudflareRecordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCloudflareRecordStmt: %w", cerr)
+		}
+	}
+	if q.getCloudflareTunnelByServerStmt != nil {
+		if cerr := q.getCloudflareTunnelByServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCloudflareTunnelByServerStmt: %w", cerr)
 		}
 	}
 	if q.getControlPlaneBackupStmt != nil {
@@ -1759,6 +1922,26 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listChangesetsStmt: %w", cerr)
 		}
 	}
+	if q.listCloudflareConnectionsStmt != nil {
+		if cerr := q.listCloudflareConnectionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listCloudflareConnectionsStmt: %w", cerr)
+		}
+	}
+	if q.listCloudflareRecordsStmt != nil {
+		if cerr := q.listCloudflareRecordsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listCloudflareRecordsStmt: %w", cerr)
+		}
+	}
+	if q.listCloudflareTunnelsStmt != nil {
+		if cerr := q.listCloudflareTunnelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listCloudflareTunnelsStmt: %w", cerr)
+		}
+	}
+	if q.listCloudflareZonesStmt != nil {
+		if cerr := q.listCloudflareZonesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listCloudflareZonesStmt: %w", cerr)
+		}
+	}
 	if q.listDataPolicyRulesStmt != nil {
 		if cerr := q.listDataPolicyRulesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listDataPolicyRulesStmt: %w", cerr)
@@ -1772,6 +1955,16 @@ func (q *Queries) Close() error {
 	if q.listDomainsByServiceStmt != nil {
 		if cerr := q.listDomainsByServiceStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listDomainsByServiceStmt: %w", cerr)
+		}
+	}
+	if q.listDueCloudflareRecordsStmt != nil {
+		if cerr := q.listDueCloudflareRecordsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listDueCloudflareRecordsStmt: %w", cerr)
+		}
+	}
+	if q.listDueCloudflareTunnelsStmt != nil {
+		if cerr := q.listDueCloudflareTunnelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listDueCloudflareTunnelsStmt: %w", cerr)
 		}
 	}
 	if q.listDueRemindersStmt != nil {
@@ -2009,6 +2202,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listSensitiveColumnsStmt: %w", cerr)
 		}
 	}
+	if q.listServerCloudflareRecordsStmt != nil {
+		if cerr := q.listServerCloudflareRecordsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServerCloudflareRecordsStmt: %w", cerr)
+		}
+	}
 	if q.listServerEnvironmentsStmt != nil {
 		if cerr := q.listServerEnvironmentsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServerEnvironmentsStmt: %w", cerr)
@@ -2042,6 +2240,11 @@ func (q *Queries) Close() error {
 	if q.listServiceBackupsStmt != nil {
 		if cerr := q.listServiceBackupsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServiceBackupsStmt: %w", cerr)
+		}
+	}
+	if q.listServiceCloudflareRecordsStmt != nil {
+		if cerr := q.listServiceCloudflareRecordsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServiceCloudflareRecordsStmt: %w", cerr)
 		}
 	}
 	if q.listServiceStatsStmt != nil {
@@ -2122,6 +2325,16 @@ func (q *Queries) Close() error {
 	if q.moveArchivedEnvironmentsStmt != nil {
 		if cerr := q.moveArchivedEnvironmentsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing moveArchivedEnvironmentsStmt: %w", cerr)
+		}
+	}
+	if q.nextCloudflareRecordRetryStmt != nil {
+		if cerr := q.nextCloudflareRecordRetryStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing nextCloudflareRecordRetryStmt: %w", cerr)
+		}
+	}
+	if q.nextCloudflareTunnelRetryStmt != nil {
+		if cerr := q.nextCloudflareTunnelRetryStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing nextCloudflareTunnelRetryStmt: %w", cerr)
 		}
 	}
 	if q.nextReleaseNumberStmt != nil {
@@ -2219,6 +2432,26 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing restoreVariableStmt: %w", cerr)
 		}
 	}
+	if q.retryCloudflareRecordStmt != nil {
+		if cerr := q.retryCloudflareRecordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing retryCloudflareRecordStmt: %w", cerr)
+		}
+	}
+	if q.retryCloudflareTunnelStmt != nil {
+		if cerr := q.retryCloudflareTunnelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing retryCloudflareTunnelStmt: %w", cerr)
+		}
+	}
+	if q.retryFailedCloudflareStmt != nil {
+		if cerr := q.retryFailedCloudflareStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing retryFailedCloudflareStmt: %w", cerr)
+		}
+	}
+	if q.retryFailedCloudflareTunnelsStmt != nil {
+		if cerr := q.retryFailedCloudflareTunnelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing retryFailedCloudflareTunnelsStmt: %w", cerr)
+		}
+	}
 	if q.revokeOrgInviteStmt != nil {
 		if cerr := q.revokeOrgInviteStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing revokeOrgInviteStmt: %w", cerr)
@@ -2244,6 +2477,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing revokeUserLoginTokensStmt: %w", cerr)
 		}
 	}
+	if q.saveCloudflareRecordStmt != nil {
+		if cerr := q.saveCloudflareRecordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing saveCloudflareRecordStmt: %w", cerr)
+		}
+	}
+	if q.saveCloudflareZoneStmt != nil {
+		if cerr := q.saveCloudflareZoneStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing saveCloudflareZoneStmt: %w", cerr)
+		}
+	}
 	if q.saveQueryStmt != nil {
 		if cerr := q.saveQueryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing saveQueryStmt: %w", cerr)
@@ -2259,9 +2502,34 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setAlertChannelSentStmt: %w", cerr)
 		}
 	}
+	if q.setCloudflareConnectionStatusStmt != nil {
+		if cerr := q.setCloudflareConnectionStatusStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setCloudflareConnectionStatusStmt: %w", cerr)
+		}
+	}
+	if q.setCloudflareTunnelAbsentStmt != nil {
+		if cerr := q.setCloudflareTunnelAbsentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setCloudflareTunnelAbsentStmt: %w", cerr)
+		}
+	}
+	if q.setCloudflareTunnelIDStmt != nil {
+		if cerr := q.setCloudflareTunnelIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setCloudflareTunnelIDStmt: %w", cerr)
+		}
+	}
+	if q.setCloudflareTunnelReasonStmt != nil {
+		if cerr := q.setCloudflareTunnelReasonStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setCloudflareTunnelReasonStmt: %w", cerr)
+		}
+	}
 	if q.setDataGrantsSyncedHashStmt != nil {
 		if cerr := q.setDataGrantsSyncedHashStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setDataGrantsSyncedHashStmt: %w", cerr)
+		}
+	}
+	if q.setDomainRecordAbsentStmt != nil {
+		if cerr := q.setDomainRecordAbsentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setDomainRecordAbsentStmt: %w", cerr)
 		}
 	}
 	if q.setEnvironmentApplyErrorStmt != nil {
@@ -2374,6 +2642,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setServiceDatabaseSettingsStmt: %w", cerr)
 		}
 	}
+	if q.setServiceRecordsAbsentStmt != nil {
+		if cerr := q.setServiceRecordsAbsentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setServiceRecordsAbsentStmt: %w", cerr)
+		}
+	}
 	if q.setServiceTemplateStmt != nil {
 		if cerr := q.setServiceTemplateStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setServiceTemplateStmt: %w", cerr)
@@ -2447,6 +2720,21 @@ func (q *Queries) Close() error {
 	if q.updateAlertStmt != nil {
 		if cerr := q.updateAlertStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateAlertStmt: %w", cerr)
+		}
+	}
+	if q.updateCloudflareConnectionStmt != nil {
+		if cerr := q.updateCloudflareConnectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateCloudflareConnectionStmt: %w", cerr)
+		}
+	}
+	if q.updateCloudflareRecordStmt != nil {
+		if cerr := q.updateCloudflareRecordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateCloudflareRecordStmt: %w", cerr)
+		}
+	}
+	if q.updateCloudflareTunnelStmt != nil {
+		if cerr := q.updateCloudflareTunnelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateCloudflareTunnelStmt: %w", cerr)
 		}
 	}
 	if q.updateDomainStatusStmt != nil {
@@ -2571,6 +2859,7 @@ type Queries struct {
 	clearGitPendingStmt                 *sql.Stmt
 	clearReleaseHostPortStmt            *sql.Stmt
 	consumeJoinTokenStmt                *sql.Stmt
+	countConnectionUseStmt              *sql.Stmt
 	countInstallationConnectionsStmt    *sql.Stmt
 	countKindEnvironmentsStmt           *sql.Stmt
 	countOrgAdminsStmt                  *sql.Stmt
@@ -2582,6 +2871,8 @@ type Queries struct {
 	createCLILoginStmt                  *sql.Stmt
 	createCLILoginTokenStmt             *sql.Stmt
 	createChangesetStmt                 *sql.Stmt
+	createCloudflareConnectionStmt      *sql.Stmt
+	createCloudflareTunnelStmt          *sql.Stmt
 	createDomainStmt                    *sql.Stmt
 	createEnvironmentStmt               *sql.Stmt
 	createGitConnectionStmt             *sql.Stmt
@@ -2605,6 +2896,10 @@ type Queries struct {
 	deleteAuditDetailsThroughStmt       *sql.Stmt
 	deleteAuditEventsThroughStmt        *sql.Stmt
 	deleteCLILoginStmt                  *sql.Stmt
+	deleteCloudflareConnectionStmt      *sql.Stmt
+	deleteCloudflareRecordStmt          *sql.Stmt
+	deleteCloudflareTunnelStmt          *sql.Stmt
+	deleteCloudflareZonesStmt           *sql.Stmt
 	deleteDataPolicyRulesStmt           *sql.Stmt
 	deleteDomainStmt                    *sql.Stmt
 	deleteExpiredCLILoginsStmt          *sql.Stmt
@@ -2656,6 +2951,10 @@ type Queries struct {
 	getCLILoginByDeviceHashStmt         *sql.Stmt
 	getCLILoginByUserCodeStmt           *sql.Stmt
 	getChangesetStmt                    *sql.Stmt
+	getCloudflareConnectionStmt         *sql.Stmt
+	getCloudflareConnectionByIDStmt     *sql.Stmt
+	getCloudflareRecordStmt             *sql.Stmt
+	getCloudflareTunnelByServerStmt     *sql.Stmt
 	getControlPlaneBackupStmt           *sql.Stmt
 	getDataAccessStmt                   *sql.Stmt
 	getDomainByHostnameStmt             *sql.Stmt
@@ -2708,9 +3007,15 @@ type Queries struct {
 	listAuditEventsByTargetStmt         *sql.Stmt
 	listBackupCandidatesStmt            *sql.Stmt
 	listChangesetsStmt                  *sql.Stmt
+	listCloudflareConnectionsStmt       *sql.Stmt
+	listCloudflareRecordsStmt           *sql.Stmt
+	listCloudflareTunnelsStmt           *sql.Stmt
+	listCloudflareZonesStmt             *sql.Stmt
 	listDataPolicyRulesStmt             *sql.Stmt
 	listDataQueryHistoryStmt            *sql.Stmt
 	listDomainsByServiceStmt            *sql.Stmt
+	listDueCloudflareRecordsStmt        *sql.Stmt
+	listDueCloudflareTunnelsStmt        *sql.Stmt
 	listDueRemindersStmt                *sql.Stmt
 	listEffectiveDataPolicyRulesStmt    *sql.Stmt
 	listEnvironmentActiveReleasesStmt   *sql.Stmt
@@ -2758,6 +3063,7 @@ type Queries struct {
 	listRoutableDomainsStmt             *sql.Stmt
 	listSavedQueriesStmt                *sql.Stmt
 	listSensitiveColumnsStmt            *sql.Stmt
+	listServerCloudflareRecordsStmt     *sql.Stmt
 	listServerEnvironmentsStmt          *sql.Stmt
 	listServerLoadsStmt                 *sql.Stmt
 	listServerPlacementsStmt            *sql.Stmt
@@ -2765,6 +3071,7 @@ type Queries struct {
 	listServerStatsStmt                 *sql.Stmt
 	listServersStmt                     *sql.Stmt
 	listServiceBackupsStmt              *sql.Stmt
+	listServiceCloudflareRecordsStmt    *sql.Stmt
 	listServiceStatsStmt                *sql.Stmt
 	listServicesStmt                    *sql.Stmt
 	listStatsNamesStmt                  *sql.Stmt
@@ -2781,6 +3088,8 @@ type Queries struct {
 	markReleaseHistoryTrimmedStmt       *sql.Stmt
 	maxAuditEventIDStmt                 *sql.Stmt
 	moveArchivedEnvironmentsStmt        *sql.Stmt
+	nextCloudflareRecordRetryStmt       *sql.Stmt
+	nextCloudflareTunnelRetryStmt       *sql.Stmt
 	nextReleaseNumberStmt               *sql.Stmt
 	openAlertStmt                       *sql.Stmt
 	orgSlugTakenStmt                    *sql.Stmt
@@ -2800,15 +3109,26 @@ type Queries struct {
 	renameProjectAlertsStmt             *sql.Stmt
 	resolveAlertStmt                    *sql.Stmt
 	restoreVariableStmt                 *sql.Stmt
+	retryCloudflareRecordStmt           *sql.Stmt
+	retryCloudflareTunnelStmt           *sql.Stmt
+	retryFailedCloudflareStmt           *sql.Stmt
+	retryFailedCloudflareTunnelsStmt    *sql.Stmt
 	revokeOrgInviteStmt                 *sql.Stmt
 	revokeOrgTokensStmt                 *sql.Stmt
 	revokeServerStmt                    *sql.Stmt
 	revokeTokenStmt                     *sql.Stmt
 	revokeUserLoginTokensStmt           *sql.Stmt
+	saveCloudflareRecordStmt            *sql.Stmt
+	saveCloudflareZoneStmt              *sql.Stmt
 	saveQueryStmt                       *sql.Stmt
 	setAlertChannelFailedStmt           *sql.Stmt
 	setAlertChannelSentStmt             *sql.Stmt
+	setCloudflareConnectionStatusStmt   *sql.Stmt
+	setCloudflareTunnelAbsentStmt       *sql.Stmt
+	setCloudflareTunnelIDStmt           *sql.Stmt
+	setCloudflareTunnelReasonStmt       *sql.Stmt
 	setDataGrantsSyncedHashStmt         *sql.Stmt
+	setDomainRecordAbsentStmt           *sql.Stmt
 	setEnvironmentApplyErrorStmt        *sql.Stmt
 	setGitHubAppStmt                    *sql.Stmt
 	setGitHubInstallationStmt           *sql.Stmt
@@ -2831,6 +3151,7 @@ type Queries struct {
 	setServiceAccessStmt                *sql.Stmt
 	setServiceCopiedSettingsStmt        *sql.Stmt
 	setServiceDatabaseSettingsStmt      *sql.Stmt
+	setServiceRecordsAbsentStmt         *sql.Stmt
 	setServiceTemplateStmt              *sql.Stmt
 	setTokenDataAccessStmt              *sql.Stmt
 	setTrafficVisitorsStmt              *sql.Stmt
@@ -2846,6 +3167,9 @@ type Queries struct {
 	trimTrafficPathsStmt                *sql.Stmt
 	unapplyVolumeStmt                   *sql.Stmt
 	updateAlertStmt                     *sql.Stmt
+	updateCloudflareConnectionStmt      *sql.Stmt
+	updateCloudflareRecordStmt          *sql.Stmt
+	updateCloudflareTunnelStmt          *sql.Stmt
 	updateDomainStatusStmt              *sql.Stmt
 	updateGitConnectionStmt             *sql.Stmt
 	updateSavedQueryStmt                *sql.Stmt
@@ -2887,6 +3211,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		clearGitPendingStmt:                 q.clearGitPendingStmt,
 		clearReleaseHostPortStmt:            q.clearReleaseHostPortStmt,
 		consumeJoinTokenStmt:                q.consumeJoinTokenStmt,
+		countConnectionUseStmt:              q.countConnectionUseStmt,
 		countInstallationConnectionsStmt:    q.countInstallationConnectionsStmt,
 		countKindEnvironmentsStmt:           q.countKindEnvironmentsStmt,
 		countOrgAdminsStmt:                  q.countOrgAdminsStmt,
@@ -2898,6 +3223,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createCLILoginStmt:                  q.createCLILoginStmt,
 		createCLILoginTokenStmt:             q.createCLILoginTokenStmt,
 		createChangesetStmt:                 q.createChangesetStmt,
+		createCloudflareConnectionStmt:      q.createCloudflareConnectionStmt,
+		createCloudflareTunnelStmt:          q.createCloudflareTunnelStmt,
 		createDomainStmt:                    q.createDomainStmt,
 		createEnvironmentStmt:               q.createEnvironmentStmt,
 		createGitConnectionStmt:             q.createGitConnectionStmt,
@@ -2921,6 +3248,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteAuditDetailsThroughStmt:       q.deleteAuditDetailsThroughStmt,
 		deleteAuditEventsThroughStmt:        q.deleteAuditEventsThroughStmt,
 		deleteCLILoginStmt:                  q.deleteCLILoginStmt,
+		deleteCloudflareConnectionStmt:      q.deleteCloudflareConnectionStmt,
+		deleteCloudflareRecordStmt:          q.deleteCloudflareRecordStmt,
+		deleteCloudflareTunnelStmt:          q.deleteCloudflareTunnelStmt,
+		deleteCloudflareZonesStmt:           q.deleteCloudflareZonesStmt,
 		deleteDataPolicyRulesStmt:           q.deleteDataPolicyRulesStmt,
 		deleteDomainStmt:                    q.deleteDomainStmt,
 		deleteExpiredCLILoginsStmt:          q.deleteExpiredCLILoginsStmt,
@@ -2972,6 +3303,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getCLILoginByDeviceHashStmt:         q.getCLILoginByDeviceHashStmt,
 		getCLILoginByUserCodeStmt:           q.getCLILoginByUserCodeStmt,
 		getChangesetStmt:                    q.getChangesetStmt,
+		getCloudflareConnectionStmt:         q.getCloudflareConnectionStmt,
+		getCloudflareConnectionByIDStmt:     q.getCloudflareConnectionByIDStmt,
+		getCloudflareRecordStmt:             q.getCloudflareRecordStmt,
+		getCloudflareTunnelByServerStmt:     q.getCloudflareTunnelByServerStmt,
 		getControlPlaneBackupStmt:           q.getControlPlaneBackupStmt,
 		getDataAccessStmt:                   q.getDataAccessStmt,
 		getDomainByHostnameStmt:             q.getDomainByHostnameStmt,
@@ -3024,9 +3359,15 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listAuditEventsByTargetStmt:         q.listAuditEventsByTargetStmt,
 		listBackupCandidatesStmt:            q.listBackupCandidatesStmt,
 		listChangesetsStmt:                  q.listChangesetsStmt,
+		listCloudflareConnectionsStmt:       q.listCloudflareConnectionsStmt,
+		listCloudflareRecordsStmt:           q.listCloudflareRecordsStmt,
+		listCloudflareTunnelsStmt:           q.listCloudflareTunnelsStmt,
+		listCloudflareZonesStmt:             q.listCloudflareZonesStmt,
 		listDataPolicyRulesStmt:             q.listDataPolicyRulesStmt,
 		listDataQueryHistoryStmt:            q.listDataQueryHistoryStmt,
 		listDomainsByServiceStmt:            q.listDomainsByServiceStmt,
+		listDueCloudflareRecordsStmt:        q.listDueCloudflareRecordsStmt,
+		listDueCloudflareTunnelsStmt:        q.listDueCloudflareTunnelsStmt,
 		listDueRemindersStmt:                q.listDueRemindersStmt,
 		listEffectiveDataPolicyRulesStmt:    q.listEffectiveDataPolicyRulesStmt,
 		listEnvironmentActiveReleasesStmt:   q.listEnvironmentActiveReleasesStmt,
@@ -3074,6 +3415,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listRoutableDomainsStmt:             q.listRoutableDomainsStmt,
 		listSavedQueriesStmt:                q.listSavedQueriesStmt,
 		listSensitiveColumnsStmt:            q.listSensitiveColumnsStmt,
+		listServerCloudflareRecordsStmt:     q.listServerCloudflareRecordsStmt,
 		listServerEnvironmentsStmt:          q.listServerEnvironmentsStmt,
 		listServerLoadsStmt:                 q.listServerLoadsStmt,
 		listServerPlacementsStmt:            q.listServerPlacementsStmt,
@@ -3081,6 +3423,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listServerStatsStmt:                 q.listServerStatsStmt,
 		listServersStmt:                     q.listServersStmt,
 		listServiceBackupsStmt:              q.listServiceBackupsStmt,
+		listServiceCloudflareRecordsStmt:    q.listServiceCloudflareRecordsStmt,
 		listServiceStatsStmt:                q.listServiceStatsStmt,
 		listServicesStmt:                    q.listServicesStmt,
 		listStatsNamesStmt:                  q.listStatsNamesStmt,
@@ -3097,6 +3440,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		markReleaseHistoryTrimmedStmt:       q.markReleaseHistoryTrimmedStmt,
 		maxAuditEventIDStmt:                 q.maxAuditEventIDStmt,
 		moveArchivedEnvironmentsStmt:        q.moveArchivedEnvironmentsStmt,
+		nextCloudflareRecordRetryStmt:       q.nextCloudflareRecordRetryStmt,
+		nextCloudflareTunnelRetryStmt:       q.nextCloudflareTunnelRetryStmt,
 		nextReleaseNumberStmt:               q.nextReleaseNumberStmt,
 		openAlertStmt:                       q.openAlertStmt,
 		orgSlugTakenStmt:                    q.orgSlugTakenStmt,
@@ -3116,15 +3461,26 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		renameProjectAlertsStmt:             q.renameProjectAlertsStmt,
 		resolveAlertStmt:                    q.resolveAlertStmt,
 		restoreVariableStmt:                 q.restoreVariableStmt,
+		retryCloudflareRecordStmt:           q.retryCloudflareRecordStmt,
+		retryCloudflareTunnelStmt:           q.retryCloudflareTunnelStmt,
+		retryFailedCloudflareStmt:           q.retryFailedCloudflareStmt,
+		retryFailedCloudflareTunnelsStmt:    q.retryFailedCloudflareTunnelsStmt,
 		revokeOrgInviteStmt:                 q.revokeOrgInviteStmt,
 		revokeOrgTokensStmt:                 q.revokeOrgTokensStmt,
 		revokeServerStmt:                    q.revokeServerStmt,
 		revokeTokenStmt:                     q.revokeTokenStmt,
 		revokeUserLoginTokensStmt:           q.revokeUserLoginTokensStmt,
+		saveCloudflareRecordStmt:            q.saveCloudflareRecordStmt,
+		saveCloudflareZoneStmt:              q.saveCloudflareZoneStmt,
 		saveQueryStmt:                       q.saveQueryStmt,
 		setAlertChannelFailedStmt:           q.setAlertChannelFailedStmt,
 		setAlertChannelSentStmt:             q.setAlertChannelSentStmt,
+		setCloudflareConnectionStatusStmt:   q.setCloudflareConnectionStatusStmt,
+		setCloudflareTunnelAbsentStmt:       q.setCloudflareTunnelAbsentStmt,
+		setCloudflareTunnelIDStmt:           q.setCloudflareTunnelIDStmt,
+		setCloudflareTunnelReasonStmt:       q.setCloudflareTunnelReasonStmt,
 		setDataGrantsSyncedHashStmt:         q.setDataGrantsSyncedHashStmt,
+		setDomainRecordAbsentStmt:           q.setDomainRecordAbsentStmt,
 		setEnvironmentApplyErrorStmt:        q.setEnvironmentApplyErrorStmt,
 		setGitHubAppStmt:                    q.setGitHubAppStmt,
 		setGitHubInstallationStmt:           q.setGitHubInstallationStmt,
@@ -3147,6 +3503,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setServiceAccessStmt:                q.setServiceAccessStmt,
 		setServiceCopiedSettingsStmt:        q.setServiceCopiedSettingsStmt,
 		setServiceDatabaseSettingsStmt:      q.setServiceDatabaseSettingsStmt,
+		setServiceRecordsAbsentStmt:         q.setServiceRecordsAbsentStmt,
 		setServiceTemplateStmt:              q.setServiceTemplateStmt,
 		setTokenDataAccessStmt:              q.setTokenDataAccessStmt,
 		setTrafficVisitorsStmt:              q.setTrafficVisitorsStmt,
@@ -3162,6 +3519,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		trimTrafficPathsStmt:                q.trimTrafficPathsStmt,
 		unapplyVolumeStmt:                   q.unapplyVolumeStmt,
 		updateAlertStmt:                     q.updateAlertStmt,
+		updateCloudflareConnectionStmt:      q.updateCloudflareConnectionStmt,
+		updateCloudflareRecordStmt:          q.updateCloudflareRecordStmt,
+		updateCloudflareTunnelStmt:          q.updateCloudflareTunnelStmt,
 		updateDomainStatusStmt:              q.updateDomainStatusStmt,
 		updateGitConnectionStmt:             q.updateGitConnectionStmt,
 		updateSavedQueryStmt:                q.updateSavedQueryStmt,

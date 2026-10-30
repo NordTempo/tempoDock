@@ -191,6 +191,9 @@ type Proxy struct {
 	// nil until the first ApplyRoutes or read of Caddy's running config.
 	hosts  atomic.Pointer[hostSet]
 	seedMu sync.Mutex // one read of Caddy's running config at a time
+	// tunnel is the tunnel hostname the control plane runs cloudflared
+	// with (SetTunnelHostname); it wins over Options.TunnelHostname.
+	tunnel atomic.Pointer[string]
 
 	// Overridable in tests.
 	lookupIP   func(ctx context.Context, host string) ([]net.IPAddr, error)

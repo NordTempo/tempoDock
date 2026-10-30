@@ -6,6 +6,7 @@ import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
+import { cloudflareKey } from "../features/cloudflare/data";
 import { registryKey } from "../features/registry/data";
 import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
@@ -205,9 +206,25 @@ function applyServer(
       ? list.map((s) => (s.id === server.id ? { ...s, ...server } : s))
       : list && [...list, server],
   );
+  // Connectors are read from Cloudflare for the server page only; an
+  // event's tunnel keeps the ones the page has.
   queryClient.setQueryData<ServerDetail>(
     keys.server(server.name),
-    (d) => d && { ...d, server: { ...d.server, ...server } },
+    (d) =>
+      d && {
+        ...d,
+        server: {
+          ...d.server,
+          ...server,
+          ...(server.tunnel &&
+            d.server.tunnel?.connectors && {
+              tunnel: {
+                connectors: d.server.tunnel.connectors,
+                ...server.tunnel,
+              },
+            }),
+        },
+      },
   );
 }
 
@@ -390,6 +407,12 @@ function invalidateForAudit(
   if (kind === "registry") invalidate(registryKey);
   // Storage connections, and which one the registry uses.
   if (kind === "storage" || kind === "registry") invalidate(storageKey);
+  // Cloudflare connections, their zones and the tunnels they run.
+  if (
+    kind === "cloudflare" ||
+    (kind === "server" && audit.action.startsWith("server.tunnel"))
+  )
+    invalidate(cloudflareKey);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;

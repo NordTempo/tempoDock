@@ -30,7 +30,7 @@ const testKeepAlive = 300 * time.Millisecond
 
 // testFacts is what the test node reports in hello.
 var testFacts = Facts{
-	DockerVersion: "28.3.1", Ingress: IngressCloudflareTunnel, TunnelHostname: "abc.cfargotunnel.com",
+	DockerVersion: "28.3.1", Ingress: IngressCloudflareTunnel, TunnelHostname: "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com",
 	Builder: true, MemoryTotal: 16 << 30,
 }
 
@@ -180,6 +180,14 @@ func TestCalls(t *testing.T) {
 	}
 	if ops := h.rt.Ops(); ops[len(ops)-1] != "disk usage keep=sha256:k repos=r" {
 		t.Fatalf("the prune filter didn't reach the node: %v", ops[len(ops)-1])
+	}
+
+	tunnel := node.TunnelSpec{Token: "tunnel-token", Hostname: "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"}
+	if err := h.client.EnsureTunnel(ctx, &tunnel); err != nil || h.rt.Tunnel() == nil || *h.rt.Tunnel() != tunnel {
+		t.Fatalf("ensure tunnel: %v, node runs %+v", err, h.rt.Tunnel())
+	}
+	if err := h.client.EnsureTunnel(ctx, nil); err != nil || h.rt.Tunnel() != nil {
+		t.Fatalf("stop tunnel: %v, node runs %+v", err, h.rt.Tunnel())
 	}
 }
 
@@ -1154,4 +1162,28 @@ func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// TestCheckFacts keeps only what DNS can point at from a hello: the
+// control plane shows it as records and uses the tunnel in Cloudflare
+// (ADR 0036). An unknown ingress mode is refused.
+func TestCheckFacts(t *testing.T) {
+	const tunnel = "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"
+	f := Facts{Ingress: IngressDirect, PublicIPs: []string{"203.0.113.7", "home.example.com", "127.0.0.1", "0.0.0.0", "2001:db8::1"}}
+	if dropped, err := checkFacts(&f); err != nil || len(dropped) != 3 || !slices.Equal(f.PublicIPs, []string{"203.0.113.7", "2001:db8::1"}) {
+		t.Errorf("public IPs %v, dropped %v, %v", f.PublicIPs, dropped, err)
+	}
+	for hostname, want := range map[string]string{
+		strings.ToUpper(tunnel[:36]) + ".cfargotunnel.com": tunnel,
+		"evil.example.com":                    "",
+		"x.evil.example.com.cfargotunnel.com": "",
+	} {
+		f := Facts{Ingress: IngressCloudflareTunnel, TunnelHostname: hostname}
+		if _, err := checkFacts(&f); err != nil || f.TunnelHostname != want {
+			t.Errorf("tunnel hostname %q became %q, %v", hostname, f.TunnelHostname, err)
+		}
+	}
+	if _, err := checkFacts(&Facts{Ingress: "other"}); err == nil {
+		t.Error("unknown ingress mode passed")
+	}
 }

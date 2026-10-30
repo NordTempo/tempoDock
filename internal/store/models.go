@@ -142,6 +142,62 @@ type CliLogin struct {
 	UserID     *int64
 }
 
+type CloudflareConnection struct {
+	ID           int64
+	Name         string
+	AccountID    string
+	AccountName  string
+	Token        []byte
+	Status       string
+	StatusReason string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	UpdatedBy    string
+}
+
+type CloudflareRecord struct {
+	ID           int64
+	Hostname     string
+	DomainID     *int64
+	ServerID     *int64
+	ConnectionID int64
+	ZoneID       string
+	RecordID     string
+	Content      string
+	RouteTunnel  string
+	Want         string
+	Status       string
+	Reason       string
+	Attempts     int64
+	RetryAt      *time.Time
+	Gen          int64
+	UpdatedAt    time.Time
+}
+
+type CloudflareTunnel struct {
+	ID           int64
+	ServerID     *int64
+	ServerName   string
+	ConnectionID int64
+	TunnelID     string
+	Token        []byte
+	Adopted      bool
+	Want         string
+	Status       string
+	Reason       string
+	Attempts     int64
+	RetryAt      *time.Time
+	Gen          int64
+	UpdatedAt    time.Time
+}
+
+type CloudflareZone struct {
+	ID           int64
+	ConnectionID int64
+	ZoneID       string
+	Name         string
+}
+
 type ControlPlaneBackup struct {
 	ID          int64
 	Trigger     string
@@ -267,6 +323,7 @@ type JoinToken struct {
 	ExpiresAt            time.Time
 	UsedAt               *time.Time
 	UsedByServerID       *int64
+	CloudflareID         *int64
 }
 
 type Org struct {

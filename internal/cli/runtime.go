@@ -79,7 +79,12 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		builder = b
 	}
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
-	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter}, proxy, nil
+	owner, err := filepath.Abs(cfg.DataDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	tunnel := docker.NewCloudflared(containers, cfg.Ingress.CloudflaredImage, owner, proxy.SetTunnelHostname)
+	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel}, proxy, nil
 }
 
 // dockerRoot asks Docker once where it keeps images, volumes and logs, for

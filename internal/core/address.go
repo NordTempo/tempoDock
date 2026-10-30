@@ -176,7 +176,7 @@ func (c *Core) describeAddress(ctx context.Context) (apitypes.Address, error) {
 		}
 	} else {
 		for _, ip := range ing.publicIPs {
-			out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: "A", Name: host, Value: ip})
+			out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: ipRecordType(ip), Name: host, Value: ip})
 		}
 	}
 	check, err := c.rt.CheckDomain(ctx, host)

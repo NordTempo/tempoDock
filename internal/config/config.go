@@ -42,7 +42,8 @@ type Config struct {
 	PublicListen string `toml:"public_listen"`
 	// PublicIP is the address users point DNS records at.
 	PublicIP string `toml:"public_ip"`
-	// BaseDomain enables generated hostnames (<service>-<env>.<base>).
+	// BaseDomain enables generated hostnames
+	// (<service>-<project>[-<env>].<base>).
 	// Requires a wildcard DNS record pointing at PublicIP.
 	BaseDomain string `toml:"base_domain"`
 	// MaxUploadMB caps source uploads (`dock deploy` tarballs).
@@ -252,8 +253,12 @@ type Ingress struct {
 	// Mode is direct or cloudflare_tunnel.
 	Mode IngressMode `toml:"mode"`
 	// TunnelHostname is "<tunnel-id>.cfargotunnel.com", the CNAME target
-	// for hostnames served through the tunnel. Tunnel mode only.
+	// for hostnames served through the tunnel. Tunnel mode only; empty
+	// when the control plane manages the tunnel (ADR 0036).
 	TunnelHostname string `toml:"tunnel_hostname"`
+	// CloudflaredImage is the cloudflared the server runs when the control
+	// plane manages its tunnel (ADR 0036). Pin it by digest.
+	CloudflaredImage string `toml:"cloudflared_image"`
 }
 
 // Hooks configures incoming webhooks for GitHub push-to-deploy (ADR 0018).
@@ -308,8 +313,11 @@ func Default() Config {
 			StorageDir: "/var/lib/dock-registry",
 			ConfigDir:  "/etc/dock/registry",
 		},
-		Ingress: Ingress{Mode: IngressDirect},
-		Hooks:   Hooks{Listen: "127.0.0.1:7072"},
+		Ingress: Ingress{
+			Mode:             IngressDirect,
+			CloudflaredImage: "cloudflare/cloudflared:2026.10.3@sha256:faa8e0a1475f137c910be6025f43c8e4092fdd35461b31e19fd1390657a1ff39",
+		},
+		Hooks: Hooks{Listen: "127.0.0.1:7072"},
 		Backup: Backup{
 			ResticImage: "restic/restic:0.18.1@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76",
 		},
@@ -430,6 +438,14 @@ func (h *Hooks) validate() error {
 	}
 	return nil
 }
+
+// tunnelHostnameRe matches a Cloudflare tunnel's CNAME target.
+var tunnelHostnameRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.cfargotunnel\.com$`)
+
+// ValidTunnelHostname reports whether h is <tunnel-id>.cfargotunnel.com,
+// what a server behind a Cloudflare tunnel reports and DNS records point
+// at.
+func ValidTunnelHostname(h string) bool { return tunnelHostnameRe.MatchString(h) }
 
 // hostnameRe matches lower-case DNS names with at least two labels.
 var hostnameRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)

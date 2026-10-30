@@ -366,6 +366,28 @@ func (c *Client) DiskUsage(ctx context.Context, req node.PruneImagesRequest) (no
 	return fromWireDiskUsage(r), err
 }
 
+// TunnelProtocol is the first protocol version with ensure-tunnel.
+const TunnelProtocol = 8
+
+// EnsureTunnel implements node.Tunnel. An older node can't run
+// cloudflared for the control plane: that is an error saying to upgrade
+// it.
+func (c *Client) EnsureTunnel(ctx context.Context, spec *node.TunnelSpec) error {
+	if err := c.needProtocol(ctx, TunnelProtocol, "run a Cloudflare tunnel for the control plane"); err != nil {
+		return err
+	}
+	req := tunnelRequest{}
+	if spec != nil {
+		req.Spec = &wireTunnelSpec{Token: spec.Token, Hostname: spec.Hostname}
+	}
+	// Longer than a control call: the node may pull cloudflared first.
+	_, err := callWithLogs[empty](ctx, c, opEnsureTunnel, ensureTunnelTimeout, req, nil, nil)
+	return err
+}
+
+// ensureTunnelTimeout bounds ensure-tunnel, which may pull an image.
+const ensureTunnelTimeout = 5 * time.Minute
+
 // unaryCall makes a control call, bounded by the hub's call timeout.
 func unaryCall[R any](ctx context.Context, c *Client, op string, args any) (R, error) {
 	return callWithLogs[R](ctx, c, op, c.hub.callTimeout(), args, nil, nil)

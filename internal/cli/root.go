@@ -70,7 +70,7 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newDiscardCmd(g), newDomainCmd(g), newAccessCmd(g), newVolumeCmd(g),
 		newServiceCmd(g), newEnvironmentCmd(g), newProjectCmd(g))
 	addGroup(root, "admin", "Administer:",
-		newTokenCmd(g), newUserCmd(g), newAuditCmd(g), newServerCmd(g), newRegistryCmd(g), newStorageCmd(g), newAlertsCmd(g), newUpdateCmd(g), newAddressCmd(g), newGitHubCmd(g))
+		newTokenCmd(g), newUserCmd(g), newAuditCmd(g), newServerCmd(g), newRegistryCmd(g), newStorageCmd(g), newAlertsCmd(g), newUpdateCmd(g), newAddressCmd(g), newGitHubCmd(g), newCloudflareCmd(g))
 	if cmds := serverCommands(); len(cmds) > 0 {
 		addGroup(root, "server", "Run a server:", cmds...)
 	}

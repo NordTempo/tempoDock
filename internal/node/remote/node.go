@@ -423,6 +423,13 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		t, err := rt.DrainTraffic(ctx)
 		return trafficResult{Hosts: toWireTraffic(t)}, err
 	}))
+	h(opEnsureTunnel, unary(func(ctx context.Context, req tunnelRequest) (empty, error) {
+		var spec *node.TunnelSpec
+		if req.Spec != nil {
+			spec = &node.TunnelSpec{Token: req.Spec.Token, Hostname: req.Spec.Hostname}
+		}
+		return empty{}, rt.EnsureTunnel(ctx, spec)
+	}))
 	h(opDial, serveDial(rt))
 }
 

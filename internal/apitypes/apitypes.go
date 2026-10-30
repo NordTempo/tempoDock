@@ -657,7 +657,8 @@ type Domain struct {
 	Status       DomainStatus `json:"status" enum:"added,waiting_for_dns,issuing_certificate,active,error"`
 	StatusReason string       `json:"status_reason,omitempty"`
 	// DNSRecords are the records to create; any one of them is enough.
-	// Empty for generated domains (covered by the wildcard record).
+	// Empty for generated domains under their server's base domain
+	// (covered by its wildcard record).
 	DNSRecords []DNSRecord `json:"dns_records"`
 	// CheckedAt is when the daemon last checked the domain's DNS and
 	// certificate, and ResolvedIPs what the hostname resolved to then.
@@ -666,12 +667,21 @@ type Domain struct {
 	CheckedAt   *time.Time `json:"checked_at,omitempty"`
 	ResolvedIPs []string   `json:"resolved_ips,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+	// DNS is set for a domain Dock routes through its server's Cloudflare
+	// tunnel (added from Cloudflare, ADR 0036): how far it is. Only in a
+	// service's domain list and domain changes.
+	DNS *DomainDNS `json:"dns,omitempty"`
 }
 
 // AddDomainRequest adds a hostname to a service.
 type AddDomainRequest struct {
 	Hostname   string `json:"hostname" maxLength:"253"`
 	RedirectTo string `json:"redirect_to,omitempty" doc:"Permanently redirect to this hostname instead of proxying"`
+	// Cloudflare adds a hostname in a zone a Cloudflare connection
+	// manages and has Dock set up all it needs: a route through the
+	// server's tunnel (created or adopted if Dock runs none) and its
+	// proxied CNAME. The server must be in tunnel mode (ADR 0036).
+	Cloudflare bool `json:"cloudflare,omitempty"`
 }
 
 // DomainChange is the result of adding a domain. Release is set when the
@@ -937,6 +947,9 @@ type Server struct {
 	// Usage is the latest minute sample, kept in memory. Only unlimited
 	// admins get it, as with server statistics.
 	Usage *ServerUsage `json:"usage,omitempty"`
+	// Tunnel is the Cloudflare tunnel Dock manages for it (ADR 0036);
+	// unset when it manages none.
+	Tunnel *ServerTunnel `json:"tunnel,omitempty"`
 }
 
 // EffectiveLimits are the limits a service's releases get.
@@ -971,6 +984,12 @@ type AddServerRequest struct {
 	AcceptsProduction    bool   `json:"accepts_production"`
 	AcceptsNonProduction bool   `json:"accepts_non_production"`
 	Builder              bool   `json:"builder"`
+	// Tunnel has Dock create a Cloudflare tunnel for the server once it
+	// joins, with the Cloudflare connection named Cloudflare (it may be
+	// left out when there is one), and installs it in tunnel mode (ADR
+	// 0036).
+	Tunnel     bool   `json:"tunnel,omitempty"`
+	Cloudflare string `json:"cloudflare,omitempty"`
 }
 
 // AddedServer is a new join token. Token is shown only this once; run

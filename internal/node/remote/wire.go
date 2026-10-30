@@ -42,6 +42,10 @@ type Facts struct {
 	// only ([caddy] disable_tls in direct mode): no certificates to wait
 	// for, and app URLs are http://.
 	PlainHTTP bool `json:"plain_http,omitempty"`
+	// HTTPPort is the port the node's Caddy serves plain HTTP on: in
+	// tunnel mode cloudflared forwards to 127.0.0.1 on it. 0 from nodes
+	// before protocol 8, which means 80.
+	HTTPPort int `json:"http_port,omitempty"`
 	// BaseDomain is the node config's base_domain (BASE_DOMAIN at install).
 	// The control plane takes it when the server joins without one; after
 	// that `dock server update --base-domain` decides.
@@ -678,4 +682,16 @@ func fromWireDiskUsage(w wireDiskUsage) node.DiskUsage {
 		d.Volumes[i] = node.VolumeUsage(v)
 	}
 	return d
+}
+
+// tunnelRequest is ensure-tunnel's argument: the tunnel cloudflared runs,
+// or none (Spec nil) to stop it.
+type tunnelRequest struct {
+	Spec *wireTunnelSpec `json:"spec,omitempty"`
+}
+
+// wireTunnelSpec is node.TunnelSpec on the wire. Token is a secret.
+type wireTunnelSpec struct {
+	Token    string `json:"token"`
+	Hostname string `json:"hostname"`
 }
