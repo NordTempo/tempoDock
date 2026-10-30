@@ -324,9 +324,13 @@ func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey
 		s.close()
 		return fmt.Errorf("hello from %s: %w", s.name, err)
 	}
-	if err := checkFacts(s.hello.Facts); err != nil {
+	dropped, err := checkFacts(&s.hello.Facts)
+	if err != nil {
 		s.close()
 		return fmt.Errorf("hello from %s: %w", s.name, err)
+	}
+	if len(dropped) > 0 {
+		h.log.Warn("node reported what DNS can't point at; ignored, check its config.toml", "server", s.name, "ignored", dropped)
 	}
 	if key.Next {
 		if err := h.o.Store.PromoteKey(helloCtx, s.id); err != nil {
@@ -358,25 +362,35 @@ func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey
 	return nil
 }
 
-// checkFacts rejects a hello the control plane can't act on. What DNS
-// records point at (the tunnel hostname, the public IPs) must be what
-// it says it is: the control plane shows it as records to create, and
-// creates them in Cloudflare (ADR 0035), so a compromised node can't
-// point a domain somewhere else.
-func checkFacts(f Facts) error {
+// checkFacts rejects a hello the control plane can't act on, and drops
+// what DNS should point at (the tunnel hostname, the public IPs) unless
+// it is what it says it is: the control plane shows it as records to
+// create, and uses the tunnel in Cloudflare (ADR 0035), so a compromised
+// node can't point a domain somewhere else. Dropping, not refusing,
+// keeps a node with an odd public_ip (a DDNS name) connected. It returns
+// what was dropped, for the log.
+func checkFacts(f *Facts) (dropped []string, err error) {
 	if f.Ingress != IngressDirect && f.Ingress != IngressCloudflareTunnel {
-		return fmt.Errorf("unknown ingress mode %q (want %s or %s); check ingress in the node's node.toml", f.Ingress, IngressDirect, IngressCloudflareTunnel)
+		return nil, fmt.Errorf("unknown ingress mode %q (want %s or %s); check ingress in the node's node.toml", f.Ingress, IngressDirect, IngressCloudflareTunnel)
 	}
-	if f.TunnelHostname != "" && !config.ValidTunnelHostname(f.TunnelHostname) {
-		return fmt.Errorf("tunnel hostname %q is not <tunnel-id>.cfargotunnel.com; check [ingress] tunnel_hostname in the node's config.toml", f.TunnelHostname)
-	}
-	for _, ip := range f.PublicIPs {
-		a, err := netip.ParseAddr(ip)
-		if err != nil || a.Zone() != "" || a.IsUnspecified() || a.IsLoopback() || a.IsMulticast() || a.IsLinkLocalUnicast() {
-			return fmt.Errorf("public IP %q is not an address DNS can point at; check public_ip in the node's config.toml", ip)
+	if f.TunnelHostname != "" {
+		if t := strings.ToLower(f.TunnelHostname); config.ValidTunnelHostname(t) {
+			f.TunnelHostname = t
+		} else {
+			dropped = append(dropped, "tunnel hostname "+f.TunnelHostname)
+			f.TunnelHostname = ""
 		}
 	}
-	return nil
+	ips := f.PublicIPs[:0]
+	for _, ip := range f.PublicIPs {
+		if a, err := netip.ParseAddr(ip); err == nil && a.Zone() == "" && !a.IsUnspecified() && !a.IsLoopback() && !a.IsMulticast() && !a.IsLinkLocalUnicast() {
+			ips = append(ips, ip)
+		} else {
+			dropped = append(dropped, "public IP "+ip)
+		}
+	}
+	f.PublicIPs = ips
+	return dropped, nil
 }
 
 // register makes s the server's session. A node that reconnects before its
@@ -585,8 +599,12 @@ func (h *Hub) redeem(ctx context.Context, fp string, jr joinResult, remote strin
 	if len(jr.Secret) != secretSize {
 		return Server{}, ErrJoinRejected
 	}
-	if err := checkFacts(jr.Hello.Facts); err != nil {
+	dropped, err := checkFacts(&jr.Hello.Facts)
+	if err != nil {
 		return Server{}, err
+	}
+	if len(dropped) > 0 {
+		h.log.Warn("joining node reported what DNS can't point at; ignored, check its config.toml", "remote", remote, "ignored", dropped)
 	}
 	srv, err := h.o.Store.Join(ctx, JoinRequest{SecretHash: hashSecret(jr.Secret), Fingerprint: fp, Hello: jr.Hello, RemoteAddr: remote})
 	if err != nil && !errors.Is(err, ErrJoinRejected) {

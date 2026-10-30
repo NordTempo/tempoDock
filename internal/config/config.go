@@ -407,9 +407,6 @@ func (c *Config) validate() error {
 		if c.Caddy.DisableTLS {
 			return errors.New("[ingress] mode cloudflare_tunnel serves apps over https:// at Cloudflare's edge; set [caddy] disable_tls = false (Caddy is plain HTTP on 127.0.0.1 either way)")
 		}
-		if t := c.Ingress.TunnelHostname; t != "" && !ValidTunnelHostname(t) {
-			return fmt.Errorf("[ingress] tunnel_hostname %q must be <tunnel-id>.cfargotunnel.com (or empty when the control plane manages the tunnel)", t)
-		}
 	default:
 		return fmt.Errorf("[ingress] mode %q must be %q or %q", c.Ingress.Mode, IngressDirect, IngressCloudflareTunnel)
 	}

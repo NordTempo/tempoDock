@@ -1164,30 +1164,26 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// TestCheckFacts refuses a hello whose DNS targets aren't what they say:
-// the control plane creates records from them (ADR 0035).
+// TestCheckFacts keeps only what DNS can point at from a hello: the
+// control plane shows it as records and uses the tunnel in Cloudflare
+// (ADR 0035). An unknown ingress mode is refused.
 func TestCheckFacts(t *testing.T) {
-	ok := []Facts{
-		{Ingress: IngressDirect, PublicIPs: []string{"203.0.113.7", "2001:db8::1"}},
-		{Ingress: IngressCloudflareTunnel, TunnelHostname: "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"},
-		{Ingress: IngressCloudflareTunnel},
+	const tunnel = "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"
+	f := Facts{Ingress: IngressDirect, PublicIPs: []string{"203.0.113.7", "home.example.com", "127.0.0.1", "0.0.0.0", "2001:db8::1"}}
+	if dropped, err := checkFacts(&f); err != nil || len(dropped) != 3 || !slices.Equal(f.PublicIPs, []string{"203.0.113.7", "2001:db8::1"}) {
+		t.Errorf("public IPs %v, dropped %v, %v", f.PublicIPs, dropped, err)
 	}
-	for _, f := range ok {
-		if err := checkFacts(f); err != nil {
-			t.Errorf("checkFacts(%+v) = %v", f, err)
+	for hostname, want := range map[string]string{
+		strings.ToUpper(tunnel[:36]) + ".cfargotunnel.com": tunnel,
+		"evil.example.com":                    "",
+		"x.evil.example.com.cfargotunnel.com": "",
+	} {
+		f := Facts{Ingress: IngressCloudflareTunnel, TunnelHostname: hostname}
+		if _, err := checkFacts(&f); err != nil || f.TunnelHostname != want {
+			t.Errorf("tunnel hostname %q became %q, %v", hostname, f.TunnelHostname, err)
 		}
 	}
-	bad := []Facts{
-		{Ingress: "other"},
-		{Ingress: IngressCloudflareTunnel, TunnelHostname: "evil.example.com"},
-		{Ingress: IngressCloudflareTunnel, TunnelHostname: "x.evil.example.com.cfargotunnel.com"},
-		{Ingress: IngressDirect, PublicIPs: []string{"example.com"}},
-		{Ingress: IngressDirect, PublicIPs: []string{"127.0.0.1"}},
-		{Ingress: IngressDirect, PublicIPs: []string{"0.0.0.0"}},
-	}
-	for _, f := range bad {
-		if err := checkFacts(f); err == nil {
-			t.Errorf("checkFacts(%+v) passed", f)
-		}
+	if _, err := checkFacts(&Facts{Ingress: "other"}); err == nil {
+		t.Error("unknown ingress mode passed")
 	}
 }
