@@ -73,3 +73,12 @@ Status is shown live in the UI and CLI.
   A hosted offering with many generated subdomains would switch to a wildcard
   certificate via DNS challenge.
 - Out of scope for now: raw TCP/UDP proxying (e.g. exposing Postgres publicly).
+
+## Amendment (2026-10-30): domains from Cloudflare
+
+A domain added "from Cloudflare" ([0036](0036-cloudflare-api.md)), in a
+zone a Cloudflare connection reaches, on a tunnel server, needs no DNS
+work: Dock routes it through the server's tunnel and creates its proxied
+CNAME, and deletes both with the domain. Dock never creates records
+pointing at an IP, and never changes one it didn't make. Other domains
+still show the record to create.

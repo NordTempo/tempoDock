@@ -52,3 +52,15 @@ server's Caddy adds.
 - Replacing the homelab with a rented server later is just another node
   joining, in either mode.
 - Lands in M3 with the node runtime. M1 and M2 run on a direct server.
+
+## Amendment (2026-10-30): tunnels and records from Dock
+
+[0036](0036-cloudflare-api.md) automates this: with a Cloudflare
+connection (an API token), Dock creates or adopts a tunnel server's
+tunnel, runs `cloudflared` in its own `dock-cloudflared` container
+instead of the systemd service, and routes each domain added from
+Cloudflare through it with a proxied CNAME (and a hostname route on an
+adopted tunnel that needs one). Dock makes no wildcard record; the one
+made by hand keeps serving generated hostnames where it exists.
+Installing with `CLOUDFLARE_TUNNEL_TOKEN` and the systemd service stays
+the way without a connection.

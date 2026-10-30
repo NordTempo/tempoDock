@@ -453,3 +453,17 @@ in an S3-compatible bucket (a storage connection) instead of the control
 plane's disk, and moves them either way with `dock registry migrate`.
 Pulls still go through the registry (`redirect: disable`), so the node
 link's registry proxy and the per-call tokens above are unchanged.
+
+## Amendment (2026-10-30): Cloudflare tunnels run by the control plane
+
+[0036](0036-cloudflare-api.md) lets the control plane create (or adopt)
+a tunnel server's Cloudflare tunnel. Protocol 8 adds `ensure-tunnel`:
+the control plane sends the tunnel's token (or none, to stop it) on
+every reconnect, and the node runs `cloudflared` in its
+`dock-cloudflared` container. The token runs only that server's tunnel,
+so nodes still hold no platform credential. Hello now also reports the
+node's Caddy HTTP port (`http_port`), which the tunnel routes to, and the
+control plane refuses a hello whose `tunnel_hostname` isn't a
+`<uuid>.cfargotunnel.com` or whose `public_ips` aren't addresses DNS can
+point at: section 6's facts end up in DNS. A tunnel the control plane
+runs is the server's `tunnel_hostname`, whatever the node reports.

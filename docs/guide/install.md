@@ -115,6 +115,7 @@ the others also change an existing config, touching only their own keys.
 | `DISABLE_TLS` | `false` | `true` serves plain HTTP only → `[caddy] disable_tls`. For LAN/Tailscale-only setups. Ignored on tunnel servers |
 | `CLOUDFLARE_TUNNEL_TOKEN` | empty | Serve public traffic through a [Cloudflare Tunnel](#cloudflare-tunnel): installs `cloudflared` and `dock-cloudflared.service`, sets `[ingress]` |
 | `CLOUDFLARED_VERSION`, `CLOUDFLARED_SHA256` | `2026.10.3`, pinned | Another `cloudflared` release and the SHA-256 of `cloudflared-linux-<arch>` from its release notes |
+| `INGRESS` | `direct` | `cloudflare_tunnel` without a token: tunnel mode, with the tunnel made and run by Dock ([Tunnels managed by Dock](#tunnels-managed-by-dock)); `dock server add --tunnel` prints it. Once Dock runs a tunnel this script installed, a re-run removes `dock-cloudflared.service` |
 | `NODE_LISTEN` | empty | Accept nodes on this address, e.g. `100.64.0.10:7443` → `[node] listen`. Control plane only |
 | `REGISTRY` | empty | `1` runs the [image registry](#registry) → `[registry] enabled`. Control plane only |
 | `REGISTRY_NAME` | `dock-registry` with `REGISTRY=1` | The registry's name in its tokens → `[registry] public_name` |
@@ -190,6 +191,7 @@ running).
 | `[defaults] keep_releases` | `5` | Releases kept for rollback per service: their images and history are never pruned |
 | `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
 | `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
+| `[ingress] cloudflared_image` | `cloudflare/cloudflared:2026.10.3@sha256:…` | The `cloudflared` image of the `dock-cloudflared` container, when Dock runs the server's tunnel ([Tunnels managed by Dock](#tunnels-managed-by-dock)). Pin it by digest |
 | `[node] listen` | empty | Control plane: where nodes connect, e.g. `100.64.0.10:7443` on Tailscale. Join tokens carry it, so it must be an address nodes can dial, not `0.0.0.0`. Empty: no nodes |
 | `[node] control_plane` | empty | Node: overrides the control plane address in `node.toml` (`host:port`). Its key stays pinned. When the control plane moves, `dock node set-control-plane` is the usual way |
 | `[registry] enabled` | `false` | Control plane: run the image registry |
@@ -328,6 +330,9 @@ listens in plain HTTP on `127.0.0.1:80` only. Cloudflare's edge terminates
 TLS, so apps are still `https://`. Nothing listens publicly and the home IP
 never appears in DNS.
 
+With a Cloudflare API token, Dock does the setup for you: see [Tunnels
+managed by Dock](#tunnels-managed-by-dock). By hand:
+
 1. **Zone.** Add a dedicated domain for app hostnames to Cloudflare, e.g.
    `example-apps.dev`, separate from your product's domain (cookies and
    reputation stay apart).
@@ -367,6 +372,62 @@ domains need their DNS on the same Cloudflare account: CNAME them to the
 tunnel hostname. Domain status is checked with an HTTPS request through
 Cloudflare that looks for this server's `Dock-Server` header, since a
 tunnelled hostname resolves to Cloudflare, not to the server.
+
+### Tunnels managed by Dock
+
+With a Cloudflare connection, Dock creates (or takes over) a tunnel
+server's tunnel and routes domains you add from Cloudflare through it
+([ADR 0036](../decisions/0036-cloudflare-api.md)). It is optional:
+without one, everything above still applies. Dock only uses tunnels: it
+never points DNS at an IP and makes no wildcard record.
+
+1. **Zone.** As above: a zone for app hostnames, on Cloudflare.
+2. **Token.** In the Cloudflare dashboard, create an API token (an
+   account-owned one survives you leaving the account) with:
+   - Account › Cloudflare Tunnel › Edit
+   - Zone › DNS › Edit, on the zones domains may come from
+   - Zone › Zone › Read, on the same zones
+
+   Dock only edits records it made (comment `dock:<install id>`) and
+   never overwrites one it didn't.
+3. **Connect** it on the control plane (or Console › Cloudflare):
+
+   ```sh
+   printf %s "$CLOUDFLARE_API_TOKEN" | dock cloudflare add home --token-stdin
+   ```
+
+   Dock checks the token and lists the zones domains can come from
+   (`dock cloudflare zones`).
+4. **A new server:** `dock server add homelab --non-production --tunnel`,
+   then run the command it prints on the server (it has
+   `INGRESS=cloudflare_tunnel` and no tunnel token). Once the server
+   joins, Dock creates the tunnel `dock-<install id>-homelab`, routes it
+   to the server's Caddy and runs `cloudflared` there in its
+   `dock-cloudflared` container.
+5. **Domains:** `dock domain add shop.example-apps.dev -s web --cloudflare`
+   (in the UI, Add domain → from Cloudflare). Dock routes the hostname
+   through the server's tunnel and creates its proxied CNAME; both go
+   when the domain is removed or the service archived. The server must be
+   in tunnel mode. A name that already has a record Dock didn't make is
+   refused. Generated domains under a base domain in a connected zone get
+   the same.
+
+A server that already runs a tunnel set up by hand (above) needs no step
+of its own: the first domain from Cloudflare (or `dock server tunnel
+adopt homelab`) has Dock take it over. The tunnel must be in the token's
+account and configured in the dashboard (a locally configured one needs
+its Migrate step first). Its routes stay; Dock adds a hostname route for
+each of its domains when the tunnel's catch-all doesn't go to Caddy.
+Dock's container joins the old `cloudflared` as a second connector, so
+nothing drops; then run install.sh on the server again to remove the old
+service. CNAMEs you made that already point at the tunnel stay yours,
+untouched, and so does the wildcard.
+
+If Cloudflare is down, tunnels and domains wait and are retried. If the
+token is revoked or expires, the connection shows `invalid` and its work
+waits for `dock cloudflare set home --token-stdin`. Dock asks Cloudflare
+nothing while idle. Removing a server deletes the tunnel Dock created,
+never one it adopted.
 
 ## Servers and placement
 

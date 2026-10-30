@@ -1,0 +1,95 @@
+# 0036: Cloudflare tunnels, and domains through them, from Dock
+
+Status: accepted (planned with Saile, 2026-10-30; narrowed the same day
+to tunnels only). Amends [0013](0013-homelab-ingress-cloudflare-tunnel.md),
+[0009](0009-dynamic-domains-and-tls.md) and [0014](0014-node-protocol.md).
+
+## Context
+
+A server behind a Cloudflare Tunnel ([0013](0013-homelab-ingress-cloudflare-tunnel.md))
+took manual steps:
+
+1. Create the tunnel in the dashboard.
+2. Paste its token into install.sh.
+3. Route its traffic to `http://127.0.0.1:80`.
+4. Add `*.<zone>`.
+5. CNAME every custom domain to the tunnel.
+
+0013 named automating this "a later option". The homelab joins the
+Hetzner control plane as a builder and non-production node behind a
+tunnel, and Dock will be open-sourced, so the integration must stay
+optional and clean.
+
+Saile's direction: tunnels only. Dock never points DNS at an IP, uses no
+wildcard, and leaves hostnames typed by hand alone. A domain is picked
+"from Cloudflare", from the zones connected to the platform, and Dock
+sets up everything the tunnel needs for it, reusing the server's tunnel
+when there is one.
+
+| Force | Means here |
+|---|---|
+| Optional | Without a Cloudflare connection nothing changes; the token-based install keeps working |
+| Safe on production | The control plane is production: it must never overwrite or delete a record it didn't make |
+| Idle means idle | API calls only on changes; no sync loop ([performance](../performance.md)) |
+| Failure-proof | Cloudflare being down delays, never breaks; failures are retried |
+| One shape | Storage connections ([0034](0034-registry-object-storage.md)) are named, sealed and operator-managed; this matches |
+
+## Decision
+
+| Topic | Decision |
+|---|---|
+| Connection | `cloudflare_connections`: a named API token (sealed), its account, and its status (`ok`, or `invalid` once Cloudflare refused it). Operators manage them: `dock cloudflare [add\|set\|refresh\|remove\|zones\|records\|retry]`, `/cloudflare` endpoints, the console's Cloudflare page. Same shape as storage connections, own table: their columns are S3's |
+| Checked on save | Cloudflare doesn't tell a token its own permissions. Saving verifies the token, finds the account (`--account-id` when several, or for account-owned tokens), lists tunnels and zones, and reads one page of each zone's records, a few zones at a time. Zones it can't read are left out. Edit permissions show on first use, as an error naming the missing one |
+| Token scopes | Account › Cloudflare Tunnel › Edit; Zone › DNS › Edit and Zone › Zone › Read on the zones domains may come from |
+| Tunnels | One remotely managed tunnel per tunnel server. Dock creates `dock-<install id>-<server>`, routed by a single catch-all to the server's Caddy (`http://127.0.0.1:<http_port>`), or adopts the one the server runs (made in the dashboard; it must be remotely managed, and its routes stay). It happens when a domain is added from Cloudflare and the server has no tunnel Dock runs, with `dock server add --tunnel` once the server joins (not before, so an unused join token leaves nothing behind), or with `dock server tunnel create\|adopt`. Dock deletes a tunnel it created when the server is removed, never one it adopted |
+| Running it | Protocol 8's `ensure-tunnel` sends the token to the node, which runs `dock-cloudflared`: the pinned `cloudflare/cloudflared` image, host network (Caddy listens on 127.0.0.1 only and trusts loopback), read-only, no capabilities, 256 MB, metrics on `127.0.0.1:0` (the image's default is `0.0.0.0`), token in its environment, never argv. The token is sealed in SQLite, so a reconnect sends it again without asking Cloudflare; the node compares a hash label and does nothing when it matches. An adopted tunnel's old `cloudflared` is a second connector until install.sh removes it, so traffic doesn't drop |
+| Domains from Cloudflare | `dock domain add HOST --cloudflare` (the UI's "from Cloudflare"), for anyone who can add domains: HOST must be in a connected zone and the service's server in tunnel mode (a direct server is refused: no IPs). Dock checks the name at once (a record it didn't make there is refused), gets the server's tunnel ready, then creates a proxied CNAME to it, and on an adopted tunnel whose catch-all doesn't go to Caddy a hostname route ahead of the others. A generated domain under a base domain in a connected zone, on a tunnel server, gets the same. Both go with the domain, the archived service or the server. Typed hostnames are as before: Dock shows the CNAME to create |
+| Ownership | Records Dock makes carry the comment `dock:<install id>` (comments fit the Free plan; tags don't). Dock only edits or deletes those, and only the hostname routes it added. A proxied CNAME someone else made that already points at the tunnel is used as it is and never touched |
+| Queue | `cloudflare_tunnels` and `cloudflare_records` hold what Dock wants (`want` present or absent) and how far it is. One worker works through pending rows, one call at a time, then sleeps until kicked or until the earliest retry; nothing is triggered by the lossy event bus alone. Rows carry a generation every other writer bumps, and the worker saves a result only if it is unchanged, so a removal while it works isn't lost |
+| Failures | Cloudflare unreachable, too slow or 5xx: the row retries with backoff, 5 s doubling to 5 min. 429: the worker stops calling Cloudflare until `Retry-After` (5 min, Cloudflare's block, without one). A refused token: Dock verifies it; if Cloudflare refuses the token itself, the connection turns `invalid` and its rows wait, without retries, for `dock cloudflare set`; otherwise the row fails with the permission it needs, until `dock cloudflare retry` |
+| Not now | A records to IPs and wildcards (by choice), Cloudflare in front of direct servers (Hetzner would have to switch to tunnel mode), switching a running server's ingress (re-run install.sh), Access policies, load balancing, per-org connections or zones (an `org_id` like storage's when orgs need their own; today every org's members see the zones), an alert when a token turns invalid (the console shows it) |
+
+## Why this shape
+
+**Tunnels only.** A CNAME to a tunnel never exposes a server's address,
+and every domain goes the same way. Not making A records keeps Dock out
+of production's direct DNS entirely.
+
+**Picked, not inferred.** Only a hostname added from Cloudflare (or one
+Dock generates under a connected zone) is Dock's to set up. Typing a
+hostname in a connected zone changes nothing in Cloudflare, so connecting
+a token never touches records someone manages by hand.
+
+**A queue in the database.** The add answers once the name is checked and
+the tunnel is in hand; the CNAME and route follow. A crash, a restart or
+Cloudflare being down leaves rows pending, and they resume. Idle, the
+worker has no timer.
+
+**A container, not the systemd unit.** The node daemon runs as `dock`
+with Docker access but can't manage systemd units, and the token must
+arrive over the link. A container is what Dock already runs for BuildKit,
+survives reboots (`unless-stopped`), and is replaced (after pulling) when
+the token or image changes.
+
+**Routes on adopted tunnels, not a takeover.** Adding a hostname route
+for Dock's own domains ahead of a tunnel's existing rules keeps what the
+tunnel already serves working; replacing its configuration with a
+catch-all would not.
+
+## Consequences
+
+- A new tunnel server is `dock server add NAME --tunnel` plus the printed
+  install command; a domain on it is `dock domain add HOST --cloudflare`,
+  with no DNS work.
+- The Cloudflare token is in the control plane's database and its
+  backups (sealed, like every secret). A restored control plane keeps its
+  install ID and so manages the same records; a moved one's old copy stops
+  (`MOVED`, [0021](0021-control-plane-backup-and-move.md)).
+- Nodes report their tunnel hostname and public IPs, and these end up in
+  DNS instructions and records, so hello refuses values that aren't a
+  `<uuid>.cfargotunnel.com` or an address DNS can point at.
+- A Cloudflare outage delays new tunnels and domains, never deploys or
+  existing traffic; adding a domain from Cloudflare needs Cloudflare up
+  for its name check.
+- One migration (0030), protocol 8, `[ingress] cloudflared_image`, and an
+  `INGRESS=cloudflare_tunnel` option in install.sh.

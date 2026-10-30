@@ -43,6 +43,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0033](0033-traffic-statistics.md) | Traffic statistics for a service's domains | accepted |
 | [0034](0034-registry-object-storage.md) | The registry's images in S3-compatible object storage | accepted |
 | [0035](0035-server-disk-breakdown.md) | Where a server's disk goes | accepted |
+| [0036](0036-cloudflare-api.md) | Cloudflare tunnels, and domains through them, from Dock | accepted |
 
 ## Template
 
