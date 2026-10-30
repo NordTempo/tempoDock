@@ -103,21 +103,26 @@ func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apit
 	if err != nil {
 		return apitypes.Storage{}, err
 	}
+	if c.registryMigrating(row.ID) {
+		return apitypes.Storage{}, conflict("the registry's images are moving to or from %s; change it once the migration finishes", name)
+	}
 	inUse := regID != nil && *regID == row.ID
-	trim := func(v *string) *string {
+	// Keys keep every character but surrounding space: a secret may end
+	// in a slash, an endpoint loses its trailing one.
+	trim := func(v *string, cut string) *string {
 		if v == nil {
 			return nil
 		}
-		s := strings.TrimRight(strings.TrimSpace(*v), "/")
+		s := strings.TrimRight(strings.TrimSpace(*v), cut)
 		return &s
 	}
 	old := b
-	patch(&b.Endpoint, trim(req.Endpoint))
-	patch(&b.Region, trim(req.Region))
-	patch(&b.Name, trim(req.Bucket))
+	patch(&b.Endpoint, trim(req.Endpoint, "/"))
+	patch(&b.Region, trim(req.Region, ""))
+	patch(&b.Name, trim(req.Bucket, ""))
 	patch(&b.PathStyle, req.PathStyle)
-	patch(&b.AccessKeyID, trim(req.AccessKeyID))
-	patch(&b.SecretAccessKey, trim(req.SecretAccessKey))
+	patch(&b.AccessKeyID, trim(req.AccessKeyID, ""))
+	patch(&b.SecretAccessKey, trim(req.SecretAccessKey, ""))
 	if inUse && (b.Endpoint != old.Endpoint || b.Name != old.Name) {
 		return apitypes.Storage{}, conflict("the registry keeps its images in %s; move them with `dock registry migrate` before pointing it at another endpoint or bucket", name)
 	}
@@ -167,15 +172,17 @@ func (c *Core) RemoveStorage(ctx context.Context, a Actor, name string) error {
 	if err != nil {
 		return err
 	}
+	// Migrations first: one that commits after this check holds the
+	// setting the next check reads.
+	if c.registryMigrating(row.ID) {
+		return conflict("the registry's images are moving to or from %s; wait for the migration to finish", name)
+	}
 	regID, err := c.registryStorageID(ctx)
 	if err != nil {
 		return err
 	}
 	if regID != nil && *regID == row.ID {
 		return conflict("the registry keeps its images in %s; move them with `dock registry migrate --to local` (or to other storage) first", name)
-	}
-	if c.registryMigrating(row.ID) {
-		return conflict("the registry's images are moving to or from %s; wait for the migration to finish", name)
 	}
 	if err := c.store.DeleteStorageConnection(ctx, row.ID); err != nil {
 		return err
@@ -213,6 +220,7 @@ func (c *Core) bucketOf(row store.StorageConnection) (s3.Bucket, error) {
 	}, nil
 }
 
+// sealKeys seals b's keys for storage_connections.credentials.
 func (c *Core) sealKeys(b s3.Bucket) ([]byte, error) {
 	plain, err := json.Marshal(storageKeys{AccessKeyID: b.AccessKeyID, SecretAccessKey: b.SecretAccessKey})
 	if err != nil {
@@ -256,6 +264,8 @@ func (c *Core) registryStorageID(ctx context.Context) (*int64, error) {
 	return id, err
 }
 
+// toStorage is a connection as the API shows it, with "registry" in
+// used_by when registryID is its ID. Keys stay out.
 func toStorage(r store.StorageConnection, registryID *int64) apitypes.Storage {
 	out := apitypes.Storage{
 		Name: r.Name, Endpoint: r.Endpoint, Region: r.Region, Bucket: r.Bucket, PathStyle: r.PathStyle,

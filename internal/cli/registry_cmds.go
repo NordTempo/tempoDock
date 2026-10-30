@@ -123,6 +123,7 @@ Refused while builds or pulls use the registry.`,
 	}
 }
 
+// newRegistryMigrateCmd is `dock registry migrate`.
 func newRegistryMigrateCmd(g *globals) *cobra.Command {
 	var req apitypes.MigrateRegistryRequest
 	var yes bool

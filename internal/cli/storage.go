@@ -15,6 +15,7 @@ import (
 // Storage connections (ADR 0034): S3-compatible buckets defined once, by
 // name, for what keeps data in object storage (the registry's images).
 
+// newStorageCmd is `dock storage`: the list, and add, set and remove.
 func newStorageCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "storage",
@@ -50,6 +51,7 @@ after ` + "`dock registry migrate --to s3`" + `. Keys are never shown.`,
 	return cmd
 }
 
+// addressing names how a connection addresses its bucket.
 func addressing(pathStyle bool) string {
 	if pathStyle {
 		return "path"
@@ -57,6 +59,7 @@ func addressing(pathStyle bool) string {
 	return "host"
 }
 
+// orDash shows an empty table cell as "-".
 func orDash(s string) string {
 	if s == "" {
 		return "-"
@@ -77,6 +80,7 @@ func readSecret(g *globals, cmdline string) (string, error) {
 	return secret, nil
 }
 
+// newStorageAddCmd is `dock storage add`.
 func newStorageAddCmd(g *globals) *cobra.Command {
 	var req apitypes.CreateStorageRequest
 	pathStyle := true
@@ -128,6 +132,7 @@ addressing (https://endpoint/bucket) is the default and works everywhere;
 	return cmd
 }
 
+// newStorageSetCmd is `dock storage set`.
 func newStorageSetCmd(g *globals) *cobra.Command {
 	var endpoint, region, bucket, accessKey string
 	var pathStyle, secretStdin bool
@@ -188,6 +193,7 @@ and new keys restart the registry for a second.`,
 	return cmd
 }
 
+// newStorageRemoveCmd is `dock storage remove`.
 func newStorageRemoveCmd(g *globals) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{

@@ -43,8 +43,10 @@ type Registry interface {
 	// Migrate copies the registry's images to to (nil: the disk) while it
 	// serves them read-only, calls commit once the copy is checked, and
 	// then switches the registry over. Before commit, a failure leaves
-	// the registry as it was. The source is left for Drop.
-	Migrate(ctx context.Context, to *s3.Bucket, commit func() error) (objects int, bytes int64, err error)
+	// the registry as it was. The source is left for Drop. owner (the
+	// install ID) marks the copy in a bucket, so a later migration can
+	// tell its own leftovers from another Dock's registry.
+	Migrate(ctx context.Context, to *s3.Bucket, owner string, commit func() error) (objects int, bytes int64, err error)
 	// Drop deletes the registry's data from storage it no longer uses.
 	Drop(ctx context.Context, storage *s3.Bucket) error
 }
@@ -71,14 +73,9 @@ func (c *Core) registryInfo(ctx context.Context) (apitypes.Registry, error) {
 	if err != nil {
 		c.log.Debug("registry size", "err", err)
 	}
-	storage, err := c.registryStorageName(ctx)
-	if err != nil {
-		return apitypes.Registry{}, err
-	}
 	out := apitypes.Registry{
 		Enabled:      true,
 		Host:         c.reg.Host(),
-		Storage:      storage,
 		StoredBytes:  stored,
 		KeepReleases: c.keepReleases(),
 		Services:     make([]apitypes.RegistryService, len(rows)),
@@ -95,7 +92,6 @@ func (c *Core) registryInfo(ctx context.Context) (apitypes.Registry, error) {
 	}
 	u := &c.images
 	u.mu.Lock()
-	defer u.mu.Unlock()
 	out.Pruning = u.pruning
 	out.LastPruned = u.lastPruned
 	out.LastPruneError = u.lastErr
@@ -107,6 +103,12 @@ func (c *Core) registryInfo(ctx context.Context) (apitypes.Registry, error) {
 	if !u.lastPrune.IsZero() {
 		at := u.lastPrune.UTC().Truncate(time.Second)
 		out.LastPruneAt = &at
+	}
+	u.mu.Unlock()
+	// The setting after the migration state: a migration commits before
+	// it reads as finished, so a finished one shows with its storage.
+	if out.Storage, err = c.registryStorageName(ctx); err != nil {
+		return apitypes.Registry{}, err
 	}
 	return out, nil
 }
@@ -171,14 +173,6 @@ func (c *Core) MigrateRegistry(ctx context.Context, a Actor, req apitypes.Migrat
 	if c.reg == nil {
 		return apitypes.Registry{}, invalid("this Dock has no registry; images stay on the server that built them")
 	}
-	fromID, err := c.registryStorageID(ctx)
-	if err != nil {
-		return apitypes.Registry{}, err
-	}
-	from, err := c.registryEnd(ctx, fromID)
-	if err != nil {
-		return apitypes.Registry{}, err
-	}
 	var to registryEnd
 	switch req.To {
 	case "local":
@@ -196,9 +190,6 @@ func (c *Core) MigrateRegistry(ctx context.Context, a Actor, req apitypes.Migrat
 	default:
 		return apitypes.Registry{}, invalid("to must be local or s3")
 	}
-	if to.name == from.name {
-		return apitypes.Registry{}, invalid("the registry keeps its images in %s already", from.name)
-	}
 
 	u := &c.images
 	u.mu.Lock()
@@ -212,6 +203,21 @@ func (c *Core) MigrateRegistry(ctx context.Context, a Actor, req apitypes.Migrat
 	case !u.inUse.TryLock():
 		u.mu.Unlock()
 		return apitypes.Registry{}, conflict("builds or pulls are using the registry; migrate once they finish")
+	}
+	// Read where the images are only now: a migration commits while it
+	// holds inUse, so the setting can't change under this one.
+	fromID, err := c.registryStorageID(ctx)
+	var from registryEnd
+	if err == nil {
+		from, err = c.registryEnd(ctx, fromID)
+	}
+	if err == nil && to.name == from.name {
+		err = invalid("the registry keeps its images in %s already", from.name)
+	}
+	if err != nil {
+		u.inUse.Unlock()
+		u.mu.Unlock()
+		return apitypes.Registry{}, err
 	}
 	u.migration = &apitypes.RegistryMigration{From: from.name, To: to.name, Running: true, StartedAt: now().UTC().Truncate(time.Second)}
 	u.migrateIDs = [2]*int64{fromID, to.id}
@@ -283,7 +289,7 @@ func (c *Core) pickStorage(ctx context.Context, name string) (store.StorageConne
 func (c *Core) migrateRegistry(ctx context.Context, a Actor, from, to registryEnd) {
 	u := &c.images
 	committed := false
-	objects, size, err := c.reg.Migrate(ctx, to.bucket, func() error {
+	objects, size, err := c.reg.Migrate(ctx, to.bucket, c.install, func() error {
 		err := c.store.SetRegistryStorage(ctx, store.SetRegistryStorageParams{RegistryStorageID: to.id, UpdatedBy: a.Name, UpdatedAt: now()})
 		committed = err == nil
 		return err

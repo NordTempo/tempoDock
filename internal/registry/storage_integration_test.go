@@ -36,8 +36,9 @@ const minioImage = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc
 // TestStorageInBucket runs ADR 0034 against a real registry:3 and MinIO:
 // images pushed to the disk move to a bucket, where they are pulled,
 // pushed and garbage collected, and move back to the disk. A migration
-// into a bucket already holding registry data is refused and leaves the
-// registry writable.
+// into a bucket holding another Dock's registry data is refused and
+// leaves the registry writable; data this install's interrupted
+// migration left is cleared instead.
 func TestStorageInBucket(t *testing.T) {
 	docker, err := client.New(client.FromEnv)
 	if err != nil {
@@ -68,22 +69,25 @@ func TestStorageInBucket(t *testing.T) {
 		t.Fatalf("stored on disk = %d, %v", onDisk, err)
 	}
 
-	// Refused: the bucket holds registry data already. Nothing changes.
+	// Refused: the bucket holds another Dock's registry data. Nothing
+	// changes.
+	const owner = "test-install"
 	stray := &s3.Client{Bucket: *bucket}
-	if err := stray.Put(ctx, registry.BucketRoot+"/stray", strings.NewReader("x"), 1); err != nil {
+	if err := stray.Put(ctx, registry.BucketRoot+"/docker/stray", strings.NewReader("x"), 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := p.Migrate(ctx, bucket, func() error { t.Fatal("committed"); return nil }); err == nil || !strings.Contains(err.Error(), "already holds registry data") {
+	if _, _, err := p.Migrate(ctx, bucket, owner, func() error { t.Fatal("committed"); return nil }); err == nil || !strings.Contains(err.Error(), "already holds registry data") {
 		t.Fatalf("migrate into a used bucket: %v", err)
-	}
-	if err := stray.Delete(ctx, []string{registry.BucketRoot + "/stray"}); err != nil {
-		t.Fatal(err)
 	}
 	push(t, docker, p, "busybox:latest", repo, "1b") // still writable
 
-	// Disk to bucket.
+	// Disk to bucket, over what an interrupted migration of this install
+	// left there.
+	if err := stray.Put(ctx, registry.OwnerKey, strings.NewReader(owner), int64(len(owner))); err != nil {
+		t.Fatal(err)
+	}
 	committed := false
-	objects, size, err := p.Migrate(ctx, bucket, func() error { committed = true; return nil })
+	objects, size, err := p.Migrate(ctx, bucket, owner, func() error { committed = true; return nil })
 	if err != nil || !committed || objects == 0 || size == 0 {
 		t.Fatalf("migrate to the bucket: %d objects, %d bytes, committed %v: %v", objects, size, committed, err)
 	}
@@ -119,7 +123,7 @@ func TestStorageInBucket(t *testing.T) {
 	}
 
 	// Bucket back to disk.
-	objects, size, err = p.Migrate(ctx, nil, func() error { return nil })
+	objects, size, err = p.Migrate(ctx, nil, owner, func() error { return nil })
 	if err != nil || objects == 0 {
 		t.Fatalf("migrate to disk: %d objects, %v", objects, err)
 	}

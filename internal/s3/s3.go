@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -79,11 +80,25 @@ func (b Bucket) Validate() error {
 // Client sends requests for one bucket.
 type Client struct {
 	Bucket Bucket
-	// HTTP is the client to use; nil means http.DefaultClient.
+	// HTTP is the client to use; nil means defaultHTTP.
 	HTTP *http.Client
 	// now is the signing time; nil means time.Now.
 	now func() time.Time
 }
+
+// defaultHTTP bounds connecting and waiting for an answer, so a store
+// that stops responding fails the request instead of hanging the
+// migration or the prune waiting on it. Bodies have no deadline: a large
+// object takes as long as the link needs.
+var defaultHTTP = &http.Client{Transport: &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
+	DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+	TLSHandshakeTimeout:   30 * time.Second,
+	ResponseHeaderTimeout: 2 * time.Minute,
+	IdleConnTimeout:       90 * time.Second,
+	MaxIdleConnsPerHost:   16,
+	ForceAttemptHTTP2:     true,
+}}
 
 // Object is one object in a listing.
 type Object struct {
@@ -277,7 +292,7 @@ func (c *Client) do(ctx context.Context, method, key string, query url.Values, b
 		}
 	}
 	c.sign(req, payload)
-	resp, err := cmp.Or(c.HTTP, http.DefaultClient).Do(req)
+	resp, err := cmp.Or(c.HTTP, defaultHTTP).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("s3: %w", err)
 	}
@@ -353,12 +368,14 @@ func (c *Client) sign(req *http.Request, payload string) {
 		c.Bucket.AccessKeyID, scope, signed, hex.EncodeToString(hmacSum(key, toSign))))
 }
 
+// hmacSum is HMAC-SHA256 of data with key, a step of SigV4's key chain.
 func hmacSum(key []byte, data string) []byte {
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte(data))
 	return m.Sum(nil)
 }
 
+// hexHash is the hex SHA-256 of b, as SigV4 writes hashes.
 func hexHash(b []byte) string {
 	s := sha256.Sum256(b)
 	return hex.EncodeToString(s[:])

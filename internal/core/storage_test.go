@@ -72,6 +72,14 @@ func TestStorageConnections(t *testing.T) {
 		t.Fatalf("keys not sealed: %v", err)
 	}
 
+	// A secret may end in a slash; only the endpoint loses its trailing one.
+	if _, err := h.c.UpdateStorage(h.ctx, testSystem, "hetzner", apitypes.UpdateStorageRequest{SecretAccessKey: new(" abc/ ")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, b, err := h.c.storageByName(h.ctx, "hetzner"); err != nil || b.SecretAccessKey != "abc/" {
+		t.Fatalf("secret = %q, %v", b.SecretAccessKey, err)
+	}
+
 	if err := h.c.RemoveStorage(h.ctx, testSystem, "hetzner"); err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +145,9 @@ func TestMigrateRegistry(t *testing.T) {
 	}
 	if err := h.c.RemoveStorage(h.ctx, testSystem, "hetzner"); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("removed the target of a migration: %v", err)
+	}
+	if _, err := h.c.UpdateStorage(h.ctx, testSystem, "hetzner", apitypes.UpdateStorageRequest{Bucket: new("other")}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("changed the target of a migration: %v", err)
 	}
 	close(reg.gate)
 	r = waitMigrated(t, h)

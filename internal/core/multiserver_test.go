@@ -76,7 +76,7 @@ func (r *fakeRegistry) UseStorage(_ context.Context, b *s3.Bucket) error {
 	return nil
 }
 
-func (r *fakeRegistry) Migrate(_ context.Context, to *s3.Bucket, commit func() error) (int, int64, error) {
+func (r *fakeRegistry) Migrate(_ context.Context, to *s3.Bucket, _ string, commit func() error) (int, int64, error) {
 	r.op("migrate to %s", bucketLabel(to))
 	if r.gate != nil {
 		<-r.gate

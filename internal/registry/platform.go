@@ -128,6 +128,7 @@ func (p *Platform) waitReady(ctx context.Context) error {
 	}
 }
 
+// container is the registry container's name.
 func (p *Platform) container() string {
 	if p.Container == "" {
 		return ContainerName

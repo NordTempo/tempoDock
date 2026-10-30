@@ -33,8 +33,10 @@ const uploads = 8
 //  1. The registry restarts read-only on its current storage: pulls keep
 //     working, pushes and deletes are refused.
 //  2. The target is prepared: a bucket must hold nothing under BucketRoot
-//     (another Dock may use it), the storage dir is emptied (the registry
-//     doesn't use it, so whatever is there is a stale copy).
+//     (another Dock may use it) unless OwnerKey names owner, which makes
+//     it a copy an interrupted migration of this install left, deleted
+//     first; OwnerKey is then written. The storage dir is emptied (the
+//     registry doesn't use it, so whatever is there is a stale copy).
 //  3. Every object under docker/ is copied, except unfinished uploads,
 //     and the target is listed to check it holds as many objects and
 //     bytes as were copied.
@@ -48,7 +50,7 @@ const uploads = 8
 // disk streams a tar into the container (Docker's archive API), so the
 // files belong to the registry's user. Bucket to bucket streams each
 // object through the daemon.
-func (p *Platform) Migrate(ctx context.Context, to *s3.Bucket, commit func() error) (objects int, size int64, err error) {
+func (p *Platform) Migrate(ctx context.Context, to *s3.Bucket, owner string, commit func() error) (objects int, size int64, err error) {
 	from := p.current()
 	if sameStorage(from, to) {
 		return 0, 0, errors.New("the registry already keeps its images there")
@@ -75,12 +77,8 @@ func (p *Platform) Migrate(ctx context.Context, to *s3.Bucket, commit func() err
 	}()
 
 	if to != nil {
-		used, err := (&s3.Client{Bucket: *to}).HasPrefix(ctx, BucketRoot+"/")
-		if err != nil {
+		if err := prepareBucket(ctx, &s3.Client{Bucket: *to}, owner); err != nil {
 			return 0, 0, err
-		}
-		if used {
-			return 0, 0, fmt.Errorf("bucket %s already holds registry data under %s/, maybe another Dock's; empty that folder or use another bucket", to.Name, BucketRoot)
 		}
 	} else if err := p.Drop(ctx, nil); err != nil {
 		return 0, 0, fmt.Errorf("empty the storage dir: %w", err)
@@ -106,6 +104,39 @@ func (p *Platform) Migrate(ctx context.Context, to *s3.Bucket, commit func() err
 	return objects, size, nil
 }
 
+// OwnerKey holds the install ID of the Dock whose registry data is under
+// BucketRoot in a bucket. Distribution ignores it (it reads only
+// BucketRoot/docker/).
+const OwnerKey = BucketRoot + "/dock-install"
+
+// prepareBucket makes c's bucket ready for a migration's copy: empty
+// under BucketRoot, or holding only what an earlier migration of owner
+// left there, which is deleted. It then writes OwnerKey.
+func prepareBucket(ctx context.Context, c *s3.Client, owner string) error {
+	used, err := c.HasPrefix(ctx, BucketRoot+"/")
+	if err != nil {
+		return err
+	}
+	if used {
+		mine := false
+		if r, err := c.Get(ctx, OwnerKey); err == nil {
+			b, _ := io.ReadAll(io.LimitReader(r, 256))
+			_ = r.Close()
+			mine = owner != "" && string(b) == owner
+		} else if !s3.IsNotFound(err) {
+			return err
+		}
+		if !mine {
+			return fmt.Errorf("bucket %s already holds registry data under %s/, maybe another Dock's; empty that folder or use another bucket", c.Bucket.Name, BucketRoot)
+		}
+		// A copy an interrupted migration of this install left.
+		if err := dropBucket(ctx, c); err != nil {
+			return fmt.Errorf("remove an earlier partial copy: %w", err)
+		}
+	}
+	return c.Put(ctx, OwnerKey, strings.NewReader(owner), int64(len(owner)))
+}
+
 // Drop implements core.Registry: it deletes the registry's data from
 // storage (nil: StorageDir), which must not be the storage the registry
 // uses. Migrate's caller drops the source once the move is recorded.
@@ -114,7 +145,12 @@ func (p *Platform) Drop(ctx context.Context, storage *s3.Bucket) error {
 		// The storage dir belongs to the registry's user: delete as it.
 		return p.exec(ctx, "rm", "-rf", storageMount+"/docker")
 	}
-	c := &s3.Client{Bucket: *storage}
+	return dropBucket(ctx, &s3.Client{Bucket: *storage})
+}
+
+// dropBucket deletes everything under BucketRoot in c's bucket, a page
+// of up to 1000 objects at a time.
+func dropBucket(ctx context.Context, c *s3.Client) error {
 	return c.List(ctx, BucketRoot+"/", func(page []s3.Object) error {
 		keys := make([]string, len(page))
 		for i, o := range page {
@@ -225,6 +261,9 @@ func (p *Platform) copyTo(ctx context.Context, from, to *s3.Bucket) (n int, size
 // upload copies one object into dst under BucketRoot, trying three times:
 // one failed request out of thousands shouldn't fail a migration.
 func upload(ctx context.Context, dst *s3.Client, o object) error {
+	if o.size > s3.MaxPut {
+		return fmt.Errorf("%s is %d bytes; a migration copies objects up to 5 GB", o.rel, o.size)
+	}
 	var err error
 	for attempt := range 3 {
 		if attempt > 0 {

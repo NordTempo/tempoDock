@@ -249,11 +249,13 @@ function MoveImages({
 }) {
   const storage = useQuery(storageQuery()).data ?? [];
   const migrate = useMigrateRegistry();
-  const targets = [
-    "local",
-    ...storage.map((s) => s.name).filter((n) => n !== registry.storage),
-  ].filter((n) => n !== registry.storage);
-  const [to, setTo] = useState(targets[0] ?? "");
+  const targets = ["local", ...storage.map((s) => s.name)].filter(
+    (n) => n !== registry.storage,
+  );
+  // The connections may load after the form opens: the first one counts
+  // as chosen until the admin picks another.
+  const [picked, setTo] = useState<string>();
+  const to = picked ?? targets[0] ?? "";
   const cli =
     to === "local"
       ? "dock registry migrate --to local"
