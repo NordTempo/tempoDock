@@ -198,8 +198,8 @@ func runPlan(ctx context.Context, in planInput) (planResult, error) {
 		return planResult{}, fmt.Errorf("generating the build plan took longer than %s; the source may contain symlink loops", planTimeout)
 	case ctx.Err() != nil:
 		return planResult{}, context.Cause(ctx)
-	case err != nil && outOfMemory(stderr.String()):
-		return planResult{}, fmt.Errorf("generating the build plan ran out of memory (%d MB); the source may contain symlink loops", planMemory>>20)
+	case err != nil && runtimeCrash(stderr.String()):
+		return planResult{}, fmt.Errorf("generating the build plan ran out of memory (%d MB) and crashed; the source may contain symlink loops", planMemory>>20)
 	case err != nil:
 		return planResult{}, fmt.Errorf("generate build plan: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
@@ -210,12 +210,17 @@ func runPlan(ctx context.Context, in planInput) (planResult, error) {
 	return res, nil
 }
 
-// outOfMemory reports whether a Go process's crash output says it hit its
-// memory cap: "out of memory" when the heap can't grow, "cannot allocate
-// memory" when the address-space limit (limitMemory) refuses a mapping
-// first, which happens on some kernels and machines.
-func outOfMemory(stderr string) bool {
-	return strings.Contains(stderr, "out of memory") || strings.Contains(stderr, "cannot allocate memory")
+// runtimeCrash reports whether a Go process's crash output is the Go
+// runtime dying rather than a planner error: what hitting the memory cap
+// looks like. Go says "out of memory" when the heap can't grow, "cannot
+// allocate memory" when the address-space limit (limitMemory) refuses a
+// mapping, and on some machines its garbage collector faults outright
+// (SIGSEGV) once a mapping fails. The planner itself never crashes the
+// runtime on a valid source.
+func runtimeCrash(stderr string) bool {
+	return strings.Contains(stderr, "out of memory") || strings.Contains(stderr, "cannot allocate memory") ||
+		strings.HasPrefix(strings.TrimSpace(stderr), "fatal error: runtime:") ||
+		strings.HasPrefix(strings.TrimSpace(stderr), "SIGSEGV") || strings.HasPrefix(strings.TrimSpace(stderr), "unexpected fault address")
 }
 
 // headWriter keeps the first max bytes written to it and drops the rest.
