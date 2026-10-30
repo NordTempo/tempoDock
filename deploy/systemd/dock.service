@@ -25,6 +25,9 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/dock
+# The registry's config ([registry] config_dir), which the daemon rewrites
+# when its storage changes (ADR 0034). "-": absent without a registry.
+ReadWritePaths=-/etc/dock/registry
 PrivateTmp=true
 # Railpack keeps its tool cache (~150 MB) in /tmp/railpack. On disk it
 # survives restarts and isn't charged to this unit's memory as tmpfs.
