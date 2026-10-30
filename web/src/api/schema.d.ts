@@ -3675,6 +3675,7 @@ export interface components {
             alert?: components["schemas"]["Alert"];
             audit?: components["schemas"]["AuditEvent"];
             build_log?: components["schemas"]["BuildLogLine"];
+            disk?: components["schemas"]["ServerDisk"];
             domain?: components["schemas"]["Domain"];
             environment?: string;
             message?: string;
@@ -3689,7 +3690,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk";
             update?: components["schemas"]["UpdateStatus"];
             usage?: components["schemas"]["UsageUpdate"];
         };
@@ -4189,11 +4190,13 @@ export interface components {
             services: components["schemas"]["ServerService"][] | null;
         };
         ServerDisk: {
+            error?: string;
             parts: components["schemas"]["DiskPart"][] | null;
             /** Format: date-time */
             read_at: string;
             /** Format: int64 */
             reclaimable_bytes: number;
+            refreshing?: boolean;
             server: string;
             /** Format: int64 */
             total_bytes: number;

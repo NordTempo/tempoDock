@@ -644,7 +644,9 @@ A server's page in the console also shows where its disk goes
 volumes, images (running, kept for rollbacks, shared layers, not Dock's),
 images a prune would remove, BuildKit's cache, Dock's own data and the
 rest. Docker sizes every image and volume for it, which takes a few
-seconds, so it is read when the page opens and never in the background.
+seconds, so it is only read when someone asks: the page shows the last
+reading at once and, when it is over a minute old, reads it again in the
+background and updates in place.
 **Prune** frees what is reclaimable now instead of waiting for
 `[retention] prune_disk_percent`; running apps, rollback images and
 volumes are never touched.

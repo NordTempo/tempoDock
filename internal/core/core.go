@@ -163,8 +163,9 @@ type Core struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	// diskReads shares one disk read (ServerDisk) per server between
-	// concurrent callers.
+	// concurrent callers; disk keeps each server's last reading.
 	diskReads singleflight.Group
+	disk      diskState
 }
 
 // New creates the control plane and makes sure the local server is

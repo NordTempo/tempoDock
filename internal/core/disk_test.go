@@ -2,7 +2,9 @@ package core
 
 import (
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -83,5 +85,61 @@ func TestServerDisk(t *testing.T) {
 	ops := h.rt.Ops()
 	if !slices.ContainsFunc(ops, func(o string) bool { return len(o) > 12 && o[:12] == "prune images" }) {
 		t.Errorf("prune didn't prune images: %v", ops)
+	}
+}
+
+// A kept reading is answered without asking the server again while it is
+// fresh. An older one is answered at once, marked refreshing, and the new
+// reading goes out as a disk event; a prune reads it again too.
+func TestServerDiskKeepsTheLastReading(t *testing.T) {
+	h := newHarness(t)
+	srv := h.c.local.Name
+	reads := func() int {
+		n := 0
+		for _, op := range h.rt.Ops() {
+			if strings.HasPrefix(op, "disk usage") {
+				n++
+			}
+		}
+		return n
+	}
+	first, err := h.c.ServerDisk(h.ctx, testSystem, srv)
+	if err != nil || first.Refreshing {
+		t.Fatalf("first read = %+v, %v", first, err)
+	}
+	if again, err := h.c.ServerDisk(h.ctx, testSystem, srv); err != nil || again.Refreshing || reads() != 1 {
+		t.Fatalf("a fresh reading was read again: %+v, %v, %d reads", again, err, reads())
+	}
+
+	sub := h.c.bus.subscribe(func(e busEvent) bool { return e.ev.Type == apitypes.EventDisk })
+	defer sub.close()
+	h.c.disk.mu.Lock()
+	old := h.c.disk.last[h.c.local.ID]
+	old.ReadAt = old.ReadAt.Add(-2 * diskFresh)
+	h.c.disk.last[h.c.local.ID] = old
+	h.c.disk.mu.Unlock()
+	stale, err := h.c.ServerDisk(h.ctx, testSystem, srv)
+	if err != nil || !stale.Refreshing || !stale.ReadAt.Equal(old.ReadAt) {
+		t.Fatalf("an old reading = %+v, %v; want it at once, refreshing", stale, err)
+	}
+	select {
+	case ev := <-sub.ch:
+		if d := ev.Disk; d == nil || d.Refreshing || !d.ReadAt.After(old.ReadAt) || d.Server != srv {
+			t.Fatalf("disk event = %+v", ev.Disk)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no disk event after the refresh")
+	}
+	if reads() != 2 {
+		t.Fatalf("%d reads, want 2", reads())
+	}
+
+	if _, err := h.c.PruneServer(h.ctx, testSystem, srv); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sub.ch:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no disk event after a prune")
 	}
 }

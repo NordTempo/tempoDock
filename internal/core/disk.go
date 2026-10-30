@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -17,11 +18,32 @@ import (
 
 // Where a server's disk goes (ADR 0035). Read when someone asks: Docker
 // sizes every image and volume for it, which takes seconds, so nothing
-// reads it on a timer. Concurrent requests for one server share a read.
+// reads it on a timer. The last reading of each server is kept in memory
+// and answered at once; one older than diskFresh is read again in the
+// background and the new one goes out as a disk event (the 0035
+// amendment). Concurrent reads of one server share one read.
+
+// diskFresh is how old a kept reading may be before asking for it starts
+// a new read in the background.
+const diskFresh = time.Minute
+
+// diskReadTimeout bounds one disk read.
+const diskReadTimeout = 3 * time.Minute
+
+// diskState is the last disk reading of each server (one per server, so
+// bounded by the servers), and which servers are being read again.
+type diskState struct {
+	mu         sync.Mutex
+	last       map[int64]apitypes.ServerDisk
+	refreshing map[int64]bool
+}
 
 // ServerDisk returns where a server's disk goes: its services' volumes,
 // images by what keeps them, BuildKit's cache, Dock's own data and the
-// rest of the filesystem, and what a prune would free. Operators only.
+// rest of the filesystem, and what a prune would free. The first time it
+// waits for the read; after that it answers with the last reading, and if
+// that is older than diskFresh, marks it refreshing and reads again in
+// the background. Operators only.
 func (c *Core) ServerDisk(ctx context.Context, a Actor, name string) (apitypes.ServerDisk, error) {
 	if err := a.requireOperator("managing servers"); err != nil {
 		return apitypes.ServerDisk{}, err
@@ -30,16 +52,79 @@ func (c *Core) ServerDisk(ctx context.Context, a Actor, name string) (apitypes.S
 	if err != nil {
 		return apitypes.ServerDisk{}, err
 	}
+	s := &c.disk
+	s.mu.Lock()
+	d, ok := s.last[srv.ID]
+	busy := s.refreshing[srv.ID]
+	s.mu.Unlock()
+	if !ok {
+		return c.readDiskShared(ctx, srv)
+	}
+	if busy || now().Sub(d.ReadAt) >= diskFresh {
+		c.refreshDisk(srv)
+		d.Refreshing = true
+	}
+	return d, nil
+}
+
+// readDiskShared reads a server's disk, sharing a read already under way,
+// and keeps the reading.
+func (c *Core) readDiskShared(ctx context.Context, srv store.Server) (apitypes.ServerDisk, error) {
 	v, err, _ := c.diskReads.Do(strconv.FormatInt(srv.ID, 10), func() (any, error) {
 		// Not the caller's ctx: others may wait on this read.
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), diskReadTimeout)
 		defer cancel()
-		return c.readDisk(ctx, srv)
+		d, err := c.readDisk(ctx, srv)
+		if err == nil {
+			c.disk.mu.Lock()
+			if c.disk.last == nil {
+				c.disk.last = map[int64]apitypes.ServerDisk{}
+			}
+			c.disk.last[srv.ID] = d
+			c.disk.mu.Unlock()
+		}
+		return d, err
 	})
 	if err != nil {
 		return apitypes.ServerDisk{}, err
 	}
 	return v.(apitypes.ServerDisk), nil
+}
+
+// refreshDisk reads a server's disk again in the background, unless that
+// is under way, and publishes the reading as a disk event (operators
+// only). If the read fails, the kept reading goes out with the error.
+func (c *Core) refreshDisk(srv store.Server) {
+	s := &c.disk
+	s.mu.Lock()
+	if s.refreshing[srv.ID] {
+		s.mu.Unlock()
+		return
+	}
+	if s.refreshing == nil {
+		s.refreshing = map[int64]bool{}
+	}
+	s.refreshing[srv.ID] = true
+	s.mu.Unlock()
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		d, err := c.readDiskShared(c.ctx, srv)
+		s.mu.Lock()
+		delete(s.refreshing, srv.ID)
+		if err != nil {
+			d = s.last[srv.ID]
+			d.Error = "reading it again failed: " + err.Error()
+		}
+		s.mu.Unlock()
+		if err != nil {
+			c.log.Warn("read a server's disk", "server", srv.Name, "err", err)
+			if d.Server == "" {
+				return // nothing was ever read to show
+			}
+		}
+		c.bus.publish(busEvent{serverStats: true, ev: apitypes.Event{Type: apitypes.EventDisk, Disk: &d}})
+	}()
 }
 
 // readDisk asks a server for its disk usage and filesystem and groups it.
@@ -183,6 +268,8 @@ func (c *Core) PruneServer(ctx context.Context, a Actor, name string) (apitypes.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pruneTimeout)
 	defer cancel()
 	images, cache, err := c.pruneServer(ctx, srv)
+	// What the prune freed shows on the server page once read again.
+	c.refreshDisk(srv)
 	r.mu.Lock()
 	r.pruning[srv.ID] = false
 	if err == nil {

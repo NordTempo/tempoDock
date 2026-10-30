@@ -3339,6 +3339,9 @@
           "build_log": {
             "$ref": "#/components/schemas/BuildLogLine"
           },
+          "disk": {
+            "$ref": "#/components/schemas/ServerDisk"
+          },
           "domain": {
             "$ref": "#/components/schemas/Domain"
           },
@@ -3391,7 +3394,8 @@
               "server",
               "alert",
               "update",
-              "project_renamed"
+              "project_renamed",
+              "disk"
             ],
             "type": "string"
           },
@@ -5195,6 +5199,9 @@
       "ServerDisk": {
         "additionalProperties": false,
         "properties": {
+          "error": {
+            "type": "string"
+          },
           "parts": {
             "items": {
               "$ref": "#/components/schemas/DiskPart"
@@ -5211,6 +5218,9 @@
           "reclaimable_bytes": {
             "format": "int64",
             "type": "integer"
+          },
+          "refreshing": {
+            "type": "boolean"
           },
           "server": {
             "type": "string"

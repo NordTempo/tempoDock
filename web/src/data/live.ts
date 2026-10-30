@@ -8,6 +8,7 @@ import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { cloudflareKey } from "../features/cloudflare/data";
 import { registryKey } from "../features/registry/data";
+import { diskKey } from "../features/servers/disk";
 import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
 import { useOrg } from "../shell/location";
@@ -50,6 +51,7 @@ const busEvents = [
   "server",
   "alert",
   "update",
+  "disk",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -172,6 +174,11 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "update":
       // Only operators get these: an update moved on.
       if (event.update) applyUpdateEvent(queryClient, event.update);
+      return;
+    case "disk":
+      // Only operators get these: a server's disk was read again.
+      if (event.disk)
+        queryClient.setQueryData(diskKey(event.disk.server), event.disk);
       return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.

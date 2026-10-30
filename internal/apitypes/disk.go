@@ -35,6 +35,12 @@ type ServerDisk struct {
 	// release needs, and build cache above what is kept.
 	ReclaimableBytes int64     `json:"reclaimable_bytes"`
 	ReadAt           time.Time `json:"read_at"`
+	// Refreshing: this is the last reading, and a new one is being read;
+	// it arrives as a disk event.
+	Refreshing bool `json:"refreshing,omitempty"`
+	// Error says why reading it again failed; the reading is the last
+	// one that worked.
+	Error string `json:"error,omitempty"`
 }
 
 // DiskPart is one user of a server's disk.
