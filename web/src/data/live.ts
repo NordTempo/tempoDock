@@ -7,6 +7,7 @@ import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { registryKey } from "../features/registry/data";
+import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
 import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
@@ -387,6 +388,8 @@ function invalidateForAudit(
   // The install's settings and the control plane's own backups.
   if (kind === "backup" && !audit.project) invalidate(backupSettingsKey);
   if (kind === "registry") invalidate(registryKey);
+  // Storage connections, and which one the registry uses.
+  if (kind === "storage" || kind === "registry") invalidate(storageKey);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;

@@ -1,8 +1,11 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useOrg } from "../../shell/location";
 import { plural, since, size } from "../../ui/format";
 import {
   Act,
+  Button,
   ErrorText,
   Fact,
   Facts,
@@ -11,16 +14,23 @@ import {
   SectionHead,
   TitleRow,
 } from "../../ui/kit";
-import { type Registry, usePruneRegistry, useRegistry } from "./data";
+import { storageQuery } from "../storage/data";
+import {
+  type Registry,
+  useMigrateRegistry,
+  usePruneRegistry,
+  useRegistry,
+} from "./data";
 
-// The console's Registry page: what the platform registry stores, how
-// pruning went since the daemon started, and the services keeping images
-// in it (ADR 0014 section 4).
+// The console's Registry page: what the platform registry stores and
+// where (ADR 0034), how pruning and moves went since the daemon started,
+// and the services keeping images in it (ADR 0014 section 4).
 
 export function RegistryPage() {
   const org = useOrg();
   const registry = useRegistry();
   const prune = usePruneRegistry();
+  const [moving, setMoving] = useState(false);
   if (!registry.enabled) {
     return (
       <Page>
@@ -47,17 +57,43 @@ export function RegistryPage() {
           </>
         }
         actions={
-          <Act
-            cli="dock registry prune"
-            disabled={registry.pruning || prune.isPending}
-            onClick={() => prune.mutate()}
-          >
-            {registry.pruning ? "Pruning…" : "Prune now"}
-          </Act>
+          <>
+            {!moving && (
+              <Button
+                disabled={registry.migration?.running}
+                onClick={() => setMoving(true)}
+              >
+                Move images
+              </Button>
+            )}
+            <Act
+              cli="dock registry prune"
+              disabled={
+                registry.pruning ||
+                prune.isPending ||
+                registry.migration?.running
+              }
+              onClick={() => prune.mutate()}
+            >
+              {registry.pruning ? "Pruning…" : "Prune now"}
+            </Act>
+          </>
         }
       />
       <ErrorText error={prune.error} />
+      {moving && (
+        <MoveImages registry={registry} onClose={() => setMoving(false)} />
+      )}
       <Facts>
+        <Fact label="Storage">
+          {registry.storage === "local" ? (
+            "this server's disk"
+          ) : (
+            <Link to="/console/storage" className="font-mono">
+              {registry.storage}
+            </Link>
+          )}
+        </Fact>
         <Fact label="Stored">
           {registry.stored_bytes ? size(registry.stored_bytes) : "unknown"}
         </Fact>
@@ -80,6 +116,7 @@ export function RegistryPage() {
           Last prune failed: {registry.last_prune_error}
         </p>
       )}
+      <Migration registry={registry} />
       {registry.collect_pending && (
         <p className="text-warn-text">
           Deleted images' layers are still on disk; the next prune collects
@@ -171,5 +208,107 @@ function LastPrune({ registry: r }: { registry: Registry }) {
         · {plural(r.last_pruned, "image")} deleted
       </span>
     </>
+  );
+}
+
+/** The latest move of the images, while it runs and once it ended. */
+function Migration({ registry: r }: { registry: Registry }) {
+  const m = r.migration;
+  if (!m) return null;
+  if (m.running) {
+    return (
+      <p className="text-warn-text">
+        Moving the images from {m.from} to {m.to} since {since(m.started_at)}{" "}
+        ago. The registry serves them read-only; builds and pulls wait.
+      </p>
+    );
+  }
+  if (m.error) {
+    return (
+      <p className="text-fail">
+        Moving the images from {m.from} to {m.to} failed: {m.error}
+      </p>
+    );
+  }
+  return (
+    <p className="text-mut">
+      Moved the images from {m.from} to {m.to}{" "}
+      {m.finished_at && `${since(m.finished_at)} ago`}:{" "}
+      {plural(m.objects, "object")}, {size(m.bytes)}.
+    </p>
+  );
+}
+
+/** Picks where the images go: this server's disk or a storage connection. */
+function MoveImages({
+  registry,
+  onClose,
+}: {
+  registry: Registry;
+  onClose: () => void;
+}) {
+  const storage = useQuery(storageQuery()).data ?? [];
+  const migrate = useMigrateRegistry();
+  const targets = [
+    "local",
+    ...storage.map((s) => s.name).filter((n) => n !== registry.storage),
+  ].filter((n) => n !== registry.storage);
+  const [to, setTo] = useState(targets[0] ?? "");
+  const cli =
+    to === "local"
+      ? "dock registry migrate --to local"
+      : `dock registry migrate --to s3 --storage ${to}`;
+  return (
+    <form
+      aria-label="Move images"
+      className="flex max-w-[760px] flex-col gap-3 border-t border-line pt-3.5"
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+      onSubmit={(e) => {
+        e.preventDefault();
+        migrate.mutate(
+          to === "local" ? { to: "local" } : { to: "s3", storage: to },
+          { onSuccess: onClose },
+        );
+      }}
+    >
+      {targets.length === 0 ? (
+        <p className="text-mut">
+          Add a bucket on the <Link to="/console/storage">Storage</Link> page
+          first.
+        </p>
+      ) : (
+        <label className="flex max-w-[360px] flex-col gap-1.5">
+          <span>Move to</span>
+          <select
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="field py-[7px]"
+          >
+            {targets.map((t) => (
+              <option key={t} value={t}>
+                {t === "local" ? "this server's disk" : t}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <p className="text-mut">
+        The registry serves the images read-only while they are copied, and
+        builds and pulls wait. Once the copy is checked the registry switches
+        over and the old copy is deleted.
+      </p>
+      <ErrorText error={migrate.error} />
+      <div className="flex items-center gap-2.5">
+        <Act
+          primary
+          type="submit"
+          cli={cli}
+          disabled={!to || migrate.isPending}
+        >
+          Move images
+        </Act>
+        <Button onClick={onClose}>Cancel</Button>
+      </div>
+    </form>
   );
 }
