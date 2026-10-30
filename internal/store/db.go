@@ -765,6 +765,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listUserOrgsStmt, err = db.PrepareContext(ctx, listUserOrgs); err != nil {
 		return nil, fmt.Errorf("error preparing query ListUserOrgs: %w", err)
 	}
+	if q.listUserTokensStmt, err = db.PrepareContext(ctx, listUserTokens); err != nil {
+		return nil, fmt.Errorf("error preparing query ListUserTokens: %w", err)
+	}
 	if q.listVariablesStmt, err = db.PrepareContext(ctx, listVariables); err != nil {
 		return nil, fmt.Errorf("error preparing query ListVariables: %w", err)
 	}
@@ -2302,6 +2305,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listUserOrgsStmt: %w", cerr)
 		}
 	}
+	if q.listUserTokensStmt != nil {
+		if cerr := q.listUserTokensStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listUserTokensStmt: %w", cerr)
+		}
+	}
 	if q.listVariablesStmt != nil {
 		if cerr := q.listVariablesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listVariablesStmt: %w", cerr)
@@ -3083,6 +3091,7 @@ type Queries struct {
 	listUnprunedBackupsStmt             *sql.Stmt
 	listUsedHostPortsStmt               *sql.Stmt
 	listUserOrgsStmt                    *sql.Stmt
+	listUserTokensStmt                  *sql.Stmt
 	listVariablesStmt                   *sql.Stmt
 	listVolumesStmt                     *sql.Stmt
 	markReleaseHistoryTrimmedStmt       *sql.Stmt
@@ -3435,6 +3444,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listUnprunedBackupsStmt:             q.listUnprunedBackupsStmt,
 		listUsedHostPortsStmt:               q.listUsedHostPortsStmt,
 		listUserOrgsStmt:                    q.listUserOrgsStmt,
+		listUserTokensStmt:                  q.listUserTokensStmt,
 		listVariablesStmt:                   q.listVariablesStmt,
 		listVolumesStmt:                     q.listVolumesStmt,
 		markReleaseHistoryTrimmedStmt:       q.markReleaseHistoryTrimmedStmt,

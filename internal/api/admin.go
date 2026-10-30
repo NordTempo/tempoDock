@@ -34,6 +34,12 @@ func registerAdmin(s *Server, a huma.API) {
 		return reply(s.core.ListTokens(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "list-own-tokens", Method: http.MethodGet, Path: Prefix + "/me/tokens",
+		Summary: "List your tokens", Description: "Your `dock login` tokens and the tokens you created in the organization. Users only, any role.", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Token], error) {
+		return reply(s.core.ListOwnTokens(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "create-token", Method: http.MethodPost, Path: Prefix + "/tokens",
 		Summary: "Create a token", Description: "In the organization. The secret is returned once and never again. Scope: admin, unlimited; an operator token needs an operator.",
 		Tags: tags, DefaultStatus: http.StatusCreated,
@@ -42,7 +48,7 @@ func registerAdmin(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "revoke-token", Method: http.MethodDelete, Path: Prefix + "/tokens/{id}",
-		Summary: "Revoke a token", Description: "Scope: admin, unlimited.", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Summary: "Revoke a token", Description: "Any of the organization's tokens with scope admin, unlimited; your own (`GET /me/tokens`) with any role.", Tags: tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ID int64 `path:"id"`
 	}) (*struct{}, error) {

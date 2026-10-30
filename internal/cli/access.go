@@ -21,7 +21,7 @@ import (
 func newTokenCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "token",
-		Short: "Manage API tokens (admin)",
+		Short: "Manage API tokens (admin; your own with any role)",
 		Long: `API tokens for the CLI, CI and agents. A token has a scope (read < deploy <
 admin) and can be limited to one project or one environment of it. Its
 database access follows the data policy's tokens rule unless it has its own
@@ -32,17 +32,25 @@ database access follows the data policy's tokens rule unless it has its own
 }
 
 func newTokenListCmd(g *globals) *cobra.Command {
-	return &cobra.Command{
+	var mine bool
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List tokens",
-		Args:    cobra.NoArgs,
+		Long: `List the organization's tokens and its members' ` + "`dock login`" + ` tokens
+(admin). --mine lists only yours, with any role: your ` + "`dock login`" + ` tokens
+and the tokens you created. You can revoke your own with ` + "`dock token revoke`" + `.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.connect()
 			if err != nil {
 				return err
 			}
-			tokens, err := get[[]apitypes.Token](cmd.Context(), s, apiPrefix+"/tokens")
+			path := apiPrefix + "/tokens"
+			if mine {
+				path = apiPrefix + "/me/tokens"
+			}
+			tokens, err := get[[]apitypes.Token](cmd.Context(), s, path)
 			if err != nil {
 				return err
 			}
@@ -55,6 +63,8 @@ func newTokenListCmd(g *globals) *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&mine, "mine", false, "only your own tokens")
+	return cmd
 }
 
 func tokenLimit(project, env string) string {

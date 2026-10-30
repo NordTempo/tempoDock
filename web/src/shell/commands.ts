@@ -332,8 +332,8 @@ export function useCommands(): Command[] {
     });
   }
 
-  // Operators reach the platform console's pages; everyone else their
-  // organization's tokens and the activity they may see.
+  // Operators reach the platform console's pages; everyone else the
+  // activity they may see. Admins reach their organization's tokens.
   const pages = operator
     ? ([
         ["Platform console", "/console", ""],
@@ -341,7 +341,6 @@ export function useCommands(): Command[] {
         ["Registry", "/console/registry", "dock registry"],
         ["Backups", "/console/backups", "dock backup status"],
         ["Users", "/console/users", "dock user list"],
-        ["Tokens", "/console/tokens", "dock token list"],
         ["Data access policy", "/console/data-access", "dock db policy show"],
         ["Alerts", "/console/alerts", "dock alerts"],
         ["Audit log", "/console/audit", "dock audit"],
@@ -358,20 +357,23 @@ export function useCommands(): Command[] {
       run: () => navigate({ to }),
     });
   }
-  if (!operator) {
-    for (const [label, to, cli] of [
-      ["Tokens", "/$org/tokens", "dock token list"],
-      ["Audit log", "/$org/audit", "dock audit"],
-    ] as const) {
-      add({
-        id: `go:${to}`,
-        group: "Go to",
-        label,
-        cli,
-        weight: 0,
-        run: () => navigate({ to, params: { org } }),
-      });
-    }
+  const orgPages = [
+    ...(session?.scope === "admin"
+      ? ([["Tokens", "/$org/settings/tokens", "dock token list"]] as const)
+      : []),
+    ...(operator
+      ? []
+      : ([["Audit log", "/$org/audit", "dock audit"]] as const)),
+  ];
+  for (const [label, to, cli] of orgPages) {
+    add({
+      id: `go:${to}`,
+      group: "Go to",
+      label,
+      cli,
+      weight: 0,
+      run: () => navigate({ to, params: { org } }),
+    });
   }
   // Server pages (statistics, placement) are in the console.
   for (const { name } of operator ? servers : []) {

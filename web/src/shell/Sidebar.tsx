@@ -48,7 +48,7 @@ const settings = new Set<keyof FileRoutesById>([
   "/_app/$org/settings/members",
   "/_app/$org/settings/variables",
   "/_app/$org/settings/general",
-  "/_app/$org/tokens",
+  "/_app/$org/settings/tokens",
   "/_app/$org/audit",
   "/_app/account",
 ]);
@@ -136,6 +136,7 @@ const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
 function AppNav() {
   const openPalette = usePalette();
   const operator = useIsOperator();
+  const admin = useIsAdmin();
   return (
     <>
       <OrgSwitcher />
@@ -157,8 +158,8 @@ function AppNav() {
       <NavLink to="/$org/audit" icon="activity">
         Activity
       </NavLink>
-      {!operator && (
-        <NavLink to="/$org/tokens" icon="key">
+      {admin && (
+        <NavLink to="/$org/settings/tokens" icon="key">
           Tokens
         </NavLink>
       )}
@@ -615,7 +616,6 @@ function ServiceLink({ view }: { view: ServiceView }) {
 }
 
 function SettingsNav() {
-  const operator = useIsOperator();
   const admin = useIsAdmin();
   const slug = useOrg();
   const org = useOrgs().find((o) => o.slug === slug);
@@ -634,8 +634,8 @@ function SettingsNav() {
       <NavLink to="/$org/settings/variables" params={params}>
         Variables
       </NavLink>
-      {!operator && (
-        <NavLink to="/$org/tokens" params={params}>
+      {admin && (
+        <NavLink to="/$org/settings/tokens" params={params}>
           Tokens
         </NavLink>
       )}
@@ -704,9 +704,6 @@ function ConsoleNav() {
       <div className={groupLabel}>Access</div>
       <NavLink to="/console/users" icon="users">
         Users
-      </NavLink>
-      <NavLink to="/console/tokens" icon="key">
-        Tokens
       </NavLink>
       <NavLink to="/console/data-access" icon="shield">
         Data access

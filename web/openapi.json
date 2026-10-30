@@ -12573,6 +12573,112 @@
         ]
       }
     },
+    "/api/v1/me/tokens": {
+      "get": {
+        "description": "Your `dock login` tokens and the tokens you created in the organization. Users only, any role.",
+        "operationId": "list-own-tokens",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Token"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List your tokens",
+        "tags": [
+          "tokens"
+        ]
+      }
+    },
     "/api/v1/org": {
       "delete": {
         "description": "Only without projects (archived ones count). Its members, invites, variables and data policy go and its tokens are revoked; its audit log stays. Scope: admin, unlimited.",
@@ -29149,7 +29255,7 @@
     },
     "/api/v1/tokens/{id}": {
       "delete": {
-        "description": "Scope: admin, unlimited.",
+        "description": "Any of the organization's tokens with scope admin, unlimited; your own (`GET /me/tokens`) with any role.",
         "operationId": "revoke-token",
         "parameters": [
           {

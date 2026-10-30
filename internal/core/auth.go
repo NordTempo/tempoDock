@@ -428,6 +428,9 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 		}
 	}
 	params := store.CreateTokenParams{Name: req.Name, Scope: string(req.Scope), OrgID: &a.OrgID, Operator: req.Operator, CreatedBy: a.Name}
+	if a.UserID != 0 { // the creator lists and revokes it on their account
+		params.UserID = &a.UserID
+	}
 	var p *store.Project
 	var e *store.Environment
 	switch {
@@ -477,13 +480,28 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	return apitypes.CreatedToken{Token: out, Secret: secret}, nil
 }
 
-// RevokeToken revokes one of the org's tokens, or a member's `dock login`
-// token, by ID.
-func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
-		return err
+// ListOwnTokens returns the caller's own tokens: their `dock login` tokens
+// and those they created in the org. Any user may list theirs.
+func (c *Core) ListOwnTokens(ctx context.Context, a Actor) ([]apitypes.Token, error) {
+	if a.UserID == 0 {
+		return nil, errf(apitypes.CodeForbidden, "%s is a token; only users have tokens of their own", a)
 	}
-	t, err := c.orgToken(ctx, a, id)
+	rows, err := c.store.ListUserTokens(ctx, store.ListUserTokensParams{UserID: &a.UserID, OrgID: &a.OrgID})
+	if err != nil {
+		return nil, err
+	}
+	names := newNames(c.store)
+	out := make([]apitypes.Token, 0, len(rows))
+	for _, t := range rows {
+		out = append(out, toToken(ctx, names, t))
+	}
+	return out, nil
+}
+
+// RevokeToken revokes a token by ID: an admin any of the org's tokens or a
+// member's `dock login` token, anyone else their own (see ListOwnTokens).
+func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
+	t, err := c.revocableToken(ctx, a, id)
 	if err != nil {
 		return err
 	}
@@ -493,6 +511,32 @@ func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
 	}
 	c.audit(ctx, a, "token.revoke", nil, nil, "token "+t.Name, fmt.Sprintf("revoked token %q (id %d)", t.Name, t.ID))
 	return nil
+}
+
+// revocableToken loads a token the actor may revoke: as an unlimited
+// admin through orgToken, else one of their own.
+func (c *Core) revocableToken(ctx context.Context, a Actor, id int64) (store.Token, error) {
+	admin := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens")
+	if admin == nil {
+		return c.orgToken(ctx, a, id)
+	}
+	if a.UserID == 0 {
+		return store.Token{}, admin
+	}
+	t, err := c.store.GetToken(ctx, id)
+	if store.IsNotFound(err) || err == nil && !ownToken(a, t) {
+		return t, admin
+	}
+	return t, err
+}
+
+// ownToken reports whether t is one of a's own tokens, as ListUserTokens
+// selects them.
+func ownToken(a Actor, t store.Token) bool {
+	if t.UserID == nil || *t.UserID != a.UserID {
+		return false
+	}
+	return t.Origin == "cli_login" || t.OrgID != nil && *t.OrgID == a.OrgID
 }
 
 // orgToken loads a token the actor's org manages: one of its own, or a

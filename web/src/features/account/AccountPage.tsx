@@ -1,13 +1,18 @@
 import { useMutation } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { api, done } from "../../api/client";
 import type { components } from "../../api/schema";
-import { useSession } from "../../data/queries";
+import { useIsAdmin, useSession } from "../../data/queries";
 import type { Scope } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { ErrorText, Page, SectionHead, TitleRow } from "../../ui/kit";
+import { useOwnTokens } from "../tokens/data";
+import { TokenTable } from "../tokens/TokenTable";
 
-// The signed-in person's own account (`dock whoami`, `dock me password`):
-// who they are, their role, and changing their password.
+// The signed-in person's own account (`dock whoami`, `dock token list
+// --mine`, `dock me password`): who they are, their role, their tokens and
+// changing their password.
 
 /** What each role may do, in a few words. */
 const roleNote: Record<Scope, string> = {
@@ -86,13 +91,43 @@ export function AccountPage() {
         )}
       </dl>
       {me.kind === "user" ? (
-        <ChangePassword />
+        <>
+          <OwnTokens />
+          <ChangePassword />
+        </>
       ) : (
         <p className="text-mut">
           This session is a token; tokens have no password.
         </p>
       )}
     </Page>
+  );
+}
+
+/**
+ * The caller's `dock login` tokens and those they created, which they may
+ * revoke with any role. Admins create tokens in the organization's settings.
+ */
+function OwnTokens() {
+  const tokens = useOwnTokens();
+  const admin = useIsAdmin();
+  const org = useOrg();
+  return (
+    <section aria-labelledby="own-tokens" className="flex flex-col gap-3">
+      <SectionHead id="own-tokens" aside="dock token list --mine">
+        Your tokens
+      </SectionHead>
+      <TokenTable tokens={tokens} mine />
+      {admin && (
+        <p className="text-mut">
+          Create tokens for agents, CI and scripts in{" "}
+          <Link to="/$org/settings/tokens" params={{ org }}>
+            the organization's tokens
+          </Link>
+          .
+        </p>
+      )}
+    </section>
   );
 }
 

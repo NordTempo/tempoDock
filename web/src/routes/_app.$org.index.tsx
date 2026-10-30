@@ -97,7 +97,7 @@ function NoProjects() {
       <p className="text-mut">
         This page updates when the first project appears. Letting an agent do
         it?{" "}
-        <Link to="/$org/tokens" params={{ org }}>
+        <Link to="/$org/settings/tokens" params={{ org }}>
           Create a deploy token
         </Link>
         .

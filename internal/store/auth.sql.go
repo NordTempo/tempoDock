@@ -37,8 +37,8 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 }
 
 const createToken = `-- name: CreateToken :one
-INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment_id, created_by, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment_id, created_by, user_id, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator
 `
 
@@ -51,6 +51,7 @@ type CreateTokenParams struct {
 	ProjectID     *int64
 	EnvironmentID *int64
 	CreatedBy     string
+	UserID        *int64
 	ExpiresAt     *time.Time
 }
 
@@ -64,6 +65,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.CreatedBy,
+		arg.UserID,
 		arg.ExpiresAt,
 	)
 	var i Token
@@ -372,6 +374,61 @@ WHERE org_members.org_id = +?1 AND tokens.origin = 'cli_login'
 // login` tokens (which have no org), each through an index.
 func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]Token, error) {
 	rows, err := q.query(ctx, q.listOrgTokensStmt, listOrgTokens, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Token
+	for rows.Next() {
+		var i Token
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Hash,
+			&i.Scope,
+			&i.ProjectID,
+			&i.EnvironmentID,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.LastUsedAt,
+			&i.RevokedAt,
+			&i.Origin,
+			&i.DataProduction,
+			&i.DataNonProduction,
+			&i.DataSensitive,
+			&i.UserID,
+			&i.OrgID,
+			&i.Operator,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserTokens = `-- name: ListUserTokens :many
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator FROM tokens WHERE user_id = +?1
+    AND (origin = 'cli_login' OR org_id = +?2)
+ORDER BY id
+`
+
+type ListUserTokensParams struct {
+	UserID *int64
+	OrgID  *int64
+}
+
+// ListUserTokens is a user's own tokens: their `dock login` tokens and
+// the manual tokens they created in an org, through tokens_user.
+func (q *Queries) ListUserTokens(ctx context.Context, arg ListUserTokensParams) ([]Token, error) {
+	rows, err := q.query(ctx, q.listUserTokensStmt, listUserTokens, arg.UserID, arg.OrgID)
 	if err != nil {
 		return nil, err
 	}
