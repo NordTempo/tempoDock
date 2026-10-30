@@ -219,8 +219,14 @@ type Registry struct {
 	// 0014 amendment), so it is the registry's address on every server and
 	// the prefix of every image name.
 	Listen string `toml:"listen"`
-	// StorageDir holds the registry's blobs and manifests on the host.
+	// StorageDir holds the registry's blobs and manifests on the host,
+	// unless they are in a bucket (ADR 0034: a runtime setting, `dock
+	// registry migrate`).
 	StorageDir string `toml:"storage_dir"`
+	// ConfigDir holds the registry container's config.yml and jwks.json
+	// (mounted at /etc/distribution). The daemon rewrites them when the
+	// registry's storage changes.
+	ConfigDir string `toml:"config_dir"`
 	// PublicName names the registry: the audience of its tokens. Required
 	// when Enabled.
 	PublicName string `toml:"public_name"`
@@ -300,6 +306,7 @@ func Default() Config {
 		Registry: Registry{
 			Listen:     "127.0.0.1:5000",
 			StorageDir: "/var/lib/dock-registry",
+			ConfigDir:  "/etc/dock/registry",
 		},
 		Ingress: Ingress{Mode: IngressDirect},
 		Hooks:   Hooks{Listen: "127.0.0.1:7072"},
@@ -359,8 +366,8 @@ func (c *Config) validate() error {
 		return err
 	}
 	if c.Registry.Enabled {
-		if c.Registry.Listen == "" || c.Registry.StorageDir == "" || c.Registry.PublicName == "" {
-			return errors.New("[registry] enabled needs listen, storage_dir and public_name (the registry's name in its tokens)")
+		if c.Registry.Listen == "" || c.Registry.StorageDir == "" || c.Registry.ConfigDir == "" || c.Registry.PublicName == "" {
+			return errors.New("[registry] enabled needs listen, storage_dir, config_dir and public_name (the registry's name in its tokens)")
 		}
 		if err := CheckHostPort("[registry] listen", c.Registry.Listen); err != nil {
 			return err

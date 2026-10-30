@@ -21,7 +21,7 @@ func newAdminCmd() *cobra.Command {
 		Use:   "admin",
 		Short: "Server-side administration (run on the server)",
 	})
-	cmd.AddCommand(newBootstrapCmd(), newCaddyConfigCmd(), newRegistryConfigCmd(), newFirewallCmd(),
+	cmd.AddCommand(newBootstrapCmd(), newCaddyConfigCmd(), newRegistryConfigCmd(), newRegistryStorageCmd(), newFirewallCmd(),
 		newAdminBackupCmd(), newAdminRestoreCmd(), newAdminUpdateCmd())
 	return cmd
 }

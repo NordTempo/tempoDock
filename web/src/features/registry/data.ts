@@ -30,3 +30,19 @@ export function usePruneRegistry() {
     onSuccess: (registry) => queryClient.setQueryData(registryKey, registry),
   });
 }
+
+export type MigrateRegistry = components["schemas"]["MigrateRegistryRequest"];
+
+/**
+ * Starts moving the images to other storage; the answer (migrating)
+ * replaces the cached registry, and registry.* audit events refetch it
+ * when the move ends.
+ */
+export function useMigrateRegistry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: MigrateRegistry) =>
+      body(api.POST("/api/v1/registry/migrate", { body: input })),
+    onSuccess: (registry) => queryClient.setQueryData(registryKey, registry),
+  });
+}

@@ -46,6 +46,15 @@
 #   REGISTRY          "1" runs the image registry (dock-registry container) → [registry] enabled
 #   REGISTRY_NAME     the registry's name in its tokens (default dock-registry) → [registry] public_name
 #   REGISTRY_LISTEN   host address the registry is published on (default 127.0.0.1:5000)
+#   REGISTRY_STORAGE  where a new registry keeps its images (ADR 0034): "local" (this
+#                     server's disk, the default) or "s3" (an S3-compatible bucket:
+#                     AWS, Hetzner, R2, B2, MinIO, Garage). Asked when the registry is
+#                     new and there is a terminal. Later: dock registry migrate
+#   REGISTRY_S3_ENDPOINT, REGISTRY_S3_REGION, REGISTRY_S3_BUCKET  with "s3": the store's
+#                     base URL (https://fsn1.your-objectstorage.com), region, bucket
+#   REGISTRY_S3_ACCESS_KEY_ID, REGISTRY_S3_SECRET_ACCESS_KEY  with "s3": its keys
+#   REGISTRY_S3_PATH_STYLE  "false" puts the bucket in the host name (default true)
+#   REGISTRY_S3_NAME  the storage connection's name in dock (default: the bucket's)
 # Node only:
 #   NODE_JOIN_TOKEN   from `dock server add` on the control plane; implies --node.
 #                     Needed for the first run only (and to re-join)
@@ -73,7 +82,7 @@ MACHINE_KEYS=(:data_dir :listen :internal_listen :public_ip
   buildkit:enabled buildkit:memory_mb buildkit:cpus
   network:pool network:allow_private
   ingress:mode ingress:tunnel_hostname
-  registry:listen registry:storage_dir)
+  registry:listen registry:storage_dir registry:config_dir)
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -228,7 +237,7 @@ fi
 if [[ "$node_mode" == true ]]; then
   [[ -n "${NODE_JOIN_TOKEN:-}" || -f "$NODE_STATE" ]] \
     || die "set NODE_JOIN_TOKEN to a join token: run \`dock server add <name>\` against the control plane"
-  for v in LISTEN NODE_LISTEN REGISTRY REGISTRY_NAME REGISTRY_LISTEN; do
+  for v in LISTEN NODE_LISTEN REGISTRY REGISTRY_NAME REGISTRY_LISTEN REGISTRY_STORAGE; do
     [[ -z "${!v:-}" ]] || die "$v is for the control plane; this is a node install"
   done
 fi
@@ -331,6 +340,19 @@ if [[ "$tunnel" == true ]]; then
   fi
 fi
 
+# A registry this run turns on is new: install.sh may ask where it keeps
+# its images (ask_registry_storage).
+registry_was_enabled=false
+if [[ -f "$CONF" && "$(toml_get "$CONF" registry enabled)" == true ]]; then
+  registry_was_enabled=true
+fi
+case "${REGISTRY_STORAGE:-}" in
+  ""|local|s3) ;;
+  *) die "REGISTRY_STORAGE must be local or s3" ;;
+esac
+[[ -z "$restore" || -z "${REGISTRY_STORAGE:-}" ]] \
+  || die "a restored control plane keeps its registry storage from the backup; leave out REGISTRY_STORAGE (dock registry migrate moves the images later)"
+
 say "==> config"
 # 0751: Caddy (dock-caddy) reads caddy.json in here; config.toml stays 0640.
 install -d -m 0751 -o root -g dock /etc/dock
@@ -409,7 +431,9 @@ listen = ""
 # Image registry for builds and deploys across servers (dock-registry).
 enabled = false
 listen = "127.0.0.1:5000"
+# Its images, unless they are in a bucket (dock registry migrate).
 storage_dir = "/var/lib/dock-registry"
+config_dir = "/etc/dock/registry"
 # The registry's name: the audience of its tokens.
 public_name = ""
 CONF
@@ -563,39 +587,105 @@ if [[ "$tunnel" == true ]]; then
   fi
 fi
 
-# registry_storage creates the dock-registry user and the registry's
-# storage dir, and prints the dir.
+# registry_storage creates the dock-registry user, the registry's storage
+# dir and its config dir, and prints the storage dir. The dock group may
+# read the storage dir (the registry writes 0755 dirs and 0644 files
+# inside), so the console can show its size and the daemon can copy it to
+# a bucket; only the registry writes to it. The daemon writes the config
+# dir (it rewrites config.yml when the registry's storage changes); it is
+# setgid dock-registry, so the registry reads the 0640 files the daemon
+# writes, which can hold a bucket's keys.
 registry_storage() {
-  local storage
+  local storage cfg_dir
   storage="$(toml_get "$CONF" registry storage_dir)"
   storage="${storage:-/var/lib/dock-registry}"
+  cfg_dir="$(registry_config_dir)"
   id dock-registry >/dev/null 2>&1 \
     || useradd --system --no-create-home --home-dir "$storage" --shell /usr/sbin/nologin dock-registry
-  install -d -m 0700 -o dock-registry -g dock-registry "$storage"
+  install -d -m 0750 -o dock-registry -g dock "$storage"
+  install -d -m 2750 -o dock -g dock-registry "$cfg_dir"
+  # Files an older install wrote as root.
+  find "$cfg_dir" -maxdepth 1 -type f -exec chown dock:dock-registry {} + -exec chmod 0640 {} +
   printf '%s\n' "$storage"
+}
+
+# registry_config_dir prints [registry] config_dir.
+registry_config_dir() {
+  local dir
+  dir="$(toml_get "$CONF" registry config_dir)"
+  printf '%s\n' "${dir:-/etc/dock/registry}"
+}
+
+# ask_registry_storage asks where a new registry keeps its images, when
+# REGISTRY_STORAGE isn't set and there is a terminal to ask on. Local is
+# the default. For S3 it fills in the REGISTRY_S3_* variables left empty.
+ask_registry_storage() {
+  [[ -z "${REGISTRY_STORAGE:-}" ]] || return 0
+  if ! { exec 3</dev/tty; } 2>/dev/null; then
+    REGISTRY_STORAGE=local
+    return 0
+  fi
+  local choice
+  say ""
+  say "Where should the registry keep images?"
+  say "  1) on this server's disk (default)"
+  say "  2) in S3-compatible object storage: AWS, Hetzner, Cloudflare R2, Backblaze B2, MinIO, Garage"
+  read -r -u 3 -p "Choice [1]: " choice || true
+  if [[ "${choice:-1}" != 2 ]]; then
+    REGISTRY_STORAGE=local
+    exec 3<&-
+    return 0
+  fi
+  REGISTRY_STORAGE=s3
+  [[ -n "${REGISTRY_S3_ENDPOINT:-}" ]] || read -r -u 3 -p "Endpoint (base URL, e.g. https://fsn1.your-objectstorage.com): " REGISTRY_S3_ENDPOINT
+  [[ -n "${REGISTRY_S3_REGION:-}" ]] || read -r -u 3 -p "Region (empty for us-east-1): " REGISTRY_S3_REGION || true
+  [[ -n "${REGISTRY_S3_BUCKET:-}" ]] || read -r -u 3 -p "Bucket: " REGISTRY_S3_BUCKET
+  [[ -n "${REGISTRY_S3_ACCESS_KEY_ID:-}" ]] || read -r -u 3 -p "Access key ID: " REGISTRY_S3_ACCESS_KEY_ID
+  if [[ -z "${REGISTRY_S3_SECRET_ACCESS_KEY:-}" ]]; then
+    read -r -s -u 3 -p "Secret access key: " REGISTRY_S3_SECRET_ACCESS_KEY
+    say ""
+  fi
+  exec 3<&-
+}
+
+# set_registry_storage keeps a new registry's images in the bucket the
+# REGISTRY_S3_* variables name (dock admin registry-storage). It runs
+# before the daemon starts, which applies it. Images already on disk would
+# be left behind, so it refuses then.
+set_registry_storage() {
+  local storage name
+  storage="$(registry_storage)"
+  if [[ -n "$(ls -A "$storage/docker" 2>/dev/null)" ]]; then
+    die "the registry already has images in $storage; move them with \`dock registry migrate --to s3\` instead of REGISTRY_STORAGE=s3"
+  fi
+  for v in REGISTRY_S3_ENDPOINT REGISTRY_S3_BUCKET REGISTRY_S3_ACCESS_KEY_ID REGISTRY_S3_SECRET_ACCESS_KEY; do
+    [[ -n "${!v:-}" ]] || die "REGISTRY_STORAGE=s3 needs $v"
+  done
+  name="${REGISTRY_S3_NAME:-$(printf '%s' "$REGISTRY_S3_BUCKET" | tr '.' '-')}"
+  # The keys go on stdin, never in arguments, which any user could read.
+  printf '%s\n%s\n' "$REGISTRY_S3_ACCESS_KEY_ID" "$REGISTRY_S3_SECRET_ACCESS_KEY" \
+    | runuser -u dock -- /usr/local/bin/dock admin registry-storage "$name" --config "$CONF" \
+      --endpoint "$REGISTRY_S3_ENDPOINT" --region "${REGISTRY_S3_REGION:-}" --bucket "$REGISTRY_S3_BUCKET" \
+      --path-style="${REGISTRY_S3_PATH_STYLE:-true}" \
+    || die "the registry's bucket was not accepted (see above); fix the REGISTRY_S3_* values and run the same command again"
 }
 
 # setup_registry runs CNCF Distribution as the dock-registry container
 # (ADR 0014). Docker's restart policy keeps it up across reboots, like the
-# apps; the control plane execs into it for garbage collection. It is
-# recreated only when its image, config or mounts change.
+# apps; the control plane stops it for garbage collection, which runs in a
+# one-shot container next to it. It is recreated only when its image,
+# config or mounts change.
 setup_registry() {
-  local listen storage cfg_dir=/etc/dock/registry hash current
+  local listen storage cfg_dir hash current
   listen="$(toml_get "$CONF" registry listen)"
   listen="${listen:-127.0.0.1:5000}"
   storage="$(registry_storage)"
-  install -d -m 0750 -o root -g dock-registry "$cfg_dir"
-  # Runs as dock: it reads the control plane's token signing key. It writes
-  # config.yml and jwks.json (both deterministic for a given key).
-  local out
-  out="$(mktemp -d)"
-  chown dock "$out"
-  runuser -u dock -- /usr/local/bin/dock admin registry-config --config "$CONF" --out "$out" \
-    || { rm -rf "$out"; die "dock admin registry-config failed; the registry was not changed"; }
-  for f in config.yml jwks.json; do
-    install -m 0640 -o root -g dock-registry "$out/$f" "$cfg_dir/$f"
-  done
-  rm -rf "$out"
+  cfg_dir="$(registry_config_dir)"
+  # Runs as dock: it reads the control plane's token signing key and the
+  # registry's storage setting. It writes config.yml and jwks.json (both
+  # deterministic for a given key and storage), only where they changed.
+  runuser -u dock -- /usr/local/bin/dock admin registry-config --config "$CONF" --out "$cfg_dir" \
+    || die "dock admin registry-config failed; the registry was not changed"
 
   hash="$( { printf '%s\n' "$REGISTRY_IMAGE" "$listen" "$storage"; cat "$cfg_dir"/*; } | sha256sum | cut -c1-16)"
   current="$(docker inspect -f '{{index .Config.Labels "dock.install-hash"}}' dock-registry 2>/dev/null || true)"
@@ -647,6 +737,18 @@ else
       install -m 0640 -o root -g dock "$old_config" /etc/dock/config.from-backup.toml
     fi
   fi
+  if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
+    registry_storage >/dev/null # the daemon writes into its config dir
+    if [[ -z "$restore" && "$registry_was_enabled" == false ]]; then
+      ask_registry_storage
+    fi
+    if [[ "${REGISTRY_STORAGE:-}" == s3 ]]; then
+      say "==> registry storage"
+      set_registry_storage
+    fi
+  elif [[ -n "${REGISTRY_STORAGE:-}" ]]; then
+    die "REGISTRY_STORAGE is for the registry; set REGISTRY=1 too"
+  fi
   systemctl enable dock.service
   systemctl restart dock.service
   if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
@@ -696,6 +798,7 @@ else
   if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
     registry_listen="$(toml_get "$CONF" registry listen)"
     say "  Registry: $(toml_get "$CONF" registry public_name) (container dock-registry on ${registry_listen:-127.0.0.1:5000})"
+    say "  Its images: dock registry (dock registry migrate moves them to a bucket or back)"
   fi
 fi
 say ""

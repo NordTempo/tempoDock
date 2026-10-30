@@ -27,8 +27,15 @@
 // 127.0.0.1:5000/<repo>@sha256:... on every server. Its config dir,
 // /etc/dock/registry, is mounted read-only at /etc/distribution and holds
 // config.yml (ConfigYAML) and jwks.json (JWKS). Both are deterministic for
-// a given key and Config, so re-running the installer only recreates the
-// registry when something changed.
+// a given key, Config and Storage, so re-running the installer only
+// recreates the registry when something changed. The daemon rewrites
+// them too (Platform.UseStorage) when the registry's storage changes.
+//
+// # Storage
+//
+// Images are on the control plane's disk ([registry] storage_dir, mounted
+// at /var/lib/registry) or in an S3-compatible bucket, under BucketRoot
+// (ADR 0034). Platform.Migrate moves them from one to the other.
 //
 // The config keeps the registry idle when idle: no storage health check
 // ticker, no access log, no debug server. Run the container with
@@ -45,6 +52,7 @@ package registry
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -54,6 +62,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/NordTempo/tempoDock/internal/s3"
 )
 
 const (
@@ -87,19 +97,66 @@ func (c Config) withDefaults() Config {
 	return c
 }
 
+// Storage is where the registry keeps its blobs and manifests (ADR 0034).
+type Storage struct {
+	// Bucket is an S3-compatible bucket; nil is the filesystem, the
+	// storage dir mounted at /var/lib/registry.
+	Bucket *s3.Bucket
+	// ReadOnly refuses pushes and deletes: Migrate copies the storage
+	// while the registry serves pulls from it.
+	ReadOnly bool
+}
+
+// BucketRoot is the registry's directory in a bucket: its objects are
+// under BucketRoot/docker/registry/v2/, so a bucket can hold other
+// things next to it.
+const BucketRoot = "dock-registry"
+
 // ConfigYAML renders Distribution's config.yml for the registry s mints
-// tokens for. The output only depends on s's key and Config.
+// tokens for, keeping its images in st. The output only depends on s's
+// key, Config and st.
 //
 // http.secret, which signs upload state between requests, is derived from
 // the signing key rather than random, so the output is stable; without
 // one the registry makes up a new secret on every start.
-func ConfigYAML(s *Signer) ([]byte, error) {
+//
+// In a bucket, redirects stay off: every pull goes through the registry
+// (and so through each node's registry proxy, with its per-call tokens)
+// instead of to presigned bucket URLs.
+func ConfigYAML(s *Signer, st Storage) ([]byte, error) {
 	cfg := s.cfg
 	if cfg.Service == "" || cfg.Realm == "" {
 		return nil, errors.New("registry config: service and realm are required")
 	}
 	q := func(s string) string { b, _ := json.Marshal(s); return string(b) } // a JSON string is a YAML scalar
 	secret := sha256.Sum256(append([]byte("dock registry http.secret\x00"), s.key.Seed()...))
+	driver := `
+  filesystem:
+    rootdirectory: /var/lib/registry`
+	if b := st.Bucket; b != nil {
+		if err := b.Validate(); err != nil {
+			return nil, fmt.Errorf("registry config: %w", err)
+		}
+		driver = fmt.Sprintf(`
+  s3:
+    regionendpoint: %s
+    secure: %t
+    region: %s
+    bucket: %s
+    forcepathstyle: %t
+    accesskey: %s
+    secretkey: %s
+    rootdirectory: /%s
+  redirect:
+    disable: true`, q(b.Endpoint), strings.HasPrefix(b.Endpoint, "https:"), q(cmp.Or(b.Region, s3.DefaultRegion)), q(b.Name),
+			b.PathStyle, q(b.AccessKeyID), q(b.SecretAccessKey), BucketRoot)
+	}
+	if st.ReadOnly {
+		driver += `
+  maintenance:
+    readonly:
+      enabled: true`
+	}
 	return []byte(strings.TrimLeft(fmt.Sprintf(`
 # Written by dock (internal/registry). Changes are overwritten.
 version: 0.1
@@ -108,9 +165,7 @@ log:
   formatter: text
   accesslog:
     disabled: true
-storage:
-  filesystem:
-    rootdirectory: /var/lib/registry
+storage:%s
   delete:
     enabled: true
   cache:
@@ -130,15 +185,16 @@ auth:
     issuer: %s
     jwks: /etc/distribution/jwks.json
     signingalgorithms: [EdDSA]
-`, hex.EncodeToString(secret[:]), q(cfg.Realm), q(cfg.Service), q(cfg.Issuer)), "\n")), nil
+`, driver, hex.EncodeToString(secret[:]), q(cfg.Realm), q(cfg.Service), q(cfg.Issuer)), "\n")), nil
 }
 
 // WriteConfig writes config.yml (ConfigYAML) and jwks.json (JWKS) for s
-// into dir, the registry container's /etc/distribution. Files are only
-// rewritten when their content changes; changed says whether any did, in
-// which case a running registry must be restarted to pick them up.
-func WriteConfig(dir string, s *Signer) (changed bool, err error) {
-	yml, err := ConfigYAML(s)
+// and st into dir, the registry container's /etc/distribution. Files are
+// only rewritten when their content changes; changed says whether any
+// did, in which case a running registry must be restarted to pick them
+// up.
+func WriteConfig(dir string, s *Signer, st Storage) (changed bool, err error) {
+	yml, err := ConfigYAML(s, st)
 	if err != nil {
 		return false, err
 	}
@@ -177,8 +233,10 @@ func writeIfChanged(path string, content []byte) (bool, error) {
 	if err := tmp.Close(); err != nil {
 		return false, err
 	}
-	// Readable by the registry process, which doesn't run as root.
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+	// config.yml can hold the bucket's keys. install.sh makes dir setgid
+	// dock-registry, so the registry process (which doesn't run as root)
+	// reads it through its group.
+	if err := os.Chmod(tmp.Name(), 0o640); err != nil {
 		return false, err
 	}
 	return true, os.Rename(tmp.Name(), path)

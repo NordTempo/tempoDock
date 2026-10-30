@@ -41,6 +41,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0031](0031-github-app.md) | Dock's GitHub App | accepted |
 | [0032](0032-server-memory-breakdown.md) | Where a server's memory goes | accepted |
 | [0033](0033-traffic-statistics.md) | Traffic statistics for a service's domains | accepted |
+| [0034](0034-registry-object-storage.md) | The registry's images in S3-compatible object storage | accepted |
 
 ## Template
 

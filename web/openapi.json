@@ -1402,6 +1402,47 @@
         ],
         "type": "object"
       },
+      "CreateStorageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "access_key_id": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "endpoint": {
+            "description": "the store's base URL, without the bucket",
+            "examples": [
+              "https://fsn1.your-objectstorage.com"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
+            "type": "string"
+          },
+          "path_style": {
+            "description": "address the bucket in the path (https://endpoint/bucket); default true, which every S3-compatible store accepts",
+            "type": "boolean"
+          },
+          "region": {
+            "description": "empty signs as us-east-1",
+            "type": "string"
+          },
+          "secret_access_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "endpoint",
+          "bucket",
+          "access_key_id",
+          "secret_access_key"
+        ],
+        "type": "object"
+      },
       "CreateTokenRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3752,6 +3793,26 @@
         ],
         "type": "object"
       },
+      "MigrateRegistryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "storage": {
+            "type": "string"
+          },
+          "to": {
+            "description": "local: the control plane's disk; s3: a storage connection",
+            "enum": [
+              "local",
+              "s3"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "to"
+        ],
+        "type": "object"
+      },
       "Org": {
         "additionalProperties": false,
         "properties": {
@@ -4164,6 +4225,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "migration": {
+            "$ref": "#/components/schemas/RegistryMigration"
+          },
           "pruning": {
             "type": "boolean"
           },
@@ -4175,6 +4239,12 @@
               "array",
               "null"
             ]
+          },
+          "storage": {
+            "examples": [
+              "local"
+            ],
+            "type": "string"
           },
           "stored_bytes": {
             "format": "int64",
@@ -4189,6 +4259,48 @@
           "last_pruned",
           "collect_pending",
           "services"
+        ],
+        "type": "object"
+      },
+      "RegistryMigration": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "objects": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "running",
+          "objects",
+          "bytes",
+          "started_at"
         ],
         "type": "object"
       },
@@ -5846,6 +5958,62 @@
         },
         "type": "object"
       },
+      "Storage": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "examples": [
+              "dock-images"
+            ],
+            "type": "string"
+          },
+          "endpoint": {
+            "examples": [
+              "https://fsn1.your-objectstorage.com"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "examples": [
+              "hetzner-images"
+            ],
+            "type": "string"
+          },
+          "path_style": {
+            "type": "boolean"
+          },
+          "region": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "endpoint",
+          "region",
+          "bucket",
+          "path_style",
+          "used_by",
+          "updated_at",
+          "updated_by"
+        ],
+        "type": "object"
+      },
       "TemplateInfo": {
         "additionalProperties": false,
         "properties": {
@@ -6471,6 +6639,30 @@
           "updater",
           "servers"
         ],
+        "type": "object"
+      },
+      "UpdateStorageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "access_key_id": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "path_style": {
+            "type": "boolean"
+          },
+          "region": {
+            "type": "string"
+          },
+          "secret_access_key": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "UpdateTokenRequest": {
@@ -25094,6 +25286,126 @@
         ]
       }
     },
+    "/api/v1/registry/migrate": {
+      "post": {
+        "description": "Copies the registry's images to the control plane's disk (to local) or a storage connection's bucket (to s3) in the background, then switches the registry over and deletes the old copy (ADR 0034). The registry serves them read-only meanwhile, and builds and pulls wait. Answers with the registry, its migration running; registry.migrated or registry.migrate_failed is audited at the end. 409 while builds or pulls use the registry, or a prune or migration runs. Operators only.",
+        "operationId": "migrate-registry",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrateRegistryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registry"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Move the registry's images to other storage",
+        "tags": [
+          "registry"
+        ]
+      }
+    },
     "/api/v1/registry/prune": {
       "post": {
         "description": "Deletes the images no release keeps (outside every service's rollback window and not active) and collects their layers, in the background; the registry stops for those seconds. Answers with the registry, pruning. 409 while builds or pulls use the registry or a prune runs. Operators only.",
@@ -26314,6 +26626,471 @@
         "summary": "Live server statistics",
         "tags": [
           "servers"
+        ]
+      }
+    },
+    "/api/v1/storage": {
+      "get": {
+        "description": "The S3-compatible buckets defined for Dock, and what keeps data in each. Keys are never returned. Operators only.",
+        "operationId": "list-storage",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Storage"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List storage connections",
+        "tags": [
+          "storage"
+        ]
+      },
+      "post": {
+        "description": "An S3-compatible bucket: endpoint, region, bucket, keys and addressing. Dock lists the bucket with the keys before saving it, so a mistake fails here (422). Operators only.",
+        "operationId": "create-storage",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStorageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Storage"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add a storage connection",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/{storage}": {
+      "delete": {
+        "description": "The bucket and its contents are left alone. 409 while the registry keeps its images in it. Operators only.",
+        "operationId": "remove-storage",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Storage connection name",
+            "in": "path",
+            "name": "storage",
+            "required": true,
+            "schema": {
+              "description": "Storage connection name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a storage connection",
+        "tags": [
+          "storage"
+        ]
+      },
+      "patch": {
+        "description": "Fields left out stay as they are. The bucket is listed again with the result. While the registry keeps its images in it, the endpoint and bucket can't change (409), and new keys restart the registry. Operators only.",
+        "operationId": "update-storage",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Storage connection name",
+            "in": "path",
+            "name": "storage",
+            "required": true,
+            "schema": {
+              "description": "Storage connection name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStorageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Storage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change a storage connection",
+        "tags": [
+          "storage"
         ]
       }
     },

@@ -31,6 +31,7 @@ import { Route as AppConsoleDataAccessRouteImport } from './routes/_app.console.
 import { Route as AppConsoleGithubRouteImport } from './routes/_app.console.github'
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
+import { Route as AppConsoleStorageRouteImport } from './routes/_app.console.storage'
 import { Route as AppConsoleTokensRouteImport } from './routes/_app.console.tokens'
 import { Route as AppConsoleUpdatesRouteImport } from './routes/_app.console.updates'
 import { Route as AppConsoleUsersRouteImport } from './routes/_app.console.users'
@@ -163,6 +164,11 @@ const AppConsoleRegistryRoute = AppConsoleRegistryRouteImport.update({
 const AppConsoleServersRoute = AppConsoleServersRouteImport.update({
   id: '/servers',
   path: '/servers',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleStorageRoute = AppConsoleStorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleTokensRoute = AppConsoleTokensRouteImport.update({
@@ -320,6 +326,7 @@ export interface FileRoutesByFullPath {
   '/console/github': typeof AppConsoleGithubRoute
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
+  '/console/storage': typeof AppConsoleStorageRoute
   '/console/tokens': typeof AppConsoleTokensRoute
   '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
@@ -365,6 +372,7 @@ export interface FileRoutesByTo {
   '/console/github': typeof AppConsoleGithubRoute
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
+  '/console/storage': typeof AppConsoleStorageRoute
   '/console/tokens': typeof AppConsoleTokensRoute
   '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
@@ -413,6 +421,7 @@ export interface FileRoutesById {
   '/_app/console/github': typeof AppConsoleGithubRoute
   '/_app/console/registry': typeof AppConsoleRegistryRoute
   '/_app/console/servers': typeof AppConsoleServersRoute
+  '/_app/console/storage': typeof AppConsoleStorageRoute
   '/_app/console/tokens': typeof AppConsoleTokensRoute
   '/_app/console/updates': typeof AppConsoleUpdatesRoute
   '/_app/console/users': typeof AppConsoleUsersRoute
@@ -462,6 +471,7 @@ export interface FileRouteTypes {
     | '/console/github'
     | '/console/registry'
     | '/console/servers'
+    | '/console/storage'
     | '/console/tokens'
     | '/console/updates'
     | '/console/users'
@@ -507,6 +517,7 @@ export interface FileRouteTypes {
     | '/console/github'
     | '/console/registry'
     | '/console/servers'
+    | '/console/storage'
     | '/console/tokens'
     | '/console/updates'
     | '/console/users'
@@ -554,6 +565,7 @@ export interface FileRouteTypes {
     | '/_app/console/github'
     | '/_app/console/registry'
     | '/_app/console/servers'
+    | '/_app/console/storage'
     | '/_app/console/tokens'
     | '/_app/console/updates'
     | '/_app/console/users'
@@ -745,6 +757,13 @@ declare module '@tanstack/react-router' {
       path: '/servers'
       fullPath: '/console/servers'
       preLoaderRoute: typeof AppConsoleServersRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/storage': {
+      id: '/_app/console/storage'
+      path: '/storage'
+      fullPath: '/console/storage'
+      preLoaderRoute: typeof AppConsoleStorageRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/tokens': {
@@ -1007,6 +1026,7 @@ interface AppConsoleRouteChildren {
   AppConsoleGithubRoute: typeof AppConsoleGithubRoute
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
   AppConsoleServersRoute: typeof AppConsoleServersRoute
+  AppConsoleStorageRoute: typeof AppConsoleStorageRoute
   AppConsoleTokensRoute: typeof AppConsoleTokensRoute
   AppConsoleUpdatesRoute: typeof AppConsoleUpdatesRoute
   AppConsoleUsersRoute: typeof AppConsoleUsersRoute
@@ -1023,6 +1043,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleGithubRoute: AppConsoleGithubRoute,
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,
   AppConsoleServersRoute: AppConsoleServersRoute,
+  AppConsoleStorageRoute: AppConsoleStorageRoute,
   AppConsoleTokensRoute: AppConsoleTokensRoute,
   AppConsoleUpdatesRoute: AppConsoleUpdatesRoute,
   AppConsoleUsersRoute: AppConsoleUsersRoute,

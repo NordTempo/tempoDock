@@ -2119,6 +2119,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/registry/migrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move the registry's images to other storage
+         * @description Copies the registry's images to the control plane's disk (to local) or a storage connection's bucket (to s3) in the background, then switches the registry over and deletes the old copy (ADR 0034). The registry serves them read-only meanwhile, and builds and pulls wait. Answers with the registry, its migration running; registry.migrated or registry.migrate_failed is audited at the end. 409 while builds or pulls use the registry, or a prune or migration runs. Operators only.
+         */
+        post: operations["migrate-registry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/registry/prune": {
         parameters: {
             query?: never;
@@ -2271,6 +2291,54 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List storage connections
+         * @description The S3-compatible buckets defined for Dock, and what keeps data in each. Keys are never returned. Operators only.
+         */
+        get: operations["list-storage"];
+        put?: never;
+        /**
+         * Add a storage connection
+         * @description An S3-compatible bucket: endpoint, region, bucket, keys and addressing. Dock lists the bucket with the keys before saving it, so a mistake fails here (422). Operators only.
+         */
+        post: operations["create-storage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/storage/{storage}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a storage connection
+         * @description The bucket and its contents are left alone. 409 while the registry keeps its images in it. Operators only.
+         */
+        delete: operations["remove-storage"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a storage connection
+         * @description Fields left out stay as they are. The bucket is listed again with the result. While the registry keeps its images in it, the endpoint and bucket can't change (409), and new keys restart the registry. Operators only.
+         */
+        patch: operations["update-storage"];
         trace?: never;
     };
     "/api/v1/templates": {
@@ -2936,6 +3004,21 @@ export interface components {
              */
             template?: "postgres" | "redis";
         };
+        CreateStorageRequest: {
+            access_key_id: string;
+            bucket: string;
+            /**
+             * @description the store's base URL, without the bucket
+             * @example https://fsn1.your-objectstorage.com
+             */
+            endpoint: string;
+            name: string;
+            /** @description address the bucket in the path (https://endpoint/bucket); default true, which every S3-compatible store accepts */
+            path_style?: boolean;
+            /** @description empty signs as us-east-1 */
+            region?: string;
+            secret_access_key: string;
+        };
         CreateTokenRequest: {
             data?: components["schemas"]["DataTokenAccess"];
             /** @description Requires project */
@@ -3541,6 +3624,14 @@ export interface components {
             group: "apps" | "platform" | "kernel" | "system";
             name: string;
         };
+        MigrateRegistryRequest: {
+            storage?: string;
+            /**
+             * @description local: the control plane's disk; s3: a storage connection
+             * @enum {string}
+             */
+            to: "local" | "s3";
+        };
         Org: {
             /** Format: date-time */
             created_at: string;
@@ -3639,10 +3730,27 @@ export interface components {
             last_prune_error?: string;
             /** Format: int64 */
             last_pruned: number;
+            migration?: components["schemas"]["RegistryMigration"];
             pruning: boolean;
             services: components["schemas"]["RegistryService"][] | null;
+            /** @example local */
+            storage?: string;
             /** Format: int64 */
             stored_bytes: number;
+        };
+        RegistryMigration: {
+            /** Format: int64 */
+            bytes: number;
+            error?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            from: string;
+            /** Format: int64 */
+            objects: number;
+            running: boolean;
+            /** Format: date-time */
+            started_at: string;
+            to: string;
         };
         RegistryService: {
             /** Format: int64 */
@@ -4133,6 +4241,20 @@ export interface components {
             /** @example v0.4.0 */
             version?: string;
         };
+        Storage: {
+            /** @example dock-images */
+            bucket: string;
+            /** @example https://fsn1.your-objectstorage.com */
+            endpoint: string;
+            /** @example hetzner-images */
+            name: string;
+            path_style: boolean;
+            region: string;
+            /** Format: date-time */
+            updated_at: string;
+            updated_by: string;
+            used_by: string[] | null;
+        };
         TemplateInfo: {
             description: string;
             exports: string[] | null;
@@ -4335,6 +4457,14 @@ export interface components {
             updater: boolean;
             /** @example v0.3.0 */
             version: string;
+        };
+        UpdateStorageRequest: {
+            access_key_id?: string;
+            bucket?: string;
+            endpoint?: string;
+            path_style?: boolean;
+            region?: string;
+            secret_access_key?: string;
         };
         UpdateTokenRequest: {
             data: components["schemas"]["DataTokenAccess"];
@@ -16648,6 +16778,96 @@ export interface operations {
             };
         };
     };
+    "migrate-registry": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrateRegistryRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Registry"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "prune-registry": {
         parameters: {
             query?: {
@@ -17533,6 +17753,353 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-storage": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Storage"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "create-storage": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStorageRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Storage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "remove-storage": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Storage connection name */
+                storage: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "update-storage": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Storage connection name */
+                storage: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStorageRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Storage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -10,9 +10,15 @@ type Registry struct {
 	// on the server that built them; the rest is then empty.
 	Enabled bool   `json:"enabled"`
 	Host    string `json:"host,omitempty" example:"127.0.0.1:5000"`
-	// StoredBytes is the size of the registry's blobs on disk; 0 when it
-	// can't be read.
+	// Storage is where the registry keeps its images: "local" (the control
+	// plane's disk) or a storage connection's name (ADR 0034).
+	Storage string `json:"storage,omitempty" example:"local"`
+	// StoredBytes is the size of the registry's blobs; 0 when it can't be
+	// read.
 	StoredBytes int64 `json:"stored_bytes"`
+	// Migration is the latest move of the images to other storage since
+	// the daemon started.
+	Migration *RegistryMigration `json:"migration,omitempty"`
 	// KeepReleases is the rollback window: each service's newest releases
 	// whose images pruning keeps, with its active release.
 	KeepReleases int        `json:"keep_releases"`
@@ -42,4 +48,28 @@ type RegistryService struct {
 	Newest int64 `json:"newest"`
 	// Active is its active release, 0 when none is.
 	Active int64 `json:"active"`
+}
+
+// RegistryMigration is a move of the registry's images from one storage to
+// another (`dock registry migrate`). The registry serves pulls read-only
+// while it runs; builds wait for it.
+type RegistryMigration struct {
+	// From and To are "local" or storage connection names.
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Running bool   `json:"running"`
+	// Objects and Bytes are what was copied, once it finished.
+	Objects    int        `json:"objects"`
+	Bytes      int64      `json:"bytes"`
+	Error      string     `json:"error,omitempty"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// MigrateRegistryRequest moves the registry's images.
+type MigrateRegistryRequest struct {
+	To string `json:"to" enum:"local,s3" doc:"local: the control plane's disk; s3: a storage connection"`
+	// Storage names the storage connection for to s3; it may be left out
+	// when there is only one.
+	Storage string `json:"storage,omitempty"`
 }

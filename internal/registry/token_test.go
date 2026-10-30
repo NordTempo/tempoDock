@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NordTempo/tempoDock/internal/s3"
 )
 
 var testCfg = Config{Service: "registry.example.com", Realm: "https://dock.example.com/registry/token"}
@@ -145,7 +147,7 @@ func TestWriteConfig(t *testing.T) {
 	key := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
 	s := NewSigner(key, testCfg)
 	for i, want := range []bool{true, false} {
-		changed, err := WriteConfig(dir, s)
+		changed, err := WriteConfig(dir, s, Storage{})
 		if err != nil || changed != want {
 			t.Fatalf("write %d: changed = %v, %v; want %v", i, changed, err, want)
 		}
@@ -163,7 +165,36 @@ func TestWriteConfig(t *testing.T) {
 			t.Errorf("config.yml lacks %q:\n%s", want, yml)
 		}
 	}
-	if _, err := WriteConfig(dir, NewSigner(key, Config{Service: "x"})); err == nil {
+	if info, _ := os.Stat(filepath.Join(dir, "config.yml")); info.Mode().Perm() != 0o640 {
+		t.Errorf("config.yml is %v; it can hold a bucket's keys", info.Mode().Perm())
+	}
+	if _, err := WriteConfig(dir, NewSigner(key, Config{Service: "x"}), Storage{}); err == nil {
 		t.Error("config without a realm written")
+	}
+
+	// A bucket replaces the filesystem driver; pulls never redirect to it.
+	bucket := &s3.Bucket{Endpoint: "https://fsn1.your-objectstorage.com", Name: "dock-images", PathStyle: true, AccessKeyID: "AK", SecretAccessKey: `se"cret`}
+	changed, err := WriteConfig(dir, s, Storage{Bucket: bucket, ReadOnly: true})
+	if err != nil || !changed {
+		t.Fatalf("write with a bucket: changed = %v, %v", changed, err)
+	}
+	yml, _ = os.ReadFile(filepath.Join(dir, "config.yml"))
+	for _, want := range []string{
+		`regionendpoint: "https://fsn1.your-objectstorage.com"`,
+		"secure: true",
+		`region: "us-east-1"`,
+		`bucket: "dock-images"`,
+		"forcepathstyle: true",
+		`secretkey: "se\"cret"`,
+		"rootdirectory: /dock-registry",
+		"redirect:\n    disable: true",
+		"readonly:\n      enabled: true",
+	} {
+		if !strings.Contains(string(yml), want) {
+			t.Errorf("config.yml lacks %q:\n%s", want, yml)
+		}
+	}
+	if strings.Contains(string(yml), "filesystem") {
+		t.Errorf("config.yml keeps the filesystem driver next to s3:\n%s", yml)
 	}
 }
