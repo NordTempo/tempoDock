@@ -442,13 +442,20 @@ func TestCloudflareDirectServerTunnel(t *testing.T) {
 			t.Errorf("certificate for %s: %v, %v", host, ok, err)
 		}
 	}
+	// Routes are applied in the background after the domains change.
 	tunnelOnly := map[string]bool{}
-	for _, rt := range p.rt.Routes() {
-		for _, h := range rt.Hostnames {
-			tunnelOnly[h] = rt.TunnelOnly
+	waitFor(t, func() bool {
+		clear(tunnelOnly)
+		for _, rt := range p.rt.Routes() {
+			for _, h := range rt.Hostnames {
+				tunnelOnly[h] = rt.TunnelOnly
+			}
 		}
-	}
-	if only, ok := tunnelOnly["api.tempo.run"]; !ok || !only || tunnelOnly["api.example.com"] {
+		_, a := tunnelOnly["api.tempo.run"]
+		_, b := tunnelOnly["api.example.com"]
+		return a && b
+	})
+	if !tunnelOnly["api.tempo.run"] || tunnelOnly["api.example.com"] {
 		t.Fatalf("tunnel-only routes = %v", tunnelOnly)
 	}
 }
