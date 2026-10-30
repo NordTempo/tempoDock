@@ -66,6 +66,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addServiceStatsStmt, err = db.PrepareContext(ctx, addServiceStats); err != nil {
 		return nil, fmt.Errorf("error preparing query AddServiceStats: %w", err)
 	}
+	if q.addSiteHostnameStmt, err = db.PrepareContext(ctx, addSiteHostname); err != nil {
+		return nil, fmt.Errorf("error preparing query AddSiteHostname: %w", err)
+	}
+	if q.addSiteMarkerStmt, err = db.PrepareContext(ctx, addSiteMarker); err != nil {
+		return nil, fmt.Errorf("error preparing query AddSiteMarker: %w", err)
+	}
 	if q.addTrafficStmt, err = db.PrepareContext(ctx, addTraffic); err != nil {
 		return nil, fmt.Errorf("error preparing query AddTraffic: %w", err)
 	}
@@ -83,6 +89,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.archiveServiceStmt, err = db.PrepareContext(ctx, archiveService); err != nil {
 		return nil, fmt.Errorf("error preparing query ArchiveService: %w", err)
+	}
+	if q.archiveSiteStmt, err = db.PrepareContext(ctx, archiveSite); err != nil {
+		return nil, fmt.Errorf("error preparing query ArchiveSite: %w", err)
 	}
 	if q.clearArchivedHostPortsStmt, err = db.PrepareContext(ctx, clearArchivedHostPorts); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearArchivedHostPorts: %w", err)
@@ -113,6 +122,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.countPendingCLILoginsStmt, err = db.PrepareContext(ctx, countPendingCLILogins); err != nil {
 		return nil, fmt.Errorf("error preparing query CountPendingCLILogins: %w", err)
+	}
+	if q.countSiteHostnamesStmt, err = db.PrepareContext(ctx, countSiteHostnames); err != nil {
+		return nil, fmt.Errorf("error preparing query CountSiteHostnames: %w", err)
 	}
 	if q.countUsersStmt, err = db.PrepareContext(ctx, countUsers); err != nil {
 		return nil, fmt.Errorf("error preparing query CountUsers: %w", err)
@@ -176,6 +188,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.createSessionStmt, err = db.PrepareContext(ctx, createSession); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSession: %w", err)
+	}
+	if q.createSiteStmt, err = db.PrepareContext(ctx, createSite); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateSite: %w", err)
 	}
 	if q.createStorageConnectionStmt, err = db.PrepareContext(ctx, createStorageConnection); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateStorageConnection: %w", err)
@@ -308,6 +323,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.detachLocalServerStmt, err = db.PrepareContext(ctx, detachLocalServer); err != nil {
 		return nil, fmt.Errorf("error preparing query DetachLocalServer: %w", err)
+	}
+	if q.domainScopeStmt, err = db.PrepareContext(ctx, domainScope); err != nil {
+		return nil, fmt.Errorf("error preparing query DomainScope: %w", err)
 	}
 	if q.downsampleServerStatsStmt, err = db.PrepareContext(ctx, downsampleServerStats); err != nil {
 		return nil, fmt.Errorf("error preparing query DownsampleServerStats: %w", err)
@@ -492,6 +510,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getSessionUserStmt, err = db.PrepareContext(ctx, getSessionUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSessionUser: %w", err)
 	}
+	if q.getSiteStmt, err = db.PrepareContext(ctx, getSite); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSite: %w", err)
+	}
+	if q.getSiteByNameStmt, err = db.PrepareContext(ctx, getSiteByName); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSiteByName: %w", err)
+	}
+	if q.getSiteHostnameStmt, err = db.PrepareContext(ctx, getSiteHostname); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSiteHostname: %w", err)
+	}
 	if q.getStorageConnectionStmt, err = db.PrepareContext(ctx, getStorageConnection); err != nil {
 		return nil, fmt.Errorf("error preparing query GetStorageConnection: %w", err)
 	}
@@ -536,6 +563,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listAlertsStmt, err = db.PrepareContext(ctx, listAlerts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAlerts: %w", err)
+	}
+	if q.listAllSitesStmt, err = db.PrepareContext(ctx, listAllSites); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAllSites: %w", err)
+	}
+	if q.listAnalyticsHostsStmt, err = db.PrepareContext(ctx, listAnalyticsHosts); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAnalyticsHosts: %w", err)
 	}
 	if q.listAnalyticsSaltsStmt, err = db.PrepareContext(ctx, listAnalyticsSalts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAnalyticsSalts: %w", err)
@@ -630,6 +663,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listLatestScheduledBackupsStmt, err = db.PrepareContext(ctx, listLatestScheduledBackups); err != nil {
 		return nil, fmt.Errorf("error preparing query ListLatestScheduledBackups: %w", err)
 	}
+	if q.listLiveSitesStmt, err = db.PrepareContext(ctx, listLiveSites); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLiveSites: %w", err)
+	}
 	if q.listLocalBackupServersStmt, err = db.PrepareContext(ctx, listLocalBackupServers); err != nil {
 		return nil, fmt.Errorf("error preparing query ListLocalBackupServers: %w", err)
 	}
@@ -695,6 +731,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listProjectServicesStmt, err = db.PrepareContext(ctx, listProjectServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectServices: %w", err)
+	}
+	if q.listProjectSitesStmt, err = db.PrepareContext(ctx, listProjectSites); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectSites: %w", err)
 	}
 	if q.listProjectVariableNamesStmt, err = db.PrepareContext(ctx, listProjectVariableNames); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectVariableNames: %w", err)
@@ -764,6 +803,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listServicesStmt, err = db.PrepareContext(ctx, listServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServices: %w", err)
+	}
+	if q.listSiteDeploysStmt, err = db.PrepareContext(ctx, listSiteDeploys); err != nil {
+		return nil, fmt.Errorf("error preparing query ListSiteDeploys: %w", err)
+	}
+	if q.listSiteHostnamesStmt, err = db.PrepareContext(ctx, listSiteHostnames); err != nil {
+		return nil, fmt.Errorf("error preparing query ListSiteHostnames: %w", err)
+	}
+	if q.listSiteMarkersStmt, err = db.PrepareContext(ctx, listSiteMarkers); err != nil {
+		return nil, fmt.Errorf("error preparing query ListSiteMarkers: %w", err)
 	}
 	if q.listStatsNamesStmt, err = db.PrepareContext(ctx, listStatsNames); err != nil {
 		return nil, fmt.Errorf("error preparing query ListStatsNames: %w", err)
@@ -873,6 +921,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.removeOrgMemberStmt, err = db.PrepareContext(ctx, removeOrgMember); err != nil {
 		return nil, fmt.Errorf("error preparing query RemoveOrgMember: %w", err)
 	}
+	if q.removeSiteHostnameStmt, err = db.PrepareContext(ctx, removeSiteHostname); err != nil {
+		return nil, fmt.Errorf("error preparing query RemoveSiteHostname: %w", err)
+	}
 	if q.renameOrgStmt, err = db.PrepareContext(ctx, renameOrg); err != nil {
 		return nil, fmt.Errorf("error preparing query RenameOrg: %w", err)
 	}
@@ -881,6 +932,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.renameProjectAlertsStmt, err = db.PrepareContext(ctx, renameProjectAlerts); err != nil {
 		return nil, fmt.Errorf("error preparing query RenameProjectAlerts: %w", err)
+	}
+	if q.renameSiteStmt, err = db.PrepareContext(ctx, renameSite); err != nil {
+		return nil, fmt.Errorf("error preparing query RenameSite: %w", err)
 	}
 	if q.resolveAlertStmt, err = db.PrepareContext(ctx, resolveAlert); err != nil {
 		return nil, fmt.Errorf("error preparing query ResolveAlert: %w", err)
@@ -924,6 +978,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.saveQueryStmt, err = db.PrepareContext(ctx, saveQuery); err != nil {
 		return nil, fmt.Errorf("error preparing query SaveQuery: %w", err)
 	}
+	if q.serviceNamesStmt, err = db.PrepareContext(ctx, serviceNames); err != nil {
+		return nil, fmt.Errorf("error preparing query ServiceNames: %w", err)
+	}
 	if q.setAlertChannelFailedStmt, err = db.PrepareContext(ctx, setAlertChannelFailed); err != nil {
 		return nil, fmt.Errorf("error preparing query SetAlertChannelFailed: %w", err)
 	}
@@ -935,6 +992,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setAnalyticsServerStmt, err = db.PrepareContext(ctx, setAnalyticsServer); err != nil {
 		return nil, fmt.Errorf("error preparing query SetAnalyticsServer: %w", err)
+	}
+	if q.setAnalyticsSiteDefaultsStmt, err = db.PrepareContext(ctx, setAnalyticsSiteDefaults); err != nil {
+		return nil, fmt.Errorf("error preparing query SetAnalyticsSiteDefaults: %w", err)
 	}
 	if q.setCloudflareConnectionStatusStmt, err = db.PrepareContext(ctx, setCloudflareConnectionStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query SetCloudflareConnectionStatus: %w", err)
@@ -1026,6 +1086,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setServiceTemplateStmt, err = db.PrepareContext(ctx, setServiceTemplate); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServiceTemplate: %w", err)
 	}
+	if q.setSiteEnvironmentStmt, err = db.PrepareContext(ctx, setSiteEnvironment); err != nil {
+		return nil, fmt.Errorf("error preparing query SetSiteEnvironment: %w", err)
+	}
+	if q.setSiteHostnameServiceStmt, err = db.PrepareContext(ctx, setSiteHostnameService); err != nil {
+		return nil, fmt.Errorf("error preparing query SetSiteHostnameService: %w", err)
+	}
+	if q.setSiteSettingsStmt, err = db.PrepareContext(ctx, setSiteSettings); err != nil {
+		return nil, fmt.Errorf("error preparing query SetSiteSettings: %w", err)
+	}
 	if q.setTokenDataAccessStmt, err = db.PrepareContext(ctx, setTokenDataAccess); err != nil {
 		return nil, fmt.Errorf("error preparing query SetTokenDataAccess: %w", err)
 	}
@@ -1040,6 +1109,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setVariablePendingStmt, err = db.PrepareContext(ctx, setVariablePending); err != nil {
 		return nil, fmt.Errorf("error preparing query SetVariablePending: %w", err)
+	}
+	if q.siteOfServiceStmt, err = db.PrepareContext(ctx, siteOfService); err != nil {
+		return nil, fmt.Errorf("error preparing query SiteOfService: %w", err)
 	}
 	if q.startControlPlaneBackupStmt, err = db.PrepareContext(ctx, startControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query StartControlPlaneBackup: %w", err)
@@ -1188,6 +1260,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing addServiceStatsStmt: %w", cerr)
 		}
 	}
+	if q.addSiteHostnameStmt != nil {
+		if cerr := q.addSiteHostnameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addSiteHostnameStmt: %w", cerr)
+		}
+	}
+	if q.addSiteMarkerStmt != nil {
+		if cerr := q.addSiteMarkerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addSiteMarkerStmt: %w", cerr)
+		}
+	}
 	if q.addTrafficStmt != nil {
 		if cerr := q.addTrafficStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addTrafficStmt: %w", cerr)
@@ -1216,6 +1298,11 @@ func (q *Queries) Close() error {
 	if q.archiveServiceStmt != nil {
 		if cerr := q.archiveServiceStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing archiveServiceStmt: %w", cerr)
+		}
+	}
+	if q.archiveSiteStmt != nil {
+		if cerr := q.archiveSiteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing archiveSiteStmt: %w", cerr)
 		}
 	}
 	if q.clearArchivedHostPortsStmt != nil {
@@ -1266,6 +1353,11 @@ func (q *Queries) Close() error {
 	if q.countPendingCLILoginsStmt != nil {
 		if cerr := q.countPendingCLILoginsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countPendingCLILoginsStmt: %w", cerr)
+		}
+	}
+	if q.countSiteHostnamesStmt != nil {
+		if cerr := q.countSiteHostnamesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countSiteHostnamesStmt: %w", cerr)
 		}
 	}
 	if q.countUsersStmt != nil {
@@ -1371,6 +1463,11 @@ func (q *Queries) Close() error {
 	if q.createSessionStmt != nil {
 		if cerr := q.createSessionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createSessionStmt: %w", cerr)
+		}
+	}
+	if q.createSiteStmt != nil {
+		if cerr := q.createSiteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createSiteStmt: %w", cerr)
 		}
 	}
 	if q.createStorageConnectionStmt != nil {
@@ -1591,6 +1688,11 @@ func (q *Queries) Close() error {
 	if q.detachLocalServerStmt != nil {
 		if cerr := q.detachLocalServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing detachLocalServerStmt: %w", cerr)
+		}
+	}
+	if q.domainScopeStmt != nil {
+		if cerr := q.domainScopeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing domainScopeStmt: %w", cerr)
 		}
 	}
 	if q.downsampleServerStatsStmt != nil {
@@ -1898,6 +2000,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getSessionUserStmt: %w", cerr)
 		}
 	}
+	if q.getSiteStmt != nil {
+		if cerr := q.getSiteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSiteStmt: %w", cerr)
+		}
+	}
+	if q.getSiteByNameStmt != nil {
+		if cerr := q.getSiteByNameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSiteByNameStmt: %w", cerr)
+		}
+	}
+	if q.getSiteHostnameStmt != nil {
+		if cerr := q.getSiteHostnameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSiteHostnameStmt: %w", cerr)
+		}
+	}
 	if q.getStorageConnectionStmt != nil {
 		if cerr := q.getStorageConnectionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getStorageConnectionStmt: %w", cerr)
@@ -1971,6 +2088,16 @@ func (q *Queries) Close() error {
 	if q.listAlertsStmt != nil {
 		if cerr := q.listAlertsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listAlertsStmt: %w", cerr)
+		}
+	}
+	if q.listAllSitesStmt != nil {
+		if cerr := q.listAllSitesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAllSitesStmt: %w", cerr)
+		}
+	}
+	if q.listAnalyticsHostsStmt != nil {
+		if cerr := q.listAnalyticsHostsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAnalyticsHostsStmt: %w", cerr)
 		}
 	}
 	if q.listAnalyticsSaltsStmt != nil {
@@ -2128,6 +2255,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listLatestScheduledBackupsStmt: %w", cerr)
 		}
 	}
+	if q.listLiveSitesStmt != nil {
+		if cerr := q.listLiveSitesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLiveSitesStmt: %w", cerr)
+		}
+	}
 	if q.listLocalBackupServersStmt != nil {
 		if cerr := q.listLocalBackupServersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listLocalBackupServersStmt: %w", cerr)
@@ -2236,6 +2368,11 @@ func (q *Queries) Close() error {
 	if q.listProjectServicesStmt != nil {
 		if cerr := q.listProjectServicesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listProjectServicesStmt: %w", cerr)
+		}
+	}
+	if q.listProjectSitesStmt != nil {
+		if cerr := q.listProjectSitesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectSitesStmt: %w", cerr)
 		}
 	}
 	if q.listProjectVariableNamesStmt != nil {
@@ -2351,6 +2488,21 @@ func (q *Queries) Close() error {
 	if q.listServicesStmt != nil {
 		if cerr := q.listServicesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServicesStmt: %w", cerr)
+		}
+	}
+	if q.listSiteDeploysStmt != nil {
+		if cerr := q.listSiteDeploysStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listSiteDeploysStmt: %w", cerr)
+		}
+	}
+	if q.listSiteHostnamesStmt != nil {
+		if cerr := q.listSiteHostnamesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listSiteHostnamesStmt: %w", cerr)
+		}
+	}
+	if q.listSiteMarkersStmt != nil {
+		if cerr := q.listSiteMarkersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listSiteMarkersStmt: %w", cerr)
 		}
 	}
 	if q.listStatsNamesStmt != nil {
@@ -2533,6 +2685,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing removeOrgMemberStmt: %w", cerr)
 		}
 	}
+	if q.removeSiteHostnameStmt != nil {
+		if cerr := q.removeSiteHostnameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing removeSiteHostnameStmt: %w", cerr)
+		}
+	}
 	if q.renameOrgStmt != nil {
 		if cerr := q.renameOrgStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing renameOrgStmt: %w", cerr)
@@ -2546,6 +2703,11 @@ func (q *Queries) Close() error {
 	if q.renameProjectAlertsStmt != nil {
 		if cerr := q.renameProjectAlertsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing renameProjectAlertsStmt: %w", cerr)
+		}
+	}
+	if q.renameSiteStmt != nil {
+		if cerr := q.renameSiteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing renameSiteStmt: %w", cerr)
 		}
 	}
 	if q.resolveAlertStmt != nil {
@@ -2618,6 +2780,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing saveQueryStmt: %w", cerr)
 		}
 	}
+	if q.serviceNamesStmt != nil {
+		if cerr := q.serviceNamesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing serviceNamesStmt: %w", cerr)
+		}
+	}
 	if q.setAlertChannelFailedStmt != nil {
 		if cerr := q.setAlertChannelFailedStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setAlertChannelFailedStmt: %w", cerr)
@@ -2636,6 +2803,11 @@ func (q *Queries) Close() error {
 	if q.setAnalyticsServerStmt != nil {
 		if cerr := q.setAnalyticsServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setAnalyticsServerStmt: %w", cerr)
+		}
+	}
+	if q.setAnalyticsSiteDefaultsStmt != nil {
+		if cerr := q.setAnalyticsSiteDefaultsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setAnalyticsSiteDefaultsStmt: %w", cerr)
 		}
 	}
 	if q.setCloudflareConnectionStatusStmt != nil {
@@ -2788,6 +2960,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setServiceTemplateStmt: %w", cerr)
 		}
 	}
+	if q.setSiteEnvironmentStmt != nil {
+		if cerr := q.setSiteEnvironmentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setSiteEnvironmentStmt: %w", cerr)
+		}
+	}
+	if q.setSiteHostnameServiceStmt != nil {
+		if cerr := q.setSiteHostnameServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setSiteHostnameServiceStmt: %w", cerr)
+		}
+	}
+	if q.setSiteSettingsStmt != nil {
+		if cerr := q.setSiteSettingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setSiteSettingsStmt: %w", cerr)
+		}
+	}
 	if q.setTokenDataAccessStmt != nil {
 		if cerr := q.setTokenDataAccessStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setTokenDataAccessStmt: %w", cerr)
@@ -2811,6 +2998,11 @@ func (q *Queries) Close() error {
 	if q.setVariablePendingStmt != nil {
 		if cerr := q.setVariablePendingStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setVariablePendingStmt: %w", cerr)
+		}
+	}
+	if q.siteOfServiceStmt != nil {
+		if cerr := q.siteOfServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing siteOfServiceStmt: %w", cerr)
 		}
 	}
 	if q.startControlPlaneBackupStmt != nil {
@@ -2986,12 +3178,15 @@ type Queries struct {
 	addSensitiveColumnStmt              *sql.Stmt
 	addServerStatsStmt                  *sql.Stmt
 	addServiceStatsStmt                 *sql.Stmt
+	addSiteHostnameStmt                 *sql.Stmt
+	addSiteMarkerStmt                   *sql.Stmt
 	addTrafficStmt                      *sql.Stmt
 	addTrafficPathStmt                  *sql.Stmt
 	applyVariableStmt                   *sql.Stmt
 	applyVolumeStmt                     *sql.Stmt
 	archiveProjectStmt                  *sql.Stmt
 	archiveServiceStmt                  *sql.Stmt
+	archiveSiteStmt                     *sql.Stmt
 	clearArchivedHostPortsStmt          *sql.Stmt
 	clearGitPendingStmt                 *sql.Stmt
 	clearReleaseHostPortStmt            *sql.Stmt
@@ -3002,6 +3197,7 @@ type Queries struct {
 	countOrgAdminsStmt                  *sql.Stmt
 	countOrgProjectsStmt                *sql.Stmt
 	countPendingCLILoginsStmt           *sql.Stmt
+	countSiteHostnamesStmt              *sql.Stmt
 	countUsersStmt                      *sql.Stmt
 	createAlertChannelStmt              *sql.Stmt
 	createAnalyticsSettingsStmt         *sql.Stmt
@@ -3023,6 +3219,7 @@ type Queries struct {
 	createServerStmt                    *sql.Stmt
 	createServiceStmt                   *sql.Stmt
 	createSessionStmt                   *sql.Stmt
+	createSiteStmt                      *sql.Stmt
 	createStorageConnectionStmt         *sql.Stmt
 	createTokenStmt                     *sql.Stmt
 	createUserStmt                      *sql.Stmt
@@ -3067,6 +3264,7 @@ type Queries struct {
 	deleteVariableStmt                  *sql.Stmt
 	deleteVolumeStmt                    *sql.Stmt
 	detachLocalServerStmt               *sql.Stmt
+	domainScopeStmt                     *sql.Stmt
 	downsampleServerStatsStmt           *sql.Stmt
 	downsampleServiceStatsStmt          *sql.Stmt
 	expireChangesetsStmt                *sql.Stmt
@@ -3128,6 +3326,9 @@ type Queries struct {
 	getServiceAccessStmt                *sql.Stmt
 	getServiceByNameStmt                *sql.Stmt
 	getSessionUserStmt                  *sql.Stmt
+	getSiteStmt                         *sql.Stmt
+	getSiteByNameStmt                   *sql.Stmt
+	getSiteHostnameStmt                 *sql.Stmt
 	getStorageConnectionStmt            *sql.Stmt
 	getStorageConnectionByIDStmt        *sql.Stmt
 	getTokenStmt                        *sql.Stmt
@@ -3143,6 +3344,8 @@ type Queries struct {
 	listAlertChannelsStmt               *sql.Stmt
 	listAlertNoticesStmt                *sql.Stmt
 	listAlertsStmt                      *sql.Stmt
+	listAllSitesStmt                    *sql.Stmt
+	listAnalyticsHostsStmt              *sql.Stmt
 	listAnalyticsSaltsStmt              *sql.Stmt
 	listAuditEventsStmt                 *sql.Stmt
 	listAuditEventsByActionStmt         *sql.Stmt
@@ -3174,6 +3377,7 @@ type Queries struct {
 	listKeptDigestsStmt                 *sql.Stmt
 	listKeptImageIDsStmt                *sql.Stmt
 	listLatestScheduledBackupsStmt      *sql.Stmt
+	listLiveSitesStmt                   *sql.Stmt
 	listLocalBackupServersStmt          *sql.Stmt
 	listOldestAuditEventsStmt           *sql.Stmt
 	listOpenAlertsStmt                  *sql.Stmt
@@ -3196,6 +3400,7 @@ type Queries struct {
 	listProjectLatestBackupsStmt        *sql.Stmt
 	listProjectReleaseHeadsStmt         *sql.Stmt
 	listProjectServicesStmt             *sql.Stmt
+	listProjectSitesStmt                *sql.Stmt
 	listProjectVariableNamesStmt        *sql.Stmt
 	listProjectVolumesStmt              *sql.Stmt
 	listProjectsStmt                    *sql.Stmt
@@ -3219,6 +3424,9 @@ type Queries struct {
 	listServiceCloudflareRecordsStmt    *sql.Stmt
 	listServiceStatsStmt                *sql.Stmt
 	listServicesStmt                    *sql.Stmt
+	listSiteDeploysStmt                 *sql.Stmt
+	listSiteHostnamesStmt               *sql.Stmt
+	listSiteMarkersStmt                 *sql.Stmt
 	listStatsNamesStmt                  *sql.Stmt
 	listStatsTargetsStmt                *sql.Stmt
 	listStorageConnectionsStmt          *sql.Stmt
@@ -3255,9 +3463,11 @@ type Queries struct {
 	relabelBackupRepositoryStmt         *sql.Stmt
 	relabelControlPlaneRepositoryStmt   *sql.Stmt
 	removeOrgMemberStmt                 *sql.Stmt
+	removeSiteHostnameStmt              *sql.Stmt
 	renameOrgStmt                       *sql.Stmt
 	renameProjectStmt                   *sql.Stmt
 	renameProjectAlertsStmt             *sql.Stmt
+	renameSiteStmt                      *sql.Stmt
 	resolveAlertStmt                    *sql.Stmt
 	restoreVariableStmt                 *sql.Stmt
 	retryCloudflareRecordStmt           *sql.Stmt
@@ -3272,10 +3482,12 @@ type Queries struct {
 	saveCloudflareRecordStmt            *sql.Stmt
 	saveCloudflareZoneStmt              *sql.Stmt
 	saveQueryStmt                       *sql.Stmt
+	serviceNamesStmt                    *sql.Stmt
 	setAlertChannelFailedStmt           *sql.Stmt
 	setAlertChannelSentStmt             *sql.Stmt
 	setAnalyticsEnabledStmt             *sql.Stmt
 	setAnalyticsServerStmt              *sql.Stmt
+	setAnalyticsSiteDefaultsStmt        *sql.Stmt
 	setCloudflareConnectionStatusStmt   *sql.Stmt
 	setCloudflareTunnelAbsentStmt       *sql.Stmt
 	setCloudflareTunnelIDStmt           *sql.Stmt
@@ -3306,11 +3518,15 @@ type Queries struct {
 	setServiceDatabaseSettingsStmt      *sql.Stmt
 	setServiceRecordsAbsentStmt         *sql.Stmt
 	setServiceTemplateStmt              *sql.Stmt
+	setSiteEnvironmentStmt              *sql.Stmt
+	setSiteHostnameServiceStmt          *sql.Stmt
+	setSiteSettingsStmt                 *sql.Stmt
 	setTokenDataAccessStmt              *sql.Stmt
 	setTrafficVisitorsStmt              *sql.Stmt
 	setUserDisabledStmt                 *sql.Stmt
 	setUserPasswordStmt                 *sql.Stmt
 	setVariablePendingStmt              *sql.Stmt
+	siteOfServiceStmt                   *sql.Stmt
 	startControlPlaneBackupStmt         *sql.Stmt
 	supersedeReleaseStmt                *sql.Stmt
 	topTrafficPathsStmt                 *sql.Stmt
@@ -3355,12 +3571,15 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addSensitiveColumnStmt:              q.addSensitiveColumnStmt,
 		addServerStatsStmt:                  q.addServerStatsStmt,
 		addServiceStatsStmt:                 q.addServiceStatsStmt,
+		addSiteHostnameStmt:                 q.addSiteHostnameStmt,
+		addSiteMarkerStmt:                   q.addSiteMarkerStmt,
 		addTrafficStmt:                      q.addTrafficStmt,
 		addTrafficPathStmt:                  q.addTrafficPathStmt,
 		applyVariableStmt:                   q.applyVariableStmt,
 		applyVolumeStmt:                     q.applyVolumeStmt,
 		archiveProjectStmt:                  q.archiveProjectStmt,
 		archiveServiceStmt:                  q.archiveServiceStmt,
+		archiveSiteStmt:                     q.archiveSiteStmt,
 		clearArchivedHostPortsStmt:          q.clearArchivedHostPortsStmt,
 		clearGitPendingStmt:                 q.clearGitPendingStmt,
 		clearReleaseHostPortStmt:            q.clearReleaseHostPortStmt,
@@ -3371,6 +3590,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		countOrgAdminsStmt:                  q.countOrgAdminsStmt,
 		countOrgProjectsStmt:                q.countOrgProjectsStmt,
 		countPendingCLILoginsStmt:           q.countPendingCLILoginsStmt,
+		countSiteHostnamesStmt:              q.countSiteHostnamesStmt,
 		countUsersStmt:                      q.countUsersStmt,
 		createAlertChannelStmt:              q.createAlertChannelStmt,
 		createAnalyticsSettingsStmt:         q.createAnalyticsSettingsStmt,
@@ -3392,6 +3612,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createServerStmt:                    q.createServerStmt,
 		createServiceStmt:                   q.createServiceStmt,
 		createSessionStmt:                   q.createSessionStmt,
+		createSiteStmt:                      q.createSiteStmt,
 		createStorageConnectionStmt:         q.createStorageConnectionStmt,
 		createTokenStmt:                     q.createTokenStmt,
 		createUserStmt:                      q.createUserStmt,
@@ -3436,6 +3657,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteVariableStmt:                  q.deleteVariableStmt,
 		deleteVolumeStmt:                    q.deleteVolumeStmt,
 		detachLocalServerStmt:               q.detachLocalServerStmt,
+		domainScopeStmt:                     q.domainScopeStmt,
 		downsampleServerStatsStmt:           q.downsampleServerStatsStmt,
 		downsampleServiceStatsStmt:          q.downsampleServiceStatsStmt,
 		expireChangesetsStmt:                q.expireChangesetsStmt,
@@ -3497,6 +3719,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getServiceAccessStmt:                q.getServiceAccessStmt,
 		getServiceByNameStmt:                q.getServiceByNameStmt,
 		getSessionUserStmt:                  q.getSessionUserStmt,
+		getSiteStmt:                         q.getSiteStmt,
+		getSiteByNameStmt:                   q.getSiteByNameStmt,
+		getSiteHostnameStmt:                 q.getSiteHostnameStmt,
 		getStorageConnectionStmt:            q.getStorageConnectionStmt,
 		getStorageConnectionByIDStmt:        q.getStorageConnectionByIDStmt,
 		getTokenStmt:                        q.getTokenStmt,
@@ -3512,6 +3737,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listAlertChannelsStmt:               q.listAlertChannelsStmt,
 		listAlertNoticesStmt:                q.listAlertNoticesStmt,
 		listAlertsStmt:                      q.listAlertsStmt,
+		listAllSitesStmt:                    q.listAllSitesStmt,
+		listAnalyticsHostsStmt:              q.listAnalyticsHostsStmt,
 		listAnalyticsSaltsStmt:              q.listAnalyticsSaltsStmt,
 		listAuditEventsStmt:                 q.listAuditEventsStmt,
 		listAuditEventsByActionStmt:         q.listAuditEventsByActionStmt,
@@ -3543,6 +3770,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listKeptDigestsStmt:                 q.listKeptDigestsStmt,
 		listKeptImageIDsStmt:                q.listKeptImageIDsStmt,
 		listLatestScheduledBackupsStmt:      q.listLatestScheduledBackupsStmt,
+		listLiveSitesStmt:                   q.listLiveSitesStmt,
 		listLocalBackupServersStmt:          q.listLocalBackupServersStmt,
 		listOldestAuditEventsStmt:           q.listOldestAuditEventsStmt,
 		listOpenAlertsStmt:                  q.listOpenAlertsStmt,
@@ -3565,6 +3793,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listProjectLatestBackupsStmt:        q.listProjectLatestBackupsStmt,
 		listProjectReleaseHeadsStmt:         q.listProjectReleaseHeadsStmt,
 		listProjectServicesStmt:             q.listProjectServicesStmt,
+		listProjectSitesStmt:                q.listProjectSitesStmt,
 		listProjectVariableNamesStmt:        q.listProjectVariableNamesStmt,
 		listProjectVolumesStmt:              q.listProjectVolumesStmt,
 		listProjectsStmt:                    q.listProjectsStmt,
@@ -3588,6 +3817,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listServiceCloudflareRecordsStmt:    q.listServiceCloudflareRecordsStmt,
 		listServiceStatsStmt:                q.listServiceStatsStmt,
 		listServicesStmt:                    q.listServicesStmt,
+		listSiteDeploysStmt:                 q.listSiteDeploysStmt,
+		listSiteHostnamesStmt:               q.listSiteHostnamesStmt,
+		listSiteMarkersStmt:                 q.listSiteMarkersStmt,
 		listStatsNamesStmt:                  q.listStatsNamesStmt,
 		listStatsTargetsStmt:                q.listStatsTargetsStmt,
 		listStorageConnectionsStmt:          q.listStorageConnectionsStmt,
@@ -3624,9 +3856,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		relabelBackupRepositoryStmt:         q.relabelBackupRepositoryStmt,
 		relabelControlPlaneRepositoryStmt:   q.relabelControlPlaneRepositoryStmt,
 		removeOrgMemberStmt:                 q.removeOrgMemberStmt,
+		removeSiteHostnameStmt:              q.removeSiteHostnameStmt,
 		renameOrgStmt:                       q.renameOrgStmt,
 		renameProjectStmt:                   q.renameProjectStmt,
 		renameProjectAlertsStmt:             q.renameProjectAlertsStmt,
+		renameSiteStmt:                      q.renameSiteStmt,
 		resolveAlertStmt:                    q.resolveAlertStmt,
 		restoreVariableStmt:                 q.restoreVariableStmt,
 		retryCloudflareRecordStmt:           q.retryCloudflareRecordStmt,
@@ -3641,10 +3875,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		saveCloudflareRecordStmt:            q.saveCloudflareRecordStmt,
 		saveCloudflareZoneStmt:              q.saveCloudflareZoneStmt,
 		saveQueryStmt:                       q.saveQueryStmt,
+		serviceNamesStmt:                    q.serviceNamesStmt,
 		setAlertChannelFailedStmt:           q.setAlertChannelFailedStmt,
 		setAlertChannelSentStmt:             q.setAlertChannelSentStmt,
 		setAnalyticsEnabledStmt:             q.setAnalyticsEnabledStmt,
 		setAnalyticsServerStmt:              q.setAnalyticsServerStmt,
+		setAnalyticsSiteDefaultsStmt:        q.setAnalyticsSiteDefaultsStmt,
 		setCloudflareConnectionStatusStmt:   q.setCloudflareConnectionStatusStmt,
 		setCloudflareTunnelAbsentStmt:       q.setCloudflareTunnelAbsentStmt,
 		setCloudflareTunnelIDStmt:           q.setCloudflareTunnelIDStmt,
@@ -3675,11 +3911,15 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setServiceDatabaseSettingsStmt:      q.setServiceDatabaseSettingsStmt,
 		setServiceRecordsAbsentStmt:         q.setServiceRecordsAbsentStmt,
 		setServiceTemplateStmt:              q.setServiceTemplateStmt,
+		setSiteEnvironmentStmt:              q.setSiteEnvironmentStmt,
+		setSiteHostnameServiceStmt:          q.setSiteHostnameServiceStmt,
+		setSiteSettingsStmt:                 q.setSiteSettingsStmt,
 		setTokenDataAccessStmt:              q.setTokenDataAccessStmt,
 		setTrafficVisitorsStmt:              q.setTrafficVisitorsStmt,
 		setUserDisabledStmt:                 q.setUserDisabledStmt,
 		setUserPasswordStmt:                 q.setUserPasswordStmt,
 		setVariablePendingStmt:              q.setVariablePendingStmt,
+		siteOfServiceStmt:                   q.siteOfServiceStmt,
 		startControlPlaneBackupStmt:         q.startControlPlaneBackupStmt,
 		supersedeReleaseStmt:                q.supersedeReleaseStmt,
 		topTrafficPathsStmt:                 q.topTrafficPathsStmt,

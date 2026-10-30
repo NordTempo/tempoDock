@@ -347,3 +347,46 @@ func (s *Store) loadRollupState(ctx context.Context) error {
 	}
 	return nil
 }
+
+// pruneStep is how much of a site's events one delete covers, so a first
+// prune of a long history doesn't hold writes up for long.
+const pruneStep = 7 * day
+
+// Prune deletes a site's raw events before q.Before (Unix ms), a week at
+// a time from the oldest, letting writes in between; but never from a day
+// that isn't rolled up yet, so the day's totals stay. The space is reused
+// after the next checkpoint.
+func (s *Store) Prune(ctx context.Context, q analytics.PruneQuery) (analytics.PruneResult, error) {
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	before := time.UnixMilli(q.Before).UTC()
+	if b := s.builtThrough(); b.Before(before) {
+		before = b
+	}
+	var stale, oldest sql.NullTime
+	if err := s.db.QueryRowContext(ctx, "SELECT min(day)::TIMESTAMP FROM rollup_days WHERE site_id = $1 AND stale", uint32(q.Site)).Scan(&stale); err != nil {
+		return analytics.PruneResult{}, err
+	}
+	if stale.Valid && stale.Time.Before(before) {
+		before = stale.Time
+	}
+	if err := s.db.QueryRowContext(ctx, "SELECT min(ts) FROM events WHERE site_id = $1", uint32(q.Site)).Scan(&oldest); err != nil || !oldest.Valid {
+		return analytics.PruneResult{}, err
+	}
+	var out analytics.PruneResult
+	for from := oldest.Time.UTC(); from.Before(before); from = from.Add(pruneStep) {
+		to := from.Add(pruneStep)
+		if to.After(before) {
+			to = before
+		}
+		s.writeMu.Lock()
+		res, err := s.db.ExecContext(ctx, "DELETE FROM events WHERE site_id = $1 AND ts < $2", uint32(q.Site), to)
+		s.writeMu.Unlock()
+		if err != nil {
+			return out, err
+		}
+		n, _ := res.RowsAffected()
+		out.Deleted += n
+	}
+	return out, nil
+}

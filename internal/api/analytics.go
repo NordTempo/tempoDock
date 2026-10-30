@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
 )
@@ -30,5 +33,139 @@ func registerAnalytics(s *Server, a huma.API) {
 		Body apitypes.SetAnalyticsServerRequest
 	}) (*out[apitypes.AnalyticsStatus], error) {
 		return reply(s.core.SetAnalyticsServer(ctx, actor, in.Body.Server))
+	})
+}
+
+// SitePath addresses a site of a project.
+type SitePath struct {
+	ProjectPath
+	Site string `path:"site" doc:"Site name"`
+}
+
+// StatsParams pick a dashboard's range and filters.
+type StatsParams struct {
+	Range  string   `query:"range" enum:"24h,7d,30d,90d,12m," doc:"A range ending now; default 30d"`
+	From   int64    `query:"from" doc:"Start of a custom range, Unix ms (with to)"`
+	To     int64    `query:"to" doc:"End of a custom range, Unix ms"`
+	Filter []string `query:"filter" doc:"dimension:op:value, op is, is_not or contains; repeat for more"`
+}
+
+// query parses the parameters for core.
+func (p StatsParams) query() (core.StatsQuery, error) {
+	q := core.StatsQuery{Range: p.Range, From: p.From, To: p.To}
+	for _, f := range p.Filter {
+		dim, rest, ok1 := strings.Cut(f, ":")
+		op, value, ok2 := strings.Cut(rest, ":")
+		if !ok1 || !ok2 {
+			return q, huma.Error400BadRequest(fmt.Sprintf("filter %q must look like country:is:NO", f))
+		}
+		q.Filters = append(q.Filters, analytics.Filter{Dimension: analytics.Dimension(dim), Op: analytics.FilterOp(op), Value: value})
+	}
+	return q, nil
+}
+
+const sitesPath = projectPathT + "/sites"
+
+// registerSites registers Dock Analytics' sites (ADR 0037).
+func registerSites(s *Server, a huma.API) {
+	tags := []string{"analytics"}
+	authed(s, a, huma.Operation{
+		OperationID: "list-sites", Method: http.MethodGet, Path: sitesPath,
+		Summary: "List a project's analytics sites", Tags: tags,
+		Description: "Sets of hostnames whose visits are counted together, live first.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ ProjectPath }) (*out[[]apitypes.Site], error) {
+		return reply(s.core.ListSites(ctx, actor, in.Project))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-site", Method: http.MethodGet, Path: sitesPath + "/{site}",
+		Summary: "Show an analytics site", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct{ SitePath }) (*out[apitypes.Site], error) {
+		return reply(s.core.GetSite(ctx, actor, in.Project, in.Site))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "update-site", Method: http.MethodPatch, Path: sitesPath + "/{site}",
+		Summary: "Rename a site or change its settings", Tags: tags,
+		Description: "Settings given are set on the site; reset names settings to set back to the install's defaults. Needs deploy.",
+		Errors:      []int{http.StatusConflict},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Body apitypes.UpdateSiteRequest
+	}) (*out[apitypes.Site], error) {
+		return reply(s.core.UpdateSite(ctx, actor, in.Project, in.Site, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-site-stats", Method: http.MethodGet, Path: sitesPath + "/{site}/stats",
+		Summary: "A site's dashboard", Tags: tags,
+		Description: "Visitors, page views, sessions, bounce rate and session length for a range and the one before it, the series, the top values of the dashboard's dimensions, and deploys and domain moves as markers. With the analytics server offline the numbers are empty and store_online is false.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		StatsParams
+	}) (*out[apitypes.SiteStats], error) {
+		q, err := in.query()
+		if err != nil {
+			return nil, err
+		}
+		return reply(s.core.SiteStats(ctx, actor, in.Project, in.Site, q))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-site-breakdown", Method: http.MethodGet, Path: sitesPath + "/{site}/breakdown",
+		Summary: "The top values of one dimension", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		StatsParams
+		Dimension string `query:"dimension" required:"true" doc:"page, entry_page, exit_page, hostname, referrer, channel, utm_source, country, city, browser, os, device, screen, language, event, outbound, service, release, ..."`
+		Limit     int    `query:"limit" minimum:"1" maximum:"1000" default:"100"`
+	}) (*out[apitypes.SiteBreakdown], error) {
+		q, err := in.query()
+		if err != nil {
+			return nil, err
+		}
+		return reply(s.core.SiteBreakdown(ctx, actor, in.Project, in.Site, analytics.Dimension(in.Dimension), q, in.Limit))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "enable-hostname-analytics", Method: http.MethodPut, Path: Prefix + "/analytics/hostnames/{hostname}",
+		Summary: "Turn analytics on for a domain", Tags: tags,
+		Description: "The hostname joins a site: the one named, else its service's other hostnames' site, else a new one named after it. Its pages then need <script src=\"/_dock/a/s.js\" defer></script>. The first site starts the analytics store. Needs deploy.",
+		Errors:      []int{http.StatusConflict},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Hostname string `path:"hostname"`
+		Body     apitypes.EnableAnalyticsRequest
+	}) (*out[apitypes.Site], error) {
+		return reply(s.core.EnableHostnameAnalytics(ctx, actor, in.Hostname, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "disable-hostname-analytics", Method: http.MethodDelete, Path: Prefix + "/analytics/hostnames/{hostname}",
+		Summary: "Turn analytics off for a domain", Tags: tags,
+		Description: "The site keeps its history; one left without hostnames is archived. Needs deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Hostname string `path:"hostname"`
+	}) (*struct{}, error) {
+		return nil, s.core.DisableHostnameAnalytics(ctx, actor, in.Hostname)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-analytics-defaults", Method: http.MethodGet, Path: Prefix + "/analytics/defaults",
+		Summary: "The install's default site settings", Tags: tags, Description: "Operators only.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.SiteSettings], error) {
+		return reply(s.core.SiteDefaults(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-analytics-defaults", Method: http.MethodPatch, Path: Prefix + "/analytics/defaults",
+		Summary: "Change the install's default site settings", Tags: tags,
+		Description: "Settings given become every site's default where the site sets nothing; reset names settings to set back to Dock's own defaults. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.UpdateSiteRequest }) (*out[apitypes.SiteSettings], error) {
+		return reply(s.core.SetSiteDefaults(ctx, actor, in.Body.Settings, in.Body.Reset))
+	})
+}
+
+// registerSiteLive registers a site's live view (ADR 0037).
+func registerSiteLive(s *Server, a huma.API) {
+	sse(s, a, huma.Operation{
+		OperationID: "site-live", Method: http.MethodGet, Path: sitesPath + "/{site}/live",
+		Summary: "Watch a site live", Tags: []string{"analytics"},
+		Description: "Visitors of the last five minutes and the latest events, now and on every change. Costs nothing while nobody watches.",
+	}, []string{"live"}, sseFormat[apitypes.SiteLive]{
+		name: func(apitypes.SiteLive) string { return "live" },
+	}, func(ctx context.Context, actor core.Actor, in *struct{ SitePath }) (core.Stream[apitypes.SiteLive], error) {
+		return s.core.SiteLive(ctx, actor, in.Project, in.Site)
 	})
 }

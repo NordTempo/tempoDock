@@ -17,8 +17,32 @@ type Store interface {
 	Overview(ctx context.Context, q Query) (Overview, error)
 	Series(ctx context.Context, q SeriesQuery) ([]Point, error)
 	Breakdown(ctx context.Context, q BreakdownQuery) ([]Row, error)
+	Live(ctx context.Context, q LiveQuery) (Live, error)
 	// Health says whether the store answers, and its size.
 	Health(ctx context.Context) (Health, error)
+	// Prune deletes a site's raw events before Before (Unix ms); its daily
+	// rollups stay.
+	Prune(ctx context.Context, q PruneQuery) (PruneResult, error)
+	// UpdateGeoIP has the store fetch this month's location database
+	// unless it has it, and answers the month it has.
+	UpdateGeoIP(ctx context.Context) (GeoIP, error)
+}
+
+// PruneQuery names the raw events Prune deletes.
+type PruneQuery struct {
+	Site   int64 `json:"site"`
+	Before int64 `json:"before"`
+}
+
+// PruneResult says how many events went.
+type PruneResult struct {
+	Deleted int64 `json:"deleted"`
+}
+
+// GeoIP is the store's location database.
+type GeoIP struct {
+	// Month is the database's month, "2026-10"; empty for none yet.
+	Month string `json:"month"`
 }
 
 // Health is the store's state.
@@ -26,6 +50,8 @@ type Health struct {
 	Version   string `json:"version"`
 	Events    int64  `json:"events"`
 	FileBytes int64  `json:"file_bytes"`
+	// GeoIP is the location database's month, "" for none yet.
+	GeoIP string `json:"geoip,omitempty"`
 }
 
 // WriteResult answers a write.
@@ -57,6 +83,13 @@ const (
 	OverviewPath  = "/v1/overview"
 	SeriesPath    = "/v1/series"
 	BreakdownPath = "/v1/breakdown"
+	// LivePath takes POST with a LiveQuery and answers Live.
+	LivePath = "/v1/live"
+	// PrunePath takes POST with a PruneQuery and answers PruneResult.
+	PrunePath = "/v1/prune"
+	// GeoIPPath takes POST and answers GeoIP once the store has this
+	// month's location database (it may download it first).
+	GeoIPPath = "/v1/geoip"
 )
 
 // MaxWriteBatch caps the events of one write, and MaxEventBytes one

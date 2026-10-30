@@ -13,11 +13,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/NordTempo/tempoDock/cmd/dock-analytics/geo"
 	"github.com/NordTempo/tempoDock/cmd/dock-analytics/store"
 	"github.com/NordTempo/tempoDock/internal/analytics"
 )
@@ -55,6 +57,12 @@ func serveCmd(ctx context.Context, args []string) error {
 	defer func() { stopRollups(); <-rollupsDone }()
 
 	a := newAPI(s, token, log, max(1, *queries), *trimMB<<20)
+	// Locations: the database in the volume next to the store's, if one
+	// was downloaded (POST /v1/geoip).
+	if a.geo, err = geo.Open(filepath.Join(filepath.Dir(sf.db), "geoip")); err != nil {
+		log.Error("location database: events get no location until it is downloaded again", "err", err)
+	}
+	a.locate = a.geo.Locate
 	idle := &idleTrim{after: trimAfter, trim: a.trim}
 	srv := &http.Server{
 		Addr:              *listen,
@@ -126,8 +134,9 @@ type api struct {
 	s     *store.Store
 	token []byte
 	log   *slog.Logger
-	// locate looks up locations; nil until a GeoIP database is loaded.
+	// locate looks up locations, from geo (which may have no database).
 	locate store.Locator
+	geo    *geo.DB
 
 	// slots bounds how many queries run at once.
 	slots chan struct{}
@@ -150,6 +159,9 @@ func (a *api) handler() http.Handler {
 	mux.Handle("POST "+analytics.OverviewPath, a.auth(query(a, a.s.Overview)))
 	mux.Handle("POST "+analytics.SeriesPath, a.auth(query(a, a.s.Series)))
 	mux.Handle("POST "+analytics.BreakdownPath, a.auth(query(a, a.s.Breakdown)))
+	mux.Handle("POST "+analytics.LivePath, a.auth(query(a, a.s.Live)))
+	mux.Handle("POST "+analytics.GeoIPPath, a.auth(a.updateGeoIP))
+	mux.Handle("POST "+analytics.PrunePath, a.auth(a.prune))
 	return mux
 }
 
@@ -217,7 +229,11 @@ func (a *api) health(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	reply(w, analytics.Health{Version: version, Events: st.Events, FileBytes: st.FileBytes})
+	h := analytics.Health{Version: version, Events: st.Events, FileBytes: st.FileBytes}
+	if a.geo != nil {
+		h.GeoIP = a.geo.Month()
+	}
+	reply(w, h)
 }
 
 // write appends a batch of JSON-line events (analytics.WritePath).
@@ -269,6 +285,44 @@ func readEvents(body io.Reader) (events []analytics.Event, skipped int, err erro
 		events = append(events, e)
 	}
 	return events, skipped, sc.Err()
+}
+
+// updateGeoIP has the location database fetched for this month, unless
+// it is there (analytics.GeoIPPath). The control plane asks once a day;
+// a month's first ask downloads it (about 130 MB).
+func (a *api) updateGeoIP(w http.ResponseWriter, r *http.Request) {
+	if a.geo == nil {
+		http.Error(w, "no location database directory", http.StatusInternalServerError)
+		return
+	}
+	month, err := a.geo.Update(r.Context(), time.Now())
+	if err != nil && month == "" {
+		a.log.Error("location database", "err", err)
+		http.Error(w, "the location database couldn't be downloaded: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err != nil {
+		a.log.Warn("location database: keeping the one there is", "month", month, "err", err)
+	}
+	reply(w, analytics.GeoIP{Month: month})
+}
+
+// prune deletes a site's old raw events (analytics.PrunePath): a write,
+// so neither a query slot nor the query timeout; a first prune of a long
+// history may take minutes.
+func (a *api) prune(w http.ResponseWriter, r *http.Request) {
+	var q analytics.PruneQuery
+	if err := json.UnmarshalRead(io.LimitReader(r.Body, 4<<10), &q); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := a.s.Prune(r.Context(), q)
+	if err != nil {
+		a.log.Error("prune", "site", q.Site, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	reply(w, res)
 }
 
 // cursor answers a source's position (analytics.CursorPath).

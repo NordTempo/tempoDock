@@ -94,7 +94,7 @@ func (f *domainFlags) add(cmd *cobra.Command) {
 
 func newDomainAddCmd(g *globals) *cobra.Command {
 	var f domainFlags
-	var redirect string
+	var redirect, analyticsMode string
 	var fromCloudflare bool
 	cmd := &cobra.Command{
 		Use:   "add <hostname> [--cloudflare]",
@@ -113,12 +113,13 @@ serves only such domains. A record Dock didn't make at that name is refused.`,
   dock domain add shop.tempo.run -s web --cloudflare`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return g.addDomain(cmd.Context(), f, "/domains", apitypes.AddDomainRequest{Hostname: args[0], RedirectTo: redirect, Cloudflare: fromCloudflare})
+			return g.addDomain(cmd.Context(), f, "/domains", apitypes.AddDomainRequest{Hostname: args[0], RedirectTo: redirect, Cloudflare: fromCloudflare, Analytics: analyticsMode})
 		},
 	}
 	f.add(cmd)
 	cmd.Flags().StringVar(&redirect, "redirect-to", "", "permanently redirect to this hostname instead of serving the service")
 	cmd.Flags().BoolVar(&fromCloudflare, "cloudflare", false, "add it from a connected Cloudflare zone: Dock routes it through the server's tunnel")
+	cmd.Flags().StringVar(&analyticsMode, "analytics", "", "for a hostname that collected analytics on another service: keep its site's history (default) or start a new site (keep|new)")
 	return cmd
 }
 

@@ -124,3 +124,28 @@ type Row struct {
 	Visitors int64  `json:"visitors"`
 	Count    int64  `json:"count"`
 }
+
+// LiveQuery asks for a site's visitors since Since (Unix ms) and its
+// latest events: what a live view starts from.
+type LiveQuery struct {
+	Site  int64 `json:"site"`
+	Since int64 `json:"since"`
+}
+
+// MaxLiveVisitors caps Live's visitors.
+const MaxLiveVisitors = 10_000
+
+// Live is a site's recent activity.
+type Live struct {
+	// Visitors are those seen since the query's Since, with when each was
+	// last seen (Unix ms); at most MaxLiveVisitors.
+	Visitors []LiveVisitor `json:"visitors"`
+	// Recent are the latest events, newest first, at most 20.
+	Recent []Event `json:"recent"`
+}
+
+// LiveVisitor is a visitor and when they were last seen.
+type LiveVisitor struct {
+	Visitor uint64 `json:"visitor"`
+	Last    int64  `json:"last"`
+}

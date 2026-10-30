@@ -350,7 +350,7 @@ func (d *deployment) cutover(ctx context.Context) error {
 	canFallBack := d.old != nil && !d.oldRemoved
 
 	c.routesMu.Lock()
-	routeErr := c.applyRoutesLocked(ctx, serverID, map[int64]int64{d.ss.svc.ID: d.rel.HostPort})
+	routeErr := c.applyRoutesLocked(ctx, serverID, map[int64]routeOverride{d.ss.svc.ID: {port: d.rel.HostPort, release: d.rel.ID}})
 	if routeErr != nil && canFallBack {
 		c.routesMu.Unlock()
 		// The old release never stopped serving and keeps doing so.

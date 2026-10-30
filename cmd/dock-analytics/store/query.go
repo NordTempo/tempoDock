@@ -354,3 +354,47 @@ GROUP BY v ORDER BY visitors DESC, n DESC, v LIMIT `+strconv.Itoa(limit), p...)
 	}
 	return out, rows.Err()
 }
+
+// Live returns a site's visitors since q.Since with when each was last
+// seen, and its 20 latest events: what a live view starts from.
+func (s *Store) Live(ctx context.Context, q analytics.LiveQuery) (analytics.Live, error) {
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	out := analytics.Live{Visitors: []analytics.LiveVisitor{}, Recent: []analytics.Event{}}
+	since := time.UnixMilli(q.Since).UTC()
+	rows, err := s.db.QueryContext(ctx, `SELECT visitor_id, epoch_ms(max(ts)) FROM events WHERE site_id = $1 AND ts >= $2
+GROUP BY visitor_id LIMIT `+strconv.Itoa(analytics.MaxLiveVisitors), uint32(q.Site), since)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var v analytics.LiveVisitor
+		if err := rows.Scan(&v.Visitor, &v.Last); err != nil {
+			_ = rows.Close()
+			return out, err
+		}
+		out.Visitors = append(out.Visitors, v)
+	}
+	if err := rows.Close(); err != nil {
+		return out, err
+	}
+	rows, err = s.db.QueryContext(ctx, `SELECT epoch_ms(ts), service_id, release_id, hostname, kind, name, path, referrer, country, city, browser, os, device, visitor_id
+FROM events WHERE site_id = $1 AND ts >= $2 ORDER BY ts DESC LIMIT 20`, uint32(q.Site), since)
+	if err != nil {
+		return out, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		e := analytics.Event{Site: q.Site}
+		var svc, rel uint32
+		var kind uint8
+		var country, city string
+		if err := rows.Scan(&e.Time, &svc, &rel, &e.Hostname, &kind, &e.Name, &e.Path, &e.Referrer, &country, &city, &e.Browser, &e.OS, &e.Device, &e.Visitor); err != nil {
+			return out, err
+		}
+		e.Service, e.Release, e.Kind = int64(svc), int64(rel), analytics.Kind(kind)
+		e.Country, e.City = country, city
+		out.Recent = append(out.Recent, e)
+	}
+	return out, rows.Err()
+}

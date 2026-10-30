@@ -85,6 +85,24 @@ func (c *Client) Breakdown(ctx context.Context, q BreakdownQuery) ([]Row, error)
 	return res, c.post(ctx, BreakdownPath, q, &res)
 }
 
+// Live implements Store.
+func (c *Client) Live(ctx context.Context, q LiveQuery) (Live, error) {
+	var res Live
+	return res, c.post(ctx, LivePath, q, &res)
+}
+
+// Prune implements Store.
+func (c *Client) Prune(ctx context.Context, q PruneQuery) (PruneResult, error) {
+	var res PruneResult
+	return res, c.post(ctx, PrunePath, q, &res)
+}
+
+// UpdateGeoIP implements Store.
+func (c *Client) UpdateGeoIP(ctx context.Context) (GeoIP, error) {
+	var res GeoIP
+	return res, c.do(ctx, http.MethodPost, GeoIPPath, nil, &res)
+}
+
 // Health implements Store.
 func (c *Client) Health(ctx context.Context) (Health, error) {
 	var res Health

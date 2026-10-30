@@ -723,6 +723,14 @@ type wireTunnelSpec struct {
 // setAnalyticsRequest is node.AnalyticsConfig.
 type setAnalyticsRequest struct {
 	Salts map[int64][]byte `json:"salts"`
+	// Sites null keeps the server's rules; {} clears them.
+	Sites map[int64]wireSiteRules `json:"sites"`
+}
+
+// wireSiteRules is node.SiteRules.
+type wireSiteRules struct {
+	ExcludedPaths []string `json:"excluded_paths,omitempty"`
+	IgnoredIPs    []string `json:"ignored_ips,omitempty"`
 }
 
 type tailSpoolRequest struct {

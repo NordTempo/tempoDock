@@ -599,7 +599,14 @@ func (c *Client) SetAnalytics(ctx context.Context, cfg node.AnalyticsConfig) err
 	if err := c.needProtocol(ctx, AnalyticsProtocol, "collect analytics"); err != nil {
 		return err
 	}
-	_, err := unaryCall[empty](ctx, c, opSetAnalytics, setAnalyticsRequest{Salts: cfg.Salts})
+	req := setAnalyticsRequest{Salts: cfg.Salts}
+	if cfg.Sites != nil {
+		req.Sites = make(map[int64]wireSiteRules, len(cfg.Sites))
+		for id, r := range cfg.Sites {
+			req.Sites[id] = wireSiteRules(r)
+		}
+	}
+	_, err := unaryCall[empty](ctx, c, opSetAnalytics, req)
 	return err
 }
 

@@ -739,6 +739,17 @@ const SpoolBatchEvents = 1000
 type AnalyticsConfig struct {
 	// Salts are by UTC day number (days since 1970-01-01).
 	Salts map[int64][]byte
+	// Sites are the rules of every live site, by site ID, for the
+	// ingest. A site missing here has none; nil keeps the rules the
+	// server has (the control plane couldn't read them).
+	Sites map[int64]SiteRules
+}
+
+// SiteRules are what a site's ingest leaves out: paths (* matches any
+// run of characters) and client addresses or CIDR ranges.
+type SiteRules struct {
+	ExcludedPaths []string
+	IgnoredIPs    []string
 }
 
 // SpoolBatch is events read from a spool.

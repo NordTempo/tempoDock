@@ -39,6 +39,19 @@ public dashboards, in phases A0 to A4.
 | Salts | Made by the control plane, today's and tomorrow's handed to every server over the link; older ones deleted |
 | IP addresses | Cut to /24 (IPv6 /48) at ingest, for the location lookup only (DB-IP City Lite, CC BY 4.0, on the analytics server); never stored |
 
+### Sites in practice (A1)
+
+| Topic | Decision |
+|---|---|
+| Model | `sites` (an environment, a name, settings as JSON overrides), `site_hostnames` (a hostname, its site, the service it last served) and `site_markers` (added, moved, removed). Migration 0032. A site lives in one environment, so staging and production never mix |
+| Turning it on | `dock analytics enable <hostname>` (deploy on its environment): it joins `--site`, or its service's other hostnames' site, or a new site named after it. The first site starts the store |
+| Moves | A hostname stays with its site when its domain is removed. Added back on another service of the environment, the site follows it and gets a "moved" marker; `domain add --analytics new` starts a new site instead, archiving the old one if it is left empty. In another environment the site comes along only if it was the hostname's alone and the actor can read it there |
+| Routing | Each route carries its analytics hostnames with the tag `site.service.release`; a cutover retags with the new release before it goes active |
+| Settings | Per site, each a default or an override of the install's defaults (`dock analytics defaults`, operators). A1 applies excluded paths and ignored addresses (at the ingest, from the control plane with the salts) and event retention (daily, the store keeps daily totals); replay, errors, Web Vitals and public dashboards are stored for their phases |
+| Reading | One dashboard call: the overview and the period before, the series (hourly up to two days), the dashboard's breakdowns and the markers (hostname changes and the services' deploys). A store that can't be reached gives an empty dashboard that says so |
+| Live | Only while someone watches: the first viewer loads the last five minutes' visitors from the store, the forwarders feed the site's events as they pass, and a 30 s recount drops visitors who left |
+| Locations | The store downloads DB-IP's City Lite (CC BY 4.0, credited wherever locations show) into its volume at start and on a month's first day, falling back to the month before |
+
 ### Changed by the spike
 
 | Plan | Now | Why |

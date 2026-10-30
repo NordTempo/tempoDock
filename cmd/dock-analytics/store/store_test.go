@@ -337,3 +337,27 @@ func TestSessionsThatBeganBeforeTheRange(t *testing.T) {
 		t.Errorf("overview = %+v", o)
 	}
 }
+
+func TestPruneKeepsDailyTotals(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	write(t, s, "a", 1, at(1, time.Hour, "/"), at(2, 2*time.Hour, "/"))
+	if err := s.BuildRollups(ctx); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Prune(ctx, analytics.PruneQuery{Site: 1, Before: day0.Add(48 * time.Hour).UnixMilli()})
+	if err != nil || res.Deleted != 2 {
+		t.Fatalf("prune = %+v, %v", res, err)
+	}
+	// The day's numbers come from its rollup now.
+	q := analytics.Query{Site: 1, From: day0.UnixMilli(), To: day0.Add(24 * time.Hour).UnixMilli()}
+	if o, err := s.Overview(ctx, q); err != nil || o.Visitors != 2 {
+		t.Errorf("after pruning: %+v, %v", o, err)
+	}
+	// A day not rolled up yet keeps its events.
+	late := at(3, 50*time.Hour, "/")
+	write(t, s, "a", 2, late)
+	if res, _ = s.Prune(ctx, analytics.PruneQuery{Site: 1, Before: day0.Add(72 * time.Hour).UnixMilli()}); res.Deleted != 0 {
+		t.Errorf("pruned %d events of a day without its rollup", res.Deleted)
+	}
+}

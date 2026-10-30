@@ -683,6 +683,10 @@ type AddDomainRequest struct {
 	// proxied CNAME. On a direct server the tunnel serves such domains next
 	// to the public IP (ADR 0036).
 	Cloudflare bool `json:"cloudflare,omitempty"`
+	// Analytics says what happens to a hostname that collected analytics
+	// before, on another service (ADR 0037): keep (the default) carries
+	// its site's history on; new starts a new site.
+	Analytics string `json:"analytics,omitempty" enum:"keep,new" doc:"For a hostname with analytics history: keep its site (default) or start a new one"`
 }
 
 // DomainChange is the result of adding a domain. Release is set when the

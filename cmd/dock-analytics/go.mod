@@ -8,6 +8,7 @@ go 1.27.3
 require (
 	github.com/NordTempo/tempoDock v0.0.0
 	github.com/duckdb/duckdb-go/v2 v2.10506.0
+	github.com/oschwald/maxminddb-golang/v2 v2.8.0
 	modernc.org/sqlite v1.61.0
 )
 
