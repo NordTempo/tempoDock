@@ -86,11 +86,13 @@ func (c *Core) AddStorage(ctx context.Context, a Actor, req apitypes.CreateStora
 	return toStorage(row, nil), nil
 }
 
-// UpdateStorage changes a storage connection and checks the bucket again.
-// While the registry keeps its images in it, the endpoint and bucket stay
-// (the images are there; `dock registry migrate` moves them), and new
-// keys or addressing are written into the registry's config, restarting
-// it, so that waits until no build or pull uses the registry.
+// UpdateStorage changes a storage connection and checks the bucket again
+// if anything but its name changed. While the registry keeps its images
+// in it, the endpoint and bucket stay (the images are there; `dock
+// registry migrate` moves them), and new keys or addressing are written
+// into the registry's config, restarting it, so that waits until no
+// build or pull uses the registry. A rename touches nothing else: the
+// registry refers to the connection by ID.
 func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apitypes.UpdateStorageRequest) (apitypes.Storage, error) {
 	if err := a.requireOperator("changing storage connections"); err != nil {
 		return apitypes.Storage{}, err
@@ -126,32 +128,54 @@ func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apit
 	if inUse && (b.Endpoint != old.Endpoint || b.Name != old.Name) {
 		return apitypes.Storage{}, conflict("the registry keeps its images in %s; move them with `dock registry migrate` before pointing it at another endpoint or bucket", name)
 	}
-	if b == old {
-		return toStorage(row, regID), nil
-	}
-	if err := checkBucket(ctx, b); err != nil {
-		return apitypes.Storage{}, err
-	}
-	keys, err := c.sealKeys(b)
-	if err != nil {
-		return apitypes.Storage{}, err
-	}
-	if inUse {
-		release, err := c.holdRegistry()
-		if err != nil {
+	newName := name
+	if req.Name != nil && *req.Name != name {
+		newName = *req.Name
+		if err := validName("storage connection", newName); err != nil {
 			return apitypes.Storage{}, err
 		}
-		defer release()
+		if _, err := c.store.GetStorageConnection(ctx, newName); err == nil {
+			return apitypes.Storage{}, conflict("a storage connection named %s exists; pick another name", newName)
+		} else if !store.IsNotFound(err) {
+			return apitypes.Storage{}, err
+		}
+	}
+	changed := b != old
+	if !changed && newName == name {
+		return toStorage(row, regID), nil
+	}
+	keys := row.Credentials
+	if changed {
+		if err := checkBucket(ctx, b); err != nil {
+			return apitypes.Storage{}, err
+		}
+		if keys, err = c.sealKeys(b); err != nil {
+			return apitypes.Storage{}, err
+		}
+		if inUse {
+			release, err := c.holdRegistry()
+			if err != nil {
+				return apitypes.Storage{}, err
+			}
+			defer release()
+		}
 	}
 	row, err = c.store.UpdateStorageConnection(ctx, store.UpdateStorageConnectionParams{
-		Endpoint: b.Endpoint, Region: b.Region, Bucket: b.Name, PathStyle: b.PathStyle,
+		Name: newName, Endpoint: b.Endpoint, Region: b.Region, Bucket: b.Name, PathStyle: b.PathStyle,
 		Credentials: keys, UpdatedAt: now(), UpdatedBy: a.Name, ID: row.ID,
 	})
 	if err != nil {
 		return apitypes.Storage{}, err
 	}
-	c.audit(ctx, a.platform(), "storage.update", nil, nil, name, "changed storage "+name)
-	if inUse && c.reg != nil {
+	var did []string
+	if newName != name {
+		did = append(did, "renamed storage "+name+" to "+newName)
+	}
+	if changed {
+		did = append(did, "changed storage "+newName)
+	}
+	c.audit(ctx, a.platform(), "storage.update", nil, nil, newName, strings.Join(did, "; "))
+	if changed && inUse && c.reg != nil {
 		if err := c.reg.UseStorage(ctx, &b); err != nil {
 			return toStorage(row, regID), fmt.Errorf("saved, but the registry didn't take the change (restarting the daemon retries): %w", err)
 		}

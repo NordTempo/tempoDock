@@ -2308,7 +2308,7 @@ export interface paths {
         put?: never;
         /**
          * Add a storage connection
-         * @description An S3-compatible bucket: endpoint, region, bucket, keys and addressing. Dock lists the bucket with the keys before saving it, so a mistake fails here (422). Operators only.
+         * @description An S3-compatible bucket: endpoint, region, bucket, keys and addressing. Dock lists the bucket with the keys before saving it, so a mistake fails here (400, saying what to check). Operators only.
          */
         post: operations["create-storage"];
         delete?: never;
@@ -2336,7 +2336,7 @@ export interface paths {
         head?: never;
         /**
          * Change a storage connection
-         * @description Fields left out stay as they are. The bucket is listed again with the result. While the registry keeps its images in it, the endpoint and bucket can't change (409), and new keys restart the registry. Operators only.
+         * @description Fields left out stay as they are; name renames it, and what uses it follows. The bucket is listed again unless only the name changed. While the registry keeps its images in it, the endpoint and bucket can't change (409), and new keys restart the registry. Operators only.
          */
         patch: operations["update-storage"];
         trace?: never;
@@ -4462,6 +4462,7 @@ export interface components {
             access_key_id?: string;
             bucket?: string;
             endpoint?: string;
+            name?: string;
             path_style?: boolean;
             region?: string;
             secret_access_key?: string;

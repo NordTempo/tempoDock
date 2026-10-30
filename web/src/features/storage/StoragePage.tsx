@@ -218,6 +218,7 @@ function StorageForm({
       return;
     }
     const change: StorageChange = {
+      ...(v.name.trim() !== storage.name && { name: v.name.trim() }),
       ...(t.endpoint !== storage.endpoint && { endpoint: t.endpoint }),
       ...(t.region !== storage.region && { region: t.region }),
       ...(t.bucket !== storage.bucket && { bucket: t.bucket }),
@@ -228,9 +229,12 @@ function StorageForm({
     update.mutate({ name: storage.name, change }, { onSuccess: onClose });
   };
 
-  const cli = storage
-    ? `dock storage set ${storage.name} --access-key-id … --secret-access-key-stdin`
-    : `dock storage add ${v.name.trim() || "<name>"} --endpoint ${v.endpoint.trim() || "<url>"} --bucket ${v.bucket.trim() || "<bucket>"}${v.region.trim() ? ` --region ${v.region.trim()}` : ""}${v.pathStyle ? "" : " --path-style=false"} --access-key-id … --secret-access-key-stdin`;
+  // The CLI equivalent: add, or a rename or key change of this one.
+  const cli = !storage
+    ? `dock storage add ${v.name.trim() || "<name>"} --endpoint ${v.endpoint.trim() || "<url>"} --bucket ${v.bucket.trim() || "<bucket>"}${v.region.trim() ? ` --region ${v.region.trim()}` : ""}${v.pathStyle ? "" : " --path-style=false"} --access-key-id … --secret-access-key-stdin`
+    : v.name.trim() !== storage.name
+      ? `dock storage rename ${storage.name} ${v.name.trim()}`
+      : `dock storage set ${storage.name} --access-key-id … --secret-access-key-stdin`;
   return (
     <form
       aria-label={storage ? `Change storage ${storage.name}` : "Add storage"}
@@ -239,19 +243,17 @@ function StorageForm({
       onSubmit={submit}
     >
       <div className="flex flex-wrap gap-3">
-        {!storage && (
-          <label className="flex flex-[1_1_160px] flex-col gap-1.5">
-            <span>Name</span>
-            <input
-              // biome-ignore lint/a11y/noAutofocus: the form opens on request
-              autoFocus
-              value={v.name}
-              onChange={set("name")}
-              placeholder="hetzner"
-              className={`${field} font-mono`}
-            />
-          </label>
-        )}
+        <label className="flex flex-[1_1_160px] flex-col gap-1.5">
+          <span>Name</span>
+          <input
+            // biome-ignore lint/a11y/noAutofocus: the form opens on request
+            autoFocus
+            value={v.name}
+            onChange={set("name")}
+            placeholder="hetzner"
+            className={`${field} font-mono`}
+          />
+        </label>
         <label className="flex flex-[3_1_320px] flex-col gap-1.5">
           <span>
             Endpoint <span className="text-mut">base URL, no bucket</span>

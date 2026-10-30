@@ -34,9 +34,11 @@ type CreateStorageRequest struct {
 }
 
 // UpdateStorageRequest changes a storage connection. Fields that aren't
-// set stay as they are. While something keeps data in it, only the
+// set stay as they are. While something keeps data in it, only the name,
 // region, addressing and keys can change.
 type UpdateStorageRequest struct {
+	// Name renames the connection; what uses it follows.
+	Name            *string `json:"name,omitempty" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"`
 	Endpoint        *string `json:"endpoint,omitempty"`
 	Region          *string `json:"region,omitempty"`
 	Bucket          *string `json:"bucket,omitempty"`

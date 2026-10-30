@@ -11,7 +11,7 @@ RETURNING *;
 
 -- name: UpdateStorageConnection :one
 UPDATE storage_connections
-SET endpoint = ?, region = ?, bucket = ?, path_style = ?, credentials = ?, updated_at = ?, updated_by = ?
+SET name = ?, endpoint = ?, region = ?, bucket = ?, path_style = ?, credentials = ?, updated_at = ?, updated_by = ?
 WHERE id = +?
 RETURNING *;
 
