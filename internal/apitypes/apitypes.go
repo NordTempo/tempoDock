@@ -668,7 +668,7 @@ type Domain struct {
 	ResolvedIPs []string   `json:"resolved_ips,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	// DNS is set for a domain Dock routes through its server's Cloudflare
-	// tunnel (added from Cloudflare, ADR 0035): how far it is. Only in a
+	// tunnel (added from Cloudflare, ADR 0036): how far it is. Only in a
 	// service's domain list and domain changes.
 	DNS *DomainDNS `json:"dns,omitempty"`
 }
@@ -680,7 +680,7 @@ type AddDomainRequest struct {
 	// Cloudflare adds a hostname in a zone a Cloudflare connection
 	// manages and has Dock set up all it needs: a route through the
 	// server's tunnel (created or adopted if Dock runs none) and its
-	// proxied CNAME. The server must be in tunnel mode (ADR 0035).
+	// proxied CNAME. The server must be in tunnel mode (ADR 0036).
 	Cloudflare bool `json:"cloudflare,omitempty"`
 }
 
@@ -947,7 +947,7 @@ type Server struct {
 	// Usage is the latest minute sample, kept in memory. Only unlimited
 	// admins get it, as with server statistics.
 	Usage *ServerUsage `json:"usage,omitempty"`
-	// Tunnel is the Cloudflare tunnel Dock manages for it (ADR 0035);
+	// Tunnel is the Cloudflare tunnel Dock manages for it (ADR 0036);
 	// unset when it manages none.
 	Tunnel *ServerTunnel `json:"tunnel,omitempty"`
 }
@@ -987,7 +987,7 @@ type AddServerRequest struct {
 	// Tunnel has Dock create a Cloudflare tunnel for the server once it
 	// joins, with the Cloudflare connection named Cloudflare (it may be
 	// left out when there is one), and installs it in tunnel mode (ADR
-	// 0035).
+	// 0036).
 	Tunnel     bool   `json:"tunnel,omitempty"`
 	Cloudflare string `json:"cloudflare,omitempty"`
 }

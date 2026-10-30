@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// Cloudflare connections (ADR 0035): API tokens with which Dock runs
+// Cloudflare connections (ADR 0036): API tokens with which Dock runs
 // Cloudflare tunnels for tunnel servers and routes domains added from the
 // tokens' zones through them.
 

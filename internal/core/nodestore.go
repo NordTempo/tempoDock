@@ -190,7 +190,7 @@ func (s nodeStore) Join(ctx context.Context, req remote.JoinRequest) (remote.Ser
 }
 
 // wantJoinTunnel has Dock create a Cloudflare tunnel for a server that
-// joined with a token from `dock server add --tunnel` (ADR 0035), unless
+// joined with a token from `dock server add --tunnel` (ADR 0036), unless
 // it already has one (a revoked server joining again).
 func wantJoinTunnel(ctx context.Context, q *store.Queries, srv store.Server, tok store.JoinToken, t time.Time) error {
 	if tok.CloudflareID == nil {

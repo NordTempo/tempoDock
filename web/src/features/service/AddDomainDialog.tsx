@@ -8,7 +8,7 @@ import { useCloudflareZones } from "../cloudflare/data";
 /**
  * Adds a hostname: your own (you create its DNS record), or from a zone
  * connected to Dock, which Dock routes through the server's Cloudflare
- * tunnel (ADR 0035).
+ * tunnel (ADR 0036).
  */
 export default function AddDomainDialog({
   serviceRef: ref,

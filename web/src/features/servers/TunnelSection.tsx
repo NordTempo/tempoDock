@@ -25,7 +25,7 @@ const tunnelState: Record<Tunnel["status"], State> = {
 };
 
 /**
- * A tunnel server's Cloudflare tunnel (ADR 0035): the one Dock runs, with
+ * A tunnel server's Cloudflare tunnel (ADR 0036): the one Dock runs, with
  * the cloudflared processes connected to it (read when the page opens),
  * or how to have Dock run it.
  */

@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// Cloudflare is a Cloudflare connection (ADR 0035): an API token with
+// Cloudflare is a Cloudflare connection (ADR 0036): an API token with
 // which Dock runs tunnels for tunnel servers and routes domains added
 // from its zones through them. The token is never returned.
 type Cloudflare struct {
@@ -48,7 +48,7 @@ type UpdateCloudflareRequest struct {
 	AccountID *string `json:"account_id,omitempty"`
 }
 
-// CloudflareZone is a zone domains can be added from (ADR 0035).
+// CloudflareZone is a zone domains can be added from (ADR 0036).
 type CloudflareZone struct {
 	Name       string `json:"name" example:"tempo.run"`
 	Connection string `json:"connection"`

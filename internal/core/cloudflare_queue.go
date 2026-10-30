@@ -15,7 +15,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// The Cloudflare worker (ADR 0035): it works through the pending rows of
+// The Cloudflare worker (ADR 0036): it works through the pending rows of
 // cloudflare_tunnels and cloudflare_records, one call at a time, until
 // none is due, then sleeps until kicked or until the earliest held-back
 // retry. Idle (nothing pending) it has no timer.

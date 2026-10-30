@@ -87,7 +87,7 @@ type CreateJoinTokenParams struct {
 // GetServerByName, ListServers and ListServerLoads (projects.sql).
 // Records a join token for `dock server add`; the secret itself is only
 // ever shown once, to the admin. cloudflare_id: make the server a tunnel
-// with that connection once it joins (ADR 0035).
+// with that connection once it joins (ADR 0036).
 func (q *Queries) CreateJoinToken(ctx context.Context, arg CreateJoinTokenParams) (JoinToken, error) {
 	row := q.queryRow(ctx, q.createJoinTokenStmt, createJoinToken,
 		arg.Hash,

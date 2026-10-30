@@ -123,7 +123,7 @@ func (p *Proxy) tunnelRequestError(hostname string, err error) string {
 }
 
 // SetTunnelHostname records the hostname of the tunnel the control plane
-// manages for this server (ADR 0035), for CheckDomain's instructions.
+// manages for this server (ADR 0036), for CheckDomain's instructions.
 func (p *Proxy) SetTunnelHostname(hostname string) {
 	p.tunnel.Store(&hostname)
 }

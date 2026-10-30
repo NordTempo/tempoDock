@@ -1,5 +1,5 @@
 // Package cloudflare is the little of Cloudflare's v4 API that Dock uses
-// (ADR 0035): checking an API token, listing its zones, managing DNS
+// (ADR 0036): checking an API token, listing its zones, managing DNS
 // records and remotely managed tunnels. It knows nothing about Dock.
 //
 // The token goes in the Authorization header only, never into errors or

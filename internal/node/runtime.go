@@ -26,7 +26,7 @@ type Runtime interface {
 }
 
 // Tunnel runs a server's Cloudflare Tunnel connector, cloudflared, when
-// the control plane manages its tunnel (ADR 0035).
+// the control plane manages its tunnel (ADR 0036).
 type Tunnel interface {
 	// EnsureTunnel runs cloudflared with spec's token, or stops and
 	// removes it when spec is nil. It does nothing when cloudflared

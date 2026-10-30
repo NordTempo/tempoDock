@@ -254,10 +254,10 @@ type Ingress struct {
 	Mode IngressMode `toml:"mode"`
 	// TunnelHostname is "<tunnel-id>.cfargotunnel.com", the CNAME target
 	// for hostnames served through the tunnel. Tunnel mode only; empty
-	// when the control plane manages the tunnel (ADR 0035).
+	// when the control plane manages the tunnel (ADR 0036).
 	TunnelHostname string `toml:"tunnel_hostname"`
 	// CloudflaredImage is the cloudflared the server runs when the control
-	// plane manages its tunnel (ADR 0035). Pin it by digest.
+	// plane manages its tunnel (ADR 0036). Pin it by digest.
 	CloudflaredImage string `toml:"cloudflared_image"`
 }
 

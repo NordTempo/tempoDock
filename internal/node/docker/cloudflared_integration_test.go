@@ -13,7 +13,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
-// TestCloudflared runs the tunnel connector the way ADR 0035 says: on the
+// TestCloudflared runs the tunnel connector the way ADR 0036 says: on the
 // host network, read-only, without capabilities, metrics on loopback, the
 // token in its environment and not its command. The same token leaves it
 // alone, a new one recreates it, none removes it. The token is made up:

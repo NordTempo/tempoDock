@@ -211,7 +211,7 @@ func (c *Core) checkNewDomain(ss svcScope, host string) error {
 }
 
 // addDomain adds host to a service; zone, when set, is the Cloudflare
-// zone Dock routes it through the server's tunnel from (ADR 0035).
+// zone Dock routes it through the server's tunnel from (ADR 0036).
 func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redirect string, generated bool, zone *store.CloudflareZone) (apitypes.DomainChange, error) {
 	if err := c.checkNewDomain(ss, host); err != nil {
 		return apitypes.DomainChange{}, err
@@ -222,7 +222,7 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		if d, err = q.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: ss.svc.ID, Generated: generated, RedirectTo: redirect}); err != nil || zone == nil {
 			return err
 		}
-		// Dock routes it through the server's tunnel (ADR 0035).
+		// Dock routes it through the server's tunnel (ADR 0036).
 		return q.SaveCloudflareRecord(ctx, store.SaveCloudflareRecordParams{
 			Hostname: host, DomainID: &d.ID, ServerID: &ss.env.ServerID,
 			ConnectionID: zone.ConnectionID, ZoneID: zone.ZoneID, UpdatedAt: now(),
@@ -295,7 +295,7 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 	if err != nil {
 		return err
 	}
-	// Dock deletes the DNS record it made for it (ADR 0035).
+	// Dock deletes the DNS record it made for it (ADR 0036).
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.SetDomainRecordAbsent(ctx, store.SetDomainRecordAbsentParams{UpdatedAt: now(), DomainID: &d.ID}); err != nil {
 			return err

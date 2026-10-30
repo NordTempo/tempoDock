@@ -14,7 +14,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Cloudflare (ADR 0035): named connections, each an API token, with which
+// Cloudflare (ADR 0036): named connections, each an API token, with which
 // Dock runs a Cloudflare tunnel for tunnel servers and routes domains
 // added from the token's zones through them (cloudflare_domains.go).
 // Dock never points DNS at an IP. Tokens are sealed with c.box and never

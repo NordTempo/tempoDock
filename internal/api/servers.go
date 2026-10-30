@@ -92,7 +92,7 @@ func registerServers(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "set-server-tunnel", Method: http.MethodPost, Path: serverPathT + "/tunnel",
 		Summary: "Have Dock run a server's Cloudflare tunnel", Tags: tags,
-		Description: "For a server in tunnel mode (ADR 0035). create: Dock creates a tunnel in the background, routes it to the server's Caddy and has the server run it. " +
+		Description: "For a server in tunnel mode (ADR 0036). create: Dock creates a tunnel in the background, routes it to the server's Caddy and has the server run it. " +
 			"adopt: Dock takes over the tunnel the server runs already; its routes stay. Adding a domain from Cloudflare does this when needed. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServerPath

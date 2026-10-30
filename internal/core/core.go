@@ -63,7 +63,7 @@ type Options struct {
 	// (https://api.github.com) for push-to-deploy; tests point it at a
 	// fake.
 	GitHubAPI string
-	// CloudflareAPI overrides Cloudflare's API base URL (ADR 0035); tests
+	// CloudflareAPI overrides Cloudflare's API base URL (ADR 0036); tests
 	// point it at a fake.
 	CloudflareAPI string
 	// ConfigPath is the daemon config file, archived by the control

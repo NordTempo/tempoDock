@@ -262,7 +262,7 @@ func (c *Core) serverDetail(ctx context.Context, id int64) (apitypes.Server, err
 // new server. The server shows as joining until it joins. A revoked
 // server joins again under its name and keeps its environments. With
 // Tunnel, it installs in tunnel mode and Dock creates its Cloudflare
-// tunnel once it joins (ADR 0035). Admin only.
+// tunnel once it joins (ADR 0036). Admin only.
 func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerRequest) (apitypes.AddedServer, error) {
 	if err := a.requireOperator("adding a server"); err != nil {
 		return apitypes.AddedServer{}, err
@@ -308,7 +308,7 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 	token := tok.String()
 	ingress := ""
 	if req.Tunnel {
-		// Dock creates the tunnel once the server joins (ADR 0035).
+		// Dock creates the tunnel once the server joins (ADR 0036).
 		ingress = "INGRESS=cloudflare_tunnel "
 	}
 	return apitypes.AddedServer{
@@ -441,7 +441,7 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		return invalid("server %s runs the control plane and can't be removed", srv.Name)
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		// Dock deletes the tunnel it made for it (ADR 0035); the row
+		// Dock deletes the tunnel it made for it (ADR 0036); the row
 		// outlives the server until then. Its domains went with their
 		// archived services.
 		if err := q.SetCloudflareTunnelAbsent(ctx, store.SetCloudflareTunnelAbsentParams{UpdatedAt: now(), ServerID: &srv.ID}); err != nil {
@@ -554,7 +554,7 @@ func (c *Core) ingressOf(s store.Server) serverIngress {
 	ing := serverIngress{mode: apitypes.Ingress(s.Ingress), tunnel: s.TunnelHostname, baseDomain: s.BaseDomain, publicIPs: []string{}}
 	_ = json.Unmarshal([]byte(s.PublicIps), &ing.publicIPs)
 	if t := c.managedTunnel(s.ID); t != "" {
-		ing.tunnel = t // the tunnel Dock runs for it (ADR 0035)
+		ing.tunnel = t // the tunnel Dock runs for it (ADR 0036)
 	}
 	if !s.Local {
 		ing.plainHTTP = ing.mode == apitypes.IngressDirect && s.PlainHttp

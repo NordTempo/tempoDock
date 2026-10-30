@@ -365,7 +365,7 @@ func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey
 // checkFacts rejects a hello the control plane can't act on, and drops
 // what DNS should point at (the tunnel hostname, the public IPs) unless
 // it is what it says it is: the control plane shows it as records to
-// create, and uses the tunnel in Cloudflare (ADR 0035), so a compromised
+// create, and uses the tunnel in Cloudflare (ADR 0036), so a compromised
 // node can't point a domain somewhere else. Dropping, not refusing,
 // keeps a node with an odd public_ip (a DDNS name) connected. It returns
 // what was dropped, for the log.

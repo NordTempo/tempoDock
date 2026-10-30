@@ -16,7 +16,7 @@ type CloudflarePath struct {
 }
 
 // registerCloudflare registers the Cloudflare connections' endpoints
-// (ADR 0035).
+// (ADR 0036).
 func registerCloudflare(s *Server, a huma.API) {
 	tags := []string{"cloudflare"}
 	const one = Prefix + "/cloudflare/{cloudflare}"

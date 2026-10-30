@@ -150,7 +150,7 @@ func newServerTunnelCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "tunnel",
 		Short: "Have Dock run a server's Cloudflare tunnel (admin)",
-		Long: `Have Dock run the Cloudflare tunnel of a server in tunnel mode (ADR 0035), with
+		Long: `Have Dock run the Cloudflare tunnel of a server in tunnel mode (ADR 0036), with
 a Cloudflare connection (` + "`dock cloudflare add`" + `): cloudflared runs there in
 Dock's dock-cloudflared container, and a tunnel Dock created is deleted with
 the server. Adding a domain from Cloudflare does this when the server needs it.`,

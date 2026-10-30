@@ -9,7 +9,7 @@ import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
 import { keys } from "../../data/queries";
 
-// Cloudflare connections (ADR 0035): API tokens Dock runs tunnels and
+// Cloudflare connections (ADR 0036): API tokens Dock runs tunnels and
 // routes domains with. cloudflare.* audit events refetch the list
 // (data/live.ts).
 

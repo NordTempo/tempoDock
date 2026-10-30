@@ -14,7 +14,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Domains through tunnels (ADR 0035): a domain added "from Cloudflare"
+// Domains through tunnels (ADR 0036): a domain added "from Cloudflare"
 // (or generated under a base domain in a managed zone) on a tunnel
 // server is routed through the server's tunnel: a proxied CNAME to it,
 // and on an adopted tunnel whose catch-all doesn't go to Caddy a hostname

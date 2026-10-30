@@ -1735,7 +1735,7 @@ export interface paths {
         put?: never;
         /**
          * Add a domain
-         * @description Any hostname, unique across all services. DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0035): the server must be in tunnel mode, and a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.
+         * @description Any hostname, unique across all services. DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0036): the server must be in tunnel mode, and a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.
          */
         post: operations["add-domain"];
         delete?: never;
@@ -2472,7 +2472,7 @@ export interface paths {
         put?: never;
         /**
          * Have Dock run a server's Cloudflare tunnel
-         * @description For a server in tunnel mode (ADR 0035). create: Dock creates a tunnel in the background, routes it to the server's Caddy and has the server run it. adopt: Dock takes over the tunnel the server runs already; its routes stay. Adding a domain from Cloudflare does this when needed. Operators only.
+         * @description For a server in tunnel mode (ADR 0036). create: Dock creates a tunnel in the background, routes it to the server's Caddy and has the server run it. adopt: Dock takes over the tunnel the server runs already; its routes stay. Adding a domain from Cloudflare does this when needed. Operators only.
          */
         post: operations["set-server-tunnel"];
         delete?: never;

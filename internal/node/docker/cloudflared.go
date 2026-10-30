@@ -16,7 +16,7 @@ import (
 const (
 	// CloudflaredContainer is the container that runs the server's
 	// Cloudflare Tunnel connector when the control plane manages the
-	// tunnel (ADR 0035).
+	// tunnel (ADR 0036).
 	CloudflaredContainer = "dock-cloudflared"
 	// labelTunnel holds a hash of the image and token the container runs
 	// with, so a new token or image recreates it and the same ones don't.

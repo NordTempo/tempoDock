@@ -41,7 +41,7 @@
 #                     https:// at Cloudflare's edge, so DISABLE_TLS doesn't apply)
 #   CLOUDFLARED_VERSION, CLOUDFLARED_SHA256  another cloudflared release and its checksum
 #   INGRESS           "cloudflare_tunnel" without a token: tunnel mode, with the tunnel
-#                     made and run by Dock through a Cloudflare connection (ADR 0035;
+#                     made and run by Dock through a Cloudflare connection (ADR 0036;
 #                     `dock server add --tunnel` prints it). Once Dock runs a tunnel
 #                     this script installed, a re-run removes dock-cloudflared.service
 # Control plane only:
@@ -247,7 +247,7 @@ if [[ "$node_mode" == true ]]; then
 fi
 
 # tunnel: the server is in tunnel mode. tunnel_unit: this script runs its
-# cloudflared (dock-cloudflared.service); without it, Dock does (ADR 0035).
+# cloudflared (dock-cloudflared.service); without it, Dock does (ADR 0036).
 tunnel=false
 tunnel_unit=false
 tunnel_hostname=""
@@ -285,7 +285,7 @@ command -v systemctl >/dev/null || die "systemd is required"
 command -v iptables >/dev/null || die "iptables is required for the app firewall: apt install iptables"
 
 # Dock runs the tunnel in its dock-cloudflared container once it adopted it
-# (ADR 0035): this script's cloudflared is then a second connector of the
+# (ADR 0036): this script's cloudflared is then a second connector of the
 # same tunnel, and goes.
 if [[ "$tunnel_unit" == true && -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] \
   && [[ -n "$(docker ps -q --filter name=^dock-cloudflared\$ --filter label=dock.role=cloudflared)" ]]; then

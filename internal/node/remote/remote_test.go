@@ -1166,7 +1166,7 @@ func (b *syncBuffer) String() string {
 
 // TestCheckFacts keeps only what DNS can point at from a hello: the
 // control plane shows it as records and uses the tunnel in Cloudflare
-// (ADR 0035). An unknown ingress mode is refused.
+// (ADR 0036). An unknown ingress mode is refused.
 func TestCheckFacts(t *testing.T) {
 	const tunnel = "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"
 	f := Facts{Ingress: IngressDirect, PublicIPs: []string{"203.0.113.7", "home.example.com", "127.0.0.1", "0.0.0.0", "2001:db8::1"}}
