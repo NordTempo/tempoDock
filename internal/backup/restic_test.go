@@ -200,17 +200,17 @@ func TestS3URL(t *testing.T) {
 	}
 }
 
-// A move check's listing maps each copied snapshot's original to its new
-// ID; a snapshot that was a copy already keeps pointing at its first
-// original.
+// A move job's listing maps each snapshot to what it is a copy of: its
+// original, or itself.
 func TestParseMoved(t *testing.T) {
-	out := "no errors were found\n" + MoveMarker + "\n" +
-		`[{"id":"new1","original":"old1","tags":["dock-s1"]},{"id":"new2","original":"first2"},{"id":"own3"}]` + "\n"
+	out := "copied\n" + MoveMarker + "\n" +
+		`"original":"` + strings.Repeat("1", 64) + `"` + "\n" + `"id":"` + strings.Repeat("a", 64) + `"` + "\n" +
+		`"id":"` + strings.Repeat("b", 64) + `"` + "\n"
 	got, err := ParseMoved(out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"old1": "new1", "first2": "new2", "own3": "own3"}
+	want := map[string]string{strings.Repeat("a", 64): strings.Repeat("1", 64), strings.Repeat("b", 64): strings.Repeat("b", 64)}
 	if !maps.Equal(got, want) {
 		t.Fatalf("ParseMoved = %v", got)
 	}

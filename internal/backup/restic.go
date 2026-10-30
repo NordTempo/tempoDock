@@ -9,6 +9,7 @@ package backup
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -404,26 +405,34 @@ func NextDue(hour int, since, now time.Time, loc *time.Location) time.Time {
 // source repository into the target, then one check and listing of the
 // target, then each source emptied.
 
-// MoveMarker precedes the target's snapshot list in a move check's output.
+// MoveMarker precedes a snapshot listing in a move job's output.
 const MoveMarker = "dock-move-snapshots:"
+
+// listSnapshots prints a repository's snapshots after MoveMarker as one
+// "original" (when the snapshot is a copy) and "id" token each, in that
+// order: restic's JSON lists original before id, and nothing else in it
+// has those keys. Kept this small, thousands of snapshots fit in a job's
+// output (node.MaxJobOutput), which the full JSON doesn't.
+const listSnapshots = `echo ` + MoveMarker + `
+$R snapshots --json --retry-lock ` + RetryLock + ` | grep -oE '"(original|id)":"[0-9a-f]{64}"' || true
+`
 
 // CopyScript copies every snapshot of the repository RESTIC_FROM_REPOSITORY
 // (password RESTIC_FROM_PASSWORD) into the target (the job's repository),
 // creating the target with the source's chunking parameters if it doesn't
-// exist, so their data deduplicates. Snapshots already copied are
-// skipped. It runs in the restic image.
+// exist, so their data deduplicates, then lists the source (ParseMoved).
+// Snapshots already copied are skipped. It runs in the restic image.
 const CopyScript = prelude + `if ! $R cat config >/dev/null 2>&1; then
   $R init --from-repo "$RESTIC_FROM_REPOSITORY" --copy-chunker-params >/dev/null
 fi
 $R copy --quiet --retry-lock ` + RetryLock + ` --from-repo "$RESTIC_FROM_REPOSITORY"
-`
+export RESTIC_REPOSITORY="$RESTIC_FROM_REPOSITORY" RESTIC_PASSWORD="$RESTIC_FROM_PASSWORD"
+` + listSnapshots
 
-// CheckScript checks the target's structure and lists its snapshots after
-// MoveMarker, for ParseMoved.
+// CheckScript checks the target's structure and lists its snapshots
+// (ParseMoved).
 const CheckScript = prelude + `$R check --retry-lock ` + RetryLock + ` >&2
-echo ` + MoveMarker + `
-$R snapshots --json --retry-lock ` + RetryLock + `
-`
+` + listSnapshots
 
 // ClearLocalScript empties the local repository mounted at LocalPath,
 // once its snapshots were copied elsewhere. The volume stays.
@@ -444,32 +453,30 @@ func CopyEnv(from, to Repo) map[string]string {
 	return env
 }
 
-// ParseMoved reads a move check's output: the target's snapshots, as a
-// map from the snapshot each was copied from (restic's "original", or its
-// own ID) to its ID in the target.
+// ParseMoved reads the snapshot listing of a move job (CopyScript's of
+// the source, CheckScript's of the target): each snapshot's ID mapped to
+// the snapshot it is a copy of (restic's "original"), or to itself. A
+// target's copy of a source snapshot shares the source's value.
 func ParseMoved(output string) (map[string]string, error) {
 	_, list, ok := strings.Cut(output, MoveMarker)
 	if !ok {
-		return nil, errors.New("the check listed no snapshots")
+		return nil, errors.New("the job listed no snapshots")
 	}
-	start := strings.IndexByte(list, '[')
-	if start < 0 {
-		return nil, errors.New("the check listed no snapshots")
-	}
-	var snaps []struct {
-		ID       string `json:"id"`
-		Original string `json:"original"`
-	}
-	if err := json.NewDecoder(strings.NewReader(list[start:])).Decode(&snaps); err != nil {
-		return nil, fmt.Errorf("read the snapshot list: %w", err)
-	}
-	out := make(map[string]string, len(snaps))
-	for _, s := range snaps {
-		orig := s.Original
-		if orig == "" {
-			orig = s.ID
+	out := map[string]string{}
+	original := ""
+	for line := range strings.Lines(list) {
+		key, val, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if !ok {
+			continue
 		}
-		out[orig] = s.ID
+		val = strings.Trim(val, `"`)
+		switch key {
+		case `"original"`:
+			original = val
+		case `"id"`:
+			out[val] = cmp.Or(original, val)
+			original = ""
+		}
 	}
 	return out, nil
 }

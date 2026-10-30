@@ -595,6 +595,21 @@ func (q *Queries) PruneBackup(ctx context.Context, id int64) error {
 	return err
 }
 
+const pruneBackupSnapshot = `-- name: PruneBackupSnapshot :exec
+UPDATE backups SET pruned = 1 WHERE repository = +? AND snapshot_id = +?
+`
+
+type PruneBackupSnapshotParams struct {
+	Repository string
+	SnapshotID string
+}
+
+// Marks the backups of a snapshot gone: a move found it in no repository.
+func (q *Queries) PruneBackupSnapshot(ctx context.Context, arg PruneBackupSnapshotParams) error {
+	_, err := q.exec(ctx, q.pruneBackupSnapshotStmt, pruneBackupSnapshot, arg.Repository, arg.SnapshotID)
+	return err
+}
+
 const relabelBackupRepository = `-- name: RelabelBackupRepository :exec
 UPDATE backups SET repository = ? WHERE repository = +?
 `

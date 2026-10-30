@@ -118,6 +118,46 @@ func TestIntegrationMoveBackups(t *testing.T) {
 	if next := waitBackupRun(t, c, db, run.ID); next.Status != apitypes.BackupSucceeded || next.Repository != set.Repository {
 		t.Fatalf("backup after the move: %+v", next)
 	}
+
+	// A second move, to another folder of the bucket: the first backup is
+	// a copy already, and still finds its copy through restic's original.
+	if _, err := c.MoveBackups(ctx, testSystem, apitypes.MoveBackupsRequest{Storage: "minio", Path: "dock-backups-2"}); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Minute); ; time.Sleep(500 * time.Millisecond) {
+		if set, err = c.GetBackupSettings(ctx, testSystem, false); err == nil && set.Move != nil && !set.Move.Running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("second move still running: %+v", set.Move)
+		}
+	}
+	if set.Move.Error != "" || set.Move.Moved != 2 || set.Move.Gone != 0 || set.Path != "dock-backups-2" {
+		t.Fatalf("second move: %+v", set.Move)
+	}
+	b, err = c.ServiceBackups(ctx, testSystem, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first apitypes.BackupRun
+	for _, r := range b.Runs {
+		if r.ID == local.ID {
+			first = r
+		}
+	}
+	if first.Repository != set.Repository {
+		t.Fatalf("the first backup after two moves: %+v", first)
+	}
+	res, err = c.RestoreBackup(ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: first.Snapshot[:8], As: "db-twice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := waitBackupRun(t, c, db, res.Restore.ID); r.Status != apitypes.BackupSucceeded {
+		t.Fatalf("restore after two moves: %+v", r)
+	}
+	if out := execIn(t, c, ServiceRef{project, "production", "db-twice"}, "psql", "-U", "postgres", "-d", "app", "-tAc", "SELECT count(*) FROM notes"); out != "300" {
+		t.Errorf("rows restored after two moves: %q", out)
+	}
 }
 
 // startMinIOBucket runs MinIO with one bucket and returns its endpoint,

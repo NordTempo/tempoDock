@@ -822,6 +822,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.pruneBackupStmt, err = db.PrepareContext(ctx, pruneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneBackup: %w", err)
 	}
+	if q.pruneBackupSnapshotStmt, err = db.PrepareContext(ctx, pruneBackupSnapshot); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneBackupSnapshot: %w", err)
+	}
 	if q.pruneGitDeliveriesStmt, err = db.PrepareContext(ctx, pruneGitDeliveries); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneGitDeliveries: %w", err)
 	}
@@ -2424,6 +2427,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing pruneBackupStmt: %w", cerr)
 		}
 	}
+	if q.pruneBackupSnapshotStmt != nil {
+		if cerr := q.pruneBackupSnapshotStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneBackupSnapshotStmt: %w", cerr)
+		}
+	}
 	if q.pruneGitDeliveriesStmt != nil {
 		if cerr := q.pruneGitDeliveriesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing pruneGitDeliveriesStmt: %w", cerr)
@@ -3174,6 +3182,7 @@ type Queries struct {
 	orgSlugTakenStmt                    *sql.Stmt
 	promoteServerKeyStmt                *sql.Stmt
 	pruneBackupStmt                     *sql.Stmt
+	pruneBackupSnapshotStmt             *sql.Stmt
 	pruneGitDeliveriesStmt              *sql.Stmt
 	pruneResolvedAlertsStmt             *sql.Stmt
 	pruneServerStatsStmt                *sql.Stmt
@@ -3535,6 +3544,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		orgSlugTakenStmt:                    q.orgSlugTakenStmt,
 		promoteServerKeyStmt:                q.promoteServerKeyStmt,
 		pruneBackupStmt:                     q.pruneBackupStmt,
+		pruneBackupSnapshotStmt:             q.pruneBackupSnapshotStmt,
 		pruneGitDeliveriesStmt:              q.pruneGitDeliveriesStmt,
 		pruneResolvedAlertsStmt:             q.pruneResolvedAlertsStmt,
 		pruneServerStatsStmt:                q.pruneServerStatsStmt,

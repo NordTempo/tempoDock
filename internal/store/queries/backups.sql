@@ -124,3 +124,7 @@ UPDATE backups SET repository = ? WHERE repository = +?;
 -- The snapshots of one repository that backups restores can use point at.
 SELECT snapshot_id FROM backups
 WHERE repository = +? AND operation = 'backup' AND status = 'succeeded' AND pruned = 0 AND snapshot_id <> '';
+
+-- name: PruneBackupSnapshot :exec
+-- Marks the backups of a snapshot gone: a move found it in no repository.
+UPDATE backups SET pruned = 1 WHERE repository = +? AND snapshot_id = +?;

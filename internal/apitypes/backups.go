@@ -176,8 +176,10 @@ type BackupMove struct {
 	Path    string             `json:"path"`
 	Running bool               `json:"running"`
 	Sources []BackupMoveSource `json:"sources"`
-	// Moved is how many backups now point at their copies.
+	// Moved is how many backups now point at their copies; Gone how many
+	// were missing from their repository already (now marked pruned).
 	Moved      int        `json:"moved"`
+	Gone       int        `json:"gone"`
 	Error      string     `json:"error,omitempty"`
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
@@ -187,8 +189,8 @@ type BackupMove struct {
 type BackupMoveSource struct {
 	// Repository is "local" or the S3 repository URL.
 	Repository string `json:"repository"`
-	// Server holds the local repository, or runs the copy for a bucket.
-	Server string `json:"server"`
+	// Server holds the local repository; empty for a bucket.
+	Server string `json:"server,omitempty"`
 	Status string `json:"status" enum:"waiting,copying,copied,emptied,failed"`
 	// Error says why it failed, or why it couldn't be emptied.
 	Error string `json:"error,omitempty"`
@@ -222,9 +224,8 @@ type ControlPlaneBackupRun struct {
 	FinishedAt *time.Time   `json:"finished_at,omitempty"`
 }
 
-// ConfigureBackupRequest changes the install's backup settings. Fields
-// that aren't set stay as they are. Setting repository to "" goes back to
-// local repositories.
+// ConfigureBackupRequest changes the install's backup retention and hour.
+// Fields that aren't set stay as they are.
 type ConfigureBackupRequest struct {
 	// Repository and the S3 keys are refused since ADR 0039: buckets are
 	// storage connections, and `dock backup move` takes backups there.

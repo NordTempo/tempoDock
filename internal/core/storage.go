@@ -304,8 +304,8 @@ func (c *Core) registryStorageID(ctx context.Context) (*int64, error) {
 	return id, err
 }
 
-// toStorage is a connection as the API shows it, with "registry" in
-// used_by when registryID is its ID. Keys stay out.
+// toStorage is a connection as the API shows it, with what keeps data in
+// it (storageUses) as used_by. Keys stay out.
 func toStorage(r store.StorageConnection, uses map[int64][]string) apitypes.Storage {
 	return apitypes.Storage{
 		Name: r.Name, Endpoint: r.Endpoint, Region: r.Region, Bucket: r.Bucket, PathStyle: r.PathStyle,

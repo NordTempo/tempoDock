@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -13,19 +14,20 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// moveCheckOutput is what a move's check job prints: restic's check, then
-// the target's snapshots with the originals they were copied from.
-func moveCheckOutput(copies map[string]string) string {
-	type snap struct {
-		ID       string `json:"id"`
-		Original string `json:"original"`
+// listing is what a move job prints after the copy or check: a token
+// line per snapshot's original (if it is a copy) and its ID, as
+// backup.CopyScript and CheckScript emit them. snaps maps ID to original
+// ("" for none).
+func listing(snaps map[string]string) string {
+	var b strings.Builder
+	b.WriteString("done\n" + backup.MoveMarker + "\n")
+	for id, orig := range snaps {
+		if orig != "" {
+			fmt.Fprintf(&b, "\"original\":%q\n", orig)
+		}
+		fmt.Fprintf(&b, "\"id\":%q\n", id)
 	}
-	list := []snap{} // restic prints [] for none
-	for orig, id := range copies {
-		list = append(list, snap{id, orig})
-	}
-	b, _ := json.Marshal(list)
-	return "no errors were found\n" + backup.MoveMarker + "\n" + string(b) + "\n"
+	return b.String()
 }
 
 // waitMoved waits until the backup move finished.
@@ -55,12 +57,14 @@ func TestMoveBackups(t *testing.T) {
 	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
 		switch {
 		case strings.Contains(spec.Name, "_move_check"):
-			return node.JobResult{Output: moveCheckOutput(copies)}, nil
-		case strings.Contains(spec.Name, "_move_empty"), strings.Contains(spec.Name, "_backup_move_"):
-			if strings.Contains(spec.Name, "_backup_move_") && !strings.Contains(spec.Name, "_empty") && gated {
+			return node.JobResult{Output: listing(map[string]string{copies[old[0]]: old[0], copies[old[1]]: old[1]})}, nil
+		case strings.Contains(spec.Name, "_move_empty"):
+			return node.JobResult{}, nil
+		case strings.Contains(spec.Name, "_backup_move_"):
+			if gated {
 				<-gate
 			}
-			return node.JobResult{}, nil
+			return node.JobResult{Output: listing(map[string]string{old[0]: "", old[1]: ""})}, nil
 		case strings.Contains(spec.Name, "_backup"):
 			n++
 			return node.JobResult{Output: resticOutput(old[n-1], 1000*int64(n), old[:n]...)}, nil
@@ -157,9 +161,9 @@ func TestMoveBackupsFailsBeforeTheSwitch(t *testing.T) {
 	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
 		switch {
 		case strings.Contains(spec.Name, "_move_check"):
-			return node.JobResult{Output: moveCheckOutput(nil)}, nil
+			return node.JobResult{Output: listing(nil)}, nil
 		case strings.Contains(spec.Name, "_backup_move_"):
-			return node.JobResult{}, nil
+			return node.JobResult{Output: listing(map[string]string{snap: ""})}, nil
 		case strings.Contains(spec.Name, "_backup"):
 			return node.JobResult{Output: resticOutput(snap, 10, snap)}, nil
 		}
@@ -235,5 +239,70 @@ func TestMoveBackupsWithNothingToCopy(t *testing.T) {
 	}
 	if slices.ContainsFunc(h.rt.Jobs(), func(j node.JobSpec) bool { return strings.Contains(j.Name, "_move") }) {
 		t.Error("a move with nothing to copy ran jobs")
+	}
+}
+
+// A backup whose snapshot its repository doesn't hold any more was gone
+// before the move: it is marked pruned, and the move goes on. A second
+// move, from that bucket to another folder of it, matches the backups
+// through the original they were first copied from; a folder inside the
+// current one is refused, since emptying the source would delete it.
+func TestMoveBackupsAgainAndGone(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	local := []string{strings.Repeat("1", 64), strings.Repeat("2", 64)}
+	inA, inB := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	n := 0
+	var source, target map[string]string
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		switch {
+		case strings.Contains(spec.Name, "_move_check"):
+			return node.JobResult{Output: listing(target)}, nil
+		case strings.Contains(spec.Name, "_move_empty"):
+			return node.JobResult{}, nil
+		case strings.Contains(spec.Name, "_backup_move_"):
+			return node.JobResult{Output: listing(source)}, nil
+		case strings.Contains(spec.Name, "_backup"):
+			n++
+			return node.JobResult{Output: resticOutput(local[n-1], 10, local[:n]...)}, nil
+		}
+		return node.JobResult{}, nil
+	})
+	h.runBackup(db)
+	h.runBackup(db)
+	endpoint := fakeS3(t)
+	if _, err := h.c.AddStorage(h.ctx, testSystem, apitypes.CreateStorageRequest{Name: "hetzner", Endpoint: endpoint, Bucket: "images", AccessKeyID: "k", SecretAccessKey: "s"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The first backup's snapshot went missing from the local repository.
+	source = map[string]string{local[1]: ""}
+	target = map[string]string{inA: local[1]}
+	if _, err := h.c.MoveBackups(h.ctx, testSystem, apitypes.MoveBackupsRequest{Storage: "hetzner", Path: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	set := h.waitMoved()
+	if set.Move.Error != "" || set.Move.Moved != 1 || set.Move.Gone != 1 {
+		t.Fatalf("first move: %+v", set.Move)
+	}
+	if b, _ := h.c.ServiceBackups(h.ctx, testSystem, db); len(b.Runs) != 2 || b.Runs[0].Snapshot != inA {
+		t.Fatalf("backups after the first move: %+v", b.Runs)
+	}
+
+	if _, err := h.c.MoveBackups(h.ctx, testSystem, apitypes.MoveBackupsRequest{Storage: "hetzner", Path: "a/inner"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("moved into a folder inside the current one: %v", err)
+	}
+	// Bucket A's snapshot is a copy of the local one; B's copy keeps that
+	// original, not A's ID.
+	source = map[string]string{inA: local[1]}
+	target = map[string]string{inB: local[1]}
+	if _, err := h.c.MoveBackups(h.ctx, testSystem, apitypes.MoveBackupsRequest{Storage: "hetzner", Path: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if set := h.waitMoved(); set.Move.Error != "" || set.Move.Moved != 1 || set.Path != "b" {
+		t.Fatalf("second move: %+v", set.Move)
+	}
+	if b, _ := h.c.ServiceBackups(h.ctx, testSystem, db); b.Runs[0].Snapshot != inB || b.Runs[0].Repository != backup.S3URL(endpoint, "images", "b") {
+		t.Fatalf("backup after the second move: %+v", b.Runs[0])
 	}
 }

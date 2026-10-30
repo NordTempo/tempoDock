@@ -135,7 +135,7 @@ func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, 
 			return backup.Repo{}, err
 		}
 		s.Password, s.UpdatedAt = sealed, now()
-		if s, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
+		if _, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
 			return backup.Repo{}, err
 		}
 	}
@@ -312,7 +312,12 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 		changed = append(changed, "generated the repository password")
 	}
 	s.UpdatedAt, s.UpdatedBy = now(), a.Name
-	if s, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
+	if _, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
+		return apitypes.BackupSettings{}, err
+	}
+	// Read back resolved: the stored row has no repository URL when a
+	// storage connection is set.
+	if s, err = c.backupSettings(ctx); err != nil {
 		return apitypes.BackupSettings{}, err
 	}
 	summary := "no changes"

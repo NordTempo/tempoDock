@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -85,7 +86,7 @@ func (c *Core) MoveBackups(ctx context.Context, a Actor, req apitypes.MoveBackup
 		return apitypes.BackupSettings{}, err
 	}
 	target := backup.Repo{URL: targetURL, AccessKeyID: b.AccessKeyID, SecretAccessKey: b.SecretAccessKey, Region: b.Region, PathStyle: b.PathStyle, Password: cur.Password}
-	sources, err := c.moveSources(ctx, set, cur, b)
+	sources, err := c.moveSources(ctx, set, cur, b, path)
 	if err != nil {
 		return apitypes.BackupSettings{}, err
 	}
@@ -102,7 +103,12 @@ func (c *Core) MoveBackups(ctx context.Context, a Actor, req apitypes.MoveBackup
 	}
 	move := &apitypes.BackupMove{To: conn.Name, Path: path, Running: true, StartedAt: now().UTC().Truncate(time.Second), Sources: []apitypes.BackupMoveSource{}}
 	for _, s := range sources {
-		move.Sources = append(move.Sources, apitypes.BackupMoveSource{Repository: repoLabel(s.label), Server: s.server, Status: "waiting"})
+		// A bucket is one repository, whichever server copies it.
+		server := s.server
+		if s.label != "" {
+			server = ""
+		}
+		move.Sources = append(move.Sources, apitypes.BackupMoveSource{Repository: repoLabel(s.label), Server: server, Status: "waiting"})
 	}
 	st.move = move
 	st.moveTo = conn.ID
@@ -119,7 +125,7 @@ func (c *Core) MoveBackups(ctx context.Context, a Actor, req apitypes.MoveBackup
 // moveSources lists the repositories a move copies from: each server's
 // local repository that holds backups restores can use (and the control
 // plane's, for its own backup), or the current bucket's repository.
-func (c *Core) moveSources(ctx context.Context, set store.BackupSetting, cur backup.Repo, to s3.Bucket) ([]moveSource, error) {
+func (c *Core) moveSources(ctx context.Context, set store.BackupSetting, cur backup.Repo, to s3.Bucket, toPath string) ([]moveSource, error) {
 	if set.Repository != "" {
 		if set.StorageID == nil {
 			return nil, invalid("backups go to %s, set before storage connections; restart the daemon so it becomes one, then move", set.Repository)
@@ -132,8 +138,13 @@ func (c *Core) moveSources(ctx context.Context, set store.BackupSetting, cur bac
 		if err != nil {
 			return nil, err
 		}
-		if from.Endpoint != to.Endpoint || from.AccessKeyID != to.AccessKeyID || from.PathStyle != to.PathStyle {
+		if !strings.EqualFold(from.Endpoint, to.Endpoint) || from.AccessKeyID != to.AccessKeyID || from.PathStyle != to.PathStyle {
 			return nil, invalid("moving backups between buckets needs the same endpoint, keys and addressing: restic copies with one set of keys")
+		}
+		// Emptying the source deletes its folder: it must not hold the
+		// target, nor the target it.
+		if from.Name == to.Name && nested(set.StoragePath, toPath) {
+			return nil, invalid("folder %q and %q in bucket %s contain one another; pick a folder outside the current one", set.StoragePath, toPath, to.Name)
 		}
 		return []moveSource{{label: set.Repository, serverID: c.local.ID, server: c.local.Name, from: cur, bucket: &from, prefix: set.StoragePath}}, nil
 	}
@@ -162,13 +173,23 @@ func (c *Core) moveSources(ctx context.Context, set store.BackupSetting, cur bac
 	return out, nil
 }
 
+// nested reports whether folders a and b of one bucket contain one
+// another; the bucket's root ("") contains every folder.
+func nested(a, b string) bool {
+	a, b = strings.Trim(a, "/"), strings.Trim(b, "/")
+	if a == "" || b == "" {
+		return true
+	}
+	return strings.HasPrefix(a+"/", b+"/") || strings.HasPrefix(b+"/", a+"/")
+}
+
 // runMove runs a move MoveBackups started and records how it went.
 func (c *Core) runMove(ctx context.Context, a Actor, sources []moveSource, target backup.Repo, connID int64, path string) {
-	moved, cleanup, err := c.move(ctx, sources, target, connID, path)
+	moved, gone, cleanup, err := c.move(ctx, sources, target, connID, path)
 	st := &c.backups
 	st.mu.Lock()
 	m := st.move
-	m.Running, m.Moved = false, moved
+	m.Running, m.Moved, m.Gone = false, moved, gone
 	t := now().UTC().Truncate(time.Second)
 	m.FinishedAt = &t
 	if err != nil {
@@ -182,6 +203,9 @@ func (c *Core) runMove(ctx context.Context, a Actor, sources []moveSource, targe
 		return
 	}
 	summary := fmt.Sprintf("moved %d backups to %s", moved, target.URL)
+	if gone > 0 {
+		summary += fmt.Sprintf("; %d were gone from their repository already and are marked pruned", gone)
+	}
 	if cleanup != nil {
 		summary += fmt.Sprintf("; %v", cleanup)
 	}
@@ -191,26 +215,43 @@ func (c *Core) runMove(ctx context.Context, a Actor, sources []moveSource, targe
 
 // move copies each source into target, checks and lists target, points
 // the backups at their copies and switches the setting in one
-// transaction, then empties the sources. err means nothing switched;
-// cleanup says which sources couldn't be emptied.
-func (c *Core) move(ctx context.Context, sources []moveSource, target backup.Repo, connID int64, path string) (moved int, cleanup, err error) {
+// transaction, then empties the sources. Backups are matched to their
+// copies through restic's "original", read from each source's listing
+// (the copy job's) and the target's (the check's): a backup's snapshot
+// may itself be a copy from an earlier move. A backup whose snapshot is
+// in no source any more was gone before the move; it is marked pruned
+// (gone counts them). err means nothing switched; cleanup says which
+// sources couldn't be emptied.
+func (c *Core) move(ctx context.Context, sources []moveSource, target backup.Repo, connID int64, path string) (moved, gone int, cleanup, err error) {
+	// origins maps each source repository's snapshots to what they are
+	// copies of, by repository label ("" is every local repository).
+	origins := map[string]map[string]string{}
 	for i, src := range sources {
 		c.setMoveStatus(i, "copying", "")
 		rt := c.connected(src.serverID)
 		if rt == nil {
 			err := fmt.Errorf("server %s went offline", src.server)
 			c.setMoveStatus(i, "failed", err.Error())
-			return 0, nil, err
+			return 0, 0, nil, err
 		}
 		spec := node.JobSpec{
 			Name: fmt.Sprintf("dock_backup_move_%d", now().UnixNano()), Image: c.cfg.Backup.ResticImage,
 			Labels: node.Labels{ControlPlane: c.install}, Script: backup.CopyScript, Env: backup.CopyEnv(src.from, target),
 		}
-		if _, err := c.runResticJob(ctx, src.serverID, rt, src.from, spec); err != nil {
+		out, err := c.runResticJob(ctx, src.serverID, rt, src.from, spec)
+		var listed map[string]string
+		if err == nil {
+			listed, err = backup.ParseMoved(out)
+		}
+		if err != nil {
 			err = fmt.Errorf("copy from %s on %s: %w", repoLabel(src.label), src.server, err)
 			c.setMoveStatus(i, "failed", err.Error())
-			return 0, nil, err
+			return 0, 0, nil, err
 		}
+		if origins[src.label] == nil {
+			origins[src.label] = map[string]string{}
+		}
+		maps.Copy(origins[src.label], listed)
 		c.setMoveStatus(i, "copied", "")
 		// Each copy's end is audited, so the Backups page refetches as the
 		// move goes on (data/live.ts).
@@ -219,60 +260,77 @@ func (c *Core) move(ctx context.Context, sources []moveSource, target backup.Rep
 	// Check the target and list what it holds, on the control plane.
 	// With nothing copied there is nothing to check: the first backup
 	// creates the repository, as it always has.
-	copies := map[string]string{}
+	copies := map[string]string{} // original -> ID in the target
 	if len(sources) > 0 {
 		out, err := c.runResticJob(ctx, c.local.ID, c.rt, target, node.JobSpec{
 			Name: fmt.Sprintf("dock_backup_move_check_%d", now().UnixNano()), Image: c.cfg.Backup.ResticImage,
 			Labels: node.Labels{ControlPlane: c.install}, Script: backup.CheckScript, Env: target.Env(),
 		})
-		if err != nil {
-			return 0, nil, fmt.Errorf("check %s: %w", target.URL, err)
+		var listed map[string]string
+		if err == nil {
+			listed, err = backup.ParseMoved(out)
 		}
-		if copies, err = backup.ParseMoved(out); err != nil {
-			return 0, nil, fmt.Errorf("check %s: %w", target.URL, err)
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf("check %s: %w", target.URL, err)
+		}
+		for id, orig := range listed {
+			copies[orig] = id
 		}
 	}
 
-	// Every backup restores can use must have its copy.
+	// Every backup whose snapshot a source holds must have its copy.
 	type repoint struct{ from, oldID, newID string }
-	var points []repoint
+	var points, lost []repoint
 	var missing []string
-	labels := map[string]bool{}
-	for _, src := range sources {
-		labels[src.label] = true
+	find := func(label, id string) (newID string, held, ok bool) {
+		orig, held := origins[label][id]
+		if !held {
+			return "", false, false
+		}
+		newID, ok = copies[orig]
+		return newID, true, ok
 	}
-	for label := range labels {
+	for label := range origins {
 		ids, err := c.store.ListRepositorySnapshots(ctx, label)
 		if err != nil {
-			return 0, nil, err
+			return 0, 0, nil, err
 		}
 		for _, id := range ids {
-			if n, ok := copies[id]; ok {
+			switch n, held, ok := find(label, id); {
+			case ok:
 				points = append(points, repoint{label, id, n})
-			} else {
+			case held:
 				missing = append(missing, id[:min(8, len(id))])
+			default:
+				lost = append(lost, repoint{from: label, oldID: id})
 			}
 		}
 	}
 	cp, err := c.store.GetControlPlaneBackup(ctx)
 	if err != nil && !store.IsNotFound(err) {
-		return 0, nil, err
+		return 0, 0, nil, err
 	}
-	cpCopy, cpMoves := "", err == nil && labels[cp.Repository] && cp.SnapshotID != ""
-	if cpMoves {
-		var ok bool
-		if cpCopy, ok = copies[cp.SnapshotID]; !ok {
+	cpCopy, cpMoves := "", false
+	if err == nil && origins[cp.Repository] != nil && cp.SnapshotID != "" {
+		var held bool
+		cpCopy, held, cpMoves = find(cp.Repository, cp.SnapshotID)
+		if held && !cpMoves {
 			missing = append(missing, cp.SnapshotID[:min(8, len(cp.SnapshotID))]+" (control plane)")
 		}
 	}
 	if len(missing) > 0 {
 		slices.Sort(missing)
-		return 0, nil, fmt.Errorf("%d backups have no copy in %s (%s); nothing was switched", len(missing), target.URL, strings.Join(missing[:min(5, len(missing))], ", "))
+		return 0, 0, nil, fmt.Errorf("%d backups have no copy in %s (%s); nothing was switched", len(missing), target.URL, strings.Join(missing[:min(5, len(missing))], ", "))
 	}
 
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		for _, p := range points {
 			if err := q.MoveBackupSnapshot(ctx, store.MoveBackupSnapshotParams{Repository: target.URL, SnapshotID: p.newID, Repository_2: p.from, SnapshotID_2: p.oldID}); err != nil {
+				return err
+			}
+		}
+		for _, p := range lost {
+			if err := q.PruneBackupSnapshot(ctx, store.PruneBackupSnapshotParams{Repository: p.from, SnapshotID: p.oldID}); err != nil {
 				return err
 			}
 		}
@@ -293,9 +351,9 @@ func (c *Core) move(ctx context.Context, sources []moveSource, target backup.Rep
 		return err
 	})
 	if err != nil {
-		return 0, nil, fmt.Errorf("point the backups at their copies: %w", err)
+		return 0, 0, nil, fmt.Errorf("point the backups at their copies: %w", err)
 	}
-	moved = len(points)
+	moved, gone = len(points), len(lost)
 	if cpMoves {
 		moved++
 	}
@@ -310,7 +368,7 @@ func (c *Core) move(ctx context.Context, sources []moveSource, target backup.Rep
 		}
 		c.setMoveStatus(i, "emptied", "")
 	}
-	return moved, errors.Join(failed...), nil
+	return moved, gone, errors.Join(failed...), nil
 }
 
 // emptySource deletes a source repository's contents after a move: the
