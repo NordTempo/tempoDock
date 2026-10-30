@@ -7,14 +7,16 @@ import {
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 
-// Where a server's disk goes (ADR 0035), read when the server page opens:
-// Docker sizes every image and volume for it, which takes seconds, so it
-// is its own query the page doesn't wait for, kept a minute.
+// Where a server's disk goes (ADR 0035). The daemon answers with its last
+// reading at once (only the first read waits) and, when it is old, reads
+// again in the background: the new one arrives as a disk event
+// (data/live.ts patches this query). It is its own query the page doesn't
+// wait for.
 
 export type ServerDisk = components["schemas"]["ServerDisk"];
 export type DiskPart = components["schemas"]["DiskPart"];
 
-const diskKey = (server: string) => ["servers", server, "disk"] as const;
+export const diskKey = (server: string) => ["servers", server, "disk"] as const;
 
 export const diskQuery = (server: string) =>
   queryOptions({

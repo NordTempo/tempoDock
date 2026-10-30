@@ -1361,11 +1361,14 @@ const (
 	// EventUpdate carries the update status whenever an update moves on
 	// (ADR 0028), without the releases. Operators only.
 	EventUpdate EventType = "update"
+	// EventDisk carries a server's disk reading once a refresh of it
+	// finished (ADR 0035). Operators only.
+	EventDisk EventType = "disk"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType       `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed"`
+	Type           EventType       `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk"`
 	Time           time.Time       `json:"time"`
 	ProjectRenamed *ProjectRenamed `json:"project_renamed,omitempty"`
 	Project        string          `json:"project,omitempty"`
@@ -1382,6 +1385,7 @@ type Event struct {
 	Server         *Server         `json:"server,omitempty"`
 	Alert          *Alert          `json:"alert,omitempty"`
 	Update         *UpdateStatus   `json:"update,omitempty"`
+	Disk           *ServerDisk     `json:"disk,omitempty"`
 	Message        string          `json:"message,omitempty"`
 }
 

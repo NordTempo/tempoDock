@@ -24,7 +24,7 @@ once the disk passes `prune_disk_percent`.
 
 | Topic | Decision |
 |---|---|
-| Reading | `Containers.DiskUsage` (node protocol 7, `disk-usage`): Docker's `system df -v`, and a walk of dock's data dir. Read when someone asks: `GET /servers/{server}/disk`, the server page (its own query, not one the page waits for, kept a minute), `dock server disk`. Concurrent requests for one server share one read (singleflight). No cache, no timer |
+| Reading | `Containers.DiskUsage` (node protocol 7, `disk-usage`): Docker's `system df -v`, and a walk of dock's data dir. Read when someone asks: `GET /servers/{server}/disk`, the server page (its own query, not one the page waits for, kept a minute), `dock server disk`. Concurrent requests for one server share one read (singleflight). No timer; the last reading is kept (amendment below) |
 | Images | Each image's unique bytes (size less shared size), so they add up: running (a container uses it), for rollbacks (Dock made it and a release may need it), reclaimable (what `PruneImages` removes: dangling, Dock's, unused, not kept), not Dock's. Layers no single image owns are one "shared layers" part |
 | Volumes | Dock's volumes by service (named with one query of the server's services, stopped ones too), BuildKit's cache volume, the local backup repository (`dock_backups_*`), Dock's other volumes; volumes Dock didn't make, and another install's on a shared Docker host, go to Other |
 | Groups | App data (service volumes, container layers), Images kept, Reclaimable, Build cache, Dock (data dir, local backups, the registry's dir while its images are on disk), Other (volumes not Dock's and the rest of the filesystem, so the parts add up to "used") |
@@ -49,3 +49,17 @@ once the disk passes `prune_disk_percent`.
 - A prune never touches running images, images a rollback may need,
   volumes or backups; images other work on the server pulled are never
   counted as reclaimable.
+
+## Amendment (2026-10-30): the last reading answers at once
+
+Waiting seconds for Docker on every visit was the wrong trade (Saile).
+The daemon keeps each server's last reading in memory (one per server).
+`GET /servers/{server}/disk` answers with it at once; when it is older
+than a minute, the answer is marked `refreshing` and the server is read
+again in the background, and the new reading goes out as a `disk` event
+(operators only) that the server page patches its query from. Only the
+first read after the daemon starts waits. A prune reads again the same
+way, so the page shows what it freed. A failed refresh sends the last
+reading with its `error`. Still no timer: a read only follows someone
+asking, so a server nobody looks at is never read.
+

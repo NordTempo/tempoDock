@@ -87,7 +87,7 @@ export function DiskBreakdown({ server }: { server: string }) {
         id="disk"
         aside={
           d
-            ? `${size(used)} of ${size(total)} used · read ${ago(d.read_at)}`
+            ? `${size(used)} of ${size(total)} used · read ${ago(d.read_at)}${d.refreshing ? ", reading again" : ""}`
             : undefined
         }
         right={actions}
@@ -101,6 +101,7 @@ export function DiskBreakdown({ server }: { server: string }) {
         </p>
       )}
       <ErrorText error={disk.error ?? prune.error} />
+      {d?.error && <p className="mb-2 text-fail">{d.error}</p>}
       {done && (
         <p className="mb-2 text-mut">
           {done.image_bytes + done.cache_bytes > 0
