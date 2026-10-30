@@ -31,6 +31,8 @@ type Health struct {
 // WriteResult answers a write.
 type WriteResult struct {
 	Written int `json:"written"`
+	// Skipped counts lines that weren't events.
+	Skipped int `json:"skipped,omitempty"`
 }
 
 // CursorResult answers a cursor request.
@@ -44,7 +46,8 @@ const (
 	// HealthPath answers GET with Health.
 	HealthPath = "/v1/health"
 	// WritePath takes POST ?source=&position= with a body of events as
-	// JSON lines, and answers WriteResult.
+	// JSON lines, and answers WriteResult. Lines that aren't events are
+	// skipped and counted, so one bad line can't hold a spool up.
 	WritePath = "/v1/write"
 	// CursorPath answers GET ?source= with CursorResult.
 	CursorPath = "/v1/cursor"

@@ -50,6 +50,16 @@ func (c *Client) Write(ctx context.Context, source string, position uint64, even
 	return res.Written, err
 }
 
+// WriteLines is Write for events that are already JSON lines, as a
+// spool holds them: they go to the store as they are. The store skips
+// lines it can't read.
+func (c *Client) WriteLines(ctx context.Context, source string, position uint64, lines []byte) (int, error) {
+	q := url.Values{"source": {source}, "position": {strconv.FormatUint(position, 10)}}
+	var res WriteResult
+	err := c.do(ctx, http.MethodPost, WritePath+"?"+q.Encode(), bytes.NewReader(lines), &res)
+	return res.Written, err
+}
+
 // Cursor implements Store.
 func (c *Client) Cursor(ctx context.Context, source string) (uint64, error) {
 	var res CursorResult
