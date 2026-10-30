@@ -157,12 +157,13 @@ func (q *Queries) SetRegistryStorage(ctx context.Context, arg SetRegistryStorage
 
 const updateStorageConnection = `-- name: UpdateStorageConnection :one
 UPDATE storage_connections
-SET endpoint = ?, region = ?, bucket = ?, path_style = ?, credentials = ?, updated_at = ?, updated_by = ?
+SET name = ?, endpoint = ?, region = ?, bucket = ?, path_style = ?, credentials = ?, updated_at = ?, updated_by = ?
 WHERE id = +?
 RETURNING id, name, endpoint, region, bucket, path_style, credentials, created_at, updated_at, updated_by
 `
 
 type UpdateStorageConnectionParams struct {
+	Name        string
 	Endpoint    string
 	Region      string
 	Bucket      string
@@ -175,6 +176,7 @@ type UpdateStorageConnectionParams struct {
 
 func (q *Queries) UpdateStorageConnection(ctx context.Context, arg UpdateStorageConnectionParams) (StorageConnection, error) {
 	row := q.queryRow(ctx, q.updateStorageConnectionStmt, updateStorageConnection,
+		arg.Name,
 		arg.Endpoint,
 		arg.Region,
 		arg.Bucket,

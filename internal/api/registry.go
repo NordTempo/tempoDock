@@ -66,7 +66,7 @@ func registerStorage(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "update-storage", Method: http.MethodPatch, Path: one,
 		Summary: "Change a storage connection", Tags: tags,
-		Description: "Fields left out stay as they are. The bucket is listed again with the result. While the registry keeps its images in it, the endpoint and bucket can't change (409), and new keys restart the registry. Operators only.",
+		Description: "Fields left out stay as they are; name renames it, and what uses it follows. The bucket is listed again unless only the name changed. While the registry keeps its images in it, the endpoint and bucket can't change (409), and new keys restart the registry. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		StoragePath
 		Body apitypes.UpdateStorageRequest

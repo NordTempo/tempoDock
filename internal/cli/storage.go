@@ -47,7 +47,7 @@ after ` + "`dock registry migrate --to s3`" + `. Keys are never shown.`,
 			})
 		},
 	}
-	cmd.AddCommand(newStorageAddCmd(g), newStorageSetCmd(g), newStorageRemoveCmd(g))
+	cmd.AddCommand(newStorageAddCmd(g), newStorageSetCmd(g), newStorageRenameCmd(g), newStorageRemoveCmd(g))
 	return cmd
 }
 
@@ -191,6 +191,31 @@ and new keys restart the registry for a second.`,
 	fs.BoolVar(&secretStdin, "secret-access-key-stdin", false, "read the secret access key from stdin")
 	fs.BoolVar(&pathStyle, "path-style", true, "address the bucket in the URL's path; false puts it in the host name")
 	return cmd
+}
+
+// newStorageRenameCmd is `dock storage rename`.
+func newStorageRenameCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <current> <new>",
+		Short: "Rename a storage connection (admin)",
+		Long:  `Rename a storage connection. What uses it (the registry) follows; nothing restarts and the bucket is untouched.`,
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			req := apitypes.UpdateStorageRequest{Name: &args[1]}
+			st, err := send[apitypes.Storage](cmd.Context(), s, http.MethodPatch, apiPrefix+"/storage/"+url.PathEscape(args[0]), req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(st, func() error {
+				g.io.Successf("Renamed storage %s to %s", args[0], st.Name)
+				return nil
+			})
+		},
+	}
 }
 
 // newStorageRemoveCmd is `dock storage remove`.

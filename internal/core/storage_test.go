@@ -176,6 +176,24 @@ func TestMigrateRegistry(t *testing.T) {
 		t.Fatalf("restart: ops = %v", ops)
 	}
 
+	// A rename leaves the registry alone; it follows by ID.
+	if _, err := h.c.AddStorage(h.ctx, testSystem, apitypes.CreateStorageRequest{Name: "spare", Endpoint: endpoint, Bucket: "images", AccessKeyID: "k", SecretAccessKey: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.UpdateStorage(h.ctx, testSystem, "hetzner", apitypes.UpdateStorageRequest{Name: new("spare")}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("renamed onto another connection: %v", err)
+	}
+	before := len(reg.Ops())
+	if st, err := h.c.UpdateStorage(h.ctx, testSystem, "hetzner", apitypes.UpdateStorageRequest{Name: new("hel1")}); err != nil || st.Name != "hel1" || !slices.Equal(st.UsedBy, []string{"registry"}) {
+		t.Fatalf("rename = %+v, %v", st, err)
+	}
+	if r, err := h.c.GetRegistry(h.ctx, testSystem); err != nil || r.Storage != "hel1" || len(reg.Ops()) != before {
+		t.Fatalf("after the rename: storage %q, ops %v, %v", r.Storage, reg.Ops()[before:], err)
+	}
+	if _, b, err := h.c.storageByName(h.ctx, "hel1"); err != nil || b.SecretAccessKey != "s2" {
+		t.Fatalf("the rename lost the keys: %+v, %v", b, err)
+	}
+
 	if _, err := h.c.MigrateRegistry(h.ctx, testSystem, apitypes.MigrateRegistryRequest{To: "local"}); err != nil {
 		t.Fatal(err)
 	}
