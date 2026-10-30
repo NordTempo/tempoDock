@@ -18,9 +18,9 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v5
+      - uses: useblacksmith/checkout@v1
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -48,12 +48,12 @@ jobs:
   # parallel build have succeeded. Publish the built artifacts, never rebuild.
   release:
     needs: [ci, build]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: useblacksmith/checkout@v1
       - uses: actions/download-artifact@v5
         with:
           name: release-artifacts
@@ -74,7 +74,8 @@ jobs:
       # tempoBase's image (deploy/tempobase/Dockerfile) from the binaries
       # just released. Only on a v* tag, and only once the release has
       # tempoBase binaries (cmd/tempobase exists).
-      - uses: docker/setup-buildx-action@v4
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
         if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''
       - uses: docker/login-action@v4
         if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''

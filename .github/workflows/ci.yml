@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   go:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v5
+      - uses: useblacksmith/checkout@v1
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -50,7 +50,7 @@ jobs:
   # against scripts/perf/baseline.json, for Dock and tempoBase. Builds its
   # own inputs, so it runs alongside the Go and web checks.
   perf:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # For tempoBase's check that it closes Postgres connections after use.
     services:
       postgres:
@@ -64,7 +64,7 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: useblacksmith/checkout@v1
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -84,12 +84,12 @@ jobs:
           PERF_PG_URL: postgres://postgres:perf@127.0.0.1:5432/postgres?sslmode=disable
 
   web:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v5
+      - uses: useblacksmith/checkout@v1
       - uses: actions/setup-node@v7
         with:
           node-version: 24
