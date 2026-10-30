@@ -247,8 +247,8 @@ type archivedService struct {
 	active *store.Release
 }
 
-// archiveTx archives a service within a transaction and supersedes its
-// active release, so from then on no event of that release's container
+// archiveTx archives a service within a transaction, gives up the DNS
+// records Dock made for its domains, and supersedes its active release, so from then on no event of that release's container
 // counts as the service's status or as drift. ok is false if the service
 // was already archived. A service that is deploying is refused.
 func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedService, bool, error) {
@@ -269,6 +269,10 @@ func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedServ
 	n := now()
 	as.svc.ArchivedAt = &n
 	if err := q.ArchiveService(ctx, store.ArchiveServiceParams{ArchivedAt: &n, ID: ss.svc.ID}); err != nil {
+		return as, false, err
+	}
+	// Its domains stay, unrouted; the DNS records Dock made for them go.
+	if err := q.SetServiceRecordsAbsent(ctx, store.SetServiceRecordsAbsentParams{UpdatedAt: n, ServiceID: ss.svc.ID}); err != nil {
 		return as, false, err
 	}
 	active, err := q.GetActiveRelease(ctx, ss.svc.ID)
@@ -300,6 +304,7 @@ func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedServ
 // is done when the background stops are.
 func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes []string, stopped *sync.WaitGroup) {
 	stopped = &sync.WaitGroup{}
+	c.kickCloudflare() // archiveTx gave up their DNS records
 	links := map[int64]serverLink{}
 	stopping := map[int64]int{} // containers to stop, by server
 	for _, as := range done {

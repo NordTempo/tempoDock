@@ -5,9 +5,10 @@
 
 -- name: CreateJoinToken :one
 -- Records a join token for `dock server add`; the secret itself is only
--- ever shown once, to the admin.
-INSERT INTO join_tokens (hash, server_name, accepts_production, accepts_non_production, builder, created_by, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+-- ever shown once, to the admin. cloudflare_id: make the server a tunnel
+-- with that connection once it joins (ADR 0035).
+INSERT INTO join_tokens (hash, server_name, accepts_production, accepts_non_production, builder, cloudflare_id, created_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ConsumeJoinToken :one

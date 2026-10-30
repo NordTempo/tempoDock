@@ -76,6 +76,9 @@
       "AddDomainRequest": {
         "additionalProperties": false,
         "properties": {
+          "cloudflare": {
+            "type": "boolean"
+          },
           "hostname": {
             "maxLength": 253,
             "type": "string"
@@ -102,10 +105,16 @@
           "builder": {
             "type": "boolean"
           },
+          "cloudflare": {
+            "type": "string"
+          },
           "name": {
             "maxLength": 32,
             "minLength": 1,
             "type": "string"
+          },
+          "tunnel": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1041,6 +1050,145 @@
         ],
         "type": "object"
       },
+      "Cloudflare": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "account_name": {
+            "type": "string"
+          },
+          "name": {
+            "examples": [
+              "home"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "invalid"
+            ],
+            "type": "string"
+          },
+          "status_reason": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "zones": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "account_id",
+          "account_name",
+          "status",
+          "zones",
+          "used_by",
+          "updated_at",
+          "updated_by"
+        ],
+        "type": "object"
+      },
+      "CloudflareRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "type": "string"
+          },
+          "hostname": {
+            "examples": [
+              "shop.tempo.run"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "ready",
+              "external",
+              "error",
+              "deleting"
+            ],
+            "type": "string"
+          },
+          "tunnel": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname",
+          "connection",
+          "status",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "CloudflareRetried": {
+        "additionalProperties": false,
+        "properties": {
+          "retried": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "retried"
+        ],
+        "type": "object"
+      },
+      "CloudflareZone": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "type": "string"
+          },
+          "name": {
+            "examples": [
+              "tempo.run"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "connection"
+        ],
+        "type": "object"
+      },
       "Commit": {
         "additionalProperties": false,
         "properties": {
@@ -1263,6 +1411,28 @@
         "required": [
           "name",
           "kind"
+        ],
+        "type": "object"
+      },
+      "CreateCloudflareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
+            "type": "string"
+          },
+          "token": {
+            "description": "API token: Account › Cloudflare Tunnel › Edit, Zone › DNS › Edit and Zone › Zone › Read",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "token"
         ],
         "type": "object"
       },
@@ -2851,6 +3021,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "dns": {
+            "$ref": "#/components/schemas/DomainDNS"
+          },
           "dns_records": {
             "items": {
               "$ref": "#/components/schemas/DNSRecord"
@@ -2932,6 +3105,39 @@
         },
         "required": [
           "domain"
+        ],
+        "type": "object"
+      },
+      "DomainDNS": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "ready",
+              "external",
+              "error",
+              "deleting"
+            ],
+            "type": "string"
+          },
+          "tunnel": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "zone",
+          "status"
         ],
         "type": "object"
       },
@@ -4920,6 +5126,9 @@
             ],
             "type": "string"
           },
+          "tunnel": {
+            "$ref": "#/components/schemas/ServerTunnel"
+          },
           "tunnel_hostname": {
             "description": "CNAME target of its Cloudflare tunnel",
             "type": "string"
@@ -5209,6 +5418,74 @@
           "memory_used_bytes",
           "disk_used_bytes",
           "load1"
+        ],
+        "type": "object"
+      },
+      "ServerTunnel": {
+        "additionalProperties": false,
+        "properties": {
+          "adopted": {
+            "type": "boolean"
+          },
+          "connection": {
+            "type": "string"
+          },
+          "connectors": {
+            "items": {
+              "$ref": "#/components/schemas/TunnelConnector"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "hostname": {
+            "description": "CNAME target, \u003ctunnel_id\u003e.cfargotunnel.com",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "ready",
+              "error",
+              "deleting"
+            ],
+            "type": "string"
+          },
+          "tunnel_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "status",
+          "adopted"
+        ],
+        "type": "object"
+      },
+      "ServerTunnelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "create",
+              "adopt"
+            ],
+            "type": "string"
+          },
+          "cloudflare": {
+            "description": "Cloudflare connection; may be left out when there is one",
+            "type": "string"
+          },
+          "replace_ingress": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action"
         ],
         "type": "object"
       },
@@ -6386,6 +6663,38 @@
         ],
         "type": "object"
       },
+      "TunnelConnector": {
+        "additionalProperties": false,
+        "properties": {
+          "edge": {
+            "description": "Cloudflare data centres it is connected to",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "edge",
+          "since"
+        ],
+        "type": "object"
+      },
       "UpdateBackupScheduleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6402,6 +6711,22 @@
             "type": "integer"
           }
         },
+        "type": "object"
+      },
+      "UpdateCloudflareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "token": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
         "type": "object"
       },
       "UpdateDataPolicyRequest": {
@@ -9631,6 +9956,903 @@
         "summary": "Back up the control plane now",
         "tags": [
           "backups"
+        ]
+      }
+    },
+    "/api/v1/cloudflare": {
+      "get": {
+        "description": "The API tokens Dock runs tunnels and routes domains with, their zones and the servers whose tunnels they run. Tokens are never returned. Operators only.",
+        "operationId": "list-cloudflare",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Cloudflare"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List Cloudflare connections",
+        "tags": [
+          "cloudflare"
+        ]
+      },
+      "post": {
+        "description": "Dock checks the token (active, reaches the account and its tunnels, lists zones) before saving it, so a mistake fails here (400, saying what to fix). Zones whose DNS records the token can't read are left out. Operators only.",
+        "operationId": "create-cloudflare",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCloudflareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cloudflare"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add a Cloudflare connection",
+        "tags": [
+          "cloudflare"
+        ]
+      }
+    },
+    "/api/v1/cloudflare/records": {
+      "get": {
+        "description": "Failed ones first; at most 500. Operators only.",
+        "operationId": "list-cloudflare-records",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CloudflareRecord"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List the domains Dock routes through tunnels",
+        "tags": [
+          "cloudflare"
+        ]
+      }
+    },
+    "/api/v1/cloudflare/retry": {
+      "post": {
+        "description": "Every domain and tunnel that failed is tried again, in the background. Operators only.",
+        "operationId": "retry-cloudflare",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudflareRetried"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Retry failed Cloudflare changes",
+        "tags": [
+          "cloudflare"
+        ]
+      }
+    },
+    "/api/v1/cloudflare/zones": {
+      "get": {
+        "description": "The zones of working Cloudflare connections, for adding a domain from Cloudflare. Scope: deploy.",
+        "operationId": "list-cloudflare-zones",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CloudflareZone"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List the zones domains can be added from",
+        "tags": [
+          "cloudflare"
+        ]
+      }
+    },
+    "/api/v1/cloudflare/{cloudflare}": {
+      "delete": {
+        "description": "Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it. Operators only.",
+        "operationId": "remove-cloudflare",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cloudflare connection name",
+            "in": "path",
+            "name": "cloudflare",
+            "required": true,
+            "schema": {
+              "description": "Cloudflare connection name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a Cloudflare connection",
+        "tags": [
+          "cloudflare"
+        ]
+      },
+      "patch": {
+        "description": "Checked like a new one; its zones are listed again. A connection whose token Cloudflare refused works again. Operators only.",
+        "operationId": "update-cloudflare",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cloudflare connection name",
+            "in": "path",
+            "name": "cloudflare",
+            "required": true,
+            "schema": {
+              "description": "Cloudflare connection name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCloudflareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cloudflare"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Give a Cloudflare connection a new token",
+        "tags": [
+          "cloudflare"
+        ]
+      }
+    },
+    "/api/v1/cloudflare/{cloudflare}/refresh": {
+      "post": {
+        "description": "After zones were added to or taken from its token in Cloudflare. Operators only.",
+        "operationId": "refresh-cloudflare",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cloudflare connection name",
+            "in": "path",
+            "name": "cloudflare",
+            "required": true,
+            "schema": {
+              "description": "Cloudflare connection name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cloudflare"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List a Cloudflare connection's zones again",
+        "tags": [
+          "cloudflare"
         ]
       }
     },
@@ -20689,7 +21911,7 @@
         ]
       },
       "post": {
-        "description": "Any hostname, unique across all services. DNS can be set up before or after. Scope: deploy.",
+        "description": "Any hostname, unique across all services. DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0035): the server must be in tunnel mode, and a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.",
         "operationId": "add-domain",
         "parameters": [
           {
@@ -26980,6 +28202,136 @@
           }
         ],
         "summary": "Live server statistics",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/tunnel": {
+      "post": {
+        "description": "For a server in tunnel mode (ADR 0035). create: Dock creates a tunnel in the background, routes it to the server's Caddy and has the server run it. adopt: Dock takes over the tunnel the server runs already; its routes stay. Adding a domain from Cloudflare does this when needed. Operators only.",
+        "operationId": "set-server-tunnel",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerTunnelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Server"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Have Dock run a server's Cloudflare tunnel",
         "tags": [
           "servers"
         ]

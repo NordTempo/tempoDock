@@ -56,6 +56,9 @@ func (c *Core) ListDomains(ctx context.Context, a Actor, ref ServiceRef) ([]apit
 	return c.domainsOf(ctx, ss)
 }
 
+// domainsOf returns a service's domains with their status, the DNS
+// records to create and, for those Dock routes through a tunnel, how far
+// it is: three queries however many domains.
 func (c *Core) domainsOf(ctx context.Context, ss svcScope) ([]apitypes.Domain, error) {
 	rows, err := c.store.ListDomainsByService(ctx, ss.svc.ID)
 	if err != nil {
@@ -65,9 +68,21 @@ func (c *Core) domainsOf(ctx context.Context, ss svcScope) ([]apitypes.Domain, e
 	if err != nil {
 		return nil, err
 	}
+	records, err := c.store.ListServiceCloudflareRecords(ctx, ss.svc.ID)
+	if err != nil {
+		return nil, err
+	}
+	byDomain := make(map[int64]*store.CloudflareRecord, len(records))
+	for i, r := range records {
+		if r.DomainID != nil {
+			byDomain[*r.DomainID] = &records[i]
+		}
+	}
 	out := make([]apitypes.Domain, 0, len(rows))
 	for _, d := range rows {
-		out = append(out, c.toDomain(ss, d, rows, ing))
+		dom := c.toDomain(ss, d, rows, ing)
+		dom.DNS = c.domainDNS(byDomain[d.ID])
+		out = append(out, dom)
 	}
 	return out, nil
 }
@@ -101,12 +116,43 @@ func (c *Core) AddDomain(ctx context.Context, a Actor, ref ServiceRef, req apity
 			return apitypes.DomainChange{}, invalid("a domain can't redirect to itself")
 		}
 	}
-	return c.addDomain(ctx, a, ss, host, redirect, false)
+	var zone *store.CloudflareZone
+	if req.Cloudflare {
+		if zone, err = c.cloudflareZoneFor(ctx, a, ss, host); err != nil {
+			return apitypes.DomainChange{}, err
+		}
+	}
+	return c.addDomain(ctx, a, ss, host, redirect, false, zone)
+}
+
+// cloudflareZoneFor gets a service's server ready for host to be added
+// from Cloudflare (prepareCloudflareDomain) and returns its zone. An
+// archived service is refused first, before anything changes.
+func (c *Core) cloudflareZoneFor(ctx context.Context, a Actor, ss svcScope, host string) (*store.CloudflareZone, error) {
+	if err := c.checkNewDomain(ss, host); err != nil {
+		return nil, err
+	}
+	if exists, err := c.store.HostnameExists(ctx, host); err != nil || exists {
+		if err == nil {
+			err = errf(apitypes.CodeHostnameTaken, "%s is already in use by a service; a hostname can belong to only one service", host)
+		}
+		return nil, err
+	}
+	srv, err := c.store.GetServer(ctx, ss.env.ServerID)
+	if err != nil {
+		return nil, err
+	}
+	z, err := c.prepareCloudflareDomain(ctx, a, srv, host)
+	if err != nil {
+		return nil, err
+	}
+	return &z, nil
 }
 
 // GenerateDomain gives a service a hostname under the base domain of its
 // environment's server: <service>-<project>[-<env>].<base>, with -2, -3…
-// on collisions.
+// on collisions. On a tunnel server whose base domain is in a zone Dock
+// manages, it is routed through the tunnel like a domain from Cloudflare.
 func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (apitypes.DomainChange, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "adding a domain")
 	if err != nil {
@@ -135,23 +181,53 @@ func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (api
 		if err != nil {
 			return apitypes.DomainChange{}, err
 		}
-		if !exists {
-			return c.addDomain(ctx, a, ss, host, "", true)
+		if exists {
+			continue
 		}
+		// Under a zone Dock manages, on a tunnel server, Dock routes it
+		// through the tunnel like a domain from Cloudflare (no wildcard).
+		var zone *store.CloudflareZone
+		if _, managed := c.zoneFor(host); managed && c.ingressOf(srv).mode == apitypes.IngressCloudflareTunnel {
+			if zone, err = c.cloudflareZoneFor(ctx, a, ss, host); err != nil {
+				return apitypes.DomainChange{}, err
+			}
+		}
+		return c.addDomain(ctx, a, ss, host, "", true, zone)
 	}
 }
 
-func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redirect string, generated bool) (apitypes.DomainChange, error) {
-	if ss.svc.ArchivedAt != nil {
-		return apitypes.DomainChange{}, invalid("service %s is archived", ss)
+// checkNewDomain refuses host for a service before anything is set up
+// for it: an archived service, the webhook hostname, Dock's address.
+func (c *Core) checkNewDomain(ss svcScope, host string) error {
+	switch {
+	case ss.svc.ArchivedAt != nil:
+		return invalid("service %s is archived", ss)
+	case host == c.cfg.Hooks.PublicHost:
+		return errf(apitypes.CodeHostnameTaken, "%s is this server's webhook hostname ([hooks] public_host); use another hostname", host)
+	case host == c.publicHost():
+		return errf(apitypes.CodeHostnameTaken, "%s is Dock's own address (`dock address`); use another hostname", host)
 	}
-	if host == c.cfg.Hooks.PublicHost {
-		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is this server's webhook hostname ([hooks] public_host); use another hostname", host)
+	return nil
+}
+
+// addDomain adds host to a service; zone, when set, is the Cloudflare
+// zone Dock routes it through the server's tunnel from (ADR 0035).
+func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redirect string, generated bool, zone *store.CloudflareZone) (apitypes.DomainChange, error) {
+	if err := c.checkNewDomain(ss, host); err != nil {
+		return apitypes.DomainChange{}, err
 	}
-	if host == c.publicHost() {
-		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is Dock's own address (`dock address`); use another hostname", host)
-	}
-	d, err := c.store.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: ss.svc.ID, Generated: generated, RedirectTo: redirect})
+	var d store.Domain
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		var err error
+		if d, err = q.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: ss.svc.ID, Generated: generated, RedirectTo: redirect}); err != nil || zone == nil {
+			return err
+		}
+		// Dock routes it through the server's tunnel (ADR 0035).
+		return q.SaveCloudflareRecord(ctx, store.SaveCloudflareRecordParams{
+			Hostname: host, DomainID: &d.ID, ServerID: &ss.env.ServerID,
+			ConnectionID: zone.ConnectionID, ZoneID: zone.ZoneID, UpdatedAt: now(),
+		})
+	})
 	if store.IsUnique(err) {
 		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is already in use by a service; a hostname can belong to only one service", host)
 	}
@@ -159,6 +235,9 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		return apitypes.DomainChange{}, err
 	}
 	c.audit(ctx, a, "domain.add", &ss.project, &ss.env, ss.String(), "added domain "+host)
+	if zone != nil {
+		c.kickCloudflare()
+	}
 
 	var out apitypes.DomainChange
 	// A running service whose port isn't published yet needs a release that
@@ -191,11 +270,15 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		return out, err
 	}
 	out.Domain = c.toDomain(ss, d, rows, ing)
+	if r, err := c.store.GetCloudflareRecord(ctx, host); err == nil {
+		out.Domain.DNS = c.domainDNS(&r)
+	}
 	c.publish(ss, apitypes.Event{Type: apitypes.EventDomain, Domain: &out.Domain})
 	return out, nil
 }
 
-// RemoveDomain removes a hostname from a service and its routes.
+// RemoveDomain removes a hostname from a service and its routes, and the
+// DNS record Dock made for it.
 func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostname string) error {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "removing a domain")
 	if err != nil {
@@ -212,9 +295,17 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 	if err != nil {
 		return err
 	}
-	if err := c.store.DeleteDomain(ctx, d.ID); err != nil {
+	// Dock deletes the DNS record it made for it (ADR 0035).
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.SetDomainRecordAbsent(ctx, store.SetDomainRecordAbsentParams{UpdatedAt: now(), DomainID: &d.ID}); err != nil {
+			return err
+		}
+		return q.DeleteDomain(ctx, d.ID)
+	})
+	if err != nil {
 		return err
 	}
+	c.kickCloudflare()
 	if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
 		c.log.Error("apply routes after removing domain", "domain", host, "err", err)
 	}

@@ -53,7 +53,10 @@ what the hostname resolved to then.`,
 				tb := g.io.Table(headers...)
 				for _, d := range domains {
 					dns := "-"
-					if d.Status != apitypes.DomainActive && len(d.DNSRecords) > 0 {
+					switch {
+					case d.DNS != nil:
+						dns = dnsWords(d.DNS)
+					case d.Status != apitypes.DomainActive && len(d.DNSRecords) > 0:
 						r := d.DNSRecords[0]
 						dns = r.Type + " " + r.Name + " → " + r.Value
 					}
@@ -92,20 +95,30 @@ func (f *domainFlags) add(cmd *cobra.Command) {
 func newDomainAddCmd(g *globals) *cobra.Command {
 	var f domainFlags
 	var redirect string
+	var fromCloudflare bool
 	cmd := &cobra.Command{
-		Use:   "add <hostname>",
+		Use:   "add <hostname> [--cloudflare]",
 		Short: "Add a hostname and wait for DNS and its certificate",
 		Long: `Add any hostname to the service. The exact DNS record to create is printed;
 DNS can be set up before or after. Unless --detach, waits (up to --timeout)
 while the server checks DNS and issues the certificate. Still waiting after
-that is not an error: the server keeps checking.`,
+that is not an error: the server keeps checking.
+
+--cloudflare adds a hostname in a zone connected to Dock (` + "`dock cloudflare zones`" + `)
+and has Dock set up all it needs: it routes the hostname through the
+server's Cloudflare tunnel (creating or adopting one) and creates its
+proxied CNAME. The server must be in tunnel mode; a record Dock didn't make
+at that name is refused.`,
+		Example: `  dock domain add shop.example.com -s web
+  dock domain add shop.tempo.run -s web --cloudflare`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return g.addDomain(cmd.Context(), f, "/domains", apitypes.AddDomainRequest{Hostname: args[0], RedirectTo: redirect})
+			return g.addDomain(cmd.Context(), f, "/domains", apitypes.AddDomainRequest{Hostname: args[0], RedirectTo: redirect, Cloudflare: fromCloudflare})
 		},
 	}
 	f.add(cmd)
 	cmd.Flags().StringVar(&redirect, "redirect-to", "", "permanently redirect to this hostname instead of serving the service")
+	cmd.Flags().BoolVar(&fromCloudflare, "cloudflare", false, "add it from a connected Cloudflare zone: Dock routes it through the server's tunnel")
 	return cmd
 }
 
@@ -153,7 +166,13 @@ func (g *globals) addDomain(ctx context.Context, f domainFlags, path string, bod
 			target = "redirect to " + d.RedirectTo
 		}
 		_, _ = fmt.Fprintf(g.io.Out, "Added %s → %s (%s)\n", d.Hostname, target, d.Environment)
+		if d.DNS != nil {
+			_, _ = fmt.Fprintf(g.io.Out, "DNS: Dock routes it through the server's Cloudflare tunnel (zone %s)\n", d.DNS.Zone)
+		}
 		for i, r := range d.DNSRecords {
+			if d.DNS != nil {
+				break
+			}
 			label := "Point DNS:"
 			if i > 0 {
 				label = "       or:"
@@ -297,4 +316,13 @@ func newDomainRemoveCmd(g *globals) *cobra.Command {
 	f.add(cmd, needService)
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	return cmd
+}
+
+// dnsWords describes how Dock routes a domain through its tunnel, for
+// `domain list`.
+func dnsWords(d *apitypes.DomainDNS) string {
+	if d.Reason != "" && d.Status == apitypes.DNSError {
+		return "Cloudflare error: " + d.Reason
+	}
+	return "Cloudflare " + string(d.Status)
 }

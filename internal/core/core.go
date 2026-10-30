@@ -63,6 +63,9 @@ type Options struct {
 	// (https://api.github.com) for push-to-deploy; tests point it at a
 	// fake.
 	GitHubAPI string
+	// CloudflareAPI overrides Cloudflare's API base URL (ADR 0035); tests
+	// point it at a fake.
+	CloudflareAPI string
 	// ConfigPath is the daemon config file, archived by the control
 	// plane's own backup (ADR 0021); empty leaves it out.
 	ConfigPath string
@@ -153,6 +156,8 @@ type Core struct {
 	updates updates
 	// address is Dock's public address, "" for none (address.go).
 	address atomic.Pointer[string]
+	// cf is the Cloudflare integration (cloudflare.go).
+	cf cfState
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -199,6 +204,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
 		updates:    newUpdates(o),
+		cf:         newCFState(o.CloudflareAPI),
 	}
 	if c.data == nil {
 		c.data = pg.New(pg.Options{})
@@ -217,6 +223,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	}
 	if err := c.loadPublicHost(ctx); err != nil {
 		return nil, err
+	}
+	if err := c.loadCloudflare(ctx); err != nil {
+		return nil, fmt.Errorf("load Cloudflare state: %w", err)
 	}
 	return c, nil
 }
@@ -292,11 +301,18 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	c.loadLastUpdate()
 	c.UpdateFinished(ctx)
-	c.wg.Add(4)
+	c.wg.Add(6)
 	go c.watchRuntime(events)
 	go c.checkDomains()
 	go c.collectStats()
 	go c.scheduleBackups()
+	go c.runCloudflare()
+	// In the background: running the tunnel may pull an image.
+	go func() {
+		defer c.wg.Done()
+		c.runServerTunnel(c.ctx, c.local.ID, c.rt)
+		c.syncServerRecords(c.ctx, c.local)
+	}()
 	if err := c.resumeGit(ctx); err != nil {
 		return fmt.Errorf("resume queued pushes: %w", err)
 	}

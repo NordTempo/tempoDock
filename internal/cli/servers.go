@@ -20,7 +20,7 @@ func newServerCmd(g *globals) *cobra.Command {
 		Short: "Servers environments run on, and what may be placed on them",
 	})
 	cmd.AddCommand(newServerListCmd(g), newServerShowCmd(g), newServerDiskCmd(g), newServerPruneCmd(g), newServerAddCmd(g),
-		newServerUpdateCmd(g), newServerRevokeCmd(g), newServerRotateKeyCmd(g), newServerRemoveCmd(g))
+		newServerUpdateCmd(g), newServerRevokeCmd(g), newServerRotateKeyCmd(g), newServerRemoveCmd(g), newServerTunnelCmd(g))
 	return cmd
 }
 
@@ -88,9 +88,10 @@ func ingressWords(ingress apitypes.Ingress) string {
 }
 
 func newServerAddCmd(g *globals) *cobra.Command {
-	var prod, nonProd, builder bool
+	var prod, nonProd, builder, tunnel bool
+	var cloudflare string
 	cmd := &cobra.Command{
-		Use:   "add <name> [--production] [--non-production] [--builder]",
+		Use:   "add <name> [--production] [--non-production] [--builder] [--tunnel]",
 		Short: "Add a server: create its join token and print the install command (admin)",
 		Long: `Add a server as a node of this control plane. Prints a join token, valid
 for an hour and usable once, and the install.sh command to run on the new
@@ -99,8 +100,12 @@ connects.
 
 Choose which environment kinds it takes (both is fine), and --builder for a
 server that builds images for others. All of it can be changed later with
-` + "`dock server update`" + `.`,
-		Example: `  dock server add homelab --non-production --builder
+` + "`dock server update`" + `.
+
+--tunnel puts the server behind a Cloudflare tunnel that Dock creates once it
+joins, with a Cloudflare connection (` + "`dock cloudflare add`" + `): it needs no
+open ports, and domains added from Cloudflare go through the tunnel.`,
+		Example: `  dock server add homelab --non-production --builder --tunnel
   dock server add vps-2 --production`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -113,6 +118,7 @@ server that builds images for others. All of it can be changed later with
 			}
 			a, err := send[apitypes.AddedServer](cmd.Context(), s, http.MethodPost, apiPrefix+"/servers", apitypes.AddServerRequest{
 				Name: args[0], AcceptsProduction: prod, AcceptsNonProduction: nonProd, Builder: builder,
+				Tunnel: tunnel, Cloudflare: cloudflare,
 			})
 			if err != nil {
 				return err
@@ -133,7 +139,86 @@ server that builds images for others. All of it can be changed later with
 	f.BoolVar(&prod, "production", false, "accept production environments")
 	f.BoolVar(&nonProd, "non-production", false, "accept non-production environments")
 	f.BoolVar(&builder, "builder", false, "build images on this server")
+	f.BoolVar(&tunnel, "tunnel", false, "put it behind a Cloudflare tunnel Dock creates once it joins")
+	f.StringVar(&cloudflare, "cloudflare", "", "Cloudflare connection for --tunnel (default: the only one)")
 	return cmd
+}
+
+// newServerTunnelCmd is `dock server tunnel`: have Dock manage a tunnel
+// server's Cloudflare tunnel.
+func newServerTunnelCmd(g *globals) *cobra.Command {
+	cmd := group(&cobra.Command{
+		Use:   "tunnel",
+		Short: "Have Dock run a server's Cloudflare tunnel (admin)",
+		Long: `Have Dock run the Cloudflare tunnel of a server in tunnel mode (ADR 0035), with
+a Cloudflare connection (` + "`dock cloudflare add`" + `): cloudflared runs there in
+Dock's dock-cloudflared container, and a tunnel Dock created is deleted with
+the server. Adding a domain from Cloudflare does this when the server needs it.`,
+	})
+	run := func(action string) func(*cobra.Command, []string) error {
+		return func(cmd *cobra.Command, args []string) error {
+			fs := cmd.Flags()
+			cf, _ := fs.GetString("cloudflare")
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			sv, err := send[apitypes.Server](cmd.Context(), s, http.MethodPost, apiPrefix+"/servers/"+url.PathEscape(args[0])+"/tunnel",
+				apitypes.ServerTunnelRequest{Action: action, Cloudflare: cf})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(sv, func() error {
+				if action == "create" {
+					g.io.Successf("Dock creates server %s's Cloudflare tunnel; `dock server show %s` shows when it is ready", sv.Name, sv.Name)
+					return nil
+				}
+				g.io.Successf("Dock runs server %s's tunnel", sv.Name)
+				g.io.Detail("It runs in Dock's dock-cloudflared container now, next to the old cloudflared service. Run install.sh on the server again to remove that one.")
+				return nil
+			})
+		}
+	}
+	create := &cobra.Command{
+		Use:     "create <server> [--cloudflare <connection>]",
+		Short:   "Create a tunnel for a server in tunnel mode that runs none (admin)",
+		Example: `  dock server tunnel create homelab`,
+		Args:    cobra.ExactArgs(1),
+		RunE:    run("create"),
+	}
+	create.Flags().String("cloudflare", "", "Cloudflare connection (default: the only one)")
+	adopt := &cobra.Command{
+		Use:   "adopt <server> [--cloudflare <connection>]",
+		Short: "Take over the tunnel a server runs already (admin)",
+		Long: `Take over the tunnel the server runs already, made in the Cloudflare dashboard
+and installed with its token. Its routes stay; domains added from Cloudflare
+get their own route when its catch-all doesn't go to the server's Caddy.
+Traffic doesn't drop: Dock's cloudflared joins the old one as a second
+connector until install.sh removes the old one. Dock never deletes a tunnel
+it adopted. Adding a domain from Cloudflare adopts it too.`,
+		Example: `  dock server tunnel adopt homelab`,
+		Args:    cobra.ExactArgs(1),
+		RunE:    run("adopt"),
+	}
+	adopt.Flags().String("cloudflare", "", "Cloudflare connection of the tunnel's account (default: the only one)")
+	cmd.AddCommand(create, adopt)
+	return cmd
+}
+
+// tunnelWords describes the tunnel Dock manages for a server.
+func tunnelWords(t *apitypes.ServerTunnel) string {
+	words := string(t.Status)
+	if t.Adopted {
+		words += ", adopted"
+	}
+	words += ", connection " + t.Connection
+	if t.Connectors != nil {
+		words += fmt.Sprintf(", %d connectors", len(t.Connectors))
+	}
+	if t.Reason != "" {
+		words += ": " + t.Reason
+	}
+	return words
 }
 
 func newServerRevokeCmd(g *globals) *cobra.Command {
@@ -269,6 +354,9 @@ func newServerShowCmd(g *globals) *cobra.Command {
 				sv := d.Server
 				_, _ = fmt.Fprintf(g.io.Out, "%s  %s  %s\naccepts %s\nmemory reserved %s\n", sv.Name, serverStatus(sv), dash(sv.Version), accepts(sv), reserved(sv))
 				_, _ = fmt.Fprintf(g.io.Out, "ingress %s%s\nbase domain %s\n", dash(ingressWords(sv.Ingress)), ingressTarget(sv), dash(sv.BaseDomain))
+				if sv.Tunnel != nil {
+					_, _ = fmt.Fprintf(g.io.Out, "tunnel managed by Dock: %s\n", tunnelWords(sv.Tunnel))
+				}
 				if sv.Builder {
 					_, _ = fmt.Fprintln(g.io.Out, "builds images")
 				}
