@@ -9,7 +9,8 @@ alike. `make perf` checks the budgets; CI runs it on every pull request.
 
 Checked by `make perf` ([scripts/perf](../scripts/perf)). Product targets are
 in [experience](experience.md#performance-targets); the budgets keep
-headroom below them.
+headroom below them. Dock and tempoBase are measured with `GOMAXPROCS=4`,
+a small server, so a runner's core count doesn't move their memory.
 
 | What | Budget | Measured (8-core Ryzen VM) |
 |---|---|---|
