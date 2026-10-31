@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -64,6 +65,12 @@ func newHarness(t *testing.T) *harness {
 	cfg.DataDir = dir
 	cfg.BaseDomain = "apps.test"
 	cfg.PublicIP = "203.0.113.10"
+	// The analytics store's binary: a development build has no release
+	// to download it from.
+	cfg.Analytics.StoreBinary = filepath.Join(dir, "dock-analytics")
+	if err := os.WriteFile(cfg.Analytics.StoreBinary, []byte("store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	h := &harness{t: t, ctx: ctx, rt: fake.New(), store: st}
 	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond}
 	h.c = h.start()

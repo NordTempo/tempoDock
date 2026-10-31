@@ -3,9 +3,13 @@ package remote
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -48,9 +52,33 @@ func TestAnalyticsOverTheLink(t *testing.T) {
 		t.Fatalf("ack: %v, node acked %d", err, fk.SpoolAcked())
 	}
 
-	spec := &node.AnalyticsStoreSpec{Image: "dock-analytics:dev", Token: strings.Repeat("t", 32), MemoryBytes: 512 << 20}
-	if err := h.client.EnsureAnalyticsStore(ctx, spec); err != nil || fk.AnalyticsStoreSpec() == nil || *fk.AnalyticsStoreSpec() != *spec {
-		t.Fatalf("ensure: %v, node has %+v", err, fk.AnalyticsStoreSpec())
+	// The store runs from the control plane's binary, sent once.
+	bin := filepath.Join(t.TempDir(), "dock-analytics")
+	if err := os.WriteFile(bin, []byte("the store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("the store"))
+	spec := node.AnalyticsStoreSpec{Binary: bin, SHA256: hex.EncodeToString(sum[:]), Token: strings.Repeat("t", 32), MemoryBytes: 512 << 20}
+	if err := h.client.EnsureAnalyticsStore(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	got := fk.AnalyticsStoreSpec()
+	onNode := filepath.Join(h.dataDir, "analytics", "bin", "dock-analytics-"+spec.SHA256)
+	if got == nil || got.Binary != onNode || got.SHA256 != spec.SHA256 || got.Token != spec.Token {
+		t.Fatalf("the node runs %+v", got)
+	}
+	if b, err := os.ReadFile(onNode); err != nil || string(b) != "the store" {
+		t.Fatalf("the node's copy: %q, %v", b, err)
+	}
+	// The next ensure finds it there: nothing is sent again.
+	_ = os.Remove(bin)
+	if err := h.client.EnsureAnalyticsStore(ctx, spec); err != nil {
+		t.Fatalf("ensure with the binary on the node: %v", err)
+	}
+	// A binary that doesn't match its hash is refused.
+	_ = os.WriteFile(bin, []byte("tampered"), 0o755)
+	if err := h.client.EnsureAnalyticsStore(ctx, node.AnalyticsStoreSpec{Binary: bin, SHA256: strings.Repeat("a", 64), Token: spec.Token, MemoryBytes: spec.MemoryBytes}); err == nil || !strings.Contains(err.Error(), "doesn't match") {
+		t.Fatalf("a mismatched binary: %v", err)
 	}
 	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return h.client.DialAnalyticsStore(ctx)
@@ -65,8 +93,11 @@ func TestAnalyticsOverTheLink(t *testing.T) {
 		t.Fatalf("through the link the store said %q", body)
 	}
 
-	// Removing the store: a nil spec.
-	if err := h.client.EnsureAnalyticsStore(ctx, nil); err != nil || fk.AnalyticsStoreSpec() != nil {
+	// Removing the store takes its binaries with it.
+	if err := h.client.RemoveAnalyticsStore(ctx); err != nil || fk.AnalyticsStoreSpec() != nil {
 		t.Fatalf("remove: %v, node has %+v", err, fk.AnalyticsStoreSpec())
+	}
+	if _, err := os.Stat(onNode); !os.IsNotExist(err) {
+		t.Errorf("the binary stayed on the node: %v", err)
 	}
 }

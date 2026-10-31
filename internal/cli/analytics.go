@@ -37,36 +37,46 @@ analytics store, and whether the store answers (operator).`,
 			return g.io.Print(st, func() error { return printAnalytics(g, st) })
 		},
 	}
-	cmd.AddCommand(&cobra.Command{
+	server := &cobra.Command{
 		Use:   "server [<server>]",
 		Short: "Choose the server the analytics store runs on, and turn analytics on (operator)",
 		Long: `Run the analytics store on <server>, or on the control plane's own server
 without one, and turn analytics on. Every server keeps its events until
 the store has them, so a store that is off for a while loses nothing.
 
-A store already running on another server stops; its data stays there,
-and the new store starts empty.`,
+A store already running on another server moves with its data, in the
+background: events wait in each server's spool, the data is copied and
+checked, then the store and its data are removed from the old server.
+Follow it with ` + "`dock analytics`" + `. When the old server is offline its data
+can't be copied: --start-empty starts the store empty instead, and the
+old store is removed when that server is back.`,
 		Example: "  dock analytics server homelab\n  dock analytics server",
 		Args:    cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := g.connect()
-			if err != nil {
-				return err
-			}
-			req := apitypes.SetAnalyticsServerRequest{}
-			if len(args) == 1 {
-				req.Server = args[0]
-			}
-			st, err := send[apitypes.AnalyticsStatus](cmd.Context(), s, http.MethodPut, apiPrefix+"/analytics/server", req)
-			if err != nil {
-				return err
-			}
-			return g.io.Print(st, func() error {
+	}
+	startEmpty := server.Flags().Bool("start-empty", false, "move although the old server is offline: the new store starts empty")
+	server.RunE = func(cmd *cobra.Command, args []string) error {
+		s, err := g.connect()
+		if err != nil {
+			return err
+		}
+		req := apitypes.SetAnalyticsServerRequest{StartEmpty: *startEmpty}
+		if len(args) == 1 {
+			req.Server = args[0]
+		}
+		st, err := send[apitypes.AnalyticsStatus](cmd.Context(), s, http.MethodPut, apiPrefix+"/analytics/server", req)
+		if err != nil {
+			return err
+		}
+		return g.io.Print(st, func() error {
+			if st.MovingTo != "" {
+				g.io.Successf("Moving the analytics store from %s to %s; see `dock analytics`", st.Server, st.MovingTo)
+			} else {
 				g.io.Successf("The analytics store runs on %s", st.Server)
-				return printAnalytics(g, st)
-			})
-		},
-	})
+			}
+			return printAnalytics(g, st)
+		})
+	}
+	cmd.AddCommand(server)
 	cmd.AddCommand(newAnalyticsEnableCmd(g), newAnalyticsDisableCmd(g), newAnalyticsSitesCmd(g),
 		newAnalyticsStatsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
 	return cmd
@@ -496,12 +506,18 @@ func printAnalytics(g *globals, st apitypes.AnalyticsStatus) error {
 		store = fmt.Sprintf("running (%s), %s events, %s", st.StoreVersion, strconv.FormatInt(st.Events, 10), bytesize(st.StoreBytes))
 	case st.Enabled && !st.ServerOnline:
 		store = "unreachable: " + st.Server + " is offline; events wait in each server's spool"
+	case st.Starting:
+		store = "starting (the first start downloads it)"
 	case st.Enabled:
-		store = "starting, or not answering; see `docker logs dock-analytics` on " + st.Server
+		store = "not answering; see `docker logs dock-analytics` on " + st.Server
 	}
 	geo := ""
 	if st.GeoIP != "" {
 		geo = st.GeoIP + " (" + apitypes.GeoAttribution + ")"
 	}
-	return g.io.Fields("Analytics", state, "Server", st.Server, "Store", store, "Locations", geo)
+	moving := ""
+	if st.MovingTo != "" {
+		moving = "to " + st.MovingTo + ", with its data; events wait in each server's spool"
+	}
+	return g.io.Fields("Analytics", state, "Server", st.Server, "Store", store, "Moving", moving, "Problem", st.Error, "Locations", geo)
 }

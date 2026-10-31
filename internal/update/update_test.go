@@ -23,6 +23,7 @@ func fakeRelease(t *testing.T, dir, v string, archs ...string) map[string][]byte
 	files := map[string][]byte{InstallAsset(v): []byte("tarball " + v)}
 	for _, a := range archs {
 		files[BinaryAsset(a)] = []byte("binary " + v + " " + a)
+		files[AnalyticsAsset(a)] = []byte("analytics " + v + " " + a)
 	}
 	var sums strings.Builder
 	for name, b := range files {
@@ -79,6 +80,46 @@ func TestStageVerifiesAndReuses(t *testing.T) {
 	}
 	if cs.opened[BinaryAsset("amd64")] != 1 || cs.opened[InstallAsset("v1.2.0")] != 1 || cs.opened[BinaryAsset("arm64")] != 1 {
 		t.Errorf("opened %v; want each asset once", cs.opened)
+	}
+}
+
+// The analytics store's binary comes from the release only when it is
+// needed: checked, executable, downloaded once, and older versions' gone
+// once the store runs on a newer one.
+func TestStageAnalytics(t *testing.T) {
+	ctx := context.Background()
+	src, data := t.TempDir(), t.TempDir()
+	files := fakeRelease(t, src, "v1.2.0", "arm64")
+	fakeRelease(t, src, "v1.1.0", "arm64")
+	if _, _, err := StageAnalytics(ctx, DirSource{Path: src}, data, "v1.1.0", "arm64"); err != nil {
+		t.Fatal(err)
+	}
+	cs := &countingSource{Source: DirSource{Path: src}, opened: map[string]int{}}
+	for range 2 {
+		path, sum, err := StageAnalytics(ctx, cs, data, "v1.2.0", "arm64")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(path)
+		h := sha256.Sum256(files[AnalyticsAsset("arm64")])
+		if err != nil || !bytes.Equal(got, files[AnalyticsAsset("arm64")]) || sum != hex.EncodeToString(h[:]) {
+			t.Fatalf("staged %q (%s), %v", got, sum, err)
+		}
+		if st, err := os.Stat(path); err != nil || st.Mode().Perm()&0o111 == 0 {
+			t.Errorf("the binary isn't executable: %v", err)
+		}
+	}
+	if cs.opened[AnalyticsAsset("arm64")] != 1 || cs.opened[BinaryAsset("arm64")] != 0 {
+		t.Errorf("opened %v; want the store's binary once and nothing else", cs.opened)
+	}
+	if err := PruneAnalytics(data, "v1.2.0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(AnalyticsDir(data), "v1.1.0")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the older version's binary is still there: %v", err)
+	}
+	if _, _, err := StageAnalytics(ctx, cs, data, "dev", "arm64"); err == nil || !strings.Contains(err.Error(), "store_binary") {
+		t.Errorf("a development build: %v", err)
 	}
 }
 

@@ -1373,11 +1373,15 @@ const (
 	// EventDisk carries a server's disk reading once a refresh of it
 	// finished (ADR 0035). Operators only.
 	EventDisk EventType = "disk"
+	// EventAnalytics says the analytics store started, or failed to
+	// start: read the status again (ADR 0037). No payload; operators
+	// only.
+	EventAnalytics EventType = "analytics"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType       `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk"`
+	Type           EventType       `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics"`
 	Time           time.Time       `json:"time"`
 	ProjectRenamed *ProjectRenamed `json:"project_renamed,omitempty"`
 	Project        string          `json:"project,omitempty"`

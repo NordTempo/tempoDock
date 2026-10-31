@@ -14,19 +14,18 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/analytics/ingest"
-	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
-	"github.com/NordTempo/tempoDock/internal/version"
 )
 
 // Dock Analytics in the control plane (ADR 0037). Every server's ingest
 // appends events to its own spool. Once analytics is enabled the control
 // plane:
 //
-//   - keeps the store's container running on the analytics server
-//     (EnsureAnalyticsStore, on start, on a change of server and whenever
-//     that server reconnects);
+//   - keeps the store's container running on the analytics server, from
+//     the release's binary (analytics_store.go: on start, on a move,
+//     whenever that server reconnects, and when the status page finds it
+//     down);
 //   - makes a salt per UTC day and hands today's and tomorrow's to every
 //     server (rotateSalts on the statistics tick, and on each connect);
 //   - forwards every server's spool to the store: one goroutine per server
@@ -53,18 +52,26 @@ type analyticsState struct {
 	serverID  int64
 	runCtx    context.Context
 	runCancel context.CancelFunc
+	// writing is read locked by each forwarder while it writes to the
+	// store, and locked by a move while it copies the store
+	// (analytics_store.go).
+	writing sync.RWMutex
+	// starting is set while a start of the store runs, so the status
+	// page asking again doesn't start another. storeErr is why the last
+	// start or move failed, "" once one worked.
+	starting  bool
+	startedAt time.Time
+	storeErr  string
+	// moving is the move running, nil otherwise.
+	moving *analyticsMove
+	// binMu makes downloads of the store's binary one at a time.
+	binMu sync.Mutex
 	// live are the sites someone watches live (analytics_live.go).
 	live liveSites
 }
 
 // analyticsMinMemory is the least the store's container may get.
 const analyticsMinMemory = 256 << 20
-
-// defaultAnalyticsImage is the store's image released with this version
-// of Dock.
-func defaultAnalyticsImage() string {
-	return "ghcr.io/nordtempo/dock-analytics:" + version.Version
-}
 
 // analyticsSource names a server's spool in the store's cursors.
 func analyticsSource(serverID int64) string { return "server:" + strconv.FormatInt(serverID, 10) }
@@ -103,20 +110,7 @@ func (c *Core) runAnalytics(ctx context.Context, st store.AnalyticsSetting) erro
 	}
 	c.analytics.runCtx, c.analytics.runCancel = context.WithCancel(c.ctx)
 	c.analytics.serverID = serverID
-	c.analytics.client = &analytics.Client{
-		BaseURL: "http://analytics",
-		Token:   string(token),
-		HTTP: &http.Client{Transport: &http.Transport{
-			// The store's port on its server, over the node link for a
-			// remote one; a dashboard has dashboardParallel queries in
-			// flight.
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return c.runtime(serverID).DialAnalyticsStore(ctx)
-			},
-			MaxIdleConnsPerHost: dashboardParallel,
-			IdleConnTimeout:     90 * time.Second,
-		}},
-	}
+	c.analytics.client = c.storeClient(serverID, string(token))
 	c.analytics.mu.Unlock()
 	c.ensureAnalyticsStore(serverID)
 	c.forwardFrom(c.local.ID)
@@ -134,6 +128,23 @@ func (c *Core) runAnalytics(ctx context.Context, st store.AnalyticsSetting) erro
 	return nil
 }
 
+// storeClient reaches the store on serverID: its port on that server,
+// over the node link for a remote one.
+func (c *Core) storeClient(serverID int64, token string) *analytics.Client {
+	return &analytics.Client{
+		BaseURL: "http://analytics",
+		Token:   token,
+		HTTP: &http.Client{Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return c.runtime(serverID).DialAnalyticsStore(ctx)
+			},
+			// A dashboard has dashboardParallel queries in flight.
+			MaxIdleConnsPerHost: dashboardParallel,
+			IdleConnTimeout:     90 * time.Second,
+		}},
+	}
+}
+
 // analyticsClient is the store's client and server, or nil before
 // analytics is enabled.
 func (c *Core) analyticsClient() (*analytics.Client, int64) {
@@ -147,30 +158,6 @@ func (c *Core) analyticsRun() (*analytics.Client, int64, context.Context) {
 	c.analytics.mu.Lock()
 	defer c.analytics.mu.Unlock()
 	return c.analytics.client, c.analytics.serverID, c.analytics.runCtx
-}
-
-// ensureAnalyticsStore starts (or updates) the store's container on
-// serverID, in the background.
-func (c *Core) ensureAnalyticsStore(serverID int64) {
-	cl, _ := c.analyticsClient()
-	if cl == nil || !c.online(serverID) {
-		return
-	}
-	image := c.cfg.Analytics.StoreImage
-	if image == "" {
-		image = defaultAnalyticsImage()
-	}
-	spec := &node.AnalyticsStoreSpec{Image: image, Token: cl.Token, MemoryBytes: max(int64(c.cfg.Analytics.StoreMemoryMB)<<20, analyticsMinMemory)}
-	c.wg.Go(func() {
-		ctx, cancel := context.WithTimeout(c.ctx, 15*time.Minute)
-		defer cancel()
-		if err := c.runtime(serverID).EnsureAnalyticsStore(ctx, spec); err != nil && c.ctx.Err() == nil {
-			c.log.Error("start the analytics store", "server", serverID, "err", err)
-			return
-		}
-		c.wakeForwarders()
-		c.updateGeoIP()
-	})
 }
 
 // pruneAnalytics deletes every site's raw events past its retention, in
@@ -241,13 +228,16 @@ func (c *Core) updateGeoIP() {
 
 // analyticsServerChanged is called when a server comes online or goes
 // away: its forwarder starts (or wakes), the store starts if it is the
-// analytics server, and it gets the salts.
+// analytics server (and a store left there goes if it isn't), and it
+// gets the salts.
 func (c *Core) analyticsServerChanged(serverID int64, online bool) {
 	if online {
 		c.pushSalts(serverID)
 		if cl, storeServer := c.analyticsClient(); cl != nil {
 			if serverID == storeServer {
 				c.ensureAnalyticsStore(serverID)
+			} else {
+				c.removeStrayStore(serverID, false)
 			}
 			c.forwardFrom(serverID)
 		}
@@ -461,8 +451,18 @@ func (c *Core) forwardOnce(serverID int64) error {
 			return err
 		}
 	}
+	// A move holds every forwarder off while it copies the store. The run
+	// is read first: a move marks itself before it replaces the run, so a
+	// forwarder holding the new one sees the move and stops.
 	cl, storeServer, run := c.analyticsRun()
-	if cl == nil || !c.online(serverID) || !c.online(storeServer) {
+	if !c.analytics.writing.TryRLock() {
+		return errNotReady
+	}
+	defer c.analytics.writing.RUnlock()
+	c.analytics.mu.Lock()
+	moving := c.analytics.moving != nil
+	c.analytics.mu.Unlock()
+	if moving || cl == nil || !c.online(serverID) || !c.online(storeServer) {
 		return errNotReady
 	}
 	source := analyticsSource(serverID)
@@ -538,106 +538,4 @@ func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64) 
 		return err
 	}
 	return c.runAnalytics(ctx, st)
-}
-
-// stopAnalyticsStore removes the store's container from a server it no
-// longer runs on, in the background. The server runs ensures one at a
-// time, so a start still pulling its image finishes first and is then
-// removed. Its volume, with the data, stays.
-func (c *Core) stopAnalyticsStore(serverID int64) {
-	if !c.online(serverID) {
-		c.log.Warn("analytics: the old analytics server is offline; remove its dock-analytics container there by hand", "server", serverID)
-		return
-	}
-	c.wg.Go(func() {
-		ctx, cancel := context.WithTimeout(c.ctx, 15*time.Minute)
-		defer cancel()
-		if err := c.runtime(serverID).EnsureAnalyticsStore(ctx, nil); err != nil && c.ctx.Err() == nil {
-			c.log.Warn("analytics: stop the store on the old server", "server", serverID, "err", err)
-		}
-	})
-}
-
-// AnalyticsStatus is Dock Analytics' state, for operators.
-func (c *Core) AnalyticsStatus(ctx context.Context, a Actor) (apitypes.AnalyticsStatus, error) {
-	if err := a.requireOperator("reading analytics status"); err != nil {
-		return apitypes.AnalyticsStatus{}, err
-	}
-	out := apitypes.AnalyticsStatus{}
-	st, err := c.store.GetAnalyticsSettings(ctx)
-	if store.IsNotFound(err) {
-		out.Server = c.local.Name
-		return out, nil
-	}
-	if err != nil {
-		return out, err
-	}
-	out.Enabled = st.Enabled
-	serverID := c.local.ID
-	if st.ServerID != nil {
-		serverID = *st.ServerID
-	}
-	srv, err := c.store.GetServer(ctx, serverID)
-	if err != nil {
-		return out, err
-	}
-	out.Server = srv.Name
-	out.ServerOnline = c.online(serverID)
-	if cl, _ := c.analyticsClient(); cl != nil && out.ServerOnline {
-		hctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if h, err := cl.Health(hctx); err == nil {
-			out.StoreRunning, out.StoreVersion, out.Events, out.StoreBytes, out.GeoIP = true, h.Version, h.Events, h.FileBytes, h.GeoIP
-		}
-	}
-	return out, nil
-}
-
-// SetAnalyticsServer picks the server the store runs on ("" or the
-// control plane's own name: the control plane's server) and turns
-// analytics on. The store on the old server stops; its data stays there,
-// on its volume, and the new store starts empty. Moving data is a later
-// phase (ADR 0037).
-func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, server string) (apitypes.AnalyticsStatus, error) {
-	if err := a.requireOperator("choosing the analytics server"); err != nil {
-		return apitypes.AnalyticsStatus{}, err
-	}
-	target := c.local
-	if server != "" && server != c.local.Name {
-		s, err := c.store.GetServerByName(ctx, server)
-		if store.IsNotFound(err) {
-			return apitypes.AnalyticsStatus{}, notFound("server %q not found; see `dock server list`", server)
-		}
-		if err != nil {
-			return apitypes.AnalyticsStatus{}, err
-		}
-		target = s
-	}
-	var id *int64
-	if !target.Local {
-		id = &target.ID
-	}
-	cl, old := c.analyticsClient()
-	switch {
-	case cl == nil:
-		// The first time: straight onto the chosen server.
-		if err := c.enableAnalytics(ctx, a.Name, id); err != nil {
-			return apitypes.AnalyticsStatus{}, err
-		}
-	case old != target.ID:
-		if err := c.store.SetAnalyticsServer(ctx, store.SetAnalyticsServerParams{ServerID: id, UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
-			return apitypes.AnalyticsStatus{}, err
-		}
-		st, err := c.store.GetAnalyticsSettings(ctx)
-		if err != nil {
-			return apitypes.AnalyticsStatus{}, err
-		}
-		if err := c.runAnalytics(ctx, st); err != nil {
-			return apitypes.AnalyticsStatus{}, err
-		}
-		c.stopAnalyticsStore(old)
-		c.wakeForwarders()
-	}
-	c.audit(ctx, a, "analytics.server", nil, nil, target.Name, "analytics store on "+target.Name)
-	return c.AnalyticsStatus(ctx, a)
 }

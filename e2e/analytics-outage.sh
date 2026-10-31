@@ -8,17 +8,19 @@
 #
 # Page views go to cp's ingest before, during and after lab is off (a
 # reboot: its Docker, Caddy, node and store all stop for OFF_FOR seconds).
-# It passes when the store has every page view of each phase, and the
-# outage's own time window holds the page views sent during it.
+# Then the store moves from lab to cp with its data. It passes when the
+# store has every page view of each phase, the outage's own time window
+# holds the page views sent during it, and after the move cp's store has
+# them all while lab has no store, data or binary left.
 #
-#   make build && make image-analytics && docker tag dock-analytics:<version> dock-analytics:dev
+#   make build && make analytics-binary
 #   e2e/analytics-outage.sh            # N=200 page views a phase, OFF_FOR=120
 #
 # Needs Docker (privileged containers), caddy on PATH, curl and jq. KEEP=1
 # leaves the servers running; the CLI then works with `source $W/env`.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=${IMAGE:-dock-analytics:dev}
+STORE=$REPO/bin/dock-analytics-linux-amd64 # the control plane's store_binary
 N=${N:-200}
 OFF_FOR=${OFF_FOR:-120}
 NET=dock-e2e-analytics
@@ -47,6 +49,7 @@ server() {
 	docker rm -f "$1" >/dev/null 2>&1 || true
 	docker run -d --privileged --name "$1" --hostname "$1" --network "$NET" \
 		-v "$REPO/bin/dock:/usr/local/bin/dock:ro" -v "$(command -v caddy):/usr/local/bin/caddy:ro" \
+		-v "$STORE:/usr/local/lib/dock-analytics:ro" \
 		docker:28-dind >/dev/null
 	wait_for "Docker in $1" 60 x "$1" 'docker info'
 }
@@ -69,7 +72,7 @@ disable_tls = true
 [buildkit]
 enabled = false
 [analytics]
-store_image = "$IMAGE"
+store_binary = "/usr/local/lib/dock-analytics"
 $link
 CONF
 	x "$c" 'dock admin caddy-config --config /etc/dock/config.toml > /etc/dock/caddy.json'
@@ -109,7 +112,6 @@ docker network create "$NET" >/dev/null
 server "$CP" & server "$LAB" & wait
 configure "$CP" cp
 configure "$LAB" node
-for c in "$CP" "$LAB"; do docker save "$IMAGE" | docker exec -i "$c" docker load -q >/dev/null; done
 TOKEN=$(x "$CP" 'dock admin bootstrap --config /etc/dock/config.toml' 2>/dev/null)
 x "$CP" 'nohup dock serve --config /etc/dock/config.toml > /var/log/dock.log 2>&1 &'
 export DOCK_URL=http://$(ip "$CP"):7070 DOCK_TOKEN=$TOKEN
@@ -157,4 +159,18 @@ wait_for "every page view in the store" 180 has_all before during after
 win=$(curl -sf -H "Authorization: Bearer $DOCK_TOKEN" \
 	"$DOCK_URL/api/v1/projects/shop/sites/$HOST/stats?from=$((off * 1000))&to=$((on * 1000))" | jq .overview.pageviews)
 [[ $win == "$N" ]] || fail "lab's $((on - off))s off hold $win page views, want $N"
-say "PASS: $((3 * N)) page views, $N of them while lab was off for $((on - off))s, none missing"
+say "the outage: $((3 * N)) page views, $N of them while lab was off for $((on - off))s, none missing"
+
+say "the store moves from lab to cp"
+dock analytics server >/dev/null
+moved() { dock analytics --json | jq -e --arg cp "$CP" '.server == $cp and .store_running and (.moving_to // "") == ""'; }
+wait_for "the move" 300 moved
+err=$(dock analytics --json | jq -r '.error // ""')
+[[ -z $err ]] || fail "the move: $err"
+has_all before during after || fail "cp's store is missing page views after the move"
+[[ -z $(x "$LAB" 'docker ps -aq --filter name=^dock-analytics$') ]] || fail "lab still has the store's container"
+[[ -z $(x "$LAB" 'docker volume ls -q --filter name=^dock-analytics-data$') ]] || fail "lab still has the store's data"
+x "$LAB" 'test ! -e /var/lib/dock/analytics/bin' || fail "lab still has the store's binary"
+send moved
+wait_for "page views after the move" 60 has_all moved
+say "PASS: $((4 * N)) page views, $N of them while lab was off for $((on - off))s; the store moved to cp with all of them and left nothing on lab"

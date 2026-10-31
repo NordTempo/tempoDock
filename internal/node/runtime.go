@@ -723,14 +723,24 @@ type Analytics interface {
 	// AckSpool records that the store has everything up to position,
 	// events in all; the spool deletes what it no longer needs.
 	AckSpool(ctx context.Context, position uint64, events int) error
-	// EnsureAnalyticsStore runs the store's container as spec says, or
-	// removes it when spec is nil (its volume stays). It returns once the
-	// container runs; the store may take a moment more to answer.
-	EnsureAnalyticsStore(ctx context.Context, spec *AnalyticsStoreSpec) error
+	// EnsureAnalyticsStore runs the store's container as spec says. It
+	// returns once the container runs; the store may take a moment more
+	// to answer.
+	EnsureAnalyticsStore(ctx context.Context, spec AnalyticsStoreSpec) error
+	// RemoveAnalyticsStore removes the store from this server: its
+	// container, its data and its binary. Dock calls it once the store
+	// moved to another server and the copy there was checked, and on a
+	// server that holds a store it shouldn't (a move that stopped).
+	RemoveAnalyticsStore(ctx context.Context) error
 	// DialAnalyticsStore connects to the store's API on this server. On a
 	// remote server the bytes go over the node link.
 	DialAnalyticsStore(ctx context.Context) (net.Conn, error)
 }
+
+// AnalyticsBaseImage is what the store's container runs on: the C and
+// C++ libraries DuckDB needs and a nonroot user, nothing else. Pinned by
+// digest, a multi-platform index (linux/amd64 and linux/arm64).
+const AnalyticsBaseImage = "gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f"
 
 // SpoolBatchEvents caps a SpoolBatch.
 const SpoolBatchEvents = 1000
@@ -766,11 +776,17 @@ type SpoolBatch struct {
 	Skipped bool
 }
 
-// AnalyticsStoreSpec is how the analytics store's container runs.
+// AnalyticsStoreSpec is how the analytics store's container runs: the
+// dock-analytics binary, mounted read-only into a container of
+// AnalyticsBaseImage.
 type AnalyticsStoreSpec struct {
-	// Image is the dock-analytics image: by default the one the release
-	// workflow publishes with this version of dock.
-	Image string
+	// Binary is the dock-analytics binary on this server: the release's
+	// for its arch, which the control plane downloads when analytics is
+	// turned on. Over the node link it names the control plane's copy,
+	// sent to the server once (by SHA256).
+	Binary string
+	// SHA256 is the binary's hex SHA-256.
+	SHA256 string
 	// Token is the install's analytics token, which every call but its
 	// health check needs.
 	Token string

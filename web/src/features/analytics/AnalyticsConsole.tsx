@@ -51,6 +51,8 @@ export function AnalyticsConsole() {
         >
           {status.store_running ? (
             "running"
+          ) : status.starting ? (
+            "starting"
           ) : status.enabled ? (
             <span className="text-warn-text">not answering</span>
           ) : (
@@ -67,30 +69,51 @@ export function AnalyticsConsole() {
           {status.geoip || "not downloaded"}
         </Fact>
       </Facts>
+      {status.moving_to && (
+        <p>
+          Moving to {status.moving_to} with its data. Events wait on each server
+          meanwhile.
+        </p>
+      )}
+      {status.error && <p className="text-fail">{status.error}</p>}
       {!status.enabled && (
         <p className="text-mut">
           The store starts when the first hostname is counted: on a service's
           Analytics tab, or with <code>dock analytics enable</code>.
         </p>
       )}
-      <ServerPicker current={status.server} />
+      <ServerPicker
+        current={status.server}
+        online={status.server_online}
+        moving={!!status.moving_to}
+      />
       <Defaults />
     </Page>
   );
 }
 
-/** Moves the store to another server, after saying what that means. */
-function ServerPicker({ current }: { current: string }) {
+/**
+ * Moves the store to another server, after saying what that means: its
+ * data goes along, unless its server is offline and the new store starts
+ * empty.
+ */
+function ServerPicker({
+  current,
+  online,
+  moving,
+}: {
+  current: string;
+  online: boolean;
+  moving: boolean;
+}) {
   const servers = useServers();
   const move = useSetAnalyticsServer();
   const [server, setServer] = useState(current);
   const [confirming, setConfirming] = useState(false);
+  const cli = `dock analytics server ${server}${online ? "" : " --start-empty"}`;
   return (
     <section aria-labelledby="server" className="flex flex-col gap-2">
-      <SectionHead
-        id="server"
-        aside="other servers keep their events until it has them"
-      >
+      <SectionHead id="server" aside="its data moves with it">
         Analytics server
       </SectionHead>
       <span className="flex items-center gap-2.5">
@@ -106,8 +129,8 @@ function ServerPicker({ current }: { current: string }) {
           ))}
         </select>
         <Act
-          cli={`dock analytics server ${server}`}
-          disabled={server === current || move.isPending}
+          cli={cli}
+          disabled={server === current || moving || move.isPending}
           onClick={() => setConfirming(true)}
         >
           Move the store
@@ -116,17 +139,20 @@ function ServerPicker({ current }: { current: string }) {
       {confirming && (
         <Confirm
           action={`Move to ${server}`}
-          cli={`dock analytics server ${server}`}
+          cli={cli}
           pending={move.isPending}
           error={move.error}
           onConfirm={() =>
-            move.mutate(server, { onSuccess: () => setConfirming(false) })
+            move.mutate(
+              { server, start_empty: !online },
+              { onSuccess: () => setConfirming(false) },
+            )
           }
           onCancel={() => setConfirming(false)}
         >
-          The store on {current} stops and its data stays on that server's
-          volume. The store on {server} starts empty; events not yet stored wait
-          on each server and go to it.
+          {online
+            ? `Its data is copied to ${server} and checked, then the store and its data are removed from ${current}. Events wait on each server meanwhile.`
+            : `${current} is offline, so its data can't be copied: the store on ${server} starts empty, and the old one is removed when ${current} is back.`}
         </Confirm>
       )}
     </section>

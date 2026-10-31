@@ -52,6 +52,12 @@ func newTestServer(t *testing.T) *testServer {
 	cfg.DataDir = dir
 	cfg.BaseDomain = "apps.test"
 	cfg.PublicIP = "203.0.113.10"
+	// The analytics store's binary: a test build has no release to
+	// download it from.
+	cfg.Analytics.StoreBinary = filepath.Join(dir, "dock-analytics")
+	if err := os.WriteFile(cfg.Analytics.StoreBinary, []byte("store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	rt := fake.New()
 	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond})
 	if err != nil {

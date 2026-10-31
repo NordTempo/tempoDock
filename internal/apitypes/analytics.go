@@ -20,6 +20,16 @@ type AnalyticsStatus struct {
 	// GeoIP is the location database's month, empty before the first
 	// download.
 	GeoIP string `json:"geoip,omitempty"`
+	// Starting says the store is being started: its binary may be
+	// downloading. Reading the status starts a store that should run
+	// but doesn't answer.
+	Starting bool `json:"starting,omitempty"`
+	// MovingTo is the server the store is moving to, with its data,
+	// while it moves.
+	MovingTo string `json:"moving_to,omitempty"`
+	// Error is why the store last failed to start, or a move failed, and
+	// what to do; empty once it starts.
+	Error string `json:"error,omitempty"`
 }
 
 // GeoAttribution credits the location data wherever locations appear
@@ -30,6 +40,10 @@ const GeoAttribution = "IP Geolocation by DB-IP"
 type SetAnalyticsServerRequest struct {
 	// Server is a server's name; empty is the control plane's server.
 	Server string `json:"server" doc:"The server the analytics store runs on; empty for the control plane's own"`
+	// StartEmpty moves the store even though the old server is offline:
+	// the new store starts empty, and the old one goes when its server
+	// is back.
+	StartEmpty bool `json:"start_empty,omitempty" doc:"Move even though the old analytics server is offline: the new store starts empty"`
 }
 
 // Site is a set of hostnames in one environment whose visits Dock

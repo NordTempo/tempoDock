@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	duckdb "github.com/duckdb/duckdb-go/v2"
@@ -47,6 +48,8 @@ type Options struct {
 // Store is the analytics database. It is safe for concurrent use: queries
 // run in parallel, writes one at a time.
 type Store struct {
+	// path is the database file, "" in memory.
+	path      string
 	db        *sql.DB
 	connector *duckdb.Connector
 	// memoryLimit is DuckDB's memory_limit setting, which Trim restores.
@@ -56,6 +59,10 @@ type Store struct {
 	// locked), and Trim alone (locked): DuckDB's low memory limit during
 	// a trim would fail anything else.
 	gate sync.RWMutex
+
+	// copying is set while a Snapshot streams the file: a trim then does
+	// nothing, since its checkpoint could change the file.
+	copying atomic.Bool
 
 	// writeMu serializes Write: one appender, one transaction at a time,
 	// the sessions map and the rollup state below.
@@ -77,14 +84,18 @@ type Store struct {
 	now func() time.Time
 }
 
-// Open opens (creating if needed) the database at path. An empty path is
-// an in-memory database, for tests.
+// Open opens (creating if needed) the database at path, first putting a
+// database Receive wrote in its place. An empty path is an in-memory
+// database, for tests.
 func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 	if opts.Threads <= 0 {
 		opts.Threads = 2
 	}
 	if path != "" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return nil, err
+		}
+		if err := applyReceived(path); err != nil {
 			return nil, err
 		}
 		if opts.TempDir == "" {
@@ -116,7 +127,7 @@ func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 	}
 	db := sql.OpenDB(connector)
 	s := &Store{
-		db: db, connector: connector, memoryLimit: memoryLimit, sessions: newSessions(),
+		path: path, db: db, connector: connector, memoryLimit: memoryLimit, sessions: newSessions(),
 		staleGen: map[siteDay]int{}, kick: make(chan struct{}, 1), now: time.Now,
 	}
 	if err := s.migrate(ctx); err != nil {
@@ -384,6 +395,9 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 func (s *Store) Trim(ctx context.Context) error {
 	s.gate.Lock()
 	defer s.gate.Unlock()
+	if s.copying.Load() {
+		return nil
+	}
 	return s.trim(ctx)
 }
 
@@ -393,6 +407,9 @@ func (s *Store) TryTrim(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	defer s.gate.Unlock()
+	if s.copying.Load() {
+		return false, nil
+	}
 	return true, s.trim(ctx)
 }
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"time"
@@ -590,8 +591,12 @@ func cancelable(ctx context.Context, src io.Reader) (r io.Reader, release func()
 // (ADR 0037).
 const AnalyticsProtocol = 10
 
+// AnalyticsBinaryProtocol is the first protocol whose nodes run the
+// store from the release's binary (ADR 0037); a node on 10 can't run it.
+const AnalyticsBinaryProtocol = 11
+
 // analyticsStoreTimeout bounds EnsureAnalyticsStore, which may pull the
-// store's image.
+// store's base image, and sending the binary (~70 MB).
 const analyticsStoreTimeout = 10 * time.Minute
 
 // SetAnalytics implements node.Analytics.
@@ -633,16 +638,48 @@ func (c *Client) AckSpool(ctx context.Context, position uint64, events int) erro
 	return err
 }
 
-// EnsureAnalyticsStore implements node.Analytics.
-func (c *Client) EnsureAnalyticsStore(ctx context.Context, spec *node.AnalyticsStoreSpec) error {
-	if err := c.needProtocol(ctx, AnalyticsProtocol, "run the analytics store"); err != nil {
+// EnsureAnalyticsStore implements node.Analytics. The node runs the
+// binary it has with spec's hash; one it doesn't have is sent first, from
+// spec.Binary on this server, once per release.
+func (c *Client) EnsureAnalyticsStore(ctx context.Context, spec node.AnalyticsStoreSpec) error {
+	if err := c.needProtocol(ctx, AnalyticsBinaryProtocol, "run the analytics store"); err != nil {
 		return err
 	}
-	req := analyticsStoreRequest{}
-	if spec != nil {
-		req.Spec = &wireAnalyticsStoreSpec{Image: spec.Image, Token: spec.Token, MemoryBytes: spec.MemoryBytes}
+	req := analyticsStoreRequest{Spec: wireAnalyticsStoreSpec{SHA256: spec.SHA256, Token: spec.Token, MemoryBytes: spec.MemoryBytes}}
+	_, err := callWithLogs[empty](ctx, c, opRunAnalytics, analyticsStoreTimeout, req, nil, io.Discard)
+	if !errors.Is(err, errNoAnalyticsBinary) {
+		return err
 	}
-	_, err := callWithLogs[empty](ctx, c, opEnsureAnalytics, analyticsStoreTimeout, req, nil, io.Discard)
+	if err := c.putAnalyticsBinary(ctx, spec.Binary, spec.SHA256); err != nil {
+		return err
+	}
+	_, err = callWithLogs[empty](ctx, c, opRunAnalytics, analyticsStoreTimeout, req, nil, io.Discard)
+	return err
+}
+
+// putAnalyticsBinary sends the store's binary at path to the node, which
+// checks it against sum.
+func (c *Client) putAnalyticsBinary(ctx context.Context, path, sum string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("the analytics store's binary: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	_, err = callWithLogs[empty](ctx, c, opPutAnalyticsBinary, analyticsStoreTimeout, putAnalyticsBinaryRequest{SHA256: sum, Size: st.Size()}, f, nil)
+	return err
+}
+
+// RemoveAnalyticsStore implements node.Analytics: the node removes the
+// container, its data and the binaries it received.
+func (c *Client) RemoveAnalyticsStore(ctx context.Context) error {
+	if err := c.needProtocol(ctx, AnalyticsBinaryProtocol, "remove the analytics store"); err != nil {
+		return err
+	}
+	_, err := callWithLogs[empty](ctx, c, opRemoveAnalytics, analyticsStoreTimeout, empty{}, nil, nil)
 	return err
 }
 

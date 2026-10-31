@@ -6,6 +6,8 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,28 +16,43 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/update"
 )
 
-// analyticsTestImage is the store's image as `make image-analytics
-// VERSION=dev` builds it (CI builds it before the integration tests).
-const analyticsTestImage = "dock-analytics:dev"
+// analyticsTestBinary is the store as `make analytics-binary` builds it
+// (CI builds it before the integration tests).
+var analyticsTestBinary = filepath.Join("..", "..", "..", "bin", "dock-analytics-linux-"+runtime.GOARCH)
 
-// The analytics store's container (ADR 0037) on a real Docker: it runs,
-// answers on its loopback port, keeps its data across a recreate for a
-// new token, and goes (but not its volume) for a nil spec.
-func TestIntegrationAnalyticsStore(t *testing.T) {
-	e := newEnv(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	if ok, _ := e.HasImage(ctx, analyticsTestImage); !ok {
-		t.Skipf("no %s image; build it with `make image-analytics VERSION=dev`", analyticsTestImage)
-	}
+// testAnalyticsStore is a store of its own for the test, on a free port.
+func testAnalyticsStore(t *testing.T, e *testEnv, name string) *AnalyticsStore {
+	t.Helper()
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
-	a := &AnalyticsStore{cli: e.cli, name: e.name("analytics"), volume: e.name("analytics-data"), port: port, owner: "/test/" + e.prefix}
+	a := &AnalyticsStore{cli: e.cli, name: e.name(name), volume: e.name(name + "-data"), port: port, owner: "/test/" + e.prefix}
+	t.Cleanup(func() { _ = a.Remove(context.Background()) })
+	return a
+}
 
-	spec := &node.AnalyticsStoreSpec{Image: analyticsTestImage, Token: strings.Repeat("a", 32), MemoryBytes: 512 << 20}
+// The analytics store's container (ADR 0037) on a real Docker: the
+// release's binary in the base image as a nonroot user, answering on its
+// loopback port, keeping its data across a recreate for a new token,
+// moving its database to another store (which restarts on it), and going
+// with its data on Remove.
+func TestIntegrationAnalyticsStore(t *testing.T) {
+	e := newEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	bin, err := filepath.Abs(analyticsTestBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := update.HashFile(bin)
+	if err != nil {
+		t.Skipf("no store binary (%v); build it with `make analytics-binary`", err)
+	}
+	a := testAnalyticsStore(t, e, "analytics")
+	spec := node.AnalyticsStoreSpec{Binary: bin, SHA256: sum, Token: strings.Repeat("a", 32), MemoryBytes: 512 << 20}
 	if err := a.Ensure(ctx, spec); err != nil {
 		t.Fatal(err)
 	}
@@ -63,14 +80,38 @@ func TestIntegrationAnalyticsStore(t *testing.T) {
 		t.Errorf("after the recreate the cursor is %d, %v; want the data kept", pos, err)
 	}
 
-	if err := a.Ensure(ctx, nil); err != nil {
+	// A move: another store takes this one's database and restarts on it.
+	b := testAnalyticsStore(t, e, "analytics-b")
+	if err := b.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	to := storeClient(b, spec.Token)
+	waitStore(t, to)
+	snap, err := c.Snapshot(ctx)
+	if err != nil || snap.Events != 1 {
+		t.Fatalf("snapshot = %+v, %v; want 1 event", snap, err)
+	}
+	got, err := to.Restore(ctx, snap, snap.Size)
+	_ = snap.Close()
+	if err != nil || got.Bytes != snap.Size {
+		t.Fatalf("restore = %+v, %v; want %d bytes", got, err, snap.Size)
+	}
+	for deadline := time.Now().Add(time.Minute); ; time.Sleep(200 * time.Millisecond) {
+		if h, err := to.Health(ctx); err == nil && h.Events == 1 {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("the restored store didn't come back with the event: %+v, %v", h, err)
+		}
+	}
+
+	if err := a.Remove(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.cli.ContainerInspect(ctx, a.name, client.ContainerInspectOptions{}); err == nil {
-		t.Error("a nil spec left the container")
+		t.Error("Remove left the container")
 	}
-	if _, err := e.cli.VolumeInspect(ctx, a.volume, client.VolumeInspectOptions{}); err != nil {
-		t.Errorf("the volume went with the container: %v", err)
+	if _, err := e.cli.VolumeInspect(ctx, a.volume, client.VolumeInspectOptions{}); err == nil {
+		t.Error("Remove left the volume")
 	}
 }
 

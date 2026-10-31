@@ -365,7 +365,8 @@ func (o offlineRuntime) TailSpool(context.Context, uint64) (<-chan node.SpoolBat
 	return nil, o.err
 }
 func (o offlineRuntime) AckSpool(context.Context, uint64, int) error { return o.err }
-func (o offlineRuntime) EnsureAnalyticsStore(context.Context, *node.AnalyticsStoreSpec) error {
+func (o offlineRuntime) EnsureAnalyticsStore(context.Context, node.AnalyticsStoreSpec) error {
 	return o.err
 }
+func (o offlineRuntime) RemoveAnalyticsStore(context.Context) error           { return o.err }
 func (o offlineRuntime) DialAnalyticsStore(context.Context) (net.Conn, error) { return nil, o.err }

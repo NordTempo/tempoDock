@@ -252,6 +252,7 @@ func (n *Node) handler(st *connState) http.Handler {
 		return n.receiveUpdate(ctx, req, body)
 	}))
 	mux.HandleFunc("POST /v1/"+opRegistry, n.serveRegistryCall)
+	n.analyticsStoreRoutes(mux)
 	runtimeRoutes(mux, n.Runtime)
 	return mux
 }
@@ -446,13 +447,6 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	}, toWireSpoolBatch))
 	h(opAckSpool, unary(func(ctx context.Context, a ackSpoolRequest) (empty, error) {
 		return empty{}, rt.AckSpool(ctx, a.Position, a.Events)
-	}))
-	h(opEnsureAnalytics, unary(func(ctx context.Context, a analyticsStoreRequest) (empty, error) {
-		var spec *node.AnalyticsStoreSpec
-		if w := a.Spec; w != nil {
-			spec = &node.AnalyticsStoreSpec{Image: w.Image, Token: w.Token, MemoryBytes: w.MemoryBytes}
-		}
-		return empty{}, rt.EnsureAnalyticsStore(ctx, spec)
 	}))
 	h(opDialAnalytics, serveDialAnalytics(rt))
 }

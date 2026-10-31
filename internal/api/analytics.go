@@ -32,7 +32,7 @@ func registerAnalytics(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Body apitypes.SetAnalyticsServerRequest
 	}) (*out[apitypes.AnalyticsStatus], error) {
-		return reply(s.core.SetAnalyticsServer(ctx, actor, in.Body.Server))
+		return reply(s.core.SetAnalyticsServer(ctx, actor, in.Body))
 	})
 }
 

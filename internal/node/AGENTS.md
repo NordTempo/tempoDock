@@ -42,7 +42,10 @@ durations travel as milliseconds.
 - Only touch resources labelled `dock.managed` for this control plane
   (`dock.control_plane`). Another install's containers, networks and
   volumes are ignored, never removed. Volumes are never removed by the
-  runtime.
+  runtime, with one exception: `RemoveAnalyticsStore` removes the
+  analytics store's own volume, which core calls only once the store's
+  data was copied to its new server and checked, or the operator chose
+  to start empty (ADR 0037).
 - No polling: follow Docker's event stream. Stats are the one periodic
   job and read files, not the Docker API (except once per new container,
   to name it in the memory breakdown).
