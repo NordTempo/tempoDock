@@ -53,12 +53,13 @@ type AnalyticsSalt struct {
 }
 
 type AnalyticsSetting struct {
-	ID        int64
-	ServerID  *int64
-	Token     []byte
-	Enabled   bool
-	UpdatedBy string
-	UpdatedAt time.Time
+	ID           int64
+	ServerID     *int64
+	Token        []byte
+	Enabled      bool
+	UpdatedBy    string
+	UpdatedAt    time.Time
+	SiteDefaults string
 }
 
 type AuditDetail struct {
@@ -535,6 +536,31 @@ type Session struct {
 	Hash      string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+}
+
+type Site struct {
+	ID            int64
+	EnvironmentID int64
+	Name          string
+	Settings      string
+	ArchivedAt    *time.Time
+	CreatedBy     string
+	CreatedAt     time.Time
+}
+
+type SiteHostname struct {
+	Hostname  string
+	SiteID    int64
+	ServiceID *int64
+	AddedAt   time.Time
+}
+
+type SiteMarker struct {
+	ID      int64
+	SiteID  int64
+	At      time.Time
+	Kind    string
+	Message string
 }
 
 type StorageConnection struct {

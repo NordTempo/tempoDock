@@ -58,7 +58,7 @@ func (q *Queries) DeleteAnalyticsSaltsBefore(ctx context.Context, day int64) err
 }
 
 const getAnalyticsSettings = `-- name: GetAnalyticsSettings :one
-SELECT id, server_id, token, enabled, updated_by, updated_at FROM analytics_settings WHERE id = 1
+SELECT id, server_id, token, enabled, updated_by, updated_at, site_defaults FROM analytics_settings WHERE id = 1
 `
 
 func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, error) {
@@ -71,6 +71,7 @@ func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, e
 		&i.Enabled,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.SiteDefaults,
 	)
 	return i, err
 }

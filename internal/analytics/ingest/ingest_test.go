@@ -13,6 +13,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/analytics/spool"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 const chromeMac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -249,6 +250,39 @@ func TestChannel(t *testing.T) {
 	} {
 		if got := Channel(c.ref, c.src, c.medium); got != c.want {
 			t.Errorf("Channel(%q, %q, %q) = %s, want %s", c.ref, c.src, c.medium, got, c.want)
+		}
+	}
+}
+
+func TestSiteRules(t *testing.T) {
+	in, sp := newIngest(t)
+	rules, err := OpenRules(t.TempDir() + "/rules.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rules.Set(map[int64]node.SiteRules{3: {ExcludedPaths: []string{"/admin/*", "/healthz"}, IgnoredIPs: []string{"198.51.100.0/24"}}}); err != nil {
+		t.Fatal(err)
+	}
+	in.Rules = rules
+	for _, c := range []struct{ path, ip string }{{"/admin/users", "203.0.113.7"}, {"/healthz", "203.0.113.7"}, {"/", "198.51.100.9"}} {
+		post(in, "shop.example.com", `{"k":1,"u":"https://shop.example.com`+c.path+`"}`, chromeMac, c.ip)
+	}
+	post(in, "shop.example.com", `{"k":1,"u":"https://shop.example.com/admins"}`, chromeMac, "203.0.113.7")
+	if ev := spooled(t, sp); len(ev) != 1 || ev[0].Path != "/admins" || in.Stats().Excluded.Load() != 3 {
+		t.Errorf("kept %+v, excluded %d; want only /admins", ev, in.Stats().Excluded.Load())
+	}
+}
+
+func TestGlobMatch(t *testing.T) {
+	for _, c := range []struct {
+		pattern, s string
+		want       bool
+	}{
+		{"/admin/*", "/admin/x/y", true}, {"/admin/*", "/admin", false}, {"/healthz", "/healthz", true},
+		{"/healthz", "/healthz/x", false}, {"*.php", "/wp/login.php", true}, {"/a/*/b", "/a/x/y/b", true},
+	} {
+		if got := globMatch(c.pattern, c.s); got != c.want {
+			t.Errorf("globMatch(%q, %q) = %v", c.pattern, c.s, got)
 		}
 	}
 }

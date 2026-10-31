@@ -1,5 +1,7 @@
 package apitypes
 
+import "time"
+
 // AnalyticsStatus is Dock Analytics' state (ADR 0037), for operators:
 // which server runs the store and whether it answers.
 type AnalyticsStatus struct {
@@ -15,10 +17,152 @@ type AnalyticsStatus struct {
 	StoreVersion string `json:"store_version,omitempty"`
 	Events       int64  `json:"events"`
 	StoreBytes   int64  `json:"store_bytes"`
+	// GeoIP is the location database's month, empty before the first
+	// download.
+	GeoIP string `json:"geoip,omitempty"`
 }
+
+// GeoAttribution credits the location data wherever locations appear
+// (DB-IP's IP to City Lite, CC BY 4.0).
+const GeoAttribution = "IP Geolocation by DB-IP"
 
 // SetAnalyticsServerRequest picks the analytics server.
 type SetAnalyticsServerRequest struct {
 	// Server is a server's name; empty is the control plane's server.
 	Server string `json:"server" doc:"The server the analytics store runs on; empty for the control plane's own"`
+}
+
+// Site is a set of hostnames in one environment whose visits Dock
+// Analytics counts together (ADR 0037). Its history follows a hostname
+// when the hostname's domain moves to another service.
+type Site struct {
+	Name        string         `json:"name"`
+	Environment string         `json:"environment"`
+	Hostnames   []SiteHostname `json:"hostnames"`
+	Archived    bool           `json:"archived"`
+	CreatedAt   time.Time      `json:"created_at"`
+	// Settings are in effect: the site's own, or the install's defaults.
+	Settings SiteSettings `json:"settings"`
+	// Overrides are the settings the site sets itself.
+	Overrides SiteSettings `json:"overrides"`
+}
+
+// SiteHostname is one of a site's hostnames and the service it serves
+// (empty while no service has a domain for it).
+type SiteHostname struct {
+	Hostname string `json:"hostname"`
+	Service  string `json:"service,omitempty"`
+}
+
+// SiteSettings are a site's settings (ADR 0037). In Site.Settings every
+// field is set; in overrides and in requests, nil means "the default".
+type SiteSettings struct {
+	Replay              *bool     `json:"replay,omitempty" doc:"Record sessions (phase A3); off by default"`
+	ReplaySampleRate    *int      `json:"replay_sample_rate,omitempty" minimum:"1" maximum:"100" doc:"Percent of page loads recorded"`
+	MaskAllText         *bool     `json:"mask_all_text,omitempty" doc:"Mask all text in replays; inputs are always masked"`
+	ErrorsAndVitals     *bool     `json:"errors_and_vitals,omitempty" doc:"Collect errors and Web Vitals (phase A2)"`
+	EventRetentionDays  *int      `json:"event_retention_days,omitempty" minimum:"1" maximum:"3650" doc:"Days raw events are kept; daily totals stay"`
+	ReplayRetentionDays *int      `json:"replay_retention_days,omitempty" minimum:"1" maximum:"3650"`
+	ErrorRetentionDays  *int      `json:"error_retention_days,omitempty" minimum:"1" maximum:"3650"`
+	ExcludedPaths       *[]string `json:"excluded_paths,omitempty" maxItems:"50" doc:"Paths not counted; * matches any run of characters"`
+	IgnoredIPs          *[]string `json:"ignored_ips,omitempty" maxItems:"50" doc:"Addresses or CIDR ranges whose visits aren't counted"`
+	Public              *bool     `json:"public,omitempty" doc:"Public dashboard (phase A4)"`
+}
+
+// UpdateSiteRequest renames a site or changes its settings.
+type UpdateSiteRequest struct {
+	Name     string       `json:"name,omitempty" doc:"A new name"`
+	Settings SiteSettings `json:"settings,omitzero" doc:"Settings to set on the site"`
+	// Reset names settings (their JSON names) to set back to the default.
+	Reset []string `json:"reset,omitempty"`
+}
+
+// EnableAnalyticsRequest turns analytics on for a hostname.
+type EnableAnalyticsRequest struct {
+	// Site joins a site of the same environment; empty joins the site of
+	// the service's other hostnames, or makes one named after the
+	// hostname.
+	Site string `json:"site,omitempty"`
+}
+
+// SiteStats is a site's dashboard for a range: the numbers, the previous
+// period's, the series and the top values of the dashboard's dimensions,
+// and what happened (deploys, moves) for the chart's markers.
+type SiteStats struct {
+	Site     string            `json:"site"`
+	From     int64             `json:"from" doc:"Unix ms"`
+	To       int64             `json:"to" doc:"Unix ms"`
+	Bucket   string            `json:"bucket" enum:"hour,day"`
+	Overview AnalyticsOverview `json:"overview"`
+	Previous AnalyticsOverview `json:"previous"`
+	Series   []AnalyticsPoint  `json:"series"`
+	// Breakdowns are keyed by dimension (page, referrer, country, ...).
+	Breakdowns map[string][]AnalyticsRow `json:"breakdowns"`
+	Markers    []SiteMarker              `json:"markers"`
+	// StoreOnline is false while the analytics store can't be reached;
+	// the numbers are then empty and events wait on each server.
+	StoreOnline bool   `json:"store_online"`
+	StoreError  string `json:"store_error,omitempty"`
+	// Notice says what the numbers leave out: filters over a range
+	// reaching past the site's event retention see only what is kept.
+	Notice string `json:"notice,omitempty"`
+}
+
+// AnalyticsOverview is a range's headline numbers.
+type AnalyticsOverview struct {
+	Visitors   int64   `json:"visitors"`
+	Pageviews  int64   `json:"pageviews"`
+	Sessions   int64   `json:"sessions"`
+	BounceRate float64 `json:"bounce_rate"`
+	DurationMS int64   `json:"duration_ms"`
+	Events     int64   `json:"events"`
+}
+
+// AnalyticsPoint is one bucket of a series; T is its start (Unix ms).
+type AnalyticsPoint struct {
+	T         int64 `json:"t"`
+	Visitors  int64 `json:"visitors"`
+	Pageviews int64 `json:"pageviews"`
+}
+
+// AnalyticsRow is one value of a breakdown.
+type AnalyticsRow struct {
+	Value    string `json:"value"`
+	Visitors int64  `json:"visitors"`
+	Count    int64  `json:"count"`
+}
+
+// SiteMarker is something that happened to a site, for its charts.
+type SiteMarker struct {
+	At      time.Time `json:"at"`
+	Kind    string    `json:"kind" enum:"deploy,added,moved,removed"`
+	Message string    `json:"message"`
+}
+
+// SiteBreakdown is the top values of one dimension.
+type SiteBreakdown struct {
+	Dimension string         `json:"dimension"`
+	Rows      []AnalyticsRow `json:"rows"`
+}
+
+// SiteLive is what a site's live view shows: visitors seen in the last
+// five minutes and the latest events, newest first.
+type SiteLive struct {
+	Visitors int         `json:"visitors"`
+	Recent   []LiveVisit `json:"recent"`
+}
+
+// LiveVisit is one recent event.
+type LiveVisit struct {
+	At       time.Time `json:"at"`
+	Kind     string    `json:"kind" enum:"pageview,event,outbound"`
+	Path     string    `json:"path"`
+	Name     string    `json:"name,omitempty"`
+	Hostname string    `json:"hostname"`
+	Referrer string    `json:"referrer,omitempty"`
+	Country  string    `json:"country,omitempty"`
+	City     string    `json:"city,omitempty"`
+	Browser  string    `json:"browser,omitempty"`
+	OS       string    `json:"os,omitempty"`
+	Device   string    `json:"device,omitempty"`
 }

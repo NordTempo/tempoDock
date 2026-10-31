@@ -116,13 +116,30 @@ func (c *Core) AddDomain(ctx context.Context, a Actor, ref ServiceRef, req apity
 			return apitypes.DomainChange{}, invalid("a domain can't redirect to itself")
 		}
 	}
+	if req.Analytics != "" && req.Analytics != "keep" && req.Analytics != "new" {
+		return apitypes.DomainChange{}, invalid("analytics is keep or new, not %q", req.Analytics)
+	}
 	var zone *store.CloudflareZone
 	if req.Cloudflare {
 		if zone, err = c.cloudflareZoneFor(ctx, a, ss, host); err != nil {
 			return apitypes.DomainChange{}, err
 		}
 	}
-	return c.addDomain(ctx, a, ss, host, redirect, false, zone)
+	change, err := c.addDomain(ctx, a, ss, host, redirect, false, zone)
+	if err != nil || redirect != "" {
+		return change, err
+	}
+	// A hostname that collected analytics before keeps its site's history
+	// here, or starts a new site (ADR 0037).
+	if moved, err := c.siteDomainAdded(ctx, a, ss, host, req.Analytics); err != nil {
+		c.log.Error("analytics: carry a site over to a domain", "domain", host, "err", err)
+	} else if moved {
+		c.analyticsSitesChanged(ctx)
+		if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
+			c.log.Error("apply routes after a site change", "domain", host, "err", err)
+		}
+	}
+	return change, nil
 }
 
 // cloudflareZoneFor gets a service's server ready for host to be added

@@ -27,6 +27,9 @@ type Store interface {
 type Collector struct {
 	Spool *spool.Spool
 	Salts *ingest.Salts
+	// Rules are the sites' rules the ingest applies; SetAnalytics
+	// replaces them.
+	Rules *ingest.Rules
 	Store Store
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
@@ -44,7 +47,15 @@ func (c *Collector) SetAnalytics(_ context.Context, cfg node.AnalyticsConfig) er
 	if c.Now != nil {
 		now = c.Now
 	}
-	return c.Salts.Set(cfg.Salts, now())
+	// Salts first: without them nothing is counted, while a rules error
+	// only keeps the old rules.
+	if err := c.Salts.Set(cfg.Salts, now()); err != nil {
+		return err
+	}
+	if c.Rules == nil || cfg.Sites == nil {
+		return nil
+	}
+	return c.Rules.Set(cfg.Sites)
 }
 
 // TailSpool implements node.Analytics. While behind it reads batch after

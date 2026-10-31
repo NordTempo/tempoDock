@@ -53,6 +53,8 @@ type analyticsState struct {
 	serverID  int64
 	runCtx    context.Context
 	runCancel context.CancelFunc
+	// live are the sites someone watches live (analytics_live.go).
+	live liveSites
 }
 
 // analyticsMinMemory is the least the store's container may get.
@@ -106,11 +108,12 @@ func (c *Core) runAnalytics(ctx context.Context, st store.AnalyticsSetting) erro
 		Token:   string(token),
 		HTTP: &http.Client{Transport: &http.Transport{
 			// The store's port on its server, over the node link for a
-			// remote one; one connection is plenty.
+			// remote one; a dashboard has dashboardParallel queries in
+			// flight.
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return c.runtime(serverID).DialAnalyticsStore(ctx)
 			},
-			MaxIdleConnsPerHost: 2,
+			MaxIdleConnsPerHost: dashboardParallel,
 			IdleConnTimeout:     90 * time.Second,
 		}},
 	}
@@ -166,6 +169,73 @@ func (c *Core) ensureAnalyticsStore(serverID int64) {
 			return
 		}
 		c.wakeForwarders()
+		c.updateGeoIP()
+	})
+}
+
+// pruneAnalytics deletes every site's raw events past its retention, in
+// the background, once a day with the salts. Daily totals stay.
+func (c *Core) pruneAnalytics() {
+	cl, _ := c.analyticsClient()
+	if cl == nil {
+		return
+	}
+	c.wg.Go(func() {
+		ctx, cancel := context.WithTimeout(c.ctx, time.Hour)
+		defer cancel()
+		sites, err := c.store.ListAllSites(ctx)
+		if err != nil {
+			return
+		}
+		defaults, err := c.siteDefaults(ctx)
+		if err != nil {
+			return
+		}
+		for _, s := range sites {
+			set := mergeSettings(defaults, siteOverrides(store.Site{Settings: s.Settings}))
+			before := now().AddDate(0, 0, -*set.EventRetentionDays).UnixMilli()
+			if _, err := cl.Prune(ctx, analytics.PruneQuery{Site: s.ID, Before: before}); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				c.log.Warn("analytics: retention; trying again tomorrow", "site", s.ID, "err", err)
+				// One site failing doesn't hold the others' retention up;
+				// a store that is gone does.
+				if errors.Is(err, analytics.ErrOffline) {
+					return
+				}
+			}
+		}
+	})
+}
+
+// updateGeoIP has the store fetch this month's location database unless
+// it has it, in the background: after the store starts, and once a day
+// with the salts. The store answers at once when it is current.
+func (c *Core) updateGeoIP() {
+	cl, _ := c.analyticsClient()
+	if cl == nil {
+		return
+	}
+	c.wg.Go(func() {
+		// The store may still be opening its database after a start.
+		for attempt := range 5 {
+			ctx, cancel := context.WithTimeout(c.ctx, 15*time.Minute)
+			_, err := cl.UpdateGeoIP(ctx)
+			cancel()
+			if err == nil || c.ctx.Err() != nil {
+				return
+			}
+			if !errors.Is(err, analytics.ErrOffline) || attempt == 4 {
+				c.log.Warn("analytics: the location database couldn't be updated; locations stay as they were", "err", err)
+				return
+			}
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-time.After(time.Duration(attempt+1) * 2 * time.Second):
+			}
+		}
 	})
 }
 
@@ -233,6 +303,8 @@ func (c *Core) rotateSalts(ctx context.Context, t time.Time) {
 	c.analytics.mu.Lock()
 	c.analytics.saltDay = today
 	c.analytics.mu.Unlock()
+	c.updateGeoIP()
+	c.pruneAnalytics()
 	c.pushSalts(c.local.ID)
 	if c.nodes == nil {
 		return
@@ -248,28 +320,75 @@ func (c *Core) rotateSalts(ctx context.Context, t time.Time) {
 	}
 }
 
-// pushSalts hands a server today's and tomorrow's salts, in the
-// background. A server that misses them (offline, or too old to collect)
-// gets them on its next connect.
+// pushSalts hands a server what its ingest needs, in the background:
+// today's and tomorrow's salts and every live site's rules. A server that
+// misses them (offline, or too old to collect) gets them on its next
+// connect.
 func (c *Core) pushSalts(serverID int64) {
 	c.wg.Go(func() {
 		ctx, cancel := context.WithTimeout(c.ctx, time.Minute)
 		defer cancel()
-		rows, err := c.store.ListAnalyticsSalts(ctx, ingest.Day(now()))
+		cfg, err := c.analyticsConfig(ctx)
 		if err != nil {
-			c.log.Error("analytics: read salts", "err", err)
+			c.log.Error("analytics: read site rules; the servers keep the ones they have", "err", err)
+		}
+		if cfg.Salts == nil {
 			return
 		}
-		salts := make(map[int64][]byte, len(rows))
-		for _, r := range rows {
-			if salt, err := c.box.Open(r.Salt); err == nil {
-				salts[r.Day] = salt
-			}
-		}
-		if err := c.runtime(serverID).SetAnalytics(ctx, node.AnalyticsConfig{Salts: salts}); err != nil && c.ctx.Err() == nil {
+		if err := c.runtime(serverID).SetAnalytics(ctx, cfg); err != nil && c.ctx.Err() == nil {
 			c.log.Warn("analytics: hand out salts; this server's sites go uncounted until it gets them", "server", serverID, "err", err)
 		}
 	})
+}
+
+// analyticsConfig is what every server's ingest gets: the salts of today
+// and later, and each live site's excluded paths and ignored addresses.
+// When only the rules can't be read it returns the salts, Sites nil, and
+// the error.
+func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error) {
+	rows, err := c.store.ListAnalyticsSalts(ctx, ingest.Day(now()))
+	if err != nil {
+		return node.AnalyticsConfig{}, err
+	}
+	cfg := node.AnalyticsConfig{Salts: make(map[int64][]byte, len(rows))}
+	for _, r := range rows {
+		if salt, err := c.box.Open(r.Salt); err == nil {
+			cfg.Salts[r.Day] = salt
+		}
+	}
+	sites, err := c.store.ListLiveSites(ctx)
+	if err != nil {
+		return cfg, err
+	}
+	defaults, err := c.siteDefaults(ctx)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Sites = map[int64]node.SiteRules{}
+	for _, s := range sites {
+		set := mergeSettings(defaults, siteOverrides(store.Site{Settings: s.Settings}))
+		if len(*set.ExcludedPaths) > 0 || len(*set.IgnoredIPs) > 0 {
+			cfg.Sites[s.ID] = node.SiteRules{ExcludedPaths: *set.ExcludedPaths, IgnoredIPs: *set.IgnoredIPs}
+		}
+	}
+	return cfg, nil
+}
+
+// analyticsSitesChanged hands every server the sites' new rules.
+func (c *Core) analyticsSitesChanged(ctx context.Context) {
+	c.pushSalts(c.local.ID)
+	if c.nodes == nil {
+		return
+	}
+	servers, err := c.store.ListServers(ctx)
+	if err != nil {
+		return
+	}
+	for _, s := range servers {
+		if !s.Local && c.online(s.ID) {
+			c.pushSalts(s.ID)
+		}
+	}
 }
 
 // forwardFrom starts serverID's forwarder unless it runs.
@@ -365,6 +484,7 @@ func (c *Core) forwardOnce(serverID int64) error {
 		if _, err := cl.WriteLines(ctx, source, b.Position, b.Events); err != nil {
 			return err
 		}
+		c.observeLive(b.Events)
 		if err := rt.AckSpool(ctx, b.Position, b.Count); err != nil {
 			// The store has them; the next tail starts from its cursor.
 			return err
@@ -467,7 +587,7 @@ func (c *Core) AnalyticsStatus(ctx context.Context, a Actor) (apitypes.Analytics
 		hctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		if h, err := cl.Health(hctx); err == nil {
-			out.StoreRunning, out.StoreVersion, out.Events, out.StoreBytes = true, h.Version, h.Events, h.FileBytes
+			out.StoreRunning, out.StoreVersion, out.Events, out.StoreBytes, out.GeoIP = true, h.Version, h.Events, h.FileBytes, h.GeoIP
 		}
 	}
 	return out, nil

@@ -11,20 +11,28 @@ import (
 // applyRoutes renders the server's complete routing table from the DB and
 // loads it atomically (ADR 0009). Every domain of a running service routes
 // to its active release's host port, with the service's access protection
-// (ADR 0030) and its requests counted (ADR 0033); redirect domains
-// redirect. On a direct server, domains Dock routes through its Cloudflare
-// tunnel are served to the tunnel only (ADR 0036).
+// (ADR 0030), its requests counted (ADR 0033) and, for hostnames of an
+// analytics site, /_dock/a/* sent to the server's ingest tagged with the
+// site, service and release (ADR 0037); redirect domains redirect. On a
+// direct server, domains Dock routes through its Cloudflare tunnel are
+// served to the tunnel only (ADR 0036).
 func (c *Core) applyRoutes(ctx context.Context, serverID int64) error {
 	c.routesMu.Lock()
 	defer c.routesMu.Unlock()
 	return c.applyRoutesLocked(ctx, serverID, nil)
 }
 
+// routeOverride is a release a cutover switches a service to before the
+// DB records it as active: its host port, and its ID for analytics tags.
+type routeOverride struct {
+	port, release int64
+}
+
 // applyRoutesLocked is applyRoutes for callers holding routesMu. override
-// maps service IDs to host ports that replace the active release's, so a
-// cutover can switch traffic before the DB records the new release as
-// active.
-func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override map[int64]int64) error {
+// maps service IDs to the release that replaces the active one, so a
+// cutover can switch traffic (and analytics tags) before the DB records
+// the new release as active.
+func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override map[int64]routeOverride) error {
 	rows, err := c.store.ListRoutableDomains(ctx, serverID)
 	if err != nil {
 		return err
@@ -32,6 +40,14 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	viaTunnel, err := c.tunnelOnlyHosts(ctx, serverID)
 	if err != nil {
 		return err
+	}
+	hosts, err := c.store.ListAnalyticsHosts(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	siteOf := make(map[string]int64, len(hosts))
+	for _, h := range hosts {
+		siteOf[h.Hostname] = h.SiteID
 	}
 	routes := []node.Route{}
 	// A service's domains share a route, one for those served to the
@@ -43,9 +59,9 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	bySvc := map[svcRoute]int{} // → index in routes
 	for _, d := range rows {
 		tunnelOnly := viaTunnel[d.Hostname]
-		port := d.HostPort
-		if p, ok := override[d.ServiceID]; ok {
-			port = p
+		port, release := d.HostPort, d.ReleaseID
+		if o, ok := override[d.ServiceID]; ok {
+			port, release = o.port, o.release
 		}
 		switch {
 		case d.RedirectTo != "":
@@ -54,18 +70,23 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 			// Not running yet: Caddy has nothing to proxy to.
 		default:
 			key := svcRoute{d.ServiceID, tunnelOnly}
-			if i, ok := bySvc[key]; ok {
-				routes[i].Hostnames = append(routes[i].Hostnames, d.Hostname)
-				continue
+			i, ok := bySvc[key]
+			if !ok {
+				acc, err := c.routeAccess(d)
+				if err != nil {
+					// Never serve a protected service unprotected.
+					c.log.Error("service left out of routing", "domain", d.Hostname, "err", err)
+					continue
+				}
+				i = len(routes)
+				bySvc[key] = i
+				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly})
 			}
-			acc, err := c.routeAccess(d)
-			if err != nil {
-				// Never serve a protected service unprotected.
-				c.log.Error("service left out of routing", "domain", d.Hostname, "err", err)
-				continue
+			r := &routes[i]
+			r.Hostnames = append(r.Hostnames, d.Hostname)
+			if site, ok := siteOf[d.Hostname]; ok {
+				addAnalyticsHost(r, d.Hostname, fmt.Sprintf("%d.%d.%d", site, d.ServiceID, release))
 			}
-			bySvc[key] = len(routes)
-			routes = append(routes, node.Route{Hostnames: []string{d.Hostname}, Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly})
 		}
 	}
 	return c.runtime(serverID).ApplyRoutes(ctx, c.withControlRoutes(serverID, routes))
@@ -97,4 +118,16 @@ func (c *Core) tunnelOnlyHosts(ctx context.Context, serverID int64) (map[string]
 		hosts[r.Hostname] = true
 	}
 	return hosts, nil
+}
+
+// addAnalyticsHost adds hostname to r's analytics group with tag, making
+// one when there is none.
+func addAnalyticsHost(r *node.Route, hostname, tag string) {
+	for i := range r.Analytics {
+		if r.Analytics[i].Tag == tag {
+			r.Analytics[i].Hostnames = append(r.Analytics[i].Hostnames, hostname)
+			return
+		}
+	}
+	r.Analytics = append(r.Analytics, node.AnalyticsHosts{Hostnames: []string{hostname}, Tag: tag})
 }

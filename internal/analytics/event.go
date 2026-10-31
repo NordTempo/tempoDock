@@ -72,6 +72,11 @@ type Event struct {
 	ScreenW  uint16 `json:"sw,omitempty"`
 	ScreenH  uint16 `json:"sh,omitempty"`
 	Language string `json:"l,omitempty"`
+	// Country, Region and City are where the event came from, which the
+	// store looks up from IPPrefix; the ingest never sets them.
+	Country string `json:"cc,omitempty"`
+	Region  string `json:"rg,omitempty"`
+	City    string `json:"ci,omitempty"`
 	// Props are a custom event's properties: a JSON object of string,
 	// number and boolean values, at most MaxProps of them.
 	Props string `json:"pr,omitempty"`

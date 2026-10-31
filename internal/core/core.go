@@ -372,11 +372,13 @@ func (c *Core) clearTempFiles() {
 func (c *Core) Close() {
 	c.tunnels.closeAll()
 	c.closeStats()
-	// Under serversMu and git.mu, so kickServer and kickGit can't start a
-	// goroutine after this.
+	// Under serversMu, git.mu and the live lock, so kickServer, kickGit
+	// and reloadSite can't start a goroutine after this.
 	c.serversMu.Lock()
 	c.git.mu.Lock()
+	c.analytics.live.mu.Lock()
 	c.cancel()
+	c.analytics.live.mu.Unlock()
 	c.git.mu.Unlock()
 	c.serversMu.Unlock()
 	c.wg.Wait()

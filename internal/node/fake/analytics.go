@@ -21,6 +21,7 @@ type fakeAnalytics struct {
 	lines [][]byte
 	acked uint64
 	salts map[int64][]byte
+	sites map[int64]node.SiteRules
 	store *node.AnalyticsStoreSpec
 	// fakeStore runs while the store does, on storeLn: an in-memory store
 	// with the real one's API, which DialAnalyticsStore reaches.
@@ -91,7 +92,17 @@ func (r *Runtime) SetAnalytics(_ context.Context, cfg node.AnalyticsConfig) erro
 		return a.failSet
 	}
 	a.salts = maps.Clone(cfg.Salts)
+	if cfg.Sites != nil {
+		a.sites = maps.Clone(cfg.Sites)
+	}
 	return nil
+}
+
+// AnalyticsSiteRules are the site rules SetAnalytics last handed over.
+func (r *Runtime) AnalyticsSiteRules() map[int64]node.SiteRules {
+	r.analytics.mu.Lock()
+	defer r.analytics.mu.Unlock()
+	return maps.Clone(r.analytics.sites)
 }
 
 // TailSpool implements node.Analytics, without the real one's second of

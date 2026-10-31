@@ -122,8 +122,12 @@ func newCollector(cfg config.Config, store collect.Store, log *slog.Logger) (*co
 	if err != nil {
 		return nil, nil, fmt.Errorf("analytics salts: %w", err)
 	}
-	return &collect.Collector{Spool: sp, Salts: salts, Store: store},
-		&ingest.Ingest{Spool: sp, Salts: salts, Log: log.With("component", "analytics")}, nil
+	rules, err := ingest.OpenRules(filepath.Join(dir, "rules.json"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("analytics site rules: %w", err)
+	}
+	return &collect.Collector{Spool: sp, Salts: salts, Rules: rules, Store: store},
+		&ingest.Ingest{Spool: sp, Salts: salts, Rules: rules, Log: log.With("component", "analytics")}, nil
 }
 
 // dockerRoot asks Docker once where it keeps images, volumes and logs, for

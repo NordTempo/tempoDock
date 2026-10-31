@@ -69,6 +69,37 @@ func (s *Store) Handler() http.Handler {
 		}
 		reply(w, s.overview(q))
 	}))
+	mux.HandleFunc("POST "+analytics.LivePath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.LiveQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, s.live(q))
+	}))
+	mux.HandleFunc("POST "+analytics.PrunePath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.PruneQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		kept := s.events[:0]
+		var n int64
+		for _, e := range s.events {
+			if e.Site == q.Site && e.Time < q.Before {
+				n++
+				continue
+			}
+			kept = append(kept, e)
+		}
+		s.events = kept
+		s.mu.Unlock()
+		reply(w, analytics.PruneResult{Deleted: n})
+	}))
+	mux.HandleFunc("POST "+analytics.GeoIPPath, s.auth(func(w http.ResponseWriter, _ *http.Request) {
+		reply(w, analytics.GeoIP{Month: "fake"})
+	}))
 	mux.HandleFunc("POST "+analytics.SeriesPath, s.auth(func(w http.ResponseWriter, _ *http.Request) { reply(w, []analytics.Point{}) }))
 	mux.HandleFunc("POST "+analytics.BreakdownPath, s.auth(func(w http.ResponseWriter, _ *http.Request) { reply(w, []analytics.Row{}) }))
 	return mux
@@ -139,6 +170,28 @@ func (s *Store) overview(q analytics.Query) analytics.Overview {
 	}
 	o.Visitors = int64(len(visitors))
 	return o
+}
+
+// live answers a LiveQuery by scanning the events.
+func (s *Store) live(q analytics.LiveQuery) analytics.Live {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := analytics.Live{Visitors: []analytics.LiveVisitor{}, Recent: []analytics.Event{}}
+	last := map[uint64]int64{}
+	for i := len(s.events) - 1; i >= 0; i-- {
+		e := s.events[i]
+		if e.Site != q.Site || e.Time < q.Since {
+			continue
+		}
+		last[e.Visitor] = max(last[e.Visitor], e.Time)
+		if len(out.Recent) < 20 {
+			out.Recent = append(out.Recent, e)
+		}
+	}
+	for v, t := range last {
+		out.Visitors = append(out.Visitors, analytics.LiveVisitor{Visitor: v, Last: t})
+	}
+	return out
 }
 
 // reply writes v as JSON.

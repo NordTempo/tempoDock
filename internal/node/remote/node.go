@@ -432,7 +432,14 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	}))
 	h(opDial, serveDial(rt))
 	h(opSetAnalytics, unary(func(ctx context.Context, a setAnalyticsRequest) (empty, error) {
-		return empty{}, rt.SetAnalytics(ctx, node.AnalyticsConfig{Salts: a.Salts})
+		cfg := node.AnalyticsConfig{Salts: a.Salts}
+		if a.Sites != nil {
+			cfg.Sites = make(map[int64]node.SiteRules, len(a.Sites))
+			for id, r := range a.Sites {
+				cfg.Sites[id] = node.SiteRules(r)
+			}
+		}
+		return empty{}, rt.SetAnalytics(ctx, cfg)
 	}))
 	h(opTailSpool, stream(func(ctx context.Context, a tailSpoolRequest) (<-chan node.SpoolBatch, error) {
 		return rt.TailSpool(ctx, a.After)

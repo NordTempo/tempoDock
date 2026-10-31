@@ -58,6 +58,9 @@ var script []byte
 type Ingest struct {
 	Spool *spool.Spool
 	Salts *Salts
+	// Rules leave sites' excluded paths and ignored addresses out; nil
+	// is none.
+	Rules *Rules
 	Log   *slog.Logger
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
@@ -71,7 +74,7 @@ type Ingest struct {
 
 // Stats counts what the ingest saw since it started.
 type Stats struct {
-	Accepted, Bots, Invalid, NoSalt atomic.Int64
+	Accepted, Bots, Invalid, NoSalt, Excluded atomic.Int64
 }
 
 // Stats returns the counts.
@@ -266,10 +269,15 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 		return false, true
 	}
 	ip := r.Header.Get(ClientIPHeader)
+	path := cut(cmpStr(u.EscapedPath(), "/"), maxPath)
+	if in.Rules.skip(site, path, ip) {
+		in.stats.Excluded.Add(1)
+		return false, true
+	}
 	e.Time = t.UnixMilli()
 	e.Visitor = visitorID(salt, site, ip, r.Header.Get("User-Agent"))
 	e.IPPrefix = ipPrefix(ip)
-	e.Path = cut(cmpStr(u.EscapedPath(), "/"), maxPath)
+	e.Path = path
 	if strings.Contains(u.RawQuery, "utm_") {
 		utm(u.RawQuery, e)
 	}

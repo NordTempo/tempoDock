@@ -178,7 +178,8 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
 | Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events wait to go to the control plane (ADR 0037) | one timer; then one spool read of up to 1,000 events |
 | Analytics forwarder retry | `internal/core/analytics.go` | 1 s, doubling to 30 s | the store doesn't answer or a write fails | one cursor request to the store |
-| Analytics salts | `internal/core/analytics.go` | with the statistics tick | always; does nothing on the same UTC day | at midnight: two inserts, a delete, one call per server |
+| Analytics salts | `internal/core/analytics.go` | with the statistics tick | always; does nothing on the same UTC day | at midnight: two inserts, a delete, one call per server; then the store's daily retention (one delete per site) and location database check (a download on a month's first day) |
+| Analytics live view | `internal/core/analytics_live.go` | 30 s, or 2 s while the site's events arrive | someone watches a site live (ADR 0037) | one live query to the analytics store, one SSE write per viewer when the view changed |
 | Analytics store trim | `cmd/dock-analytics/serve.go` | once, a minute after the last request | the store was asked something (ADR 0037) | a checkpoint and two `SET memory_limit`, then `debug.FreeOSMemory` |
 | Analytics rollups | `cmd/dock-analytics/store/rollup.go` | no timer: woken by a write that brings events for a finished day, or the first write of a new day | there are days to roll up | per site and day, one transaction of about 25 grouped inserts (0.27 s for a day of a 100M-event-a-year site) |
 
