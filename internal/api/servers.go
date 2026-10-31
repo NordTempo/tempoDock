@@ -139,8 +139,8 @@ func registerServers(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "service-traffic", Method: http.MethodGet, Path: servicePathT + "/traffic",
 		Summary: "Service traffic",
-		Description: "Requests to the service's domains, counted from the proxy's access log: points over the range, totals, distinct visitors " +
-			"(estimated; bots left out) and the most requested paths, with IDs in paths replaced by `:id`.",
+		Description: "Requests to the service's domains, counted from the proxy's access log: points over the range, totals " +
+			"and the most requested paths, with IDs in paths replaced by `:id`. Visitors are Dock Analytics'.",
 		Tags: []string{"services"},
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath

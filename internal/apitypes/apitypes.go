@@ -1240,7 +1240,7 @@ const (
 
 // ServiceTraffic is what a service's domains served over a range: the
 // requests Caddy proxied to it, counted from its access log (ADR 0033).
-// Totals, Visitors and Paths cover whole hours, from the start of the hour
+// Totals and Paths cover whole hours, from the start of the hour
 // the range starts in (Since).
 type ServiceTraffic struct {
 	Project           string         `json:"project"`

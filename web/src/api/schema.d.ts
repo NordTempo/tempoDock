@@ -2179,7 +2179,7 @@ export interface paths {
         };
         /**
          * Service traffic
-         * @description Requests to the service's domains, counted from the proxy's access log: points over the range, totals, distinct visitors (estimated; bots left out) and the most requested paths, with IDs in paths replaced by `:id`.
+         * @description Requests to the service's domains, counted from the proxy's access log: points over the range, totals and the most requested paths, with IDs in paths replaced by `:id`. Visitors are Dock Analytics'.
          */
         get: operations["service-traffic"];
         put?: never;

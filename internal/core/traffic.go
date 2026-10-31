@@ -17,8 +17,9 @@ import (
 // of service routes to the server's counter (internal/node/traffic). The
 // minute tick drains every server's counts along with its resource
 // samples, maps hostnames to services and, in one transaction, adds a
-// minute point and the hour so far per service, and the hour's paths. When an hour is over its paths are trimmed to the top 100
-// and points past retention are pruned. Open pages patch from one traffic
+// minute point and the hour so far per service, and the hour's paths.
+// When an hour is over its paths are trimmed to the top 100 and points
+// past retention are pruned. Open pages patch from one traffic
 // event per environment. Nothing runs that the stats tick doesn't already
 // run, and a minute without requests writes nothing.
 

@@ -3,13 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { queries, servicePath, useService } from "../data/queries";
 import type { ServiceTraffic } from "../data/types";
-import { LineChart } from "../features/stats/LineChart";
 import { RangeSwitch, Stat } from "../features/stats/parts";
 import { BarChart } from "../features/traffic/BarChart";
 import {
   barLabel,
   barMs,
-  niceMax,
   toBars,
   trafficRangeLabel,
   trafficRangeMs,
@@ -20,9 +18,9 @@ import { useOrg } from "../shell/location";
 import { bytes, size } from "../ui/format";
 import { Panel, SectionHead } from "../ui/kit";
 
-// What a service's domains served (ADR 0033): totals, requests and their
-// average time over time, and the most requested endpoints. Visitors are
-// Dock Analytics' (the Analytics tab).
+// What a service's domains served (ADR 0033): totals, requests over time
+// and the most requested endpoints. Visitors are Dock Analytics' (the
+// Analytics tab, ADR 0040).
 // /shop/production/web/traffic?range=7d
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/traffic",
@@ -86,7 +84,7 @@ function TrafficTab() {
           {trafficRangeLabel[range]}
         </SectionHead>
         <Totals traffic={traffic} />
-        <Charts traffic={traffic} to={dataUpdatedAt} />
+        <Chart traffic={traffic} to={dataUpdatedAt} />
       </section>
       <section aria-labelledby="endpoints">
         <SectionHead
@@ -125,44 +123,22 @@ function Totals({ traffic: { totals: t } }: { traffic: ServiceTraffic }) {
   );
 }
 
-function Charts({ traffic, to }: { traffic: ServiceTraffic; to: number }) {
+function Chart({ traffic, to }: { traffic: ServiceTraffic; to: number }) {
   const range = traffic.range;
   const from = to - trafficRangeMs[range];
   const bars = useMemo(
     () => toBars(traffic.points, barMs[range]),
     [traffic.points, range],
   );
-  // Minutes and hours without requests have no point, so the line breaks
-  // there instead of dropping to 0 ms.
-  const avg = useMemo(
-    () =>
-      traffic.points.map((p) => ({
-        t: Date.parse(p.time),
-        v: p.avg_duration_ms,
-      })),
-    [traffic.points],
-  );
-  const per = traffic.resolution_seconds === 60 ? "minute" : "hour";
   return (
-    <div className="grid gap-x-8 gap-y-5 lg:grid-cols-2">
-      <BarChart
-        title="Requests"
-        per={barLabel[range]}
-        bars={bars}
-        from={from - (from % barMs[range])}
-        to={to}
-        bucketMs={barMs[range]}
-      />
-      <LineChart
-        title={`Avg time per ${per}`}
-        points={avg}
-        from={from}
-        to={to}
-        resolution={traffic.resolution_seconds}
-        max={niceMax(Math.max(1, ...avg.map((p) => p.v)))}
-        format={(v) => `${Math.round(v)} ms`}
-      />
-    </div>
+    <BarChart
+      title="Requests"
+      per={barLabel[range]}
+      bars={bars}
+      from={from - (from % barMs[range])}
+      to={to}
+      bucketMs={barMs[range]}
+    />
   );
 }
 

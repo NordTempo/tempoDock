@@ -3,6 +3,7 @@
 package caddy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -715,17 +716,17 @@ func TestIntegrationAccess(t *testing.T) {
 }
 
 // Caddy accepts the traffic log config and sends a line per request of a
-// counted route to the counter, and none for other hostnames.
+// counted route, without who sent it, and none for other hostnames.
 func TestIntegrationTraffic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	port := freePorts(t, 1)[0]
-	counter, err := traffic.Listen(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), slog.New(slog.DiscardHandler))
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = conn.Close() })
 	tc := startCaddyWith(t, func(o *Options) {
-		o.DisableTLS, o.TrafficAddr = true, net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+		o.DisableTLS, o.TrafficAddr = true, conn.LocalAddr().String()
 	})
 	up := backend(t, "app")
 	err = tc.proxy.ApplyRoutes(ctx, []node.Route{
@@ -740,14 +741,33 @@ func TestIntegrationTraffic(t *testing.T) {
 	}
 	tc.get(t, tc.url("http", "quiet.test", "/"))
 
-	var got []node.HostTraffic
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
-		d, _ := counter.DrainTraffic(ctx)
-		got = append(got, d...)
-		if len(got) > 0 && got[0].Requests == 3 {
+	// The three counted lines, then nothing for quiet.test.
+	counter := traffic.NewCounter()
+	buf := make([]byte, 64<<10)
+	for i := range 4 {
+		wait := 5 * time.Second
+		if i == 3 {
+			wait = 500 * time.Millisecond
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(wait))
+		n, _, err := conn.ReadFrom(buf)
+		if i == 3 {
+			if err == nil {
+				t.Errorf("an uncounted request was logged: %s", buf[:n])
+			}
 			break
 		}
+		if err != nil {
+			t.Fatalf("line %d: %v", i, err)
+		}
+		for _, field := range []string{`"remote_ip"`, `"client_ip"`, `"headers"`, `"ua"`, "Go-http-client"} {
+			if bytes.Contains(buf[:n], []byte(field)) {
+				t.Errorf("line has %s: %s", field, buf[:n])
+			}
+		}
+		counter.Add(buf[:n])
 	}
+	got, _ := counter.DrainTraffic(ctx)
 	if len(got) != 1 || got[0].Host != "counted.test" || got[0].Requests != 3 || got[0].Status[0] != 3 {
 		t.Fatalf("counted %+v; want 3 requests to counted.test", got)
 	}

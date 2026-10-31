@@ -21,7 +21,7 @@ agree, which reads as a bug, and "Metrics" reads like analytics.
 | Caddy's line | Without the client's address (`remote_ip`, `client_ip`) and without the `ua` field: the counter no longer reads them, so they aren't encoded or sent |
 | Store | Migration 0035 drops `traffic_visitors` and `traffic_stats.visitors` |
 | Node link | `HostTraffic` loses `visitors`. Older nodes still send it and it is ignored; no protocol change |
-| The tab | The visitors chart gives way to the average time per minute or hour, from the points the tab already loads |
+| The tab | Totals, the requests chart (4xx and 5xx stacked in) and the endpoints; the visitors stat and chart go |
 | Names | Metrics is Resources (`/resources`), like the Overview's row of the same numbers. Its shortcut stays G M |
 
 ## Consequences
@@ -34,3 +34,5 @@ agree, which reads as a bug, and "Metrics" reads like analytics.
   busy services).
 - No address or user agent of a visitor reaches the traffic counter.
 - Links to `/metrics` stop working.
+- A control plane before v0.13.0 reading an updated node gets no
+  sketch and shows 0 visitors until it is updated too.
