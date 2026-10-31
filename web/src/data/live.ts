@@ -52,6 +52,7 @@ const busEvents = [
   "alert",
   "update",
   "disk",
+  "analytics",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -179,6 +180,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Only operators get these: a server's disk was read again.
       if (event.disk)
         queryClient.setQueryData(diskKey(event.disk.server), event.disk);
+      return;
+    case "analytics":
+      // Only operators get these: the analytics store started or failed.
+      queryClient.invalidateQueries({ queryKey: ["analytics", "status"] });
       return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.

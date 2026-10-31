@@ -122,3 +122,59 @@ func TestClientReportsABusyStore(t *testing.T) {
 		t.Errorf("err = %v, want ErrBusy (not offline)", err)
 	}
 }
+
+// A move (ADR 0037): one store's snapshot fills an empty one, which exits
+// to reopen on it with the same events and cursors; a store with events
+// refuses one.
+func TestAPIMovesTheDatabase(t *testing.T) {
+	ctx := context.Background()
+	from, _ := server(t)
+	day := time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)
+	if _, err := from.Write(ctx, "server-1", 7, []analytics.Event{{Time: day.UnixMilli(), Site: 1, Kind: analytics.KindPageview, Path: "/", Visitor: 1}}); err != nil {
+		t.Fatal(err)
+	}
+
+	db := filepath.Join(t.TempDir(), "b.duckdb")
+	s, err := store.Open(ctx, db, store.Options{MemoryLimit: 128 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newAPI(s, testToken, slog.New(slog.DiscardHandler), 1, 0)
+	exited := false
+	a.db, a.exit = db, func() { exited = true }
+	srv := httptest.NewServer(a.handler())
+	defer srv.Close()
+	to := &analytics.Client{BaseURL: srv.URL, Token: testToken}
+
+	snap, err := from.Snapshot(ctx)
+	if err != nil || snap.Events != 1 {
+		t.Fatalf("snapshot = %+v, %v; want 1 event", snap, err)
+	}
+	got, err := to.Restore(ctx, snap, snap.Size)
+	_ = snap.Close()
+	if err != nil || got.Bytes != snap.Size || len(got.SHA256) != 64 || !exited {
+		t.Fatalf("restore = %+v, %v (exited %v); want %d bytes", got, err, exited, snap.Size)
+	}
+	_ = s.Close()
+	s, err = store.Open(ctx, db, store.Options{MemoryLimit: 128 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if st, err := s.Stats(ctx); err != nil || st.Events != 1 {
+		t.Errorf("after the restore: %+v, %v; want 1 event", st, err)
+	}
+	if pos, err := s.Cursor(ctx, "server-1"); err != nil || pos != 7 {
+		t.Errorf("cursor after the restore = %d, %v; want 7", pos, err)
+	}
+
+	snap, err = from.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = snap.Close() }()
+	var se *analytics.StoreError
+	if _, err := from.Restore(ctx, snap, snap.Size); !errors.As(err, &se) || se.Status != http.StatusConflict {
+		t.Errorf("restore into a store with events = %v; want a 409", err)
+	}
+}

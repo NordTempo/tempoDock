@@ -109,6 +109,40 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 	return res, c.do(ctx, http.MethodGet, HealthPath, nil, &res)
 }
 
+// Snapshot is a store's database file as SnapshotPath sends it.
+type Snapshot struct {
+	io.ReadCloser
+	// Size is its length; Events the events it holds.
+	Size, Events int64
+}
+
+// Snapshot opens the store's database file (SnapshotPath); the caller
+// reads and closes it. Writes wait until it is closed.
+func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
+	resp, err := c.send(ctx, http.MethodGet, SnapshotPath, nil, -1)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	events, err := strconv.ParseInt(resp.Header.Get(SnapshotEventsHeader), 10, 64)
+	if resp.ContentLength < 0 || err != nil {
+		_ = resp.Body.Close()
+		return Snapshot{}, errors.New("the analytics store's snapshot has no length or event count")
+	}
+	return Snapshot{ReadCloser: resp.Body, Size: resp.ContentLength, Events: events}, nil
+}
+
+// Restore sends size bytes of another store's snapshot to this one
+// (RestorePath), which must be empty, and answers what it wrote.
+func (c *Client) Restore(ctx context.Context, r io.Reader, size int64) (Restored, error) {
+	resp, err := c.send(ctx, http.MethodPut, RestorePath, r, size)
+	if err != nil {
+		return Restored{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var res Restored
+	return res, json.UnmarshalRead(io.LimitReader(resp.Body, maxAnswer), &res)
+}
+
 // post sends in as JSON and decodes the answer into out.
 func (c *Client) post(ctx context.Context, path string, in, out any) error {
 	b, err := json.Marshal(in)
@@ -125,9 +159,26 @@ const maxAnswer = 8 << 20
 // (wrapped), a busy one ErrBusy; one that answers with an error returns
 // its message as a StoreError.
 func (c *Client) do(ctx context.Context, method, path string, body io.Reader, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimSuffix(c.BaseURL, "/")+path, body)
+	resp, err := c.send(ctx, method, path, body, -1)
 	if err != nil {
 		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return json.UnmarshalRead(io.LimitReader(resp.Body, maxAnswer), out)
+}
+
+// send makes one call and returns the answer when it is 200, for the
+// caller to read and close; size is the body's length, or -1 for do's
+// small bodies. A store that can't be reached is ErrOffline (wrapped), a
+// busy one ErrBusy; one that answers with an error returns its message as
+// a StoreError.
+func (c *Client) send(ctx context.Context, method, path string, body io.Reader, size int64) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimSuffix(c.BaseURL, "/")+path, body)
+	if err != nil {
+		return nil, err
+	}
+	if size >= 0 {
+		req.ContentLength = size
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	hc := c.HTTP
@@ -137,23 +188,22 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ou
 	resp, err := hc.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
-		return fmt.Errorf("%w: %w", ErrOffline, err)
+		return nil, fmt.Errorf("%w: %w", ErrOffline, err)
+	}
+	if resp.StatusCode == http.StatusOK {
+		return resp, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
-	r := io.LimitReader(resp.Body, maxAnswer)
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(r, 4<<10))
-		switch resp.StatusCode {
-		case http.StatusServiceUnavailable:
-			return fmt.Errorf("%w: %s", ErrOffline, strings.TrimSpace(string(msg)))
-		case http.StatusTooManyRequests:
-			return ErrBusy
-		}
-		return &StoreError{Status: resp.StatusCode, Message: strings.TrimSpace(string(msg))}
+	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	switch resp.StatusCode {
+	case http.StatusServiceUnavailable:
+		return nil, fmt.Errorf("%w: %s", ErrOffline, strings.TrimSpace(string(msg)))
+	case http.StatusTooManyRequests:
+		return nil, ErrBusy
 	}
-	return json.UnmarshalRead(r, out)
+	return nil, &StoreError{Status: resp.StatusCode, Message: strings.TrimSpace(string(msg))}
 }
 
 // StoreError is an error the store answered with: a bad query (400) or

@@ -87,9 +87,11 @@ type Analytics struct {
 	// StorePort is the loopback port the analytics store is published on,
 	// on the analytics server.
 	StorePort int `toml:"store_port"`
-	// StoreImage is the dock-analytics image the control plane runs.
-	// Empty is the image released with this version of dock.
-	StoreImage string `toml:"store_image"`
+	// StoreBinary is a dock-analytics binary (linux, Debian 12's C
+	// library: `make analytics-binary`) the control plane runs the store
+	// from, for development builds, which have no release to download it
+	// from. Empty is the binary released with this version of dock.
+	StoreBinary string `toml:"store_binary"`
 	// StoreMemoryMB is the store container's memory limit.
 	StoreMemoryMB int `toml:"store_memory_mb"`
 }

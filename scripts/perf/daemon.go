@@ -203,7 +203,14 @@ admin_socket = %q
 http_port = 18080
 https_port = 18443
 disable_tls = true
-`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"))
+
+# The fake runtime runs an in-memory store; it only needs a binary to name.
+[analytics]
+store_binary = %q
+`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"), filepath.Join(dir, "dock-analytics"))
+	if err := os.WriteFile(filepath.Join(dir, "dock-analytics"), []byte("fake"), 0o755); err != nil {
+		return nil, err
+	}
 	cfgPath := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		return nil, err

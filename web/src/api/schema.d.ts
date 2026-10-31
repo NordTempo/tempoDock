@@ -3134,11 +3134,14 @@ export interface components {
         };
         AnalyticsStatus: {
             enabled: boolean;
+            error?: string;
             /** Format: int64 */
             events: number;
             geoip?: string;
+            moving_to?: string;
             server: string;
             server_online: boolean;
+            starting?: boolean;
             /** Format: int64 */
             store_bytes: number;
             store_running: boolean;
@@ -4006,7 +4009,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics";
             update?: components["schemas"]["UpdateStatus"];
             usage?: components["schemas"]["UsageUpdate"];
         };
@@ -4838,6 +4841,8 @@ export interface components {
         SetAnalyticsServerRequest: {
             /** @description The server the analytics store runs on; empty for the control plane's own */
             server: string;
+            /** @description Move even though the old analytics server is offline: the new store starts empty */
+            start_empty?: boolean;
         };
         SetMemberRoleRequest: {
             /** @enum {string} */

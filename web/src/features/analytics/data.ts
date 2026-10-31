@@ -192,8 +192,8 @@ export const useSetDefaults = () =>
 // Servers show which one runs the store.
 export const useSetAnalyticsServer = () =>
   useAnalyticsAction(
-    (server: string) =>
-      body(api.PUT("/api/v1/analytics/server", { body: { server } })),
+    (move: { server: string; start_empty?: boolean }) =>
+      body(api.PUT("/api/v1/analytics/server", { body: move })),
     [keys.servers],
   );
 

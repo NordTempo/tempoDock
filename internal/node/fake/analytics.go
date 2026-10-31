@@ -30,6 +30,8 @@ type fakeAnalytics struct {
 	// appended is closed by the next append, waking tails.
 	appended chan struct{}
 	failSet  error
+	// failEnsure makes EnsureAnalyticsStore fail.
+	failEnsure error
 }
 
 // AppendSpool adds events (JSON lines) to the fake spool, as the ingest
@@ -80,6 +82,14 @@ func (r *Runtime) AnalyticsStore() *fakestore.Store {
 func (r *Runtime) FailSetAnalytics(err error) {
 	r.analytics.mu.Lock()
 	r.analytics.failSet = err
+	r.analytics.mu.Unlock()
+}
+
+// FailEnsureAnalyticsStore makes EnsureAnalyticsStore return err (nil:
+// work again).
+func (r *Runtime) FailEnsureAnalyticsStore(err error) {
+	r.analytics.mu.Lock()
+	r.analytics.failEnsure = err
 	r.analytics.mu.Unlock()
 }
 
@@ -152,17 +162,21 @@ func (r *Runtime) AckSpool(_ context.Context, position uint64, _ int) error {
 
 // EnsureAnalyticsStore implements node.Analytics: it records spec and
 // runs an in-memory store (fakestore) with spec's token, on a loopback
-// port, until spec is nil. A new token starts a new, empty store.
-func (r *Runtime) EnsureAnalyticsStore(_ context.Context, spec *node.AnalyticsStoreSpec) error {
+// port. A new token starts a new, empty store.
+func (r *Runtime) EnsureAnalyticsStore(_ context.Context, spec node.AnalyticsStoreSpec) error {
+	if spec.Binary == "" || len(spec.SHA256) != 64 {
+		return errors.New("the analytics store needs its binary and its SHA-256")
+	}
 	a := &r.analytics
 	a.mu.Lock()
-	if spec == nil || (a.store != nil && a.store.Token != spec.Token) {
-		if a.storeLn != nil {
-			_ = a.storeLn.Close()
-		}
-		a.store, a.fakeStore, a.storeLn = nil, nil, nil
+	if a.failEnsure != nil {
+		a.mu.Unlock()
+		return a.failEnsure
 	}
-	if spec != nil && a.store == nil {
+	if a.store != nil && a.store.Token != spec.Token {
+		a.stopStore()
+	}
+	if a.store == nil {
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			a.mu.Unlock()
@@ -172,15 +186,32 @@ func (r *Runtime) EnsureAnalyticsStore(_ context.Context, spec *node.AnalyticsSt
 		go func() { _ = http.Serve(ln, fs.Handler()) }()
 		a.fakeStore, a.storeLn = fs, ln
 	}
-	if spec != nil {
-		c := *spec
-		a.store = &c
-	}
+	a.store = &spec
 	a.mu.Unlock()
 	r.mu.Lock()
 	r.ops = append(r.ops, "ensure-analytics-store")
 	r.mu.Unlock()
 	return nil
+}
+
+// RemoveAnalyticsStore implements node.Analytics: the in-memory store and
+// its events go.
+func (r *Runtime) RemoveAnalyticsStore(context.Context) error {
+	r.analytics.mu.Lock()
+	r.analytics.stopStore()
+	r.analytics.mu.Unlock()
+	r.mu.Lock()
+	r.ops = append(r.ops, "remove-analytics-store")
+	r.mu.Unlock()
+	return nil
+}
+
+// stopStore stops the in-memory store; mu is held.
+func (a *fakeAnalytics) stopStore() {
+	if a.storeLn != nil {
+		_ = a.storeLn.Close()
+	}
+	a.store, a.fakeStore, a.storeLn = nil, nil, nil
 }
 
 // DialAnalyticsStore implements node.Analytics: it connects to the

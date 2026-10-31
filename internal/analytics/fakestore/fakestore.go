@@ -7,7 +7,11 @@ package fakestore
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json/v2"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -115,10 +119,57 @@ func (s *Store) Handler() http.Handler {
 		s.mu.Unlock()
 		reply(w, analytics.PruneResult{Deleted: n})
 	}))
+	mux.HandleFunc("GET "+analytics.SnapshotPath, s.auth(func(w http.ResponseWriter, _ *http.Request) {
+		s.mu.Lock()
+		b, err := json.Marshal(snapshot{Events: s.events, Cursors: s.cursors})
+		events := len(s.events)
+		s.mu.Unlock()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(b)))
+		w.Header().Set(analytics.SnapshotEventsHeader, strconv.Itoa(events))
+		_, _ = w.Write(b)
+	}))
+	mux.HandleFunc("PUT "+analytics.RestorePath, s.auth(s.restore))
 	mux.HandleFunc("POST "+analytics.GeoIPPath, s.auth(func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, analytics.GeoIP{Month: "fake"})
 	}))
 	return mux
+}
+
+// snapshot is the fake's database file: its events and cursors as JSON.
+type snapshot struct {
+	Events  []analytics.Event `json:"events"`
+	Cursors map[string]uint64 `json:"cursors"`
+}
+
+// restore takes a snapshot into an empty store at once (the real one
+// restarts on it).
+func (s *Store) restore(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var snap snapshot
+	if err := json.UnmarshalRead(bytes.NewReader(raw), &snap); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.events) > 0 {
+		http.Error(w, "this store holds events; only an empty store takes another's data", http.StatusConflict)
+		return
+	}
+	s.events, s.cursors = snap.Events, snap.Cursors
+	if s.cursors == nil {
+		s.cursors = map[string]uint64{}
+	}
+	sum := sha256.Sum256(raw)
+	reply(w, analytics.Restored{Bytes: int64(len(raw)), SHA256: hex.EncodeToString(sum[:])})
 }
 
 // auth checks the token and that the store is up.

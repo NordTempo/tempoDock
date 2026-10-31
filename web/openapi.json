@@ -474,6 +474,9 @@
           "enabled": {
             "type": "boolean"
           },
+          "error": {
+            "type": "string"
+          },
           "events": {
             "format": "int64",
             "type": "integer"
@@ -481,10 +484,16 @@
           "geoip": {
             "type": "string"
           },
+          "moving_to": {
+            "type": "string"
+          },
           "server": {
             "type": "string"
           },
           "server_online": {
+            "type": "boolean"
+          },
+          "starting": {
             "type": "boolean"
           },
           "store_bytes": {
@@ -3670,7 +3679,8 @@
               "alert",
               "update",
               "project_renamed",
-              "disk"
+              "disk",
+              "analytics"
             ],
             "type": "string"
           },
@@ -6552,6 +6562,10 @@
           "server": {
             "description": "The server the analytics store runs on; empty for the control plane's own",
             "type": "string"
+          },
+          "start_empty": {
+            "description": "Move even though the old analytics server is offline: the new store starts empty",
+            "type": "boolean"
           }
         },
         "required": [

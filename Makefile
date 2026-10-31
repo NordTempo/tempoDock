@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics image-analytics analytics-deps release-local web test test-integration lint generate dev perf perf-baseline
+.PHONY: build build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-integration lint generate dev perf perf-baseline
 
 ## build: the single static binary (UI embedded if web/dist is built)
 build:
@@ -45,9 +45,11 @@ test-analytics:
 lint-analytics:
 	cd cmd/dock-analytics && golangci-lint run ./... && go vet ./...
 
-## image-analytics: the store's container image, locally (nothing is pushed)
-image-analytics:
-	docker build -f deploy/analytics/Dockerfile --build-arg VERSION=$(VERSION) -t dock-analytics:$(VERSION) .
+## analytics-binary: bin/dock-analytics-linux-<arch>, the store as Dock
+## runs it (built on Debian 12 in Docker, like the release's); point
+## [analytics] store_binary at it to run a development build's store
+analytics-binary:
+	docker build -f deploy/analytics/Dockerfile --target binary --build-arg VERSION=$(VERSION) --output type=local,dest=bin .
 
 ## analytics-deps: fail if cmd/dock links DuckDB or CGO code, or if
 ## internal/analytics (which dock links) imports anything outside the

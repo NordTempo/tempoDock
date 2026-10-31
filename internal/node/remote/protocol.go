@@ -58,8 +58,11 @@ const (
 	// 0036); 9 added a direct server's tunnel listener: its port in hello
 	// and tunnel-only routes (ADR 0036).
 	// 10 added set-analytics, tail-spool, ack-spool, ensure-analytics-store,
-	// dial-analytics and the routes' analytics hosts (ADR 0037).
-	Protocol = 10
+	// dial-analytics and the routes' analytics hosts (ADR 0037); 11 runs
+	// the store from the release's binary: run-analytics-store,
+	// put-analytics-binary and remove-analytics-store, and answers
+	// ensure-analytics-store (an image) with an error (ADR 0037).
+	Protocol = 11
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -148,9 +151,13 @@ const (
 	opAckSpool        = "ack-spool"
 	opEnsureAnalytics = "ensure-analytics-store"
 	opDialAnalytics   = "dial-analytics" // raw bytes, like dial
-	opRunJob          = "run-job"        // protocol 2
-	opRotate          = "rotate"
-	opUpdate          = "update" // protocol 4
+	// Protocol 11.
+	opRunAnalytics       = "run-analytics-store"
+	opPutAnalyticsBinary = "put-analytics-binary"
+	opRemoveAnalytics    = "remove-analytics-store"
+	opRunJob             = "run-job" // protocol 2
+	opRotate             = "rotate"
+	opUpdate             = "update" // protocol 4
 	// Joining mode (join.go) only.
 	opJoin   = "join"
 	opJoined = "joined"
@@ -183,6 +190,9 @@ const (
 	codeDeadline   = "deadline_exceeded"
 	codeBadRequest = "bad_request"
 	codeInternal   = "internal"
+	// codeNoBinary is a node without the analytics binary it was asked
+	// to run: the control plane sends it (put-analytics-binary).
+	codeNoBinary = "no_analytics_binary"
 )
 
 func (e *Error) Error() string { return e.Message }
@@ -196,6 +206,8 @@ func (e *Error) Is(target error) bool {
 		return target == context.Canceled
 	case codeDeadline:
 		return target == context.DeadlineExceeded
+	case codeNoBinary:
+		return target == errNoAnalyticsBinary
 	}
 	return false
 }
@@ -210,6 +222,8 @@ func wireError(err error) *Error {
 		code = codeCanceled
 	case errors.Is(err, context.DeadlineExceeded):
 		code = codeDeadline
+	case errors.Is(err, errNoAnalyticsBinary):
+		code = codeNoBinary
 	}
 	return &Error{Code: code, Message: truncate(err.Error(), maxErrorMessage)}
 }

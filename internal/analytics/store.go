@@ -90,7 +90,23 @@ const (
 	// GeoIPPath takes POST and answers GeoIP once the store has this
 	// month's location database (it may download it first).
 	GeoIPPath = "/v1/geoip"
+	// SnapshotPath answers GET with the store's database file, with its
+	// Content-Length and SnapshotEventsHeader; writes wait until it is
+	// sent. A move to another server copies it (ADR 0037).
+	SnapshotPath = "/v1/snapshot"
+	// SnapshotEventsHeader is the events the snapshot holds.
+	SnapshotEventsHeader = "Dock-Analytics-Events"
+	// RestorePath takes PUT with another store's snapshot and answers
+	// Restored once it is on disk; the store then exits for its
+	// container to restart on it. Only an empty store takes one.
+	RestorePath = "/v1/restore"
 )
+
+// Restored is what a store received for RestorePath.
+type Restored struct {
+	Bytes  int64  `json:"bytes"`
+	SHA256 string `json:"sha256"`
+}
 
 // MaxWriteBatch caps the events of one write, and MaxEventBytes one
 // event's JSON line.

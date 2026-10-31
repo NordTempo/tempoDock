@@ -759,14 +759,20 @@ type ackSpoolRequest struct {
 	Events   int    `json:"events"`
 }
 
-// analyticsStoreRequest is EnsureAnalyticsStore's spec; nil removes the
-// store.
+// analyticsStoreRequest is run-analytics-store's spec. The binary goes by
+// its hash: the node runs the copy it received with that hash.
 type analyticsStoreRequest struct {
-	Spec *wireAnalyticsStoreSpec `json:"spec,omitempty"`
+	Spec wireAnalyticsStoreSpec `json:"spec"`
 }
 
 type wireAnalyticsStoreSpec struct {
-	Image       string `json:"image"`
+	SHA256      string `json:"sha256"`
 	Token       string `json:"token"`
 	MemoryBytes int64  `json:"memory_bytes"`
+}
+
+// putAnalyticsBinaryRequest precedes the binary's bytes.
+type putAnalyticsBinaryRequest struct {
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
 }

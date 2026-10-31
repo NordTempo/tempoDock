@@ -17,7 +17,8 @@ import (
 
 // Store runs the analytics store's container (docker.AnalyticsStore).
 type Store interface {
-	Ensure(ctx context.Context, spec *node.AnalyticsStoreSpec) error
+	Ensure(ctx context.Context, spec node.AnalyticsStoreSpec) error
+	Remove(ctx context.Context) error
 	Dial(ctx context.Context) (net.Conn, error)
 }
 
@@ -114,11 +115,21 @@ func (c *Collector) AckSpool(_ context.Context, position uint64, events int) err
 var errNoStore = errors.New("this server can't run the analytics store: it has no Docker runtime")
 
 // EnsureAnalyticsStore implements node.Analytics.
-func (c *Collector) EnsureAnalyticsStore(ctx context.Context, spec *node.AnalyticsStoreSpec) error {
+func (c *Collector) EnsureAnalyticsStore(ctx context.Context, spec node.AnalyticsStoreSpec) error {
 	if c.Store == nil {
 		return errNoStore
 	}
 	return c.Store.Ensure(ctx, spec)
+}
+
+// RemoveAnalyticsStore implements node.Analytics: the container and its
+// data. The binary is the caller's: the control plane's staged copy, or
+// the one the node link received.
+func (c *Collector) RemoveAnalyticsStore(ctx context.Context) error {
+	if c.Store == nil {
+		return nil
+	}
+	return c.Store.Remove(ctx)
 }
 
 // DialAnalyticsStore implements node.Analytics.

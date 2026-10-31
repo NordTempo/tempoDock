@@ -43,6 +43,10 @@ func serveCmd(ctx context.Context, args []string) error {
 		return errors.New("DOCK_ANALYTICS_TOKEN must be set to the install's analytics token (at least 32 characters); Dock sets it when it starts the container")
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	// A restore ends the process once the database is on disk: the
+	// container's restart opens it (store.Receive).
+	ctx, exit := context.WithCancel(ctx)
+	defer exit()
 	s, err := sf.open(ctx)
 	if err != nil {
 		return err
@@ -57,6 +61,7 @@ func serveCmd(ctx context.Context, args []string) error {
 	defer func() { stopRollups(); <-rollupsDone }()
 
 	a := newAPI(s, token, log, max(1, *queries), *trimMB<<20)
+	a.db, a.exit = sf.db, exit
 	// Locations: the database in the volume next to the store's, if one
 	// was downloaded (POST /v1/geoip).
 	if a.geo, err = geo.Open(filepath.Join(filepath.Dir(sf.db), "geoip")); err != nil {
@@ -143,6 +148,10 @@ type api struct {
 	// trimAbove is the anonymous memory (bytes) above which a finished
 	// query trims.
 	trimAbove int64
+	// db is the database file a restore goes next to; exit ends the
+	// process after one.
+	db   string
+	exit func()
 }
 
 // newAPI returns the API for s; every call but health needs token.
@@ -162,6 +171,8 @@ func (a *api) handler() http.Handler {
 	mux.Handle("POST "+analytics.LivePath, a.auth(query(a, a.s.Live)))
 	mux.Handle("POST "+analytics.GeoIPPath, a.auth(a.updateGeoIP))
 	mux.Handle("POST "+analytics.PrunePath, a.auth(a.prune))
+	mux.Handle("GET "+analytics.SnapshotPath, a.auth(a.snapshot))
+	mux.Handle("PUT "+analytics.RestorePath, a.auth(a.restore))
 	return mux
 }
 
@@ -323,6 +334,48 @@ func (a *api) prune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, res)
+}
+
+// snapshot streams the database file (analytics.SnapshotPath) for a move
+// to another server. Writes wait until it is sent.
+func (a *api) snapshot(w http.ResponseWriter, r *http.Request) {
+	started := false
+	err := a.s.Snapshot(r.Context(), func(size, events int64) {
+		started = true
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+		w.Header().Set(analytics.SnapshotEventsHeader, strconv.FormatInt(events, 10))
+	}, w)
+	switch {
+	case err != nil && !started:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	case err != nil:
+		// The answer is cut short of its length, which the receiver sees.
+		a.log.Error("snapshot", "err", err)
+	}
+}
+
+// restore takes another store's snapshot (analytics.RestorePath) into an
+// empty store, then exits so the container restarts on it.
+func (a *api) restore(w http.ResponseWriter, r *http.Request) {
+	st, err := a.s.Stats(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if st.Events > 0 {
+		http.Error(w, fmt.Sprintf("this store holds %d events; only an empty store takes another's data", st.Events), http.StatusConflict)
+		return
+	}
+	got, err := store.Receive(a.db, r.Body)
+	if err != nil {
+		a.log.Error("restore", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	a.log.Info("received a database; restarting on it", "bytes", got.Bytes)
+	reply(w, analytics.Restored{Bytes: got.Bytes, SHA256: got.SHA256})
+	a.exit()
 }
 
 // cursor answers a source's position (analytics.CursorPath).
