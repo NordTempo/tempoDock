@@ -616,13 +616,6 @@ type TrafficStat struct {
 	Status5xx  int64
 	Bytes      int64
 	DurationMs int64
-	Visitors   int64
-}
-
-type TrafficVisitor struct {
-	ServiceID int64
-	At        int64
-	Sketch    []byte
 }
 
 type User struct {

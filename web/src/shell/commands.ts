@@ -49,7 +49,7 @@ const serviceTabs = [
   // Stateful services only.
   ["backups", "Backups", "g k"],
   ["logs", "Logs", "g l"],
-  ["metrics", "Metrics", "g m"],
+  ["resources", "Resources", "g m"],
   ["releases", "Releases", "g r"],
   ["domains", "Domains", "g d"],
   ["settings", "Settings", "g s"],

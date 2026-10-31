@@ -10,8 +10,8 @@ import (
 )
 
 const addTraffic = `-- name: AddTraffic :exec
-INSERT INTO traffic_stats (service_id, res, at, requests, status_2xx, status_3xx, status_4xx, status_5xx, bytes, duration_ms, visitors)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO traffic_stats (service_id, res, at, requests, status_2xx, status_3xx, status_4xx, status_5xx, bytes, duration_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (service_id, res, at) DO UPDATE SET
     requests = requests + excluded.requests,
     status_2xx = status_2xx + excluded.status_2xx,
@@ -19,8 +19,7 @@ ON CONFLICT (service_id, res, at) DO UPDATE SET
     status_4xx = status_4xx + excluded.status_4xx,
     status_5xx = status_5xx + excluded.status_5xx,
     bytes = bytes + excluded.bytes,
-    duration_ms = duration_ms + excluded.duration_ms,
-    visitors = max(visitors, excluded.visitors)
+    duration_ms = duration_ms + excluded.duration_ms
 `
 
 type AddTrafficParams struct {
@@ -34,11 +33,9 @@ type AddTrafficParams struct {
 	Status5xx  int64
 	Bytes      int64
 	DurationMs int64
-	Visitors   int64
 }
 
 // AddTraffic adds to a service's point: a new minute, or the hour so far.
-// visitors is the interval's whole estimate, which only grows.
 func (q *Queries) AddTraffic(ctx context.Context, arg AddTrafficParams) error {
 	_, err := q.exec(ctx, q.addTrafficStmt, addTraffic,
 		arg.ServiceID,
@@ -51,7 +48,6 @@ func (q *Queries) AddTraffic(ctx context.Context, arg AddTrafficParams) error {
 		arg.Status5xx,
 		arg.Bytes,
 		arg.DurationMs,
-		arg.Visitors,
 	)
 	return err
 }
@@ -78,40 +74,6 @@ func (q *Queries) AddTrafficPath(ctx context.Context, arg AddTrafficPathParams) 
 		arg.Requests,
 	)
 	return err
-}
-
-const listHourVisitors = `-- name: ListHourVisitors :many
-SELECT service_id, sketch FROM traffic_visitors WHERE at = +?
-`
-
-type ListHourVisitorsRow struct {
-	ServiceID int64
-	Sketch    []byte
-}
-
-// ListHourVisitors is every service's visitor sketch of one hour, which
-// the collector merges new visitors into.
-func (q *Queries) ListHourVisitors(ctx context.Context, at int64) ([]ListHourVisitorsRow, error) {
-	rows, err := q.query(ctx, q.listHourVisitorsStmt, listHourVisitors, at)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListHourVisitorsRow
-	for rows.Next() {
-		var i ListHourVisitorsRow
-		if err := rows.Scan(&i.ServiceID, &i.Sketch); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listTrafficHosts = `-- name: ListTrafficHosts :many
@@ -174,7 +136,7 @@ func (q *Queries) ListTrafficHosts(ctx context.Context) ([]ListTrafficHostsRow, 
 }
 
 const listTrafficStats = `-- name: ListTrafficStats :many
-SELECT at, requests, status_2xx, status_3xx, status_4xx, status_5xx, bytes, duration_ms, visitors
+SELECT at, requests, status_2xx, status_3xx, status_4xx, status_5xx, bytes, duration_ms
 FROM traffic_stats WHERE service_id = +? AND res = +? AND at >= +? ORDER BY at
 `
 
@@ -193,7 +155,6 @@ type ListTrafficStatsRow struct {
 	Status5xx  int64
 	Bytes      int64
 	DurationMs int64
-	Visitors   int64
 }
 
 func (q *Queries) ListTrafficStats(ctx context.Context, arg ListTrafficStatsParams) ([]ListTrafficStatsRow, error) {
@@ -214,43 +175,10 @@ func (q *Queries) ListTrafficStats(ctx context.Context, arg ListTrafficStatsPara
 			&i.Status5xx,
 			&i.Bytes,
 			&i.DurationMs,
-			&i.Visitors,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTrafficVisitors = `-- name: ListTrafficVisitors :many
-SELECT sketch FROM traffic_visitors WHERE service_id = +? AND at >= +?
-`
-
-type ListTrafficVisitorsParams struct {
-	ServiceID int64
-	At        int64
-}
-
-func (q *Queries) ListTrafficVisitors(ctx context.Context, arg ListTrafficVisitorsParams) ([][]byte, error) {
-	rows, err := q.query(ctx, q.listTrafficVisitorsStmt, listTrafficVisitors, arg.ServiceID, arg.At)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items [][]byte
-	for rows.Next() {
-		var sketch []byte
-		if err := rows.Scan(&sketch); err != nil {
-			return nil, err
-		}
-		items = append(items, sketch)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -281,30 +209,6 @@ type PruneTrafficStatsParams struct {
 
 func (q *Queries) PruneTrafficStats(ctx context.Context, arg PruneTrafficStatsParams) error {
 	_, err := q.exec(ctx, q.pruneTrafficStatsStmt, pruneTrafficStats, arg.Res, arg.At)
-	return err
-}
-
-const pruneTrafficVisitors = `-- name: PruneTrafficVisitors :exec
-DELETE FROM traffic_visitors WHERE at < +?
-`
-
-func (q *Queries) PruneTrafficVisitors(ctx context.Context, at int64) error {
-	_, err := q.exec(ctx, q.pruneTrafficVisitorsStmt, pruneTrafficVisitors, at)
-	return err
-}
-
-const setTrafficVisitors = `-- name: SetTrafficVisitors :exec
-INSERT OR REPLACE INTO traffic_visitors (service_id, at, sketch) VALUES (?, ?, ?)
-`
-
-type SetTrafficVisitorsParams struct {
-	ServiceID int64
-	At        int64
-	Sketch    []byte
-}
-
-func (q *Queries) SetTrafficVisitors(ctx context.Context, arg SetTrafficVisitorsParams) error {
-	_, err := q.exec(ctx, q.setTrafficVisitorsStmt, setTrafficVisitors, arg.ServiceID, arg.At, arg.Sketch)
 	return err
 }
 

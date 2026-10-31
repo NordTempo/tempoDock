@@ -20,9 +20,9 @@ import { SectionHead } from "../ui/kit";
 const MiB = 1024 * 1024;
 
 // A service's CPU and memory: live while open, and history across
-// releases. /shop/production/web/metrics?range=24h
+// releases. /shop/production/web/resources?range=24h
 export const Route = createFileRoute(
-  "/_app/$org/$project/$environment/$service/metrics",
+  "/_app/$org/$project/$environment/$service/resources",
 )({
   validateSearch: validateRange,
   loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),
@@ -30,10 +30,10 @@ export const Route = createFileRoute(
     queryClient.ensureQueryData(
       queries.serviceStats(servicePath(params), deps.range),
     ),
-  component: MetricsTab,
+  component: ResourcesTab,
 });
 
-function MetricsTab() {
+function ResourcesTab() {
   const ref = servicePath(Route.useParams());
   const range = Route.useSearch().range ?? "1h";
   const navigate = Route.useNavigate();

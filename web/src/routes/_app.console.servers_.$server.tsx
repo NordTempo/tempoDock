@@ -440,7 +440,7 @@ const ServiceRow = memo(function ServiceRow({
     <tr>
       <td>
         <Link
-          to="/$org/$project/$environment/$service/metrics"
+          to="/$org/$project/$environment/$service/resources"
           params={{ org, ...ref }}
         >
           {ref.service}

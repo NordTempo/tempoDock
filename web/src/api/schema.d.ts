@@ -2179,7 +2179,7 @@ export interface paths {
         };
         /**
          * Service traffic
-         * @description Requests to the service's domains, counted from the proxy's access log: points over the range, totals, distinct visitors (estimated; bots left out) and the most requested paths, with IDs in paths replaced by `:id`.
+         * @description Requests to the service's domains, counted from the proxy's access log: points over the range, totals and the most requested paths, with IDs in paths replaced by `:id`. Visitors are Dock Analytics'.
          */
         get: operations["service-traffic"];
         put?: never;
@@ -5032,11 +5032,6 @@ export interface components {
             status_4xx: number;
             /** Format: int64 */
             status_5xx: number;
-            /**
-             * Format: int64
-             * @description Distinct visitors (client address and user agent, bots left out), estimated within about 3%
-             */
-            visitors: number;
         };
         TrafficPath: {
             method: string;
@@ -5067,11 +5062,6 @@ export interface components {
              * @description Start of the interval
              */
             time: string;
-            /**
-             * Format: int64
-             * @description Distinct visitors (client address and user agent, bots left out), estimated within about 3%
-             */
-            visitors: number;
         };
         TrafficUpdate: {
             /** Format: date-time */

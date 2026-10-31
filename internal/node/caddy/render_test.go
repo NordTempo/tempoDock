@@ -344,8 +344,8 @@ func TestRenderAccess(t *testing.T) {
 	}
 }
 
-// Counted routes get their access log sent to the traffic counter, with
-// the user agent appended; other hostnames aren't logged at all.
+// Counted routes get their access log sent to the traffic counter, without
+// who sent each request; other hostnames aren't logged at all.
 func TestRenderTraffic(t *testing.T) {
 	opts := testOptions()
 	opts.TrafficAddr = "127.0.0.1:7074"
@@ -359,12 +359,6 @@ func TestRenderTraffic(t *testing.T) {
 	if logs == nil || !logs.SkipUnmappedHosts || len(logs.LoggerNames) != 2 || logs.LoggerNames["shop.test"][0] != "dock" {
 		t.Fatalf("https logs = %+v; want the shop hostnames only", logs)
 	}
-	if h := https.Routes[0].Handle[0]; h.Handler != "log_append" || h.Key != "ua" || h.Value != "{http.request.header.User-Agent}" {
-		t.Errorf("counted route starts with %+v, want log_append of the user agent", h)
-	}
-	if h := https.Routes[2].Handle[0]; h.Handler != "reverse_proxy" {
-		t.Errorf("uncounted route starts with %+v", h)
-	}
 	if cfg.Apps.HTTP.Servers["http"].Logs != nil {
 		t.Error("the redirecting http server logs")
 	}
@@ -372,8 +366,10 @@ func TestRenderTraffic(t *testing.T) {
 	if dock.Writer.Address != "udp/127.0.0.1:7074" || !dock.Writer.SoftStart || dock.Include[0] != "http.log.access.dock" {
 		t.Errorf("dock log = %+v", dock)
 	}
-	if _, ok := dock.Encoder.Fields["request>headers"]; !ok {
-		t.Error("request headers are encoded")
+	for _, f := range []string{"request>headers", "request>remote_ip", "request>client_ip"} {
+		if _, ok := dock.Encoder.Fields[f]; !ok {
+			t.Errorf("%s is encoded", f)
+		}
 	}
 	if ex := cfg.Logging.Logs["default"].Exclude; len(ex) != 1 || ex[0] != "http.log.access.dock" {
 		t.Errorf("default log excludes %v", ex)

@@ -47,6 +47,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0037](0037-analytics.md) | Dock Analytics: DuckDB in its own container, sites, spools | accepted |
 | [0038](0038-own-tokens.md) | Tokens in organization settings, your own on your account | accepted |
 | [0039](0039-backups-on-storage-connections.md) | Backups on storage connections, and moving them | accepted |
+| [0040](0040-traffic-counts-requests.md) | Traffic counts requests; visitors are Analytics' | accepted |
 
 ## Template
 

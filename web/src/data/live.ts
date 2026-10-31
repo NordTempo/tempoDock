@@ -267,9 +267,9 @@ function appendPoint<
 
 /**
  * A minute's traffic of an environment's services (ADR 0033): a new point
- * on each open 24h view, added to its totals. Visitors and paths can't be
- * added up, and hour points may already hold the minute, so those stay as
- * loaded until the view is fetched again.
+ * on each open 24h view, added to its totals. Paths aren't in the event,
+ * and hour points may already hold the minute, so those stay as loaded
+ * until the view is fetched again.
  */
 function applyTraffic(queryClient: QueryClient, event: LiveEvent) {
   const { project, environment, traffic } = event;
@@ -287,7 +287,7 @@ function applyTraffic(queryClient: QueryClient, event: LiveEvent) {
   }
 }
 
-/** Traffic counts with a minute's added; visitors stay (not additive). */
+/** Traffic counts with a minute's added. */
 function plus(
   t: ServiceTraffic["totals"],
   p: TrafficPoint,

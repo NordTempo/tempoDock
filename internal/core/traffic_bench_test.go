@@ -19,9 +19,8 @@ import (
 )
 
 // BenchmarkTrafficTick50 is the minute tick's traffic step for a server
-// whose 50 services all had requests: map hostnames, merge visitor
-// sketches (200 visitors each) and write 50 minute and hour points, 50
-// sketches and 2,500 path counts in one transaction. Core isn't started,
+// whose 50 services all had requests: map hostnames and write 50 minute
+// and hour points and 2,500 path counts in one transaction. Core isn't started,
 // so nothing else runs.
 func BenchmarkTrafficTick50(b *testing.B) {
 	ctx := context.Background()
@@ -49,16 +48,11 @@ func BenchmarkTrafficTick50(b *testing.B) {
 		if _, err := st.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: svc.ID}); err != nil {
 			b.Fatal(err)
 		}
-		var v traffic.Sketch
-		for j := range 200 {
-			v.Add(traffic.Hash(fmt.Sprint("203.0.113.", j), "Firefox"))
-		}
-		visitors, _ := v.MarshalBinary()
 		paths := make([]node.PathCount, traffic.DrainPaths)
 		for j := range paths {
 			paths[j] = node.PathCount{Method: "GET", Path: fmt.Sprintf("/api/things/:id/part%d", j), Requests: uint64(100 - j)}
 		}
-		hosts[i] = node.HostTraffic{Host: host, Requests: 5000, Status: [4]uint64{4900, 50, 40, 10}, Bytes: 5 << 20, Duration: time.Minute, Visitors: visitors, Paths: paths}
+		hosts[i] = node.HostTraffic{Host: host, Requests: 5000, Status: [4]uint64{4900, 50, 40, 10}, Bytes: 5 << 20, Duration: time.Minute, Paths: paths}
 	}
 	srv, err := st.GetServer(ctx, c.local.ID)
 	if err != nil {

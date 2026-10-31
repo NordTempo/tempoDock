@@ -558,14 +558,14 @@ func (w wireDomainCheck) node() node.DomainCheck {
 }
 
 // wireHostTraffic is node.HostTraffic; the duration travels as
-// milliseconds and the visitor sketch as base64.
+// milliseconds. Nodes before v0.13.0 also send a "visitors" sketch, which is
+// ignored.
 type wireHostTraffic struct {
 	Host       string                `json:"host"`
 	Requests   uint64                `json:"requests"`
 	Status     [4]uint64             `json:"status"`
 	Bytes      uint64                `json:"bytes"`
 	DurationMS int64                 `json:"duration_ms"`
-	Visitors   []byte                `json:"visitors,omitempty"`
 	Paths      capped[wirePathCount] `json:"paths,omitempty"`
 }
 
@@ -580,7 +580,7 @@ func toWireTraffic(hs []node.HostTraffic) []wireHostTraffic {
 	for i, h := range hs {
 		out[i] = wireHostTraffic{
 			Host: h.Host, Requests: h.Requests, Status: h.Status, Bytes: h.Bytes,
-			DurationMS: h.Duration.Milliseconds(), Visitors: h.Visitors, Paths: make([]wirePathCount, len(h.Paths)),
+			DurationMS: h.Duration.Milliseconds(), Paths: make([]wirePathCount, len(h.Paths)),
 		}
 		for j, p := range h.Paths {
 			out[i].Paths[j] = wirePathCount(p)
@@ -594,7 +594,7 @@ func fromWireTraffic(ws []wireHostTraffic) []node.HostTraffic {
 	for i, w := range ws {
 		out[i] = node.HostTraffic{
 			Host: w.Host, Requests: w.Requests, Status: w.Status, Bytes: w.Bytes,
-			Duration: time.Duration(w.DurationMS) * time.Millisecond, Visitors: w.Visitors, Paths: make([]node.PathCount, len(w.Paths)),
+			Duration: time.Duration(w.DurationMS) * time.Millisecond, Paths: make([]node.PathCount, len(w.Paths)),
 		}
 		for j, p := range w.Paths {
 			out[i].Paths[j] = node.PathCount(p)

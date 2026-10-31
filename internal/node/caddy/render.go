@@ -156,10 +156,6 @@ type handler struct {
 	HandleResponse []responseHandler `json:"handle_response,omitempty"`
 	// Providers configure the authentication handler (passwordAccess).
 	Providers *authProviders `json:"providers,omitempty"`
-	// Key and Value add a field to the request's access log line
-	// (log_append).
-	Key   string `json:"key,omitempty"`
-	Value string `json:"value,omitempty"`
 	// LogSkip keeps the request out of the access log (vars handler).
 	LogSkip bool `json:"log_skip,omitempty"`
 }
@@ -360,9 +356,6 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		}
 		var handle []handler
 		if r.Traffic && r.RedirectTo == "" && opts.TrafficAddr != "" {
-			// Caddy's access log has the request headers, which the
-			// filter drops; the user agent is all the counter needs.
-			handle = append(handle, handler{Handler: "log_append", Key: "ua", Value: "{http.request.header.User-Agent}"})
 			if counted == nil {
 				counted = map[string][]string{}
 			}
@@ -511,8 +504,8 @@ const trafficLogger = "dock"
 
 // trafficLogging sends the access log of counted routes to addr over UDP,
 // one line per datagram, and keeps it out of Caddy's own log. Only what
-// the traffic counter reads is encoded: the request line, client address,
-// status, size, duration and the user agent. While nothing listens at addr
+// the traffic counter reads is encoded: the request line, status, size and
+// duration, never who sent the request. While nothing listens at addr
 // (the node restarting), Caddy writes the lines it can't send to its
 // stderr, the journal.
 func trafficLogging(addr string) *logging {
@@ -523,7 +516,8 @@ func trafficLogging(addr string) *logging {
 		trafficLogger: {
 			Writer: &logWriter{Output: "net", Address: "udp/" + addr, SoftStart: true},
 			Encoder: &logEncoder{Format: "filter", Wrap: map[string]string{"format": "json"}, Fields: map[string]fieldFilter{
-				"request>headers": drop, "request>tls": drop, "request>remote_port": drop, "request>proto": drop,
+				"request>headers": drop, "request>tls": drop, "request>remote_ip": drop, "request>remote_port": drop,
+				"request>client_ip": drop, "request>proto": drop,
 				"resp_headers": drop, "user_id": drop, "bytes_read": drop,
 			}},
 			Include: []string{access},

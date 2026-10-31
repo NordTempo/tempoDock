@@ -17,9 +17,9 @@ import (
 // of service routes to the server's counter (internal/node/traffic). The
 // minute tick drains every server's counts along with its resource
 // samples, maps hostnames to services and, in one transaction, adds a
-// minute point and the hour so far per service, the hour's visitor sketch
-// and its paths. When an hour is over its paths are trimmed to the top 100
-// and points past retention are pruned. Open pages patch from one traffic
+// minute point and the hour so far per service, and the hour's paths.
+// When an hour is over its paths are trimmed to the top 100 and points
+// past retention are pruned. Open pages patch from one traffic
 // event per environment. Nothing runs that the stats tick doesn't already
 // run, and a minute without requests writes nothing.
 
@@ -37,11 +37,9 @@ type trafficState struct {
 	// hosts maps hostnames to their services, reloaded when a drained
 	// hostname is missing.
 	hosts map[string]store.ListTrafficHostsRow
-	// hour is the hour sketches are of: each service's visitors in it so
-	// far, which every tick's visitors are merged into. Bounded by
-	// services, and replaced each hour.
-	hour     int64
-	sketches map[int64]*traffic.Sketch
+	// hour is the hour paths are added to; when it changes, the hour
+	// before is trimmed.
+	hour int64
 	// services are the current tick's counts per service.
 	services map[int64]*serviceTraffic
 }
@@ -49,10 +47,9 @@ type trafficState struct {
 // serviceTraffic is one service's traffic in a tick, added up over its
 // hostnames.
 type serviceTraffic struct {
-	host     store.ListTrafficHostsRow
-	counts   node.HostTraffic // without Visitors and Paths
-	visitors traffic.Sketch
-	paths    map[node.PathCount]uint64 // keyed without Requests
+	host   store.ListTrafficHostsRow
+	counts node.HostTraffic          // without Paths
+	paths  map[node.PathCount]uint64 // keyed without Requests
 }
 
 // loadHosts reads the hostname map again.
@@ -95,10 +92,6 @@ func (tr *trafficState) addUp(ctx context.Context, q *store.Queries, serverID in
 		}
 		st.counts.Bytes += h.Bytes
 		st.counts.Duration += h.Duration
-		var v traffic.Sketch
-		if v.UnmarshalBinary(h.Visitors) == nil {
-			st.visitors.Merge(&v)
-		}
 		for _, p := range h.Paths[:min(len(h.Paths), traffic.DrainPaths)] {
 			st.paths[node.PathCount{Method: p.Method, Path: p.Path}] += p.Requests
 		}
@@ -111,10 +104,11 @@ func (tr *trafficState) addUp(ctx context.Context, q *store.Queries, serverID in
 func (c *Core) trafficTick(ctx context.Context, col *collector, now time.Time, at int64) {
 	tr := &col.traffic
 	if hour := at - at%trafficHour; hour != tr.hour {
-		if err := c.trafficNewHour(ctx, tr, hour, now.Unix()); err != nil {
+		if err := c.trafficNewHour(ctx, hour, now.Unix()); err != nil {
 			c.log.Warn("traffic: new hour", "err", err)
 			return
 		}
+		tr.hour = hour
 	}
 	clear(tr.services)
 	reloaded := false
@@ -136,29 +130,18 @@ func (c *Core) trafficTick(ctx context.Context, col *collector, now time.Time, a
 	points := make(map[int64]apitypes.TrafficPoint, len(tr.services))
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		for id, st := range tr.services {
-			hour := tr.sketches[id]
-			if hour == nil {
-				hour = new(traffic.Sketch)
-				tr.sketches[id] = hour
-			}
-			hour.Merge(&st.visitors)
 			p := store.AddTrafficParams{
 				ServiceID: id, Res: statsMinute, At: at, Requests: toInt64(st.counts.Requests),
 				Status2xx: toInt64(st.counts.Status[0]), Status3xx: toInt64(st.counts.Status[1]),
 				Status4xx: toInt64(st.counts.Status[2]), Status5xx: toInt64(st.counts.Status[3]),
 				Bytes: toInt64(st.counts.Bytes), DurationMs: st.counts.Duration.Milliseconds(),
-				Visitors: toInt64(st.visitors.Estimate()),
 			}
 			if err := q.AddTraffic(ctx, p); err != nil {
 				return err
 			}
-			points[id] = trafficPoint(at, p.Requests, p.Status2xx, p.Status3xx, p.Status4xx, p.Status5xx, p.Bytes, p.DurationMs, p.Visitors)
-			p.Res, p.At, p.Visitors = trafficHour, tr.hour, toInt64(hour.Estimate())
+			points[id] = trafficPoint(at, p.Requests, p.Status2xx, p.Status3xx, p.Status4xx, p.Status5xx, p.Bytes, p.DurationMs)
+			p.Res, p.At = trafficHour, tr.hour
 			if err := q.AddTraffic(ctx, p); err != nil {
-				return err
-			}
-			sketch, _ := hour.MarshalBinary()
-			if err := q.SetTrafficVisitors(ctx, store.SetTrafficVisitorsParams{ServiceID: id, At: tr.hour, Sketch: sketch}); err != nil {
 				return err
 			}
 			for k, n := range st.paths {
@@ -177,12 +160,10 @@ func (c *Core) trafficTick(ctx context.Context, col *collector, now time.Time, a
 	c.publishTraffic(tr, points, at, now)
 }
 
-// trafficNewHour starts the hour sketches are of: it trims the paths of
-// the hour before, prunes what is past retention and loads the hour's
-// sketches stored before a restart.
-func (c *Core) trafficNewHour(ctx context.Context, tr *trafficState, hour, now int64) error {
-	var rows []store.ListHourVisitorsRow
-	err := c.store.Tx(ctx, func(q *store.Queries) error {
+// trafficNewHour starts a new hour: it trims the paths of the hour before
+// and prunes what is past retention.
+func (c *Core) trafficNewHour(ctx context.Context, hour, now int64) error {
+	return c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.TrimTrafficPaths(ctx, hour-trafficHour); err != nil {
 			return err
 		}
@@ -191,27 +172,8 @@ func (c *Core) trafficNewHour(ctx context.Context, tr *trafficState, hour, now i
 				return err
 			}
 		}
-		if err := q.PruneTrafficVisitors(ctx, now-trafficKeepHours); err != nil {
-			return err
-		}
-		if err := q.PruneTrafficPaths(ctx, now-trafficKeepHours); err != nil {
-			return err
-		}
-		var err error
-		rows, err = q.ListHourVisitors(ctx, hour)
-		return err
+		return q.PruneTrafficPaths(ctx, now-trafficKeepHours)
 	})
-	if err != nil {
-		return err
-	}
-	tr.hour, tr.sketches = hour, make(map[int64]*traffic.Sketch, len(rows))
-	for _, r := range rows {
-		s := new(traffic.Sketch)
-		if s.UnmarshalBinary(r.Sketch) == nil {
-			tr.sketches[r.ServiceID] = s
-		}
-	}
-	return nil
 }
 
 // publishTraffic sends one traffic event per environment with the minute
@@ -236,13 +198,15 @@ func (c *Core) publishTraffic(tr *trafficState, points map[int64]apitypes.Traffi
 }
 
 // trafficPoint builds a point from stored columns.
-func trafficPoint(at, requests, s2, s3, s4, s5, bytes, durationMS, visitors int64) apitypes.TrafficPoint {
-	return apitypes.TrafficPoint{Time: time.Unix(at, 0).UTC(), TrafficCounts: trafficCounts(requests, s2, s3, s4, s5, bytes, durationMS, visitors)}
+func trafficPoint(at, requests, s2, s3, s4, s5, bytes, durationMS int64) apitypes.TrafficPoint {
+	return apitypes.TrafficPoint{Time: time.Unix(at, 0).UTC(), TrafficCounts: trafficCounts(requests, s2, s3, s4, s5, bytes, durationMS)}
 }
 
-func trafficCounts(requests, s2, s3, s4, s5, bytes, durationMS, visitors int64) apitypes.TrafficCounts {
+// trafficCounts builds counts from stored columns, with the average
+// duration per request.
+func trafficCounts(requests, s2, s3, s4, s5, bytes, durationMS int64) apitypes.TrafficCounts {
 	t := apitypes.TrafficCounts{
-		Requests: requests, Status2xx: s2, Status3xx: s3, Status4xx: s4, Status5xx: s5, Bytes: bytes, Visitors: visitors,
+		Requests: requests, Status2xx: s2, Status3xx: s3, Status4xx: s4, Status5xx: s5, Bytes: bytes,
 	}
 	if requests > 0 {
 		t.AvgDurationMS = float64(durationMS) / float64(requests)
@@ -264,7 +228,7 @@ func trafficSpan(r apitypes.TrafficRange, now time.Time) (res, since int64, err 
 }
 
 // ServiceTraffic returns what a service's domains served over a range:
-// points, totals, distinct visitors and the most requested paths.
+// points, totals and the most requested paths.
 func (c *Core) ServiceTraffic(ctx context.Context, a Actor, ref ServiceRef, r apitypes.TrafficRange) (apitypes.ServiceTraffic, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "reading service traffic")
 	if err != nil {
@@ -284,30 +248,20 @@ func (c *Core) ServiceTraffic(ctx context.Context, a Actor, ref ServiceRef, r ap
 	if err != nil {
 		return apitypes.ServiceTraffic{}, err
 	}
-	sketches, err := c.store.ListTrafficVisitors(ctx, store.ListTrafficVisitorsParams{ServiceID: id, At: from})
-	if err != nil {
-		return apitypes.ServiceTraffic{}, err
-	}
 	paths, err := c.store.TopTrafficPaths(ctx, store.TopTrafficPathsParams{ServiceID: id, At: from, Limit: trafficTopPaths})
 	if err != nil {
 		return apitypes.ServiceTraffic{}, err
 	}
 
-	var visitors, s traffic.Sketch
-	for _, b := range sketches {
-		if s.UnmarshalBinary(b) == nil {
-			visitors.Merge(&s)
-		}
-	}
 	out := apitypes.ServiceTraffic{
 		Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		Range: cmp.Or(r, apitypes.TrafficRange24h), ResolutionSeconds: int(res), Since: time.Unix(from, 0).UTC(),
-		Totals: trafficCounts(tot.Requests, tot.Status2xx, tot.Status3xx, tot.Status4xx, tot.Status5xx, tot.Bytes, tot.DurationMs, toInt64(visitors.Estimate())),
+		Totals: trafficCounts(tot.Requests, tot.Status2xx, tot.Status3xx, tot.Status4xx, tot.Status5xx, tot.Bytes, tot.DurationMs),
 		Points: make([]apitypes.TrafficPoint, len(rows)),
 		Paths:  make([]apitypes.TrafficPath, len(paths)),
 	}
 	for i, p := range rows {
-		out.Points[i] = trafficPoint(p.At, p.Requests, p.Status2xx, p.Status3xx, p.Status4xx, p.Status5xx, p.Bytes, p.DurationMs, p.Visitors)
+		out.Points[i] = trafficPoint(p.At, p.Requests, p.Status2xx, p.Status3xx, p.Status4xx, p.Status5xx, p.Bytes, p.DurationMs)
 	}
 	for i, p := range paths {
 		out.Paths[i] = apitypes.TrafficPath{Method: p.Method, Path: p.Path, Requests: p.Requests}

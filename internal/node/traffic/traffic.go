@@ -4,9 +4,9 @@
 // Caddy writes an access log line for each request to a counted route and
 // sends it, one UDP datagram per line, to a loopback port the node listens
 // on (Listen). The Counter parses each line and adds it to the hostname's
-// counts: requests, status classes, bytes, time taken, a sketch of
-// distinct visitors and the most requested paths. Lines are dropped once
-// counted; nothing is written to disk. The control plane drains the counts
+// counts: requests, status classes, bytes, time taken and the most
+// requested paths. Lines are dropped once counted; nothing is written to
+// disk. The control plane drains the counts
 // once a minute (node.Traffic).
 //
 // UDP keeps the cost off the apps: Caddy never waits for the node, and a
@@ -56,8 +56,7 @@ type Counter struct {
 // hostCount is one hostname's counts since the last drain.
 type hostCount struct {
 	node.HostTraffic
-	visitors Sketch
-	paths    map[pathKey]uint64
+	paths map[pathKey]uint64
 }
 
 type pathKey struct{ method, path string }
@@ -69,20 +68,17 @@ func NewCounter() *Counter {
 	return &Counter{hosts: map[string]*hostCount{}}
 }
 
-// accessLine is the part of a Caddy access log line that is counted. The
-// user agent comes from a log_append field (caddy.Render).
+// accessLine is the part of a Caddy access log line that is counted.
 type accessLine struct {
 	Request struct {
-		ClientIP string `json:"client_ip"`
-		Method   string `json:"method"`
-		Host     string `json:"host"`
-		URI      string `json:"uri"`
+		Method string `json:"method"`
+		Host   string `json:"host"`
+		URI    string `json:"uri"`
 	} `json:"request"`
 	// Duration is in seconds, Caddy's default.
 	Duration float64 `json:"duration"`
 	Size     uint64  `json:"size"`
 	Status   int     `json:"status"`
-	UA       string  `json:"ua"`
 }
 
 // Add counts one access log line. Lines that don't parse are ignored.
@@ -106,11 +102,6 @@ func (c *Counter) Add(line []byte) {
 		class = 1
 	}
 	key := pathKey{normalizeMethod(l.Request.Method), normalizePath(l.Request.URI)}
-	var visitor uint64
-	human := !isBot(l.UA)
-	if human {
-		visitor = Hash(l.Request.ClientIP, l.UA)
-	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -126,9 +117,6 @@ func (c *Counter) Add(line []byte) {
 	h.Status[class]++
 	h.Bytes += l.Size
 	h.Duration += time.Duration(l.Duration * float64(time.Second))
-	if human {
-		h.visitors.Add(visitor)
-	}
 	h.countPath(key)
 }
 
@@ -164,7 +152,6 @@ func (c *Counter) DrainTraffic(context.Context) ([]node.HostTraffic, error) {
 	out := make([]node.HostTraffic, 0, len(hosts))
 	for _, h := range hosts {
 		t := h.HostTraffic
-		t.Visitors, _ = h.visitors.MarshalBinary()
 		t.Paths = make([]node.PathCount, 0, len(h.paths))
 		for k, n := range h.paths {
 			t.Paths = append(t.Paths, node.PathCount{Method: k.method, Path: k.path, Requests: n})

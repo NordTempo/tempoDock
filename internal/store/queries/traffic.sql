@@ -12,10 +12,9 @@ JOIN projects ON projects.id = environments.project_id
 WHERE domains.redirect_to = '';
 
 -- AddTraffic adds to a service's point: a new minute, or the hour so far.
--- visitors is the interval's whole estimate, which only grows.
 -- name: AddTraffic :exec
-INSERT INTO traffic_stats (service_id, res, at, requests, status_2xx, status_3xx, status_4xx, status_5xx, bytes, duration_ms, visitors)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO traffic_stats (service_id, res, at, requests, status_2xx, status_3xx, status_4xx, status_5xx, bytes, duration_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (service_id, res, at) DO UPDATE SET
     requests = requests + excluded.requests,
     status_2xx = status_2xx + excluded.status_2xx,
@@ -23,20 +22,11 @@ ON CONFLICT (service_id, res, at) DO UPDATE SET
     status_4xx = status_4xx + excluded.status_4xx,
     status_5xx = status_5xx + excluded.status_5xx,
     bytes = bytes + excluded.bytes,
-    duration_ms = duration_ms + excluded.duration_ms,
-    visitors = max(visitors, excluded.visitors);
-
--- name: SetTrafficVisitors :exec
-INSERT OR REPLACE INTO traffic_visitors (service_id, at, sketch) VALUES (?, ?, ?);
+    duration_ms = duration_ms + excluded.duration_ms;
 
 -- name: AddTrafficPath :exec
 INSERT INTO traffic_paths (service_id, at, method, path, requests) VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (service_id, at, method, path) DO UPDATE SET requests = requests + excluded.requests;
-
--- ListHourVisitors is every service's visitor sketch of one hour, which
--- the collector merges new visitors into.
--- name: ListHourVisitors :many
-SELECT service_id, sketch FROM traffic_visitors WHERE at = +?;
 
 -- TrimTrafficPaths keeps the 100 most requested paths of each service in
 -- an hour that is over.
@@ -53,14 +43,11 @@ WHERE traffic_paths.at = +sqlc.arg(hour) AND (traffic_paths.service_id, traffic_
 -- name: PruneTrafficStats :exec
 DELETE FROM traffic_stats WHERE res = +? AND at < +?;
 
--- name: PruneTrafficVisitors :exec
-DELETE FROM traffic_visitors WHERE at < +?;
-
 -- name: PruneTrafficPaths :exec
 DELETE FROM traffic_paths WHERE at < +?;
 
 -- name: ListTrafficStats :many
-SELECT at, requests, status_2xx, status_3xx, status_4xx, status_5xx, bytes, duration_ms, visitors
+SELECT at, requests, status_2xx, status_3xx, status_4xx, status_5xx, bytes, duration_ms
 FROM traffic_stats WHERE service_id = +? AND res = +? AND at >= +? ORDER BY at;
 
 -- TrafficTotals adds up a service's hour points since a time.
@@ -73,9 +60,6 @@ SELECT CAST(coalesce(sum(requests), 0) AS INTEGER) AS requests,
        CAST(coalesce(sum(bytes), 0) AS INTEGER) AS bytes,
        CAST(coalesce(sum(duration_ms), 0) AS INTEGER) AS duration_ms
 FROM traffic_stats WHERE service_id = +? AND res = 3600 AND at >= +?;
-
--- name: ListTrafficVisitors :many
-SELECT sketch FROM traffic_visitors WHERE service_id = +? AND at >= +?;
 
 -- TopTrafficPaths is a service's most requested paths since a time.
 -- name: TopTrafficPaths :many

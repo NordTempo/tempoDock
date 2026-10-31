@@ -188,8 +188,9 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
 - DNS can be set up before or after adding the domain; status updates live.
 - Release cutovers use the same render-and-load path.
 - Requests to service domains are counted on each server from Caddy's
-  access log and collected with the minute statistics: requests, visitors
-  and the most requested paths ([ADR 0033](decisions/0033-traffic-statistics.md)).
+  access log and collected with the minute statistics: requests, errors,
+  time taken and the most requested paths
+  ([ADR 0033](decisions/0033-traffic-statistics.md), [0040](decisions/0040-traffic-counts-requests.md)).
 
 ## Docker as the runtime source of truth
 

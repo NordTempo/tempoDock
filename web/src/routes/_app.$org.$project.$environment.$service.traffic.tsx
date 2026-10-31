@@ -3,13 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { queries, servicePath, useService } from "../data/queries";
 import type { ServiceTraffic } from "../data/types";
-import { LineChart } from "../features/stats/LineChart";
 import { RangeSwitch, Stat } from "../features/stats/parts";
 import { BarChart } from "../features/traffic/BarChart";
 import {
   barLabel,
   barMs,
-  niceMax,
   toBars,
   trafficRangeLabel,
   trafficRangeMs,
@@ -20,8 +18,9 @@ import { useOrg } from "../shell/location";
 import { bytes, size } from "../ui/format";
 import { Panel, SectionHead } from "../ui/kit";
 
-// What a service's domains served (ADR 0033): totals, requests and
-// visitors over time, and the most requested endpoints.
+// What a service's domains served (ADR 0033): totals, requests over time
+// and the most requested endpoints. Visitors are Dock Analytics' (the
+// Analytics tab, ADR 0040).
 // /shop/production/web/traffic?range=7d
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/traffic",
@@ -85,7 +84,7 @@ function TrafficTab() {
           {trafficRangeLabel[range]}
         </SectionHead>
         <Totals traffic={traffic} />
-        <Charts traffic={traffic} to={dataUpdatedAt} />
+        <Chart traffic={traffic} to={dataUpdatedAt} />
       </section>
       <section aria-labelledby="endpoints">
         <SectionHead
@@ -104,7 +103,6 @@ function Totals({ traffic: { totals: t } }: { traffic: ServiceTraffic }) {
   return (
     <div className="flex flex-wrap gap-x-10 gap-y-3 tabular-nums">
       <Stat label="Requests" value={count(t.requests)} />
-      <Stat label="Visitors" value={`~${count(t.visitors)}`} />
       <Stat
         label="Errors"
         value={
@@ -125,38 +123,22 @@ function Totals({ traffic: { totals: t } }: { traffic: ServiceTraffic }) {
   );
 }
 
-function Charts({ traffic, to }: { traffic: ServiceTraffic; to: number }) {
+function Chart({ traffic, to }: { traffic: ServiceTraffic; to: number }) {
   const range = traffic.range;
   const from = to - trafficRangeMs[range];
   const bars = useMemo(
     () => toBars(traffic.points, barMs[range]),
     [traffic.points, range],
   );
-  const visitors = useMemo(
-    () => traffic.points.map((p) => ({ t: Date.parse(p.time), v: p.visitors })),
-    [traffic.points],
-  );
-  const per = traffic.resolution_seconds === 60 ? "minute" : "hour";
   return (
-    <div className="grid gap-x-8 gap-y-5 lg:grid-cols-2">
-      <BarChart
-        title="Requests"
-        per={barLabel[range]}
-        bars={bars}
-        from={from - (from % barMs[range])}
-        to={to}
-        bucketMs={barMs[range]}
-      />
-      <LineChart
-        title={`Visitors per ${per}`}
-        points={visitors}
-        from={from}
-        to={to}
-        resolution={traffic.resolution_seconds}
-        max={niceMax(Math.max(1, ...visitors.map((p) => p.v)))}
-        format={(v) => count(Math.round(v))}
-      />
-    </div>
+    <BarChart
+      title="Requests"
+      per={barLabel[range]}
+      bars={bars}
+      from={from - (from % barMs[range])}
+      to={to}
+      bucketMs={barMs[range]}
+    />
   );
 }
 
