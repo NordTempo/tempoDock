@@ -726,6 +726,9 @@ function ConsoleNav() {
       <NavLink to="/console/cloudflare" icon="cloud">
         Cloudflare
       </NavLink>
+      <NavLink to="/console/analytics" icon="bars">
+        Analytics
+      </NavLink>
       <NavLink to="/console/updates" icon="upload">
         <span className="flex-1">Updates</span>
         <UpdateBadge />

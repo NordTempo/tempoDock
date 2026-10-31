@@ -79,6 +79,16 @@ use:
 | Site settings | C: sections, each setting a "default (value) / custom" switch, the CLI equivalent under the form |
 | Replay player | A: player and scrubber, the session's pages, events and errors in a column that follows playback |
 
+A1 builds the Analytics tab and the site settings with what A1 collects:
+the panels for pages, sources, locations, devices, events and what
+served the visits; clicking a value filters by it; the chart's markers
+and the live column. Site settings show the settings A1 applies
+(excluded paths, ignored addresses, event retention); replay, error and
+public dashboard settings join with their phases. Operators get Console ›
+Analytics: the store's state, the analytics server and the site
+defaults. Breakdowns label services and releases ("web r3") and keep
+their IDs as the values filters take; a filter may also name a service.
+
 ## The spike
 
 `dock-analytics seed` writes synthetic traffic through the store's real

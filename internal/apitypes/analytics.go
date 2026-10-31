@@ -125,9 +125,12 @@ type AnalyticsPoint struct {
 	Pageviews int64 `json:"pageviews"`
 }
 
-// AnalyticsRow is one value of a breakdown.
+// AnalyticsRow is one value of a breakdown. Value is what a filter on the
+// dimension takes; Label names it where the value is an ID (services and
+// releases: "web", "web r3").
 type AnalyticsRow struct {
 	Value    string `json:"value"`
+	Label    string `json:"label,omitempty"`
 	Visitors int64  `json:"visitors"`
 	Count    int64  `json:"count"`
 }

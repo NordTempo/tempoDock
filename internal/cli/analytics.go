@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"net/http"
@@ -227,7 +228,7 @@ func printSiteStats(g *globals, st apitypes.SiteStats) error {
 		return err
 	}
 	defer g.io.Detail("Locations: " + apitypes.GeoAttribution)
-	for _, d := range []string{"page", "referrer", "country", "browser", "device", "event"} {
+	for _, d := range []string{"page", "referrer", "country", "browser", "device", "event", "service"} {
 		rows := st.Breakdowns[d]
 		if len(rows) == 0 {
 			continue
@@ -235,7 +236,7 @@ func printSiteStats(g *globals, st apitypes.SiteStats) error {
 		_, _ = io.WriteString(g.io.Out, "\n")
 		tb := g.io.Table(d, "visitors", "count")
 		for _, r := range rows[:min(len(rows), 5)] {
-			tb.Row(dash(r.Value), itoa(r.Visitors), itoa(r.Count))
+			tb.Row(dash(cmp.Or(r.Label, r.Value)), itoa(r.Visitors), itoa(r.Count))
 		}
 		if err := tb.Flush(); err != nil {
 			return err

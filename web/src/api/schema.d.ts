@@ -3127,6 +3127,7 @@ export interface components {
         AnalyticsRow: {
             /** Format: int64 */
             count: number;
+            label?: string;
             value: string;
             /** Format: int64 */
             visitors: number;

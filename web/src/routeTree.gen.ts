@@ -24,6 +24,7 @@ import { Route as AppOrgAuditRouteImport } from './routes/_app.$org.audit'
 import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
 import { Route as AppConsoleAddressRouteImport } from './routes/_app.console.address'
 import { Route as AppConsoleAlertsRouteImport } from './routes/_app.console.alerts'
+import { Route as AppConsoleAnalyticsRouteImport } from './routes/_app.console.analytics'
 import { Route as AppConsoleAuditRouteImport } from './routes/_app.console.audit'
 import { Route as AppConsoleBackupsRouteImport } from './routes/_app.console.backups'
 import { Route as AppConsoleCloudflareRouteImport } from './routes/_app.console.cloudflare'
@@ -45,6 +46,7 @@ import { Route as AppConsoleServersServerRouteImport } from './routes/_app.conso
 import { Route as AppOrgProjectEnvironmentIndexRouteImport } from './routes/_app.$org.$project.$environment.index'
 import { Route as AppOrgProjectEnvironmentServiceRouteImport } from './routes/_app.$org.$project.$environment.$service'
 import { Route as AppOrgProjectEnvironmentServiceIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.index'
+import { Route as AppOrgProjectEnvironmentServiceAnalyticsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics'
 import { Route as AppOrgProjectEnvironmentServiceAuditRouteImport } from './routes/_app.$org.$project.$environment.$service.audit'
 import { Route as AppOrgProjectEnvironmentServiceBackupsRouteImport } from './routes/_app.$org.$project.$environment.$service.backups'
 import { Route as AppOrgProjectEnvironmentServiceDataRouteImport } from './routes/_app.$org.$project.$environment.$service.data'
@@ -129,6 +131,11 @@ const AppConsoleAddressRoute = AppConsoleAddressRouteImport.update({
 const AppConsoleAlertsRoute = AppConsoleAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleAnalyticsRoute = AppConsoleAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleAuditRoute = AppConsoleAuditRouteImport.update({
@@ -239,6 +246,12 @@ const AppOrgProjectEnvironmentServiceIndexRoute =
     path: '/',
     getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
   } as any)
+const AppOrgProjectEnvironmentServiceAnalyticsRoute =
+  AppOrgProjectEnvironmentServiceAnalyticsRouteImport.update({
+    id: '/analytics',
+    path: '/analytics',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
+  } as any)
 const AppOrgProjectEnvironmentServiceAuditRoute =
   AppOrgProjectEnvironmentServiceAuditRouteImport.update({
     id: '/audit',
@@ -319,6 +332,7 @@ export interface FileRoutesByFullPath {
   '/$org/audit': typeof AppOrgAuditRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
+  '/console/analytics': typeof AppConsoleAnalyticsRoute
   '/console/audit': typeof AppConsoleAuditRoute
   '/console/backups': typeof AppConsoleBackupsRoute
   '/console/cloudflare': typeof AppConsoleCloudflareRoute
@@ -341,6 +355,7 @@ export interface FileRoutesByFullPath {
   '/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   '/$org/$project/$environment/': typeof AppOrgProjectEnvironmentIndexRoute
+  '/$org/$project/$environment/$service/analytics': typeof AppOrgProjectEnvironmentServiceAnalyticsRoute
   '/$org/$project/$environment/$service/audit': typeof AppOrgProjectEnvironmentServiceAuditRoute
   '/$org/$project/$environment/$service/backups': typeof AppOrgProjectEnvironmentServiceBackupsRoute
   '/$org/$project/$environment/$service/data': typeof AppOrgProjectEnvironmentServiceDataRoute
@@ -365,6 +380,7 @@ export interface FileRoutesByTo {
   '/$org/audit': typeof AppOrgAuditRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
+  '/console/analytics': typeof AppConsoleAnalyticsRoute
   '/console/audit': typeof AppConsoleAuditRoute
   '/console/backups': typeof AppConsoleBackupsRoute
   '/console/cloudflare': typeof AppConsoleCloudflareRoute
@@ -386,6 +402,7 @@ export interface FileRoutesByTo {
   '/$org/$project': typeof AppOrgProjectIndexRoute
   '/$org/settings': typeof AppOrgSettingsIndexRoute
   '/$org/$project/$environment': typeof AppOrgProjectEnvironmentIndexRoute
+  '/$org/$project/$environment/$service/analytics': typeof AppOrgProjectEnvironmentServiceAnalyticsRoute
   '/$org/$project/$environment/$service/audit': typeof AppOrgProjectEnvironmentServiceAuditRoute
   '/$org/$project/$environment/$service/backups': typeof AppOrgProjectEnvironmentServiceBackupsRoute
   '/$org/$project/$environment/$service/data': typeof AppOrgProjectEnvironmentServiceDataRoute
@@ -414,6 +431,7 @@ export interface FileRoutesById {
   '/_app/$org/audit': typeof AppOrgAuditRoute
   '/_app/console/address': typeof AppConsoleAddressRoute
   '/_app/console/alerts': typeof AppConsoleAlertsRoute
+  '/_app/console/analytics': typeof AppConsoleAnalyticsRoute
   '/_app/console/audit': typeof AppConsoleAuditRoute
   '/_app/console/backups': typeof AppConsoleBackupsRoute
   '/_app/console/cloudflare': typeof AppConsoleCloudflareRoute
@@ -436,6 +454,7 @@ export interface FileRoutesById {
   '/_app/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/_app/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   '/_app/$org/$project/$environment/': typeof AppOrgProjectEnvironmentIndexRoute
+  '/_app/$org/$project/$environment/$service/analytics': typeof AppOrgProjectEnvironmentServiceAnalyticsRoute
   '/_app/$org/$project/$environment/$service/audit': typeof AppOrgProjectEnvironmentServiceAuditRoute
   '/_app/$org/$project/$environment/$service/backups': typeof AppOrgProjectEnvironmentServiceBackupsRoute
   '/_app/$org/$project/$environment/$service/data': typeof AppOrgProjectEnvironmentServiceDataRoute
@@ -464,6 +483,7 @@ export interface FileRouteTypes {
     | '/$org/audit'
     | '/console/address'
     | '/console/alerts'
+    | '/console/analytics'
     | '/console/audit'
     | '/console/backups'
     | '/console/cloudflare'
@@ -486,6 +506,7 @@ export interface FileRouteTypes {
     | '/$org/settings/'
     | '/$org/$project/$environment/$service'
     | '/$org/$project/$environment/'
+    | '/$org/$project/$environment/$service/analytics'
     | '/$org/$project/$environment/$service/audit'
     | '/$org/$project/$environment/$service/backups'
     | '/$org/$project/$environment/$service/data'
@@ -510,6 +531,7 @@ export interface FileRouteTypes {
     | '/$org/audit'
     | '/console/address'
     | '/console/alerts'
+    | '/console/analytics'
     | '/console/audit'
     | '/console/backups'
     | '/console/cloudflare'
@@ -531,6 +553,7 @@ export interface FileRouteTypes {
     | '/$org/$project'
     | '/$org/settings'
     | '/$org/$project/$environment'
+    | '/$org/$project/$environment/$service/analytics'
     | '/$org/$project/$environment/$service/audit'
     | '/$org/$project/$environment/$service/backups'
     | '/$org/$project/$environment/$service/data'
@@ -558,6 +581,7 @@ export interface FileRouteTypes {
     | '/_app/$org/audit'
     | '/_app/console/address'
     | '/_app/console/alerts'
+    | '/_app/console/analytics'
     | '/_app/console/audit'
     | '/_app/console/backups'
     | '/_app/console/cloudflare'
@@ -580,6 +604,7 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/'
     | '/_app/$org/$project/$environment/$service'
     | '/_app/$org/$project/$environment/'
+    | '/_app/$org/$project/$environment/$service/analytics'
     | '/_app/$org/$project/$environment/$service/audit'
     | '/_app/$org/$project/$environment/$service/backups'
     | '/_app/$org/$project/$environment/$service/data'
@@ -708,6 +733,13 @@ declare module '@tanstack/react-router' {
       path: '/alerts'
       fullPath: '/console/alerts'
       preLoaderRoute: typeof AppConsoleAlertsRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/analytics': {
+      id: '/_app/console/analytics'
+      path: '/analytics'
+      fullPath: '/console/analytics'
+      preLoaderRoute: typeof AppConsoleAnalyticsRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/audit': {
@@ -857,6 +889,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgProjectEnvironmentServiceIndexRouteImport
       parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
     }
+    '/_app/$org/$project/$environment/$service/analytics': {
+      id: '/_app/$org/$project/$environment/$service/analytics'
+      path: '/analytics'
+      fullPath: '/$org/$project/$environment/$service/analytics'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
+    }
     '/_app/$org/$project/$environment/$service/audit': {
       id: '/_app/$org/$project/$environment/$service/audit'
       path: '/audit'
@@ -938,6 +977,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppOrgProjectEnvironmentServiceRouteChildren {
+  AppOrgProjectEnvironmentServiceAnalyticsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsRoute
   AppOrgProjectEnvironmentServiceAuditRoute: typeof AppOrgProjectEnvironmentServiceAuditRoute
   AppOrgProjectEnvironmentServiceBackupsRoute: typeof AppOrgProjectEnvironmentServiceBackupsRoute
   AppOrgProjectEnvironmentServiceDataRoute: typeof AppOrgProjectEnvironmentServiceDataRoute
@@ -953,6 +993,8 @@ interface AppOrgProjectEnvironmentServiceRouteChildren {
 
 const AppOrgProjectEnvironmentServiceRouteChildren: AppOrgProjectEnvironmentServiceRouteChildren =
   {
+    AppOrgProjectEnvironmentServiceAnalyticsRoute:
+      AppOrgProjectEnvironmentServiceAnalyticsRoute,
     AppOrgProjectEnvironmentServiceAuditRoute:
       AppOrgProjectEnvironmentServiceAuditRoute,
     AppOrgProjectEnvironmentServiceBackupsRoute:
@@ -1020,6 +1062,7 @@ const AppOrgRouteWithChildren =
 interface AppConsoleRouteChildren {
   AppConsoleAddressRoute: typeof AppConsoleAddressRoute
   AppConsoleAlertsRoute: typeof AppConsoleAlertsRoute
+  AppConsoleAnalyticsRoute: typeof AppConsoleAnalyticsRoute
   AppConsoleAuditRoute: typeof AppConsoleAuditRoute
   AppConsoleBackupsRoute: typeof AppConsoleBackupsRoute
   AppConsoleCloudflareRoute: typeof AppConsoleCloudflareRoute
@@ -1037,6 +1080,7 @@ interface AppConsoleRouteChildren {
 const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleAddressRoute: AppConsoleAddressRoute,
   AppConsoleAlertsRoute: AppConsoleAlertsRoute,
+  AppConsoleAnalyticsRoute: AppConsoleAnalyticsRoute,
   AppConsoleAuditRoute: AppConsoleAuditRoute,
   AppConsoleBackupsRoute: AppConsoleBackupsRoute,
   AppConsoleCloudflareRoute: AppConsoleCloudflareRoute,

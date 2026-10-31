@@ -66,6 +66,13 @@ const tabs = [
     to: "/$org/$project/$environment/$service/traffic",
     key: "g t",
   },
+  // Services with a domain only: Dock Analytics' dashboard (ADR 0037).
+  // G Y, "analytics": G A is Audit.
+  {
+    label: "Analytics",
+    to: "/$org/$project/$environment/$service/analytics",
+    key: "g y",
+  },
   {
     label: "Releases",
     to: "/$org/$project/$environment/$service/releases",
@@ -158,7 +165,8 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     (tab) =>
       (tab.label !== "Data" || isDatabase(service)) &&
       (tab.label !== "Backups" || service.stateful) &&
-      (tab.label !== "Traffic" || view.domains.length > 0),
+      ((tab.label !== "Traffic" && tab.label !== "Analytics") ||
+        view.domains.length > 0),
   );
   useShortcuts(
     shown.map((tab) => ({

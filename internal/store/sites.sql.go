@@ -524,6 +524,52 @@ func (q *Queries) ListSiteMarkers(ctx context.Context, arg ListSiteMarkersParams
 	return items, nil
 }
 
+const releaseNames = `-- name: ReleaseNames :many
+SELECT r.id, s.name, r.number FROM releases r JOIN services s ON s.id = r.service_id
+WHERE r.id IN (/*SLICE:ids*/?)
+`
+
+type ReleaseNamesRow struct {
+	ID     int64
+	Name   string
+	Number int64
+}
+
+// ReleaseNames names releases for the dashboard's Releases breakdown:
+// their service's name and their number.
+func (q *Queries) ReleaseNames(ctx context.Context, ids []int64) ([]ReleaseNamesRow, error) {
+	query := releaseNames
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.query(ctx, nil, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReleaseNamesRow
+	for rows.Next() {
+		var i ReleaseNamesRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Number); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeSiteHostname = `-- name: RemoveSiteHostname :exec
 DELETE FROM site_hostnames WHERE hostname = +?
 `

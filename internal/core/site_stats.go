@@ -86,6 +86,32 @@ func checkFilters(fs []analytics.Filter) error {
 	return nil
 }
 
+// serviceFilters lets service filters name a service of the site's
+// environment ("service:is:web"); the store compares service IDs.
+func (c *Core) serviceFilters(ctx context.Context, s siteScope, fs []analytics.Filter) ([]analytics.Filter, error) {
+	out := slices.Clone(fs)
+	for i, f := range out {
+		if f.Dimension != analytics.DimService {
+			continue
+		}
+		if f.Op == analytics.OpContains {
+			return nil, invalid("service filters take is or is_not with a service's name, like service:is:web")
+		}
+		if _, err := strconv.ParseInt(f.Value, 10, 64); err == nil {
+			continue
+		}
+		svc, err := c.store.GetServiceByName(ctx, store.GetServiceByNameParams{EnvironmentID: s.env.ID, Name: f.Value})
+		if store.IsNotFound(err) {
+			return nil, invalid("service %q isn't in %s; filter by one of the environment's services", f.Value, s.env.Name)
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[i].Value = strconv.FormatInt(svc.ID, 10)
+	}
+	return out, nil
+}
+
 // dimensionList names every dimension, for messages.
 func dimensionList() string {
 	names := make([]string, len(analytics.Dimensions))
@@ -104,6 +130,9 @@ func (c *Core) SiteStats(ctx context.Context, a Actor, project, name string, q S
 		return apitypes.SiteStats{}, err
 	}
 	if err := checkFilters(q.Filters); err != nil {
+		return apitypes.SiteStats{}, err
+	}
+	if q.Filters, err = c.serviceFilters(ctx, s, q.Filters); err != nil {
 		return apitypes.SiteStats{}, err
 	}
 	t := now()
@@ -204,6 +233,9 @@ func (c *Core) SiteBreakdown(ctx context.Context, a Actor, project, name string,
 	if err := checkFilters(q.Filters); err != nil {
 		return apitypes.SiteBreakdown{}, err
 	}
+	if q.Filters, err = c.serviceFilters(ctx, s, q.Filters); err != nil {
+		return apitypes.SiteBreakdown{}, err
+	}
 	if !slices.Contains(analytics.Dimensions, dim) {
 		return apitypes.SiteBreakdown{}, invalid("%q isn't a dimension; use one of %s", dim, dimensionList())
 	}
@@ -233,13 +265,14 @@ func toOverview(o analytics.Overview) apitypes.AnalyticsOverview {
 		BounceRate: o.BounceRate, DurationMS: o.Duration, Events: o.Events}
 }
 
-// toRows converts breakdown rows; services are named, not numbered.
+// toRows converts breakdown rows, labelling services and releases with
+// their names ("web", "web r3"); their values stay the IDs filters take.
 func (c *Core) toRows(ctx context.Context, d analytics.Dimension, rows []analytics.Row) []apitypes.AnalyticsRow {
 	out := make([]apitypes.AnalyticsRow, len(rows))
 	for i, r := range rows {
-		out[i] = apitypes.AnalyticsRow(r)
+		out[i] = apitypes.AnalyticsRow{Value: r.Value, Visitors: r.Visitors, Count: r.Count}
 	}
-	if d != analytics.DimService || len(rows) == 0 {
+	if (d != analytics.DimService && d != analytics.DimRelease) || len(rows) == 0 {
 		return out
 	}
 	ids := make([]int64, 0, len(rows))
@@ -248,18 +281,26 @@ func (c *Core) toRows(ctx context.Context, d analytics.Dimension, rows []analyti
 			ids = append(ids, id)
 		}
 	}
-	names, err := c.store.ServiceNames(ctx, ids)
-	if err != nil {
-		return out
-	}
 	byID := map[string]string{}
-	for _, n := range names {
-		byID[strconv.FormatInt(n.ID, 10)] = n.Name
+	if d == analytics.DimService {
+		names, err := c.store.ServiceNames(ctx, ids)
+		if err != nil {
+			return out
+		}
+		for _, n := range names {
+			byID[strconv.FormatInt(n.ID, 10)] = n.Name
+		}
+	} else {
+		names, err := c.store.ReleaseNames(ctx, ids)
+		if err != nil {
+			return out
+		}
+		for _, n := range names {
+			byID[strconv.FormatInt(n.ID, 10)] = n.Name + " r" + strconv.FormatInt(n.Number, 10)
+		}
 	}
 	for i := range out {
-		if n, ok := byID[out[i].Value]; ok {
-			out[i].Value = n
-		}
+		out[i].Label = byID[out[i].Value]
 	}
 	return out
 }

@@ -1,7 +1,8 @@
 // Package fakestore is an in-memory analytics store behind the real
 // store's HTTP API (analytics.Client's paths), for core's tests and for
 // running the daemon on the fake runtime. It keeps every event and
-// answers queries by scanning them; it has no sessions or rollups.
+// answers queries by scanning them; it has no sessions or rollups, so
+// sessions, bounce rate, durations and entry and exit pages stay empty.
 package fakestore
 
 import (
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
@@ -69,6 +71,22 @@ func (s *Store) Handler() http.Handler {
 		}
 		reply(w, s.overview(q))
 	}))
+	mux.HandleFunc("POST "+analytics.SeriesPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.SeriesQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, s.series(q))
+	}))
+	mux.HandleFunc("POST "+analytics.BreakdownPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.BreakdownQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, s.breakdown(q))
+	}))
 	mux.HandleFunc("POST "+analytics.LivePath, s.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.LiveQuery
 		if json.UnmarshalRead(r.Body, &q) != nil {
@@ -100,8 +118,6 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("POST "+analytics.GeoIPPath, s.auth(func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, analytics.GeoIP{Month: "fake"})
 	}))
-	mux.HandleFunc("POST "+analytics.SeriesPath, s.auth(func(w http.ResponseWriter, _ *http.Request) { reply(w, []analytics.Point{}) }))
-	mux.HandleFunc("POST "+analytics.BreakdownPath, s.auth(func(w http.ResponseWriter, _ *http.Request) { reply(w, []analytics.Row{}) }))
 	return mux
 }
 
@@ -151,14 +167,15 @@ func (s *Store) write(w http.ResponseWriter, r *http.Request) {
 	reply(w, analytics.WriteResult{Written: len(batch)})
 }
 
-// overview counts the site's events in range: visitors and page views.
+// overview counts the site's events in range that pass the filters:
+// visitors, page views and other events.
 func (s *Store) overview(q analytics.Query) analytics.Overview {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var o analytics.Overview
 	visitors := map[uint64]bool{}
 	for _, e := range s.events {
-		if e.Site != q.Site || e.Time < q.From || e.Time >= q.To {
+		if !matches(e, q) {
 			continue
 		}
 		visitors[e.Visitor] = true
@@ -170,6 +187,159 @@ func (s *Store) overview(q analytics.Query) analytics.Overview {
 	}
 	o.Visitors = int64(len(visitors))
 	return o
+}
+
+// series buckets the matching events by UTC hour or day (minutes for
+// anything else), returning only buckets with events, in time order.
+func (s *Store) series(q analytics.SeriesQuery) []analytics.Point {
+	width := int64(60_000)
+	switch q.Bucket {
+	case analytics.BucketHour:
+		width = 3_600_000
+	case analytics.BucketDay:
+		width = 86_400_000
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	type bucket struct {
+		visitors  map[uint64]bool
+		pageviews int64
+	}
+	buckets := map[int64]*bucket{}
+	for _, e := range s.events {
+		if !matches(e, q.Query) {
+			continue
+		}
+		t := e.Time - e.Time%width
+		b := buckets[t]
+		if b == nil {
+			b = &bucket{visitors: map[uint64]bool{}}
+			buckets[t] = b
+		}
+		b.visitors[e.Visitor] = true
+		if e.Kind == analytics.KindPageview {
+			b.pageviews++
+		}
+	}
+	out := make([]analytics.Point, 0, len(buckets))
+	for t, b := range buckets {
+		out = append(out, analytics.Point{T: t, Visitors: int64(len(b.visitors)), Pageviews: b.pageviews})
+	}
+	slices.SortFunc(out, func(a, b analytics.Point) int { return int(a.T - b.T) })
+	return out
+}
+
+// breakdown counts the matching events by the dimension's value, most
+// visitors first. Count is page views for pages and events for the rest.
+func (s *Store) breakdown(q analytics.BreakdownQuery) []analytics.Row {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	type row struct {
+		visitors map[uint64]bool
+		count    int64
+	}
+	rows := map[string]*row{}
+	for _, e := range s.events {
+		v, known := value(e, q.Dimension)
+		if !known || v == "" || !applies(e, q.Dimension) || !matches(e, q.Query) {
+			continue
+		}
+		r := rows[v]
+		if r == nil {
+			r = &row{visitors: map[uint64]bool{}}
+			rows[v] = r
+		}
+		r.visitors[e.Visitor] = true
+		r.count++
+	}
+	out := make([]analytics.Row, 0, len(rows))
+	for v, r := range rows {
+		out = append(out, analytics.Row{Value: v, Visitors: int64(len(r.visitors)), Count: r.count})
+	}
+	slices.SortFunc(out, func(a, b analytics.Row) int {
+		if a.Visitors != b.Visitors {
+			return int(b.Visitors - a.Visitors)
+		}
+		return strings.Compare(a.Value, b.Value)
+	})
+	return out[:min(len(out), max(q.Limit, 1))]
+}
+
+// matches says whether e is the query's site, in its range, and passes
+// its filters.
+func matches(e analytics.Event, q analytics.Query) bool {
+	if e.Site != q.Site || e.Time < q.From || e.Time >= q.To {
+		return false
+	}
+	for _, f := range q.Filters {
+		v, known := value(e, f.Dimension)
+		if !known {
+			continue // a session dimension the fake doesn't keep
+		}
+		var ok bool
+		switch f.Op {
+		case analytics.OpIs:
+			ok = v == f.Value
+		case analytics.OpIsNot:
+			ok = v != f.Value
+		case analytics.OpContains:
+			ok = strings.Contains(strings.ToLower(v), strings.ToLower(f.Value))
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// applies says whether a breakdown of d counts e: pages count page views,
+// custom events and outbound links their own kind, the rest every event.
+func applies(e analytics.Event, d analytics.Dimension) bool {
+	switch d {
+	case analytics.DimPage:
+		return e.Kind == analytics.KindPageview
+	case analytics.DimEvent:
+		return e.Kind == analytics.KindEvent
+	case analytics.DimOutbound:
+		return e.Kind == analytics.KindOutbound
+	}
+	return true
+}
+
+// value is e's value of a dimension; known is false for dimensions the
+// fake doesn't keep (those of sessions, like entry pages, and UTM tags).
+func value(e analytics.Event, d analytics.Dimension) (v string, known bool) {
+	switch d {
+	case analytics.DimPage:
+		return e.Path, true
+	case analytics.DimEvent, analytics.DimOutbound:
+		return e.Name, true
+	case analytics.DimHostname:
+		return e.Hostname, true
+	case analytics.DimReferrer:
+		return e.Referrer, true
+	case analytics.DimChannel:
+		return e.Channel, true
+	case analytics.DimCountry:
+		return e.Country, true
+	case analytics.DimRegion:
+		return e.Region, true
+	case analytics.DimCity:
+		return e.City, true
+	case analytics.DimBrowser:
+		return e.Browser, true
+	case analytics.DimOS:
+		return e.OS, true
+	case analytics.DimDevice:
+		return e.Device, true
+	case analytics.DimLanguage:
+		return e.Language, true
+	case analytics.DimService:
+		return id(e.Service), true
+	case analytics.DimRelease:
+		return id(e.Release), true
+	}
+	return "", false
 }
 
 // live answers a LiveQuery by scanning the events.
@@ -198,4 +368,13 @@ func (s *Store) live(q analytics.LiveQuery) analytics.Live {
 func reply(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.MarshalWrite(w, v)
+}
+
+// id is an ID as a dimension's value; "" for none, so events without a
+// service or release don't count as one.
+func id(n int64) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.FormatInt(n, 10)
 }

@@ -174,6 +174,7 @@ export const useAddDomain = () =>
       hostname: string;
       redirect_to?: string;
       cloudflare?: boolean;
+      analytics?: "keep" | "new";
     }) =>
       body(
         api.POST(

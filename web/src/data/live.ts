@@ -420,6 +420,10 @@ function invalidateForAudit(
     (kind === "server" && audit.action.startsWith("server.tunnel"))
   )
     invalidate(cloudflareKey);
+  // Dock Analytics: sites, settings, the analytics server (ADR 0037). A
+  // domain added or removed may carry a site along or leave it.
+  if (kind === "analytics") invalidate(["analytics"]);
+  if (kind === "domain") invalidate(["analytics", "sites"]);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;

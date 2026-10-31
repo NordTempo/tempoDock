@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAddDomain } from "../../data/mutations";
 import type { ServiceRef } from "../../data/types";
 import { Dialog } from "../../ui/Dialog";
-import { Act, Button, ErrorText } from "../../ui/kit";
+import { Act, Button, Check, ErrorText } from "../../ui/kit";
 import { useCloudflareZones } from "../cloudflare/data";
 
 /**
@@ -25,6 +25,9 @@ export default function AddDomainDialog({
   const [redirect, setRedirect] = useState("");
   const [name, setName] = useState("");
   const [zone, setZone] = useState("");
+  // A hostname that collected analytics before carries its site's history
+  // here unless this is set (ADR 0037).
+  const [newSite, setNewSite] = useState(false);
   const picked = zone || zones[0]?.name || "";
   // A full hostname typed into the name field keeps one zone.
   const sub = name
@@ -53,6 +56,7 @@ export default function AddDomainDialog({
               hostname: host,
               ...(target && { redirect_to: target }),
               ...(fromCloudflare && { cloudflare: true }),
+              ...(newSite && !target && { analytics: "new" as const }),
             },
             { onSuccess: onClose },
           );
@@ -151,13 +155,21 @@ export default function AddDomainDialog({
             )}
           </span>
         </label>
+        {!target && (
+          <Check
+            label="Start a new analytics site if this hostname was counted before"
+            title="Otherwise its site, with its history, moves here with it"
+            checked={newSite}
+            onChange={setNewSite}
+          />
+        )}
         <ErrorText error={add.error} />
         <div className="flex items-center justify-end gap-2.5">
           <Button onClick={onClose}>Cancel</Button>
           <Act
             primary
             type="submit"
-            cli={`dock domain add ${host || "<host>"}${target ? ` --redirect-to ${target}` : ""}${fromCloudflare ? " --cloudflare" : ""} ${flags}`}
+            cli={`dock domain add ${host || "<host>"}${target ? ` --redirect-to ${target}` : ""}${fromCloudflare ? " --cloudflare" : ""}${newSite && !target ? " --analytics new" : ""} ${flags}`}
             disabled={add.isPending || !host}
           >
             {add.isPending

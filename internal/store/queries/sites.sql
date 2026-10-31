@@ -120,6 +120,12 @@ WHERE domains.hostname = +?;
 -- name: ServiceNames :many
 SELECT id, name FROM services WHERE id IN (sqlc.slice(ids));
 
+-- ReleaseNames names releases for the dashboard's Releases breakdown:
+-- their service's name and their number.
+-- name: ReleaseNames :many
+SELECT r.id, s.name, r.number FROM releases r JOIN services s ON s.id = r.service_id
+WHERE r.id IN (sqlc.slice(ids));
+
 -- ListAllSites returns every site's settings, archived ones too: the
 -- daily retention pass.
 -- name: ListAllSites :many

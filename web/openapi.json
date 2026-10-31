@@ -450,6 +450,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "label": {
+            "type": "string"
+          },
           "value": {
             "type": "string"
           },
