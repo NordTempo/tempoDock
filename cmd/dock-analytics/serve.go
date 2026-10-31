@@ -228,10 +228,13 @@ func (a *api) write(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "source and position are required", http.StatusBadRequest)
 		return
 	}
-	events, err := readEvents(r.Body)
+	events, skipped, err := readEvents(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if skipped > 0 {
+		a.log.Warn("write: lines that aren't events were skipped", "source", source, "skipped", skipped)
 	}
 	n, err := a.s.Write(r.Context(), source, pos, events, a.locate)
 	if err != nil {
@@ -239,28 +242,33 @@ func (a *api) write(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	reply(w, analytics.WriteResult{Written: n})
+	reply(w, analytics.WriteResult{Written: n, Skipped: skipped})
 }
 
 // readEvents decodes up to analytics.MaxWriteBatch JSON-line events.
-func readEvents(body io.Reader) ([]analytics.Event, error) {
+// Lines that aren't events are skipped and counted rather than failing
+// the batch: the batch's position is written either way, so one bad line
+// can't hold a server's spool up forever. A line over the size cap or a
+// batch over the count cap is the caller's error.
+func readEvents(body io.Reader) (events []analytics.Event, skipped int, err error) {
 	sc := bufio.NewScanner(body)
 	// The buffer's capacity counts as a limit too: keep it under the cap.
 	sc.Buffer(make([]byte, 0, 4<<10), analytics.MaxEventBytes)
-	var events []analytics.Event
 	for sc.Scan() {
 		if len(sc.Bytes()) == 0 {
 			continue
 		}
-		if len(events) == analytics.MaxWriteBatch {
-			return nil, fmt.Errorf("a write takes at most %d events", analytics.MaxWriteBatch)
+		if len(events)+skipped == analytics.MaxWriteBatch {
+			return nil, 0, fmt.Errorf("a write takes at most %d events", analytics.MaxWriteBatch)
 		}
-		events = append(events, analytics.Event{})
-		if err := json.Unmarshal(sc.Bytes(), &events[len(events)-1]); err != nil {
-			return nil, fmt.Errorf("event %d: %w", len(events), err)
+		var e analytics.Event
+		if json.Unmarshal(sc.Bytes(), &e) != nil {
+			skipped++
+			continue
 		}
+		events = append(events, e)
 	}
-	return events, sc.Err()
+	return events, skipped, sc.Err()
 }
 
 // cursor answers a source's position (analytics.CursorPath).

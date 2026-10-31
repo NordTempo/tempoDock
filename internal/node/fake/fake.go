@@ -64,6 +64,8 @@ type Runtime struct {
 	hostSet    bool
 	ctrStats   map[string]node.ContainerStats
 	statsCalls atomic.Int64
+
+	analytics fakeAnalytics
 }
 
 var _ node.Runtime = (*Runtime)(nil)

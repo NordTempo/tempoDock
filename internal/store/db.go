@@ -33,6 +33,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addAlertNoticeStmt, err = db.PrepareContext(ctx, addAlertNotice); err != nil {
 		return nil, fmt.Errorf("error preparing query AddAlertNotice: %w", err)
 	}
+	if q.addAnalyticsSaltStmt, err = db.PrepareContext(ctx, addAnalyticsSalt); err != nil {
+		return nil, fmt.Errorf("error preparing query AddAnalyticsSalt: %w", err)
+	}
 	if q.addAuditDetailStmt, err = db.PrepareContext(ctx, addAuditDetail); err != nil {
 		return nil, fmt.Errorf("error preparing query AddAuditDetail: %w", err)
 	}
@@ -117,6 +120,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createAlertChannelStmt, err = db.PrepareContext(ctx, createAlertChannel); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateAlertChannel: %w", err)
 	}
+	if q.createAnalyticsSettingsStmt, err = db.PrepareContext(ctx, createAnalyticsSettings); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateAnalyticsSettings: %w", err)
+	}
 	if q.createBackupStmt, err = db.PrepareContext(ctx, createBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateBackup: %w", err)
 	}
@@ -194,6 +200,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteAlertNoticesStmt, err = db.PrepareContext(ctx, deleteAlertNotices); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteAlertNotices: %w", err)
+	}
+	if q.deleteAnalyticsSaltsBeforeStmt, err = db.PrepareContext(ctx, deleteAnalyticsSaltsBefore); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteAnalyticsSaltsBefore: %w", err)
 	}
 	if q.deleteAuditDetailsThroughStmt, err = db.PrepareContext(ctx, deleteAuditDetailsThrough); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteAuditDetailsThrough: %w", err)
@@ -338,6 +347,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getAlertChannelByIDStmt, err = db.PrepareContext(ctx, getAlertChannelByID); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAlertChannelByID: %w", err)
+	}
+	if q.getAnalyticsSettingsStmt, err = db.PrepareContext(ctx, getAnalyticsSettings); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAnalyticsSettings: %w", err)
 	}
 	if q.getAppGitConnectionsStmt, err = db.PrepareContext(ctx, getAppGitConnections); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAppGitConnections: %w", err)
@@ -524,6 +536,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listAlertsStmt, err = db.PrepareContext(ctx, listAlerts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAlerts: %w", err)
+	}
+	if q.listAnalyticsSaltsStmt, err = db.PrepareContext(ctx, listAnalyticsSalts); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAnalyticsSalts: %w", err)
 	}
 	if q.listAuditEventsStmt, err = db.PrepareContext(ctx, listAuditEvents); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAuditEvents: %w", err)
@@ -915,6 +930,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setAlertChannelSentStmt, err = db.PrepareContext(ctx, setAlertChannelSent); err != nil {
 		return nil, fmt.Errorf("error preparing query SetAlertChannelSent: %w", err)
 	}
+	if q.setAnalyticsEnabledStmt, err = db.PrepareContext(ctx, setAnalyticsEnabled); err != nil {
+		return nil, fmt.Errorf("error preparing query SetAnalyticsEnabled: %w", err)
+	}
+	if q.setAnalyticsServerStmt, err = db.PrepareContext(ctx, setAnalyticsServer); err != nil {
+		return nil, fmt.Errorf("error preparing query SetAnalyticsServer: %w", err)
+	}
 	if q.setCloudflareConnectionStatusStmt, err = db.PrepareContext(ctx, setCloudflareConnectionStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query SetCloudflareConnectionStatus: %w", err)
 	}
@@ -1112,6 +1133,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing addAlertNoticeStmt: %w", cerr)
 		}
 	}
+	if q.addAnalyticsSaltStmt != nil {
+		if cerr := q.addAnalyticsSaltStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addAnalyticsSaltStmt: %w", cerr)
+		}
+	}
 	if q.addAuditDetailStmt != nil {
 		if cerr := q.addAuditDetailStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addAuditDetailStmt: %w", cerr)
@@ -1252,6 +1278,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createAlertChannelStmt: %w", cerr)
 		}
 	}
+	if q.createAnalyticsSettingsStmt != nil {
+		if cerr := q.createAnalyticsSettingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createAnalyticsSettingsStmt: %w", cerr)
+		}
+	}
 	if q.createBackupStmt != nil {
 		if cerr := q.createBackupStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createBackupStmt: %w", cerr)
@@ -1380,6 +1411,11 @@ func (q *Queries) Close() error {
 	if q.deleteAlertNoticesStmt != nil {
 		if cerr := q.deleteAlertNoticesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteAlertNoticesStmt: %w", cerr)
+		}
+	}
+	if q.deleteAnalyticsSaltsBeforeStmt != nil {
+		if cerr := q.deleteAnalyticsSaltsBeforeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteAnalyticsSaltsBeforeStmt: %w", cerr)
 		}
 	}
 	if q.deleteAuditDetailsThroughStmt != nil {
@@ -1620,6 +1656,11 @@ func (q *Queries) Close() error {
 	if q.getAlertChannelByIDStmt != nil {
 		if cerr := q.getAlertChannelByIDStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAlertChannelByIDStmt: %w", cerr)
+		}
+	}
+	if q.getAnalyticsSettingsStmt != nil {
+		if cerr := q.getAnalyticsSettingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAnalyticsSettingsStmt: %w", cerr)
 		}
 	}
 	if q.getAppGitConnectionsStmt != nil {
@@ -1930,6 +1971,11 @@ func (q *Queries) Close() error {
 	if q.listAlertsStmt != nil {
 		if cerr := q.listAlertsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listAlertsStmt: %w", cerr)
+		}
+	}
+	if q.listAnalyticsSaltsStmt != nil {
+		if cerr := q.listAnalyticsSaltsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAnalyticsSaltsStmt: %w", cerr)
 		}
 	}
 	if q.listAuditEventsStmt != nil {
@@ -2582,6 +2628,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setAlertChannelSentStmt: %w", cerr)
 		}
 	}
+	if q.setAnalyticsEnabledStmt != nil {
+		if cerr := q.setAnalyticsEnabledStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setAnalyticsEnabledStmt: %w", cerr)
+		}
+	}
+	if q.setAnalyticsServerStmt != nil {
+		if cerr := q.setAnalyticsServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setAnalyticsServerStmt: %w", cerr)
+		}
+	}
 	if q.setCloudflareConnectionStatusStmt != nil {
 		if cerr := q.setCloudflareConnectionStatusStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setCloudflareConnectionStatusStmt: %w", cerr)
@@ -2919,6 +2975,7 @@ type Queries struct {
 	acceptOrgInviteStmt                 *sql.Stmt
 	activateReleaseStmt                 *sql.Stmt
 	addAlertNoticeStmt                  *sql.Stmt
+	addAnalyticsSaltStmt                *sql.Stmt
 	addAuditDetailStmt                  *sql.Stmt
 	addAuditEventStmt                   *sql.Stmt
 	addAuditEventWithDetailStmt         *sql.Stmt
@@ -2947,6 +3004,7 @@ type Queries struct {
 	countPendingCLILoginsStmt           *sql.Stmt
 	countUsersStmt                      *sql.Stmt
 	createAlertChannelStmt              *sql.Stmt
+	createAnalyticsSettingsStmt         *sql.Stmt
 	createBackupStmt                    *sql.Stmt
 	createCLILoginStmt                  *sql.Stmt
 	createCLILoginTokenStmt             *sql.Stmt
@@ -2973,6 +3031,7 @@ type Queries struct {
 	decideChangesetStmt                 *sql.Stmt
 	deleteAlertChannelStmt              *sql.Stmt
 	deleteAlertNoticesStmt              *sql.Stmt
+	deleteAnalyticsSaltsBeforeStmt      *sql.Stmt
 	deleteAuditDetailsThroughStmt       *sql.Stmt
 	deleteAuditEventsThroughStmt        *sql.Stmt
 	deleteCLILoginStmt                  *sql.Stmt
@@ -3021,6 +3080,7 @@ type Queries struct {
 	getAlertStmt                        *sql.Stmt
 	getAlertChannelStmt                 *sql.Stmt
 	getAlertChannelByIDStmt             *sql.Stmt
+	getAnalyticsSettingsStmt            *sql.Stmt
 	getAppGitConnectionsStmt            *sql.Stmt
 	getAuditDetailStmt                  *sql.Stmt
 	getAuditEventByDetailStmt           *sql.Stmt
@@ -3083,6 +3143,7 @@ type Queries struct {
 	listAlertChannelsStmt               *sql.Stmt
 	listAlertNoticesStmt                *sql.Stmt
 	listAlertsStmt                      *sql.Stmt
+	listAnalyticsSaltsStmt              *sql.Stmt
 	listAuditEventsStmt                 *sql.Stmt
 	listAuditEventsByActionStmt         *sql.Stmt
 	listAuditEventsByTargetStmt         *sql.Stmt
@@ -3213,6 +3274,8 @@ type Queries struct {
 	saveQueryStmt                       *sql.Stmt
 	setAlertChannelFailedStmt           *sql.Stmt
 	setAlertChannelSentStmt             *sql.Stmt
+	setAnalyticsEnabledStmt             *sql.Stmt
+	setAnalyticsServerStmt              *sql.Stmt
 	setCloudflareConnectionStatusStmt   *sql.Stmt
 	setCloudflareTunnelAbsentStmt       *sql.Stmt
 	setCloudflareTunnelIDStmt           *sql.Stmt
@@ -3281,6 +3344,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		acceptOrgInviteStmt:                 q.acceptOrgInviteStmt,
 		activateReleaseStmt:                 q.activateReleaseStmt,
 		addAlertNoticeStmt:                  q.addAlertNoticeStmt,
+		addAnalyticsSaltStmt:                q.addAnalyticsSaltStmt,
 		addAuditDetailStmt:                  q.addAuditDetailStmt,
 		addAuditEventStmt:                   q.addAuditEventStmt,
 		addAuditEventWithDetailStmt:         q.addAuditEventWithDetailStmt,
@@ -3309,6 +3373,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		countPendingCLILoginsStmt:           q.countPendingCLILoginsStmt,
 		countUsersStmt:                      q.countUsersStmt,
 		createAlertChannelStmt:              q.createAlertChannelStmt,
+		createAnalyticsSettingsStmt:         q.createAnalyticsSettingsStmt,
 		createBackupStmt:                    q.createBackupStmt,
 		createCLILoginStmt:                  q.createCLILoginStmt,
 		createCLILoginTokenStmt:             q.createCLILoginTokenStmt,
@@ -3335,6 +3400,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		decideChangesetStmt:                 q.decideChangesetStmt,
 		deleteAlertChannelStmt:              q.deleteAlertChannelStmt,
 		deleteAlertNoticesStmt:              q.deleteAlertNoticesStmt,
+		deleteAnalyticsSaltsBeforeStmt:      q.deleteAnalyticsSaltsBeforeStmt,
 		deleteAuditDetailsThroughStmt:       q.deleteAuditDetailsThroughStmt,
 		deleteAuditEventsThroughStmt:        q.deleteAuditEventsThroughStmt,
 		deleteCLILoginStmt:                  q.deleteCLILoginStmt,
@@ -3383,6 +3449,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getAlertStmt:                        q.getAlertStmt,
 		getAlertChannelStmt:                 q.getAlertChannelStmt,
 		getAlertChannelByIDStmt:             q.getAlertChannelByIDStmt,
+		getAnalyticsSettingsStmt:            q.getAnalyticsSettingsStmt,
 		getAppGitConnectionsStmt:            q.getAppGitConnectionsStmt,
 		getAuditDetailStmt:                  q.getAuditDetailStmt,
 		getAuditEventByDetailStmt:           q.getAuditEventByDetailStmt,
@@ -3445,6 +3512,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listAlertChannelsStmt:               q.listAlertChannelsStmt,
 		listAlertNoticesStmt:                q.listAlertNoticesStmt,
 		listAlertsStmt:                      q.listAlertsStmt,
+		listAnalyticsSaltsStmt:              q.listAnalyticsSaltsStmt,
 		listAuditEventsStmt:                 q.listAuditEventsStmt,
 		listAuditEventsByActionStmt:         q.listAuditEventsByActionStmt,
 		listAuditEventsByTargetStmt:         q.listAuditEventsByTargetStmt,
@@ -3575,6 +3643,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		saveQueryStmt:                       q.saveQueryStmt,
 		setAlertChannelFailedStmt:           q.setAlertChannelFailedStmt,
 		setAlertChannelSentStmt:             q.setAlertChannelSentStmt,
+		setAnalyticsEnabledStmt:             q.setAnalyticsEnabledStmt,
+		setAnalyticsServerStmt:              q.setAnalyticsServerStmt,
 		setCloudflareConnectionStatusStmt:   q.setCloudflareConnectionStatusStmt,
 		setCloudflareTunnelAbsentStmt:       q.setCloudflareTunnelAbsentStmt,
 		setCloudflareTunnelIDStmt:           q.setCloudflareTunnelIDStmt,

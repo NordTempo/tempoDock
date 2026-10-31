@@ -431,6 +431,23 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return empty{}, rt.EnsureTunnel(ctx, spec)
 	}))
 	h(opDial, serveDial(rt))
+	h(opSetAnalytics, unary(func(ctx context.Context, a setAnalyticsRequest) (empty, error) {
+		return empty{}, rt.SetAnalytics(ctx, node.AnalyticsConfig{Salts: a.Salts})
+	}))
+	h(opTailSpool, stream(func(ctx context.Context, a tailSpoolRequest) (<-chan node.SpoolBatch, error) {
+		return rt.TailSpool(ctx, a.After)
+	}, toWireSpoolBatch))
+	h(opAckSpool, unary(func(ctx context.Context, a ackSpoolRequest) (empty, error) {
+		return empty{}, rt.AckSpool(ctx, a.Position, a.Events)
+	}))
+	h(opEnsureAnalytics, unary(func(ctx context.Context, a analyticsStoreRequest) (empty, error) {
+		var spec *node.AnalyticsStoreSpec
+		if w := a.Spec; w != nil {
+			spec = &node.AnalyticsStoreSpec{Image: w.Image, Token: w.Token, MemoryBytes: w.MemoryBytes}
+		}
+		return empty{}, rt.EnsureAnalyticsStore(ctx, spec)
+	}))
+	h(opDialAnalytics, serveDialAnalytics(rt))
 }
 
 // unary serves a call with one result.

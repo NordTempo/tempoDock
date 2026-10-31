@@ -31,6 +31,8 @@ jobs:
       - run: make analytics-deps
       - name: Install Caddy
         run: curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin caddy
+      # The analytics store's container test needs its image (ADR 0037).
+      - run: make image-analytics VERSION=dev
       - name: Integration tests (Docker, Caddy, BuildKit)
         run: make test-integration
       # Build the UI first so the binary embeds it.

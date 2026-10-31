@@ -796,3 +796,67 @@ func TestIntegrationTunnelListener(t *testing.T) {
 		t.Errorf("public http a.test: got %d, want the redirect to https", code)
 	}
 }
+
+// Analytics through a real Caddy (ADR 0037): /_dock/a/* reaches the
+// ingest with the route's tag and the client's address, whatever the
+// visitor sent in those headers, the app gets the rest, and only the
+// app's requests are counted as traffic.
+func TestIntegrationAnalytics(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	port := freePorts(t, 1)[0]
+	counter, err := traffic.Listen(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, "ingest %s %s tag=%s ip=%s", r.Method, r.URL.Path, r.Header.Get(analyticsTagHeader), r.Header.Get(analyticsIPHeader))
+	}))
+	t.Cleanup(ingest.Close)
+	tc := startCaddyWith(t, func(o *Options) {
+		o.DisableTLS = true
+		o.TrafficAddr = net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+		o.AnalyticsAddr = strings.TrimPrefix(ingest.URL, "http://")
+	})
+	err = tc.proxy.ApplyRoutes(ctx, []node.Route{{
+		Hostnames: []string{"shop.test", "admin.test"}, Upstream: backend(t, "app"), Traffic: true,
+		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"shop.test"}, Tag: "3.40.981"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodPost, tc.url("http", "shop.test", "/_dock/a/e"), strings.NewReader(`{}`))
+	req.Header.Set(analyticsTagHeader, "1.1.1")
+	req.Header.Set(analyticsIPHeader, "203.0.113.66")
+	req.Header.Set("User-Agent", "Mozilla/5.0 test")
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if string(b) != "ingest POST /_dock/a/e tag=3.40.981 ip=127.0.0.1" {
+		t.Errorf("the ingest got %q", b)
+	}
+	// Not an analytics hostname: the app answers.
+	if _, _, body := tc.get(t, tc.url("http", "admin.test", "/_dock/a/s.js")); !strings.HasPrefix(body, "app") {
+		t.Errorf("admin.test /_dock/a/s.js answered %q, want the app", body)
+	}
+	if _, _, body := tc.get(t, tc.url("http", "shop.test", "/")); !strings.HasPrefix(body, "app") {
+		t.Errorf("shop.test / answered %q, want the app", body)
+	}
+
+	var got []node.HostTraffic
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		d, _ := counter.DrainTraffic(ctx)
+		got = append(got, d...)
+		if len(got) >= 2 {
+			break
+		}
+	}
+	for _, h := range got {
+		if h.Host == "shop.test" && h.Requests != 1 {
+			t.Errorf("shop.test counted %d requests; the analytics one must not count", h.Requests)
+		}
+	}
+}

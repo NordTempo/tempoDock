@@ -104,7 +104,7 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	if err != nil {
 		return err
 	}
-	rt, _, err := newRuntime(ctx, cfg, remote.ServerMarker(linkID.Fingerprint()), log)
+	rt, _, in, err := newRuntime(ctx, cfg, remote.ServerMarker(linkID.Fingerprint()), log)
 	if err != nil {
 		return err
 	}
@@ -143,6 +143,9 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 			Handler:           api.Internal(c, log, registryToken, caddy.AccessHandler()),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
+	}
+	if srv := ingestServer(cfg, in); srv != nil {
+		servers = append(servers, srv)
 	}
 	if cfg.Hooks.PublicHost != "" {
 		// GitHub webhooks, the only thing Caddy exposes publicly (ADR 0018).

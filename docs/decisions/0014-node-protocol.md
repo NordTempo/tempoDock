@@ -470,3 +470,16 @@ runs is the server's `tunnel_hostname`, whatever the node reports.
 Protocol 9 lets a direct server run one next to its public IP: hello
 reports the port its cloudflared forwards to (`tunnel_port`), and
 routes may be `tunnel_only` (served on that listener alone).
+
+## Amendment (2026-10-30): analytics over the link
+
+[0037](0037-analytics.md) adds Dock Analytics in protocol 10. Every
+server spools events from its own ingest; the control plane, still the
+only caller, reads them with `tail-spool` (an item stream like `events`,
+batches of up to 1,000 events with their spool position) and confirms
+them with `ack-spool`. `set-analytics` hands a server the day's salts,
+`ensure-analytics-store` runs the store's container on the analytics
+server, and `dial-analytics` is a raw connection to the store's port
+there, like `dial`, reaching nothing else. Routes gain analytics
+hostnames with their tag; a node below protocol 10 gets its routes
+without them, so its sites go uncounted until it is updated.

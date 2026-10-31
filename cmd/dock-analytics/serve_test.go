@@ -101,13 +101,14 @@ func TestClientReportsAStoreThatIsDown(t *testing.T) {
 	}
 }
 
-func TestEventsOverTheSizeCapAreRefused(t *testing.T) {
+func TestReadEvents(t *testing.T) {
 	line := `{"t":1,"s":1,"p":"/` + strings.Repeat("a", analytics.MaxEventBytes) + `"}` + "\n"
-	if _, err := readEvents(strings.NewReader(line)); err == nil {
+	if _, _, err := readEvents(strings.NewReader(line)); err == nil {
 		t.Error("an event over MaxEventBytes was read")
 	}
-	if _, err := readEvents(strings.NewReader(`{"t":1,"s":1,"p":"/"}` + "\n")); err != nil {
-		t.Errorf("a small event: %v", err)
+	ev, skipped, err := readEvents(strings.NewReader(`{"t":1,"s":1,"p":"/"}` + "\nnot an event\n"))
+	if err != nil || len(ev) != 1 || skipped != 1 {
+		t.Errorf("a small event and a bad line: %d events, %d skipped, %v", len(ev), skipped, err)
 	}
 }
 

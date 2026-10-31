@@ -308,6 +308,7 @@ func (c *Core) NodeStatus(s remote.State) {
 	if s.Status == remote.StatusOnline {
 		c.kickServer(s.ServerID)
 	}
+	c.analyticsServerChanged(s.ServerID, s.Status == remote.StatusOnline)
 }
 
 // kickServer has a remote server's watcher run the reconnect procedure,

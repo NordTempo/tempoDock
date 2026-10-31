@@ -160,6 +160,8 @@ type handler struct {
 	// (log_append).
 	Key   string `json:"key,omitempty"`
 	Value string `json:"value,omitempty"`
+	// LogSkip keeps the request out of the access log (vars handler).
+	LogSkip bool `json:"log_skip,omitempty"`
 }
 
 // rewrite changes the request a reverse_proxy sends upstream. With method
@@ -381,6 +383,18 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 				handle = append(handle, passwordAccess(r.Access)...)
 			}
 		}
+		// The analytics route goes ahead of the service's, on every listener
+		// that serves the route: tunnel visitors are counted too.
+		if r.RedirectTo == "" && opts.AnalyticsAddr != "" {
+			for _, an := range r.Analytics {
+				if public {
+					main = append(main, analyticsRoute(an, opts.AnalyticsAddr))
+				}
+				if tunnelListener {
+					viaTunnel = append(viaTunnel, analyticsRoute(an, opts.AnalyticsAddr))
+				}
+			}
+		}
 		if public {
 			main = append(main, route{Match: []match{m}, Handle: append(slices.Clone(handle), h), Terminal: true})
 		}
@@ -517,6 +531,32 @@ func trafficLogging(addr string) *logging {
 	}}
 }
 
+// Headers the analytics ingest reads (internal/analytics/ingest), set from
+// the routing table and replacing any a visitor sent.
+const (
+	analyticsTagHeader = "X-Dock-Analytics"
+	analyticsIPHeader  = "X-Dock-Client-Ip"
+)
+
+// analyticsRoute sends /_dock/a/* on a group's hostnames to the ingest
+// (ADR 0037), ahead of the service's own route. The requests stay out of
+// the access log, so traffic statistics don't count them, and carry the
+// group's tag and the client's address as this server determined it.
+func analyticsRoute(a node.AnalyticsHosts, addr string) route {
+	return route{
+		Match: []match{{Host: a.Hostnames, Path: []string{"/_dock/a/*"}}},
+		Handle: []handler{
+			{Handler: "vars", LogSkip: true},
+			{Handler: "headers", Request: &headerOps{Set: map[string][]string{
+				analyticsTagHeader: {a.Tag},
+				analyticsIPHeader:  {"{http.vars.client_ip}"},
+			}}},
+			{Handler: "reverse_proxy", Upstreams: []upstream{{Dial: addr}}},
+		},
+		Terminal: true,
+	}
+}
+
 // Request headers the access check reads, set by Caddy from the route
 // (AccessHandler).
 const (
@@ -608,11 +648,21 @@ func portSuffix(scheme string, port int) string {
 func validateRoutes(opts Options, routes []node.Route) error {
 	seen := map[string]bool{}
 	for i, r := range routes {
+		if len(r.Hostnames) == 0 {
+			return fmt.Errorf("route %d has no hostnames", i)
+		}
 		if err := validateAccess(opts, r.Access); err != nil {
 			return fmt.Errorf("route for %s: %w", r.Hostnames[0], err)
 		}
-		if len(r.Hostnames) == 0 {
-			return fmt.Errorf("route %d has no hostnames", i)
+		for _, a := range r.Analytics {
+			if !validTag(a.Tag) {
+				return fmt.Errorf("route for %s: analytics tag %q must be three numbers like 3.40.981", r.Hostnames[0], a.Tag)
+			}
+			for _, h := range a.Hostnames {
+				if !slices.Contains(r.Hostnames, h) {
+					return fmt.Errorf("route for %s: analytics hostname %s isn't one of the route's", r.Hostnames[0], h)
+				}
+			}
 		}
 		if r.Upstream == "" && r.RedirectTo == "" {
 			return fmt.Errorf("route for %s needs an upstream or a redirect target", r.Hostnames[0])
@@ -656,6 +706,20 @@ func validateAccess(opts Options, a *node.Access) error {
 		return fmt.Errorf("username %q is not valid", a.Username)
 	}
 	return nil
+}
+
+// validTag accepts "site.service.release": three decimal numbers.
+func validTag(t string) bool {
+	parts := strings.Split(t, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" || len(p) > 19 || strings.Trim(p, "0123456789") != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // validPathPrefix accepts "/" plus lower-case segments, each ending in

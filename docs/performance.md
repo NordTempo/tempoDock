@@ -95,7 +95,9 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   lists, audit log, variable resolution, event bus fan-out, SSE writes,
   Caddy config rendering, source packing, `dock.toml` parsing, prepared
   SQLite queries, the retention pass, the alert engine's event handling,
-  the access check for login-protected services and traffic counting. Use
+  the access check for login-protected services, traffic counting, and
+the analytics ingest and spool (`BenchmarkIngestEvent`,
+`BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
   benchmarks use a 60-service project), and add one for every new hot
   path.
@@ -174,6 +176,9 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
+| Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events wait to go to the control plane (ADR 0037) | one timer; then one spool read of up to 1,000 events |
+| Analytics forwarder retry | `internal/core/analytics.go` | 1 s, doubling to 30 s | the store doesn't answer or a write fails | one cursor request to the store |
+| Analytics salts | `internal/core/analytics.go` | with the statistics tick | always; does nothing on the same UTC day | at midnight: two inserts, a delete, one call per server |
 | Analytics store trim | `cmd/dock-analytics/serve.go` | once, a minute after the last request | the store was asked something (ADR 0037) | a checkpoint and two `SET memory_limit`, then `debug.FreeOSMemory` |
 | Analytics rollups | `cmd/dock-analytics/store/rollup.go` | no timer: woken by a write that brings events for a finished day, or the first write of a new day | there are days to roll up | per site and day, one transaction of about 25 grouped inserts (0.27 s for a day of a 100M-event-a-year site) |
 

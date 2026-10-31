@@ -68,6 +68,30 @@ type Config struct {
 	Alerts    Alerts    `toml:"alerts"`
 	// Updates is where the control plane looks for new releases (ADR 0028).
 	Updates Updates `toml:"updates"`
+	// Analytics is this server's part in Dock Analytics (ADR 0037).
+	Analytics Analytics `toml:"analytics"`
+}
+
+// Analytics configures Dock Analytics on this server (ADR 0037): every
+// server's ingest and spool, and on the analytics server the store's
+// container. Which server that is, and which sites collect, are runtime
+// settings on the control plane.
+type Analytics struct {
+	// IngestListen is the loopback address Caddy sends /_dock/a/* of
+	// analytics-enabled hostnames to. Its own listener, so nothing else
+	// the daemon serves is reachable through those paths.
+	IngestListen string `toml:"ingest_listen"`
+	// SpoolMaxMB caps the spool of events waiting for the store; past it
+	// the oldest go, counted.
+	SpoolMaxMB int `toml:"spool_max_mb"`
+	// StorePort is the loopback port the analytics store is published on,
+	// on the analytics server.
+	StorePort int `toml:"store_port"`
+	// StoreImage is the dock-analytics image the control plane runs.
+	// Empty is the image released with this version of dock.
+	StoreImage string `toml:"store_image"`
+	// StoreMemoryMB is the store container's memory limit.
+	StoreMemoryMB int `toml:"store_memory_mb"`
 }
 
 // DefaultUpdateSource is the GitHub repository releases are published to
@@ -298,6 +322,12 @@ func Default() Config {
 			TrafficListen: "127.0.0.1:7074",
 			TunnelPort:    7075,
 		},
+		Analytics: Analytics{
+			IngestListen:  "127.0.0.1:7077",
+			SpoolMaxMB:    256,
+			StorePort:     7076,
+			StoreMemoryMB: 512,
+		},
 		BuildKit: BuildKit{
 			Enabled:        true,
 			Image:          "moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c",
@@ -399,6 +429,20 @@ func (c *Config) validate() error {
 			return fmt.Errorf("[caddy] traffic_listen %q must be a loopback IP and port, like 127.0.0.1:7074 (or empty to turn traffic statistics off)", t)
 		}
 	}
+	if a := c.Analytics.IngestListen; a != "" {
+		host, _, err := net.SplitHostPort(a)
+		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("[analytics] ingest_listen %q must be a loopback IP and port, like 127.0.0.1:7077 (or empty to turn the ingest off)", a)
+		}
+	}
+	switch {
+	case c.Analytics.SpoolMaxMB < 16:
+		return fmt.Errorf("[analytics] spool_max_mb is %d; it must be at least 16", c.Analytics.SpoolMaxMB)
+	case c.Analytics.StorePort <= 0 || c.Analytics.StorePort > 65535:
+		return fmt.Errorf("[analytics] store_port %d is not a port", c.Analytics.StorePort)
+	case c.Analytics.StoreMemoryMB < 256:
+		return fmt.Errorf("[analytics] store_memory_mb is %d; the store needs at least 256", c.Analytics.StoreMemoryMB)
+	}
 	if err := c.Retention.validate(); err != nil {
 		return err
 	}
@@ -469,7 +513,7 @@ func (c Config) checkTunnelPort() error {
 		return fmt.Errorf("[caddy] tunnel_port %d is not a port (0 turns the tunnel listener off)", p)
 	}
 	taken := []int{c.Caddy.HTTPPort, c.Caddy.HTTPSPort}
-	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen} {
+	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen, c.Analytics.IngestListen} {
 		if _, port, err := net.SplitHostPort(addr); err == nil {
 			if n, err := strconv.Atoi(port); err == nil {
 				taken = append(taken, n)
