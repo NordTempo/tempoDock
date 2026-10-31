@@ -347,7 +347,7 @@ export interface paths {
         get: operations["get-backup-settings"];
         /**
          * Configure backups
-         * @description Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Operators only.
+         * @description Retention and the hour; fields left out stay as they are. Where backups go is a storage connection, set by moving them (POST /backup/move); repository and the S3 keys are refused. The answer carries the repository password when this call generated it; store it safely. Operators only.
          */
         put: operations["configure-backups"];
         post?: never;
@@ -371,6 +371,26 @@ export interface paths {
          * @description Starts a backup of the control plane (database, keys, config) into the repository in the background and answers with it, running. It also runs daily at the install's hour. Operators only.
          */
         post: operations["run-control-plane-backup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backup/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move the backups to a storage connection
+         * @description Copies every repository holding backups (each server's local one, or the current bucket's) into a folder of the connection's bucket with restic, checks the copy, points each backup at its copy so it stays restorable, makes the bucket where new backups go, and empties the sources (ADR 0039). Runs in the background: the answer is the settings with the move running; backup.moved or backup.move_failed is audited at the end. Backups and restores started meanwhile are refused (409); scheduled ones wait. A failure before the switch changes nothing. Operators only.
+         */
+        post: operations["move-backups"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2921,6 +2941,37 @@ export interface components {
             summary: string;
             target: string;
         };
+        BackupMove: {
+            error?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            /** Format: int64 */
+            gone: number;
+            /** Format: int64 */
+            moved: number;
+            path: string;
+            running: boolean;
+            sources: components["schemas"]["BackupMoveSource"][] | null;
+            /** Format: date-time */
+            started_at: string;
+            to: string;
+        };
+        BackupMoveSource: {
+            error?: string;
+            repository: string;
+            server?: string;
+            /** @enum {string} */
+            status: "waiting" | "copying" | "copied" | "emptied" | "failed";
+        };
+        BackupRepository: {
+            /** Format: int64 */
+            bytes: number;
+            current: boolean;
+            repository: string;
+            server?: string;
+            /** Format: int64 */
+            snapshots: number;
+        };
         BackupRun: {
             created_by: string;
             error?: string;
@@ -2966,10 +3017,14 @@ export interface components {
             keep_monthly: number;
             /** Format: int64 */
             keep_weekly: number;
+            move?: components["schemas"]["BackupMove"];
             off_box: boolean;
             password?: string;
+            path?: string;
+            repositories: components["schemas"]["BackupRepository"][] | null;
             repository: string;
             restic_image: string;
+            storage?: string;
             time_zone: string;
             /** Format: date-time */
             updated_at?: string;
@@ -3137,6 +3192,7 @@ export interface components {
             sha: string;
         };
         ConfigureBackupRequest: {
+            /** @description no longer settable, see repository */
             access_key_id?: string;
             /** Format: int64 */
             hour?: number;
@@ -3146,9 +3202,11 @@ export interface components {
             keep_monthly?: number;
             /** Format: int64 */
             keep_weekly?: number;
+            /** @description no longer settable, see repository */
             region?: string;
-            /** @description s3:https://host/bucket/path, or empty for local repositories (not off-box) */
+            /** @description no longer settable: add the bucket as a storage connection and move the backups there (POST /backup/move) */
             repository?: string;
+            /** @description no longer settable, see repository */
             secret_access_key?: string;
         };
         ConnectInfo: {
@@ -3904,6 +3962,12 @@ export interface components {
              * @enum {string}
              */
             to: "local" | "s3";
+        };
+        MoveBackupsRequest: {
+            /** @description folder in the bucket; default dock-backups */
+            path?: string;
+            /** @description the storage connection */
+            storage: string;
         };
         Org: {
             /** Format: date-time */
@@ -6715,6 +6779,96 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "move-backups": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveBackupsRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSettings"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

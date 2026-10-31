@@ -51,6 +51,20 @@ type backupState struct {
 	// controlPlane is set while the control plane's own backup runs
 	// (backups_controlplane.go).
 	controlPlane bool
+	// move is the latest move of the backups (backups_move.go); while it
+	// runs, no backup or restore starts. moveTo is its storage connection.
+	move   *apitypes.BackupMove
+	moveTo int64
+}
+
+// moving reports whether a backup move runs. The caller holds mu.
+func (s *backupState) moving() bool { return s.move != nil && s.move.Running }
+
+// backupsMoving reports whether a backup move runs.
+func (c *Core) backupsMoving() bool {
+	c.backups.mu.Lock()
+	defer c.backups.mu.Unlock()
+	return c.backups.moving()
 }
 
 func newBackupState() backupState {
@@ -70,7 +84,7 @@ func (c *Core) kickBackups() {
 func (c *Core) claimService(serviceID int64) bool {
 	c.backups.mu.Lock()
 	defer c.backups.mu.Unlock()
-	if c.backups.running[serviceID] {
+	if c.backups.running[serviceID] || c.backups.moving() {
 		return false
 	}
 	c.backups.running[serviceID] = true
@@ -84,13 +98,24 @@ func (c *Core) releaseService(serviceID int64) {
 }
 
 // backupSettings returns the install's settings, or the defaults when
-// nothing was configured yet (no password: repoOf creates one).
+// nothing was configured yet (no password: repoOf creates one). With a
+// storage connection, Repository is the repository URL in its bucket
+// (backup.S3URL), so every comparison of a backup's repository with the
+// current one works as with a URL set by hand.
 func (c *Core) backupSettings(ctx context.Context) (store.BackupSetting, error) {
 	s, err := c.store.GetBackupSettings(ctx)
 	if store.IsNotFound(err) {
 		return store.BackupSetting{ID: 1, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 6, Hour: 3}, nil
 	}
-	return s, err
+	if err != nil || s.StorageID == nil {
+		return s, err
+	}
+	conn, err := c.storageByID(ctx, *s.StorageID)
+	if err != nil {
+		return s, err
+	}
+	s.Repository = backup.S3URL(conn.Endpoint, conn.Bucket, s.StoragePath)
+	return s, nil
 }
 
 // s3Credentials are the sealed credentials of an S3 repository.
@@ -110,7 +135,7 @@ func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, 
 			return backup.Repo{}, err
 		}
 		s.Password, s.UpdatedAt = sealed, now()
-		if s, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
+		if _, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
 			return backup.Repo{}, err
 		}
 	}
@@ -119,6 +144,18 @@ func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, 
 		return backup.Repo{}, fmt.Errorf("open the backup password: %w", err)
 	}
 	repo := backup.Repo{URL: s.Repository, Password: string(pw)}
+	if s.StorageID != nil {
+		conn, err := c.storageByID(ctx, *s.StorageID)
+		if err != nil {
+			return backup.Repo{}, err
+		}
+		b, err := c.bucketOf(conn)
+		if err != nil {
+			return backup.Repo{}, err
+		}
+		repo.AccessKeyID, repo.SecretAccessKey, repo.Region, repo.PathStyle = b.AccessKeyID, b.SecretAccessKey, b.Region, b.PathStyle
+		return repo, nil
+	}
 	if s.Credentials != nil {
 		b, err := c.box.Open(s.Credentials)
 		if err != nil {
@@ -133,11 +170,16 @@ func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, 
 	return repo, nil
 }
 
+// upsertParams writes s back. With a storage connection the repository
+// URL is derived (backupSettings), so it isn't stored.
 func upsertParams(s store.BackupSetting) store.UpsertBackupSettingsParams {
+	if s.StorageID != nil {
+		s.Repository, s.Credentials = "", nil
+	}
 	return store.UpsertBackupSettingsParams{
 		Repository: s.Repository, Credentials: s.Credentials, Password: s.Password,
 		KeepDaily: s.KeepDaily, KeepWeekly: s.KeepWeekly, KeepMonthly: s.KeepMonthly, Hour: s.Hour,
-		UpdatedAt: s.UpdatedAt, UpdatedBy: s.UpdatedBy,
+		UpdatedAt: s.UpdatedAt, UpdatedBy: s.UpdatedBy, StorageID: s.StorageID, StoragePath: s.StoragePath,
 	}
 }
 
@@ -164,6 +206,9 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 	if out.ControlPlane, err = c.controlPlaneBackups(ctx); err != nil {
 		return out, err
 	}
+	if err := c.withBackupStorage(ctx, a, &out, s); err != nil {
+		return out, err
+	}
 	if reveal {
 		repo, err := c.repoOf(ctx, s)
 		if err != nil {
@@ -177,16 +222,47 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 	return out, nil
 }
 
+// toBackupSettings is s as the API shows it, without what
+// withBackupStorage adds.
 func (c *Core) toBackupSettings(s store.BackupSetting) apitypes.BackupSettings {
 	out := apitypes.BackupSettings{
-		Repository: s.Repository, OffBox: s.Repository != "", HasCredentials: s.Credentials != nil,
-		KeepDaily: int(s.KeepDaily), KeepWeekly: int(s.KeepWeekly), KeepMonthly: int(s.KeepMonthly),
+		Repository: s.Repository, OffBox: s.Repository != "", HasCredentials: s.Credentials != nil || s.StorageID != nil,
+		Repositories: []apitypes.BackupRepository{},
+		KeepDaily:    int(s.KeepDaily), KeepWeekly: int(s.KeepWeekly), KeepMonthly: int(s.KeepMonthly),
 		Hour: int(s.Hour), TimeZone: time.Local.String(), ResticImage: c.cfg.Backup.ResticImage, UpdatedBy: s.UpdatedBy,
 	}
 	if !s.UpdatedAt.IsZero() {
 		out.UpdatedAt = &s.UpdatedAt
 	}
 	return out
+}
+
+// withBackupStorage adds the storage connection backups go to, and for
+// operators the repositories holding backups and the latest move.
+func (c *Core) withBackupStorage(ctx context.Context, a Actor, out *apitypes.BackupSettings, s store.BackupSetting) error {
+	if s.StorageID != nil {
+		conn, err := c.storageByID(ctx, *s.StorageID)
+		if err != nil {
+			return err
+		}
+		out.Storage, out.Path = conn.Name, s.StoragePath
+	}
+	if !a.Operator {
+		return nil
+	}
+	repos, err := c.backupRepositories(ctx, s.Repository)
+	if err != nil {
+		return err
+	}
+	out.Repositories = repos
+	c.backups.mu.Lock()
+	if m := c.backups.move; m != nil {
+		cp := *m
+		cp.Sources = slices.Clone(m.Sources)
+		out.Move = &cp
+	}
+	c.backups.mu.Unlock()
+	return nil
 }
 
 // ConfigureBackups changes the platform's backup settings (operators). The
@@ -201,41 +277,8 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 		return apitypes.BackupSettings{}, err
 	}
 	var changed []string
-	if req.Repository != nil {
-		u := strings.TrimSpace(*req.Repository)
-		if err := backup.ValidateURL(u); err != nil {
-			return apitypes.BackupSettings{}, invalid("%v", err)
-		}
-		if u != s.Repository {
-			s.Repository = u
-			changed = append(changed, "repository "+repoLabel(u))
-		}
-		if u == "" {
-			s.Credentials = nil
-		}
-	}
-	if req.AccessKeyID != nil || req.SecretAccessKey != nil || req.Region != nil {
-		if s.Repository == "" {
-			return apitypes.BackupSettings{}, invalid("credentials are for an S3 repository; set repository too")
-		}
-		var cr s3Credentials
-		if s.Credentials != nil {
-			b, err := c.box.Open(s.Credentials)
-			if err != nil {
-				return apitypes.BackupSettings{}, err
-			}
-			if err := json.Unmarshal(b, &cr); err != nil {
-				return apitypes.BackupSettings{}, err
-			}
-		}
-		patch(&cr.AccessKeyID, req.AccessKeyID)
-		patch(&cr.SecretAccessKey, req.SecretAccessKey)
-		patch(&cr.Region, req.Region)
-		b, _ := json.Marshal(cr)
-		if s.Credentials, err = c.box.Seal(b); err != nil {
-			return apitypes.BackupSettings{}, err
-		}
-		changed = append(changed, "credentials")
+	if req.Repository != nil || req.AccessKeyID != nil || req.SecretAccessKey != nil || req.Region != nil {
+		return apitypes.BackupSettings{}, invalid("buckets are storage connections now: add one with `dock storage add` (or the Storage page), then move the backups there with `dock backup move --storage <name>`")
 	}
 	for _, f := range []struct {
 		name     string
@@ -269,7 +312,12 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 		changed = append(changed, "generated the repository password")
 	}
 	s.UpdatedAt, s.UpdatedBy = now(), a.Name
-	if s, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
+	if _, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
+		return apitypes.BackupSettings{}, err
+	}
+	// Read back resolved: the stored row has no repository URL when a
+	// storage connection is set.
+	if s, err = c.backupSettings(ctx); err != nil {
 		return apitypes.BackupSettings{}, err
 	}
 	summary := "no changes"
@@ -280,8 +328,10 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 	c.kickBackups()
 	out := c.toBackupSettings(s)
 	out.Password = password
-	out.ControlPlane, err = c.controlPlaneBackups(ctx)
-	return out, err
+	if out.ControlPlane, err = c.controlPlaneBackups(ctx); err != nil {
+		return out, err
+	}
+	return out, c.withBackupStorage(ctx, a, &out, s)
 }
 
 // backupKindOf says how a service is backed up: with its template's tool,
@@ -401,6 +451,9 @@ func (c *Core) startBackup(ctx context.Context, a Actor, ss svcScope, trigger st
 	set, err := c.backupSettings(ctx)
 	if err != nil {
 		return store.Backup{}, err
+	}
+	if c.backupsMoving() {
+		return store.Backup{}, conflict("the backups are moving to other storage; back up %s once the move finishes", ss)
 	}
 	if !c.claimService(ss.svc.ID) {
 		return store.Backup{}, conflict("a backup or restore of %s is already running; wait for it to finish", ss)

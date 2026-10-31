@@ -5,12 +5,13 @@ UPDATE services SET template = ? WHERE id = +?;
 SELECT * FROM backup_settings WHERE id = 1;
 
 -- name: UpsertBackupSettings :one
-INSERT INTO backup_settings (id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO backup_settings (id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     repository = excluded.repository, credentials = excluded.credentials, password = excluded.password,
     keep_daily = excluded.keep_daily, keep_weekly = excluded.keep_weekly, keep_monthly = excluded.keep_monthly,
-    hour = excluded.hour, updated_at = excluded.updated_at, updated_by = excluded.updated_by
+    hour = excluded.hour, updated_at = excluded.updated_at, updated_by = excluded.updated_by,
+    storage_id = excluded.storage_id, storage_path = excluded.storage_path
 RETURNING *;
 
 -- name: GetBackupSchedule :one
@@ -85,3 +86,45 @@ UPDATE backups SET pruned = 1 WHERE id = +?;
 -- name: FailRunningBackups :execrows
 -- Runs a restart cut short.
 UPDATE backups SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running';
+
+-- name: ListBackupRepositories :many
+-- Where the backups restores can still use are: succeeded, unpruned
+-- backups by repository and the server their service is on, with their
+-- count and size. For the Backups page; the table holds a few rows per
+-- service and day, so a scan is fine.
+SELECT backups.repository, servers.name AS server, CAST(count(*) AS INTEGER) AS snapshots,
+       CAST(coalesce(sum(backups.size_bytes), 0) AS INTEGER) AS size_bytes
+FROM backups
+JOIN services ON services.id = backups.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN servers ON servers.id = environments.server_id
+WHERE backups.operation = 'backup' AND backups.status = 'succeeded' AND backups.pruned = 0
+GROUP BY backups.repository, servers.name
+ORDER BY backups.repository, servers.name;
+
+-- name: ListLocalBackupServers :many
+-- The servers holding a local repository with backups restores can still
+-- use: where a backup move copies from.
+SELECT DISTINCT environments.server_id
+FROM backups
+JOIN services ON services.id = backups.service_id
+JOIN environments ON environments.id = services.environment_id
+WHERE backups.repository = '' AND backups.operation = 'backup' AND backups.status = 'succeeded' AND backups.pruned = 0;
+
+-- name: MoveBackupSnapshot :exec
+-- Points a backup at its copy in another repository (a backup move).
+UPDATE backups SET repository = ?, snapshot_id = ? WHERE repository = +? AND snapshot_id = +?;
+
+-- name: RelabelBackupRepository :exec
+-- Renames a repository in the backups' history (an old repository URL
+-- converted to a storage connection).
+UPDATE backups SET repository = ? WHERE repository = +?;
+
+-- name: ListRepositorySnapshots :many
+-- The snapshots of one repository that backups restores can use point at.
+SELECT snapshot_id FROM backups
+WHERE repository = +? AND operation = 'backup' AND status = 'succeeded' AND pruned = 0 AND snapshot_id <> '';
+
+-- name: PruneBackupSnapshot :exec
+-- Marks the backups of a snapshot gone: a move found it in no repository.
+UPDATE backups SET pruned = 1 WHERE repository = +? AND snapshot_id = +?;

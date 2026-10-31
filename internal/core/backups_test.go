@@ -447,22 +447,20 @@ func TestScheduledBackupRunsWhenDue(t *testing.T) {
 func TestConfigureBackups(t *testing.T) {
 	h := newHarness(t)
 	dev := h.user("dev@x", apitypes.ScopeDeploy)
-	repo := "s3:https://s3.example.com/bucket/dock"
-	if _, err := h.c.ConfigureBackups(h.ctx, dev, apitypes.ConfigureBackupRequest{Repository: &repo}); CodeOf(err) != apitypes.CodeForbidden {
+	daily := 14
+	if _, err := h.c.ConfigureBackups(h.ctx, dev, apitypes.ConfigureBackupRequest{KeepDaily: &daily}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("deploy user configured backups: %v", err)
 	}
-	bad := "/srv/backups"
-	if _, err := h.c.ConfigureBackups(h.ctx, testSystem, apitypes.ConfigureBackupRequest{Repository: &bad}); CodeOf(err) != apitypes.CodeValidation {
-		t.Fatalf("bad repository: %v", err)
+	// Buckets are storage connections now (ADR 0039).
+	repo := "s3:https://s3.example.com/bucket/dock"
+	if _, err := h.c.ConfigureBackups(h.ctx, testSystem, apitypes.ConfigureBackupRequest{Repository: &repo}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("set a repository URL: %v", err)
 	}
-	key, secret, daily := "AKIA", "s3cret", 14
-	set, err := h.c.ConfigureBackups(h.ctx, testSystem, apitypes.ConfigureBackupRequest{
-		Repository: &repo, AccessKeyID: &key, SecretAccessKey: &secret, KeepDaily: &daily,
-	})
+	set, err := h.c.ConfigureBackups(h.ctx, testSystem, apitypes.ConfigureBackupRequest{KeepDaily: &daily})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !set.OffBox || !set.HasCredentials || set.KeepDaily != 14 || len(set.Password) != 32 {
+	if set.OffBox || set.KeepDaily != 14 || len(set.Password) != 32 {
 		t.Fatalf("settings = %+v", set)
 	}
 	// The password is shown once; again only to admins who ask.
@@ -477,8 +475,7 @@ func TestConfigureBackups(t *testing.T) {
 		t.Errorf("deploy user revealed the password: %v", err)
 	}
 	s, _ := h.c.backupSettings(h.ctx)
-	r, err := h.c.repoOf(h.ctx, s)
-	if err != nil || r.URL != repo || r.AccessKeyID != key || r.SecretAccessKey != secret || r.Password != set.Password {
+	if r, err := h.c.repoOf(h.ctx, s); err != nil || !r.Local() || r.Password != set.Password {
 		t.Errorf("repo = %+v, %v", r, err)
 	}
 }

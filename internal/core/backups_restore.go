@@ -61,6 +61,9 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
 		return apitypes.RestoreResult{}, err
 	}
+	if c.backupsMoving() {
+		return apitypes.RestoreResult{}, conflict("the backups are moving to other storage; restore once the move finishes")
+	}
 	if !c.claimService(ss.svc.ID) {
 		return apitypes.RestoreResult{}, conflict("a backup or restore of %s is already running; wait for it to finish", ss)
 	}

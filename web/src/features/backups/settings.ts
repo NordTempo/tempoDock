@@ -57,3 +57,20 @@ export const useRevealBackupPassword = () =>
         )
       ).password ?? "",
   });
+
+export type MoveBackups = Schemas["MoveBackupsRequest"];
+
+/**
+ * Starts moving the backups to a storage connection; the answer (moving)
+ * replaces the cached settings, and backup.* audit events refetch them
+ * as the move goes on and ends.
+ */
+export function useMoveBackups() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: MoveBackups) =>
+      body(api.POST("/api/v1/backup/move", { body: input })),
+    onSuccess: (settings) =>
+      queryClient.setQueryData(backupSettingsKey, settings),
+  });
+}

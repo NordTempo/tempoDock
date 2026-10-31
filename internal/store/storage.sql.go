@@ -100,6 +100,28 @@ func (q *Queries) GetStorageConnection(ctx context.Context, name string) (Storag
 	return i, err
 }
 
+const getStorageConnectionByID = `-- name: GetStorageConnectionByID :one
+SELECT id, name, endpoint, region, bucket, path_style, credentials, created_at, updated_at, updated_by FROM storage_connections WHERE id = +?
+`
+
+func (q *Queries) GetStorageConnectionByID(ctx context.Context, id int64) (StorageConnection, error) {
+	row := q.queryRow(ctx, q.getStorageConnectionByIDStmt, getStorageConnectionByID, id)
+	var i StorageConnection
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Endpoint,
+		&i.Region,
+		&i.Bucket,
+		&i.PathStyle,
+		&i.Credentials,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
 const listStorageConnections = `-- name: ListStorageConnections :many
 SELECT id, name, endpoint, region, bucket, path_style, credentials, created_at, updated_at, updated_by FROM storage_connections ORDER BY name
 `

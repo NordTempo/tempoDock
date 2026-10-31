@@ -32,11 +32,20 @@ func registerBackups(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "configure-backups", Method: http.MethodPut, Path: Prefix + "/backup",
 		Summary: "Configure backups", Tags: tags,
-		Description: "Fields left out stay as they are. The answer carries the repository password when this call generated it; store it safely. Operators only.",
+		Description: "Retention and the hour; fields left out stay as they are. Where backups go is a storage connection, set by moving them (POST /backup/move); repository and the S3 keys are refused. The answer carries the repository password when this call generated it; store it safely. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Body apitypes.ConfigureBackupRequest
 	}) (*out[apitypes.BackupSettings], error) {
 		return reply(s.core.ConfigureBackups(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "move-backups", Method: http.MethodPost, Path: Prefix + "/backup/move",
+		Summary: "Move the backups to a storage connection", Tags: tags, DefaultStatus: http.StatusAccepted,
+		Description: "Copies every repository holding backups (each server's local one, or the current bucket's) into a folder of the connection's bucket with restic, checks the copy, points each backup at its copy so it stays restorable, makes the bucket where new backups go, and empties the sources (ADR 0039). Runs in the background: the answer is the settings with the move running; backup.moved or backup.move_failed is audited at the end. Backups and restores started meanwhile are refused (409); scheduled ones wait. A failure before the switch changes nothing. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.MoveBackupsRequest
+	}) (*out[apitypes.BackupSettings], error) {
+		return reply(s.core.MoveBackups(ctx, actor, in.Body))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "run-control-plane-backup", Method: http.MethodPost, Path: Prefix + "/backup/control-plane",

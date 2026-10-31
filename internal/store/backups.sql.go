@@ -180,7 +180,7 @@ func (q *Queries) GetBackupSchedule(ctx context.Context, serviceID int64) (Backu
 }
 
 const getBackupSettings = `-- name: GetBackupSettings :one
-SELECT id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by FROM backup_settings WHERE id = 1
+SELECT id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path FROM backup_settings WHERE id = 1
 `
 
 func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) {
@@ -197,6 +197,8 @@ func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) 
 		&i.Hour,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.StorageID,
+		&i.StoragePath,
 	)
 	return i, err
 }
@@ -239,6 +241,57 @@ func (q *Queries) ListBackupCandidates(ctx context.Context) ([]ListBackupCandida
 			&i.ServerID,
 			&i.Enabled,
 			&i.Hour,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBackupRepositories = `-- name: ListBackupRepositories :many
+SELECT backups.repository, servers.name AS server, CAST(count(*) AS INTEGER) AS snapshots,
+       CAST(coalesce(sum(backups.size_bytes), 0) AS INTEGER) AS size_bytes
+FROM backups
+JOIN services ON services.id = backups.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN servers ON servers.id = environments.server_id
+WHERE backups.operation = 'backup' AND backups.status = 'succeeded' AND backups.pruned = 0
+GROUP BY backups.repository, servers.name
+ORDER BY backups.repository, servers.name
+`
+
+type ListBackupRepositoriesRow struct {
+	Repository string
+	Server     string
+	Snapshots  int64
+	SizeBytes  int64
+}
+
+// Where the backups restores can still use are: succeeded, unpruned
+// backups by repository and the server their service is on, with their
+// count and size. For the Backups page; the table holds a few rows per
+// service and day, so a scan is fine.
+func (q *Queries) ListBackupRepositories(ctx context.Context) ([]ListBackupRepositoriesRow, error) {
+	rows, err := q.query(ctx, q.listBackupRepositoriesStmt, listBackupRepositories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBackupRepositoriesRow
+	for rows.Next() {
+		var i ListBackupRepositoriesRow
+		if err := rows.Scan(
+			&i.Repository,
+			&i.Server,
+			&i.Snapshots,
+			&i.SizeBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -299,6 +352,39 @@ func (q *Queries) ListLatestScheduledBackups(ctx context.Context) ([]Backup, err
 	return items, nil
 }
 
+const listLocalBackupServers = `-- name: ListLocalBackupServers :many
+SELECT DISTINCT environments.server_id
+FROM backups
+JOIN services ON services.id = backups.service_id
+JOIN environments ON environments.id = services.environment_id
+WHERE backups.repository = '' AND backups.operation = 'backup' AND backups.status = 'succeeded' AND backups.pruned = 0
+`
+
+// The servers holding a local repository with backups restores can still
+// use: where a backup move copies from.
+func (q *Queries) ListLocalBackupServers(ctx context.Context) ([]int64, error) {
+	rows, err := q.query(ctx, q.listLocalBackupServersStmt, listLocalBackupServers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var server_id int64
+		if err := rows.Scan(&server_id); err != nil {
+			return nil, err
+		}
+		items = append(items, server_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectLatestBackups = `-- name: ListProjectLatestBackups :many
 SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at FROM backups WHERE id IN (
     SELECT max(backups.id) FROM backups
@@ -339,6 +425,35 @@ func (q *Queries) ListProjectLatestBackups(ctx context.Context, projectID int64)
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRepositorySnapshots = `-- name: ListRepositorySnapshots :many
+SELECT snapshot_id FROM backups
+WHERE repository = +? AND operation = 'backup' AND status = 'succeeded' AND pruned = 0 AND snapshot_id <> ''
+`
+
+// The snapshots of one repository that backups restores can use point at.
+func (q *Queries) ListRepositorySnapshots(ctx context.Context, repository string) ([]string, error) {
+	rows, err := q.query(ctx, q.listRepositorySnapshotsStmt, listRepositorySnapshots, repository)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var snapshot_id string
+		if err := rows.Scan(&snapshot_id); err != nil {
+			return nil, err
+		}
+		items = append(items, snapshot_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -449,12 +564,65 @@ func (q *Queries) ListUnprunedBackups(ctx context.Context, arg ListUnprunedBacku
 	return items, nil
 }
 
+const moveBackupSnapshot = `-- name: MoveBackupSnapshot :exec
+UPDATE backups SET repository = ?, snapshot_id = ? WHERE repository = +? AND snapshot_id = +?
+`
+
+type MoveBackupSnapshotParams struct {
+	Repository   string
+	SnapshotID   string
+	Repository_2 string
+	SnapshotID_2 string
+}
+
+// Points a backup at its copy in another repository (a backup move).
+func (q *Queries) MoveBackupSnapshot(ctx context.Context, arg MoveBackupSnapshotParams) error {
+	_, err := q.exec(ctx, q.moveBackupSnapshotStmt, moveBackupSnapshot,
+		arg.Repository,
+		arg.SnapshotID,
+		arg.Repository_2,
+		arg.SnapshotID_2,
+	)
+	return err
+}
+
 const pruneBackup = `-- name: PruneBackup :exec
 UPDATE backups SET pruned = 1 WHERE id = +?
 `
 
 func (q *Queries) PruneBackup(ctx context.Context, id int64) error {
 	_, err := q.exec(ctx, q.pruneBackupStmt, pruneBackup, id)
+	return err
+}
+
+const pruneBackupSnapshot = `-- name: PruneBackupSnapshot :exec
+UPDATE backups SET pruned = 1 WHERE repository = +? AND snapshot_id = +?
+`
+
+type PruneBackupSnapshotParams struct {
+	Repository string
+	SnapshotID string
+}
+
+// Marks the backups of a snapshot gone: a move found it in no repository.
+func (q *Queries) PruneBackupSnapshot(ctx context.Context, arg PruneBackupSnapshotParams) error {
+	_, err := q.exec(ctx, q.pruneBackupSnapshotStmt, pruneBackupSnapshot, arg.Repository, arg.SnapshotID)
+	return err
+}
+
+const relabelBackupRepository = `-- name: RelabelBackupRepository :exec
+UPDATE backups SET repository = ? WHERE repository = +?
+`
+
+type RelabelBackupRepositoryParams struct {
+	Repository   string
+	Repository_2 string
+}
+
+// Renames a repository in the backups' history (an old repository URL
+// converted to a storage connection).
+func (q *Queries) RelabelBackupRepository(ctx context.Context, arg RelabelBackupRepositoryParams) error {
+	_, err := q.exec(ctx, q.relabelBackupRepositoryStmt, relabelBackupRepository, arg.Repository, arg.Repository_2)
 	return err
 }
 
@@ -489,13 +657,14 @@ func (q *Queries) UpsertBackupSchedule(ctx context.Context, arg UpsertBackupSche
 }
 
 const upsertBackupSettings = `-- name: UpsertBackupSettings :one
-INSERT INTO backup_settings (id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO backup_settings (id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     repository = excluded.repository, credentials = excluded.credentials, password = excluded.password,
     keep_daily = excluded.keep_daily, keep_weekly = excluded.keep_weekly, keep_monthly = excluded.keep_monthly,
-    hour = excluded.hour, updated_at = excluded.updated_at, updated_by = excluded.updated_by
-RETURNING id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by
+    hour = excluded.hour, updated_at = excluded.updated_at, updated_by = excluded.updated_by,
+    storage_id = excluded.storage_id, storage_path = excluded.storage_path
+RETURNING id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path
 `
 
 type UpsertBackupSettingsParams struct {
@@ -508,6 +677,8 @@ type UpsertBackupSettingsParams struct {
 	Hour        int64
 	UpdatedAt   time.Time
 	UpdatedBy   string
+	StorageID   *int64
+	StoragePath string
 }
 
 func (q *Queries) UpsertBackupSettings(ctx context.Context, arg UpsertBackupSettingsParams) (BackupSetting, error) {
@@ -521,6 +692,8 @@ func (q *Queries) UpsertBackupSettings(ctx context.Context, arg UpsertBackupSett
 		arg.Hour,
 		arg.UpdatedAt,
 		arg.UpdatedBy,
+		arg.StorageID,
+		arg.StoragePath,
 	)
 	var i BackupSetting
 	err := row.Scan(
@@ -534,6 +707,8 @@ func (q *Queries) UpsertBackupSettings(ctx context.Context, arg UpsertBackupSett
 		&i.Hour,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.StorageID,
+		&i.StoragePath,
 	)
 	return i, err
 }

@@ -286,6 +286,10 @@ func (c *Core) Start(ctx context.Context) error {
 		return fmt.Errorf("recover backups: %w", err)
 	}
 	c.applyRegistryStorage(ctx)
+	if err := c.convertBackupRepository(ctx); err != nil {
+		// Backups keep using the URL as before; the next start tries again.
+		c.log.Error("turn the backup repository into a storage connection", "err", err)
+	}
 	if err := c.reconcileServer(ctx, c.local.ID, c.rt, true); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
