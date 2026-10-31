@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build build-cli build-tempobase tempobase-deps release-local web test test-integration lint generate dev perf perf-baseline
+.PHONY: build build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics image-analytics analytics-deps release-local web test test-integration lint generate dev perf perf-baseline
 
 ## build: the single static binary (UI embedded if web/dist is built)
 build:
@@ -32,6 +32,32 @@ tempobase-deps:
 	bad="$$(printf '%s\n' "$$deps" | grep -E '$(TEMPOBASE_FORBIDDEN)')"; \
 	if [ -n "$$bad" ]; then printf 'cmd/tempobase links Dock daemon packages (ADR 0024 section 1):\n%s\n' "$$bad" >&2; exit 1; fi; \
 	echo "tempobase-deps: ok, no Dock daemon packages"
+
+## build-analytics: dock-analytics, Dock Analytics' store (ADR 0037). Its
+## own module, with CGO (DuckDB); needs a C compiler
+build-analytics:
+	cd cmd/dock-analytics && CGO_ENABLED=1 go build -trimpath -ldflags '-s -w -X main.version=$(VERSION)' -o ../../bin/dock-analytics .
+
+## test-analytics, lint-analytics: the store's module, which `go test ./...`
+## and `golangci-lint run ./...` at the root don't enter
+test-analytics:
+	cd cmd/dock-analytics && go test ./...
+lint-analytics:
+	cd cmd/dock-analytics && golangci-lint run ./... && go vet ./...
+
+## image-analytics: the store's container image, locally (nothing is pushed)
+image-analytics:
+	docker build -f deploy/analytics/Dockerfile --build-arg VERSION=$(VERSION) -t dock-analytics:$(VERSION) .
+
+## analytics-deps: fail if cmd/dock links DuckDB or CGO code, or if
+## internal/analytics (which dock links) imports anything outside the
+## standard library (ADR 0037). CI runs it.
+analytics-deps:
+	@deps="$$(CGO_ENABLED=0 go list -deps ./cmd/dock)" || exit 1; \
+	if printf '%s\n' "$$deps" | grep -qi duckdb; then echo "cmd/dock links DuckDB (ADR 0037)" >&2; exit 1; fi; \
+	bad="$$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/analytics | grep -v '^github.com/NordTempo/tempoDock/internal/analytics$$')"; \
+	if [ -n "$$bad" ]; then printf 'internal/analytics imports more than the standard library:\n%s\n' "$$bad" >&2; exit 1; fi; \
+	echo "analytics-deps: ok, dock links no DuckDB"
 
 ## release-local: every release artifact into dist/ without publishing
 ## anything (scripts/release/build.sh): make release-local VERSION=v0.0.0-dev.
@@ -69,9 +95,9 @@ dev:
 PERF_TEMPOBASE := $(if $(wildcard cmd/tempobase),build-tempobase)
 
 ## perf: check performance budgets (docs/performance.md); builds the UIs and binaries first
-perf: web build $(PERF_TEMPOBASE)
+perf: web build build-analytics $(PERF_TEMPOBASE)
 	go run ./scripts/perf $(PERF_FLAGS)
 
 ## perf-baseline: re-record binary sizes and benchmarks in scripts/perf/baseline.json
-perf-baseline: web build $(PERF_TEMPOBASE)
+perf-baseline: web build build-analytics $(PERF_TEMPOBASE)
 	go run ./scripts/perf -update-baseline $(PERF_FLAGS)

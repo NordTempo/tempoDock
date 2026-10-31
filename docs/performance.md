@@ -56,11 +56,34 @@ tick or event stream, so its budgets are tighter. Checks `tempobase-binary`,
 tempoBase runs with `GOMEMLIMIT=48MiB`, as its image and
 `deploy/tempobase/tempobase.service` set it.
 
+### Dock Analytics' store
+
+`dock-analytics` ([ADR 0037](decisions/0037-analytics.md)) runs in its own
+container on the analytics server, so it has budgets of its own. The
+`analytics` check builds it (`make build-analytics`, CGO), seeds 1M
+events (a busy site's year) and runs it with the container's settings.
+
+| What | Budget | Measured |
+|---|---|---|
+| Idle memory, after start | ≤ 60 MB anonymous RSS | 34-38 MB |
+| Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0 |
+| Dashboard p95, 1M events, every range | ≤ 100 ms | 17-42 ms |
+| Filtered dashboard p95, 1M events, up to 30 days | ≤ 200 ms | 22-61 ms |
+| Filtered dashboard p95, 1M events, a year | ≤ 400 ms | 53-274 ms |
+| Ingest over HTTP, batches of 1,000 | ≥ 5,000 events/s | 85-97k events/s |
+| Peak memory through all of it | ≤ 512 MB (the container's limit) | 234-241 MB |
+
+DuckDB holds memory outside its `memory_limit` (freed operator memory,
+exact distinct counts), so the store runs one query at a time with a
+192 MB limit, counts filtered visitors with HyperLogLog, and gives memory
+back after a query that leaves it above 192 MB and a minute after its
+last request (`Store.Trim`).
+
 ## Running it
 
 ```sh
 make perf                        # builds the UI and binary, checks everything (~2-3 min)
-make perf PERF_FLAGS='-checks bench'          # only some checks: binary,cli,daemon,ui,bench,tempobase-binary,tempobase-daemon,tempobase-ui
+make perf PERF_FLAGS='-checks bench'          # only some checks: binary,cli,daemon,ui,bench,analytics,tempobase-binary,tempobase-daemon,tempobase-ui
 make perf PERF_FLAGS='-tempobase-pg postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable'  # also tempoBase's Postgres idle close
 make perf PERF_FLAGS='-idle 5s'               # shorter idle windows while iterating
 make perf-baseline               # re-record binary size and benchmarks
@@ -151,6 +174,8 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
+| Analytics store trim | `cmd/dock-analytics/serve.go` | once, a minute after the last request | the store was asked something (ADR 0037) | a checkpoint and two `SET memory_limit`, then `debug.FreeOSMemory` |
+| Analytics rollups | `cmd/dock-analytics/store/rollup.go` | no timer: woken by a write that brings events for a finished day, or the first write of a new day | there are days to roll up | per site and day, one transaction of about 25 grouped inserts (0.27 s for a day of a 100M-event-a-year site) |
 
 ## SQLite
 

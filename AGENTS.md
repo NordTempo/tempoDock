@@ -38,6 +38,7 @@ go vet ./...
 make generate           # sqlc, OpenAPI spec (web/openapi.json) and the UI client
 make web && make build  # UI into web/dist, then bin/dock with it embedded
 make perf               # performance budgets (docs/performance.md)
+make test-analytics lint-analytics   # the analytics store's module (CGO)
 
 cd web
 pnpm dev                # UI with hot reload, proxying /api to the daemon
@@ -53,7 +54,11 @@ Go version: `go.mod`. Node 24, pnpm. Run `make lint`, `go vet ./...`,
 ```
 cmd/dock/              entry point
 cmd/tempobase/         tempoBase's entry point (ADR 0024)
+cmd/dock-analytics/    the analytics store (ADR 0037): its own Go module with
+                       CGO and DuckDB, run as a container; dock never links it
 internal/apitypes/     the API's JSON contract; the CLI imports it, no server deps
+internal/analytics/    Dock Analytics' events, store interface and client;
+                       standard library only (make analytics-deps)
 internal/api/          Huma handlers, auth, SSE streams, loopback endpoints
 internal/mcp/          the MCP endpoint for agents (ADR 0017): tools over core
 internal/core/         domain logic: projects, services, variables, releases,

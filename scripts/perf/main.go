@@ -2,7 +2,8 @@
 // a table: binary size, CLI start-up, daemon idle memory and CPU (also with
 // SSE clients connected), API read latency on a seeded daemon, UI bundle
 // sizes, and Go benchmarks compared with a checked-in baseline; and the same
-// for tempoBase, the standalone Data panel server (tempobase.go). It exits
+// for tempoBase, the standalone Data panel server (tempobase.go), and Dock
+// Analytics' store (analytics.go). It exits
 // non-zero when anything is over budget.
 //
 // Run it through make, which builds the UIs and binaries first:
@@ -53,6 +54,9 @@ type options struct {
 	nsTol, allocsTol     float64
 	update               bool
 
+	// analytics is the analytics store's binary (ADR 0037).
+	analytics string
+
 	// tempobase and tempobaseDist are tempoBase's binary and built UI;
 	// tempobasePG is a Postgres URL for its connection check (optional).
 	tempobase, tempobaseDist, tempobasePG string
@@ -70,14 +74,15 @@ type options struct {
 
 func main() {
 	var o options
-	checks := "binary,cli,daemon,ui,bench,tempobase-binary,tempobase-daemon,tempobase-ui"
+	checks := "binary,cli,daemon,ui,bench,analytics,tempobase-binary,tempobase-daemon,tempobase-ui"
 	flag.StringVar(&o.dock, "dock", "bin/dock", "dock binary to measure (built with the UI embedded)")
 	flag.StringVar(&o.dist, "dist", "web/dist", "built UI")
+	flag.StringVar(&o.analytics, "analytics", "bin/dock-analytics", "dock-analytics binary to measure (make build-analytics)")
 	flag.StringVar(&o.tempobase, "tempobase", "bin/tempobase", "tempobase binary to measure (built with its UI embedded)")
 	flag.StringVar(&o.tempobaseDist, "tempobase-dist", "web/tempobase/dist", "tempoBase's built UI")
 	flag.StringVar(&o.tempobasePG, "tempobase-pg", "", "Postgres URL (owner with CREATEROLE) for tempoBase's idle connection check; skipped when empty")
 	flag.StringVar(&o.baseline, "baseline", "scripts/perf/baseline.json", "baseline for binary sizes and benchmarks")
-	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), ui, bench, tempobase-binary, tempobase-daemon, tempobase-ui")
+	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), ui, bench, analytics, tempobase-binary, tempobase-daemon, tempobase-ui")
 	flag.DurationVar(&o.idle, "idle", 30*time.Second, "length of each idle measurement window")
 	flag.IntVar(&o.sseClients, "sse", 20, "SSE clients connected during the second idle window")
 	flag.StringVar(&o.benchTime, "benchtime", "200ms", "go test -benchtime")
@@ -103,7 +108,7 @@ func main() {
 		os.Exit(1)
 	}
 	o.speed = 1
-	timesAPI := slices.Contains(o.checks, "daemon") || slices.Contains(o.checks, "tempobase-daemon")
+	timesAPI := slices.Contains(o.checks, "daemon") || slices.Contains(o.checks, "tempobase-daemon") || slices.Contains(o.checks, "analytics")
 	if timesAPI && base.CalibrationNs > 0 {
 		o.speed = max(1, min(calibrate(), calibrate(), calibrate())/base.CalibrationNs)
 	}
@@ -117,6 +122,7 @@ func main() {
 		{"daemon", checkDaemon},
 		{"ui", checkUI},
 		{"bench", checkBench},
+		{"analytics", checkAnalytics},
 		{"tempobase-binary", checkTempobaseBinary},
 		{"tempobase-daemon", checkTempobaseDaemon},
 		{"tempobase-ui", checkTempobaseUI},

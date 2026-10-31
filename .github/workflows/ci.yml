@@ -27,6 +27,8 @@ jobs:
       # tempoBase must not link Dock's daemon (ADR 0024); skips until
       # cmd/tempobase exists.
       - run: make tempobase-deps
+      # dock must not link DuckDB (ADR 0037).
+      - run: make analytics-deps
       - name: Install Caddy
         run: curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin caddy
       - name: Integration tests (Docker, Caddy, BuildKit)
@@ -45,9 +47,28 @@ jobs:
       - run: make build-tempobase
         if: hashFiles('cmd/tempobase/*.go') != ''
 
+  # Dock Analytics' store (ADR 0037): its own module with CGO and DuckDB,
+  # which the root's lint and tests don't enter. The image is built to
+  # check the Dockerfile; nothing is pushed.
+  analytics:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: useblacksmith/checkout@v1
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cmd/dock-analytics/go.mod
+          cache-dependency-path: cmd/dock-analytics/go.sum
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
+          working-directory: cmd/dock-analytics
+      - run: make test-analytics
+      - run: make image-analytics
+
   # Performance budgets (docs/performance.md): binary size, CLI start-up,
   # daemon idle memory/CPU/wake-ups, API latency, UI bundle and benchmarks
-  # against scripts/perf/baseline.json, for Dock and tempoBase. Builds its
+  # against scripts/perf/baseline.json, for Dock and tempoBase, and the
+  # analytics store's idle cost, dashboards and ingest. Builds its
   # own inputs, so it runs alongside the Go and web checks.
   perf:
     runs-on: blacksmith-4vcpu-ubuntu-2404
