@@ -177,6 +177,7 @@ func startTempobase(bin string) (*tempobase, error) {
 		fmt.Sprintf("TEMPOBASE_LISTEN=127.0.0.1:%d", ports[0]),
 		"TEMPOBASE_DATA_DIR="+data,
 		"GOMEMLIMIT=48MiB", // as deploy/tempobase/Dockerfile and tempobase.service
+		measuredProcs,
 		"HOME="+dir,
 	)
 	logf, err := os.Create(filepath.Join(dir, "tempobase.log"))

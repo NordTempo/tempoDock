@@ -23,6 +23,13 @@ import (
 	"time"
 )
 
+// measuredProcs is the GOMAXPROCS the measured daemons run with: the
+// small servers Dock is for, and the same on any machine. The Go runtime's
+// idle memory grows with it (24.6 MB at 4, 29.1 MB at 16 for Dock with 20
+// SSE clients), so a 16-core CI runner would otherwise fail a memory
+// budget that a 4-vCPU one passes.
+const measuredProcs = "GOMAXPROCS=4"
+
 // Budgets. Absolute ones are product targets (docs/experience.md) with
 // headroom; relative ones compare against baseline.json.
 const (

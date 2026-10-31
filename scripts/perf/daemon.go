@@ -221,7 +221,7 @@ store_binary = %q
 	}
 	cmd := exec.Command(bin, "serve", "--config", cfgPath)
 	// As the systemd unit runs it (deploy/systemd/dock.service).
-	cmd.Env = append(cleanEnv(), "DOCK_FAKE_RUNTIME=1", "GOMEMLIMIT=64MiB", "HOME="+dir)
+	cmd.Env = append(cleanEnv(), "DOCK_FAKE_RUNTIME=1", "GOMEMLIMIT=64MiB", measuredProcs, "HOME="+dir)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	if err := cmd.Start(); err != nil {
 		return nil, err
