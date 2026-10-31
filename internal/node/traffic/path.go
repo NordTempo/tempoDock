@@ -1,9 +1,6 @@
 package traffic
 
-import (
-	"bytes"
-	"strings"
-)
+import "strings"
 
 // maxPathLen caps a counted path; longer ones are cut.
 const maxPathLen = 160
@@ -95,34 +92,4 @@ func normalizeMethod(m string) string {
 		}
 	}
 	return "OTHER"
-}
-
-// botMarks are lower-case fragments of user agents that aren't people:
-// crawlers, monitors, previews and HTTP libraries.
-var botMarks = [...]string{
-	"bot", "crawl", "spider", "slurp", "curl/", "wget/", "python", "go-http-client", "java/",
-	"okhttp", "headless", "monitor", "uptime", "pingdom", "scan", "preview", "facebookexternalhit",
-	"httpclient", "axios/", "node-fetch", "undici", "libwww", "lighthouse", "feed",
-}
-
-// isBot reports whether a user agent belongs to a program rather than a
-// person's browser. An empty one does. Only the first 256 bytes are looked
-// at, lower-cased on the stack.
-func isBot(ua string) bool {
-	if ua == "" {
-		return true
-	}
-	var buf [256]byte
-	lower := buf[:copy(buf[:], ua)]
-	for i, c := range lower {
-		if c >= 'A' && c <= 'Z' {
-			lower[i] = c + 'a' - 'A'
-		}
-	}
-	for _, m := range botMarks {
-		if bytes.Contains(lower, []byte(m)) {
-			return true
-		}
-	}
-	return false
 }

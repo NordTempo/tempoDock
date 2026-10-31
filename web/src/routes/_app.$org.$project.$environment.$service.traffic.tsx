@@ -20,8 +20,9 @@ import { useOrg } from "../shell/location";
 import { bytes, size } from "../ui/format";
 import { Panel, SectionHead } from "../ui/kit";
 
-// What a service's domains served (ADR 0033): totals, requests and
-// visitors over time, and the most requested endpoints.
+// What a service's domains served (ADR 0033): totals, requests and their
+// average time over time, and the most requested endpoints. Visitors are
+// Dock Analytics' (the Analytics tab).
 // /shop/production/web/traffic?range=7d
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/traffic",
@@ -104,7 +105,6 @@ function Totals({ traffic: { totals: t } }: { traffic: ServiceTraffic }) {
   return (
     <div className="flex flex-wrap gap-x-10 gap-y-3 tabular-nums">
       <Stat label="Requests" value={count(t.requests)} />
-      <Stat label="Visitors" value={`~${count(t.visitors)}`} />
       <Stat
         label="Errors"
         value={
@@ -132,8 +132,14 @@ function Charts({ traffic, to }: { traffic: ServiceTraffic; to: number }) {
     () => toBars(traffic.points, barMs[range]),
     [traffic.points, range],
   );
-  const visitors = useMemo(
-    () => traffic.points.map((p) => ({ t: Date.parse(p.time), v: p.visitors })),
+  // Minutes and hours without requests have no point, so the line breaks
+  // there instead of dropping to 0 ms.
+  const avg = useMemo(
+    () =>
+      traffic.points.map((p) => ({
+        t: Date.parse(p.time),
+        v: p.avg_duration_ms,
+      })),
     [traffic.points],
   );
   const per = traffic.resolution_seconds === 60 ? "minute" : "hour";
@@ -148,13 +154,13 @@ function Charts({ traffic, to }: { traffic: ServiceTraffic; to: number }) {
         bucketMs={barMs[range]}
       />
       <LineChart
-        title={`Visitors per ${per}`}
-        points={visitors}
+        title={`Avg time per ${per}`}
+        points={avg}
         from={from}
         to={to}
         resolution={traffic.resolution_seconds}
-        max={niceMax(Math.max(1, ...visitors.map((p) => p.v)))}
-        format={(v) => count(Math.round(v))}
+        max={niceMax(Math.max(1, ...avg.map((p) => p.v)))}
+        format={(v) => `${Math.round(v)} ms`}
       />
     </div>
   );

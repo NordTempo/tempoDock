@@ -55,9 +55,10 @@ const tabs = [
     to: "/$org/$project/$environment/$service/logs",
     key: "g l",
   },
+  // CPU and memory. G M, from its old name Metrics: G R is Releases.
   {
-    label: "Metrics",
-    to: "/$org/$project/$environment/$service/metrics",
+    label: "Resources",
+    to: "/$org/$project/$environment/$service/resources",
     key: "g m",
   },
   // Services with a domain only: what their domains served (ADR 0033).
@@ -245,7 +246,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       "Resources",
       <Link
         key="r"
-        to="/$org/$project/$environment/$service/metrics"
+        to="/$org/$project/$environment/$service/resources"
         params={{ org, ...ref }}
         title="Memory and CPU, latest sample against the limit"
         className="hover:text-fg"

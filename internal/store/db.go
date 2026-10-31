@@ -648,9 +648,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listGitPendingServicesStmt, err = db.PrepareContext(ctx, listGitPendingServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListGitPendingServices: %w", err)
 	}
-	if q.listHourVisitorsStmt, err = db.PrepareContext(ctx, listHourVisitors); err != nil {
-		return nil, fmt.Errorf("error preparing query ListHourVisitors: %w", err)
-	}
 	if q.listInFlightReleasesStmt, err = db.PrepareContext(ctx, listInFlightReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListInFlightReleases: %w", err)
 	}
@@ -828,9 +825,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listTrafficStatsStmt, err = db.PrepareContext(ctx, listTrafficStats); err != nil {
 		return nil, fmt.Errorf("error preparing query ListTrafficStats: %w", err)
 	}
-	if q.listTrafficVisitorsStmt, err = db.PrepareContext(ctx, listTrafficVisitors); err != nil {
-		return nil, fmt.Errorf("error preparing query ListTrafficVisitors: %w", err)
-	}
 	if q.listUnprunedBackupsStmt, err = db.PrepareContext(ctx, listUnprunedBackups); err != nil {
 		return nil, fmt.Errorf("error preparing query ListUnprunedBackups: %w", err)
 	}
@@ -905,9 +899,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.pruneTrafficStatsStmt, err = db.PrepareContext(ctx, pruneTrafficStats); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneTrafficStats: %w", err)
-	}
-	if q.pruneTrafficVisitorsStmt, err = db.PrepareContext(ctx, pruneTrafficVisitors); err != nil {
-		return nil, fmt.Errorf("error preparing query PruneTrafficVisitors: %w", err)
 	}
 	if q.registerNodeServerStmt, err = db.PrepareContext(ctx, registerNodeServer); err != nil {
 		return nil, fmt.Errorf("error preparing query RegisterNodeServer: %w", err)
@@ -1100,9 +1091,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setTokenDataAccessStmt, err = db.PrepareContext(ctx, setTokenDataAccess); err != nil {
 		return nil, fmt.Errorf("error preparing query SetTokenDataAccess: %w", err)
-	}
-	if q.setTrafficVisitorsStmt, err = db.PrepareContext(ctx, setTrafficVisitors); err != nil {
-		return nil, fmt.Errorf("error preparing query SetTrafficVisitors: %w", err)
 	}
 	if q.setUserDisabledStmt, err = db.PrepareContext(ctx, setUserDisabled); err != nil {
 		return nil, fmt.Errorf("error preparing query SetUserDisabled: %w", err)
@@ -2233,11 +2221,6 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listGitPendingServicesStmt: %w", cerr)
 		}
 	}
-	if q.listHourVisitorsStmt != nil {
-		if cerr := q.listHourVisitorsStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing listHourVisitorsStmt: %w", cerr)
-		}
-	}
 	if q.listInFlightReleasesStmt != nil {
 		if cerr := q.listInFlightReleasesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listInFlightReleasesStmt: %w", cerr)
@@ -2533,11 +2516,6 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listTrafficStatsStmt: %w", cerr)
 		}
 	}
-	if q.listTrafficVisitorsStmt != nil {
-		if cerr := q.listTrafficVisitorsStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing listTrafficVisitorsStmt: %w", cerr)
-		}
-	}
 	if q.listUnprunedBackupsStmt != nil {
 		if cerr := q.listUnprunedBackupsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listUnprunedBackupsStmt: %w", cerr)
@@ -2661,11 +2639,6 @@ func (q *Queries) Close() error {
 	if q.pruneTrafficStatsStmt != nil {
 		if cerr := q.pruneTrafficStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing pruneTrafficStatsStmt: %w", cerr)
-		}
-	}
-	if q.pruneTrafficVisitorsStmt != nil {
-		if cerr := q.pruneTrafficVisitorsStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing pruneTrafficVisitorsStmt: %w", cerr)
 		}
 	}
 	if q.registerNodeServerStmt != nil {
@@ -2986,11 +2959,6 @@ func (q *Queries) Close() error {
 	if q.setTokenDataAccessStmt != nil {
 		if cerr := q.setTokenDataAccessStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setTokenDataAccessStmt: %w", cerr)
-		}
-	}
-	if q.setTrafficVisitorsStmt != nil {
-		if cerr := q.setTrafficVisitorsStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing setTrafficVisitorsStmt: %w", cerr)
 		}
 	}
 	if q.setUserDisabledStmt != nil {
@@ -3380,7 +3348,6 @@ type Queries struct {
 	listFailedLatestReleasesStmt        *sql.Stmt
 	listGitHubInstallationsStmt         *sql.Stmt
 	listGitPendingServicesStmt          *sql.Stmt
-	listHourVisitorsStmt                *sql.Stmt
 	listInFlightReleasesStmt            *sql.Stmt
 	listKeptDigestsStmt                 *sql.Stmt
 	listKeptImageIDsStmt                *sql.Stmt
@@ -3440,7 +3407,6 @@ type Queries struct {
 	listStorageConnectionsStmt          *sql.Stmt
 	listTrafficHostsStmt                *sql.Stmt
 	listTrafficStatsStmt                *sql.Stmt
-	listTrafficVisitorsStmt             *sql.Stmt
 	listUnprunedBackupsStmt             *sql.Stmt
 	listUsedHostPortsStmt               *sql.Stmt
 	listUserOrgsStmt                    *sql.Stmt
@@ -3466,7 +3432,6 @@ type Queries struct {
 	pruneServiceStatsStmt               *sql.Stmt
 	pruneTrafficPathsStmt               *sql.Stmt
 	pruneTrafficStatsStmt               *sql.Stmt
-	pruneTrafficVisitorsStmt            *sql.Stmt
 	registerNodeServerStmt              *sql.Stmt
 	relabelBackupRepositoryStmt         *sql.Stmt
 	relabelControlPlaneRepositoryStmt   *sql.Stmt
@@ -3531,7 +3496,6 @@ type Queries struct {
 	setSiteHostnameServiceStmt          *sql.Stmt
 	setSiteSettingsStmt                 *sql.Stmt
 	setTokenDataAccessStmt              *sql.Stmt
-	setTrafficVisitorsStmt              *sql.Stmt
 	setUserDisabledStmt                 *sql.Stmt
 	setUserPasswordStmt                 *sql.Stmt
 	setVariablePendingStmt              *sql.Stmt
@@ -3774,7 +3738,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listFailedLatestReleasesStmt:        q.listFailedLatestReleasesStmt,
 		listGitHubInstallationsStmt:         q.listGitHubInstallationsStmt,
 		listGitPendingServicesStmt:          q.listGitPendingServicesStmt,
-		listHourVisitorsStmt:                q.listHourVisitorsStmt,
 		listInFlightReleasesStmt:            q.listInFlightReleasesStmt,
 		listKeptDigestsStmt:                 q.listKeptDigestsStmt,
 		listKeptImageIDsStmt:                q.listKeptImageIDsStmt,
@@ -3834,7 +3797,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listStorageConnectionsStmt:          q.listStorageConnectionsStmt,
 		listTrafficHostsStmt:                q.listTrafficHostsStmt,
 		listTrafficStatsStmt:                q.listTrafficStatsStmt,
-		listTrafficVisitorsStmt:             q.listTrafficVisitorsStmt,
 		listUnprunedBackupsStmt:             q.listUnprunedBackupsStmt,
 		listUsedHostPortsStmt:               q.listUsedHostPortsStmt,
 		listUserOrgsStmt:                    q.listUserOrgsStmt,
@@ -3860,7 +3822,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		pruneServiceStatsStmt:               q.pruneServiceStatsStmt,
 		pruneTrafficPathsStmt:               q.pruneTrafficPathsStmt,
 		pruneTrafficStatsStmt:               q.pruneTrafficStatsStmt,
-		pruneTrafficVisitorsStmt:            q.pruneTrafficVisitorsStmt,
 		registerNodeServerStmt:              q.registerNodeServerStmt,
 		relabelBackupRepositoryStmt:         q.relabelBackupRepositoryStmt,
 		relabelControlPlaneRepositoryStmt:   q.relabelControlPlaneRepositoryStmt,
@@ -3925,7 +3886,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setSiteHostnameServiceStmt:          q.setSiteHostnameServiceStmt,
 		setSiteSettingsStmt:                 q.setSiteSettingsStmt,
 		setTokenDataAccessStmt:              q.setTokenDataAccessStmt,
-		setTrafficVisitorsStmt:              q.setTrafficVisitorsStmt,
 		setUserDisabledStmt:                 q.setUserDisabledStmt,
 		setUserPasswordStmt:                 q.setUserPasswordStmt,
 		setVariablePendingStmt:              q.setVariablePendingStmt,

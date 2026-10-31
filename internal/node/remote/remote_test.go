@@ -164,7 +164,7 @@ func TestCalls(t *testing.T) {
 		t.Fatalf("container stats = %+v, %v", cs, err)
 	}
 
-	tr := node.HostTraffic{Host: "web.example.com", Requests: 3, Status: [4]uint64{3}, Duration: time.Second, Visitors: []byte{1, 0, 7, 2}, Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 3}}}
+	tr := node.HostTraffic{Host: "web.example.com", Requests: 3, Status: [4]uint64{3}, Duration: time.Second, Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 3}}}
 	h.rt.AddTraffic(tr)
 	if got, err := h.client.DrainTraffic(ctx); err != nil || len(got) != 1 || !equalJSON(got[0], tr) {
 		t.Fatalf("drain traffic = %+v, %v", got, err)

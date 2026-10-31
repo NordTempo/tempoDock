@@ -17,7 +17,7 @@ func newTrafficCmd(g *globals) *cobra.Command {
 	var r string
 	cmd := &cobra.Command{
 		Use:   "traffic",
-		Short: "Requests, visitors and the most requested paths of the service's domains",
+		Short: "Requests, errors and the most requested paths of the service's domains",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, t, err := g.open(f, needService)
@@ -38,7 +38,6 @@ func newTrafficCmd(g *globals) *cobra.Command {
 				err := g.io.Fields(
 					"range", fmt.Sprintf("last %s, since %s", tr.Range, tr.Since.Local().Format("Jan 2 15:04")),
 					"requests", itoa(tot.Requests),
-					"visitors", "~"+itoa(tot.Visitors),
 					"errors", errs,
 					"avg time", fmt.Sprintf("%.0f ms", tot.AvgDurationMS),
 					"sent", bytesize(tot.Bytes),

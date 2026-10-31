@@ -305,9 +305,6 @@ type HostTraffic struct {
 	Bytes uint64
 	// Duration is the time the requests took, summed.
 	Duration time.Duration
-	// Visitors is a sketch of the distinct visitors (client address and
-	// user agent; known bots left out), encoded by traffic.Sketch.
-	Visitors []byte
 	// Paths are the most requested method and path pairs, most first,
 	// with IDs in paths replaced by ":id".
 	Paths []PathCount

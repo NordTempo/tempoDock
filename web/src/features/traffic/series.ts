@@ -44,7 +44,7 @@ export const validateTrafficRange = (
 
 /**
  * Adds points up into bars of `width` ms, aligned to multiples of it, in
- * time order. Request counts add up exactly, unlike visitors.
+ * time order.
  */
 export function toBars(points: TrafficPoint[], width: number): Bar[] {
   const bars = new Map<number, Bar>();

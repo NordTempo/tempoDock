@@ -1264,7 +1264,6 @@ type TrafficCounts struct {
 	Status5xx     int64   `json:"status_5xx"`
 	Bytes         int64   `json:"bytes" doc:"Response bytes sent"`
 	AvgDurationMS float64 `json:"avg_duration_ms"`
-	Visitors      int64   `json:"visitors" doc:"Distinct visitors (client address and user agent, bots left out), estimated within about 3%"`
 }
 
 // TrafficPoint is a service's traffic in one interval.

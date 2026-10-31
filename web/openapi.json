@@ -7206,11 +7206,6 @@
           "status_5xx": {
             "format": "int64",
             "type": "integer"
-          },
-          "visitors": {
-            "description": "Distinct visitors (client address and user agent, bots left out), estimated within about 3%",
-            "format": "int64",
-            "type": "integer"
           }
         },
         "required": [
@@ -7220,8 +7215,7 @@
           "status_4xx",
           "status_5xx",
           "bytes",
-          "avg_duration_ms",
-          "visitors"
+          "avg_duration_ms"
         ],
         "type": "object"
       },
@@ -7282,11 +7276,6 @@
             "description": "Start of the interval",
             "format": "date-time",
             "type": "string"
-          },
-          "visitors": {
-            "description": "Distinct visitors (client address and user agent, bots left out), estimated within about 3%",
-            "format": "int64",
-            "type": "integer"
           }
         },
         "required": [
@@ -7297,8 +7286,7 @@
           "status_4xx",
           "status_5xx",
           "bytes",
-          "avg_duration_ms",
-          "visitors"
+          "avg_duration_ms"
         ],
         "type": "object"
       },

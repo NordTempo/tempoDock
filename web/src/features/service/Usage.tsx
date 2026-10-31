@@ -4,7 +4,7 @@ import { cpus, pct, size } from "../../ui/format";
 // A service's resource use against its effective limit, as in the overview
 // and on server pages: "231M / 512M", "12% of 1 CPU". The limit is the
 // service's own or the server default ("default" says which). Usage is the
-// latest sample, at most a minute old (live on the Metrics tab). Without
+// latest sample, at most a minute old (live on the Resources tab). Without
 // a running container, the limit alone: "512M limit", "1 CPU default".
 
 /** What usage cells need: a service, or a service on a server page. */
