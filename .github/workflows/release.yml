@@ -5,7 +5,8 @@ name: release
 # GitHub Release with generated notes: dock and tempobase from the same
 # commit, one version (ADR 0024). Tags with a "-" (v0.2.0-rc.1) are marked
 # as pre-releases, so "latest" never points at them. tempoBase's image goes
-# to ghcr.io/nordtempo/tempobase.
+# to ghcr.io/nordtempo/tempobase, and Dock Analytics' store (ADR 0037) to
+# ghcr.io/nordtempo/dock-analytics, the image a Dock of the same version runs.
 on:
   push:
     tags: ['v*']
@@ -91,3 +92,68 @@ jobs:
           [[ "$GITHUB_REF_NAME" == *-* ]] || tags+=(--tag "$image:latest")
           docker buildx build --platform linux/amd64,linux/arm64 --push \
             --file deploy/tempobase/Dockerfile "${tags[@]}" dist
+
+  # Dock Analytics' store (deploy/analytics/Dockerfile). It links DuckDB
+  # with CGO, so each platform builds on its own runner instead of under
+  # emulation, pushed by digest; analytics-image then names both under the
+  # version's tag. A job of its own, so a failed build can be re-run
+  # without the release.
+  analytics-build:
+    needs: [ci, build]
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: blacksmith-4vcpu-ubuntu-2404
+          - platform: linux/arm64
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: useblacksmith/checkout@v1
+      - uses: useblacksmith/setup-docker-builder@v1
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push by digest
+        run: |
+          docker buildx build --platform "${{ matrix.platform }}" \
+            --file deploy/analytics/Dockerfile --build-arg VERSION="$GITHUB_REF_NAME" \
+            --output type=image,name=ghcr.io/nordtempo/dock-analytics,push-by-digest=true,name-canonical=true,push=true \
+            --metadata-file "$RUNNER_TEMP/metadata.json" .
+          mkdir -p "$RUNNER_TEMP/digests"
+          digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/metadata.json")"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analytics-digest-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  analytics-image:
+    needs: [analytics-build]
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: analytics-digest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Tag the version
+        run: |
+          image=ghcr.io/nordtempo/dock-analytics
+          docker buildx imagetools create --tag "$image:$GITHUB_REF_NAME" \
+            $(cd "$RUNNER_TEMP/digests" && printf "$image@sha256:%s " *)
+          docker buildx imagetools inspect "$image:$GITHUB_REF_NAME"

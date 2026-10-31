@@ -768,7 +768,8 @@ type SpoolBatch struct {
 
 // AnalyticsStoreSpec is how the analytics store's container runs.
 type AnalyticsStoreSpec struct {
-	// Image is the dock-analytics image, pinned by digest in releases.
+	// Image is the dock-analytics image: by default the one the release
+	// workflow publishes with this version of dock.
 	Image string
 	// Token is the install's analytics token, which every call but its
 	// health check needs.
