@@ -12,11 +12,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Jobs run on the org's self-hosted runners (label nordtempo): ephemeral,
+# each with its own Docker daemon. If they're down, set the repo variable
+# CI_RUNNER to blacksmith-4vcpu-ubuntu-2404 to fall back to Blacksmith.
 jobs:
   go:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -53,9 +56,9 @@ jobs:
   # which the root's lint and tests don't enter. The image is built to
   # check the Dockerfile; nothing is pushed.
   analytics:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: cmd/dock-analytics/go.mod
@@ -73,7 +76,7 @@ jobs:
   # analytics store's idle cost, dashboards and ingest. Builds its
   # own inputs, so it runs alongside the Go and web checks.
   perf:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     # For tempoBase's check that it closes Postgres connections after use.
     services:
       postgres:
@@ -87,7 +90,7 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -107,12 +110,12 @@ jobs:
           PERF_PG_URL: postgres://postgres:perf@127.0.0.1:5432/postgres?sslmode=disable
 
   web:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v7
         with:
           node-version: 24
