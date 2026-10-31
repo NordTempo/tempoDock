@@ -32,7 +32,7 @@ UPDATE git_connections
 SET pending_sha = ?, pending_message = ?, pending_author = ?, pending_by = ?, pending_force = ?
 WHERE id = +?;
 
--- name: ClearGitPending :exec
+-- name: ClearGitPending :execrows
 -- Clears the queued push if it is still sha (a newer one may have
 -- replaced it meanwhile).
 UPDATE git_connections

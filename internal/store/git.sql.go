@@ -24,7 +24,7 @@ func (q *Queries) AddGitDelivery(ctx context.Context, arg AddGitDeliveryParams) 
 	return err
 }
 
-const clearGitPending = `-- name: ClearGitPending :exec
+const clearGitPending = `-- name: ClearGitPending :execrows
 UPDATE git_connections
 SET pending_sha = '', pending_message = '', pending_author = '', pending_by = '', pending_force = 0
 WHERE id = +?1 AND pending_sha = CAST(?2 AS TEXT)
@@ -37,9 +37,12 @@ type ClearGitPendingParams struct {
 
 // Clears the queued push if it is still sha (a newer one may have
 // replaced it meanwhile).
-func (q *Queries) ClearGitPending(ctx context.Context, arg ClearGitPendingParams) error {
-	_, err := q.exec(ctx, q.clearGitPendingStmt, clearGitPending, arg.ID, arg.PendingSha)
-	return err
+func (q *Queries) ClearGitPending(ctx context.Context, arg ClearGitPendingParams) (int64, error) {
+	result, err := q.exec(ctx, q.clearGitPendingStmt, clearGitPending, arg.ID, arg.PendingSha)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const createGitConnection = `-- name: CreateGitConnection :one

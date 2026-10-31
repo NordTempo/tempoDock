@@ -562,7 +562,7 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 	sha := conn.PendingSha
 	commit := &apitypes.Commit{SHA: sha, Message: conn.PendingMessage, Author: conn.PendingAuthor}
 	finish := func(msg string) gitStep {
-		if err := c.store.ClearGitPending(ctx, store.ClearGitPendingParams{ID: conn.ID, PendingSha: sha}); err != nil {
+		if _, err := c.store.ClearGitPending(ctx, store.ClearGitPendingParams{ID: conn.ID, PendingSha: sha}); err != nil {
 			c.log.Error("clear queued push", "service", serviceID, "err", err)
 			return gitDone
 		}
@@ -621,9 +621,13 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 	rel, err := c.deploySource(fctx, actor, ss, open, int64(c.cfg.MaxUploadMB)<<20, commit)
 	switch {
 	case err == nil:
+		// gitDeployStart cleared the push and recorded its release; this
+		// clears it should that have failed, so it isn't deployed again.
+		if _, err := c.store.ClearGitPending(ctx, store.ClearGitPendingParams{ID: conn.ID, PendingSha: sha}); err != nil {
+			c.log.Error("clear queued push", "service", serviceID, "err", err)
+		}
 		c.audit(ctx, actor, "release.deploy", &ss.project, &ss.env, ss.String(),
 			fmt.Sprintf("release %d from %s %s (%s@%s)", rel.Number, shortSHA(sha), commit.Message, conn.Repo, conn.Branch))
-		finish(fmt.Sprintf("push %s: release %d", shortSHA(sha), rel.Number))
 		return gitDone // the release is in flight; its end kicks again
 	case ctx.Err() != nil:
 		return gitDone // shutting down; the push stays queued
@@ -652,7 +656,10 @@ func errorLine(err error) string {
 
 // gitDeployStart runs as a release built from a push starts, before its
 // deploy can finish: it queues the pending commit status, so success or
-// failure (gitDeployDone) always reaches GitHub after it.
+// failure (gitDeployDone) always reaches GitHub after it, and, for the
+// queued push the release is, clears it and records its release, so
+// nothing the deploy leads to (a later push found already live) is
+// recorded before it.
 func (c *Core) gitDeployStart(ss svcScope, rel store.Release) {
 	if rel.Source != string(apitypes.SourceUpload) {
 		return
@@ -666,6 +673,18 @@ func (c *Core) gitDeployStart(ss svcScope, rel store.Release) {
 	}
 	if conn.PostStatus {
 		c.postGitStatus(ss, conn, rel, "pending", fmt.Sprintf("Deploying release %d", rel.Number))
+	}
+	if conn.PendingSha != rel.CommitSha {
+		return
+	}
+	// Only while the push is still queued: a newer one may have replaced it.
+	n, err := c.store.ClearGitPending(c.ctx, store.ClearGitPendingParams{ID: conn.ID, PendingSha: rel.CommitSha})
+	if err != nil {
+		c.log.Error("clear queued push", "service", ss.String(), "err", err)
+		return
+	}
+	if n == 1 {
+		c.gitEvent(conn.ID, fmt.Sprintf("push %s: release %d", shortSHA(rel.CommitSha), rel.Number))
 	}
 }
 

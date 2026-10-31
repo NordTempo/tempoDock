@@ -277,6 +277,10 @@ func TestGitWebhookDeploys(t *testing.T) {
 	if r.Status != apitypes.ReleaseActive || r.Source != apitypes.SourceUpload || r.CreatedBy != "github:octocat" {
 		t.Fatalf("release: %+v", r)
 	}
+	// Recorded before the deploy started, so by the time it is live.
+	if src, err := h.c.GitStatus(h.ctx, testSystem, web); err != nil || src.Connection == nil || src.Connection.LastEvent != "push aaaaaaa: release 1" {
+		t.Fatalf("status once live: %+v, %v", src.Connection, err)
+	}
 	if r.Commit == nil || *r.Commit != (apitypes.Commit{SHA: shaA, Message: "fix checkout", Author: "octocat"}) {
 		t.Fatalf("commit: %+v", r.Commit)
 	}
