@@ -15,6 +15,11 @@
       "bytes_op": 778,
       "allocs_op": 6
     },
+    "analytics/ingest.BenchmarkIngestReplay": {
+      "ns_op": 22760.0,
+      "bytes_op": 29932,
+      "allocs_op": 17
+    },
     "analytics/ingest.BenchmarkIngestVitals": {
       "ns_op": 4266.3,
       "bytes_op": 986,

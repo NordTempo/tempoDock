@@ -1,6 +1,9 @@
 package analytics
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // Store is the analytics store as Dock uses it: Client over HTTP to the
 // dock-analytics container, or a fake in core's tests. Every method may
@@ -33,6 +36,12 @@ type Store interface {
 	// Traffic counts every site's page views in an hour and the same hour
 	// of the days before (the traffic drop alert).
 	Traffic(ctx context.Context, q TrafficQuery) ([]TrafficRow, error)
+	// Replays, Replay and ReplayData read session replays (phase A3);
+	// PruneReplays deletes old ones.
+	Replays(ctx context.Context, q ReplaysQuery) ([]Replay, error)
+	Replay(ctx context.Context, q ReplayQuery) (ReplayDetail, error)
+	ReplayData(ctx context.Context, site int64, segments []string, gzipped bool) (io.ReadCloser, bool, error)
+	PruneReplays(ctx context.Context, q ReplayPrune) (PruneResult, error)
 }
 
 // PruneQuery names the raw events Prune deletes: a site's events and

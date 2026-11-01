@@ -361,10 +361,10 @@ func (o offlineRuntime) ContainerStats(context.Context, []string) ([]node.Contai
 func (o offlineRuntime) DrainTraffic(context.Context) ([]node.HostTraffic, error) { return nil, o.err }
 func (o offlineRuntime) EnsureTunnel(context.Context, *node.TunnelSpec) error     { return o.err }
 func (o offlineRuntime) SetAnalytics(context.Context, node.AnalyticsConfig) error { return o.err }
-func (o offlineRuntime) TailSpool(context.Context, uint64) (<-chan node.SpoolBatch, error) {
+func (o offlineRuntime) TailSpool(context.Context, node.Spool, uint64) (<-chan node.SpoolBatch, error) {
 	return nil, o.err
 }
-func (o offlineRuntime) AckSpool(context.Context, uint64, int) error { return o.err }
+func (o offlineRuntime) AckSpool(context.Context, node.Spool, uint64, int) error { return o.err }
 func (o offlineRuntime) EnsureAnalyticsStore(context.Context, node.AnalyticsStoreSpec) error {
 	return o.err
 }

@@ -14,8 +14,10 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tempobase",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "check": "pnpm typecheck && pnpm lint && pnpm check:api",
-    "check:api": "openapi-typescript openapi.json --check -o src/api/schema.d.ts && openapi-typescript tempobase/openapi.json --check -o tempobase/src/api/schema.d.ts"
+    "check": "pnpm typecheck && pnpm lint && pnpm check:api && pnpm check:recorder",
+    "check:api": "openapi-typescript openapi.json --check -o src/api/schema.d.ts && openapi-typescript tempobase/openapi.json --check -o tempobase/src/api/schema.d.ts",
+    "build:recorder": "vite build --config vite.recorder.config.ts",
+    "check:recorder": "RECORDER_OUT=node_modules/.recorder-check vite build --config vite.recorder.config.ts --logLevel error && cmp node_modules/.recorder-check/r.js ../internal/analytics/ingest/recorder/r.js"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.4",
@@ -35,6 +37,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@rrweb/record": "2.2.0",
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/router-plugin": "1.168.47",
     "@types/react": "19.3.0",

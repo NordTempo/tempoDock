@@ -86,7 +86,7 @@ lint:
 ## generate: sqlc queries and the UI's API client
 generate:
 	go generate ./...
-	cd web && pnpm gen:api
+	cd web && pnpm gen:api && pnpm build:recorder
 
 ## dev: run the daemon locally on a fake runtime (no Docker), config in dev/
 dev:

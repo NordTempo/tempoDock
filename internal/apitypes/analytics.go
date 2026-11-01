@@ -316,3 +316,67 @@ type VitalThreshold struct {
 	Good float64 `json:"good"`
 	Poor float64 `json:"poor"`
 }
+
+// SiteReplays is a site's session replays that began in a range, newest
+// first (ADR 0037, phase A3).
+type SiteReplays struct {
+	Site    string   `json:"site"`
+	From    int64    `json:"from" doc:"Unix ms"`
+	To      int64    `json:"to" doc:"Unix ms"`
+	Replays []Replay `json:"replays"`
+	// Recording is the site's replay setting, and SampleRate the percent
+	// of page loads recorded.
+	Recording   bool   `json:"recording"`
+	SampleRate  int    `json:"sample_rate"`
+	StoreOnline bool   `json:"store_online"`
+	StoreError  string `json:"store_error,omitempty"`
+}
+
+// Replay is a visitor's recorded page loads with no gap over 30 minutes,
+// which play as one.
+type Replay struct {
+	ID        string    `json:"id" doc:"The replay's first page load, 16 hex digits"`
+	Start     time.Time `json:"start"`
+	End       time.Time `json:"end"`
+	Segments  int       `json:"segments" doc:"Page loads recorded"`
+	EntryPath string    `json:"entry_path"`
+	ExitPath  string    `json:"exit_path"`
+	Country   string    `json:"country,omitempty"`
+	Browser   string    `json:"browser,omitempty"`
+	OS        string    `json:"os,omitempty"`
+	Device    string    `json:"device,omitempty"`
+	Release   string    `json:"release,omitempty" doc:"The release that served its first page (\"web r41\")"`
+	Errors    int64     `json:"errors"`
+	Events    int64     `json:"events" doc:"Custom events"`
+	Bytes     int64     `json:"bytes"`
+}
+
+// ReplayDetail is one replay: its page loads, whose rrweb events are at
+// .../replays/{replay}/segments/{segment}, and its timeline.
+type ReplayDetail struct {
+	Site string `json:"site"`
+	Replay
+	SegmentList []ReplaySegment `json:"segment_list"`
+	Timeline    []TimelineItem  `json:"timeline"`
+}
+
+// ReplaySegment is one recorded page load. Add Skew to its rrweb events'
+// times for the server's clock, which Start, End and the timeline use.
+type ReplaySegment struct {
+	ID     string    `json:"id"`
+	Start  time.Time `json:"start"`
+	End    time.Time `json:"end"`
+	Path   string    `json:"path"`
+	SkewMS int64     `json:"skew_ms"`
+	Bytes  int64     `json:"bytes"`
+}
+
+// TimelineItem is a page view, custom event or error during a replay.
+type TimelineItem struct {
+	At   time.Time `json:"at"`
+	Kind string    `json:"kind" enum:"pageview,event,error"`
+	Path string    `json:"path"`
+	Name string    `json:"name,omitempty" doc:"An event's name, or an error's type and message"`
+	// Group is an error's group, for its page.
+	Group string `json:"group,omitempty"`
+}

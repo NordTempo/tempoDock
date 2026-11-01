@@ -2475,6 +2475,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/sites/{site}/replays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A site's session replays
+         * @description Recorded visits that began in the range, newest first: a visitor's recorded page loads with no gap over 30 minutes. Filters take page, country, browser, os, device and release.
+         */
+        get: operations["list-site-replays"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/sites/{site}/replays/{replay}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One session replay
+         * @description Its page loads and its timeline: page views, custom events and errors. The recording itself is /events.
+         */
+        get: operations["get-site-replay"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/sites/{site}/replays/{replay}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A session replay's recording
+         * @description Every page load's rrweb events as JSON lines: a {"segment": id} line before each page load's chunks, each chunk a JSON array of events. Gzipped when accepted. Every call is audited.
+         */
+        get: operations["get-site-replay-events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/sites/{site}/stats": {
         parameters: {
             query?: never;
@@ -4536,6 +4596,81 @@ export interface components {
             /** @description New DNS-safe name */
             name: string;
         };
+        Replay: {
+            browser?: string;
+            /** Format: int64 */
+            bytes: number;
+            country?: string;
+            device?: string;
+            /** Format: date-time */
+            end: string;
+            entry_path: string;
+            /** Format: int64 */
+            errors: number;
+            /**
+             * Format: int64
+             * @description Custom events
+             */
+            events: number;
+            exit_path: string;
+            /** @description The replay's first page load, 16 hex digits */
+            id: string;
+            os?: string;
+            /** @description The release that served its first page ("web r41") */
+            release?: string;
+            /**
+             * Format: int64
+             * @description Page loads recorded
+             */
+            segments: number;
+            /** Format: date-time */
+            start: string;
+        };
+        ReplayDetail: {
+            browser?: string;
+            /** Format: int64 */
+            bytes: number;
+            country?: string;
+            device?: string;
+            /** Format: date-time */
+            end: string;
+            entry_path: string;
+            /** Format: int64 */
+            errors: number;
+            /**
+             * Format: int64
+             * @description Custom events
+             */
+            events: number;
+            exit_path: string;
+            /** @description The replay's first page load, 16 hex digits */
+            id: string;
+            os?: string;
+            /** @description The release that served its first page ("web r41") */
+            release?: string;
+            segment_list: components["schemas"]["ReplaySegment"][] | null;
+            /**
+             * Format: int64
+             * @description Page loads recorded
+             */
+            segments: number;
+            site: string;
+            /** Format: date-time */
+            start: string;
+            timeline: components["schemas"]["TimelineItem"][] | null;
+        };
+        ReplaySegment: {
+            /** Format: int64 */
+            bytes: number;
+            /** Format: date-time */
+            end: string;
+            id: string;
+            path: string;
+            /** Format: int64 */
+            skew_ms: number;
+            /** Format: date-time */
+            start: string;
+        };
         ResetPasswordRequest: {
             /** @description New password; omit to generate one */
             password?: string;
@@ -5063,6 +5198,25 @@ export interface components {
             kind: "deploy" | "added" | "moved" | "removed";
             message: string;
         };
+        SiteReplays: {
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            from: number;
+            recording: boolean;
+            replays: components["schemas"]["Replay"][] | null;
+            /** Format: int64 */
+            sample_rate: number;
+            site: string;
+            store_error?: string;
+            store_online: boolean;
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            to: number;
+        };
         SiteSettings: {
             /** Format: int64 */
             error_retention_days?: number;
@@ -5177,6 +5331,16 @@ export interface components {
             mount_path: string;
             /** @enum {string} */
             name: "postgres" | "redis";
+        };
+        TimelineItem: {
+            /** Format: date-time */
+            at: string;
+            group?: string;
+            /** @enum {string} */
+            kind: "pageview" | "event" | "error";
+            /** @description An event's name, or an error's type and message */
+            name?: string;
+            path: string;
         };
         Token: {
             /** Format: date-time */
@@ -19532,6 +19696,232 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-site-replays": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description A range ending now; default 30d */
+                range?: "24h" | "7d" | "30d" | "90d" | "12m" | "";
+                /** @description Start of a custom range, Unix ms (with to) */
+                from?: number;
+                /** @description End of a custom range, Unix ms */
+                to?: number;
+                /** @description dimension:op:value, op is, is_not or contains; repeat for more */
+                filter?: string[] | null;
+                /** @description Only replays with an error */
+                errors?: boolean;
+                limit?: number;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteReplays"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-site-replay": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+                /** @description Any of its page loads' IDs, 16 hex digits */
+                replay: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplayDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-site-replay-events": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+                "Accept-Encoding"?: string;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+                /** @description Any of its page loads' IDs, 16 hex digits */
+                replay: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description rrweb events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-ndjson": string;
+                };
+            };
+            /** @description Bad Request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

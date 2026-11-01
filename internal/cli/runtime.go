@@ -14,6 +14,7 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/analytics/ingest"
 	"github.com/NordTempo/tempoDock/internal/analytics/spool"
 	"github.com/NordTempo/tempoDock/internal/config"
@@ -118,6 +119,12 @@ func newCollector(cfg config.Config, store collect.Store, log *slog.Logger) (*co
 	if err != nil {
 		return nil, nil, fmt.Errorf("analytics spool: %w", err)
 	}
+	// Replays have their own spool, a quarter of the size: a long outage
+	// fills it first and costs replays, never page views.
+	replay, err := spool.Open(filepath.Join(dir, "replay"), spool.Options{MaxBytes: int64(cfg.Analytics.SpoolMaxMB) << 20 / 4, MaxLine: analytics.MaxReplayLine})
+	if err != nil {
+		return nil, nil, fmt.Errorf("analytics replay spool: %w", err)
+	}
 	salts, err := ingest.OpenSalts(filepath.Join(dir, "salts.json"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("analytics salts: %w", err)
@@ -126,8 +133,8 @@ func newCollector(cfg config.Config, store collect.Store, log *slog.Logger) (*co
 	if err != nil {
 		return nil, nil, fmt.Errorf("analytics site rules: %w", err)
 	}
-	return &collect.Collector{Spool: sp, Salts: salts, Rules: rules, Store: store},
-		&ingest.Ingest{Spool: sp, Salts: salts, Rules: rules, Log: log.With("component", "analytics")}, nil
+	return &collect.Collector{Spool: sp, Replay: replay, Salts: salts, Rules: rules, Store: store},
+		&ingest.Ingest{Spool: sp, Replay: replay, Salts: salts, Rules: rules, Log: log.With("component", "analytics")}, nil
 }
 
 // dockerRoot asks Docker once where it keeps images, volumes and logs, for

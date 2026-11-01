@@ -2,7 +2,9 @@
 // Page views, single-page app route changes, outbound link clicks and
 // dock.track(name, props). Served by Dock at /_dock/a/s.js with the site's
 // settings as c, and with ev.js in place of the ev marker when the site
-// collects errors and Web Vitals.
+// collects errors and Web Vitals. A site that records sessions has c.r,
+// the percent of page loads to record (c.m: mask all text); those load
+// the recorder, /_dock/a/r.js.
 (function (c) {
   var w = window, d = document, l = location, n = navigator, last = "", first = true;
   if (w.dock && w.dock.track) return;
@@ -35,6 +37,13 @@
   }, true);
   w.dock = { track: function (name, props) { send(2, { n: String(name), p: props }); } };
   /*ev*/
+  if (c.r && w.CompressionStream && Math.random() * 100 < c.r) {
+    w.dock.r = { m: c.m };
+    var r = d.createElement("script");
+    r.src = "/_dock/a/r.js";
+    r.async = true;
+    (d.head || d.documentElement).appendChild(r);
+  }
   if (d.visibilityState === "prerender") d.addEventListener("visibilitychange", page, { once: true });
   else page();
 })(/*c*/{});

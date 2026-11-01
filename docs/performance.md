@@ -67,7 +67,8 @@ an error) and runs it with the container's settings.
 
 | What | Budget | Measured |
 |---|---|---|
-| Browser script `/_dock/a/s.js`, gzipped | core ≤ 2 KB; errors and Web Vitals ≤ 2 KB more | 0.8 KB; 1.0 KB more |
+| Browser script `/_dock/a/s.js`, gzipped | core ≤ 2 KB; errors and Web Vitals ≤ 2 KB more | 1.0 KB; 1.0 KB more |
+| Session recorder `/_dock/a/r.js` (sampled page loads of sites that record), gzipped | ≤ 50 KB | 23 KB |
 | Idle memory, after start | ≤ 60 MB anonymous RSS | 34-38 MB |
 | Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0 |
 | Dashboard p95, 1M events, every range | ≤ 100 ms | 17-42 ms |
@@ -102,7 +103,8 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   the access check for login-protected services, traffic counting, and
 the analytics ingest and spool (`BenchmarkIngestEvent`,
 `BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs;
-`BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs) and the
+`BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs;
+`BenchmarkIngestReplay`, 27 µs for a 20 KB replay chunk) and the
 forwarder's error counting for alerts (`BenchmarkAnalyticsWritten`). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
   benchmarks use a 60-service project), and add one for every new hot
@@ -182,7 +184,7 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
-| Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events wait to go to the control plane (ADR 0037) | one timer; then one spool read of up to 1,000 events |
+| Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events or replay chunks wait to go to the control plane (ADR 0037); each spool has its own tail | one timer; then one spool read of up to 1,000 events |
 | Analytics forwarder retry | `internal/core/analytics.go` | 1 s, doubling to 30 s | the store doesn't answer or a write fails | one cursor request to the store |
 | Analytics alerts | `internal/core/analytics_alerts.go` | with the statistics tick; the traffic check once an hour | analytics is on | in memory: spikes that calmed down, new-error alerts a day old; once an hour one store query for every site's page views in an hour and the 7 days before. Errors are counted per forwarded batch (`BenchmarkAnalyticsWritten`, 52 µs for 1,000 events with 10 errors; a batch without errors is one `bytes.Contains`) |
 | Analytics salts | `internal/core/analytics.go` | with the statistics tick | always; does nothing on the same UTC day | at midnight: two inserts, a delete, one call per server; then the store's daily retention (one delete per site) and location database check (a download on a month's first day) |

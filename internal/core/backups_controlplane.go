@@ -147,6 +147,10 @@ func (c *Core) controlPlaneJob(ctx context.Context, row store.ControlPlaneBackup
 			Snapshot: func(ctx context.Context, dst string) (store.SnapshotInfo, error) {
 				return store.Snapshot(ctx, c.store.DB, dst)
 			},
+			Analytics: c.analyticsSnapshot,
+			Warn: func(msg string, err error) {
+				c.log.Warn("control plane backup: "+msg, "err", err)
+			},
 		})
 		_ = pw.CloseWithError(err) // nil: the job's input ends here
 		written <- err

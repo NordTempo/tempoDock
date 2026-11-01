@@ -77,6 +77,22 @@ type Manifest struct {
 	Registry bool `json:"registry"`
 }
 
+// AnalyticsFile is where an archive keeps the analytics store's snapshot
+// (ADR 0037: its database and session replays), relative to the data
+// dir, and AnalyticsInfoFile what it holds (AnalyticsInfo). A control
+// plane restored from the archive fills its empty store from them, then
+// deletes them.
+const (
+	AnalyticsFile     = "analytics/restore.tar"
+	AnalyticsInfoFile = "analytics/restore.json"
+)
+
+// AnalyticsInfo is what an archived analytics snapshot holds.
+type AnalyticsInfo struct {
+	Bytes  int64 `json:"bytes"`
+	Events int64 `json:"events"`
+}
+
 // Source is what Write archives.
 type Source struct {
 	// DataDir is the control plane's data dir; the snapshot is written to a
@@ -90,6 +106,12 @@ type Source struct {
 	// Snapshot writes a consistent copy of the database to dst
 	// (store.Snapshot or store.SnapshotFile).
 	Snapshot func(ctx context.Context, dst string) (store.SnapshotInfo, error)
+	// Analytics opens the analytics store's snapshot: size bytes holding
+	// events events. nil, or an error, leaves it out (analytics off, or
+	// its server offline): the rest of the backup doesn't wait for it.
+	Analytics func(ctx context.Context) (r io.ReadCloser, size, events int64, err error)
+	// Warn hears what was left out and why; nil is silence.
+	Warn func(msg string, err error)
 }
 
 // skipData are data dir entries never archived: the live database (the
@@ -146,9 +168,28 @@ func Write(ctx context.Context, w io.Writer, src Source) (Manifest, error) {
 		return m, err
 	}
 	if err := addTree(ctx, tw, src.DataDir, dataPrefix, func(rel string) bool {
-		return skipData[rel] || strings.HasPrefix(path.Base(rel), ".")
+		return skipData[rel] || rel == AnalyticsFile || rel == AnalyticsInfoFile || strings.HasPrefix(path.Base(rel), ".")
 	}); err != nil {
 		return m, err
+	}
+	if src.Analytics != nil {
+		// Last: the store holds its writes while it streams.
+		r, size, events, err := src.Analytics(ctx)
+		if err != nil {
+			if src.Warn != nil {
+				src.Warn("the analytics store isn't in this backup", err)
+			}
+		} else {
+			err := addStream(tw, dataPrefix+AnalyticsFile, r, size)
+			_ = r.Close()
+			if err != nil {
+				return m, fmt.Errorf("the analytics store: %w", err)
+			}
+			info, _ := json.Marshal(AnalyticsInfo{Bytes: size, Events: events})
+			if err := writeEntry(tw, dataPrefix+AnalyticsInfoFile, info); err != nil {
+				return m, err
+			}
+		}
 	}
 	if src.RegistryDir != "" {
 		if err := addTree(ctx, tw, src.RegistryDir, regPrefix, func(string) bool { return false }); err != nil {
@@ -169,6 +210,15 @@ func writeEntry(tw *tar.Writer, name string, b []byte) error {
 
 func fileHeader(name string, size int64, mod time.Time) *tar.Header {
 	return &tar.Header{Typeflag: tar.TypeReg, Name: name, Size: size, Mode: 0o600, ModTime: mod.UTC(), Format: tar.FormatPAX}
+}
+
+// addStream adds size bytes of r as name.
+func addStream(tw *tar.Writer, name string, r io.Reader, size int64) error {
+	if err := tw.WriteHeader(fileHeader(name, size, time.Now())); err != nil {
+		return err
+	}
+	_, err := io.CopyN(tw, r, size)
+	return err
 }
 
 // addFile adds the file at src as name. Its size is taken once it is open,

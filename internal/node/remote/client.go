@@ -595,6 +595,18 @@ const AnalyticsProtocol = 10
 // store from the release's binary (ADR 0037); a node on 10 can't run it.
 const AnalyticsBinaryProtocol = 11
 
+// ReplayProtocol is the first protocol whose nodes record session
+// replays: they have a replay spool (ADR 0037, A3).
+const ReplayProtocol = 12
+
+// spoolProtocol is the protocol a spool needs.
+func spoolProtocol(spool node.Spool) (int, string) {
+	if spool == node.SpoolReplay {
+		return ReplayProtocol, "record session replays"
+	}
+	return AnalyticsProtocol, "collect analytics"
+}
+
 // analyticsStoreTimeout bounds EnsureAnalyticsStore, which may pull the
 // store's base image, and sending the binary (~70 MB).
 const analyticsStoreTimeout = 10 * time.Minute
@@ -618,23 +630,25 @@ func (c *Client) SetAnalytics(ctx context.Context, cfg node.AnalyticsConfig) err
 // TailSpool implements node.Analytics. The channel closes when the
 // stream ends for any reason; the caller reads the store's cursor and
 // tails again.
-func (c *Client) TailSpool(ctx context.Context, after uint64) (<-chan node.SpoolBatch, error) {
-	if err := c.needProtocol(ctx, AnalyticsProtocol, "collect analytics"); err != nil {
+func (c *Client) TailSpool(ctx context.Context, spool node.Spool, after uint64) (<-chan node.SpoolBatch, error) {
+	v, what := spoolProtocol(spool)
+	if err := c.needProtocol(ctx, v, what); err != nil {
 		return nil, err
 	}
 	s, err := c.session(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return streamOn(ctx, s, opTailSpool, tailSpoolRequest{After: after}, wireSpoolBatch.node)
+	return streamOn(ctx, s, opTailSpool, tailSpoolRequest{After: after, Spool: string(spool)}, wireSpoolBatch.node)
 }
 
 // AckSpool implements node.Analytics.
-func (c *Client) AckSpool(ctx context.Context, position uint64, events int) error {
-	if err := c.needProtocol(ctx, AnalyticsProtocol, "collect analytics"); err != nil {
+func (c *Client) AckSpool(ctx context.Context, spool node.Spool, position uint64, events int) error {
+	v, what := spoolProtocol(spool)
+	if err := c.needProtocol(ctx, v, what); err != nil {
 		return err
 	}
-	_, err := unaryCall[empty](ctx, c, opAckSpool, ackSpoolRequest{Position: position, Events: events})
+	_, err := unaryCall[empty](ctx, c, opAckSpool, ackSpoolRequest{Position: position, Events: events, Spool: string(spool)})
 	return err
 }
 

@@ -212,7 +212,7 @@ CREATE TABLE IF NOT EXISTS cursors (
 
 // migrate creates the tables.
 func (s *Store) migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, schema+rollupSchema+errorsSchema); err != nil {
+	if _, err := s.db.ExecContext(ctx, schema+rollupSchema+errorsSchema+replaySchema); err != nil {
 		return fmt.Errorf("create analytics tables: %w", err)
 	}
 	return nil

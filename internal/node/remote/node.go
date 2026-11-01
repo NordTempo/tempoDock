@@ -443,10 +443,10 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return empty{}, rt.SetAnalytics(ctx, cfg)
 	}))
 	h(opTailSpool, stream(func(ctx context.Context, a tailSpoolRequest) (<-chan node.SpoolBatch, error) {
-		return rt.TailSpool(ctx, a.After)
+		return rt.TailSpool(ctx, node.Spool(a.Spool), a.After)
 	}, toWireSpoolBatch))
 	h(opAckSpool, unary(func(ctx context.Context, a ackSpoolRequest) (empty, error) {
-		return empty{}, rt.AckSpool(ctx, a.Position, a.Events)
+		return empty{}, rt.AckSpool(ctx, node.Spool(a.Spool), a.Position, a.Events)
 	}))
 	h(opDialAnalytics, serveDialAnalytics(rt))
 }

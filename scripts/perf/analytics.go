@@ -43,6 +43,9 @@ const (
 	// served, and analyticsErrorsBudget what errors and Web Vitals add.
 	analyticsScriptBudget = 2 << 10
 	analyticsErrorsBudget = 2 << 10
+	// analyticsRecorderBudget is the session recorder (rrweb), which only
+	// sampled page loads of sites that record load.
+	analyticsRecorderBudget = 50 << 10
 )
 
 // errorsAndVitals is bench.ErrorsAndVitals: the errors and Web Vitals
@@ -65,8 +68,9 @@ type analyticsResult struct {
 // memory of all that.
 func checkAnalytics(o options, t *table) error {
 	const name = "analytics idle"
-	n, withErrors := ingest.ScriptSizes()
+	n, withErrors, recorder := ingest.ScriptSizes()
 	t.within("analytics script (gzip)", kb(int64(n)), "≤ "+kb(analyticsScriptBudget), n <= analyticsScriptBudget)
+	t.within("analytics session recorder (gzip)", kb(int64(recorder)), "≤ "+kb(analyticsRecorderBudget), recorder <= analyticsRecorderBudget)
 	t.within("analytics script's errors and vitals (gzip)", kb(int64(withErrors-n)), "≤ "+kb(analyticsErrorsBudget), withErrors-n <= analyticsErrorsBudget)
 	if runtime.GOOS != "linux" {
 		t.add(name, "needs /proc (Linux)", "", warn)

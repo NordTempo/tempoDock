@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/subtle"
 	"encoding/json/v2"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -173,6 +175,11 @@ func (a *api) handler() http.Handler {
 	mux.Handle("POST "+analytics.ErrorPath, a.auth(query(a, a.s.Error)))
 	mux.Handle("POST "+analytics.VitalsPath, a.auth(query(a, a.s.Vitals)))
 	mux.Handle("POST "+analytics.TrafficPath, a.auth(query(a, a.s.Traffic)))
+	mux.Handle("POST "+analytics.ReplayWritePath, a.auth(a.writeReplay))
+	mux.Handle("POST "+analytics.ReplaysPath, a.auth(query(a, a.s.Replays)))
+	mux.Handle("POST "+analytics.ReplayPath, a.auth(query(a, a.s.Replay)))
+	mux.Handle("GET "+analytics.ReplayDataPath, a.auth(a.replayData))
+	mux.Handle("POST "+analytics.ReplayPrunePath, a.auth(a.pruneReplays))
 	mux.Handle("POST "+analytics.GeoIPPath, a.auth(a.updateGeoIP))
 	mux.Handle("POST "+analytics.PrunePath, a.auth(a.prune))
 	mux.Handle("GET "+analytics.SnapshotPath, a.auth(a.snapshot))
@@ -300,6 +307,109 @@ func readEvents(body io.Reader) (events []analytics.Event, skipped int, err erro
 		events = append(events, e)
 	}
 	return events, skipped, sc.Err()
+}
+
+// writeReplay appends a batch of JSON-line replay chunks
+// (analytics.ReplayWritePath). Like write, lines that aren't chunks are
+// skipped and counted, the batch's position written either way.
+func (a *api) writeReplay(w http.ResponseWriter, r *http.Request) {
+	source := r.URL.Query().Get("source")
+	pos, err := strconv.ParseUint(r.URL.Query().Get("position"), 10, 64)
+	if source == "" || err != nil {
+		http.Error(w, "source and position are required", http.StatusBadRequest)
+		return
+	}
+	sc := bufio.NewScanner(r.Body)
+	sc.Buffer(make([]byte, 0, 64<<10), analytics.MaxReplayLine)
+	var chunks []analytics.ReplayChunk
+	skipped := 0
+	for sc.Scan() {
+		if len(sc.Bytes()) == 0 {
+			continue
+		}
+		if len(chunks)+skipped == analytics.MaxWriteBatch {
+			http.Error(w, fmt.Sprintf("a write takes at most %d chunks", analytics.MaxWriteBatch), http.StatusBadRequest)
+			return
+		}
+		var ch analytics.ReplayChunk
+		if json.Unmarshal(sc.Bytes(), &ch) != nil {
+			skipped++
+			continue
+		}
+		chunks = append(chunks, ch)
+	}
+	if err := sc.Err(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	n, bad, err := a.s.WriteReplay(r.Context(), source, pos, chunks, a.locate)
+	if err != nil {
+		a.log.Error("write replay", "source", source, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if skipped+bad > 0 {
+		a.log.Warn("write replay: lines that aren't chunks were skipped", "source", source, "skipped", skipped+bad)
+	}
+	reply(w, analytics.WriteResult{Written: n, Skipped: skipped + bad})
+}
+
+// replayData streams segments' rrweb events (analytics.ReplayDataPath),
+// gzipped for a caller that takes it: the control plane passes the bytes
+// on to the browser as they are. It takes no query slot: past one
+// lookup it reads files, not the database.
+func (a *api) replayData(w http.ResponseWriter, r *http.Request) {
+	site, err := strconv.ParseInt(r.URL.Query().Get("site"), 10, 64)
+	if err != nil {
+		http.Error(w, "site is required", http.StatusBadRequest)
+		return
+	}
+	started := false
+	var out io.Writer = w
+	var zw *gzip.Writer
+	err = a.s.ReplayData(r.Context(), site, r.URL.Query()["segment"], func() {
+		started = true
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			zw, _ = gzip.NewWriterLevel(w, gzip.DefaultCompression)
+			out = zw
+		}
+	}, writerFunc(func(p []byte) (int, error) { return out.Write(p) }))
+	if zw != nil {
+		_ = zw.Close()
+	}
+	var bad *store.QueryError
+	switch {
+	case err == nil:
+	case started:
+		a.log.Error("replay data", "err", err) // the answer is cut short
+	case errors.As(err, &bad):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// writerFunc is a function as an io.Writer.
+type writerFunc func(p []byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// pruneReplays deletes a site's old replays (analytics.ReplayPrunePath).
+func (a *api) pruneReplays(w http.ResponseWriter, r *http.Request) {
+	var q analytics.ReplayPrune
+	if err := json.UnmarshalRead(io.LimitReader(r.Body, 4<<10), &q); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := a.s.PruneReplays(r.Context(), q)
+	if err != nil {
+		a.log.Error("prune replays", "site", q.Site, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	reply(w, res)
 }
 
 // updateGeoIP has the location database fetched for this month, unless

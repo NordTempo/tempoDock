@@ -712,14 +712,14 @@ type Analytics interface {
 	// SetAnalytics hands the server what its ingest needs: the salts of
 	// today and tomorrow. A server without today's salt drops events.
 	SetAnalytics(ctx context.Context, cfg AnalyticsConfig) error
-	// TailSpool streams the spool's events after position, in batches of
-	// at most SpoolBatchEvents, oldest first: the backlog at once, then
-	// new events within a second of their arrival. The channel closes
-	// when ctx ends or the stream fails.
-	TailSpool(ctx context.Context, after uint64) (<-chan SpoolBatch, error)
-	// AckSpool records that the store has everything up to position,
-	// events in all; the spool deletes what it no longer needs.
-	AckSpool(ctx context.Context, position uint64, events int) error
+	// TailSpool streams one of the spools' lines after position, in
+	// batches of at most SpoolBatchEvents, oldest first: the backlog at
+	// once, then new lines within a second of their arrival. The channel
+	// closes when ctx ends or the stream fails.
+	TailSpool(ctx context.Context, spool Spool, after uint64) (<-chan SpoolBatch, error)
+	// AckSpool records that the store has everything of a spool up to
+	// position, events in all; the spool deletes what it no longer needs.
+	AckSpool(ctx context.Context, spool Spool, position uint64, events int) error
 	// EnsureAnalyticsStore runs the store's container as spec says. It
 	// returns once the container runs; the store may take a moment more
 	// to answer.
@@ -739,6 +739,18 @@ type Analytics interface {
 // digest, a multi-platform index (linux/amd64 and linux/arm64).
 const AnalyticsBaseImage = "gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f"
 
+// Spool names one of a server's analytics spools.
+type Spool string
+
+const (
+	// SpoolEvents holds events: page views, custom events, errors, Web
+	// Vitals.
+	SpoolEvents Spool = ""
+	// SpoolReplay holds session replay chunks (phase A3), apart from the
+	// events and capped on its own, so a full spool costs replays first.
+	SpoolReplay Spool = "replay"
+)
+
 // SpoolBatchEvents caps a SpoolBatch.
 const SpoolBatchEvents = 1000
 
@@ -753,12 +765,16 @@ type AnalyticsConfig struct {
 }
 
 // SiteRules are what a site's ingest leaves out: paths (* matches any
-// run of characters) and client addresses or CIDR ranges, and whether it
-// collects errors and Web Vitals (on unless ErrorsOff).
+// run of characters) and client addresses or CIDR ranges; whether it
+// collects errors and Web Vitals (on unless ErrorsOff); and the share of
+// page loads it records for session replay (0: none) and whether
+// replays mask all text.
 type SiteRules struct {
 	ExcludedPaths []string `json:",omitempty"`
 	IgnoredIPs    []string `json:",omitempty"`
 	ErrorsOff     bool     `json:",omitempty"`
+	ReplayPercent int      `json:",omitempty"`
+	MaskAllText   bool     `json:",omitempty"`
 }
 
 // SpoolBatch is events read from a spool.
