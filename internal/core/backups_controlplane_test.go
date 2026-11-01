@@ -238,3 +238,63 @@ func TestAfterRestoreReplaces(t *testing.T) {
 		t.Fatalf("local server %d, want %d", h.c.local.ID, old.ID)
 	}
 }
+
+// The analytics store (its database and replays) is in the control
+// plane's backup, and a control plane restored from it fills its new,
+// empty store from it once the store runs.
+func TestControlPlaneBackupHasTheAnalyticsStore(t *testing.T) {
+	h := newHarness(t)
+	h.writeKey()
+	h.rt.AppendSpool(pageview(1), pageview(2))
+	if err := h.c.EnableAnalytics(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the events in the store", func() bool { return storeEvents(h) == 2 })
+	var archive bytes.Buffer
+	h.rt.OnJob(func(s node.JobSpec) (node.JobResult, error) {
+		if s.Stdin == nil {
+			return node.JobResult{}, nil
+		}
+		if _, err := io.Copy(&archive, s.Stdin); err != nil {
+			return node.JobResult{ExitCode: 130}, err
+		}
+		return node.JobResult{Output: resticOutput("cccc1111dddd", int64(archive.Len()), "cccc1111dddd")}, nil
+	})
+	if _, err := h.c.RunControlPlaneBackup(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	if done := h.waitControlPlaneBackup(); done.Status != apitypes.BackupSucceeded {
+		t.Fatalf("done = %+v", done)
+	}
+	files := map[string][]byte{}
+	tr := tar.NewReader(&archive)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		if strings.HasPrefix(hdr.Name, "data/analytics/restore.") {
+			files[hdr.Name], _ = io.ReadAll(tr)
+		}
+	}
+	if len(files["data/"+cpbackup.AnalyticsFile]) == 0 || !strings.Contains(string(files["data/"+cpbackup.AnalyticsInfoFile]), `"events":2`) {
+		t.Fatalf("the archive's analytics: %q", files["data/"+cpbackup.AnalyticsInfoFile])
+	}
+
+	// A new control plane with the archive's files in its data dir.
+	h2 := newHarness(t)
+	for name, b := range files {
+		dst := filepath.Join(h2.opts.Config.DataDir, strings.TrimPrefix(name, "data/"))
+		_ = os.MkdirAll(filepath.Dir(dst), 0o700)
+		if err := os.WriteFile(dst, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h2.c.EnableAnalytics(h2.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the new store filled from the backup", func() bool { return storeEvents(h2) == 2 })
+	if _, err := os.Stat(filepath.Join(h2.opts.Config.DataDir, cpbackup.AnalyticsFile)); !os.IsNotExist(err) {
+		t.Errorf("the backup's snapshot is still there: %v", err)
+	}
+}

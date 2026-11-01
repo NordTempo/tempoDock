@@ -8,6 +8,7 @@ go 1.27.3
 require (
 	github.com/NordTempo/tempoDock v0.0.0
 	github.com/duckdb/duckdb-go/v2 v2.10506.0
+	github.com/klauspost/compress v1.20.3
 	github.com/oschwald/maxminddb-golang/v2 v2.8.0
 	modernc.org/sqlite v1.61.0
 )
@@ -25,7 +26,6 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect

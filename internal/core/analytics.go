@@ -15,6 +15,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/analytics/ingest"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -40,8 +41,8 @@ type analyticsState struct {
 	mu sync.Mutex
 	// saltDay is the UTC day salts were last made and handed out for.
 	saltDay int64
-	// forwarding holds the servers with a forwarder running.
-	forwarding map[int64]bool
+	// forwarding holds the servers' spools with a forwarder running.
+	forwarding map[spoolOf]bool
 	// wake is closed and replaced when a server's state changes, waking
 	// forwarders that wait for theirs or the analytics server's.
 	wake chan struct{}
@@ -75,14 +76,27 @@ type analyticsState struct {
 // analyticsMinMemory is the least the store's container may get.
 const analyticsMinMemory = 256 << 20
 
-// analyticsSource names a server's spool in the store's cursors.
-func analyticsSource(serverID int64) string { return "server:" + strconv.FormatInt(serverID, 10) }
+// spoolOf names one of a server's spools.
+type spoolOf struct {
+	server int64
+	spool  node.Spool
+}
+
+// analyticsSource names a server's spool in the store's cursors:
+// "server:1" and "replay:server:1".
+func analyticsSource(sp spoolOf) string {
+	src := "server:" + strconv.FormatInt(sp.server, 10)
+	if sp.spool != node.SpoolEvents {
+		src = string(sp.spool) + ":" + src
+	}
+	return src
+}
 
 // startAnalytics resumes analytics after a restart: salts for every
 // server, and the store and forwarders if analytics was enabled.
 func (c *Core) startAnalytics(ctx context.Context) error {
 	c.analytics.wake = make(chan struct{})
-	c.analytics.forwarding = map[int64]bool{}
+	c.analytics.forwarding = map[spoolOf]bool{}
 	c.analyticsServersChanged()
 	c.rotateSalts(ctx, now())
 	st, err := c.store.GetAnalyticsSettings(ctx)
@@ -164,8 +178,9 @@ func (c *Core) analyticsRun() (*analytics.Client, int64, context.Context) {
 }
 
 // pruneAnalytics deletes every site's raw events and Web Vitals past its
-// event retention and its errors past its error retention, in the
-// background, once a day with the salts. Daily totals stay.
+// event retention, its errors past its error retention and its replays
+// past its replay retention, in the background, once a day with the
+// salts. Daily totals stay.
 func (c *Core) pruneAnalytics() {
 	cl, _ := c.analyticsClient()
 	if cl == nil {
@@ -187,7 +202,11 @@ func (c *Core) pruneAnalytics() {
 			t := now()
 			q := analytics.PruneQuery{Site: s.ID, Before: t.AddDate(0, 0, -*set.EventRetentionDays).UnixMilli(),
 				ErrorsBefore: t.AddDate(0, 0, -*set.ErrorRetentionDays).UnixMilli()}
-			if _, err := cl.Prune(ctx, q); err != nil {
+			_, err := cl.Prune(ctx, q)
+			if err == nil {
+				_, err = cl.PruneReplays(ctx, analytics.ReplayPrune{Site: s.ID, Before: t.AddDate(0, 0, -*set.ReplayRetentionDays).UnixMilli()})
+			}
+			if err != nil {
 				if ctx.Err() != nil {
 					return
 				}
@@ -339,8 +358,8 @@ func (c *Core) pushSalts(serverID int64) {
 }
 
 // analyticsConfig is what every server's ingest gets: the salts of today
-// and later, and each live site's excluded paths, ignored addresses and
-// whether it collects errors and Web Vitals.
+// and later, and each live site's excluded paths, ignored addresses,
+// whether it collects errors and Web Vitals, and how it records replays.
 // When only the rules can't be read it returns the salts, Sites nil, and
 // the error.
 func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error) {
@@ -366,7 +385,10 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 	for _, s := range sites {
 		set := mergeSettings(defaults, siteOverrides(store.Site{Settings: s.Settings}))
 		r := node.SiteRules{ExcludedPaths: *set.ExcludedPaths, IgnoredIPs: *set.IgnoredIPs, ErrorsOff: !*set.ErrorsAndVitals}
-		if len(r.ExcludedPaths) > 0 || len(r.IgnoredIPs) > 0 || r.ErrorsOff {
+		if *set.Replay {
+			r.ReplayPercent, r.MaskAllText = *set.ReplaySampleRate, *set.MaskAllText
+		}
+		if len(r.ExcludedPaths) > 0 || len(r.IgnoredIPs) > 0 || r.ErrorsOff || r.ReplayPercent > 0 {
 			cfg.Sites[s.ID] = r
 		}
 	}
@@ -390,15 +412,20 @@ func (c *Core) analyticsSitesChanged(ctx context.Context) {
 	}
 }
 
-// forwardFrom starts serverID's forwarder unless it runs.
+// forwardFrom starts the forwarders of serverID's spools unless they run.
 func (c *Core) forwardFrom(serverID int64) {
 	c.analytics.mu.Lock()
 	defer c.analytics.mu.Unlock()
-	if c.analytics.forwarding[serverID] || c.ctx.Err() != nil {
+	if c.ctx.Err() != nil {
 		return
 	}
-	c.analytics.forwarding[serverID] = true
-	c.wg.Go(func() { c.forward(serverID) })
+	for _, which := range []node.Spool{node.SpoolEvents, node.SpoolReplay} {
+		sp := spoolOf{serverID, which}
+		if !c.analytics.forwarding[sp] {
+			c.analytics.forwarding[sp] = true
+			c.wg.Go(func() { c.forward(sp) })
+		}
+	}
 }
 
 // errNotReady is a forwarder that can't run until a server's state
@@ -411,19 +438,20 @@ const (
 	forwardRetryMax = 30 * time.Second
 )
 
-// forward forwards serverID's spool to the store until the daemon stops
+// forward forwards a server's spool to the store until the daemon stops
 // or the server is removed. Between tails it waits for a state change,
 // or (when the store failed) a backoff timer, the one timer it has.
-func (c *Core) forward(serverID int64) {
+func (c *Core) forward(sp spoolOf) {
+	serverID := sp.server
 	defer func() {
 		c.analytics.mu.Lock()
-		delete(c.analytics.forwarding, serverID)
+		delete(c.analytics.forwarding, sp)
 		c.analytics.mu.Unlock()
 	}()
 	retry := forwardRetryMin
 	for c.ctx.Err() == nil {
 		wake := c.waitWake()
-		err := c.forwardOnce(serverID)
+		err := c.forwardOnce(sp)
 		var timer <-chan time.Time
 		switch {
 		case err == nil:
@@ -450,10 +478,12 @@ func (c *Core) forward(serverID int64) {
 // the node failed to read its spool. Retried with backoff.
 var errTailEnded = errors.New("the server's spool stopped streaming; see its daemon's log")
 
-// forwardOnce tails serverID's spool from the store's cursor until the
+// forwardOnce tails a server's spool from the store's cursor until the
 // tail ends, a write fails, or the store changes. Batches go to the store
-// as the JSON lines they are, with their position.
-func (c *Core) forwardOnce(serverID int64) error {
+// as the JSON lines they are, with their position. A server too old for
+// the replay spool isn't ready for its forwarder until it is updated.
+func (c *Core) forwardOnce(sp spoolOf) error {
+	serverID := sp.server
 	if serverID != c.local.ID {
 		// Removed servers end their forwarder, offline or not.
 		if _, err := c.store.GetServer(c.ctx, serverID); err != nil {
@@ -474,7 +504,10 @@ func (c *Core) forwardOnce(serverID int64) error {
 	if moving || cl == nil || !c.online(serverID) || !c.online(storeServer) {
 		return errNotReady
 	}
-	source := analyticsSource(serverID)
+	if sp.spool == node.SpoolReplay && serverID != c.local.ID && c.nodes.State(serverID).Hello.Protocol < remote.ReplayProtocol {
+		return errNotReady
+	}
+	source := analyticsSource(sp)
 	ctx, cancel := context.WithCancel(run)
 	defer cancel()
 	cur, err := cl.Cursor(ctx, source)
@@ -482,7 +515,7 @@ func (c *Core) forwardOnce(serverID int64) error {
 		return err
 	}
 	rt := c.runtime(serverID)
-	tail, err := rt.TailSpool(ctx, cur)
+	tail, err := rt.TailSpool(ctx, sp.spool, cur)
 	if err != nil {
 		return err
 	}
@@ -490,13 +523,19 @@ func (c *Core) forwardOnce(serverID int64) error {
 		if b.Skipped {
 			c.log.Warn("analytics: a server's spool was full and dropped events before they reached the store", "server", serverID)
 		}
-		res, err := cl.WriteLines(ctx, source, b.Position, b.Events)
-		if err != nil {
-			return err
+		if sp.spool == node.SpoolReplay {
+			if _, err := cl.WriteReplayLines(ctx, source, b.Position, b.Events); err != nil {
+				return err
+			}
+		} else {
+			res, err := cl.WriteLines(ctx, source, b.Position, b.Events)
+			if err != nil {
+				return err
+			}
+			c.observeLive(b.Events)
+			c.analyticsWritten(ctx, res, b.Events)
 		}
-		c.observeLive(b.Events)
-		c.analyticsWritten(ctx, res, b.Events)
-		if err := rt.AckSpool(ctx, b.Position, b.Count); err != nil {
+		if err := rt.AckSpool(ctx, sp.spool, b.Position, b.Count); err != nil {
 			// The store has them; the next tail starts from its cursor.
 			return err
 		}

@@ -9,6 +9,7 @@ package fakestore
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json/v2"
@@ -32,6 +33,7 @@ type Store struct {
 	errs    []analytics.Event
 	vitals  []analytics.Event
 	groups  map[[2]uint64]bool
+	replays []analytics.ReplayChunk
 	cursors map[string]uint64
 	// down makes every call fail with 503, as a store that is starting.
 	down bool
@@ -154,6 +156,58 @@ func (s *Store) Handler() http.Handler {
 			out = append(out, analytics.TrafficRow{Site: k[0], DaysAgo: int(k[1]), Pageviews: n})
 		}
 		reply(w, out)
+	}))
+	mux.HandleFunc("POST "+analytics.ReplayWritePath, s.auth(s.writeReplay))
+	mux.HandleFunc("POST "+analytics.ReplaysPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.ReplaysQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, s.replayList(q.Site, func(ch analytics.ReplayChunk) bool { return ch.Time >= q.From && ch.Time < q.To }))
+	}))
+	mux.HandleFunc("POST "+analytics.ReplayPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.ReplayQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		for _, rp := range s.replayList(q.Site, func(analytics.ReplayChunk) bool { return true }) {
+			if rp.ID == q.ID {
+				reply(w, analytics.ReplayDetail{Replay: rp, SegmentList: []analytics.ReplaySegment{{ID: rp.ID, Start: rp.Start, End: rp.End}},
+					Timeline: []analytics.TimelineItem{}})
+				return
+			}
+		}
+		http.Error(w, "this site has no replay "+q.ID, http.StatusBadRequest)
+	}))
+	mux.HandleFunc("GET "+analytics.ReplayDataPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, sg := range r.URL.Query()["segment"] {
+			_, _ = io.WriteString(w, `{"segment":"`+sg+`"}`+"\n")
+			for _, ch := range s.replays {
+				if id(ch.Site) == r.URL.Query().Get("site") && fmt.Sprintf("%016x", ch.Segment) == sg {
+					if zr, err := gzip.NewReader(bytes.NewReader(ch.Data)); err == nil {
+						_, _ = io.Copy(w, zr)
+						_, _ = w.Write([]byte{'\n'})
+					}
+				}
+			}
+		}
+	}))
+	mux.HandleFunc("POST "+analytics.ReplayPrunePath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.ReplayPrune
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		before := len(s.replays)
+		s.replays = slices.DeleteFunc(s.replays, func(ch analytics.ReplayChunk) bool { return ch.Site == q.Site && ch.Time < q.Before })
+		n := before - len(s.replays)
+		s.mu.Unlock()
+		reply(w, analytics.PruneResult{Deleted: int64(n)})
 	}))
 	mux.HandleFunc("POST "+analytics.PrunePath, s.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.PruneQuery
@@ -288,6 +342,65 @@ func (s *Store) write(w http.ResponseWriter, r *http.Request) {
 	}
 	res.Written = len(batch)
 	reply(w, res)
+}
+
+// writeReplay takes replay chunks with the cursor rule of write.
+func (s *Store) writeReplay(w http.ResponseWriter, r *http.Request) {
+	source := r.URL.Query().Get("source")
+	pos, err := strconv.ParseUint(r.URL.Query().Get("position"), 10, 64)
+	if source == "" || err != nil {
+		http.Error(w, "source and position are required", http.StatusBadRequest)
+		return
+	}
+	var batch []analytics.ReplayChunk
+	sc := bufio.NewScanner(r.Body)
+	sc.Buffer(nil, analytics.MaxReplayLine)
+	for sc.Scan() {
+		var ch analytics.ReplayChunk
+		if json.Unmarshal(sc.Bytes(), &ch) == nil {
+			batch = append(batch, ch)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if pos <= s.cursors[source] {
+		reply(w, analytics.WriteResult{})
+		return
+	}
+	s.cursors[source] = pos
+	s.replays = append(s.replays, batch...)
+	reply(w, analytics.WriteResult{Written: len(batch)})
+}
+
+// Replays returns a copy of the replay chunks written.
+func (s *Store) Replays() []analytics.ReplayChunk {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.replays)
+}
+
+// replayList is a site's chunks that keep passes, one replay per segment
+// (the fake doesn't stitch), newest first.
+func (s *Store) replayList(site int64, keep func(analytics.ReplayChunk) bool) []analytics.Replay {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []analytics.Replay{}
+	at := map[uint64]int{}
+	for _, ch := range s.replays {
+		if ch.Site != site || !keep(ch) {
+			continue
+		}
+		i, ok := at[ch.Segment]
+		if !ok {
+			i = len(out)
+			at[ch.Segment] = i
+			out = append(out, analytics.Replay{ID: fmt.Sprintf("%016x", ch.Segment), Start: ch.Time, Segments: 1, EntryPath: ch.Path,
+				Browser: ch.Browser, OS: ch.OS, Device: ch.Device, Release: ch.Release})
+		}
+		out[i].End, out[i].ExitPath, out[i].Bytes = max(out[i].End, ch.Time), ch.Path, out[i].Bytes+int64(len(ch.Data))
+	}
+	slices.Reverse(out)
+	return out
 }
 
 // groupHex is a fingerprint as the store's API writes it.

@@ -16,21 +16,24 @@ func boom(visitor uint64, offset time.Duration, g uint64, msg string) analytics.
 	return e
 }
 
+// big is a fingerprint with the high bit set, as half of them are.
+const big = 1<<63 | 7
+
 func TestErrorGroups(t *testing.T) {
 	s := open(t)
 	ctx := context.Background()
 	_, news, err := s.Write(ctx, "server-1", 1, []analytics.Event{
-		at(1, 0, "/cart"), boom(1, time.Minute, 7, "x of 1"), boom(1, 2*time.Minute, 7, "x of 2"),
+		at(1, 0, "/cart"), boom(1, time.Minute, big, "x of 1"), boom(1, 2*time.Minute, big, "x of 2"),
 		boom(2, 3*time.Minute, 9, "other"),
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(news) != 2 || news[0].Group != groupHex(7) || news[0].Message != "x of 1" || news[1].Group != groupHex(9) {
+	if len(news) != 2 || news[0].Group != groupHex(big) || news[0].Message != "x of 1" || news[1].Group != groupHex(9) {
 		t.Fatalf("new groups %+v", news)
 	}
 	// A later batch with group 7 again: not new.
-	_, news, err = s.Write(ctx, "server-1", 2, []analytics.Event{boom(3, 2*time.Hour, 7, "x of 3")}, nil)
+	_, news, err = s.Write(ctx, "server-1", 2, []analytics.Event{boom(3, 2*time.Hour, big, "x of 3")}, nil)
 	if err != nil || len(news) != 0 {
 		t.Fatalf("second write: news %+v, err %v", news, err)
 	}
@@ -46,11 +49,11 @@ func TestErrorGroups(t *testing.T) {
 		t.Fatalf("groups %+v", groups)
 	}
 	g := groups[0]
-	if g.Group != groupHex(7) || g.Count != 3 || g.Sessions != 1 || g.Message != "x of 3" || g.FirstRelease != 100 ||
+	if g.Group != groupHex(big) || g.Count != 3 || g.Sessions != 1 || g.Message != "x of 3" || g.FirstRelease != 100 ||
 		g.FirstSeen != day0.Add(time.Minute).UnixMilli() || g.LastSeen != day0.Add(2*time.Hour).UnixMilli() || len(g.Series) != 2 {
 		t.Errorf("group 7: %+v", g)
 	}
-	d, err := s.Error(ctx, analytics.ErrorQuery{Query: dayQuery, Group: groupHex(7)})
+	d, err := s.Error(ctx, analytics.ErrorQuery{Query: dayQuery, Group: groupHex(big)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +79,7 @@ func TestErrorGroups(t *testing.T) {
 	if _, err := s.Error(ctx, analytics.ErrorQuery{Query: dayQuery, Group: groupHex(9)}); err == nil {
 		t.Error("group 9, last seen before the cut, is still there")
 	}
-	if d, err := s.Error(ctx, analytics.ErrorQuery{Query: dayQuery, Group: groupHex(7)}); err != nil || d.Count != 1 {
+	if d, err := s.Error(ctx, analytics.ErrorQuery{Query: dayQuery, Group: groupHex(big)}); err != nil || d.Count != 1 {
 		t.Errorf("group 7 after the prune: %+v, %v", d, err)
 	}
 }

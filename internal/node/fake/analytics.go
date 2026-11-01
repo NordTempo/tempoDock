@@ -17,43 +17,72 @@ import (
 // positions are line numbers, the salts it was handed and the store's
 // spec. Tests append events with AppendSpool.
 type fakeAnalytics struct {
-	mu    sync.Mutex
-	lines [][]byte
-	acked uint64
-	salts map[int64][]byte
-	sites map[int64]node.SiteRules
-	store *node.AnalyticsStoreSpec
+	mu sync.Mutex
+	// spools are the events' and the replay spool's lines (node.Spool).
+	spools map[node.Spool]*fakeSpool
+	salts  map[int64][]byte
+	sites  map[int64]node.SiteRules
+	store  *node.AnalyticsStoreSpec
 	// fakeStore runs while the store does, on storeLn: an in-memory store
 	// with the real one's API, which DialAnalyticsStore reaches.
 	fakeStore *fakestore.Store
 	storeLn   net.Listener
-	// appended is closed by the next append, waking tails.
-	appended chan struct{}
-	failSet  error
+	failSet   error
 	// failEnsure makes EnsureAnalyticsStore fail.
 	failEnsure error
 }
 
+// fakeSpool is one in-memory spool.
+type fakeSpool struct {
+	lines [][]byte
+	acked uint64
+	// appended is closed by the next append, waking tails.
+	appended chan struct{}
+}
+
+// spool returns the named spool. Called with mu held.
+func (a *fakeAnalytics) spool(which node.Spool) *fakeSpool {
+	if a.spools == nil {
+		a.spools = map[node.Spool]*fakeSpool{}
+	}
+	sp := a.spools[which]
+	if sp == nil {
+		sp = &fakeSpool{}
+		a.spools[which] = sp
+	}
+	return sp
+}
+
 // AppendSpool adds events (JSON lines) to the fake spool, as the ingest
 // would.
-func (r *Runtime) AppendSpool(lines ...[]byte) {
+func (r *Runtime) AppendSpool(lines ...[]byte) { r.appendTo(node.SpoolEvents, lines) }
+
+// AppendReplay adds replay chunks (JSON lines) to the fake replay spool.
+func (r *Runtime) AppendReplay(lines ...[]byte) { r.appendTo(node.SpoolReplay, lines) }
+
+// appendTo adds lines to a spool and wakes its tails.
+func (r *Runtime) appendTo(which node.Spool, lines [][]byte) {
 	a := &r.analytics
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	sp := a.spool(which)
 	for _, l := range lines {
-		a.lines = append(a.lines, bytes.Clone(l))
+		sp.lines = append(sp.lines, bytes.Clone(l))
 	}
-	if a.appended != nil {
-		close(a.appended)
-		a.appended = nil
+	if sp.appended != nil {
+		close(sp.appended)
+		sp.appended = nil
 	}
 }
 
-// SpoolAcked is the position last acknowledged.
-func (r *Runtime) SpoolAcked() uint64 {
+// SpoolAcked is the events spool's position last acknowledged.
+func (r *Runtime) SpoolAcked() uint64 { return r.Acked(node.SpoolEvents) }
+
+// Acked is a spool's position last acknowledged.
+func (r *Runtime) Acked(which node.Spool) uint64 {
 	r.analytics.mu.Lock()
 	defer r.analytics.mu.Unlock()
-	return r.analytics.acked
+	return r.analytics.spool(which).acked
 }
 
 // AnalyticsSalts are the salts SetAnalytics last handed over.
@@ -117,20 +146,23 @@ func (r *Runtime) AnalyticsSiteRules() map[int64]node.SiteRules {
 
 // TailSpool implements node.Analytics, without the real one's second of
 // batching: what is there goes at once.
-func (r *Runtime) TailSpool(ctx context.Context, after uint64) (<-chan node.SpoolBatch, error) {
+func (r *Runtime) TailSpool(ctx context.Context, which node.Spool, after uint64) (<-chan node.SpoolBatch, error) {
 	a := &r.analytics
+	a.mu.Lock()
+	sp := a.spool(which)
+	a.mu.Unlock()
 	out := make(chan node.SpoolBatch)
 	go func() {
 		defer close(out)
 		pos := after
 		for {
 			a.mu.Lock()
-			end := min(uint64(len(a.lines)), pos+node.SpoolBatchEvents)
+			end := min(uint64(len(sp.lines)), pos+node.SpoolBatchEvents)
 			if pos >= end {
-				if a.appended == nil {
-					a.appended = make(chan struct{})
+				if sp.appended == nil {
+					sp.appended = make(chan struct{})
 				}
-				ch := a.appended
+				ch := sp.appended
 				a.mu.Unlock()
 				select {
 				case <-ch:
@@ -139,7 +171,7 @@ func (r *Runtime) TailSpool(ctx context.Context, after uint64) (<-chan node.Spoo
 					return
 				}
 			}
-			b := node.SpoolBatch{Position: end, Events: bytes.Join(a.lines[pos:end], []byte{'\n'}), Count: int(end - pos)}
+			b := node.SpoolBatch{Position: end, Events: bytes.Join(sp.lines[pos:end], []byte{'\n'}), Count: int(end - pos)}
 			a.mu.Unlock()
 			select {
 			case out <- b:
@@ -153,10 +185,11 @@ func (r *Runtime) TailSpool(ctx context.Context, after uint64) (<-chan node.Spoo
 }
 
 // AckSpool implements node.Analytics.
-func (r *Runtime) AckSpool(_ context.Context, position uint64, _ int) error {
+func (r *Runtime) AckSpool(_ context.Context, which node.Spool, position uint64, _ int) error {
 	r.analytics.mu.Lock()
 	defer r.analytics.mu.Unlock()
-	r.analytics.acked = max(r.analytics.acked, position)
+	sp := r.analytics.spool(which)
+	sp.acked = max(sp.acked, position)
 	return nil
 }
 

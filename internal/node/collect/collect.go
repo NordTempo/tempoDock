@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -22,12 +23,14 @@ type Store interface {
 	Dial(ctx context.Context) (net.Conn, error)
 }
 
-// Collector implements node.Analytics. Spool and Salts are required;
-// Store is nil on a server that can't run containers of its own (the
-// fake runtime).
+// Collector implements node.Analytics. Spool, Replay and Salts are
+// required; Store is nil on a server that can't run containers of its own
+// (the fake runtime).
 type Collector struct {
 	Spool *spool.Spool
-	Salts *ingest.Salts
+	// Replay is the replay spool (node.SpoolReplay).
+	Replay *spool.Spool
+	Salts  *ingest.Salts
 	// Rules are the sites' rules the ingest applies; SetAnalytics
 	// replaces them.
 	Rules *ingest.Rules
@@ -67,8 +70,12 @@ func (c *Collector) SetAnalytics(_ context.Context, cfg node.AnalyticsConfig) er
 // after is the store's cursor: a spool behind it (the end of a segment
 // lost to a power loss, or a reset spool) continues past it first, so
 // new events aren't taken for ones the store has.
-func (c *Collector) TailSpool(ctx context.Context, after uint64) (<-chan node.SpoolBatch, error) {
-	if err := c.Spool.Resume(after); err != nil {
+func (c *Collector) TailSpool(ctx context.Context, which node.Spool, after uint64) (<-chan node.SpoolBatch, error) {
+	sp, err := c.spool(which)
+	if err != nil {
+		return nil, err
+	}
+	if err := sp.Resume(after); err != nil {
 		return nil, err
 	}
 	out := make(chan node.SpoolBatch, 1)
@@ -76,13 +83,13 @@ func (c *Collector) TailSpool(ctx context.Context, after uint64) (<-chan node.Sp
 		defer close(out)
 		pos := after
 		for {
-			b, err := c.Spool.Read(pos, node.SpoolBatchEvents)
+			b, err := sp.Read(pos, node.SpoolBatchEvents)
 			if err != nil {
 				return
 			}
 			if len(b.Lines) == 0 {
 				pos = b.Position
-				if c.Spool.Wait(ctx, pos) != nil {
+				if sp.Wait(ctx, pos) != nil {
 					return
 				}
 				t := time.NewTimer(batchWait)
@@ -107,8 +114,25 @@ func (c *Collector) TailSpool(ctx context.Context, after uint64) (<-chan node.Sp
 }
 
 // AckSpool implements node.Analytics.
-func (c *Collector) AckSpool(_ context.Context, position uint64, events int) error {
-	return c.Spool.Ack(position, events)
+func (c *Collector) AckSpool(_ context.Context, which node.Spool, position uint64, events int) error {
+	sp, err := c.spool(which)
+	if err != nil {
+		return err
+	}
+	return sp.Ack(position, events)
+}
+
+// spool is the named spool.
+func (c *Collector) spool(which node.Spool) (*spool.Spool, error) {
+	switch which {
+	case node.SpoolEvents:
+		return c.Spool, nil
+	case node.SpoolReplay:
+		if c.Replay != nil {
+			return c.Replay, nil
+		}
+	}
+	return nil, fmt.Errorf("this server has no %q spool", which)
 }
 
 // errNoStore is the answer of a server that can't run the store.

@@ -115,6 +115,50 @@ func (c *Client) Traffic(ctx context.Context, q TrafficQuery) ([]TrafficRow, err
 	return res, c.post(ctx, TrafficPath, q, &res)
 }
 
+// WriteReplayLines writes replay chunks that are already JSON lines, as
+// the replay spool holds them, from source up to position.
+func (c *Client) WriteReplayLines(ctx context.Context, source string, position uint64, lines []byte) (WriteResult, error) {
+	q := url.Values{"source": {source}, "position": {strconv.FormatUint(position, 10)}}
+	var res WriteResult
+	err := c.do(ctx, http.MethodPost, ReplayWritePath+"?"+q.Encode(), bytes.NewReader(lines), &res)
+	return res, err
+}
+
+// Replays implements Store.
+func (c *Client) Replays(ctx context.Context, q ReplaysQuery) ([]Replay, error) {
+	var res []Replay
+	return res, c.post(ctx, ReplaysPath, q, &res)
+}
+
+// Replay implements Store.
+func (c *Client) Replay(ctx context.Context, q ReplayQuery) (ReplayDetail, error) {
+	var res ReplayDetail
+	return res, c.post(ctx, ReplayPath, q, &res)
+}
+
+// ReplayData opens segments' rrweb events (ReplayDataPath) for the
+// caller to stream and close. With gzipped the store may send them
+// gzip-compressed, as they are passed on; zipped says whether it did.
+func (c *Client) ReplayData(ctx context.Context, site int64, segments []string, gzipped bool) (body io.ReadCloser, zipped bool, err error) {
+	q := url.Values{"site": {strconv.FormatInt(site, 10)}, "segment": segments}
+	var h http.Header
+	if gzipped {
+		// Set by hand, the transport leaves the answer compressed.
+		h = http.Header{"Accept-Encoding": {"gzip"}}
+	}
+	resp, err := c.sendWith(ctx, http.MethodGet, ReplayDataPath+"?"+q.Encode(), nil, -1, h)
+	if err != nil {
+		return nil, false, err
+	}
+	return resp.Body, resp.Header.Get("Content-Encoding") == "gzip", nil
+}
+
+// PruneReplays implements Store.
+func (c *Client) PruneReplays(ctx context.Context, q ReplayPrune) (PruneResult, error) {
+	var res PruneResult
+	return res, c.post(ctx, ReplayPrunePath, q, &res)
+}
+
 // Prune implements Store.
 func (c *Client) Prune(ctx context.Context, q PruneQuery) (PruneResult, error) {
 	var res PruneResult
@@ -197,9 +241,17 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ou
 // busy one ErrBusy; one that answers with an error returns its message as
 // a StoreError.
 func (c *Client) send(ctx context.Context, method, path string, body io.Reader, size int64) (*http.Response, error) {
+	return c.sendWith(ctx, method, path, body, size, nil)
+}
+
+// sendWith is send with extra request headers.
+func (c *Client) sendWith(ctx context.Context, method, path string, body io.Reader, size int64, header http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimSuffix(c.BaseURL, "/")+path, body)
 	if err != nil {
 		return nil, err
+	}
+	for k, v := range header {
+		req.Header[k] = v
 	}
 	if size >= 0 {
 		req.ContentLength = size

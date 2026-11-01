@@ -23,9 +23,11 @@ type Rules struct {
 
 // siteRules are one site's rules, ready to match.
 type siteRules struct {
-	paths     []string
-	nets      []netip.Prefix
-	errorsOff bool
+	paths         []string
+	nets          []netip.Prefix
+	errorsOff     bool
+	replayPercent int
+	maskAllText   bool
 }
 
 // OpenRules reads the rules kept at path (none if it doesn't exist).
@@ -74,7 +76,7 @@ func (r *Rules) Set(sites map[int64]node.SiteRules) error {
 func (r *Rules) load(sites map[int64]node.SiteRules) {
 	m := make(map[int64]siteRules, len(sites))
 	for id, s := range sites {
-		sr := siteRules{paths: s.ExcludedPaths, errorsOff: s.ErrorsOff}
+		sr := siteRules{paths: s.ExcludedPaths, errorsOff: s.ErrorsOff, replayPercent: min(max(s.ReplayPercent, 0), 100), maskAllText: s.MaskAllText}
 		for _, ip := range s.IgnoredIPs {
 			if p, err := netip.ParsePrefix(ip); err == nil {
 				sr.nets = append(sr.nets, p.Masked())
@@ -90,10 +92,7 @@ func (r *Rules) load(sites map[int64]node.SiteRules) {
 // skip reports whether a site's rules leave out an event on path from ip.
 // No rules is a map lookup.
 func (r *Rules) skip(site int64, path, ip string) bool {
-	if r == nil {
-		return false
-	}
-	sr, ok := (*r.sites.Load())[site]
+	sr, ok := r.site(site)
 	if !ok {
 		return false
 	}
@@ -115,13 +114,31 @@ func (r *Rules) skip(site int64, path, ip string) bool {
 	return false
 }
 
+// site is a site's rules: none for nil or empty Rules.
+func (r *Rules) site(id int64) (siteRules, bool) {
+	if r == nil {
+		return siteRules{}, false
+	}
+	m := r.sites.Load()
+	if m == nil {
+		return siteRules{}, false
+	}
+	sr, ok := (*m)[id]
+	return sr, ok
+}
+
 // collectsErrors reports whether a site collects errors and Web Vitals:
 // on unless its rules turn them off.
 func (r *Rules) collectsErrors(site int64) bool {
-	if r == nil {
-		return true
-	}
-	return !(*r.sites.Load())[site].errorsOff
+	sr, _ := r.site(site)
+	return !sr.errorsOff
+}
+
+// replay is a site's share of page loads to record (0: none) and whether
+// its replays mask all text.
+func (r *Rules) replay(site int64) (percent int, maskAllText bool) {
+	sr, _ := r.site(site)
+	return sr.replayPercent, sr.maskAllText
 }
 
 // globMatch matches s against pattern, where * matches any run of

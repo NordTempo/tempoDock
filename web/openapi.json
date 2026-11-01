@@ -5356,6 +5356,204 @@
         ],
         "type": "object"
       },
+      "Replay": {
+        "additionalProperties": false,
+        "properties": {
+          "browser": {
+            "type": "string"
+          },
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "country": {
+            "type": "string"
+          },
+          "device": {
+            "type": "string"
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entry_path": {
+            "type": "string"
+          },
+          "errors": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "events": {
+            "description": "Custom events",
+            "format": "int64",
+            "type": "integer"
+          },
+          "exit_path": {
+            "type": "string"
+          },
+          "id": {
+            "description": "The replay's first page load, 16 hex digits",
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "release": {
+            "description": "The release that served its first page (\"web r41\")",
+            "type": "string"
+          },
+          "segments": {
+            "description": "Page loads recorded",
+            "format": "int64",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "segments",
+          "entry_path",
+          "exit_path",
+          "errors",
+          "events",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "ReplayDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "browser": {
+            "type": "string"
+          },
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "country": {
+            "type": "string"
+          },
+          "device": {
+            "type": "string"
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entry_path": {
+            "type": "string"
+          },
+          "errors": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "events": {
+            "description": "Custom events",
+            "format": "int64",
+            "type": "integer"
+          },
+          "exit_path": {
+            "type": "string"
+          },
+          "id": {
+            "description": "The replay's first page load, 16 hex digits",
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "release": {
+            "description": "The release that served its first page (\"web r41\")",
+            "type": "string"
+          },
+          "segment_list": {
+            "items": {
+              "$ref": "#/components/schemas/ReplaySegment"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "segments": {
+            "description": "Page loads recorded",
+            "format": "int64",
+            "type": "integer"
+          },
+          "site": {
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "site",
+          "segment_list",
+          "timeline",
+          "id",
+          "start",
+          "end",
+          "segments",
+          "entry_path",
+          "exit_path",
+          "errors",
+          "events",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "ReplaySegment": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "skew_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "path",
+          "skew_ms",
+          "bytes"
+        ],
+        "type": "object"
+      },
       "ResetPasswordRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7148,6 +7346,56 @@
         ],
         "type": "object"
       },
+      "SiteReplays": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "description": "Unix ms",
+            "format": "int64",
+            "type": "integer"
+          },
+          "recording": {
+            "type": "boolean"
+          },
+          "replays": {
+            "items": {
+              "$ref": "#/components/schemas/Replay"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sample_rate": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "site": {
+            "type": "string"
+          },
+          "store_error": {
+            "type": "string"
+          },
+          "store_online": {
+            "type": "boolean"
+          },
+          "to": {
+            "description": "Unix ms",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "site",
+          "from",
+          "to",
+          "replays",
+          "recording",
+          "sample_rate",
+          "store_online"
+        ],
+        "type": "object"
+      },
       "SiteSettings": {
         "additionalProperties": false,
         "properties": {
@@ -7517,6 +7765,39 @@
           "memory_mb",
           "mount_path",
           "exports"
+        ],
+        "type": "object"
+      },
+      "TimelineItem": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "pageview",
+              "event",
+              "error"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "An event's name, or an error's type and message",
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "path"
         ],
         "type": "object"
       },
@@ -29681,6 +29962,454 @@
           }
         ],
         "summary": "Watch a site live",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/sites/{site}/replays": {
+      "get": {
+        "description": "Recorded visits that began in the range, newest first: a visitor's recorded page loads with no gap over 30 minutes. Filters take page, country, browser, os, device and release.",
+        "operationId": "list-site-replays",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Site name",
+            "in": "path",
+            "name": "site",
+            "required": true,
+            "schema": {
+              "description": "Site name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A range ending now; default 30d",
+            "explode": false,
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "description": "A range ending now; default 30d",
+              "enum": [
+                "24h",
+                "7d",
+                "30d",
+                "90d",
+                "12m",
+                ""
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Start of a custom range, Unix ms (with to)",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "Start of a custom range, Unix ms (with to)",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "End of a custom range, Unix ms",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "End of a custom range, Unix ms",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "dimension:op:value, op is, is_not or contains; repeat for more",
+            "explode": false,
+            "in": "query",
+            "name": "filter",
+            "schema": {
+              "description": "dimension:op:value, op is, is_not or contains; repeat for more",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Only replays with an error",
+            "explode": false,
+            "in": "query",
+            "name": "errors",
+            "schema": {
+              "description": "Only replays with an error",
+              "type": "boolean"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteReplays"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "A site's session replays",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/sites/{site}/replays/{replay}": {
+      "get": {
+        "description": "Its page loads and its timeline: page views, custom events and errors. The recording itself is /events.",
+        "operationId": "get-site-replay",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Site name",
+            "in": "path",
+            "name": "site",
+            "required": true,
+            "schema": {
+              "description": "Site name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any of its page loads' IDs, 16 hex digits",
+            "in": "path",
+            "name": "replay",
+            "required": true,
+            "schema": {
+              "description": "Any of its page loads' IDs, 16 hex digits",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "One session replay",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/sites/{site}/replays/{replay}/events": {
+      "get": {
+        "description": "Every page load's rrweb events as JSON lines: a {\"segment\": id} line before each page load's chunks, each chunk a JSON array of events. Gzipped when accepted. Every call is audited.",
+        "operationId": "get-site-replay-events",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Site name",
+            "in": "path",
+            "name": "site",
+            "required": true,
+            "schema": {
+              "description": "Site name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Any of its page loads' IDs, 16 hex digits",
+            "in": "path",
+            "name": "replay",
+            "required": true,
+            "schema": {
+              "description": "Any of its page loads' IDs, 16 hex digits",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Accept-Encoding",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "rrweb events"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "A session replay's recording",
         "tags": [
           "analytics"
         ]

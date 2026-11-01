@@ -11,7 +11,7 @@
   }
   w.addEventListener("error", function (ev) {
     var e = ev.error;
-    if (ev.message || e) err(e && e.name, ev.message || (e && e.message), (e && e.stack) || (ev.filename ? "at " + ev.filename + ":" + ev.lineno + ":" + ev.colno : ""));
+    if (ev.message || e) err(e && e.name, (e && e.message) || ev.message, (e && e.stack) || (ev.filename ? "at " + ev.filename + ":" + ev.lineno + ":" + ev.colno : ""));
   });
   w.addEventListener("unhandledrejection", function (ev) {
     var r = ev.reason;

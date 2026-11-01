@@ -733,10 +733,15 @@ type wireSiteRules struct {
 	IgnoredIPs    []string `json:"ignored_ips,omitempty"`
 	// ErrorsOff is new in A2; an older node ignores it and collects.
 	ErrorsOff bool `json:"errors_off,omitempty"`
+	// Replay settings, new in protocol 12; an older node records nothing.
+	ReplayPercent int  `json:"replay_percent,omitempty"`
+	MaskAllText   bool `json:"mask_all_text,omitempty"`
 }
 
 type tailSpoolRequest struct {
 	After uint64 `json:"after"`
+	// Spool is node.Spool; empty is the events' (protocol 12).
+	Spool string `json:"spool,omitempty"`
 }
 
 // wireSpoolBatch is node.SpoolBatch; the events travel as one string of
@@ -759,6 +764,7 @@ func (w wireSpoolBatch) node() node.SpoolBatch {
 type ackSpoolRequest struct {
 	Position uint64 `json:"position"`
 	Events   int    `json:"events"`
+	Spool    string `json:"spool,omitempty"`
 }
 
 // analyticsStoreRequest is run-analytics-store's spec. The binary goes by

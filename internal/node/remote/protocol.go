@@ -61,8 +61,10 @@ const (
 	// dial-analytics and the routes' analytics hosts (ADR 0037); 11 runs
 	// the store from the release's binary: run-analytics-store,
 	// put-analytics-binary and remove-analytics-store, and answers
-	// ensure-analytics-store (an image) with an error (ADR 0037).
-	Protocol = 11
+	// ensure-analytics-store (an image) with an error (ADR 0037); 12 adds
+	// the replay spool: tail-spool's and ack-spool's spool, and the site
+	// rules' replay settings (ADR 0037, A3).
+	Protocol = 12
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

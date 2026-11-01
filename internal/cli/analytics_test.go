@@ -80,6 +80,9 @@ func TestAnalyticsSiteCommands(t *testing.T) {
 	if v := ok[apitypes.SiteVitals](t, "analytics", "vitals", "shop.example.com", "-p", "shop", "--by", "device"); len(v.Breakdowns) != 0 || v.Thresholds["inp"].Poor != 500 {
 		t.Errorf("vitals = %+v", v)
 	}
+	if r := ok[apitypes.SiteReplays](t, "analytics", "replays", "shop.example.com", "-p", "shop", "--errors"); r.Site != "shop.example.com" || !r.Recording {
+		t.Errorf("replays = %+v", r)
+	}
 	if code, _, stderr := exec(t, "analytics", "vitals", "shop.example.com", "-p", "shop", "--by", "referrer"); code == 0 || !strings.Contains(stderr, "break down by page") {
 		t.Errorf("vitals by referrer: %d %s", code, stderr)
 	}

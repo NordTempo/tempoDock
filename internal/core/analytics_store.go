@@ -4,14 +4,19 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cpbackup"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -84,6 +89,10 @@ func (c *Core) ensureAnalyticsStore(serverID int64) {
 		if err != nil {
 			c.log.Error("analytics: start the store", "server", serverID, "err", err)
 			return
+		}
+		if err := c.restoreStoreBackup(ctx, cl); err != nil {
+			c.setStoreErr(err)
+			c.log.Error("analytics: fill the store from the control plane's backup", "err", err)
 		}
 		c.wakeForwarders()
 		c.updateGeoIP()
@@ -507,4 +516,78 @@ func (c *Core) copyStore(ctx context.Context, m *analyticsMove, token string) (i
 		return 0, 0, fmt.Errorf("the new store on %s has %d events, the copy %d", m.to.Name, after.Events, snap.Events)
 	}
 	return snap.Events, snap.Size, nil
+}
+
+// errAnalyticsOff is analytics before it is turned on, for the backup.
+var errAnalyticsOff = errors.New("analytics is off")
+
+// analyticsSnapshot opens the store's snapshot for the control plane's
+// backup (cpbackup.Source.Analytics): its database and session replays.
+// The store holds its writes while it streams; the forwarders wait.
+func (c *Core) analyticsSnapshot(ctx context.Context) (io.ReadCloser, int64, int64, error) {
+	cl, _ := c.analyticsClient()
+	if cl == nil {
+		return nil, 0, 0, errAnalyticsOff
+	}
+	snap, err := cl.Snapshot(ctx)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return snap, snap.Size, snap.Events, nil
+}
+
+// restoreStoreBackup fills an empty store from the analytics snapshot a
+// restored control plane backup left in the data dir, then deletes it.
+// Forwarders hold off meanwhile, as for a move: the store must be empty
+// to take it. A store with events already keeps them, and the snapshot
+// goes.
+func (c *Core) restoreStoreBackup(ctx context.Context, cl *analytics.Client) error {
+	path := filepath.Join(c.cfg.DataDir, cpbackup.AnalyticsFile)
+	infoPath := filepath.Join(c.cfg.DataDir, cpbackup.AnalyticsInfoFile)
+	f, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	var info cpbackup.AnalyticsInfo
+	b, err := os.ReadFile(infoPath)
+	if err == nil {
+		err = json.Unmarshal(b, &info)
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", infoPath, err)
+	}
+	// As a move does: end the forwarders' tails, whose read locks last
+	// as long as a tail, then wait for any write in flight.
+	c.analytics.mu.Lock()
+	c.analytics.runCancel()
+	c.analytics.runCtx, c.analytics.runCancel = context.WithCancel(c.ctx)
+	c.analytics.mu.Unlock()
+	c.analytics.writing.Lock()
+	defer c.analytics.writing.Unlock()
+	h, err := c.readyStore(ctx, cl, 0)
+	if err != nil {
+		return err
+	}
+	if h.Events == 0 {
+		got, err := cl.Restore(ctx, f, info.Bytes)
+		if err != nil {
+			return fmt.Errorf("the analytics store didn't take the backup's data; it stays in %s: %w", path, err)
+		}
+		if got.Bytes != info.Bytes {
+			return fmt.Errorf("the analytics store took %d of the backup's %d bytes; they stay in %s", got.Bytes, info.Bytes, path)
+		}
+		// It restarts on the copy and must count what the backup held.
+		if _, err := c.readyStore(ctx, cl, info.Events); err != nil {
+			return err
+		}
+		c.log.Info("analytics: the store has the backup's data", "events", info.Events, "bytes", info.Bytes)
+	} else {
+		c.log.Warn("analytics: the store has events already, so the backup's data isn't put in it", "events", h.Events)
+	}
+	_ = os.Remove(infoPath)
+	return os.Remove(path)
 }

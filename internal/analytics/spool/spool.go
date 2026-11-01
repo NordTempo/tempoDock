@@ -35,9 +35,10 @@ const (
 	DefaultMaxBytes     = 256 << 20
 )
 
-// MaxLine caps one event's line, and MaxBatchBytes what one Read returns
-// (it always returns at least one line when there is one): a batch fits
-// one message on the node link with room to spare.
+// MaxLine caps one event's line by default (Options.MaxLine), and
+// MaxBatchBytes what one Read returns, or one line where lines may be
+// longer (it always returns at least one line when there is one): a
+// batch fits one message on the node link with room to spare.
 const (
 	MaxLine       = 64 << 10
 	MaxBatchBytes = 512 << 10
@@ -69,6 +70,7 @@ type Spool struct {
 	dir          string
 	maxBytes     int64
 	segmentBytes int64
+	maxLine      int
 
 	mu    sync.Mutex
 	segs  []segment // oldest first; the last is appended to
@@ -94,6 +96,8 @@ type Spool struct {
 type Options struct {
 	MaxBytes     int64
 	SegmentBytes int64
+	// MaxLine caps a line: MaxLine by default, more for replay chunks.
+	MaxLine int
 }
 
 // Open opens (creating) the spool in dir. A line cut short by a crash at
@@ -106,6 +110,7 @@ func Open(dir string, opts Options) (*Spool, error) {
 		dir:          dir,
 		maxBytes:     cmpOr(opts.MaxBytes, DefaultMaxBytes),
 		segmentBytes: cmpOr(opts.SegmentBytes, DefaultSegmentBytes),
+		maxLine:      int(cmpOr(int64(opts.MaxLine), MaxLine)),
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -138,7 +143,7 @@ func Open(dir string, opts Options) (*Spool, error) {
 	if err != nil {
 		return nil, err
 	}
-	if last.size, err = trimTorn(f, last.size); err != nil {
+	if last.size, err = trimTorn(f, last.size, s.maxLine); err != nil {
 		_ = f.Close()
 		return nil, err
 	}
@@ -163,12 +168,13 @@ func cmpOr(v, def int64) int64 {
 	return v
 }
 
-// trimTorn truncates f, of size n, after its last newline.
-func trimTorn(f *os.File, n int64) (int64, error) {
+// trimTorn truncates f, of size n, after its last newline; a line is at
+// most maxLine bytes.
+func trimTorn(f *os.File, n int64, maxLine int) (int64, error) {
 	if n == 0 {
 		return 0, nil
 	}
-	buf := make([]byte, min(n, MaxLine+1))
+	buf := make([]byte, min(n, int64(maxLine)+1))
 	if _, err := f.ReadAt(buf, n-int64(len(buf))); err != nil && !errors.Is(err, io.EOF) {
 		return 0, err
 	}
@@ -194,8 +200,8 @@ func split(p uint64) (uint32, int64) { return uint32(p >> 32), int64(p & 0xfffff
 // Append adds one event's JSON line (without its newline). At the cap the
 // oldest segments go, read or not.
 func (s *Spool) Append(line []byte) error {
-	if len(line) == 0 || len(line) > MaxLine || bytes.IndexByte(line, '\n') >= 0 {
-		return fmt.Errorf("a spooled line must be 1 to %d bytes without newlines", MaxLine)
+	if len(line) == 0 || len(line) > s.maxLine || bytes.IndexByte(line, '\n') >= 0 {
+		return fmt.Errorf("a spooled line must be 1 to %d bytes without newlines", s.maxLine)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -349,7 +355,7 @@ func (s *Spool) Read(p uint64, maxLines int) (Batch, error) {
 		return b, err
 	}
 	defer func() { _ = f.Close() }()
-	chunk := make([]byte, min(size-off, int64(maxLines)*1024+MaxLine, MaxBatchBytes))
+	chunk := make([]byte, min(size-off, int64(maxLines)*1024+int64(s.maxLine), max(MaxBatchBytes, int64(s.maxLine))))
 	n, err := f.ReadAt(chunk, off)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return b, err

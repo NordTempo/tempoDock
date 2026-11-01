@@ -80,7 +80,7 @@ old store is removed when that server is back.`,
 	}
 	cmd.AddCommand(server)
 	cmd.AddCommand(newAnalyticsEnableCmd(g), newAnalyticsDisableCmd(g), newAnalyticsSitesCmd(g),
-		newAnalyticsStatsCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
+		newAnalyticsStatsCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsReplaysCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
 	return cmd
 }
 
@@ -339,6 +339,97 @@ func printSiteError(g *globals, d apitypes.SiteError) error {
 	tb := g.io.Table("AT", "PAGE", "BROWSER", "RELEASE", "SESSION")
 	for _, o := range d.Recent[:min(len(d.Recent), 10)] {
 		tb.Row(o.At.Local().Format("Jan 2 15:04:05"), o.Path, dash(strings.TrimSpace(o.Browser+" "+o.BrowserVersion)), dash(o.Release), dash(o.Session))
+	}
+	return tb.Flush()
+}
+
+func newAnalyticsReplaysCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var sq statsQuery
+	var errorsOnly bool
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "replays <site> [<replay>]",
+		Short: "A site's session replays; or one replay's page loads and timeline",
+		Long: `List a site's recorded visits over a range, newest first: a visitor's
+recorded page loads with no gap over 30 minutes. Given a replay, show its
+page loads and its timeline of page views, custom events and errors.
+Watch replays in the UI, which records every replay watched in the audit
+log. Sites record when their replay setting is on:
+dock analytics site set SITE --replay on.`,
+		Example: `  dock analytics replays shop.example.com --errors
+  dock analytics replays shop.example.com 9f3c0a1b2c3d4e5f`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needProject)
+			if err != nil {
+				return err
+			}
+			path := t.projectPath() + "/sites/" + url.PathEscape(args[0]) + "/replays"
+			if len(args) == 2 {
+				d, err := get[apitypes.ReplayDetail](cmd.Context(), s, path+"/"+url.PathEscape(args[1]))
+				if err != nil {
+					return err
+				}
+				return g.io.Print(d, func() error { return printReplay(g, d) })
+			}
+			q := sq.values()
+			q.Set("limit", strconv.Itoa(limit))
+			if errorsOnly {
+				q.Set("errors", "true")
+			}
+			list, err := get[apitypes.SiteReplays](cmd.Context(), s, path+"?"+q.Encode())
+			if err != nil {
+				return err
+			}
+			return g.io.Print(list, func() error { return printReplays(g, list) })
+		},
+	}
+	f.add(cmd, needProject)
+	sq.add(cmd)
+	cmd.Flags().BoolVar(&errorsOnly, "errors", false, "only replays with an error")
+	cmd.Flags().IntVar(&limit, "limit", 50, "at most this many replays")
+	return cmd
+}
+
+// printReplays prints replays as a table.
+func printReplays(g *globals, l apitypes.SiteReplays) error {
+	if !l.StoreOnline {
+		g.io.Warnf("%s", l.StoreError)
+		return nil
+	}
+	if !l.Recording {
+		g.io.Warnf("this site doesn't record replays; turn them on with `dock analytics site set %s --replay on`", l.Site)
+	}
+	if len(l.Replays) == 0 {
+		g.io.Detail("No replays in this range.")
+		return nil
+	}
+	tb := g.io.Table("REPLAY", "STARTED", "LENGTH", "PAGES", "ENTRY", "DEVICE", "ERRORS")
+	for _, r := range l.Replays {
+		tb.Row(r.ID, r.Start.Local().Format("Jan 2 15:04"), r.End.Sub(r.Start).Round(time.Second).String(), strconv.Itoa(r.Segments),
+			r.EntryPath, dash(strings.TrimSpace(r.Device+" "+r.Browser)), itoa(r.Errors))
+	}
+	return tb.Flush()
+}
+
+// printReplay prints a replay's page loads and timeline.
+func printReplay(g *globals, d apitypes.ReplayDetail) error {
+	err := g.io.Fields(
+		"replay", d.ID,
+		"started", d.Start.Local().Format(time.DateTime),
+		"length", d.End.Sub(d.Start).Round(time.Second).String(),
+		"visitor", dash(strings.TrimSpace(strings.Join([]string{d.Country, d.Device, d.Browser, d.OS}, " "))),
+		"release", dash(d.Release),
+		"errors", itoa(d.Errors),
+	)
+	if err != nil || len(d.Timeline) == 0 {
+		return err
+	}
+	_, _ = io.WriteString(g.io.Out, "\n")
+	tb := g.io.Table("AT", "WHAT", "PAGE", "DETAIL")
+	for _, it := range d.Timeline {
+		tb.Row("+"+it.At.Sub(d.Start).Round(time.Second).String(), it.Kind, it.Path, dash(cut(oneLine(it.Name), 80)))
 	}
 	return tb.Flush()
 }

@@ -44,6 +44,10 @@ const (
 const (
 	ScriptPath = "/_dock/a/s.js"
 	EventPath  = "/_dock/a/e"
+	// RecorderPath is the session recorder s.js loads for sampled page
+	// loads, and ReplayPath where it sends its chunks (phase A3).
+	RecorderPath = "/_dock/a/r.js"
+	ReplayPath   = "/_dock/a/r"
 	// Prefix is what Caddy routes here.
 	Prefix = "/_dock/a/"
 )
@@ -59,6 +63,10 @@ var (
 	coreScript []byte
 	//go:embed ev.js
 	evScript []byte
+	// recorderScript is rrweb's recorder with Dock's chunking, built from
+	// web/src/recorder by `pnpm build:recorder`.
+	//go:embed recorder/r.js
+	recorderScript []byte
 )
 
 const (
@@ -66,10 +74,12 @@ const (
 	configMarker = "/*c*/{}"
 )
 
-// Ingest is the handler. Spool and Salts must be set.
+// Ingest is the handler. Spool and Salts must be set; Replay is the
+// replay spool, nil where replays aren't kept.
 type Ingest struct {
-	Spool *spool.Spool
-	Salts *Salts
+	Spool  *spool.Spool
+	Replay *spool.Spool
+	Salts  *Salts
 	// Rules leave sites' excluded paths and ignored addresses out and
 	// say what each site's script collects; nil is none.
 	Rules *Rules
@@ -83,12 +93,20 @@ type Ingest struct {
 	// one per combination of settings, so a handful.
 	scriptMu sync.Mutex
 	scripts  map[scriptVariant]*builtScript
+	// recorder is r.js, built on first use.
+	recorderOnce sync.Once
+	recorder     *builtScript
 }
 
-// scriptVariant is what a site's script differs in.
+// scriptVariant is what a site's script differs in: at most 2 x 101 x 2
+// of them, a few KB each.
 type scriptVariant struct {
 	// errors splices in ev.js.
 	errors bool
+	// replay is the percent of page loads that record; mask masks all
+	// text in them.
+	replay int
+	mask   bool
 }
 
 // builtScript is one variant: its source, gzipped, and its ETag.
@@ -97,9 +115,10 @@ type builtScript struct {
 	etag    string
 }
 
-// Stats counts what the ingest saw since it started.
+// Stats counts what the ingest saw since it started; Replays are replay
+// chunks kept.
 type Stats struct {
-	Accepted, Bots, Invalid, NoSalt, Excluded atomic.Int64
+	Accepted, Bots, Invalid, NoSalt, Excluded, Replays atomic.Int64
 }
 
 // Stats returns the counts.
@@ -112,6 +131,11 @@ func (in *Ingest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		in.serveScript(w, r)
 	case r.URL.Path == EventPath && r.Method == http.MethodPost:
 		in.serveEvent(w, r)
+	case r.URL.Path == RecorderPath && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		in.recorderOnce.Do(func() { in.recorder = compress(recorderScript) })
+		serveBuilt(w, r, in.recorder, "public, max-age=86400")
+	case r.URL.Path == ReplayPath && r.Method == http.MethodPost:
+		in.serveReplay(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -139,7 +163,20 @@ func buildScript(v scriptVariant) *builtScript {
 		ev = bytes.TrimSpace(evScript)
 	}
 	src := bytes.Replace(coreScript, []byte(evMarker), ev, 1)
-	src = bytes.Replace(src, []byte(configMarker), []byte("{}"), 1)
+	config := "{}"
+	if v.replay > 0 {
+		config = `{"r":` + strconv.Itoa(v.replay)
+		if v.mask {
+			config += `,"m":1`
+		}
+		config += "}"
+	}
+	src = bytes.Replace(src, []byte(configMarker), []byte(config), 1)
+	return compress(src)
+}
+
+// compress gzips a script and names its version for the ETag.
+func compress(src []byte) *builtScript {
 	var b bytes.Buffer
 	zw, _ := gzip.NewWriterLevel(&b, gzip.BestCompression)
 	_, _ = zw.Write(src)
@@ -154,10 +191,18 @@ func buildScript(v scriptVariant) *builtScript {
 func (in *Ingest) serveScript(w http.ResponseWriter, r *http.Request) {
 	site, _, _, _ := parseTag(r.Header.Get(TagHeader))
 	v := scriptVariant{errors: in.Rules.collectsErrors(site)}
-	sc := in.script(v)
+	if in.Replay != nil {
+		v.replay, v.mask = in.Rules.replay(site)
+	}
+	serveBuilt(w, r, in.script(v), "public, max-age=3600")
+}
+
+// serveBuilt sends a built script, gzipped when the browser takes it, and
+// answers revalidations by ETag.
+func serveBuilt(w http.ResponseWriter, r *http.Request, sc *builtScript, cache string) {
 	h := w.Header()
 	h.Set("Content-Type", "text/javascript; charset=utf-8")
-	h.Set("Cache-Control", "public, max-age=3600")
+	h.Set("Cache-Control", cache)
 	h.Set("ETag", sc.etag)
 	h.Set("Vary", "Accept-Encoding")
 	if r.Header.Get("If-None-Match") == sc.etag {
@@ -176,11 +221,11 @@ func (in *Ingest) serveScript(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// ScriptSizes are the script's sizes as served to browsers, gzipped, for
-// the budgets: the core (under 2 KB) and with errors and Web Vitals
-// (about 2 KB more).
-func ScriptSizes() (core, withErrors int) {
-	return len(buildScript(scriptVariant{}).gz), len(buildScript(scriptVariant{errors: true}).gz)
+// ScriptSizes are the scripts' sizes as served to browsers, gzipped, for
+// the budgets: the core (under 2 KB), with errors and Web Vitals (about
+// 2 KB more) and the session recorder sampled page loads load.
+func ScriptSizes() (core, withErrors, recorder int) {
+	return len(buildScript(scriptVariant{}).gz), len(buildScript(scriptVariant{errors: true}).gz), len(compress(recorderScript).gz)
 }
 
 // fnv is FNV-1a, for the script's ETag.
@@ -311,8 +356,9 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 	case analytics.KindOutbound:
 		e.Name = cut(b.Name, maxOutbound)
 	case analytics.KindError:
-		e.Name = cut(b.Name, maxMessage)
-		e.Error = errorInfo(cut(b.Type, maxType), e.Name, cut(b.Stack, maxStack))
+		typ := cut(b.Type, maxType)
+		e.Name = cut(errorMessage(typ, b.Name), maxMessage)
+		e.Error = errorInfo(typ, e.Name, cut(b.Stack, maxStack))
 	case analytics.KindVitals:
 		if b.Vitals == nil {
 			return false, false

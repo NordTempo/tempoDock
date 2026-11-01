@@ -35,7 +35,7 @@ func TestAnalyticsOverTheLink(t *testing.T) {
 	}
 
 	fk.AppendSpool([]byte(`{"k":1,"p":"/a"}`), []byte(`{"k":1,"p":"/b"}`))
-	tail, err := h.client.TailSpool(ctx, 0)
+	tail, err := h.client.TailSpool(ctx, node.SpoolEvents, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,8 +48,20 @@ func TestAnalyticsOverTheLink(t *testing.T) {
 	if b = <-tail; b.Count != 1 || b.Position != 3 {
 		t.Fatalf("second batch = %+v", b)
 	}
-	if err := h.client.AckSpool(ctx, b.Position, b.Count); err != nil || fk.SpoolAcked() != 3 {
+	if err := h.client.AckSpool(ctx, node.SpoolEvents, b.Position, b.Count); err != nil || fk.SpoolAcked() != 3 {
 		t.Fatalf("ack: %v, node acked %d", err, fk.SpoolAcked())
+	}
+	// The replay spool streams apart from the events.
+	fk.AppendReplay([]byte(`{"g":7,"q":0}`))
+	replay, err := h.client.TailSpool(ctx, node.SpoolReplay, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := <-replay; b.Count != 1 || string(b.Events) != `{"g":7,"q":0}` {
+		t.Fatalf("replay batch = %+v", b)
+	}
+	if err := h.client.AckSpool(ctx, node.SpoolReplay, 1, 1); err != nil || fk.Acked(node.SpoolReplay) != 1 || fk.SpoolAcked() != 3 {
+		t.Fatalf("replay ack: %v, acked %d and %d", err, fk.Acked(node.SpoolReplay), fk.SpoolAcked())
 	}
 
 	// The store runs from the control plane's binary, sent once.

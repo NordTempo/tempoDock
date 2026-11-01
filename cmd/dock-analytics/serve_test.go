@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -124,14 +127,23 @@ func TestClientReportsABusyStore(t *testing.T) {
 }
 
 // A move (ADR 0037): one store's snapshot fills an empty one, which exits
-// to reopen on it with the same events and cursors; a store with events
-// refuses one.
+// to reopen on it with the same events, cursors and replays; a store with
+// events refuses one.
 func TestAPIMovesTheDatabase(t *testing.T) {
 	ctx := context.Background()
 	from, _ := server(t)
 	day := time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)
 	if _, err := from.Write(ctx, "server-1", 7, []analytics.Event{{Time: day.UnixMilli(), Site: 1, Kind: analytics.KindPageview, Path: "/", Visitor: 1}}); err != nil {
 		t.Fatal(err)
+	}
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	_, _ = zw.Write([]byte(`[{"timestamp":1}]`))
+	_ = zw.Close()
+	line, _ := json.Marshal(analytics.ReplayChunk{Time: day.UnixMilli(), Site: 1, Segment: 0xa1, First: day.UnixMilli(), Last: day.UnixMilli(),
+		Clock: day.UnixMilli(), Events: 1, Visitor: 1, Data: gz.Bytes()})
+	if res, err := from.WriteReplayLines(ctx, "replay:server-1", 3, line); err != nil || res.Written != 1 {
+		t.Fatalf("replay write: %+v, %v", res, err)
 	}
 
 	db := filepath.Join(t.TempDir(), "b.duckdb")
@@ -166,6 +178,10 @@ func TestAPIMovesTheDatabase(t *testing.T) {
 	}
 	if pos, err := s.Cursor(ctx, "server-1"); err != nil || pos != 7 {
 		t.Errorf("cursor after the restore = %d, %v; want 7", pos, err)
+	}
+	var data bytes.Buffer
+	if err := s.ReplayData(ctx, 1, []string{"00000000000000a1"}, func() {}, &data); err != nil || !strings.HasSuffix(data.String(), "\n[{\"timestamp\":1}]\n") {
+		t.Errorf("replay after the restore: %q, %v", data.String(), err)
 	}
 
 	snap, err = from.Snapshot(ctx)

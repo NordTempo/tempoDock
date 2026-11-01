@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -173,6 +174,62 @@ func registerSites(s *Server, a huma.API) {
 			dims[i] = analytics.Dimension(d)
 		}
 		return reply(s.core.SiteVitals(ctx, actor, in.Project, in.Site, core.VitalsQuery{Dimensions: dims, Limit: in.Limit, Metric: analytics.Vital(in.Metric)}, q))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-site-replays", Method: http.MethodGet, Path: sitesPath + "/{site}/replays",
+		Summary: "A site's session replays", Tags: tags,
+		Description: "Recorded visits that began in the range, newest first: a visitor's recorded page loads with no gap over 30 minutes. Filters take page, country, browser, os, device and release.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		StatsParams
+		Errors bool `query:"errors" doc:"Only replays with an error"`
+		Limit  int  `query:"limit" minimum:"1" maximum:"500" default:"100"`
+	}) (*out[apitypes.SiteReplays], error) {
+		q, err := in.query()
+		if err != nil {
+			return nil, err
+		}
+		return reply(s.core.SiteReplays(ctx, actor, in.Project, in.Site, q, in.Errors, in.Limit))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-site-replay", Method: http.MethodGet, Path: sitesPath + "/{site}/replays/{replay}",
+		Summary: "One session replay", Tags: tags,
+		Description: "Its page loads and its timeline: page views, custom events and errors. The recording itself is /events.",
+		Errors:      []int{http.StatusBadRequest},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Replay string `path:"replay" doc:"Any of its page loads' IDs, 16 hex digits"`
+	}) (*out[apitypes.ReplayDetail], error) {
+		return reply(s.core.SiteReplay(ctx, actor, in.Project, in.Site, in.Replay))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-site-replay-events", Method: http.MethodGet, Path: sitesPath + "/{site}/replays/{replay}/events",
+		Summary: "A session replay's recording", Tags: tags,
+		Description: "Every page load's rrweb events as JSON lines: a {\"segment\": id} line before each page load's chunks, each chunk a JSON array of events. Gzipped when accepted. Every call is audited.",
+		Errors:      []int{http.StatusBadRequest},
+		Responses: map[string]*huma.Response{"200": {
+			Description: "rrweb events",
+			Content:     map[string]*huma.MediaType{"application/x-ndjson": {Schema: &huma.Schema{Type: huma.TypeString}}},
+		}},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Replay         string `path:"replay" doc:"Any of its page loads' IDs, 16 hex digits"`
+		AcceptEncoding string `header:"Accept-Encoding"`
+	}) (*huma.StreamResponse, error) {
+		body, zipped, err := s.core.SiteReplayEvents(ctx, actor, in.Project, in.Site, in.Replay, strings.Contains(in.AcceptEncoding, "gzip"))
+		if err != nil {
+			return nil, err
+		}
+		return &huma.StreamResponse{Body: func(hctx huma.Context) {
+			defer func() { _ = body.Close() }()
+			hctx.SetHeader("Content-Type", "application/x-ndjson")
+			hctx.SetHeader("Cache-Control", "no-store")
+			if zipped {
+				hctx.SetHeader("Content-Encoding", "gzip")
+			}
+			hctx.SetStatus(http.StatusOK)
+			_, _ = io.Copy(hctx.BodyWriter(), body)
+		}}, nil
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "enable-hostname-analytics", Method: http.MethodPut, Path: Prefix + "/analytics/hostnames/{hostname}",

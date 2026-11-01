@@ -1,10 +1,16 @@
 package ingest
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/NordTempo/tempoDock/internal/analytics"
+	"github.com/NordTempo/tempoDock/internal/analytics/spool"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // BenchmarkIngestEvent is one page view through the ingest: parsing,
@@ -50,3 +56,32 @@ func benchIngest(b *testing.B, body string) {
 type noClose struct{ *strings.Reader }
 
 func (noClose) Close() error { return nil }
+
+// BenchmarkIngestReplay is a 20 KB replay chunk through the ingest: its
+// query read, its body checked and base64-encoded into the replay spool.
+func BenchmarkIngestReplay(b *testing.B) {
+	in, _ := newIngest(b)
+	rp, err := spool.Open(b.TempDir(), spool.Options{MaxLine: analytics.MaxReplayLine, MaxBytes: 1 << 40})
+	if err != nil {
+		b.Fatal(err)
+	}
+	in.Replay, in.Rules = rp, &Rules{}
+	in.Rules.load(map[int64]node.SiteRules{3: {ReplayPercent: 20}})
+	body := bytes.Repeat([]byte{0x1f, 0x8b, 8, 0, 1, 2, 3, 4, 5, 6}, 2<<10)
+	r := httptest.NewRequest(http.MethodPost, ReplayPath+"?g=0123456789abcdef&q=3&a=1000&b=4000&c=5000&n=120&u=https%3A%2F%2Fshop.example.com%2Fcart", nil)
+	r.Host = "shop.example.com"
+	r.Header.Set(TagHeader, "3.40.981")
+	r.Header.Set(ClientIPHeader, "203.0.113.77")
+	r.Header.Set("User-Agent", chromeMac)
+	w := httptest.NewRecorder()
+	rd := bytes.NewReader(body)
+	b.ReportAllocs()
+	for b.Loop() {
+		rd.Reset(body)
+		r.Body = io.NopCloser(rd)
+		in.ServeHTTP(w, r)
+	}
+	if w.Code != http.StatusAccepted {
+		b.Fatal(w.Code)
+	}
+}

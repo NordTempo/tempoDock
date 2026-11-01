@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -210,7 +211,7 @@ func TestScript(t *testing.T) {
 	if !bytes.Contains(b, []byte(`"largest-contentful-paint"`)) || bytes.Contains(b, []byte(evMarker)) || !bytes.HasSuffix(bytes.TrimSpace(b), []byte("})({});")) {
 		t.Errorf("a site that collects errors gets the core with ev.js spliced in; got:\n%s", b)
 	}
-	if core, withErrors := ScriptSizes(); core > 2048 || withErrors-core > 2048 {
+	if core, withErrors, _ := ScriptSizes(); core > 2048 || withErrors-core > 2048 {
 		t.Errorf("the script is %d bytes gzipped and errors add %d, over the 2 KB budgets (ADR 0037)", core, withErrors-core)
 	}
 	r = httptest.NewRequest(http.MethodGet, ScriptPath, nil)
@@ -263,6 +264,18 @@ func TestErrorEvent(t *testing.T) {
 	// is in the same group.
 	if g := errorGroup("TypeError", "Cannot read properties of undefined (reading 'id')", topFrame(strings.ReplaceAll(stack, "D2vX9pQa", "Zq81LmNo"))); g != e.Error.Group {
 		t.Error("a new bundle hash split the group")
+	}
+}
+
+func TestErrorMessage(t *testing.T) {
+	for in, want := range map[string]string{
+		"Uncaught TypeError: price is undefined": "price is undefined",
+		"TypeError: price is undefined":          "price is undefined",
+		"Script error.":                          "Script error.",
+	} {
+		if got := errorMessage("TypeError", in); got != want {
+			t.Errorf("errorMessage(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
@@ -361,5 +374,84 @@ func TestGlobMatch(t *testing.T) {
 		if got := globMatch(c.pattern, c.s); got != c.want {
 			t.Errorf("globMatch(%q, %q) = %v", c.pattern, c.s, got)
 		}
+	}
+}
+
+// gz gzips s, as the recorder's CompressionStream does.
+func gz(s string) []byte {
+	var b bytes.Buffer
+	zw := gzip.NewWriter(&b)
+	_, _ = zw.Write([]byte(s))
+	_ = zw.Close()
+	return b.Bytes()
+}
+
+func TestReplayChunks(t *testing.T) {
+	in, _ := newIngest(t)
+	rp, err := spool.Open(t.TempDir(), spool.Options{MaxLine: analytics.MaxReplayLine})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Replay = rp
+	in.Rules = &Rules{}
+	send := func(query string, body []byte) int {
+		r := httptest.NewRequest(http.MethodPost, ReplayPath+"?"+query, bytes.NewReader(body))
+		r.Host = "shop.example.com"
+		r.Header.Set(TagHeader, "3.40.981")
+		r.Header.Set(ClientIPHeader, "203.0.113.9")
+		r.Header.Set("User-Agent", chromeMac)
+		w := httptest.NewRecorder()
+		in.ServeHTTP(w, r)
+		return w.Code
+	}
+	q := "g=0123456789abcdef&q=0&a=1000&b=4000&c=5000&n=12&u=" + url.QueryEscape("https://shop.example.com/cart?x=1")
+	data := gz(`[{"type":4,"timestamp":1000}]`)
+	// The site doesn't record: nothing kept.
+	if code := send(q, data); code != http.StatusAccepted || in.Stats().Replays.Load() != 0 {
+		t.Fatalf("a site without replay: %d, %d kept", code, in.Stats().Replays.Load())
+	}
+	in.Rules.load(map[int64]node.SiteRules{3: {ReplayPercent: 20, MaskAllText: true}})
+	if code := send(q, data); code != http.StatusAccepted {
+		t.Fatalf("status %d", code)
+	}
+	b, err := rp.Read(0, 10)
+	if err != nil || len(b.Lines) != 1 {
+		t.Fatalf("replay spool: %+v, %v", b, err)
+	}
+	var ch analytics.ReplayChunk
+	if err := json.Unmarshal(b.Lines[0], &ch); err != nil {
+		t.Fatal(err)
+	}
+	if ch.Site != 3 || ch.Segment != 0x0123456789abcdef || ch.Path != "/cart" || ch.Events != 12 || ch.Clock != 5000 ||
+		ch.Visitor == 0 || ch.Browser != "Chrome" || !bytes.Equal(ch.Data, data) {
+		t.Errorf("chunk = %+v", ch)
+	}
+	for _, bad := range []struct {
+		q    string
+		body []byte
+	}{
+		{q, []byte("not gzip")},
+		{strings.Replace(q, "g=0123456789abcdef", "g=xyz", 1), data},
+		{strings.Replace(q, "shop.example.com", "evil.example", 1), data},
+		{q, append(gz(""), make([]byte, analytics.MaxReplayChunk)...)},
+	} {
+		if code := send(bad.q, bad.body); code != http.StatusBadRequest {
+			t.Errorf("%q: status %d", bad.q, code)
+		}
+	}
+	// The script tells sampled page loads to record, masking all text.
+	r := httptest.NewRequest(http.MethodGet, ScriptPath, nil)
+	r.Header.Set(TagHeader, "3.40.981")
+	w := httptest.NewRecorder()
+	in.ServeHTTP(w, r)
+	if !strings.HasSuffix(strings.TrimSpace(w.Body.String()), `})({"r":20,"m":1});`) {
+		t.Errorf("script ends %q", w.Body.String()[max(0, w.Body.Len()-40):])
+	}
+	r = httptest.NewRequest(http.MethodGet, RecorderPath, nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w = httptest.NewRecorder()
+	in.ServeHTTP(w, r)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Encoding") != "gzip" || w.Body.Len() > 50<<10 {
+		t.Errorf("recorder: %d, %q, %d bytes", w.Code, w.Header().Get("Content-Encoding"), w.Body.Len())
 	}
 }
