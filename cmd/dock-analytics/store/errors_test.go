@@ -117,3 +117,32 @@ func TestVitals(t *testing.T) {
 		t.Errorf("overview with vitals: %+v, %v", o, err)
 	}
 }
+
+func TestTraffic(t *testing.T) {
+	s := open(t)
+	hour := day0.Add(14 * time.Hour)
+	var events []analytics.Event
+	add := func(daysAgo, n int, minute time.Duration) {
+		for i := range n {
+			e := at(uint64(1000*daysAgo+i), 0, "/")
+			e.Time = hour.AddDate(0, 0, -daysAgo).Add(minute).UnixMilli()
+			events = append(events, e)
+		}
+	}
+	add(0, 3, 59*time.Minute+59*time.Second)
+	add(1, 10, 0)
+	add(7, 20, 30*time.Minute)
+	add(1, 5, 61*time.Minute) // the next hour: not counted
+	write(t, s, "server-1", 1, events...)
+	rows, err := s.Traffic(context.Background(), analytics.TrafficQuery{Hour: hour.UnixMilli(), Days: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int]int64{}
+	for _, r := range rows {
+		got[r.DaysAgo] = r.Pageviews
+	}
+	if len(got) != 3 || got[0] != 3 || got[1] != 10 || got[7] != 20 {
+		t.Errorf("traffic = %+v", rows)
+	}
+}

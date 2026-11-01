@@ -3121,7 +3121,7 @@ export interface components {
             environment?: string;
             /** Format: int64 */
             id: number;
-            /** @description disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed; more may be added */
+            /** @description disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop; more may be added */
             kind: string;
             message?: string;
             /** Format: date-time */

@@ -305,7 +305,7 @@ func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st
 
 // alertTick runs on the statistics tick: disk alerts from the samples just
 // taken (hosts, by server ID), servers offline for too long, crash loops
-// that calmed down, and reminders.
+// that calmed down, analytics alerts that need a clock, and reminders.
 func (c *Core) alertTick(ctx context.Context, now time.Time, servers []store.Server, hosts map[int64]apitypes.ServerUsage) {
 	for _, srv := range servers {
 		if u, ok := hosts[srv.ID]; ok && len(u.Disks) > 0 {
@@ -316,6 +316,7 @@ func (c *Core) alertTick(ctx context.Context, now time.Time, servers []store.Ser
 		}
 	}
 	c.calmCrashLoops(ctx, now)
+	c.analyticsAlertTick(ctx, now)
 	c.remind(ctx, now)
 }
 

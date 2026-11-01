@@ -40,6 +40,11 @@
       "bytes_op": 24,
       "allocs_op": 1
     },
+    "core.BenchmarkAnalyticsWritten": {
+      "ns_op": 48000.0,
+      "bytes_op": 248,
+      "allocs_op": 11
+    },
     "core.BenchmarkBusFanOut/subscribers=1": {
       "ns_op": 1675,
       "bytes_op": 1176,

@@ -134,6 +134,27 @@ func (s *Store) Handler() http.Handler {
 		}
 		reply(w, s.vitalsOf(q))
 	}))
+	mux.HandleFunc("POST "+analytics.TrafficPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.TrafficQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		counts := map[[2]int64]int64{}
+		for _, e := range s.events {
+			ago := (q.Hour + 3_599_999 - e.Time) / 86_400_000
+			if e.Kind == analytics.KindPageview && e.Time <= q.Hour+3_599_999 && ago <= int64(q.Days) && e.Time >= q.Hour-ago*86_400_000 {
+				counts[[2]int64{e.Site, ago}]++
+			}
+		}
+		s.mu.Unlock()
+		out := []analytics.TrafficRow{}
+		for k, n := range counts {
+			out = append(out, analytics.TrafficRow{Site: k[0], DaysAgo: int(k[1]), Pageviews: n})
+		}
+		reply(w, out)
+	}))
 	mux.HandleFunc("POST "+analytics.PrunePath, s.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.PruneQuery
 		if json.UnmarshalRead(r.Body, &q) != nil {

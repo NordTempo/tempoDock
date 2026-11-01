@@ -308,3 +308,22 @@ type VitalsResult struct {
 	Breakdowns map[Dimension][]VitalsRow `json:"breakdowns"`
 	Series     []VitalPoint              `json:"series"`
 }
+
+// TrafficQuery asks for every site's page views in the hour that starts
+// at Hour (Unix ms, a whole UTC hour) and in the same hour of each of the
+// Days days before: what the traffic drop alert compares.
+type TrafficQuery struct {
+	Hour int64 `json:"hour"`
+	Days int   `json:"days"`
+}
+
+// MaxTrafficDays caps a TrafficQuery's days.
+const MaxTrafficDays = 28
+
+// TrafficRow is a site's page views in one of a TrafficQuery's hours:
+// DaysAgo 0 is the hour itself. Hours without page views have no row.
+type TrafficRow struct {
+	Site      int64 `json:"site"`
+	DaysAgo   int   `json:"days_ago"`
+	Pageviews int64 `json:"pageviews"`
+}
