@@ -5,7 +5,7 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api, body, done, list } from "../../api/client";
+import { api, body, done, list, withOrg } from "../../api/client";
 import { useEventStream } from "../../api/events";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
@@ -232,4 +232,55 @@ export function useSiteLive(project: string, site: string) {
     lost,
     paused: !visible,
   };
+}
+
+export type ReplayDetail = Schemas["ReplayDetail"];
+
+/** One session replay: its page loads and timeline. */
+export const replayQuery = (project: string, site: string, replay: string) =>
+  queryOptions({
+    queryKey: ["analytics", "replay", project, site, replay],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/replays/{replay}", {
+          params: { path: { project, site, replay } },
+        }),
+      ),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+/** An rrweb event as the recorder sent it. */
+export type RecordedEvent = { type: number; timestamp: number; data: unknown };
+
+/**
+ * A replay's recording: every page load's rrweb events, their times moved
+ * to the server's clock (each page load's own skew), oldest first. The
+ * API streams JSON lines, a {"segment": id} line before each page load's
+ * chunks; fetching it is audited, once per call.
+ */
+export async function loadRecording(
+  project: string,
+  site: string,
+  replay: ReplayDetail,
+  signal: AbortSignal,
+): Promise<RecordedEvent[]> {
+  const path = `/api/v1/projects/${encodeURIComponent(project)}/sites/${encodeURIComponent(site)}/replays/${encodeURIComponent(replay.id)}/events`;
+  const res = await fetch(withOrg(path), { credentials: "include", signal });
+  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  const skews = new Map(
+    (replay.segment_list ?? []).map((s) => [s.id, s.skew_ms]),
+  );
+  const events: RecordedEvent[] = [];
+  let skew = 0;
+  for (const line of (await res.text()).split("\n")) {
+    if (!line) continue;
+    const v: unknown = JSON.parse(line);
+    if (Array.isArray(v)) {
+      for (const e of v as RecordedEvent[])
+        events.push({ ...e, timestamp: e.timestamp + skew });
+    } else if (v && typeof v === "object" && "segment" in v) {
+      skew = skews.get(String(v.segment)) ?? 0;
+    }
+  }
+  return events.sort((a, b) => a.timestamp - b.timestamp);
 }
