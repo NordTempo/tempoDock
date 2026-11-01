@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -54,14 +53,11 @@ type StatsParams struct {
 // query parses the parameters for core.
 func (p StatsParams) query() (core.StatsQuery, error) {
 	q := core.StatsQuery{Range: p.Range, From: p.From, To: p.To}
-	for _, f := range p.Filter {
-		dim, rest, ok1 := strings.Cut(f, ":")
-		op, value, ok2 := strings.Cut(rest, ":")
-		if !ok1 || !ok2 {
-			return q, huma.Error400BadRequest(fmt.Sprintf("filter %q must look like country:is:NO", f))
-		}
-		q.Filters = append(q.Filters, analytics.Filter{Dimension: analytics.Dimension(dim), Op: analytics.FilterOp(op), Value: value})
+	fs, err := core.ParseFilters(p.Filter)
+	if err != nil {
+		return q, huma.Error400BadRequest(err.Error())
 	}
+	q.Filters = fs
 	return q, nil
 }
 
@@ -230,6 +226,81 @@ func registerSites(s *Server, a huma.API) {
 			hctx.SetStatus(http.StatusOK)
 			_, _ = io.Copy(hctx.BodyWriter(), body)
 		}}, nil
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-site-goals", Method: http.MethodGet, Path: sitesPath + "/{site}/goals",
+		Summary: "A site's goals and their conversions", Tags: tags,
+		Description: "Each goal with the visitors and sessions that reached it in the range (about 2% off), how often, and its share of the range's visitors. Takes the dashboard's filters.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		StatsParams
+	}) (*out[apitypes.SiteGoals], error) {
+		q, err := in.query()
+		if err != nil {
+			return nil, err
+		}
+		return reply(s.core.SiteGoals(ctx, actor, in.Project, in.Site, q))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "add-site-goal", Method: http.MethodPost, Path: sitesPath + "/{site}/goals",
+		Summary: "Add a goal to a site", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "A page (a path, * matching anything) or a custom event (its name). At most 20 per site. Needs deploy.",
+		Errors:      []int{http.StatusConflict},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Body apitypes.CreateGoalRequest
+	}) (*out[apitypes.Goal], error) {
+		return reply(s.core.AddSiteGoal(ctx, actor, in.Project, in.Site, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "remove-site-goal", Method: http.MethodDelete, Path: sitesPath + "/{site}/goals/{goal}",
+		Summary: "Remove a site's goal", Tags: tags, Description: "Needs deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Goal string `path:"goal"`
+	}) (*struct{}, error) {
+		return nil, s.core.RemoveSiteGoal(ctx, actor, in.Project, in.Site, in.Goal)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-site-funnels", Method: http.MethodGet, Path: sitesPath + "/{site}/funnels",
+		Summary: "A site's funnels", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct{ SitePath }) (*out[[]apitypes.Funnel], error) {
+		return reply(s.core.SiteFunnels(ctx, actor, in.Project, in.Site))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "add-site-funnel", Method: http.MethodPost, Path: sitesPath + "/{site}/funnels",
+		Summary: "Add a funnel to a site", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "2 to 8 steps, each a page or a custom event, that a session takes in order. At most 20 per site. Needs deploy.",
+		Errors:      []int{http.StatusConflict},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Body apitypes.CreateFunnelRequest
+	}) (*out[apitypes.Funnel], error) {
+		return reply(s.core.AddSiteFunnel(ctx, actor, in.Project, in.Site, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-site-funnel", Method: http.MethodGet, Path: sitesPath + "/{site}/funnels/{funnel}",
+		Summary: "A funnel over a range", Tags: tags,
+		Description: "How many sessions reached each step after the ones before it, and the share of the first step's. Takes the dashboard's filters.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Funnel string `path:"funnel"`
+		StatsParams
+	}) (*out[apitypes.SiteFunnel], error) {
+		q, err := in.query()
+		if err != nil {
+			return nil, err
+		}
+		return reply(s.core.SiteFunnel(ctx, actor, in.Project, in.Site, in.Funnel, q))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "remove-site-funnel", Method: http.MethodDelete, Path: sitesPath + "/{site}/funnels/{funnel}",
+		Summary: "Remove a site's funnel", Tags: tags, Description: "Needs deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Funnel string `path:"funnel"`
+	}) (*struct{}, error) {
+		return nil, s.core.RemoveSiteFunnel(ctx, actor, in.Project, in.Site, in.Funnel)
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "enable-hostname-analytics", Method: http.MethodPut, Path: Prefix + "/analytics/hostnames/{hostname}",

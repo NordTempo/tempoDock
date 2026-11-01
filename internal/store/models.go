@@ -548,6 +548,25 @@ type Site struct {
 	CreatedAt     time.Time
 }
 
+type SiteFunnel struct {
+	ID        int64
+	SiteID    int64
+	Name      string
+	Steps     string
+	CreatedBy string
+	CreatedAt time.Time
+}
+
+type SiteGoal struct {
+	ID        int64
+	SiteID    int64
+	Name      string
+	Kind      string
+	Match     string
+	CreatedBy string
+	CreatedAt time.Time
+}
+
 type SiteHostname struct {
 	Hostname  string
 	SiteID    int64

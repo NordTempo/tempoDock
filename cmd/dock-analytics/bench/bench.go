@@ -19,11 +19,25 @@ type Querier interface {
 	Breakdown(ctx context.Context, q analytics.BreakdownQuery) ([]analytics.Row, error)
 }
 
-// ErrorsQuerier is a store with errors and Web Vitals, which Run times
-// too (the SQLite comparison has neither).
+// ErrorsQuerier is a store with errors, Web Vitals, goals and funnels,
+// which Run times too (the SQLite comparison has none of them).
 type ErrorsQuerier interface {
 	Errors(ctx context.Context, q analytics.ErrorsQuery) ([]analytics.ErrorGroup, error)
 	Vitals(ctx context.Context, q analytics.VitalsQuery) (analytics.VitalsResult, error)
+	Goals(ctx context.Context, q analytics.GoalsQuery) ([]analytics.GoalResult, error)
+	Funnel(ctx context.Context, q analytics.FunnelQuery) ([]analytics.FunnelStep, error)
+}
+
+// GoalsAndFunnels is the Filter name of the goals view's timings: five
+// goals and a three-step funnel.
+const GoalsAndFunnels = "goals and funnels"
+
+// benchGoals are the goals and funnel steps the bench counts: pages and
+// events the seed has.
+var benchGoals = []analytics.GoalSpec{
+	{Kind: analytics.GoalPage, Match: "/pricing"}, {Kind: analytics.GoalPage, Match: "/signup"},
+	{Kind: analytics.GoalPage, Match: "/blog/*"}, {Kind: analytics.GoalEvent, Match: "signup"},
+	{Kind: analytics.GoalEvent, Match: "event-3"},
 }
 
 // ErrorsAndVitals is the Filter name of the errors and Web Vitals views'
@@ -147,13 +161,34 @@ func Run(ctx context.Context, q Querier, opts Options) ([]Result, error) {
 			return out, fmt.Errorf("%s, %s: %w", rg.Name, ErrorsAndVitals, err)
 		}
 		res.Range, res.Filter = rg.Name, ErrorsAndVitals
-		if opts.Out != nil {
-			_, _ = fmt.Fprintf(opts.Out, "%-5s %-28s views     p50 %7.1f ms  p95 %7.1f ms  slowest query p95 %7.1f ms (%s)\n",
-				res.Range, res.Filter, ms(res.P50), ms(res.P95), ms(res.SlowestQuery), res.SlowestQueryName)
+		out = append(out, report(opts, res))
+		res, err = timeJobs(ctx, []job{
+			{"goals", func() error {
+				_, err := eq.Goals(ctx, analytics.GoalsQuery{Query: base, Goals: benchGoals})
+				return err
+			}},
+			{"funnel", func() error {
+				_, err := eq.Funnel(ctx, analytics.FunnelQuery{Query: base, Steps: []analytics.GoalSpec{
+					{Kind: analytics.GoalPage, Match: "/"}, {Kind: analytics.GoalPage, Match: "/pricing"}, {Kind: analytics.GoalEvent, Match: "signup"}}})
+				return err
+			}},
+		}, opts)
+		if err != nil {
+			return out, fmt.Errorf("%s, %s: %w", rg.Name, GoalsAndFunnels, err)
 		}
-		out = append(out, res)
+		res.Range, res.Filter = rg.Name, GoalsAndFunnels
+		out = append(out, report(opts, res))
 	}
 	return out, nil
+}
+
+// report prints a view's timing to opts.Out, if set, and returns it.
+func report(opts Options, res Result) Result {
+	if opts.Out != nil {
+		_, _ = fmt.Fprintf(opts.Out, "%-5s %-28s views     p50 %7.1f ms  p95 %7.1f ms  slowest query p95 %7.1f ms (%s)\n",
+			res.Range, res.Filter, ms(res.P50), ms(res.P95), ms(res.SlowestQuery), res.SlowestQueryName)
+	}
+	return res
 }
 
 // job is one of a dashboard's queries.

@@ -83,6 +83,21 @@ func TestAnalyticsSiteCommands(t *testing.T) {
 	if r := ok[apitypes.SiteReplays](t, "analytics", "replays", "shop.example.com", "-p", "shop", "--errors"); r.Site != "shop.example.com" || !r.Recording {
 		t.Errorf("replays = %+v", r)
 	}
+	if code, _, stderr := exec(t, "analytics", "goals", "add", "shop.example.com", "Signup", "event:signup", "-p", "shop"); code != 0 {
+		t.Fatalf("goals add: %s", stderr)
+	}
+	if code, _, stderr := exec(t, "analytics", "goals", "add", "shop.example.com", "Bad", "click:x", "-p", "shop"); code == 0 || !strings.Contains(stderr, "page:/pricing") {
+		t.Errorf("a goal of no kind: %d %s", code, stderr)
+	}
+	if g := ok[apitypes.SiteGoals](t, "analytics", "goals", "shop.example.com", "-p", "shop"); len(g.Goals) != 1 || g.Goals[0].Match != "signup" {
+		t.Errorf("goals = %+v", g)
+	}
+	if code, _, stderr := exec(t, "analytics", "funnels", "add", "shop.example.com", "Buy", "page:/", "event:signup", "-p", "shop"); code != 0 {
+		t.Fatalf("funnels add: %s", stderr)
+	}
+	if f := ok[apitypes.SiteFunnel](t, "analytics", "funnels", "shop.example.com", "Buy", "-p", "shop"); len(f.Steps) != 2 {
+		t.Errorf("funnel = %+v", f)
+	}
 	if code, _, stderr := exec(t, "analytics", "vitals", "shop.example.com", "-p", "shop", "--by", "referrer"); code == 0 || !strings.Contains(stderr, "break down by page") {
 		t.Errorf("vitals by referrer: %d %s", code, stderr)
 	}

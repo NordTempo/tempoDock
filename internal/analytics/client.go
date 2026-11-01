@@ -159,6 +159,18 @@ func (c *Client) PruneReplays(ctx context.Context, q ReplayPrune) (PruneResult, 
 	return res, c.post(ctx, ReplayPrunePath, q, &res)
 }
 
+// Goals implements Store.
+func (c *Client) Goals(ctx context.Context, q GoalsQuery) ([]GoalResult, error) {
+	var res []GoalResult
+	return res, c.post(ctx, GoalsPath, q, &res)
+}
+
+// Funnel implements Store.
+func (c *Client) Funnel(ctx context.Context, q FunnelQuery) ([]FunnelStep, error) {
+	var res []FunnelStep
+	return res, c.post(ctx, FunnelPath, q, &res)
+}
+
 // Prune implements Store.
 func (c *Client) Prune(ctx context.Context, q PruneQuery) (PruneResult, error) {
 	var res PruneResult

@@ -157,6 +157,54 @@ func (s *Store) Handler() http.Handler {
 		}
 		reply(w, out)
 	}))
+	mux.HandleFunc("POST "+analytics.GoalsPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.GoalsQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		out := make([]analytics.GoalResult, len(q.Goals))
+		for i, g := range q.Goals {
+			visitors := map[uint64]bool{}
+			for _, e := range s.events {
+				if matches(e, q.Query) && reaches(e, g) {
+					visitors[e.Visitor] = true
+					out[i].Count++
+				}
+			}
+			out[i].Visitors, out[i].Sessions = int64(len(visitors)), int64(len(visitors))
+		}
+		reply(w, out)
+	}))
+	mux.HandleFunc("POST "+analytics.FunnelPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.FunnelQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		// The fake has no sessions: a visitor's events are one.
+		step := map[uint64]int{}
+		for _, e := range s.events {
+			if !matches(e, q.Query) {
+				continue
+			}
+			if n := step[e.Visitor]; n < len(q.Steps) && reaches(e, q.Steps[n]) {
+				step[e.Visitor] = n + 1
+			}
+		}
+		out := make([]analytics.FunnelStep, len(q.Steps))
+		for _, n := range step {
+			for i := range n {
+				out[i].Sessions++
+				out[i].Visitors++
+			}
+		}
+		reply(w, out)
+	}))
 	mux.HandleFunc("POST "+analytics.ReplayWritePath, s.auth(s.writeReplay))
 	mux.HandleFunc("POST "+analytics.ReplaysPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.ReplaysQuery
@@ -596,6 +644,24 @@ func matches(e analytics.Event, q analytics.Query) bool {
 		}
 	}
 	return true
+}
+
+// reaches says whether e meets goal g: a page view of its path (* any
+// run of characters, as a prefix or suffix) or a custom event by name.
+func reaches(e analytics.Event, g analytics.GoalSpec) bool {
+	switch g.Kind {
+	case analytics.GoalPage:
+		if e.Kind != analytics.KindPageview {
+			return false
+		}
+		if pre, post, ok := strings.Cut(g.Match, "*"); ok {
+			return strings.HasPrefix(e.Path, pre) && strings.HasSuffix(e.Path, post)
+		}
+		return e.Path == g.Match
+	case analytics.GoalEvent:
+		return e.Kind == analytics.KindEvent && e.Name == g.Match
+	}
+	return false
 }
 
 // applies says whether a breakdown of d counts e: pages count page views,

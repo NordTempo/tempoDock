@@ -130,3 +130,28 @@ WHERE r.id IN (sqlc.slice(ids));
 -- daily retention pass.
 -- name: ListAllSites :many
 SELECT id, settings FROM sites ORDER BY id;
+
+-- ListSiteGoals returns a site's goals in the order they were added.
+-- name: ListSiteGoals :many
+SELECT * FROM site_goals WHERE site_id = +? ORDER BY id;
+
+-- name: AddSiteGoal :one
+INSERT INTO site_goals (site_id, name, kind, match, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: RemoveSiteGoal :execrows
+DELETE FROM site_goals WHERE site_id = +sqlc.arg(site_id) AND name = +sqlc.arg(name);
+
+-- ListSiteFunnels returns a site's funnels in the order they were added.
+-- name: ListSiteFunnels :many
+SELECT * FROM site_funnels WHERE site_id = +? ORDER BY id;
+
+-- name: GetSiteFunnel :one
+SELECT * FROM site_funnels WHERE site_id = +sqlc.arg(site_id) AND name = +sqlc.arg(name);
+
+-- name: AddSiteFunnel :one
+INSERT INTO site_funnels (site_id, name, steps, created_by, created_at) VALUES (?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: RemoveSiteFunnel :execrows
+DELETE FROM site_funnels WHERE site_id = +sqlc.arg(site_id) AND name = +sqlc.arg(name);

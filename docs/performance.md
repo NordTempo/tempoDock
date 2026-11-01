@@ -76,6 +76,7 @@ an error) and runs it with the container's settings.
 | Filtered dashboard p95, 1M events, a year | ≤ 400 ms | 53-274 ms |
 | Ingest over HTTP, batches of 1,000 | ≥ 5,000 events/s | 45-62k events/s (80-97k before A2; a batch now writes up to three tables) |
 | Errors and Web Vitals views p95, 1M events, every range (error groups with their series; vitals overall, by page and device, and LCP over time) | ≤ 200 ms | 13 ms (24 hours) to 84 ms (a year) |
+| Goals and funnels p95, 1M events, every range (five goals and a three-step funnel) | ≤ 200 ms | 8 ms (24 hours) to 69 ms (a year) |
 | Peak memory through all of it | ≤ 512 MB (the container's limit) | 366-397 MB (234-259 MB before A2, mostly the ingest's vitals) |
 
 DuckDB holds memory outside its `memory_limit` (freed operator memory,
