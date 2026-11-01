@@ -190,6 +190,9 @@ importers:
       '@lezer/highlight':
         specifier: 1.2.5
         version: 1.2.5
+      '@rrweb/replay':
+        specifier: 2.2.0
+        version: 2.2.0
       '@tanstack/react-query':
         specifier: 5.104.5
         version: 5.104.5(@types/react@19.3.0)(react@19.3.1)
@@ -596,6 +599,9 @@ packages:
 
   '@rrweb/record@2.2.0':
     resolution: {integrity: sha512-hJYM4yaS3aFAGPuK1X80kgWod4g3FxG3fymfXLjDkBQvcDrGKTluLENnXYVklbt97eXOJ117uwV9y+xFFYmTIQ==}
+
+  '@rrweb/replay@2.2.0':
+    resolution: {integrity: sha512-dKug7wlnM2nlIhhHKUjHaz4+1b0duMe6wgo+97eU6CjV0R7yoKvW6NDKlSQQdWx99VMOZMvHTbMbwDQl5CRM1w==}
 
   '@rrweb/types@2.2.0':
     resolution: {integrity: sha512-2gTA/pRpIbuET123oSdX5ZUDZfWCOIMYBvpSai3fr5pk9LcbccPqqaXflX+roP4oKenLjNtJPGpFK3BfYeBKnA==}
@@ -1850,6 +1856,11 @@ snapshots:
     dependencies:
       '@rrweb/types': 2.2.0
       '@rrweb/utils': 2.2.0
+      rrweb: 2.2.0
+
+  '@rrweb/replay@2.2.0':
+    dependencies:
+      '@rrweb/types': 2.2.0
       rrweb: 2.2.0
 
   '@rrweb/types@2.2.0': {}
