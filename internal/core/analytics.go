@@ -68,6 +68,8 @@ type analyticsState struct {
 	binMu sync.Mutex
 	// live are the sites someone watches live (analytics_live.go).
 	live liveSites
+	// alerts are the analytics alerts' state (analytics_alerts.go).
+	alerts analyticsAlerts
 }
 
 // analyticsMinMemory is the least the store's container may get.
@@ -81,6 +83,7 @@ func analyticsSource(serverID int64) string { return "server:" + strconv.FormatI
 func (c *Core) startAnalytics(ctx context.Context) error {
 	c.analytics.wake = make(chan struct{})
 	c.analytics.forwarding = map[int64]bool{}
+	c.analyticsServersChanged()
 	c.rotateSalts(ctx, now())
 	st, err := c.store.GetAnalyticsSettings(ctx)
 	if store.IsNotFound(err) || (err == nil && !st.Enabled) {
@@ -234,6 +237,7 @@ func (c *Core) updateGeoIP() {
 // analytics server (and a store left there goes if it isn't), and it
 // gets the salts.
 func (c *Core) analyticsServerChanged(serverID int64, online bool) {
+	c.analyticsServersChanged()
 	if online {
 		c.pushSalts(serverID)
 		if cl, storeServer := c.analyticsClient(); cl != nil {
@@ -486,10 +490,12 @@ func (c *Core) forwardOnce(serverID int64) error {
 		if b.Skipped {
 			c.log.Warn("analytics: a server's spool was full and dropped events before they reached the store", "server", serverID)
 		}
-		if _, err := cl.WriteLines(ctx, source, b.Position, b.Events); err != nil {
+		res, err := cl.WriteLines(ctx, source, b.Position, b.Events)
+		if err != nil {
 			return err
 		}
 		c.observeLive(b.Events)
+		c.analyticsWritten(ctx, res, b.Events)
 		if err := rt.AckSpool(ctx, b.Position, b.Count); err != nil {
 			// The store has them; the next tail starts from its cursor.
 			return err

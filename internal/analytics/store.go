@@ -30,6 +30,9 @@ type Store interface {
 	Errors(ctx context.Context, q ErrorsQuery) ([]ErrorGroup, error)
 	Error(ctx context.Context, q ErrorQuery) (ErrorDetail, error)
 	Vitals(ctx context.Context, q VitalsQuery) (VitalsResult, error)
+	// Traffic counts every site's page views in an hour and the same hour
+	// of the days before (the traffic drop alert).
+	Traffic(ctx context.Context, q TrafficQuery) ([]TrafficRow, error)
 }
 
 // PruneQuery names the raw events Prune deletes: a site's events and
@@ -112,6 +115,9 @@ const (
 	ErrorsPath = "/v1/errors"
 	ErrorPath  = "/v1/error"
 	VitalsPath = "/v1/vitals"
+	// TrafficPath takes POST with a TrafficQuery and answers
+	// []TrafficRow.
+	TrafficPath = "/v1/traffic"
 	// PrunePath takes POST with a PruneQuery and answers PruneResult.
 	PrunePath = "/v1/prune"
 	// GeoIPPath takes POST and answers GeoIP once the store has this

@@ -172,6 +172,7 @@ func (a *api) handler() http.Handler {
 	mux.Handle("POST "+analytics.ErrorsPath, a.auth(query(a, a.s.Errors)))
 	mux.Handle("POST "+analytics.ErrorPath, a.auth(query(a, a.s.Error)))
 	mux.Handle("POST "+analytics.VitalsPath, a.auth(query(a, a.s.Vitals)))
+	mux.Handle("POST "+analytics.TrafficPath, a.auth(query(a, a.s.Traffic)))
 	mux.Handle("POST "+analytics.GeoIPPath, a.auth(a.updateGeoIP))
 	mux.Handle("POST "+analytics.PrunePath, a.auth(a.prune))
 	mux.Handle("GET "+analytics.SnapshotPath, a.auth(a.snapshot))

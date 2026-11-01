@@ -102,7 +102,8 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   the access check for login-protected services, traffic counting, and
 the analytics ingest and spool (`BenchmarkIngestEvent`,
 `BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs;
-`BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs). Use
+`BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs) and the
+forwarder's error counting for alerts (`BenchmarkAnalyticsWritten`). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
   benchmarks use a 60-service project), and add one for every new hot
   path.
@@ -183,6 +184,7 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
 | Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events wait to go to the control plane (ADR 0037) | one timer; then one spool read of up to 1,000 events |
 | Analytics forwarder retry | `internal/core/analytics.go` | 1 s, doubling to 30 s | the store doesn't answer or a write fails | one cursor request to the store |
+| Analytics alerts | `internal/core/analytics_alerts.go` | with the statistics tick; the traffic check once an hour | analytics is on | in memory: spikes that calmed down, new-error alerts a day old; once an hour one store query for every site's page views in an hour and the 7 days before. Errors are counted per forwarded batch (`BenchmarkAnalyticsWritten`, 52 µs for 1,000 events with 10 errors; a batch without errors is one `bytes.Contains`) |
 | Analytics salts | `internal/core/analytics.go` | with the statistics tick | always; does nothing on the same UTC day | at midnight: two inserts, a delete, one call per server; then the store's daily retention (one delete per site) and location database check (a download on a month's first day) |
 | Analytics store start | `internal/core/analytics_store.go` | 250 ms, doubling to 5 s, for at most 2 minutes | a start or move of the store waits for it to answer | one health request to the store |
 | Analytics live view | `internal/core/analytics_live.go` | 30 s, or 2 s while the site's events arrive | someone watches a site live (ADR 0037) | one live query to the analytics store, one SSE write per viewer when the view changed |

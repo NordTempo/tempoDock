@@ -109,6 +109,12 @@ func (c *Client) Vitals(ctx context.Context, q VitalsQuery) (VitalsResult, error
 	return res, c.post(ctx, VitalsPath, q, &res)
 }
 
+// Traffic implements Store.
+func (c *Client) Traffic(ctx context.Context, q TrafficQuery) ([]TrafficRow, error) {
+	var res []TrafficRow
+	return res, c.post(ctx, TrafficPath, q, &res)
+}
+
 // Prune implements Store.
 func (c *Client) Prune(ctx context.Context, q PruneQuery) (PruneResult, error) {
 	var res PruneResult

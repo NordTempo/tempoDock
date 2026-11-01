@@ -253,7 +253,7 @@
             "type": "integer"
           },
           "kind": {
-            "description": "disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed; more may be added",
+            "description": "disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop; more may be added",
             "type": "string"
           },
           "message": {

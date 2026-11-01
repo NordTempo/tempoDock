@@ -398,3 +398,41 @@ FROM events WHERE site_id = $1 AND ts >= $2 ORDER BY ts DESC LIMIT 20`, uint32(q
 	}
 	return out, rows.Err()
 }
+
+// Traffic returns every site's page views in the hour starting at q.Hour
+// and in the same hour of each of the q.Days days before. It reads raw
+// events of those hours only: the time filter skips the rest of the
+// days' row groups.
+func (s *Store) Traffic(ctx context.Context, q analytics.TrafficQuery) ([]analytics.TrafficRow, error) {
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	if q.Hour%3_600_000 != 0 || q.Days < 0 || q.Days > analytics.MaxTrafficDays {
+		return nil, badQuery("traffic takes a whole UTC hour and 0 to %d days before it", analytics.MaxTrafficDays)
+	}
+	var p params
+	var hours []string
+	for d := range q.Days + 1 {
+		from := q.Hour - int64(d)*86_400_000
+		hours = append(hours, "(ts >= "+p.add(time.UnixMilli(from).UTC())+" AND ts < "+p.add(time.UnixMilli(from+3_600_000).UTC())+")")
+	}
+	// An event d days before the hour is 0 to 3,599,999 ms short of
+	// d whole days before the hour's last millisecond.
+	last := p.add(q.Hour + 3_599_999)
+	rows, err := s.db.QueryContext(ctx, `SELECT site_id, ((`+last+` - epoch_ms(ts)) // 86400000)::INTEGER AS ago, count(*)
+FROM events WHERE kind = 1 AND (`+strings.Join(hours, " OR ")+`) GROUP BY 1, 2`, p...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []analytics.TrafficRow{}
+	for rows.Next() {
+		var r analytics.TrafficRow
+		var site uint32
+		if err := rows.Scan(&site, &r.DaysAgo, &r.Pageviews); err != nil {
+			return nil, err
+		}
+		r.Site = int64(site)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
