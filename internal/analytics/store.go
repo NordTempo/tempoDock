@@ -42,6 +42,10 @@ type Store interface {
 	Replay(ctx context.Context, q ReplayQuery) (ReplayDetail, error)
 	ReplayData(ctx context.Context, site int64, segments []string, gzipped bool) (io.ReadCloser, bool, error)
 	PruneReplays(ctx context.Context, q ReplayPrune) (PruneResult, error)
+	// Goals and Funnel count goals' conversions and a funnel's steps
+	// (phase A4).
+	Goals(ctx context.Context, q GoalsQuery) ([]GoalResult, error)
+	Funnel(ctx context.Context, q FunnelQuery) ([]FunnelStep, error)
 }
 
 // PruneQuery names the raw events Prune deletes: a site's events and

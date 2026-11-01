@@ -149,3 +149,44 @@ func TestTraffic(t *testing.T) {
 		t.Errorf("traffic = %+v", rows)
 	}
 }
+
+func TestGoalsAndFunnels(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	signup := func(v uint64, off time.Duration) analytics.Event {
+		e := at(v, off, "/pricing")
+		e.Kind, e.Name = analytics.KindEvent, "signup"
+		return e
+	}
+	write(t, s, "server-1", 1,
+		// 1: / then /pricing then signs up: the whole funnel.
+		at(1, 0, "/"), at(1, time.Minute, "/pricing"), signup(1, 2*time.Minute),
+		// 2: /pricing then / (wrong order), no signup.
+		at(2, 0, "/pricing"), at(2, time.Minute, "/"),
+		// 3: / then /pricing.
+		at(3, 0, "/"), at(3, time.Minute, "/pricing"),
+		// 4: blog only.
+		at(4, 0, "/blog/a"), at(4, time.Minute, "/blog/b"),
+	)
+	g, err := s.Goals(ctx, analytics.GoalsQuery{Query: dayQuery, Goals: []analytics.GoalSpec{
+		{Kind: analytics.GoalPage, Match: "/pricing"}, {Kind: analytics.GoalEvent, Match: "signup"}, {Kind: analytics.GoalPage, Match: "/blog/*"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g[0].Visitors != 3 || g[0].Count != 3 || g[1].Visitors != 1 || g[2].Visitors != 1 || g[2].Count != 2 {
+		t.Errorf("goals = %+v", g)
+	}
+	f, err := s.Funnel(ctx, analytics.FunnelQuery{Query: dayQuery, Steps: []analytics.GoalSpec{
+		{Kind: analytics.GoalPage, Match: "/"}, {Kind: analytics.GoalPage, Match: "/pricing"}, {Kind: analytics.GoalEvent, Match: "signup"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f[0].Sessions != 3 || f[1].Sessions != 2 || f[2].Sessions != 1 {
+		t.Errorf("funnel = %+v", f)
+	}
+	if _, err := s.Funnel(ctx, analytics.FunnelQuery{Query: dayQuery, Steps: []analytics.GoalSpec{{Kind: "click", Match: "x"}, {Kind: analytics.GoalPage, Match: "/"}}}); err == nil {
+		t.Error("a funnel step of an unknown kind")
+	}
+}

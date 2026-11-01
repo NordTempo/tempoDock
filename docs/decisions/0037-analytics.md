@@ -93,6 +93,15 @@ own time window. Meanwhile they wait in the control plane's spool, 84 KB.
 | Access | Project read, like the dashboard. Fetching a replay's recording (`.../replays/{id}/events`, one stream of all its page loads) is audited as `analytics.replay_view`, once per view; the list and the timeline aren't, they show no page content |
 | Moving and backups | A store's snapshot is a tar of its database and its replay files; a move copies both. The control plane's daily backup (ADR 0021) now includes the store's snapshot as `data/analytics/restore.tar`; a control plane restored from it fills its new, empty store from it once the store runs. Before A3 the store had no backup at all. With the store's server offline, the backup goes without it and logs why |
 
+### Goals, funnels and agents (A4)
+
+| Topic | Decision |
+|---|---|
+| Goals | A page (a path, `*` matching any run of characters) or a custom event (its name), named, at most 20 per site, in Dock's database (`site_goals`, migration 0036). Their conversions are counted by the store over the dashboard's range and filters in one scan: visitors and sessions that reached each (HyperLogLog, about 2% off) and how often; the rate is over the range's visitors |
+| Funnels | Two to eight such steps (`site_funnels`, steps as JSON), at most 20 per site. A session reaches a step when it has a matching event at or after it reached the one before: one join per step in the store. Cookieless sessions end at midnight UTC and after 30 minutes away, so funnels are within a visit |
+| Cost | At 1M events, five goals and a three-step funnel take 8 ms for a day and 69 ms for a year (budget 200 ms, `make perf`) |
+| MCP | Read-only tools for everything the Analytics tab shows: `analytics_sites`, `analytics_stats`, `analytics_breakdown`, `analytics_errors`, `analytics_vitals`, `analytics_replays` (listed, never their recordings: watching is for the UI, which audits it), `analytics_goals`, `analytics_funnel`. Filters as the API and CLI take them (`country:is:NO`). Changing goals stays with people (UI, CLI, API) |
+
 ### Changed by the spike
 
 | Plan | Now | Why |

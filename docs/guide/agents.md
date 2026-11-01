@@ -136,6 +136,7 @@ instead; that is your login, so don't hand it to an agent.
 | Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `list_releases`, `release_details`, `logs`, `list_servers`, `audit_log` |
 | Ship | `deploy_image`, `redeploy`, `rollback`, `promote`, `clone_environment` |
 | Configure | `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain` |
+| Analytics | `analytics_sites`, `analytics_stats`, `analytics_breakdown`, `analytics_errors`, `analytics_vitals`, `analytics_replays` (listed only; watched in the UI), `analytics_goals`, `analytics_funnel` |
 | Data | `data_status`, `data_schema`, `data_rows`, `data_query`, `propose_data_changes` |
 
 - **Project and environment default to the token's limits**, so a token

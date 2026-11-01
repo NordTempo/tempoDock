@@ -25,6 +25,21 @@ type StatsQuery struct {
 	Filters  []analytics.Filter
 }
 
+// ParseFilters reads filters written as dimension:op:value
+// ("country:is:NO"), as the API, CLI and MCP tools take them.
+func ParseFilters(fs []string) ([]analytics.Filter, error) {
+	out := make([]analytics.Filter, 0, len(fs))
+	for _, f := range fs {
+		dim, rest, ok1 := strings.Cut(f, ":")
+		op, value, ok2 := strings.Cut(rest, ":")
+		if !ok1 || !ok2 {
+			return nil, invalid("filter %q must look like country:is:NO (dimension:op:value, op is, is_not or contains)", f)
+		}
+		out = append(out, analytics.Filter{Dimension: analytics.Dimension(dim), Op: analytics.FilterOp(op), Value: value})
+	}
+	return out, nil
+}
+
 // statsRanges are the named ranges.
 var statsRanges = map[string]time.Duration{
 	"24h": 24 * time.Hour, "7d": 7 * 24 * time.Hour, "30d": 30 * 24 * time.Hour,

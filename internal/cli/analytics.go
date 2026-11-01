@@ -80,7 +80,7 @@ old store is removed when that server is back.`,
 	}
 	cmd.AddCommand(server)
 	cmd.AddCommand(newAnalyticsEnableCmd(g), newAnalyticsDisableCmd(g), newAnalyticsSitesCmd(g),
-		newAnalyticsStatsCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsReplaysCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
+		newAnalyticsStatsCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsReplaysCmd(g), newAnalyticsGoalsCmd(g), newAnalyticsFunnelsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
 	return cmd
 }
 
@@ -432,6 +432,205 @@ func printReplay(g *globals, d apitypes.ReplayDetail) error {
 		tb.Row("+"+it.At.Sub(d.Start).Round(time.Second).String(), it.Kind, it.Path, dash(cut(oneLine(it.Name), 80)))
 	}
 	return tb.Flush()
+}
+
+// goalStepFlag reads "page:/pricing" or "event:signup".
+func goalStepFlag(v string) (apitypes.GoalStep, error) {
+	kind, match, ok := strings.Cut(v, ":")
+	if !ok || (kind != "page" && kind != "event") || match == "" {
+		return apitypes.GoalStep{}, usageError(fmt.Sprintf("%q isn't a goal", v), "a goal or step looks like page:/pricing (* matches anything) or event:signup")
+	}
+	return apitypes.GoalStep{Kind: kind, Match: match}, nil
+}
+
+func newAnalyticsGoalsCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var sq statsQuery
+	cmd := &cobra.Command{
+		Use:   "goals <site>",
+		Short: "A site's goals and their conversions over a range",
+		Long: `Show a site's goals with the visitors and sessions that reached them
+over a range, how often, and their share of the range's visitors. A goal
+is a page (a path, * matching anything) or a custom event (its name).`,
+		Example: `  dock analytics goals shop.example.com --range 7d
+  dock analytics goals add shop.example.com Signup event:signup
+  dock analytics goals add shop.example.com Pricing page:/pricing`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needProject)
+			if err != nil {
+				return err
+			}
+			st, err := get[apitypes.SiteGoals](cmd.Context(), s, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/goals?"+sq.values().Encode())
+			if err != nil {
+				return err
+			}
+			return g.io.Print(st, func() error {
+				if !st.StoreOnline {
+					g.io.Warnf("%s", st.StoreError)
+				}
+				if len(st.Goals) == 0 {
+					g.io.Detail("No goals; add one with `dock analytics goals add`.")
+					return nil
+				}
+				tb := g.io.Table("GOAL", "MATCHES", "VISITORS", "RATE", "COUNT")
+				for _, gl := range st.Goals {
+					tb.Row(gl.Name, gl.Kind+":"+gl.Match, itoa(gl.Visitors), fmt.Sprintf("%.1f%%", gl.Rate*100), itoa(gl.Count))
+				}
+				return tb.Flush()
+			})
+		},
+	}
+	f.add(cmd, needProject)
+	sq.add(cmd)
+	var af targetFlags
+	add := &cobra.Command{
+		Use:   "add <site> <name> <page:/path | event:name>",
+		Short: "Add a goal to a site",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			step, err := goalStepFlag(args[2])
+			if err != nil {
+				return err
+			}
+			s, t, err := g.open(af, needProject)
+			if err != nil {
+				return err
+			}
+			gl, err := send[apitypes.Goal](cmd.Context(), s, http.MethodPost, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/goals",
+				apitypes.CreateGoalRequest{Name: args[1], GoalStep: step})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(gl, func() error { g.io.Successf("Goal %s counts %s:%s", gl.Name, gl.Kind, gl.Match); return nil })
+		},
+	}
+	af.add(add, needProject)
+	var rf targetFlags
+	remove := &cobra.Command{
+		Use:   "remove <site> <name>",
+		Short: "Remove a site's goal",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(rf, needProject)
+			if err != nil {
+				return err
+			}
+			if err := del(cmd.Context(), s, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/goals/"+url.PathEscape(args[1])); err != nil {
+				return err
+			}
+			return g.io.Print(map[string]string{"removed": args[1]}, func() error { g.io.Successf("Removed goal %s", args[1]); return nil })
+		},
+	}
+	rf.add(remove, needProject)
+	cmd.AddCommand(add, remove)
+	return cmd
+}
+
+func newAnalyticsFunnelsCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var sq statsQuery
+	cmd := &cobra.Command{
+		Use:   "funnels <site> [<funnel>]",
+		Short: "A site's funnels; or how many sessions took one's steps",
+		Long: `List a site's funnels, or show one over a range: how many sessions
+reached each of its steps after the ones before it. Steps are pages (a
+path, * matching anything) or custom events (their names).`,
+		Example: `  dock analytics funnels shop.example.com
+  dock analytics funnels shop.example.com Checkout --range 7d
+  dock analytics funnels add shop.example.com Checkout page:/pricing page:/checkout event:paid`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needProject)
+			if err != nil {
+				return err
+			}
+			path := t.projectPath() + "/sites/" + url.PathEscape(args[0]) + "/funnels"
+			if len(args) == 1 {
+				list, err := get[[]apitypes.Funnel](cmd.Context(), s, path)
+				if err != nil {
+					return err
+				}
+				return g.io.Print(list, func() error {
+					if len(list) == 0 {
+						g.io.Detail("No funnels; add one with `dock analytics funnels add`.")
+						return nil
+					}
+					tb := g.io.Table("FUNNEL", "STEPS")
+					for _, fn := range list {
+						steps := make([]string, len(fn.Steps))
+						for i, st := range fn.Steps {
+							steps[i] = st.Kind + ":" + st.Match
+						}
+						tb.Row(fn.Name, strings.Join(steps, " > "))
+					}
+					return tb.Flush()
+				})
+			}
+			fn, err := get[apitypes.SiteFunnel](cmd.Context(), s, path+"/"+url.PathEscape(args[1])+"?"+sq.values().Encode())
+			if err != nil {
+				return err
+			}
+			return g.io.Print(fn, func() error {
+				if !fn.StoreOnline {
+					g.io.Warnf("%s", fn.StoreError)
+					return nil
+				}
+				tb := g.io.Table("STEP", "SESSIONS", "VISITORS", "OF FIRST")
+				for _, st := range fn.Steps {
+					tb.Row(st.Kind+":"+st.Match, itoa(st.Sessions), itoa(st.Visitors), fmt.Sprintf("%.1f%%", st.Conversion*100))
+				}
+				return tb.Flush()
+			})
+		},
+	}
+	f.add(cmd, needProject)
+	sq.add(cmd)
+	var af targetFlags
+	add := &cobra.Command{
+		Use:   "add <site> <name> <step> <step> [<step>...]",
+		Short: "Add a funnel to a site: 2 to 8 steps, each page:/path or event:name",
+		Args:  cobra.RangeArgs(4, 10),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req := apitypes.CreateFunnelRequest{Name: args[1]}
+			for _, a := range args[2:] {
+				st, err := goalStepFlag(a)
+				if err != nil {
+					return err
+				}
+				req.Steps = append(req.Steps, st)
+			}
+			s, t, err := g.open(af, needProject)
+			if err != nil {
+				return err
+			}
+			fn, err := send[apitypes.Funnel](cmd.Context(), s, http.MethodPost, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/funnels", req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(fn, func() error { g.io.Successf("Funnel %s has %d steps", fn.Name, len(fn.Steps)); return nil })
+		},
+	}
+	af.add(add, needProject)
+	var rf targetFlags
+	remove := &cobra.Command{
+		Use:   "remove <site> <name>",
+		Short: "Remove a site's funnel",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(rf, needProject)
+			if err != nil {
+				return err
+			}
+			if err := del(cmd.Context(), s, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/funnels/"+url.PathEscape(args[1])); err != nil {
+				return err
+			}
+			return g.io.Print(map[string]string{"removed": args[1]}, func() error { g.io.Successf("Removed funnel %s", args[1]); return nil })
+		},
+	}
+	rf.add(remove, needProject)
+	cmd.AddCommand(add, remove)
+	return cmd
 }
 
 func newAnalyticsVitalsCmd(g *globals) *cobra.Command {

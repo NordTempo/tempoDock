@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -59,6 +60,11 @@ func newFixture(t testing.TB) *fixture {
 	box, _ := secrets.New(bytes.Repeat([]byte{1}, secrets.KeySize))
 	cfg := config.Default()
 	cfg.DataDir = dir
+	// The analytics store runs from a binary the fake only names.
+	cfg.Analytics.StoreBinary = filepath.Join(dir, "dock-analytics")
+	if err := os.WriteFile(cfg.Analytics.StoreBinary, []byte("store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	rt := fake.New()
 	quiet := slog.New(slog.DiscardHandler)
 	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: quiet, CutoverDrain: time.Nanosecond})
@@ -547,5 +553,61 @@ func waitFor(t *testing.T, cond func() bool) {
 			t.Fatal("timed out")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// The analytics tools read a site as the Analytics tab does, within the
+// token's limits.
+func TestAnalyticsTools(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	web := core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}
+	if _, err := f.core.DeployImage(ctx, sys, web, apitypes.DeployImageRequest{Image: "app:1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.core.AddDomain(ctx, sys, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.core.EnableHostnameAnalytics(ctx, sys, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.core.AddSiteGoal(ctx, sys, "shop", "shop.example.com", apitypes.CreateGoalRequest{Name: "Signup",
+		GoalStep: apitypes.GoalStep{Kind: "event", Match: "signup"}}); err != nil {
+		t.Fatal(err)
+	}
+	// The store starts in the background.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if st, err := f.core.SiteStats(ctx, sys, "shop", "shop.example.com", core.StatsQuery{}); err == nil && st.StoreOnline {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the analytics store didn't start")
+		}
+	}
+	s := f.connect("shop-agent", nil)
+	if c := call(t, s, "analytics_sites", nil); c.isError || !strings.Contains(c.summary, "shop.example.com (staging)") {
+		t.Errorf("analytics_sites = %q", c.summary)
+	}
+	for tool, args := range map[string]map[string]any{
+		"analytics_stats":     {"site": "shop.example.com", "range": "7d"},
+		"analytics_breakdown": {"site": "shop.example.com", "dimension": "referrer"},
+		"analytics_errors":    {"site": "shop.example.com", "filters": []string{"device:is:mobile"}},
+		"analytics_vitals":    {"site": "shop.example.com", "by": []string{"page"}, "metric": "lcp"},
+		"analytics_replays":   {"site": "shop.example.com", "errors_only": true},
+		"analytics_goals":     {"site": "shop.example.com"},
+		"analytics_funnel":    {"site": "shop.example.com"},
+	} {
+		if c := call(t, s, tool, args); c.isError {
+			t.Errorf("%s = %q", tool, c.summary)
+		}
+	}
+	if c := call(t, s, "analytics_goals", map[string]any{"site": "shop.example.com"}); !strings.Contains(c.summary, "1 goals") {
+		t.Errorf("analytics_goals = %q", c.summary)
+	}
+	if code := call(t, s, "analytics_stats", map[string]any{"site": "shop.example.com", "filters": []string{"nope"}}).errorCode(t); code != apitypes.CodeValidation {
+		t.Errorf("a malformed filter: %s", code)
+	}
+	if code := call(t, s, "analytics_stats", map[string]any{"project": "blog", "site": "x"}).errorCode(t); code != apitypes.CodeForbidden && code != apitypes.CodeNotFound {
+		t.Errorf("another project's site: %s", code)
 	}
 }

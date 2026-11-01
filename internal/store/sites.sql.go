@@ -11,6 +11,75 @@ import (
 	"time"
 )
 
+const addSiteFunnel = `-- name: AddSiteFunnel :one
+INSERT INTO site_funnels (site_id, name, steps, created_by, created_at) VALUES (?, ?, ?, ?, ?)
+RETURNING id, site_id, name, steps, created_by, created_at
+`
+
+type AddSiteFunnelParams struct {
+	SiteID    int64
+	Name      string
+	Steps     string
+	CreatedBy string
+	CreatedAt time.Time
+}
+
+func (q *Queries) AddSiteFunnel(ctx context.Context, arg AddSiteFunnelParams) (SiteFunnel, error) {
+	row := q.queryRow(ctx, q.addSiteFunnelStmt, addSiteFunnel,
+		arg.SiteID,
+		arg.Name,
+		arg.Steps,
+		arg.CreatedBy,
+		arg.CreatedAt,
+	)
+	var i SiteFunnel
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.Name,
+		&i.Steps,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const addSiteGoal = `-- name: AddSiteGoal :one
+INSERT INTO site_goals (site_id, name, kind, match, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, site_id, name, kind, "match", created_by, created_at
+`
+
+type AddSiteGoalParams struct {
+	SiteID    int64
+	Name      string
+	Kind      string
+	Match     string
+	CreatedBy string
+	CreatedAt time.Time
+}
+
+func (q *Queries) AddSiteGoal(ctx context.Context, arg AddSiteGoalParams) (SiteGoal, error) {
+	row := q.queryRow(ctx, q.addSiteGoalStmt, addSiteGoal,
+		arg.SiteID,
+		arg.Name,
+		arg.Kind,
+		arg.Match,
+		arg.CreatedBy,
+		arg.CreatedAt,
+	)
+	var i SiteGoal
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.Name,
+		&i.Kind,
+		&i.Match,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const addSiteHostname = `-- name: AddSiteHostname :exec
 INSERT INTO site_hostnames (hostname, site_id, service_id, added_at) VALUES (?, ?, ?, ?)
 ON CONFLICT (hostname) DO UPDATE SET site_id = excluded.site_id, service_id = excluded.service_id
@@ -199,6 +268,29 @@ func (q *Queries) GetSiteByName(ctx context.Context, arg GetSiteByNameParams) (S
 		&i.Name,
 		&i.Settings,
 		&i.ArchivedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getSiteFunnel = `-- name: GetSiteFunnel :one
+SELECT id, site_id, name, steps, created_by, created_at FROM site_funnels WHERE site_id = +?1 AND name = +?2
+`
+
+type GetSiteFunnelParams struct {
+	SiteID int64
+	Name   string
+}
+
+func (q *Queries) GetSiteFunnel(ctx context.Context, arg GetSiteFunnelParams) (SiteFunnel, error) {
+	row := q.queryRow(ctx, q.getSiteFunnelStmt, getSiteFunnel, arg.SiteID, arg.Name)
+	var i SiteFunnel
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.Name,
+		&i.Steps,
 		&i.CreatedBy,
 		&i.CreatedAt,
 	)
@@ -427,6 +519,77 @@ func (q *Queries) ListSiteDeploys(ctx context.Context, arg ListSiteDeploysParams
 	return items, nil
 }
 
+const listSiteFunnels = `-- name: ListSiteFunnels :many
+SELECT id, site_id, name, steps, created_by, created_at FROM site_funnels WHERE site_id = +? ORDER BY id
+`
+
+// ListSiteFunnels returns a site's funnels in the order they were added.
+func (q *Queries) ListSiteFunnels(ctx context.Context, siteID int64) ([]SiteFunnel, error) {
+	rows, err := q.query(ctx, q.listSiteFunnelsStmt, listSiteFunnels, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SiteFunnel
+	for rows.Next() {
+		var i SiteFunnel
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.Name,
+			&i.Steps,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSiteGoals = `-- name: ListSiteGoals :many
+SELECT id, site_id, name, kind, "match", created_by, created_at FROM site_goals WHERE site_id = +? ORDER BY id
+`
+
+// ListSiteGoals returns a site's goals in the order they were added.
+func (q *Queries) ListSiteGoals(ctx context.Context, siteID int64) ([]SiteGoal, error) {
+	rows, err := q.query(ctx, q.listSiteGoalsStmt, listSiteGoals, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SiteGoal
+	for rows.Next() {
+		var i SiteGoal
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.Name,
+			&i.Kind,
+			&i.Match,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSiteHostnames = `-- name: ListSiteHostnames :many
 SELECT site_hostnames.hostname, site_hostnames.site_id, site_hostnames.service_id, site_hostnames.added_at, CAST(coalesce(services.name, '') AS TEXT) AS service_name
 FROM site_hostnames
@@ -568,6 +731,40 @@ func (q *Queries) ReleaseNames(ctx context.Context, ids []int64) ([]ReleaseNames
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeSiteFunnel = `-- name: RemoveSiteFunnel :execrows
+DELETE FROM site_funnels WHERE site_id = +?1 AND name = +?2
+`
+
+type RemoveSiteFunnelParams struct {
+	SiteID int64
+	Name   string
+}
+
+func (q *Queries) RemoveSiteFunnel(ctx context.Context, arg RemoveSiteFunnelParams) (int64, error) {
+	result, err := q.exec(ctx, q.removeSiteFunnelStmt, removeSiteFunnel, arg.SiteID, arg.Name)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const removeSiteGoal = `-- name: RemoveSiteGoal :execrows
+DELETE FROM site_goals WHERE site_id = +?1 AND name = +?2
+`
+
+type RemoveSiteGoalParams struct {
+	SiteID int64
+	Name   string
+}
+
+func (q *Queries) RemoveSiteGoal(ctx context.Context, arg RemoveSiteGoalParams) (int64, error) {
+	result, err := q.exec(ctx, q.removeSiteGoalStmt, removeSiteGoal, arg.SiteID, arg.Name)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const removeSiteHostname = `-- name: RemoveSiteHostname :exec

@@ -380,3 +380,76 @@ type TimelineItem struct {
 	// Group is an error's group, for its page.
 	Group string `json:"group,omitempty"`
 }
+
+// GoalStep is what a goal or a funnel step matches: a page (a path,
+// * matching any run of characters) or a custom event (its name).
+type GoalStep struct {
+	Kind  string `json:"kind" enum:"page,event"`
+	Match string `json:"match" maxLength:"200" example:"/pricing"`
+}
+
+// CreateGoalRequest adds a goal to a site.
+type CreateGoalRequest struct {
+	Name string `json:"name" minLength:"1" maxLength:"60"`
+	GoalStep
+}
+
+// Goal is a site's goal and, in a range, its conversions: the visitors
+// and sessions that reached it (about 2% off) and how often it happened.
+// Rate is Visitors over the range's visitors.
+type Goal struct {
+	Name string `json:"name"`
+	GoalStep
+	Visitors int64   `json:"visitors"`
+	Sessions int64   `json:"sessions"`
+	Count    int64   `json:"count"`
+	Rate     float64 `json:"rate" doc:"0 to 1"`
+}
+
+// SiteGoals is a site's goals with their conversions in a range (ADR
+// 0037, phase A4).
+type SiteGoals struct {
+	Site        string `json:"site"`
+	From        int64  `json:"from" doc:"Unix ms"`
+	To          int64  `json:"to" doc:"Unix ms"`
+	Visitors    int64  `json:"visitors"`
+	Goals       []Goal `json:"goals"`
+	StoreOnline bool   `json:"store_online"`
+	StoreError  string `json:"store_error,omitempty"`
+}
+
+// CreateFunnelRequest adds a funnel to a site: 2 to 8 steps a session
+// takes in order.
+type CreateFunnelRequest struct {
+	Name  string     `json:"name" minLength:"1" maxLength:"60"`
+	Steps []GoalStep `json:"steps" minItems:"2" maxItems:"8"`
+}
+
+// Funnel is a site's funnel.
+type Funnel struct {
+	Name  string     `json:"name"`
+	Steps []GoalStep `json:"steps"`
+}
+
+// SiteFunnel is a funnel over a range: how many sessions reached each
+// step after the ones before it.
+type SiteFunnel struct {
+	Site  string       `json:"site"`
+	Name  string       `json:"name"`
+	From  int64        `json:"from" doc:"Unix ms"`
+	To    int64        `json:"to" doc:"Unix ms"`
+	Steps []FunnelStep `json:"steps"`
+	// StoreOnline is false while the store can't be reached; the counts
+	// are then empty.
+	StoreOnline bool   `json:"store_online"`
+	StoreError  string `json:"store_error,omitempty"`
+}
+
+// FunnelStep is one step's sessions and visitors, and the share of the
+// first step's sessions that got this far.
+type FunnelStep struct {
+	GoalStep
+	Sessions   int64   `json:"sessions"`
+	Visitors   int64   `json:"visitors"`
+	Conversion float64 `json:"conversion" doc:"0 to 1, of the first step's sessions"`
+}

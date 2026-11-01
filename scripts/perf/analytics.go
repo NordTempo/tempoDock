@@ -33,7 +33,7 @@ const (
 	analyticsYearFilterBudget = 400 * time.Millisecond
 	// analyticsErrorsViewBudget is the errors and Web Vitals views (ADR
 	// 0037, phase A2): error groups and vitals by page and device, each
-	// with its series.
+	// with its series; and the goals view (A4): five goals and a funnel.
 	analyticsErrorsViewBudget = 200 * time.Millisecond
 	// analyticsIngestBudget is events per second, in batches of 1,000.
 	analyticsIngestBudget = 5000
@@ -48,12 +48,18 @@ const (
 	analyticsRecorderBudget = 50 << 10
 )
 
-// errorsAndVitals is bench.ErrorsAndVitals: the errors and Web Vitals
-// views' timings (the bench is in the store's own module).
-const errorsAndVitals = "errors and vitals"
+// errorsAndVitals and goalsAndFunnels are bench.ErrorsAndVitals and
+// bench.GoalsAndFunnels: other views' timings (the bench is in the
+// store's own module).
+const (
+	errorsAndVitals = "errors and vitals"
+	goalsAndFunnels = "goals and funnels"
+)
 
 // filtered reports whether r is a filtered dashboard's timing.
-func filtered(r analyticsResult) bool { return r.Filter != "none" && r.Filter != errorsAndVitals }
+func filtered(r analyticsResult) bool {
+	return r.Filter != "none" && r.Filter != errorsAndVitals && r.Filter != goalsAndFunnels
+}
 
 // analyticsResult is one line of `dock-analytics bench -json`.
 type analyticsResult struct {
@@ -143,6 +149,7 @@ func checkAnalytics(o options, t *table) error {
 		{"analytics filtered dashboard p95, 1M events, ≤ 30 days", analyticsFilterBudget, func(r analyticsResult) bool { return filtered(r) && r.Range != "365d" }},
 		{"analytics filtered dashboard p95, 1M events, a year", analyticsYearFilterBudget, func(r analyticsResult) bool { return filtered(r) && r.Range == "365d" }},
 		{"analytics errors and vitals p95, 1M events, every range", analyticsErrorsViewBudget, func(r analyticsResult) bool { return r.Filter == errorsAndVitals }},
+		{"analytics goals and funnels p95, 1M events, every range", analyticsErrorsViewBudget, func(r analyticsResult) bool { return r.Filter == goalsAndFunnels }},
 	} {
 		w := worst(c.keep)
 		budget, text := scaledBudget(c.budget, o.speed)
