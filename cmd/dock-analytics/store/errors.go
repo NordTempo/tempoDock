@@ -406,12 +406,12 @@ func (s *Store) Error(ctx context.Context, q analytics.ErrorQuery) (analytics.Er
 	if err != nil {
 		return analytics.ErrorDetail{}, err
 	}
-	w += " AND grp = " + p.add(grp)
+	w += " AND grp = " + p.addU64(grp)
 	d := analytics.ErrorDetail{Pages: []analytics.Row{}, Browsers: []analytics.Row{}, OS: []analytics.Row{}, Devices: []analytics.Row{},
 		Releases: []analytics.Row{}, Recent: []analytics.ErrorOccurrence{}}
 	var rel uint32
-	err = s.db.QueryRowContext(ctx, `SELECT epoch_ms(first_seen), first_release FROM error_groups WHERE site_id = $1 AND grp = $2`,
-		uint32(q.Site), grp).Scan(&d.FirstSeen, &rel)
+	err = s.db.QueryRowContext(ctx, `SELECT epoch_ms(first_seen), first_release FROM error_groups WHERE site_id = $1 AND grp = $2::UBIGINT`,
+		uint32(q.Site), strconv.FormatUint(grp, 10)).Scan(&d.FirstSeen, &rel)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, badQuery("this site has no error group %s", q.Group)
 	}

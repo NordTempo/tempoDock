@@ -105,6 +105,13 @@ func (p *params) add(v any) string {
 	return "$" + strconv.Itoa(len(*p))
 }
 
+// addU64 binds a UBIGINT (a fingerprint, segment or visitor ID) and
+// returns its placeholder. database/sql refuses uint64 arguments with the
+// high bit set, which random IDs have half the time, so it goes as text.
+func (p *params) addU64(v uint64) string {
+	return p.add(strconv.FormatUint(v, 10)) + "::UBIGINT"
+}
+
 // where is the WHERE clause for q's site and filters over events in
 // [from, to) (Unix ms), binding its values to p. q must be checked.
 func where(p *params, q analytics.Query, from, to int64) string {

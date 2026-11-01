@@ -26,17 +26,21 @@ func chunk(visitor, segment uint64, seq uint32, offset time.Duration, events str
 		Browser: "Firefox", OS: "Linux", Device: "desktop", Data: b.Bytes()}
 }
 
+// hi is the high bit: random IDs have it half the time, and
+// database/sql refuses such uint64 arguments.
+const hi = 1 << 63
+
 func TestReplays(t *testing.T) {
 	s := open(t)
 	ctx := context.Background()
 	// Visitor 1: two page loads 10 minutes apart (one replay), and one
 	// two hours later (another). Visitor 2: one page load.
 	chunks := []analytics.ReplayChunk{
-		chunk(1, 0xa1, 0, time.Hour, `[{"timestamp":1}]`),
-		chunk(1, 0xa1, 1, time.Hour+5*time.Second, `[{"timestamp":2}]`),
-		chunk(1, 0xa2, 0, time.Hour+10*time.Minute, `[{"timestamp":3}]`),
-		chunk(1, 0xa3, 0, 3*time.Hour, `[{"timestamp":4}]`),
-		chunk(2, 0xb1, 0, 2*time.Hour, `[{"timestamp":5}]`),
+		chunk(hi|1, hi|0xa1, 0, time.Hour, `[{"timestamp":1}]`),
+		chunk(hi|1, hi|0xa1, 1, time.Hour+5*time.Second, `[{"timestamp":2}]`),
+		chunk(hi|1, hi|0xa2, 0, time.Hour+10*time.Minute, `[{"timestamp":3}]`),
+		chunk(hi|1, hi|0xa3, 0, 3*time.Hour, `[{"timestamp":4}]`),
+		chunk(2, hi|0xb1, 0, 2*time.Hour, `[{"timestamp":5}]`),
 		{Site: 1, Segment: 0xbad, Time: day0.UnixMilli(), Data: []byte("not gzip")},
 	}
 	n, skipped, err := s.WriteReplay(ctx, "replay:server:1", 1, chunks, nil)
@@ -48,9 +52,9 @@ func TestReplays(t *testing.T) {
 		t.Fatalf("again: %d, %v", n, err)
 	}
 	// Visitor 1 met an error and did something during the first replay.
-	pv := at(1, time.Hour-5*time.Second, "/p0")
-	er := boom(1, time.Hour+time.Minute, 7, "boom")
-	ev := at(1, time.Hour+2*time.Minute, "/p0")
+	pv := at(hi|1, time.Hour-5*time.Second, "/p0")
+	er := boom(hi|1, time.Hour+time.Minute, hi|7, "boom")
+	ev := at(hi|1, time.Hour+2*time.Minute, "/p0")
 	ev.Kind, ev.Name = analytics.KindEvent, "signup"
 	write(t, s, "server-1", 1, pv, er, ev)
 
@@ -59,7 +63,7 @@ func TestReplays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 3 || list[0].ID != groupHex(0xa3) || list[2].ID != groupHex(0xa1) || list[2].Segments != 2 ||
+	if len(list) != 3 || list[0].ID != groupHex(hi|0xa3) || list[2].ID != groupHex(hi|0xa1) || list[2].Segments != 2 ||
 		list[2].Errors != 1 || list[2].Events != 1 || list[2].EntryPath != "/p0" || list[2].ExitPath != "/p0" || list[2].Browser != "Firefox" {
 		t.Fatalf("replays = %+v", list)
 	}
@@ -73,24 +77,24 @@ func TestReplays(t *testing.T) {
 		t.Errorf("with errors: %+v, %v", list, err)
 	}
 	q.ErrorsOnly, q.Filters = false, []analytics.Filter{{Dimension: analytics.DimPage, Op: analytics.OpIs, Value: "/p1"}}
-	if list, err := s.Replays(ctx, q); err != nil || len(list) != 1 || list[0].ID != groupHex(0xa1) {
+	if list, err := s.Replays(ctx, q); err != nil || len(list) != 1 || list[0].ID != groupHex(hi|0xa1) {
 		t.Errorf("by page: %+v, %v", list, err)
 	}
 
 	// Any segment finds the whole replay.
-	d, err := s.Replay(ctx, analytics.ReplayQuery{Site: 1, ID: groupHex(0xa2)})
+	d, err := s.Replay(ctx, analytics.ReplayQuery{Site: 1, ID: groupHex(hi | 0xa2)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The timeline starts with the first page load's own page view.
-	if d.ID != groupHex(0xa1) || len(d.SegmentList) != 2 || d.SegmentList[0].Skew != 2000 || len(d.Timeline) != 3 ||
+	if d.ID != groupHex(hi|0xa1) || len(d.SegmentList) != 2 || d.SegmentList[0].Skew != 2000 || len(d.Timeline) != 3 ||
 		d.Timeline[0].Kind != analytics.KindPageview || d.Timeline[1].Kind != analytics.KindError ||
-		d.Timeline[1].Group != groupHex(7) || d.Timeline[2].Name != "signup" {
+		d.Timeline[1].Group != groupHex(hi|7) || d.Timeline[2].Name != "signup" {
 		t.Fatalf("replay = %+v", d)
 	}
 	var out bytes.Buffer
-	if err := s.ReplayData(ctx, 1, []string{groupHex(0xa1), groupHex(0xa2)}, func() {}, &out); err != nil ||
-		out.String() != `{"segment":"00000000000000a1"}`+"\n"+`[{"timestamp":1}]`+"\n"+`[{"timestamp":2}]`+"\n"+`{"segment":"00000000000000a2"}`+"\n"+`[{"timestamp":3}]`+"\n" {
+	if err := s.ReplayData(ctx, 1, []string{groupHex(hi | 0xa1), groupHex(hi | 0xa2)}, func() {}, &out); err != nil ||
+		out.String() != `{"segment":"`+groupHex(hi|0xa1)+`"}`+"\n"+`[{"timestamp":1}]`+"\n"+`[{"timestamp":2}]`+"\n"+`{"segment":"`+groupHex(hi|0xa2)+`"}`+"\n"+`[{"timestamp":3}]`+"\n" {
 		t.Fatalf("data %q, %v", out.String(), err)
 	}
 	if err := s.ReplayData(ctx, 1, []string{groupHex(0xff)}, func() {}, &out); err == nil {
@@ -109,7 +113,7 @@ func TestReplays(t *testing.T) {
 	if _, err := os.Stat(day); !os.IsNotExist(err) {
 		t.Errorf("the day's directory: %v", err)
 	}
-	if _, err := s.Replay(ctx, analytics.ReplayQuery{Site: 1, ID: groupHex(0xa2)}); err == nil || !strings.Contains(err.Error(), "no replay") {
+	if _, err := s.Replay(ctx, analytics.ReplayQuery{Site: 1, ID: groupHex(hi | 0xa2)}); err == nil || !strings.Contains(err.Error(), "no replay") {
 		t.Errorf("a pruned replay: %v", err)
 	}
 }

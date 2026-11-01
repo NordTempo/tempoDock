@@ -267,6 +267,18 @@ func TestErrorEvent(t *testing.T) {
 	}
 }
 
+func TestErrorMessage(t *testing.T) {
+	for in, want := range map[string]string{
+		"Uncaught TypeError: price is undefined": "price is undefined",
+		"TypeError: price is undefined":          "price is undefined",
+		"Script error.":                          "Script error.",
+	} {
+		if got := errorMessage("TypeError", in); got != want {
+			t.Errorf("errorMessage(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestTopFrame(t *testing.T) {
 	for stack, want := range map[string]string{
 		"Error: x\n    at JSON.parse (<anonymous>)\n    at load (https://a.example/app.js?v=3:10:2)": "load (/app.js)",

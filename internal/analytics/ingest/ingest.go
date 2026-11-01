@@ -356,8 +356,9 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 	case analytics.KindOutbound:
 		e.Name = cut(b.Name, maxOutbound)
 	case analytics.KindError:
-		e.Name = cut(b.Name, maxMessage)
-		e.Error = errorInfo(cut(b.Type, maxType), e.Name, cut(b.Stack, maxStack))
+		typ := cut(b.Type, maxType)
+		e.Name = cut(errorMessage(typ, b.Name), maxMessage)
+		e.Error = errorInfo(typ, e.Name, cut(b.Stack, maxStack))
 	case analytics.KindVitals:
 		if b.Vitals == nil {
 			return false, false

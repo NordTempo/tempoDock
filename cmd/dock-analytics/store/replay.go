@@ -369,8 +369,8 @@ func (s *Store) Replay(ctx context.Context, q analytics.ReplayQuery) (analytics.
 	}
 	var visitor uint64
 	var at time.Time
-	err = s.db.QueryRowContext(ctx, "SELECT any_value(visitor_id), min(ts_first) FROM replay_chunks WHERE site_id = $1 AND segment = $2 HAVING count(*) > 0",
-		uint32(q.Site), id).Scan(&visitor, &at)
+	err = s.db.QueryRowContext(ctx, "SELECT any_value(visitor_id), min(ts_first) FROM replay_chunks WHERE site_id = $1 AND segment = $2::UBIGINT HAVING count(*) > 0",
+		uint32(q.Site), strconv.FormatUint(id, 10)).Scan(&visitor, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return analytics.ReplayDetail{}, badQuery("this site has no replay %s; it may have been deleted with its retention", q.ID)
 	}
@@ -379,7 +379,7 @@ func (s *Store) Replay(ctx context.Context, q analytics.ReplayQuery) (analytics.
 	}
 	// The visitor's segments around it: a visitor ID lasts a day.
 	var p params
-	segs := segmentsSQL(&p, q.Site, at.Truncate(24*time.Hour).Add(-24*time.Hour), at.Add(24*time.Hour), " HAVING any_value(visitor_id) = "+p.add(visitor))
+	segs := segmentsSQL(&p, q.Site, at.Truncate(24*time.Hour).Add(-24*time.Hour), at.Add(24*time.Hour), " HAVING any_value(visitor_id) = "+p.addU64(visitor))
 	rows, err := s.db.QueryContext(ctx, `SELECT segment, v, s, e, entry, exit, country, browser, os, device, rel, bytes::BIGINT, skew FROM (`+segs+`) ORDER BY s`, p...)
 	if err != nil {
 		return analytics.ReplayDetail{}, err
@@ -419,11 +419,11 @@ func (s *Store) Replay(ctx context.Context, q analytics.ReplayQuery) (analytics.
 	from, to := first.start.Add(-time.Second), end.Add(5*time.Second)
 	tl, err := s.db.QueryContext(ctx, `SELECT * FROM (
     SELECT epoch_ms(ts) AS t, kind, path, name, '' AS grp FROM events
-    WHERE site_id = $1 AND visitor_id = $2 AND ts >= $3 AND ts <= $4 AND kind IN (1, 2)
+    WHERE site_id = $1 AND visitor_id = $2::UBIGINT AND ts >= $3 AND ts <= $4 AND kind IN (1, 2)
     UNION ALL
     SELECT epoch_ms(ts), 4, path, type || ': ' || message, printf('%016x', grp) FROM errors
-    WHERE site_id = $1 AND visitor_id = $2 AND ts >= $3 AND ts <= $4
-) ORDER BY t LIMIT `+strconv.Itoa(analytics.MaxTimeline), uint32(q.Site), visitor, from, to)
+    WHERE site_id = $1 AND visitor_id = $2::UBIGINT AND ts >= $3 AND ts <= $4
+) ORDER BY t LIMIT `+strconv.Itoa(analytics.MaxTimeline), uint32(q.Site), strconv.FormatUint(visitor, 10), from, to)
 	if err != nil {
 		return d, err
 	}
@@ -493,7 +493,7 @@ func (s *Store) ReplayData(ctx context.Context, site int64, segments []string, s
 	var p params
 	in := make([]string, len(ids))
 	for i, id := range ids {
-		in[i] = p.add(id)
+		in[i] = p.addU64(id.(uint64))
 	}
 	s.gate.RLock()
 	rows, err := s.db.QueryContext(ctx, "SELECT segment, day, off, length FROM replay_chunks WHERE site_id = "+p.add(uint32(site))+

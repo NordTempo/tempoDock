@@ -18,6 +18,16 @@ func errorInfo(typ, message, stack string) *analytics.ErrorInfo {
 	return &analytics.ErrorInfo{Type: typ, Stack: stack, Frame: frame, Group: errorGroup(typ, message, frame)}
 }
 
+// errorMessage is an error's message without what browsers put in front
+// of a window error event's: "Uncaught TypeError: x" is "x".
+func errorMessage(typ, msg string) string {
+	msg = strings.TrimPrefix(msg, "Uncaught ")
+	if typ != "" {
+		msg = strings.TrimPrefix(msg, typ+": ")
+	}
+	return msg
+}
+
 // errorGroup is an error's fingerprint: FNV-1a over its type, its message
 // with every run of digits made "0" (ids and counts don't split a group)
 // and its top frame.
