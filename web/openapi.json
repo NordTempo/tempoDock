@@ -7301,6 +7301,18 @@
           "all": {
             "$ref": "#/components/schemas/VitalsRow"
           },
+          "breakdowns": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/VitalsRow"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
           "bucket": {
             "enum": [
               "hour",
@@ -7311,26 +7323,25 @@
           "collecting": {
             "type": "boolean"
           },
-          "dimension": {
-            "type": "string"
-          },
           "from": {
             "description": "Unix ms",
             "format": "int64",
             "type": "integer"
           },
-          "rows": {
-            "items": {
-              "$ref": "#/components/schemas/VitalsRow"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
+          "metric": {
+            "enum": [
+              "lcp",
+              "inp",
+              "cls",
+              "fcp",
+              "ttfb",
+              ""
+            ],
+            "type": "string"
           },
           "series": {
             "items": {
-              "$ref": "#/components/schemas/VitalsPoint"
+              "$ref": "#/components/schemas/VitalPoint"
             },
             "type": [
               "array",
@@ -7364,7 +7375,7 @@
           "to",
           "bucket",
           "all",
-          "rows",
+          "breakdowns",
           "series",
           "thresholds",
           "collecting",
@@ -8413,6 +8424,29 @@
         ],
         "type": "object"
       },
+      "VitalPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "p75": {
+            "format": "double",
+            "type": "number"
+          },
+          "samples": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "t": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "t",
+          "p75",
+          "samples"
+        ],
+        "type": "object"
+      },
       "VitalStat": {
         "additionalProperties": false,
         "properties": {
@@ -8457,44 +8491,6 @@
         "required": [
           "good",
           "poor"
-        ],
-        "type": "object"
-      },
-      "VitalsPoint": {
-        "additionalProperties": false,
-        "properties": {
-          "cls": {
-            "format": "double",
-            "type": "number"
-          },
-          "fcp": {
-            "format": "double",
-            "type": "number"
-          },
-          "inp": {
-            "format": "double",
-            "type": "number"
-          },
-          "lcp": {
-            "format": "double",
-            "type": "number"
-          },
-          "t": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "ttfb": {
-            "format": "double",
-            "type": "number"
-          }
-        },
-        "required": [
-          "t",
-          "lcp",
-          "inp",
-          "cls",
-          "fcp",
-          "ttfb"
         ],
         "type": "object"
       },
@@ -29889,7 +29885,7 @@
     },
     "/api/v1/projects/{project}/sites/{site}/vitals": {
       "get": {
-        "description": "LCP, INP, CLS, FCP and TTFB at the 75th percentile with good and poor counts: over all page loads in the range, by one dimension's values, and over time.",
+        "description": "LCP, INP, CLS, FCP and TTFB at the 75th percentile: over all page loads in the range (with good and poor counts), by each dimension's values, and one metric over time.",
         "operationId": "get-site-vitals",
         "parameters": [
           {
@@ -29988,37 +29984,51 @@
             }
           },
           {
-            "description": "Break down by this; empty for none",
+            "description": "Break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more",
             "explode": false,
             "in": "query",
             "name": "dimension",
             "schema": {
-              "description": "Break down by this; empty for none",
-              "enum": [
-                "page",
-                "hostname",
-                "country",
-                "browser",
-                "browser_version",
-                "os",
-                "device",
-                "service",
-                "release",
-                ""
-              ],
-              "type": "string"
+              "description": "Break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
             }
           },
           {
+            "description": "Values per breakdown",
             "explode": false,
             "in": "query",
             "name": "limit",
             "schema": {
               "default": 20,
+              "description": "Values per breakdown",
               "format": "int64",
               "maximum": 1000,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "description": "The vital to chart over time; empty for no series",
+            "explode": false,
+            "in": "query",
+            "name": "metric",
+            "schema": {
+              "description": "The vital to chart over time; empty for no series",
+              "enum": [
+                "lcp",
+                "inp",
+                "cls",
+                "fcp",
+                "ttfb",
+                ""
+              ],
+              "type": "string"
             }
           }
         ],

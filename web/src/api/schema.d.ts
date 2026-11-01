@@ -2504,7 +2504,7 @@ export interface paths {
         };
         /**
          * A site's Web Vitals
-         * @description LCP, INP, CLS, FCP and TTFB at the 75th percentile with good and poor counts: over all page loads in the range, by one dimension's values, and over time.
+         * @description LCP, INP, CLS, FCP and TTFB at the 75th percentile: over all page loads in the range (with good and poor counts), by each dimension's values, and one metric over time.
          */
         get: operations["get-site-vitals"];
         put?: never;
@@ -5118,17 +5118,20 @@ export interface components {
         };
         SiteVitals: {
             all: components["schemas"]["VitalsRow"];
+            breakdowns: {
+                [key: string]: components["schemas"]["VitalsRow"][] | null;
+            };
             /** @enum {string} */
             bucket: "hour" | "day";
             collecting: boolean;
-            dimension?: string;
             /**
              * Format: int64
              * @description Unix ms
              */
             from: number;
-            rows: components["schemas"]["VitalsRow"][] | null;
-            series: components["schemas"]["VitalsPoint"][] | null;
+            /** @enum {string} */
+            metric?: "lcp" | "inp" | "cls" | "fcp" | "ttfb" | "";
+            series: components["schemas"]["VitalPoint"][] | null;
             site: string;
             store_error?: string;
             store_online: boolean;
@@ -5455,6 +5458,14 @@ export interface components {
             /** @example v0.1.0 */
             version: string;
         };
+        VitalPoint: {
+            /** Format: double */
+            p75: number;
+            /** Format: int64 */
+            samples: number;
+            /** Format: int64 */
+            t: number;
+        };
         VitalStat: {
             /** Format: int64 */
             good: number;
@@ -5473,20 +5484,6 @@ export interface components {
             good: number;
             /** Format: double */
             poor: number;
-        };
-        VitalsPoint: {
-            /** Format: double */
-            cls: number;
-            /** Format: double */
-            fcp: number;
-            /** Format: double */
-            inp: number;
-            /** Format: double */
-            lcp: number;
-            /** Format: int64 */
-            t: number;
-            /** Format: double */
-            ttfb: number;
         };
         VitalsRow: {
             cls: components["schemas"]["VitalStat"];
@@ -19677,9 +19674,12 @@ export interface operations {
                 to?: number;
                 /** @description dimension:op:value, op is, is_not or contains; repeat for more */
                 filter?: string[] | null;
-                /** @description Break down by this; empty for none */
-                dimension?: "page" | "hostname" | "country" | "browser" | "browser_version" | "os" | "device" | "service" | "release" | "";
+                /** @description Break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more */
+                dimension?: string[] | null;
+                /** @description Values per breakdown */
                 limit?: number;
+                /** @description The vital to chart over time; empty for no series */
+                metric?: "lcp" | "inp" | "cls" | "fcp" | "ttfb" | "";
             };
             header?: {
                 /** @description Expected project identity for linked clients */

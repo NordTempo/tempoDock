@@ -319,7 +319,7 @@ func (s *Store) recentErrors(q analytics.ErrorQuery) []analytics.ErrorOccurrence
 func (s *Store) vitalsOf(q analytics.VitalsQuery) analytics.VitalsResult {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := analytics.VitalsResult{Rows: []analytics.VitalsRow{}, Series: []analytics.VitalsPoint{}}
+	out := analytics.VitalsResult{Breakdowns: map[analytics.Dimension][]analytics.VitalsRow{}, Series: []analytics.VitalPoint{}}
 	var lcp []float64
 	for _, e := range s.vitals {
 		if !matches(e, q.Query) {

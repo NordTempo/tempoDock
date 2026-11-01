@@ -169,8 +169,9 @@ type ErrorsQuery struct {
 const MaxErrorGroups = 200
 
 // ErrorGroup is errors with the same fingerprint: type, message and top
-// frame. Counts are in the query's range; FirstSeen and LastSeen are
-// over the site's whole history (Unix ms).
+// frame. Counts, LastSeen and the message (the latest) are in the
+// query's range; FirstSeen and FirstRelease are the group's first error
+// ever (Unix ms).
 type ErrorGroup struct {
 	// Group is the fingerprint in hex: JSON numbers can't hold 64 bits.
 	Group   string `json:"group"`
@@ -261,18 +262,19 @@ var VitalThresholds = map[Vital]VitalThreshold{
 }
 
 // VitalsQuery asks for a site's Web Vitals in a range: over all page
-// loads, by Dimension's values (none if empty) and over time in Bucket
-// (none if empty).
+// loads, by each of Dimensions' values (up to Limit each) and Metric's
+// 75th percentile over time in Bucket (none if either is empty).
 type VitalsQuery struct {
 	Query
-	Dimension Dimension `json:"dimension,omitempty"`
-	Limit     int       `json:"limit,omitempty"`
-	Bucket    Bucket    `json:"bucket,omitempty"`
+	Dimensions []Dimension `json:"dimensions,omitempty"`
+	Limit      int         `json:"limit,omitempty"`
+	Metric     Vital       `json:"metric,omitempty"`
+	Bucket     Bucket      `json:"bucket,omitempty"`
 }
 
 // VitalStat is one vital over some page loads: its 75th percentile (-1
 // with no samples), how many loads measured it, and how many of those
-// were good and poor.
+// were good and poor (counted over all page loads, not in breakdowns).
 type VitalStat struct {
 	P75     float64 `json:"p75"`
 	Samples int64   `json:"samples"`
@@ -292,20 +294,17 @@ type VitalsRow struct {
 	TTFB  VitalStat `json:"ttfb"`
 }
 
-// VitalsPoint is every vital's 75th percentile in one bucket (-1 for
-// none); T is its start (Unix ms).
-type VitalsPoint struct {
-	T    int64   `json:"t"`
-	LCP  float64 `json:"lcp"`
-	INP  float64 `json:"inp"`
-	CLS  float64 `json:"cls"`
-	FCP  float64 `json:"fcp"`
-	TTFB float64 `json:"ttfb"`
+// VitalPoint is one vital's 75th percentile in a bucket with samples;
+// T is its start (Unix ms).
+type VitalPoint struct {
+	T       int64   `json:"t"`
+	P75     float64 `json:"p75"`
+	Samples int64   `json:"samples"`
 }
 
 // VitalsResult answers a VitalsQuery.
 type VitalsResult struct {
-	All    VitalsRow     `json:"all"`
-	Rows   []VitalsRow   `json:"rows"`
-	Series []VitalsPoint `json:"series"`
+	All        VitalsRow                 `json:"all"`
+	Breakdowns map[Dimension][]VitalsRow `json:"breakdowns"`
+	Series     []VitalPoint              `json:"series"`
 }

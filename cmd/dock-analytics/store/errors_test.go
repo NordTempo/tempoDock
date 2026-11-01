@@ -96,7 +96,7 @@ func TestVitals(t *testing.T) {
 		events = append(events, at(uint64(i), time.Duration(i)*time.Minute, e.Path), e)
 	}
 	write(t, s, "server-1", 1, events...)
-	v, err := s.Vitals(ctx, analytics.VitalsQuery{Query: dayQuery, Dimension: analytics.DimDevice, Bucket: analytics.BucketDay})
+	v, err := s.Vitals(ctx, analytics.VitalsQuery{Query: dayQuery, Dimensions: []analytics.Dimension{analytics.DimDevice, analytics.DimPage}, Metric: analytics.VitalLCP, Bucket: analytics.BucketDay})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,8 +108,9 @@ func TestVitals(t *testing.T) {
 	if a.LCP.Good != 6 || a.LCP.Poor != 9 || a.LCP.P75 < 5000 || a.LCP.P75 > 5600 {
 		t.Errorf("LCP %+v", a.LCP)
 	}
-	if len(v.Rows) != 2 || v.Rows[0].Loads != 10 || len(v.Series) != 1 {
-		t.Errorf("rows %+v, series %+v", v.Rows, v.Series)
+	if d := v.Breakdowns[analytics.DimDevice]; len(d) != 2 || d[0].Loads != 10 || d[0].LCP.Samples != 10 || len(v.Breakdowns[analytics.DimPage]) != 2 ||
+		len(v.Series) != 1 || v.Series[0].Samples != 20 {
+		t.Errorf("breakdowns %+v, series %+v", v.Breakdowns, v.Series)
 	}
 	// Page loads' vitals don't count as events.
 	if o, err := s.Overview(ctx, dayQuery); err != nil || o.Events != 0 || o.Pageviews != 20 {

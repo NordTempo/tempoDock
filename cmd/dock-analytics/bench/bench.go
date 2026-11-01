@@ -28,7 +28,7 @@ type ErrorsQuerier interface {
 
 // ErrorsAndVitals is the Filter name of the errors and Web Vitals views'
 // timings: the error groups with their series, and the vitals by page
-// and by device with theirs.
+// and device with theirs.
 const ErrorsAndVitals = "errors and vitals"
 
 // DashboardDimensions are the breakdowns a dashboard shows on first load:
@@ -137,12 +137,9 @@ func Run(ctx context.Context, q Querier, opts Options) ([]Result, error) {
 				_, err := eq.Errors(ctx, analytics.ErrorsQuery{Query: base, Bucket: rg.Bucket, Limit: 50})
 				return err
 			}},
-			{"vitals by page", func() error {
-				_, err := eq.Vitals(ctx, analytics.VitalsQuery{Query: base, Dimension: analytics.DimPage, Limit: 20, Bucket: rg.Bucket})
-				return err
-			}},
-			{"vitals by device", func() error {
-				_, err := eq.Vitals(ctx, analytics.VitalsQuery{Query: base, Dimension: analytics.DimDevice})
+			{"vitals", func() error {
+				_, err := eq.Vitals(ctx, analytics.VitalsQuery{Query: base, Dimensions: []analytics.Dimension{analytics.DimPage, analytics.DimDevice},
+					Limit: 20, Metric: analytics.VitalLCP, Bucket: rg.Bucket})
 				return err
 			}},
 		}, opts)

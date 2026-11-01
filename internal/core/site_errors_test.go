@@ -44,7 +44,8 @@ func TestSiteErrorsAndVitals(t *testing.T) {
 	if _, err := h.c.SiteErrors(h.ctx, testSystem, "shop", "shop.example.com", bad, 50); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("errors filtered by channel: %v", err)
 	}
-	v, err := h.c.SiteVitals(h.ctx, testSystem, "shop", "shop.example.com", analytics.DimPage, StatsQuery{Range: "24h"}, 10)
+	v, err := h.c.SiteVitals(h.ctx, testSystem, "shop", "shop.example.com",
+		VitalsQuery{Dimensions: []analytics.Dimension{analytics.DimPage}, Limit: 10, Metric: analytics.VitalLCP}, StatsQuery{Range: "24h"})
 	if err != nil || v.All.Loads != 1 || v.All.LCP.P75 != 1200 || v.Thresholds["lcp"].Good != 2500 {
 		t.Errorf("vitals = %+v, %v", v, err)
 	}

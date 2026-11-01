@@ -75,6 +75,10 @@ type Store struct {
 	lastWriteDay time.Time
 	// kick wakes RunRollups.
 	kick chan struct{}
+	// known are the error groups the database has (errors.go), and
+	// newGroups those the open write adds once it commits.
+	known     map[groupKey]struct{}
+	newGroups []groupKey
 
 	// rollMu guards rolledTo: every site is rolled up (but for stale
 	// days) up to that day.
@@ -139,6 +143,10 @@ func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 		return nil, err
 	}
 	if err := s.loadRollupState(ctx); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	if err := s.loadGroups(ctx); err != nil {
 		_ = s.Close()
 		return nil, err
 	}
@@ -249,6 +257,7 @@ func (s *Store) Write(ctx context.Context, source string, position uint64, event
 		}
 		committed := false
 		s.sessions.begin()
+		s.newGroups = nil
 		defer func() {
 			if !committed {
 				_, _ = ex.ExecContext(context.WithoutCancel(ctx), "ROLLBACK", nil)
@@ -277,7 +286,7 @@ func (s *Store) Write(ctx context.Context, source string, position uint64, event
 		// the session their page view (in the same batch) started.
 		if len(errs) > 0 {
 			var err error
-			if news, err = s.appendErrors(ctx, c, ex, qr, errs, locate); err != nil {
+			if news, err = s.appendErrors(ctx, c, ex, errs, locate); err != nil {
 				return err
 			}
 		}
@@ -297,6 +306,9 @@ func (s *Store) Write(ctx context.Context, source string, position uint64, event
 		}
 		committed = true
 		s.sessions.commit()
+		for _, k := range s.newGroups {
+			s.known[k] = struct{}{}
+		}
 		written = len(events)
 		return nil
 	})

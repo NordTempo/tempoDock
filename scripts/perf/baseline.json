@@ -5,10 +5,20 @@
   "tempobase_binary_bytes": 20873376,
   "calibration_ns": 263311.04615384614,
   "benchmarks": {
+    "analytics/ingest.BenchmarkIngestError": {
+      "ns_op": 4630.7,
+      "bytes_op": 1218,
+      "allocs_op": 11
+    },
     "analytics/ingest.BenchmarkIngestEvent": {
       "ns_op": 3804.1,
       "bytes_op": 778,
       "allocs_op": 6
+    },
+    "analytics/ingest.BenchmarkIngestVitals": {
+      "ns_op": 4266.3,
+      "bytes_op": 986,
+      "allocs_op": 8
     },
     "analytics/spool.BenchmarkAppend": {
       "ns_op": 691.7,

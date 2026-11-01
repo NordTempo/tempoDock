@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -344,7 +346,7 @@ func printSiteError(g *globals, d apitypes.SiteError) error {
 func newAnalyticsVitalsCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var sq statsQuery
-	var by string
+	var by []string
 	cmd := &cobra.Command{
 		Use:   "vitals <site>",
 		Short: "A site's Web Vitals: LCP, INP, CLS, FCP and TTFB at the 75th percentile",
@@ -361,7 +363,7 @@ browser, country, service or release.`,
 				return err
 			}
 			q := sq.values()
-			q.Set("dimension", by)
+			q["dimension"] = by
 			v, err := get[apitypes.SiteVitals](cmd.Context(), s, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/vitals?"+q.Encode())
 			if err != nil {
 				return err
@@ -371,7 +373,7 @@ browser, country, service or release.`,
 	}
 	f.add(cmd, needProject)
 	sq.add(cmd)
-	cmd.Flags().StringVar(&by, "by", "", "break down by page, hostname, country, browser, browser_version, os, device, service or release")
+	cmd.Flags().StringArrayVar(&by, "by", nil, "break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more")
 	return cmd
 }
 
@@ -385,15 +387,26 @@ func printSiteVitals(g *globals, v apitypes.SiteVitals) error {
 	if !v.Collecting {
 		g.io.Warnf("this site doesn't collect Web Vitals; turn them on with `dock analytics site set %s --errors on`", v.Site)
 	}
-	tb := g.io.Table(cmp.Or(strings.ToUpper(v.Dimension), "PAGE LOADS"), "LOADS", "LCP", "INP", "CLS", "FCP", "TTFB")
-	row := func(name string, r apitypes.VitalsRow) {
-		tb.Row(name, itoa(r.Loads), vital(v, "lcp", r.LCP), vital(v, "inp", r.INP), vital(v, "cls", r.CLS), vital(v, "fcp", r.FCP), vital(v, "ttfb", r.TTFB))
+	table := func(title string, rows []apitypes.VitalsRow) error {
+		tb := g.io.Table(title, "LOADS", "LCP", "INP", "CLS", "FCP", "TTFB")
+		for _, r := range rows {
+			tb.Row(dash(cmp.Or(r.Label, r.Value)), itoa(r.Loads), vital(v, "lcp", r.LCP), vital(v, "inp", r.INP), vital(v, "cls", r.CLS), vital(v, "fcp", r.FCP), vital(v, "ttfb", r.TTFB))
+		}
+		return tb.Flush()
 	}
-	row("all", v.All)
-	for _, r := range v.Rows {
-		row(dash(cmp.Or(r.Label, r.Value)), r)
+	all := v.All
+	all.Value = "all"
+	if err := table("PAGE LOADS", []apitypes.VitalsRow{all}); err != nil {
+		return err
 	}
-	return tb.Flush()
+	dims := slices.Sorted(maps.Keys(v.Breakdowns))
+	for _, d := range dims {
+		_, _ = io.WriteString(g.io.Out, "\n")
+		if err := table(strings.ToUpper(d), v.Breakdowns[d]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // vital is a 75th percentile with its rating: "1.8 s good".

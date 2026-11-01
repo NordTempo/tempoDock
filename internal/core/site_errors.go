@@ -190,22 +190,39 @@ func (c *Core) SiteError(ctx context.Context, a Actor, project, name, group stri
 	return out, nil
 }
 
+// VitalsQuery is what a site's Web Vitals view asks for besides its range
+// and filters: breakdowns (up to Limit values each), and the vital to
+// chart over time (none if empty).
+type VitalsQuery struct {
+	Dimensions []analytics.Dimension
+	Limit      int
+	Metric     analytics.Vital
+}
+
 // SiteVitals returns a site's Web Vitals in a range: over all page loads,
-// by dim's values (none if empty) and over time. An unreachable store
-// gives empty numbers and StoreOnline false.
-func (c *Core) SiteVitals(ctx context.Context, a Actor, project, name string, dim analytics.Dimension, q StatsQuery, limit int) (apitypes.SiteVitals, error) {
+// by each of v's dimensions and v's metric over time. An unreachable
+// store gives empty numbers and StoreOnline false.
+func (c *Core) SiteVitals(ctx context.Context, a Actor, project, name string, v VitalsQuery, q StatsQuery) (apitypes.SiteVitals, error) {
 	r, err := c.readSite(ctx, a, project, name, q)
 	if err != nil {
 		return apitypes.SiteVitals{}, err
 	}
-	if dim != "" && !slices.Contains(analytics.ErrorDimensions, dim) {
-		return apitypes.SiteVitals{}, invalid("Web Vitals break down by %s; %q isn't one of them", errorDimensionList(), dim)
+	for _, d := range v.Dimensions {
+		if !slices.Contains(analytics.ErrorDimensions, d) {
+			return apitypes.SiteVitals{}, invalid("Web Vitals break down by %s; %q isn't one of them", errorDimensionList(), d)
+		}
 	}
-	out := apitypes.SiteVitals{Site: r.site.site.Name, From: r.query.From, To: r.query.To, Bucket: r.bucket, Dimension: string(dim),
-		Rows: []apitypes.VitalsRow{}, Series: []apitypes.VitalsPoint{}, Thresholds: map[string]apitypes.VitalThreshold{},
-		Collecting: r.collecting}
-	for v, t := range analytics.VitalThresholds {
-		out.Thresholds[string(v)] = apitypes.VitalThreshold(t)
+	if v.Metric != "" && !slices.Contains(analytics.VitalNames, v.Metric) {
+		return apitypes.SiteVitals{}, invalid("%q isn't a Web Vital; chart lcp, inp, cls, fcp or ttfb", v.Metric)
+	}
+	dims := slices.Clone(v.Dimensions)
+	slices.Sort(dims)
+	dims = slices.Compact(dims)
+	out := apitypes.SiteVitals{Site: r.site.site.Name, From: r.query.From, To: r.query.To, Bucket: r.bucket,
+		Breakdowns: map[string][]apitypes.VitalsRow{}, Metric: string(v.Metric), Series: []apitypes.VitalPoint{},
+		Thresholds: map[string]apitypes.VitalThreshold{}, Collecting: r.collecting}
+	for name, t := range analytics.VitalThresholds {
+		out.Thresholds[string(name)] = apitypes.VitalThreshold(t)
 	}
 	none := apitypes.VitalStat{P75: -1}
 	out.All = apitypes.VitalsRow{LCP: none, INP: none, CLS: none, FCP: none, TTFB: none}
@@ -213,30 +230,33 @@ func (c *Core) SiteVitals(ctx context.Context, a Actor, project, name string, di
 		out.StoreError = analyticsOff
 		return out, nil
 	}
-	res, err := r.cl.Vitals(ctx, analytics.VitalsQuery{Query: r.query, Dimension: dim, Limit: min(max(limit, 1), analytics.MaxBreakdown),
-		Bucket: analytics.Bucket(r.bucket)})
+	res, err := r.cl.Vitals(ctx, analytics.VitalsQuery{Query: r.query, Dimensions: dims, Limit: min(max(v.Limit, 1), analytics.MaxBreakdown),
+		Metric: v.Metric, Bucket: analytics.Bucket(r.bucket)})
 	if out.StoreOnline, out.StoreError, err = storeStatus(err); err != nil || !out.StoreOnline {
 		return out, err
 	}
 	out.All = toVitalsRow(res.All)
-	var labels map[string]string
-	if dim == analytics.DimService || dim == analytics.DimRelease {
-		rows := make([]analytics.Row, len(res.Rows))
-		for i, v := range res.Rows {
-			rows[i].Value = v.Value
+	for d, vrows := range res.Breakdowns {
+		var labels map[string]string
+		if d == analytics.DimService || d == analytics.DimRelease {
+			rows := make([]analytics.Row, len(vrows))
+			for i, vr := range vrows {
+				rows[i].Value = vr.Value
+			}
+			labels = map[string]string{}
+			for _, l := range c.toRows(ctx, d, rows) {
+				labels[l.Value] = l.Label
+			}
 		}
-		labels = map[string]string{}
-		for _, l := range c.toRows(ctx, dim, rows) {
-			labels[l.Value] = l.Label
+		out.Breakdowns[string(d)] = make([]apitypes.VitalsRow, 0, len(vrows))
+		for _, vr := range vrows {
+			row := toVitalsRow(vr)
+			row.Label = labels[vr.Value]
+			out.Breakdowns[string(d)] = append(out.Breakdowns[string(d)], row)
 		}
-	}
-	for _, v := range res.Rows {
-		row := toVitalsRow(v)
-		row.Label = labels[v.Value]
-		out.Rows = append(out.Rows, row)
 	}
 	for _, p := range res.Series {
-		out.Series = append(out.Series, apitypes.VitalsPoint(p))
+		out.Series = append(out.Series, apitypes.VitalPoint(p))
 	}
 	return out, nil
 }

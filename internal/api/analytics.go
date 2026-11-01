@@ -156,18 +156,23 @@ func registerSites(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "get-site-vitals", Method: http.MethodGet, Path: sitesPath + "/{site}/vitals",
 		Summary: "A site's Web Vitals", Tags: tags,
-		Description: "LCP, INP, CLS, FCP and TTFB at the 75th percentile with good and poor counts: over all page loads in the range, by one dimension's values, and over time.",
+		Description: "LCP, INP, CLS, FCP and TTFB at the 75th percentile: over all page loads in the range (with good and poor counts), by each dimension's values, and one metric over time.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		SitePath
 		StatsParams
-		Dimension string `query:"dimension" enum:"page,hostname,country,browser,browser_version,os,device,service,release," doc:"Break down by this; empty for none"`
-		Limit     int    `query:"limit" minimum:"1" maximum:"1000" default:"20"`
+		Dimension []string `query:"dimension" doc:"Break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more"`
+		Limit     int      `query:"limit" minimum:"1" maximum:"1000" default:"20" doc:"Values per breakdown"`
+		Metric    string   `query:"metric" enum:"lcp,inp,cls,fcp,ttfb," doc:"The vital to chart over time; empty for no series"`
 	}) (*out[apitypes.SiteVitals], error) {
 		q, err := in.query()
 		if err != nil {
 			return nil, err
 		}
-		return reply(s.core.SiteVitals(ctx, actor, in.Project, in.Site, analytics.Dimension(in.Dimension), q, in.Limit))
+		dims := make([]analytics.Dimension, len(in.Dimension))
+		for i, d := range in.Dimension {
+			dims[i] = analytics.Dimension(d)
+		}
+		return reply(s.core.SiteVitals(ctx, actor, in.Project, in.Site, core.VitalsQuery{Dimensions: dims, Limit: in.Limit, Metric: analytics.Vital(in.Metric)}, q))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "enable-hostname-analytics", Method: http.MethodPut, Path: Prefix + "/analytics/hostnames/{hostname}",

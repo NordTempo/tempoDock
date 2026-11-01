@@ -199,8 +199,9 @@ type SiteErrors struct {
 	StoreError  string `json:"store_error,omitempty"`
 }
 
-// ErrorGroup is errors with the same type, message and top frame. Counts
-// are in the range; first and last seen are over the site's history.
+// ErrorGroup is errors with the same type, message and top frame. Counts,
+// last seen and the message (the latest) are in the range; first seen
+// and first release are the group's first error ever.
 type ErrorGroup struct {
 	Group   string `json:"group" doc:"The group's fingerprint, 16 hex digits"`
 	Type    string `json:"type"`
@@ -256,17 +257,21 @@ type ErrorOccurrence struct {
 }
 
 // SiteVitals is a site's Web Vitals in a range: over all page loads, by
-// one dimension and over time (ADR 0037, phase A2). A vital with no
-// samples has p75 -1.
+// the dimensions asked for, and one metric over time (ADR 0037, phase
+// A2). A vital with no samples has p75 -1.
 type SiteVitals struct {
-	Site      string        `json:"site"`
-	From      int64         `json:"from" doc:"Unix ms"`
-	To        int64         `json:"to" doc:"Unix ms"`
-	Bucket    string        `json:"bucket" enum:"hour,day"`
-	Dimension string        `json:"dimension,omitempty"`
-	All       VitalsRow     `json:"all"`
-	Rows      []VitalsRow   `json:"rows"`
-	Series    []VitalsPoint `json:"series"`
+	Site   string    `json:"site"`
+	From   int64     `json:"from" doc:"Unix ms"`
+	To     int64     `json:"to" doc:"Unix ms"`
+	Bucket string    `json:"bucket" enum:"hour,day"`
+	All    VitalsRow `json:"all"`
+	// Breakdowns are keyed by dimension (page, device, ...), the most
+	// page loads first.
+	Breakdowns map[string][]VitalsRow `json:"breakdowns"`
+	// Metric is the vital Series charts; Series has its buckets with
+	// samples.
+	Metric string       `json:"metric,omitempty" enum:"lcp,inp,cls,fcp,ttfb,"`
+	Series []VitalPoint `json:"series"`
 	// Thresholds are each vital's good and poor limits, keyed lcp, inp,
 	// cls, fcp, ttfb.
 	Thresholds  map[string]VitalThreshold `json:"thresholds"`
@@ -289,7 +294,8 @@ type VitalsRow struct {
 }
 
 // VitalStat is one vital over some page loads: its 75th percentile, how
-// many loads measured it, and how many of those were good and poor.
+// many loads measured it, and (over all page loads, not in breakdowns)
+// how many of those were good and poor.
 type VitalStat struct {
 	P75     float64 `json:"p75" doc:"Milliseconds; the layout shift score for CLS; -1 without samples"`
 	Samples int64   `json:"samples"`
@@ -297,14 +303,12 @@ type VitalStat struct {
 	Poor    int64   `json:"poor"`
 }
 
-// VitalsPoint is every vital's 75th percentile in one bucket (-1: none).
-type VitalsPoint struct {
-	T    int64   `json:"t"`
-	LCP  float64 `json:"lcp"`
-	INP  float64 `json:"inp"`
-	CLS  float64 `json:"cls"`
-	FCP  float64 `json:"fcp"`
-	TTFB float64 `json:"ttfb"`
+// VitalPoint is one vital's 75th percentile in a bucket; T is its start
+// (Unix ms).
+type VitalPoint struct {
+	T       int64   `json:"t"`
+	P75     float64 `json:"p75"`
+	Samples int64   `json:"samples"`
 }
 
 // VitalThreshold is a vital's limits: good is at most Good, poor over Poor.

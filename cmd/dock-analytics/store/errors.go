@@ -22,9 +22,11 @@ import (
 // the session it happened in, looked up without changing the session
 // (sessions.peek): an error doesn't lengthen a visit.
 //
-// error_groups holds one row per site and fingerprint over the site's
-// whole history, so first and last seen survive the errors' retention and
-// a write knows at once whether a group is new (the "new error" alert).
+// error_groups holds one row per site and fingerprint for as long as the
+// group has errors: when and in which release it first appeared, which
+// outlives the range a query reads, and whether a write's group is new
+// (the "new error" alert). Rows are only ever inserted: the group's
+// latest message and last time are read from its errors.
 const errorsSchema = `
 CREATE TABLE IF NOT EXISTS errors (
     ts              TIMESTAMP NOT NULL,
@@ -49,11 +51,7 @@ CREATE TABLE IF NOT EXISTS errors (
 CREATE TABLE IF NOT EXISTS error_groups (
     site_id       UINTEGER NOT NULL,
     grp           UBIGINT NOT NULL,
-    type          VARCHAR NOT NULL,
-    message       VARCHAR NOT NULL,
-    frame         VARCHAR NOT NULL,
     first_seen    TIMESTAMP NOT NULL,
-    last_seen     TIMESTAMP NOT NULL,
     first_release UINTEGER NOT NULL,
     PRIMARY KEY (site_id, grp)
 );
@@ -153,22 +151,24 @@ func lookup(locate Locator, prefix string) Location {
 	return locate(prefix)
 }
 
-// groupWrite is one error group's errors in a write.
-type groupWrite struct {
-	site        int64
-	grp         uint64
-	first, last *analytics.Event
+// groupKey names an error group: its site and fingerprint.
+type groupKey struct {
+	site int64
+	grp  uint64
 }
 
-// appendErrors writes errors in the open transaction on c and updates
-// their groups, returning the groups seen for the first time.
-func (s *Store) appendErrors(ctx context.Context, c driver.Conn, ex driver.ExecerContext, qr driver.QueryerContext, events []analytics.Event, locate Locator) ([]analytics.NewError, error) {
+// appendErrors writes errors in the open transaction on c and records
+// the groups seen for the first time, which it returns. The store keeps
+// the groups it has in memory (known, primed at open), so a batch of
+// known errors costs no query; the new ones join known once the write
+// commits (Write).
+func (s *Store) appendErrors(ctx context.Context, c driver.Conn, ex driver.ExecerContext, events []analytics.Event, locate Locator) ([]analytics.NewError, error) {
 	a, err := duckdb.NewAppenderFromConn(c, "", "errors")
 	if err != nil {
 		return nil, err
 	}
-	groups := map[[2]uint64]*groupWrite{}
-	var order [][2]uint64
+	first := map[groupKey]*analytics.Event{}
+	var order []groupKey
 	for i := range events {
 		e := &events[i]
 		er := e.Error
@@ -180,84 +180,66 @@ func (s *Store) appendErrors(ctx context.Context, c driver.Conn, ex driver.Exece
 			_ = a.Close()
 			return nil, err
 		}
-		k := [2]uint64{uint64(e.Site), er.Group}
-		g := groups[k]
-		if g == nil {
-			g = &groupWrite{site: e.Site, grp: er.Group, first: e, last: e}
-			groups[k] = g
+		k := groupKey{e.Site, er.Group}
+		if _, ok := s.known[k]; ok {
+			continue
+		}
+		if f, ok := first[k]; !ok {
+			first[k] = e
 			order = append(order, k)
-		}
-		if e.Time < g.first.Time {
-			g.first = e
-		}
-		if e.Time >= g.last.Time {
-			g.last = e
+		} else if e.Time < f.Time {
+			first[k] = e
 		}
 	}
-	if err := a.Close(); err != nil {
+	if err := a.Close(); err != nil || len(order) == 0 {
 		return nil, err
 	}
-	known, err := knownGroups(ctx, qr, order)
-	if err != nil {
+	var b strings.Builder
+	args := make([]driver.NamedValue, 0, 4*len(order))
+	b.WriteString("INSERT INTO error_groups VALUES ")
+	news := make([]analytics.NewError, 0, len(order))
+	for i, k := range order {
+		f := first[k]
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		n := len(args)
+		fmt.Fprintf(&b, "($%d, $%d, $%d, $%d)", n+1, n+2, n+3, n+4)
+		args = append(args, driver.NamedValue{Ordinal: n + 1, Value: uint32(k.site)}, driver.NamedValue{Ordinal: n + 2, Value: k.grp},
+			driver.NamedValue{Ordinal: n + 3, Value: time.UnixMilli(f.Time).UTC()}, driver.NamedValue{Ordinal: n + 4, Value: uint32(f.Release)})
+		news = append(news, analytics.NewError{Site: k.site, Group: groupHex(k.grp), Type: f.Error.Type, Message: f.Name, Path: f.Path, Release: f.Release})
+	}
+	// A group known to the file but not to memory can't happen (known is
+	// primed from the file), but must not fail the write if it does.
+	b.WriteString(" ON CONFLICT DO NOTHING")
+	if _, err := ex.ExecContext(ctx, b.String(), args); err != nil {
 		return nil, err
 	}
-	var news []analytics.NewError
-	for _, k := range order {
-		g := groups[k]
-		l := g.last
-		// The latest error names the group: a message that varies only
-		// in its numbers shows its newest form.
-		args := []driver.NamedValue{
-			{Ordinal: 1, Value: uint32(g.site)}, {Ordinal: 2, Value: g.grp}, {Ordinal: 3, Value: l.Error.Type},
-			{Ordinal: 4, Value: l.Name}, {Ordinal: 5, Value: l.Error.Frame}, {Ordinal: 6, Value: time.UnixMilli(g.first.Time).UTC()},
-			{Ordinal: 7, Value: time.UnixMilli(l.Time).UTC()}, {Ordinal: 8, Value: uint32(g.first.Release)},
-		}
-		if _, err := ex.ExecContext(ctx, `INSERT INTO error_groups VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (site_id, grp) DO UPDATE SET
-    type = CASE WHEN excluded.last_seen >= last_seen THEN excluded.type ELSE type END,
-    message = CASE WHEN excluded.last_seen >= last_seen THEN excluded.message ELSE message END,
-    frame = CASE WHEN excluded.last_seen >= last_seen THEN excluded.frame ELSE frame END,
-    first_release = CASE WHEN excluded.first_seen < first_seen THEN excluded.first_release ELSE first_release END,
-    first_seen = least(first_seen, excluded.first_seen),
-    last_seen = greatest(last_seen, excluded.last_seen)`, args); err != nil {
-			return nil, err
-		}
-		if !known[k] {
-			f := g.first
-			news = append(news, analytics.NewError{Site: g.site, Group: groupHex(g.grp), Type: f.Error.Type, Message: f.Name, Path: f.Path, Release: f.Release})
-		}
-	}
+	s.newGroups = order
 	return news, nil
 }
 
-// knownGroups returns which of the groups (site, fingerprint) exist.
-func knownGroups(ctx context.Context, qr driver.QueryerContext, groups [][2]uint64) (map[[2]uint64]bool, error) {
-	known := map[[2]uint64]bool{}
-	for chunk := range slices.Chunk(groups, 200) {
-		var b strings.Builder
-		args := make([]driver.NamedValue, 0, 2*len(chunk))
-		b.WriteString("SELECT site_id, grp FROM error_groups WHERE (site_id, grp) IN (")
-		for i, k := range chunk {
-			if i > 0 {
-				b.WriteByte(',')
-			}
-			fmt.Fprintf(&b, "($%d::UINTEGER, $%d::UBIGINT)", 2*i+1, 2*i+2)
-			args = append(args, driver.NamedValue{Ordinal: 2*i + 1, Value: uint32(k[0])}, driver.NamedValue{Ordinal: 2*i + 2, Value: k[1]})
-		}
-		b.WriteByte(')')
-		rows, err := qr.QueryContext(ctx, b.String(), args)
-		if err != nil {
-			return nil, err
-		}
-		dest := make([]driver.Value, 2)
-		for rows.Next(dest) == nil {
-			site, _ := dest[0].(uint32)
-			grp, _ := dest[1].(uint64)
-			known[[2]uint64{uint64(site), grp}] = true
-		}
-		_ = rows.Close()
+// loadGroups primes known from the database: every site's error groups.
+// It holds as many as the sites' error retention keeps, a few bytes
+// each. Called at open and after a prune, with writeMu held or before
+// any write.
+func (s *Store) loadGroups(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, "SELECT site_id, grp FROM error_groups")
+	if err != nil {
+		return err
 	}
-	return known, nil
+	defer func() { _ = rows.Close() }()
+	known := map[groupKey]struct{}{}
+	for rows.Next() {
+		var site uint32
+		var grp uint64
+		if err := rows.Scan(&site, &grp); err != nil {
+			return err
+		}
+		known[groupKey{int64(site), grp}] = struct{}{}
+	}
+	s.known = known
+	return rows.Err()
 }
 
 // groupHex is a fingerprint as the API writes it.
@@ -350,14 +332,15 @@ func (s *Store) Errors(ctx context.Context, q analytics.ErrorsQuery) ([]analytic
 	if limit <= 0 || limit > analytics.MaxErrorGroups {
 		limit = analytics.MaxErrorGroups
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT e.grp, g.type, g.message, g.frame, e.n, e.sessions, e.visitors,
-       epoch_ms(g.first_seen), epoch_ms(g.last_seen), g.first_release
+	rows, err := s.db.QueryContext(ctx, `SELECT e.grp, e.type, e.message, e.frame, e.n, e.sessions, e.visitors,
+       epoch_ms(coalesce(g.first_seen, e.first)), epoch_ms(e.last), coalesce(g.first_release, 0)
 FROM (
-    SELECT grp, count(*) AS n, count(DISTINCT session_id) FILTER (WHERE session_id <> 0) AS sessions,
-           approx_count_distinct(visitor_id) AS visitors
+    SELECT grp, arg_max(type, ts) AS type, arg_max(message, ts) AS message, arg_max(frame, ts) AS frame,
+           count(*) AS n, count(DISTINCT session_id) FILTER (WHERE session_id <> 0) AS sessions,
+           approx_count_distinct(visitor_id) AS visitors, min(ts) AS first, max(ts) AS last
     FROM errors WHERE `+w+` GROUP BY grp
-) e JOIN error_groups g ON g.site_id = `+p.add(uint32(q.Site))+` AND g.grp = e.grp
-ORDER BY e.n DESC, g.last_seen DESC LIMIT `+strconv.Itoa(limit), p...)
+) e LEFT JOIN error_groups g ON g.site_id = `+p.add(uint32(q.Site))+` AND g.grp = e.grp
+ORDER BY e.n DESC, e.last DESC LIMIT `+strconv.Itoa(limit), p...)
 	if err != nil {
 		return nil, err
 	}
@@ -427,8 +410,8 @@ func (s *Store) Error(ctx context.Context, q analytics.ErrorQuery) (analytics.Er
 	d := analytics.ErrorDetail{Pages: []analytics.Row{}, Browsers: []analytics.Row{}, OS: []analytics.Row{}, Devices: []analytics.Row{},
 		Releases: []analytics.Row{}, Recent: []analytics.ErrorOccurrence{}}
 	var rel uint32
-	err = s.db.QueryRowContext(ctx, `SELECT type, message, frame, epoch_ms(first_seen), epoch_ms(last_seen), first_release
-FROM error_groups WHERE site_id = $1 AND grp = $2`, uint32(q.Site), grp).Scan(&d.Type, &d.Message, &d.Frame, &d.FirstSeen, &d.LastSeen, &rel)
+	err = s.db.QueryRowContext(ctx, `SELECT epoch_ms(first_seen), first_release FROM error_groups WHERE site_id = $1 AND grp = $2`,
+		uint32(q.Site), grp).Scan(&d.FirstSeen, &rel)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, badQuery("this site has no error group %s", q.Group)
 	}
@@ -436,13 +419,14 @@ FROM error_groups WHERE site_id = $1 AND grp = $2`, uint32(q.Site), grp).Scan(&d
 		return d, err
 	}
 	d.Group, d.FirstRelease = q.Group, int64(rel)
-	var stack sql.NullString
+	var typ, msg, frame, stack sql.NullString
+	var last sql.NullInt64
 	if err := s.db.QueryRowContext(ctx, `SELECT count(*), count(DISTINCT session_id) FILTER (WHERE session_id <> 0),
-       approx_count_distinct(visitor_id), arg_max(stack, ts)
-FROM errors WHERE `+w, p...).Scan(&d.Count, &d.Sessions, &d.Visitors, &stack); err != nil {
+       approx_count_distinct(visitor_id), arg_max(type, ts), arg_max(message, ts), arg_max(frame, ts), arg_max(stack, ts), epoch_ms(max(ts))
+FROM errors WHERE `+w, p...).Scan(&d.Count, &d.Sessions, &d.Visitors, &typ, &msg, &frame, &stack, &last); err != nil {
 		return d, err
 	}
-	d.Stack = stack.String
+	d.Type, d.Message, d.Frame, d.Stack, d.LastSeen = typ.String, msg.String, frame.String, stack.String, last.Int64
 	for _, dim := range errorBreakdowns {
 		rows, err := s.db.QueryContext(ctx, `SELECT `+errorColumns[dim]+` AS v, approx_count_distinct(visitor_id), count(*) AS n
 FROM errors WHERE `+w+` GROUP BY v ORDER BY n DESC, v LIMIT `+strconv.Itoa(errorBreakdownRows), p...)
@@ -511,37 +495,54 @@ FROM errors WHERE `+w+` ORDER BY ts DESC LIMIT `+strconv.Itoa(analytics.MaxError
 	return d, series.Err()
 }
 
-// vitalsSelect computes every vital's 75th percentile, samples, good and
-// poor counts, in VitalNames' order. The percentile is of a reservoir
-// sample of 8,192 values per group: memory stays bounded however many
-// page loads a range holds, and it is several times faster than a
-// t-digest (a year of a busy site by page: 120 ms against 510).
-var vitalsSelect = func() string {
+// vitalsSample is the reservoir each percentile is taken from: p75 of
+// 2,048 samples is within about a percentile point, and the reservoir is
+// what the query's time goes to (8,192 took three times as long).
+const vitalsSample = 2048
+
+// p75 is the SQL for a vital's 75th percentile, -1 with no samples. It
+// is of a reservoir sample: memory stays bounded however many page loads
+// a range holds, and it is several times faster than a t-digest or an
+// exact quantile.
+func p75(col string) string {
+	return "coalesce(reservoir_quantile(" + col + ", 0.75, " + strconv.Itoa(vitalsSample) + ")::DOUBLE, -1)"
+}
+
+// vitalsSelect computes every vital's 75th percentile, samples and, with
+// counts, good and poor counts, in VitalNames' order. Breakdowns leave
+// the counts out: each costs about as much as a percentile.
+func vitalsSelect(counts bool) string {
 	var b strings.Builder
 	for _, v := range analytics.VitalNames {
 		t := analytics.VitalThresholds[v]
 		c := string(v)
-		fmt.Fprintf(&b, ", coalesce(reservoir_quantile(%[1]s, 0.75)::DOUBLE, -1), count(%[1]s), count(*) FILTER (WHERE %[1]s <= %[2]g), count(*) FILTER (WHERE %[1]s > %[3]g)",
-			c, t.Good, t.Poor)
+		fmt.Fprintf(&b, ", %s, count(%s)", p75(c), c)
+		if counts {
+			fmt.Fprintf(&b, ", count(*) FILTER (WHERE %[1]s <= %[2]g), count(*) FILTER (WHERE %[1]s > %[3]g)", c, t.Good, t.Poor)
+		}
 	}
 	return b.String()
-}()
+}
 
 // scanVitals reads a row of vitalsSelect after its leading columns.
-func scanVitals(sc interface{ Scan(...any) error }, lead []any, r *analytics.VitalsRow) error {
+func scanVitals(sc interface{ Scan(...any) error }, lead []any, counts bool, r *analytics.VitalsRow) error {
 	dest := lead
 	for _, st := range []*analytics.VitalStat{&r.LCP, &r.INP, &r.CLS, &r.FCP, &r.TTFB} {
-		dest = append(dest, &st.P75, &st.Samples, &st.Good, &st.Poor)
+		dest = append(dest, &st.P75, &st.Samples)
+		if counts {
+			dest = append(dest, &st.Good, &st.Poor)
+		}
 	}
 	return sc.Scan(dest...)
 }
 
-// Vitals returns q's Web Vitals: over all its page loads, by its
-// dimension's values (the most loads first) and over time.
+// Vitals returns q's Web Vitals: over all its page loads (with good and
+// poor counts), by each of its dimensions' values (the most loads first)
+// and q.Metric over time.
 func (s *Store) Vitals(ctx context.Context, q analytics.VitalsQuery) (analytics.VitalsResult, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
-	out := analytics.VitalsResult{Rows: []analytics.VitalsRow{}, Series: []analytics.VitalsPoint{}}
+	out := analytics.VitalsResult{Breakdowns: map[analytics.Dimension][]analytics.VitalsRow{}, Series: []analytics.VitalPoint{}}
 	var p params
 	w, err := errorWhere(&p, q.Query)
 	if err != nil {
@@ -551,65 +552,74 @@ func (s *Store) Vitals(ctx context.Context, q analytics.VitalsQuery) (analytics.
 	if err != nil {
 		return out, err
 	}
-	col := ""
-	if q.Dimension != "" {
-		var ok bool
-		if col, ok = errorColumns[q.Dimension]; !ok {
-			return out, badQuery("Web Vitals can't be broken down by %s; use page, hostname, country, browser, browser_version, os, device, service or release", q.Dimension)
+	if len(q.Dimensions) > len(errorColumns) {
+		return out, badQuery("at most %d breakdowns", len(errorColumns))
+	}
+	for _, d := range q.Dimensions {
+		if _, ok := errorColumns[d]; !ok {
+			return out, badQuery("Web Vitals can't be broken down by %s; use page, hostname, country, browser, browser_version, os, device, service or release", d)
 		}
 	}
-	if err := scanVitals(s.db.QueryRowContext(ctx, `SELECT count(*)`+vitalsSelect+` FROM vitals WHERE `+w, p...), []any{&out.All.Loads}, &out.All); err != nil {
+	if q.Metric != "" && !slices.Contains(analytics.VitalNames, q.Metric) {
+		return out, badQuery("unknown vital %q; use lcp, inp, cls, fcp or ttfb", q.Metric)
+	}
+	if err := scanVitals(s.db.QueryRowContext(ctx, `SELECT count(*)`+vitalsSelect(true)+` FROM vitals WHERE `+w, p...), []any{&out.All.Loads}, true, &out.All); err != nil {
 		return out, err
 	}
-	if col != "" {
-		limit := q.Limit
-		if limit <= 0 || limit > analytics.MaxBreakdown {
-			limit = 100
-		}
-		// Percentiles only for the values shown: the top values by
-		// page loads first, then their vitals.
-		rows, err := s.db.QueryContext(ctx, `SELECT `+col+` AS v, count(*) AS n`+vitalsSelect+` FROM vitals WHERE `+w+
+	limit := q.Limit
+	if limit <= 0 || limit > analytics.MaxBreakdown {
+		limit = 100
+	}
+	for _, d := range q.Dimensions {
+		col := errorColumns[d]
+		// Percentiles only for the values shown: the top values by page
+		// loads first, then their vitals.
+		rows, err := s.db.QueryContext(ctx, `SELECT `+col+` AS v, count(*) AS n`+vitalsSelect(false)+` FROM vitals WHERE `+w+
 			` AND `+col+` IN (SELECT `+col+` FROM vitals WHERE `+w+` GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT `+strconv.Itoa(limit)+`)
 GROUP BY v ORDER BY n DESC, v`, p...)
 		if err != nil {
 			return out, err
 		}
+		out.Breakdowns[d] = []analytics.VitalsRow{}
 		for rows.Next() {
 			var r analytics.VitalsRow
-			if err := scanVitals(rows, []any{&r.Value, &r.Loads}, &r); err != nil {
+			if err := scanVitals(rows, []any{&r.Value, &r.Loads}, false, &r); err != nil {
 				_ = rows.Close()
 				return out, err
 			}
-			out.Rows = append(out.Rows, r)
+			out.Breakdowns[d] = append(out.Breakdowns[d], r)
 		}
 		if err := rows.Close(); err != nil {
 			return out, err
 		}
 	}
-	if width == "" {
+	if width == "" || q.Metric == "" {
 		return out, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT epoch_ms(time_bucket(`+width+`, ts)) AS b,
-       coalesce(reservoir_quantile(lcp, 0.75)::DOUBLE, -1), coalesce(reservoir_quantile(inp, 0.75)::DOUBLE, -1), coalesce(reservoir_quantile(cls, 0.75)::DOUBLE, -1),
-       coalesce(reservoir_quantile(fcp, 0.75)::DOUBLE, -1), coalesce(reservoir_quantile(ttfb, 0.75)::DOUBLE, -1)
+	// The metric is one of VitalNames: a column name, not a value.
+	col := string(q.Metric)
+	rows, err := s.db.QueryContext(ctx, `SELECT epoch_ms(time_bucket(`+width+`, ts)) AS b, `+p75(col)+`, count(`+col+`)
 FROM vitals WHERE `+w+` GROUP BY b ORDER BY b`, p...)
 	if err != nil {
 		return out, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var pt analytics.VitalsPoint
-		if err := rows.Scan(&pt.T, &pt.LCP, &pt.INP, &pt.CLS, &pt.FCP, &pt.TTFB); err != nil {
+		var pt analytics.VitalPoint
+		if err := rows.Scan(&pt.T, &pt.P75, &pt.Samples); err != nil {
 			return out, err
 		}
-		out.Series = append(out.Series, pt)
+		if pt.Samples > 0 {
+			out.Series = append(out.Series, pt)
+		}
 	}
 	return out, rows.Err()
 }
 
-// pruneErrors deletes a site's errors before before and the groups not
-// seen since; and its vitals before vitalsBefore, a step at a time from
-// the oldest like its events.
+// pruneErrors deletes a site's errors before before and the groups left
+// without errors; and its vitals before vitalsBefore, a step at a time
+// from the oldest like its events. A group that comes back after that is
+// new again.
 func (s *Store) pruneErrors(ctx context.Context, site int64, before, vitalsBefore time.Time) (errs int64, err error) {
 	if _, err := s.pruneTable(ctx, "vitals", site, vitalsBefore); err != nil {
 		return 0, err
@@ -622,8 +632,10 @@ func (s *Store) pruneErrors(ctx context.Context, site int64, before, vitalsBefor
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	_, err = s.db.ExecContext(ctx, "DELETE FROM error_groups WHERE site_id = $1 AND last_seen < $2", uint32(site), before)
-	return errs, err
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM error_groups WHERE site_id = $1 AND grp NOT IN (SELECT grp FROM errors WHERE site_id = $1)", uint32(site)); err != nil {
+		return errs, err
+	}
+	return errs, s.loadGroups(ctx)
 }
 
 // pruneTable deletes a site's rows of table before before, pruneStep at a
