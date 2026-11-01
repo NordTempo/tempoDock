@@ -206,11 +206,12 @@ func TestScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := io.ReadAll(zr); !bytes.Equal(b, script) {
-		t.Error("the gzipped script isn't the script")
+	b, _ := io.ReadAll(zr)
+	if !bytes.Contains(b, []byte(`"largest-contentful-paint"`)) || bytes.Contains(b, []byte(evMarker)) || !bytes.HasSuffix(bytes.TrimSpace(b), []byte("})({});")) {
+		t.Errorf("a site that collects errors gets the core with ev.js spliced in; got:\n%s", b)
 	}
-	if n := GzippedScriptSize(); n > 2048 {
-		t.Errorf("the script is %d bytes gzipped, over the 2 KB budget (ADR 0037)", n)
+	if core, withErrors := ScriptSizes(); core > 2048 || withErrors-core > 2048 {
+		t.Errorf("the script is %d bytes gzipped and errors add %d, over the 2 KB budgets (ADR 0037)", core, withErrors-core)
 	}
 	r = httptest.NewRequest(http.MethodGet, ScriptPath, nil)
 	r.Header.Set("If-None-Match", w.Header().Get("ETag"))
@@ -218,6 +219,82 @@ func TestScript(t *testing.T) {
 	in.ServeHTTP(w, r)
 	if w.Code != http.StatusNotModified {
 		t.Errorf("revalidation: status %d", w.Code)
+	}
+}
+
+func TestScriptWithoutErrors(t *testing.T) {
+	in, _ := newIngest(t)
+	in.Rules = &Rules{}
+	in.Rules.load(map[int64]node.SiteRules{3: {ErrorsOff: true}})
+	r := httptest.NewRequest(http.MethodGet, ScriptPath, nil)
+	r.Header.Set(TagHeader, "3.40.981")
+	w := httptest.NewRecorder()
+	in.ServeHTTP(w, r)
+	if b := w.Body.String(); strings.Contains(b, "largest-contentful-paint") || strings.Contains(b, evMarker) {
+		t.Errorf("a site with errors off got ev.js:\n%s", b)
+	}
+	// A cached script may still send them; they are dropped.
+	if w := post(in, "shop.example.com", `{"k":4,"u":"https://shop.example.com/","n":"boom","t":"Error"}`, chromeMac, "203.0.113.9"); w.Code != http.StatusAccepted {
+		t.Fatalf("status %d", w.Code)
+	}
+	if in.Stats().Accepted.Load() != 0 {
+		t.Error("an error of a site with errors off was kept")
+	}
+}
+
+func TestErrorEvent(t *testing.T) {
+	in, sp := newIngest(t)
+	stack := "TypeError: Cannot read properties of undefined (reading 'id')\n" +
+		"    at renderCart (https://shop.example.com/assets/index-D2vX9pQa.js:1:3456)\n" +
+		"    at https://shop.example.com/assets/vendor-a1b2c3d4.js:2:10"
+	body, _ := json.Marshal(map[string]any{"k": 4, "u": "https://shop.example.com/cart/1234", "n": "Cannot read properties of undefined (reading 'id')", "t": "TypeError", "s": stack})
+	if w := post(in, "shop.example.com", string(body), chromeMac, "203.0.113.9"); w.Code != http.StatusAccepted {
+		t.Fatalf("status %d", w.Code)
+	}
+	evs := spooled(t, sp)
+	if len(evs) != 1 || evs[0].Error == nil {
+		t.Fatalf("spooled %+v", evs)
+	}
+	e := evs[0]
+	if e.Kind != analytics.KindError || e.Path != "/cart/1234" || e.Error.Type != "TypeError" || e.Error.Frame != "renderCart (/assets/index.js)" || e.Error.Group == 0 {
+		t.Errorf("error event %+v %+v", e, e.Error)
+	}
+	// The same error from the next release's bundle, about another cart,
+	// is in the same group.
+	if g := errorGroup("TypeError", "Cannot read properties of undefined (reading 'id')", topFrame(strings.ReplaceAll(stack, "D2vX9pQa", "Zq81LmNo"))); g != e.Error.Group {
+		t.Error("a new bundle hash split the group")
+	}
+}
+
+func TestTopFrame(t *testing.T) {
+	for stack, want := range map[string]string{
+		"Error: x\n    at JSON.parse (<anonymous>)\n    at load (https://a.example/app.js?v=3:10:2)": "load (/app.js)",
+		"load@https://a.example/static/js/main.3f9a8c1e2b.js:1:200\n@https://a.example/x.js:1:1":     "load (/static/js/main.js)",
+		"at https://a.example/chunk-ABCD1234.js:5:6":                                                 "/chunk.js",
+		"Script error.": "",
+		"    at async Promise.all (index 0)\n    at async submit (/src/form.ts:12:3)": "submit (/src/form.ts)",
+	} {
+		if got := topFrame(stack); got != want {
+			t.Errorf("topFrame(%q) = %q, want %q", stack, got, want)
+		}
+	}
+}
+
+func TestVitalsEvent(t *testing.T) {
+	in, sp := newIngest(t)
+	body := `{"k":5,"u":"https://shop.example.com/p","v":{"lcp":1834.6,"inp":-1,"cls":0.04213,"fcp":912,"ttfb":1e9}}`
+	if w := post(in, "shop.example.com", body, chromeMac, "203.0.113.9"); w.Code != http.StatusAccepted {
+		t.Fatalf("status %d", w.Code)
+	}
+	evs := spooled(t, sp)
+	if len(evs) != 1 || evs[0].Vitals == nil {
+		t.Fatalf("spooled %+v", evs)
+	}
+	if v := *evs[0].Vitals; v != (analytics.Vitals{LCP: 1835, INP: -1, CLS: 0.0421, FCP: 912, TTFB: -1}) {
+		t.Errorf("vitals %+v", v)
+	}
+	if w := post(in, "shop.example.com", `{"k":5,"u":"https://shop.example.com/p"}`, chromeMac, "203.0.113.9"); w.Code != http.StatusBadRequest {
+		t.Errorf("vitals without values: status %d", w.Code)
 	}
 }
 

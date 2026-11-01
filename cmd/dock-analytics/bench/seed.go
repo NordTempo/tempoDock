@@ -72,8 +72,16 @@ func Seed(ctx context.Context, w Writer, opts SeedOptions) (int, error) {
 		f *= 0.8 + 0.4*float64(day)/float64(opts.Days)
 		target := int(perDay * f * 1.1) // the weekend dip averages out about here
 		var dayEvents []analytics.Event
-		for len(dayEvents) < target {
+		// The target counts page views and custom events; errors and
+		// Web Vitals come on top, as they would.
+		for counted := 0; counted < target; {
+			n := len(dayEvents)
 			dayEvents = g.session(dayEvents, d, day)
+			for _, e := range dayEvents[n:] {
+				if e.Kind <= analytics.KindOutbound {
+					counted++
+				}
+			}
 		}
 		slices.SortFunc(dayEvents, func(a, b analytics.Event) int { return int(a.Time - b.Time) })
 		for _, e := range dayEvents {
@@ -102,6 +110,7 @@ type gen struct {
 	refNames                         []string
 	countries                        []string
 	countryZipf                      *rand.Zipf
+	errors                           *rand.Zipf
 }
 
 func newGen(r *rand.Rand) *gen {
@@ -131,6 +140,7 @@ func newGen(r *rand.Rand) *gen {
 	g.countryZipf = rand.NewZipf(r, 1.1, 3, uint64(len(g.countries)-1))
 	g.cities = rand.NewZipf(r, 1.4, 2, 40)
 	g.events = rand.NewZipf(r, 1.5, 1, 19)
+	g.errors = rand.NewZipf(r, 1.3, 1, 59)
 	return g
 }
 
@@ -237,6 +247,34 @@ func (g *gen) session(out []analytics.Event, d time.Time, day int) []analytics.E
 		}
 		pv.Time = t
 		out = append(out, pv)
+		// Most page loads report their vitals; mobile ones are slower.
+		if r.Float64() < 0.8 {
+			slow := 1.0
+			if pv.Device != "desktop" {
+				slow = 1.8
+			}
+			vt := pv
+			vt.Kind, vt.Time = analytics.KindVitals, t+3000+r.Int64N(60_000)
+			vt.Vitals = &analytics.Vitals{
+				LCP: math.Round(slow * 900 * math.Exp(r.NormFloat64()*0.5)), INP: -1,
+				CLS: math.Round(math.Abs(r.NormFloat64())*0.06*10000) / 10000,
+				FCP: math.Round(slow * 600 * math.Exp(r.NormFloat64()*0.4)), TTFB: math.Round(150 * math.Exp(r.NormFloat64()*0.6)),
+			}
+			if r.Float64() < 0.6 {
+				vt.Vitals.INP = math.Round(slow * 80 * math.Exp(r.NormFloat64()*0.7))
+			}
+			out = append(out, vt)
+		}
+		if r.Float64() < 0.01 {
+			n := g.errors.Uint64()
+			er := pv
+			er.Kind, er.Time = analytics.KindError, t+500+r.Int64N(30_000)
+			er.Name = "Cannot read properties of undefined (reading 'f" + strconv.FormatUint(n, 10) + "')"
+			frame := "render" + strconv.FormatUint(n%7, 10) + " (/assets/index.js)"
+			er.Error = &analytics.ErrorInfo{Type: "TypeError", Frame: frame, Group: 1000 + n,
+				Stack: "TypeError: " + er.Name + "\n    at " + frame + "\n    at main (/assets/index.js)"}
+			out = append(out, er)
+		}
 		if r.Float64() < 0.07 {
 			ev := pv
 			ev.Kind = analytics.KindEvent

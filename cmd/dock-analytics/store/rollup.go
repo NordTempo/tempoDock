@@ -363,30 +363,23 @@ func (s *Store) Prune(ctx context.Context, q analytics.PruneQuery) (analytics.Pr
 	if b := s.builtThrough(); b.Before(before) {
 		before = b
 	}
-	var stale, oldest sql.NullTime
+	var stale sql.NullTime
 	if err := s.db.QueryRowContext(ctx, "SELECT min(day)::TIMESTAMP FROM rollup_days WHERE site_id = $1 AND stale", uint32(q.Site)).Scan(&stale); err != nil {
 		return analytics.PruneResult{}, err
 	}
 	if stale.Valid && stale.Time.Before(before) {
 		before = stale.Time
 	}
-	if err := s.db.QueryRowContext(ctx, "SELECT min(ts) FROM events WHERE site_id = $1", uint32(q.Site)).Scan(&oldest); err != nil || !oldest.Valid {
-		return analytics.PruneResult{}, err
-	}
 	var out analytics.PruneResult
-	for from := oldest.Time.UTC(); from.Before(before); from = from.Add(pruneStep) {
-		to := from.Add(pruneStep)
-		if to.After(before) {
-			to = before
-		}
-		s.writeMu.Lock()
-		res, err := s.db.ExecContext(ctx, "DELETE FROM events WHERE site_id = $1 AND ts < $2", uint32(q.Site), to)
-		s.writeMu.Unlock()
-		if err != nil {
-			return out, err
-		}
-		n, _ := res.RowsAffected()
-		out.Deleted += n
+	n, err := s.pruneTable(ctx, "events", q.Site, before)
+	out.Deleted = n
+	if err != nil {
+		return out, err
 	}
-	return out, nil
+	var errorsBefore time.Time
+	if q.ErrorsBefore > 0 {
+		errorsBefore = time.UnixMilli(q.ErrorsBefore).UTC()
+	}
+	out.ErrorsDeleted, err = s.pruneErrors(ctx, q.Site, errorsBefore, time.UnixMilli(q.Before).UTC())
+	return out, err
 }

@@ -2413,6 +2413,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/sites/{site}/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A site's errors
+         * @description Uncaught errors and unhandled rejections in the range, grouped by type, message and top frame, the most frequent first, each with its series. Filters take page, hostname, country, browser, browser_version, os, device, service and release.
+         */
+        get: operations["list-site-errors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/sites/{site}/errors/{group}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One error group of a site
+         * @description Its counts, latest stack trace, pages, browsers, OS, devices and releases, and its latest occurrences with their sessions, in the range.
+         */
+        get: operations["get-site-error"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/sites/{site}/live": {
         parameters: {
             query?: never;
@@ -2447,6 +2487,26 @@ export interface paths {
          * @description Visitors, page views, sessions, bounce rate and session length for a range and the one before it, the series, the top values of the dashboard's dimensions, and deploys and domain moves as markers. With the analytics server offline the numbers are empty and store_online is false.
          */
         get: operations["get-site-stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/sites/{site}/vitals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A site's Web Vitals
+         * @description LCP, INP, CLS, FCP and TTFB at the 75th percentile with good and poor counts: over all page loads in the range, by one dimension's values, and over time.
+         */
+        get: operations["get-site-vitals"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3481,6 +3541,12 @@ export interface components {
             /** @enum {string} */
             trigger: "schedule" | "manual";
         };
+        CountPoint: {
+            /** Format: int64 */
+            count: number;
+            /** Format: int64 */
+            t: number;
+        };
         CreateAlertChannelRequest: {
             /** @enum {string} */
             kind: "webhook" | "slack" | "email";
@@ -3989,6 +4055,39 @@ export interface components {
             /** @example body.name */
             location?: string;
             message: string;
+        };
+        ErrorGroup: {
+            /** Format: int64 */
+            count: number;
+            first_release?: string;
+            /** Format: date-time */
+            first_seen: string;
+            /** @description The top stack frame: function and script, without line or content hash */
+            frame: string;
+            /** @description The group's fingerprint, 16 hex digits */
+            group: string;
+            /** Format: date-time */
+            last_seen: string;
+            message: string;
+            series?: components["schemas"]["CountPoint"][] | null;
+            /** Format: int64 */
+            sessions: number;
+            type: string;
+            /** Format: int64 */
+            visitors: number;
+        };
+        ErrorOccurrence: {
+            /** Format: date-time */
+            at: string;
+            browser?: string;
+            browser_version?: string;
+            country?: string;
+            device?: string;
+            os?: string;
+            path: string;
+            /** @description The release that served the page ("web r41") */
+            release?: string;
+            session?: string;
         };
         Event: {
             alert?: components["schemas"]["Alert"];
@@ -4889,6 +4988,65 @@ export interface components {
             dimension: string;
             rows: components["schemas"]["AnalyticsRow"][] | null;
         };
+        SiteError: {
+            browsers: components["schemas"]["AnalyticsRow"][] | null;
+            /** @enum {string} */
+            bucket: "hour" | "day";
+            /** Format: int64 */
+            count: number;
+            devices: components["schemas"]["AnalyticsRow"][] | null;
+            first_release?: string;
+            /** Format: date-time */
+            first_seen: string;
+            /** @description The top stack frame: function and script, without line or content hash */
+            frame: string;
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            from: number;
+            /** @description The group's fingerprint, 16 hex digits */
+            group: string;
+            /** Format: date-time */
+            last_seen: string;
+            message: string;
+            os: components["schemas"]["AnalyticsRow"][] | null;
+            pages: components["schemas"]["AnalyticsRow"][] | null;
+            recent: components["schemas"]["ErrorOccurrence"][] | null;
+            releases: components["schemas"]["AnalyticsRow"][] | null;
+            series?: components["schemas"]["CountPoint"][] | null;
+            /** Format: int64 */
+            sessions: number;
+            site: string;
+            stack: string;
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            to: number;
+            type: string;
+            /** Format: int64 */
+            visitors: number;
+        };
+        SiteErrors: {
+            /** @enum {string} */
+            bucket: "hour" | "day";
+            collecting: boolean;
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            from: number;
+            groups: components["schemas"]["ErrorGroup"][] | null;
+            site: string;
+            store_error?: string;
+            store_online: boolean;
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            to: number;
+        };
         SiteHostname: {
             hostname: string;
             service?: string;
@@ -4952,6 +5110,31 @@ export interface components {
             site: string;
             store_error?: string;
             store_online: boolean;
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            to: number;
+        };
+        SiteVitals: {
+            all: components["schemas"]["VitalsRow"];
+            /** @enum {string} */
+            bucket: "hour" | "day";
+            collecting: boolean;
+            dimension?: string;
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            from: number;
+            rows: components["schemas"]["VitalsRow"][] | null;
+            series: components["schemas"]["VitalsPoint"][] | null;
+            site: string;
+            store_error?: string;
+            store_online: boolean;
+            thresholds: {
+                [key: string]: components["schemas"]["VitalThreshold"];
+            };
             /**
              * Format: int64
              * @description Unix ms
@@ -5271,6 +5454,50 @@ export interface components {
             max_upload_bytes: number;
             /** @example v0.1.0 */
             version: string;
+        };
+        VitalStat: {
+            /** Format: int64 */
+            good: number;
+            /**
+             * Format: double
+             * @description Milliseconds; the layout shift score for CLS; -1 without samples
+             */
+            p75: number;
+            /** Format: int64 */
+            poor: number;
+            /** Format: int64 */
+            samples: number;
+        };
+        VitalThreshold: {
+            /** Format: double */
+            good: number;
+            /** Format: double */
+            poor: number;
+        };
+        VitalsPoint: {
+            /** Format: double */
+            cls: number;
+            /** Format: double */
+            fcp: number;
+            /** Format: double */
+            inp: number;
+            /** Format: double */
+            lcp: number;
+            /** Format: int64 */
+            t: number;
+            /** Format: double */
+            ttfb: number;
+        };
+        VitalsRow: {
+            cls: components["schemas"]["VitalStat"];
+            fcp: components["schemas"]["VitalStat"];
+            inp: components["schemas"]["VitalStat"];
+            label?: string;
+            lcp: components["schemas"]["VitalStat"];
+            /** Format: int64 */
+            loads: number;
+            ttfb: components["schemas"]["VitalStat"];
+            value: string;
         };
         Volume: {
             /** Format: date-time */
@@ -19065,6 +19292,177 @@ export interface operations {
             };
         };
     };
+    "list-site-errors": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description A range ending now; default 30d */
+                range?: "24h" | "7d" | "30d" | "90d" | "12m" | "";
+                /** @description Start of a custom range, Unix ms (with to) */
+                from?: number;
+                /** @description End of a custom range, Unix ms */
+                to?: number;
+                /** @description dimension:op:value, op is, is_not or contains; repeat for more */
+                filter?: string[] | null;
+                limit?: number;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteErrors"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-site-error": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description A range ending now; default 30d */
+                range?: "24h" | "7d" | "30d" | "90d" | "12m" | "";
+                /** @description Start of a custom range, Unix ms (with to) */
+                from?: number;
+                /** @description End of a custom range, Unix ms */
+                to?: number;
+                /** @description dimension:op:value, op is, is_not or contains; repeat for more */
+                filter?: string[] | null;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+                /** @description The group's fingerprint, 16 hex digits */
+                group: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteError"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "site-live": {
         parameters: {
             query?: {
@@ -19199,6 +19597,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SiteStats"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-site-vitals": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description A range ending now; default 30d */
+                range?: "24h" | "7d" | "30d" | "90d" | "12m" | "";
+                /** @description Start of a custom range, Unix ms (with to) */
+                from?: number;
+                /** @description End of a custom range, Unix ms */
+                to?: number;
+                /** @description dimension:op:value, op is, is_not or contains; repeat for more */
+                filter?: string[] | null;
+                /** @description Break down by this; empty for none */
+                dimension?: "page" | "hostname" | "country" | "browser" | "browser_version" | "os" | "device" | "service" | "release" | "";
+                limit?: number;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteVitals"];
                 };
             };
             /** @description Bad Request */

@@ -181,6 +181,19 @@ func (s *sessions) assign(site int64, visitor uint64, t int64, pageview bool, sr
 	return mark{session: st.id, src: src, start: t, entry: pageview}
 }
 
+// peek returns the session a visitor's event at t (Unix ms) falls in,
+// without changing it: errors and vitals happen within a session but
+// don't make it longer. 0 when the visitor has no session around t.
+func (s *sessions) peek(site int64, visitor uint64, t int64) uint64 {
+	gap := SessionGap.Milliseconds()
+	for _, st := range s.m[sessionKey{site, visitor}] {
+		if t >= st.first-gap && t <= st.last+gap {
+			return st.id
+		}
+	}
+	return 0
+}
+
 // sweep forgets sessions nothing was written to for SessionGap: a live
 // visitor's next event would start a new one anyway, and a backlog is
 // written in minutes. It is journaled like assign.

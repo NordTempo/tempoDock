@@ -78,7 +78,7 @@ old store is removed when that server is back.`,
 	}
 	cmd.AddCommand(server)
 	cmd.AddCommand(newAnalyticsEnableCmd(g), newAnalyticsDisableCmd(g), newAnalyticsSitesCmd(g),
-		newAnalyticsStatsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
+		newAnalyticsStatsCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
 	return cmd
 }
 
@@ -214,6 +214,208 @@ func newAnalyticsStatsCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVar(&r, "range", "30d", "24h, 7d, 30d, 90d or 12m")
 	cmd.Flags().StringArrayVar(&filters, "filter", nil, "dimension:op:value (op is, is_not or contains); repeat for more")
 	return cmd
+}
+
+// statsQuery is the range and filters flags of a site's reads.
+type statsQuery struct {
+	r       string
+	filters []string
+}
+
+// add registers the flags.
+func (sq *statsQuery) add(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&sq.r, "range", "30d", "24h, 7d, 30d, 90d or 12m")
+	cmd.Flags().StringArrayVar(&sq.filters, "filter", nil, "dimension:op:value (op is, is_not or contains); repeat for more")
+}
+
+// values are the query's parameters.
+func (sq *statsQuery) values() url.Values {
+	q := url.Values{"range": {sq.r}}
+	for _, fl := range sq.filters {
+		q.Add("filter", fl)
+	}
+	return q
+}
+
+func newAnalyticsErrorsCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var sq statsQuery
+	cmd := &cobra.Command{
+		Use:   "errors <site> [<group>]",
+		Short: "A site's errors, grouped; or one group's stack, pages and occurrences",
+		Long: `List a site's uncaught errors and unhandled rejections over a range,
+grouped by type, message and top stack frame, the most frequent first.
+Given a group (its 16 hex digits from the list), show its latest stack
+trace, the pages, browsers and releases it happened on and its latest
+occurrences. Filters take page, hostname, country, browser,
+browser_version, os, device, service and release.`,
+		Example: `  dock analytics errors shop.example.com --range 7d
+  dock analytics errors shop.example.com 9f3c0a1b2c3d4e5f
+  dock analytics errors shop.example.com --filter release:is:web`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needProject)
+			if err != nil {
+				return err
+			}
+			path := t.projectPath() + "/sites/" + url.PathEscape(args[0]) + "/errors"
+			if len(args) == 2 {
+				d, err := get[apitypes.SiteError](cmd.Context(), s, path+"/"+url.PathEscape(args[1])+"?"+sq.values().Encode())
+				if err != nil {
+					return err
+				}
+				return g.io.Print(d, func() error { return printSiteError(g, d) })
+			}
+			st, err := get[apitypes.SiteErrors](cmd.Context(), s, path+"?"+sq.values().Encode())
+			if err != nil {
+				return err
+			}
+			return g.io.Print(st, func() error { return printSiteErrors(g, st) })
+		},
+	}
+	f.add(cmd, needProject)
+	sq.add(cmd)
+	return cmd
+}
+
+// printSiteErrors prints error groups as a table.
+func printSiteErrors(g *globals, st apitypes.SiteErrors) error {
+	if !st.StoreOnline {
+		g.io.Warnf("%s", st.StoreError)
+		return nil
+	}
+	if !st.Collecting {
+		g.io.Warnf("this site doesn't collect errors; turn them on with `dock analytics site set %s --errors on`", st.Site)
+	}
+	if len(st.Groups) == 0 {
+		g.io.Detail("No errors in this range.")
+		return nil
+	}
+	tb := g.io.Table("GROUP", "COUNT", "SESSIONS", "LAST SEEN", "ERROR")
+	for _, e := range st.Groups {
+		tb.Row(e.Group, itoa(e.Count), itoa(e.Sessions), e.LastSeen.Local().Format("Jan 2 15:04"), cut(oneLine(e.Type+": "+e.Message), 80))
+	}
+	return tb.Flush()
+}
+
+// printSiteError prints one error group.
+func printSiteError(g *globals, d apitypes.SiteError) error {
+	err := g.io.Fields(
+		"error", d.Type+": "+d.Message,
+		"frame", dash(d.Frame),
+		"count", itoa(d.Count),
+		"sessions", itoa(d.Sessions),
+		"first seen", d.FirstSeen.Local().Format(time.DateTime)+" ("+dash(d.FirstRelease)+")",
+		"last seen", d.LastSeen.Local().Format(time.DateTime),
+	)
+	if err != nil {
+		return err
+	}
+	if d.Stack != "" {
+		_, _ = io.WriteString(g.io.Out, "\n"+d.Stack+"\n")
+	}
+	for _, b := range []struct {
+		name string
+		rows []apitypes.AnalyticsRow
+	}{{"page", d.Pages}, {"browser", d.Browsers}, {"release", d.Releases}} {
+		if len(b.rows) == 0 {
+			continue
+		}
+		_, _ = io.WriteString(g.io.Out, "\n")
+		tb := g.io.Table(b.name, "visitors", "count")
+		for _, r := range b.rows[:min(len(b.rows), 5)] {
+			tb.Row(dash(cmp.Or(r.Label, r.Value)), itoa(r.Visitors), itoa(r.Count))
+		}
+		if err := tb.Flush(); err != nil {
+			return err
+		}
+	}
+	if len(d.Recent) == 0 {
+		return nil
+	}
+	_, _ = io.WriteString(g.io.Out, "\n")
+	tb := g.io.Table("AT", "PAGE", "BROWSER", "RELEASE", "SESSION")
+	for _, o := range d.Recent[:min(len(d.Recent), 10)] {
+		tb.Row(o.At.Local().Format("Jan 2 15:04:05"), o.Path, dash(strings.TrimSpace(o.Browser+" "+o.BrowserVersion)), dash(o.Release), dash(o.Session))
+	}
+	return tb.Flush()
+}
+
+func newAnalyticsVitalsCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var sq statsQuery
+	var by string
+	cmd := &cobra.Command{
+		Use:   "vitals <site>",
+		Short: "A site's Web Vitals: LCP, INP, CLS, FCP and TTFB at the 75th percentile",
+		Long: `Show a site's Web Vitals over a range: the 75th percentile of every
+page load's LCP, INP, CLS, FCP and TTFB, rated good, needs improvement or
+poor by Google's thresholds, overall and with --by for each page, device,
+browser, country, service or release.`,
+		Example: `  dock analytics vitals shop.example.com
+  dock analytics vitals shop.example.com --by page --range 7d`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needProject)
+			if err != nil {
+				return err
+			}
+			q := sq.values()
+			q.Set("dimension", by)
+			v, err := get[apitypes.SiteVitals](cmd.Context(), s, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/vitals?"+q.Encode())
+			if err != nil {
+				return err
+			}
+			return g.io.Print(v, func() error { return printSiteVitals(g, v) })
+		},
+	}
+	f.add(cmd, needProject)
+	sq.add(cmd)
+	cmd.Flags().StringVar(&by, "by", "", "break down by page, hostname, country, browser, browser_version, os, device, service or release")
+	return cmd
+}
+
+// printSiteVitals prints vitals as a table: all page loads, then each
+// value's.
+func printSiteVitals(g *globals, v apitypes.SiteVitals) error {
+	if !v.StoreOnline {
+		g.io.Warnf("%s", v.StoreError)
+		return nil
+	}
+	if !v.Collecting {
+		g.io.Warnf("this site doesn't collect Web Vitals; turn them on with `dock analytics site set %s --errors on`", v.Site)
+	}
+	tb := g.io.Table(cmp.Or(strings.ToUpper(v.Dimension), "PAGE LOADS"), "LOADS", "LCP", "INP", "CLS", "FCP", "TTFB")
+	row := func(name string, r apitypes.VitalsRow) {
+		tb.Row(name, itoa(r.Loads), vital(v, "lcp", r.LCP), vital(v, "inp", r.INP), vital(v, "cls", r.CLS), vital(v, "fcp", r.FCP), vital(v, "ttfb", r.TTFB))
+	}
+	row("all", v.All)
+	for _, r := range v.Rows {
+		row(dash(cmp.Or(r.Label, r.Value)), r)
+	}
+	return tb.Flush()
+}
+
+// vital is a 75th percentile with its rating: "1.8 s good".
+func vital(v apitypes.SiteVitals, name string, st apitypes.VitalStat) string {
+	if st.P75 < 0 {
+		return "-"
+	}
+	val := fmt.Sprintf("%.0f ms", st.P75)
+	switch {
+	case name == "cls":
+		val = fmt.Sprintf("%.2f", st.P75)
+	case st.P75 >= 1000:
+		val = fmt.Sprintf("%.1f s", st.P75/1000)
+	}
+	t := v.Thresholds[name]
+	switch {
+	case st.P75 <= t.Good:
+		return val + " good"
+	case st.P75 > t.Poor:
+		return val + " poor"
+	}
+	return val + " fair"
 }
 
 // printSiteStats prints a dashboard as text.

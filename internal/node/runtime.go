@@ -753,10 +753,12 @@ type AnalyticsConfig struct {
 }
 
 // SiteRules are what a site's ingest leaves out: paths (* matches any
-// run of characters) and client addresses or CIDR ranges.
+// run of characters) and client addresses or CIDR ranges, and whether it
+// collects errors and Web Vitals (on unless ErrorsOff).
 type SiteRules struct {
-	ExcludedPaths []string
-	IgnoredIPs    []string
+	ExcludedPaths []string `json:",omitempty"`
+	IgnoredIPs    []string `json:",omitempty"`
+	ErrorsOff     bool     `json:",omitempty"`
 }
 
 // SpoolBatch is events read from a spool.

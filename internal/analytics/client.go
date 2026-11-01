@@ -53,11 +53,11 @@ func (c *Client) Write(ctx context.Context, source string, position uint64, even
 // WriteLines is Write for events that are already JSON lines, as a
 // spool holds them: they go to the store as they are. The store skips
 // lines it can't read.
-func (c *Client) WriteLines(ctx context.Context, source string, position uint64, lines []byte) (int, error) {
+func (c *Client) WriteLines(ctx context.Context, source string, position uint64, lines []byte) (WriteResult, error) {
 	q := url.Values{"source": {source}, "position": {strconv.FormatUint(position, 10)}}
 	var res WriteResult
 	err := c.do(ctx, http.MethodPost, WritePath+"?"+q.Encode(), bytes.NewReader(lines), &res)
-	return res.Written, err
+	return res, err
 }
 
 // Cursor implements Store.
@@ -89,6 +89,24 @@ func (c *Client) Breakdown(ctx context.Context, q BreakdownQuery) ([]Row, error)
 func (c *Client) Live(ctx context.Context, q LiveQuery) (Live, error) {
 	var res Live
 	return res, c.post(ctx, LivePath, q, &res)
+}
+
+// Errors implements Store.
+func (c *Client) Errors(ctx context.Context, q ErrorsQuery) ([]ErrorGroup, error) {
+	var res []ErrorGroup
+	return res, c.post(ctx, ErrorsPath, q, &res)
+}
+
+// Error implements Store.
+func (c *Client) Error(ctx context.Context, q ErrorQuery) (ErrorDetail, error) {
+	var res ErrorDetail
+	return res, c.post(ctx, ErrorPath, q, &res)
+}
+
+// Vitals implements Store.
+func (c *Client) Vitals(ctx context.Context, q VitalsQuery) (VitalsResult, error) {
+	var res VitalsResult
+	return res, c.post(ctx, VitalsPath, q, &res)
 }
 
 // Prune implements Store.

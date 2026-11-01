@@ -143,10 +143,11 @@ type storeWriter struct{ s *store.Store }
 
 // Write implements bench.Writer.
 func (w storeWriter) Write(ctx context.Context, source string, pos uint64, events []analytics.Event) (int, error) {
-	return w.s.Write(ctx, source, pos, events, func(p string) store.Location {
+	n, _, err := w.s.Write(ctx, source, pos, events, func(p string) store.Location {
 		c, r, city := bench.SeedLocator(p)
 		return store.Location{Country: c, Region: r, City: city}
 	})
+	return n, err
 }
 
 // benchCmd times the dashboards on a seeded database (bench.Run).
