@@ -237,6 +237,14 @@ func (c *Core) AnalyticsStatus(ctx context.Context, a Actor) (apitypes.Analytics
 		return apitypes.AnalyticsStatus{}, err
 	}
 	out := apitypes.AnalyticsStatus{}
+	// The move first: one that ends while the settings are read has
+	// switched the server by then, so the status never shows the old
+	// server without the move.
+	c.analytics.mu.Lock()
+	if m := c.analytics.moving; m != nil {
+		out.MovingTo = m.to.Name
+	}
+	c.analytics.mu.Unlock()
 	st, err := c.store.GetAnalyticsSettings(ctx)
 	if store.IsNotFound(err) {
 		out.Server = c.local.Name
@@ -268,10 +276,10 @@ func (c *Core) AnalyticsStatus(ctx context.Context, a Actor) (apitypes.Analytics
 	}
 	c.analytics.mu.Lock()
 	out.Starting, out.Error = c.analytics.starting, c.analytics.storeErr
-	if m := c.analytics.moving; m != nil {
-		out.MovingTo = m.to.Name
-	}
 	c.analytics.mu.Unlock()
+	if out.MovingTo == out.Server {
+		out.MovingTo = "" // it ended meanwhile
+	}
 	return out, nil
 }
 

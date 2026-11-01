@@ -19,6 +19,18 @@ type Querier interface {
 	Breakdown(ctx context.Context, q analytics.BreakdownQuery) ([]analytics.Row, error)
 }
 
+// ErrorsQuerier is a store with errors and Web Vitals, which Run times
+// too (the SQLite comparison has neither).
+type ErrorsQuerier interface {
+	Errors(ctx context.Context, q analytics.ErrorsQuery) ([]analytics.ErrorGroup, error)
+	Vitals(ctx context.Context, q analytics.VitalsQuery) (analytics.VitalsResult, error)
+}
+
+// ErrorsAndVitals is the Filter name of the errors and Web Vitals views'
+// timings: the error groups with their series, and the vitals by page
+// and device with theirs.
+const ErrorsAndVitals = "errors and vitals"
+
 // DashboardDimensions are the breakdowns a dashboard shows on first load:
 // one panel each, with the other dimensions behind tabs.
 var DashboardDimensions = []analytics.Dimension{
@@ -116,8 +128,38 @@ func Run(ctx context.Context, q Querier, opts Options) ([]Result, error) {
 			}
 			out = append(out, res)
 		}
+		eq, ok := q.(ErrorsQuerier)
+		if !ok {
+			continue
+		}
+		res, err := timeJobs(ctx, []job{
+			{"errors", func() error {
+				_, err := eq.Errors(ctx, analytics.ErrorsQuery{Query: base, Bucket: rg.Bucket, Limit: 50})
+				return err
+			}},
+			{"vitals", func() error {
+				_, err := eq.Vitals(ctx, analytics.VitalsQuery{Query: base, Dimensions: []analytics.Dimension{analytics.DimPage, analytics.DimDevice},
+					Limit: 20, Metric: analytics.VitalLCP, Bucket: rg.Bucket})
+				return err
+			}},
+		}, opts)
+		if err != nil {
+			return out, fmt.Errorf("%s, %s: %w", rg.Name, ErrorsAndVitals, err)
+		}
+		res.Range, res.Filter = rg.Name, ErrorsAndVitals
+		if opts.Out != nil {
+			_, _ = fmt.Fprintf(opts.Out, "%-5s %-28s views     p50 %7.1f ms  p95 %7.1f ms  slowest query p95 %7.1f ms (%s)\n",
+				res.Range, res.Filter, ms(res.P50), ms(res.P95), ms(res.SlowestQuery), res.SlowestQueryName)
+		}
+		out = append(out, res)
 	}
 	return out, nil
+}
+
+// job is one of a dashboard's queries.
+type job struct {
+	name string
+	run  func() error
 }
 
 // ptrs points at each of fs.
@@ -135,10 +177,6 @@ func ptrs(fs []analytics.Filter) []*analytics.Filter {
 func timeDashboard(ctx context.Context, q Querier, qq analytics.Query, rg Range, opts Options) (Result, error) {
 	prev := qq
 	prev.From, prev.To = qq.From-(qq.To-qq.From), qq.From
-	type job struct {
-		name string
-		run  func() error
-	}
 	jobs := []job{
 		{"overview", func() error { _, err := q.Overview(ctx, qq); return err }},
 		{"overview previous", func() error { _, err := q.Overview(ctx, prev); return err }},
@@ -153,6 +191,12 @@ func timeDashboard(ctx context.Context, q Querier, qq analytics.Query, rg Range,
 			return err
 		}})
 	}
+	return timeJobs(ctx, jobs, opts)
+}
+
+// timeJobs runs jobs opts.Runs times (after one warm-up), opts.Parallel
+// at a time, and times each run and each job.
+func timeJobs(ctx context.Context, jobs []job, opts Options) (Result, error) {
 	per := make([][]time.Duration, len(jobs))
 	var walls []time.Duration
 	for run := range opts.Runs + 1 {

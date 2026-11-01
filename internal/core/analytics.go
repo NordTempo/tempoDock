@@ -160,8 +160,9 @@ func (c *Core) analyticsRun() (*analytics.Client, int64, context.Context) {
 	return c.analytics.client, c.analytics.serverID, c.analytics.runCtx
 }
 
-// pruneAnalytics deletes every site's raw events past its retention, in
-// the background, once a day with the salts. Daily totals stay.
+// pruneAnalytics deletes every site's raw events and Web Vitals past its
+// event retention and its errors past its error retention, in the
+// background, once a day with the salts. Daily totals stay.
 func (c *Core) pruneAnalytics() {
 	cl, _ := c.analyticsClient()
 	if cl == nil {
@@ -180,8 +181,10 @@ func (c *Core) pruneAnalytics() {
 		}
 		for _, s := range sites {
 			set := mergeSettings(defaults, siteOverrides(store.Site{Settings: s.Settings}))
-			before := now().AddDate(0, 0, -*set.EventRetentionDays).UnixMilli()
-			if _, err := cl.Prune(ctx, analytics.PruneQuery{Site: s.ID, Before: before}); err != nil {
+			t := now()
+			q := analytics.PruneQuery{Site: s.ID, Before: t.AddDate(0, 0, -*set.EventRetentionDays).UnixMilli(),
+				ErrorsBefore: t.AddDate(0, 0, -*set.ErrorRetentionDays).UnixMilli()}
+			if _, err := cl.Prune(ctx, q); err != nil {
 				if ctx.Err() != nil {
 					return
 				}
@@ -332,7 +335,8 @@ func (c *Core) pushSalts(serverID int64) {
 }
 
 // analyticsConfig is what every server's ingest gets: the salts of today
-// and later, and each live site's excluded paths and ignored addresses.
+// and later, and each live site's excluded paths, ignored addresses and
+// whether it collects errors and Web Vitals.
 // When only the rules can't be read it returns the salts, Sites nil, and
 // the error.
 func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error) {
@@ -357,8 +361,9 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 	cfg.Sites = map[int64]node.SiteRules{}
 	for _, s := range sites {
 		set := mergeSettings(defaults, siteOverrides(store.Site{Settings: s.Settings}))
-		if len(*set.ExcludedPaths) > 0 || len(*set.IgnoredIPs) > 0 {
-			cfg.Sites[s.ID] = node.SiteRules{ExcludedPaths: *set.ExcludedPaths, IgnoredIPs: *set.IgnoredIPs}
+		r := node.SiteRules{ExcludedPaths: *set.ExcludedPaths, IgnoredIPs: *set.IgnoredIPs, ErrorsOff: !*set.ErrorsAndVitals}
+		if len(r.ExcludedPaths) > 0 || len(r.IgnoredIPs) > 0 || r.ErrorsOff {
+			cfg.Sites[s.ID] = r
 		}
 	}
 	return cfg, nil

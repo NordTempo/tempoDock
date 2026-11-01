@@ -74,6 +74,15 @@ func TestAnalyticsSiteCommands(t *testing.T) {
 	if st := ok[apitypes.SiteStats](t, "analytics", "stats", "shop.example.com", "-p", "shop", "--range", "7d", "--filter", "country:is:NO"); st.Site != "shop.example.com" {
 		t.Errorf("stats = %+v", st)
 	}
+	if e := ok[apitypes.SiteErrors](t, "analytics", "errors", "shop.example.com", "-p", "shop", "--range", "24h"); e.Site != "shop.example.com" || !e.Collecting || e.Bucket != "hour" {
+		t.Errorf("errors = %+v", e)
+	}
+	if v := ok[apitypes.SiteVitals](t, "analytics", "vitals", "shop.example.com", "-p", "shop", "--by", "device"); len(v.Breakdowns) != 0 || v.Thresholds["inp"].Poor != 500 {
+		t.Errorf("vitals = %+v", v)
+	}
+	if code, _, stderr := exec(t, "analytics", "vitals", "shop.example.com", "-p", "shop", "--by", "referrer"); code == 0 || !strings.Contains(stderr, "break down by page") {
+		t.Errorf("vitals by referrer: %d %s", code, stderr)
+	}
 	if code, _, stderr := exec(t, "analytics", "stats", "shop.example.com", "-p", "shop", "--filter", "nope"); code == 0 || !strings.Contains(stderr, "country:is:NO") {
 		t.Errorf("a malformed filter: %d %s", code, stderr)
 	}

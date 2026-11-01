@@ -3,6 +3,7 @@
 // running the daemon on the fake runtime. It keeps every event and
 // answers queries by scanning them; it has no sessions or rollups, so
 // sessions, bounce rate, durations and entry and exit pages stay empty.
+// Errors and Web Vitals are kept apart, as the real store keeps them.
 package fakestore
 
 import (
@@ -11,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json/v2"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -27,6 +29,9 @@ type Store struct {
 
 	mu      sync.Mutex
 	events  []analytics.Event
+	errs    []analytics.Event
+	vitals  []analytics.Event
+	groups  map[[2]uint64]bool
 	cursors map[string]uint64
 	// down makes every call fail with 503, as a store that is starting.
 	down bool
@@ -34,7 +39,7 @@ type Store struct {
 
 // New returns an empty store that wants token.
 func New(token string) *Store {
-	return &Store{token: token, cursors: map[string]uint64{}}
+	return &Store{token: token, cursors: map[string]uint64{}, groups: map[[2]uint64]bool{}}
 }
 
 // Events returns a copy of the events written.
@@ -98,6 +103,36 @@ func (s *Store) Handler() http.Handler {
 			return
 		}
 		reply(w, s.live(q))
+	}))
+	mux.HandleFunc("POST "+analytics.ErrorsPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.ErrorsQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, s.errorGroups(q.Query))
+	}))
+	mux.HandleFunc("POST "+analytics.ErrorPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.ErrorQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		for _, g := range s.errorGroups(q.Query) {
+			if g.Group == q.Group {
+				reply(w, analytics.ErrorDetail{ErrorGroup: g, Recent: s.recentErrors(q)})
+				return
+			}
+		}
+		http.Error(w, "this site has no error group "+q.Group, http.StatusBadRequest)
+	}))
+	mux.HandleFunc("POST "+analytics.VitalsPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.VitalsQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, s.vitalsOf(q))
 	}))
 	mux.HandleFunc("POST "+analytics.PrunePath, s.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.PruneQuery
@@ -214,8 +249,94 @@ func (s *Store) write(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.cursors[source] = pos
-	s.events = append(s.events, batch...)
-	reply(w, analytics.WriteResult{Written: len(batch)})
+	var res analytics.WriteResult
+	for _, e := range batch {
+		switch {
+		case e.Kind == analytics.KindError && e.Error != nil:
+			s.errs = append(s.errs, e)
+			if k := [2]uint64{uint64(e.Site), e.Error.Group}; !s.groups[k] {
+				s.groups[k] = true
+				res.NewErrors = append(res.NewErrors, analytics.NewError{Site: e.Site, Group: groupHex(e.Error.Group),
+					Type: e.Error.Type, Message: e.Name, Path: e.Path, Release: e.Release})
+			}
+		case e.Kind == analytics.KindVitals && e.Vitals != nil:
+			s.vitals = append(s.vitals, e)
+		default:
+			s.events = append(s.events, e)
+		}
+	}
+	res.Written = len(batch)
+	reply(w, res)
+}
+
+// groupHex is a fingerprint as the store's API writes it.
+func groupHex(g uint64) string { return fmt.Sprintf("%016x", g) }
+
+// errorGroups groups the site's errors in range that pass the filters,
+// the most frequent first.
+func (s *Store) errorGroups(q analytics.Query) []analytics.ErrorGroup {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []analytics.ErrorGroup{}
+	at := map[uint64]int{}
+	for _, e := range s.errs {
+		if e.Site != q.Site {
+			continue
+		}
+		i, ok := at[e.Error.Group]
+		if !ok {
+			i = len(out)
+			at[e.Error.Group] = i
+			out = append(out, analytics.ErrorGroup{Group: groupHex(e.Error.Group), FirstSeen: e.Time, FirstRelease: e.Release})
+		}
+		g := &out[i]
+		g.Type, g.Message, g.Frame, g.LastSeen = e.Error.Type, e.Name, e.Error.Frame, max(g.LastSeen, e.Time)
+		if matches(e, q) {
+			g.Count++
+		}
+	}
+	out = slices.DeleteFunc(out, func(g analytics.ErrorGroup) bool { return g.Count == 0 })
+	slices.SortStableFunc(out, func(a, b analytics.ErrorGroup) int { return int(b.Count - a.Count) })
+	return out
+}
+
+// recentErrors are a group's latest errors in q's range, newest first.
+func (s *Store) recentErrors(q analytics.ErrorQuery) []analytics.ErrorOccurrence {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []analytics.ErrorOccurrence{}
+	for i := len(s.errs) - 1; i >= 0 && len(out) < analytics.MaxErrorRecent; i-- {
+		if e := s.errs[i]; matches(e, q.Query) && groupHex(e.Error.Group) == q.Group {
+			out = append(out, analytics.ErrorOccurrence{Time: e.Time, Path: e.Path, Browser: e.Browser, OS: e.OS, Device: e.Device,
+				Country: e.Country, Service: e.Service, Release: e.Release})
+		}
+	}
+	return out
+}
+
+// vitalsOf counts the site's page loads with vitals in range, with the
+// LCP's 75th percentile (nearest rank); the fake leaves the rest unknown.
+func (s *Store) vitalsOf(q analytics.VitalsQuery) analytics.VitalsResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := analytics.VitalsResult{Breakdowns: map[analytics.Dimension][]analytics.VitalsRow{}, Series: []analytics.VitalPoint{}}
+	var lcp []float64
+	for _, e := range s.vitals {
+		if !matches(e, q.Query) {
+			continue
+		}
+		out.All.Loads++
+		if e.Vitals.LCP >= 0 {
+			lcp = append(lcp, e.Vitals.LCP)
+		}
+	}
+	unknown := analytics.VitalStat{P75: -1}
+	out.All.LCP, out.All.INP, out.All.CLS, out.All.FCP, out.All.TTFB = unknown, unknown, unknown, unknown, unknown
+	if len(lcp) > 0 {
+		slices.Sort(lcp)
+		out.All.LCP = analytics.VitalStat{P75: lcp[(len(lcp)*3+3)/4-1], Samples: int64(len(lcp))}
+	}
+	return out
 }
 
 // overview counts the site's events in range that pass the filters:

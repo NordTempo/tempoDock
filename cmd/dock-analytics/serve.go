@@ -169,6 +169,9 @@ func (a *api) handler() http.Handler {
 	mux.Handle("POST "+analytics.SeriesPath, a.auth(query(a, a.s.Series)))
 	mux.Handle("POST "+analytics.BreakdownPath, a.auth(query(a, a.s.Breakdown)))
 	mux.Handle("POST "+analytics.LivePath, a.auth(query(a, a.s.Live)))
+	mux.Handle("POST "+analytics.ErrorsPath, a.auth(query(a, a.s.Errors)))
+	mux.Handle("POST "+analytics.ErrorPath, a.auth(query(a, a.s.Error)))
+	mux.Handle("POST "+analytics.VitalsPath, a.auth(query(a, a.s.Vitals)))
 	mux.Handle("POST "+analytics.GeoIPPath, a.auth(a.updateGeoIP))
 	mux.Handle("POST "+analytics.PrunePath, a.auth(a.prune))
 	mux.Handle("GET "+analytics.SnapshotPath, a.auth(a.snapshot))
@@ -263,13 +266,13 @@ func (a *api) write(w http.ResponseWriter, r *http.Request) {
 	if skipped > 0 {
 		a.log.Warn("write: lines that aren't events were skipped", "source", source, "skipped", skipped)
 	}
-	n, err := a.s.Write(r.Context(), source, pos, events, a.locate)
+	n, news, err := a.s.Write(r.Context(), source, pos, events, a.locate)
 	if err != nil {
 		a.log.Error("write", "source", source, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	reply(w, analytics.WriteResult{Written: n, Skipped: skipped})
+	reply(w, analytics.WriteResult{Written: n, Skipped: skipped, NewErrors: news})
 }
 
 // readEvents decodes up to analytics.MaxWriteBatch JSON-line events.

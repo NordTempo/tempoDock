@@ -51,15 +51,27 @@ const (
 // maxBody caps an event's request body.
 const maxBody = 8 << 10
 
-//go:embed s.js
-var script []byte
+// The script: s.js is the core every site gets, ev.js its errors and
+// Web Vitals, spliced in at evMarker for sites that collect them. The
+// site's settings go in at configMarker.
+var (
+	//go:embed s.js
+	coreScript []byte
+	//go:embed ev.js
+	evScript []byte
+)
+
+const (
+	evMarker     = "/*ev*/"
+	configMarker = "/*c*/{}"
+)
 
 // Ingest is the handler. Spool and Salts must be set.
 type Ingest struct {
 	Spool *spool.Spool
 	Salts *Salts
-	// Rules leave sites' excluded paths and ignored addresses out; nil
-	// is none.
+	// Rules leave sites' excluded paths and ignored addresses out and
+	// say what each site's script collects; nil is none.
 	Rules *Rules
 	Log   *slog.Logger
 	// Now is the clock; nil is time.Now.
@@ -67,9 +79,22 @@ type Ingest struct {
 
 	stats Stats
 
-	gzOnce sync.Once
-	gz     []byte
-	etag   string
+	// scripts are the script's variants as served, built on first use:
+	// one per combination of settings, so a handful.
+	scriptMu sync.Mutex
+	scripts  map[scriptVariant]*builtScript
+}
+
+// scriptVariant is what a site's script differs in.
+type scriptVariant struct {
+	// errors splices in ev.js.
+	errors bool
+}
+
+// builtScript is one variant: its source, gzipped, and its ETag.
+type builtScript struct {
+	src, gz []byte
+	etag    string
 }
 
 // Stats counts what the ingest saw since it started.
@@ -92,30 +117,57 @@ func (in *Ingest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveScript sends s.js, gzipped when the browser takes it, cacheable
-// for an hour and revalidated by ETag after.
+// script returns the variant v, building it on first use.
+func (in *Ingest) script(v scriptVariant) *builtScript {
+	in.scriptMu.Lock()
+	defer in.scriptMu.Unlock()
+	if s := in.scripts[v]; s != nil {
+		return s
+	}
+	s := buildScript(v)
+	if in.scripts == nil {
+		in.scripts = map[scriptVariant]*builtScript{}
+	}
+	in.scripts[v] = s
+	return s
+}
+
+// buildScript assembles and compresses a variant.
+func buildScript(v scriptVariant) *builtScript {
+	var ev []byte
+	if v.errors {
+		ev = bytes.TrimSpace(evScript)
+	}
+	src := bytes.Replace(coreScript, []byte(evMarker), ev, 1)
+	src = bytes.Replace(src, []byte(configMarker), []byte("{}"), 1)
+	var b bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&b, gzip.BestCompression)
+	_, _ = zw.Write(src)
+	_ = zw.Close()
+	etag := `"` + strconv.FormatUint(uint64(len(src)), 36) + "-" + strconv.FormatUint(fnv(src), 36) + `"`
+	return &builtScript{src: src, gz: b.Bytes(), etag: etag}
+}
+
+// serveScript sends the site's variant of s.js, gzipped when the browser
+// takes it, cacheable for an hour (so a changed setting reaches visitors
+// within the hour) and revalidated by ETag after.
 func (in *Ingest) serveScript(w http.ResponseWriter, r *http.Request) {
-	in.gzOnce.Do(func() {
-		var b bytes.Buffer
-		zw, _ := gzip.NewWriterLevel(&b, gzip.BestCompression)
-		_, _ = zw.Write(script)
-		_ = zw.Close()
-		in.gz = b.Bytes()
-		in.etag = `"` + strconv.FormatUint(uint64(len(script)), 36) + "-" + strconv.FormatUint(fnv(script), 36) + `"`
-	})
+	site, _, _, _ := parseTag(r.Header.Get(TagHeader))
+	v := scriptVariant{errors: in.Rules.collectsErrors(site)}
+	sc := in.script(v)
 	h := w.Header()
 	h.Set("Content-Type", "text/javascript; charset=utf-8")
 	h.Set("Cache-Control", "public, max-age=3600")
-	h.Set("ETag", in.etag)
+	h.Set("ETag", sc.etag)
 	h.Set("Vary", "Accept-Encoding")
-	if r.Header.Get("If-None-Match") == in.etag {
+	if r.Header.Get("If-None-Match") == sc.etag {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	body := script
+	body := sc.src
 	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		h.Set("Content-Encoding", "gzip")
-		body = in.gz
+		body = sc.gz
 	}
 	h.Set("Content-Length", strconv.Itoa(len(body)))
 	if r.Method == http.MethodHead {
@@ -124,20 +176,12 @@ func (in *Ingest) serveScript(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// GzippedScriptSize is the script's size as served to browsers, for the
-// budget (under 2 KB).
-func GzippedScriptSize() int {
-	var in Ingest
-	in.serveScript(discard{}, &http.Request{Method: http.MethodHead, Header: http.Header{"Accept-Encoding": {"gzip"}}})
-	return len(in.gz)
+// ScriptSizes are the script's sizes as served to browsers, gzipped, for
+// the budgets: the core (under 2 KB) and with errors and Web Vitals
+// (about 2 KB more).
+func ScriptSizes() (core, withErrors int) {
+	return len(buildScript(scriptVariant{}).gz), len(buildScript(scriptVariant{errors: true}).gz)
 }
-
-// discard is a ResponseWriter that keeps nothing.
-type discard struct{}
-
-func (discard) Header() http.Header         { return http.Header{} }
-func (discard) Write(b []byte) (int, error) { return len(b), nil }
-func (discard) WriteHeader(int)             {}
 
 // fnv is FNV-1a, for the script's ETag.
 func fnv(b []byte) uint64 {
@@ -158,6 +202,20 @@ type beacon struct {
 	Width    int            `json:"w"`
 	Height   int            `json:"h"`
 	Lang     string         `json:"l"`
+	// An error's type and stack.
+	Type  string `json:"t"`
+	Stack string `json:"s"`
+	// A page load's vitals.
+	Vitals *beaconVitals `json:"v"`
+}
+
+// beaconVitals are the vitals the script sends; -1 is unmeasured.
+type beaconVitals struct {
+	LCP  float64 `json:"lcp"`
+	INP  float64 `json:"inp"`
+	CLS  float64 `json:"cls"`
+	FCP  float64 `json:"fcp"`
+	TTFB float64 `json:"ttfb"`
 }
 
 // bufs are reused for request bodies and spooled lines.
@@ -216,6 +274,9 @@ const (
 	maxUTM      = 120
 	maxLang     = 35
 	maxProps    = 2 << 10
+	maxMessage  = 500
+	maxType     = 80
+	maxStack    = 4 << 10
 )
 
 // event fills e with the event a request carries. ok is false for a
@@ -227,7 +288,7 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 		return false, false
 	}
 	var b beacon
-	if err := json.Unmarshal(body, &b); err != nil || b.Kind < 1 || b.Kind > 3 {
+	if err := json.Unmarshal(body, &b); err != nil || b.Kind < 1 || b.Kind > 5 {
 		return false, false
 	}
 	host := hostOnly(r.Host)
@@ -249,6 +310,14 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 		e.Props = props
 	case analytics.KindOutbound:
 		e.Name = cut(b.Name, maxOutbound)
+	case analytics.KindError:
+		e.Name = cut(b.Name, maxMessage)
+		e.Error = errorInfo(cut(b.Type, maxType), e.Name, cut(b.Stack, maxStack))
+	case analytics.KindVitals:
+		if b.Vitals == nil {
+			return false, false
+		}
+		e.Vitals = b.Vitals.clean()
 	}
 
 	agent := ParseAgent(r.Header.Get("User-Agent"))
@@ -266,6 +335,11 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 		// The control plane hasn't handed out today's salt yet: there is
 		// no way to count this visitor without one.
 		in.stats.NoSalt.Add(1)
+		return false, true
+	}
+	if (e.Kind == analytics.KindError || e.Kind == analytics.KindVitals) && !in.Rules.collectsErrors(site) {
+		// The site turned them off; a cached script may still send them.
+		in.stats.Excluded.Add(1)
 		return false, true
 	}
 	ip := r.Header.Get(ClientIPHeader)

@@ -731,6 +731,8 @@ type setAnalyticsRequest struct {
 type wireSiteRules struct {
 	ExcludedPaths []string `json:"excluded_paths,omitempty"`
 	IgnoredIPs    []string `json:"ignored_ips,omitempty"`
+	// ErrorsOff is new in A2; an older node ignores it and collects.
+	ErrorsOff bool `json:"errors_off,omitempty"`
 }
 
 type tailSpoolRequest struct {

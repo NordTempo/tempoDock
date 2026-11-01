@@ -23,8 +23,9 @@ type Rules struct {
 
 // siteRules are one site's rules, ready to match.
 type siteRules struct {
-	paths []string
-	nets  []netip.Prefix
+	paths     []string
+	nets      []netip.Prefix
+	errorsOff bool
 }
 
 // OpenRules reads the rules kept at path (none if it doesn't exist).
@@ -73,8 +74,7 @@ func (r *Rules) Set(sites map[int64]node.SiteRules) error {
 func (r *Rules) load(sites map[int64]node.SiteRules) {
 	m := make(map[int64]siteRules, len(sites))
 	for id, s := range sites {
-		var sr siteRules
-		sr.paths = s.ExcludedPaths
+		sr := siteRules{paths: s.ExcludedPaths, errorsOff: s.ErrorsOff}
 		for _, ip := range s.IgnoredIPs {
 			if p, err := netip.ParsePrefix(ip); err == nil {
 				sr.nets = append(sr.nets, p.Masked())
@@ -113,6 +113,15 @@ func (r *Rules) skip(site int64, path, ip string) bool {
 		}
 	}
 	return false
+}
+
+// collectsErrors reports whether a site collects errors and Web Vitals:
+// on unless its rules turn them off.
+func (r *Rules) collectsErrors(site int64) bool {
+	if r == nil {
+		return true
+	}
+	return !(*r.sites.Load())[site].errorsOff
 }
 
 // globMatch matches s against pattern, where * matches any run of

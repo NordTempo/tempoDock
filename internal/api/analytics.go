@@ -123,6 +123,58 @@ func registerSites(s *Server, a huma.API) {
 		return reply(s.core.SiteBreakdown(ctx, actor, in.Project, in.Site, analytics.Dimension(in.Dimension), q, in.Limit))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "list-site-errors", Method: http.MethodGet, Path: sitesPath + "/{site}/errors",
+		Summary: "A site's errors", Tags: tags,
+		Description: "Uncaught errors and unhandled rejections in the range, grouped by type, message and top frame, the most frequent first, each with its series. Filters take page, hostname, country, browser, browser_version, os, device, service and release.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		StatsParams
+		Limit int `query:"limit" minimum:"1" maximum:"200" default:"50"`
+	}) (*out[apitypes.SiteErrors], error) {
+		q, err := in.query()
+		if err != nil {
+			return nil, err
+		}
+		return reply(s.core.SiteErrors(ctx, actor, in.Project, in.Site, q, in.Limit))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-site-error", Method: http.MethodGet, Path: sitesPath + "/{site}/errors/{group}",
+		Summary: "One error group of a site", Tags: tags,
+		Description: "Its counts, latest stack trace, pages, browsers, OS, devices and releases, and its latest occurrences with their sessions, in the range.",
+		Errors:      []int{http.StatusBadRequest},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		Group string `path:"group" doc:"The group's fingerprint, 16 hex digits"`
+		StatsParams
+	}) (*out[apitypes.SiteError], error) {
+		q, err := in.query()
+		if err != nil {
+			return nil, err
+		}
+		return reply(s.core.SiteError(ctx, actor, in.Project, in.Site, in.Group, q))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-site-vitals", Method: http.MethodGet, Path: sitesPath + "/{site}/vitals",
+		Summary: "A site's Web Vitals", Tags: tags,
+		Description: "LCP, INP, CLS, FCP and TTFB at the 75th percentile: over all page loads in the range (with good and poor counts), by each dimension's values, and one metric over time.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		SitePath
+		StatsParams
+		Dimension []string `query:"dimension" doc:"Break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more"`
+		Limit     int      `query:"limit" minimum:"1" maximum:"1000" default:"20" doc:"Values per breakdown"`
+		Metric    string   `query:"metric" enum:"lcp,inp,cls,fcp,ttfb," doc:"The vital to chart over time; empty for no series"`
+	}) (*out[apitypes.SiteVitals], error) {
+		q, err := in.query()
+		if err != nil {
+			return nil, err
+		}
+		dims := make([]analytics.Dimension, len(in.Dimension))
+		for i, d := range in.Dimension {
+			dims[i] = analytics.Dimension(d)
+		}
+		return reply(s.core.SiteVitals(ctx, actor, in.Project, in.Site, core.VitalsQuery{Dimensions: dims, Limit: in.Limit, Metric: analytics.Vital(in.Metric)}, q))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "enable-hostname-analytics", Method: http.MethodPut, Path: Prefix + "/analytics/hostnames/{hostname}",
 		Summary: "Turn analytics on for a domain", Tags: tags,
 		Description: "The hostname joins a site: the one named, else its service's other hostnames' site, else a new one named after it. Its pages then need <script src=\"/_dock/a/s.js\" defer></script>. The first site starts the analytics store. Needs deploy.",

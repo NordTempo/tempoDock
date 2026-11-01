@@ -62,6 +62,22 @@ and after the store's server is off for two minutes (a reboot), the store
 ends with all 600. The 200 sent during the outage fall in the outage's
 own time window. Meanwhile they wait in the control plane's spool, 84 KB.
 
+### Errors and Web Vitals (A2)
+
+| Topic | Decision |
+|---|---|
+| Script | `s.js` is served per site: the core, plus `ev.js` spliced in when the site's "errors and vitals" setting is on (the default). Core 0.8 KB gzipped, errors and vitals 1 KB more. Variants are built on first use and kept (a handful). Scripts are cached for an hour, so a changed setting reaches visitors within the hour; the ingest also drops errors and vitals of a site that turned them off |
+| Errors | `error` and `unhandledrejection`, at most 10 a page load, each message once; the message (500 bytes), type and stack (4 KB) go as kind 4 |
+| Groups | The ingest takes the stack's top frame that names a script (Chrome's and Firefox's/Safari's formats), keeps the function and the script's path without line, column, query or a bundler's content hash, and fingerprints type, message (digit runs made alike) and that frame with FNV-1a. So a group survives deploys of a bundled app; minified function names that change per build still split it until source maps (later) |
+| Web Vitals | Measured by hand-written observers rather than the `web-vitals` library (its 2 KB alone would be the whole budget): LCP, CLS (largest burst of shifts under a second apart, within five seconds), INP (the slowest interaction, web-vitals' value up to 50 interactions), FCP and TTFB, all relative to a prerender's activation. Sent once per page load, when the page is first hidden, as kind 5. The ingest keeps 0 to 10 minutes and a CLS up to 100; anything else is unmeasured |
+| Storage | Their own tables, `errors` and `vitals`, never the events table: the dashboard's counts, sessions and rollups don't see them. An error carries its visitor and its session (looked up, not lengthened). `error_groups` keeps each fingerprint's first time and first release, which outlive a query's range: a write knows whether a group is new. A page load's vitals are one row without visitor or session (random 64-bit IDs would double the table), times as integers: about 20 bytes a page load |
+| Percentiles | p75 from a reservoir sample of 2,048 per group (`reservoir_quantile`, within about a percentile point): bounded memory and several times faster than a t-digest or an exact quantile. One call gives the overall row (with good and poor counts), any number of breakdowns (p75 and samples only, for the top values) and one chosen vital over time; each count or percentile costs about the same, so nothing is computed that the view doesn't show. At 1M events, the errors and vitals views for a year take 84 ms (a t-digest of every vital and dimension took 510 ms for one breakdown) |
+| Groups in the store | `error_groups` is insert-only: a group's first time and first release. The store keeps the set of groups in memory (as many as the error retention keeps), so a batch of known errors costs no query; a group's latest message and last time are read from its errors |
+| Cost | At 1M seeded events, ingest went from 80-97k to 45-62k events/s and the store's peak from about 250 to 370-400 MB: every page view brings a vitals row, and a batch writes up to three tables. Both are well within the budgets (5,000 events/s, the container's 512 MB) |
+| Retention | Errors by the site's error retention (90 days); a group left without errors goes, and is new again if it comes back. Vitals by the event retention |
+| Filters | Errors and vitals filter and break down by what they record: page, hostname, country, browser and version, OS, device, service, release |
+| Reading | API, CLI (`dock analytics errors`, `dock analytics vitals`) and UI. The UI follows the mocks' pick |
+
 ### Changed by the spike
 
 | Plan | Now | Why |

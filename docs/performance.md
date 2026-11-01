@@ -62,17 +62,20 @@ tempoBase runs with `GOMEMLIMIT=48MiB`, as its image and
 `dock-analytics` ([ADR 0037](decisions/0037-analytics.md)) runs in its own
 container on the analytics server, so it has budgets of its own. The
 `analytics` check builds it (`make build-analytics`, CGO), seeds 1M
-events (a busy site's year) and runs it with the container's settings.
+events (a busy site's year, plus most page loads' Web Vitals and 1% with
+an error) and runs it with the container's settings.
 
 | What | Budget | Measured |
 |---|---|---|
+| Browser script `/_dock/a/s.js`, gzipped | core ≤ 2 KB; errors and Web Vitals ≤ 2 KB more | 0.8 KB; 1.0 KB more |
 | Idle memory, after start | ≤ 60 MB anonymous RSS | 34-38 MB |
 | Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0 |
 | Dashboard p95, 1M events, every range | ≤ 100 ms | 17-42 ms |
 | Filtered dashboard p95, 1M events, up to 30 days | ≤ 200 ms | 22-61 ms |
 | Filtered dashboard p95, 1M events, a year | ≤ 400 ms | 53-274 ms |
-| Ingest over HTTP, batches of 1,000 | ≥ 5,000 events/s | 85-97k events/s |
-| Peak memory through all of it | ≤ 512 MB (the container's limit) | 234-241 MB |
+| Ingest over HTTP, batches of 1,000 | ≥ 5,000 events/s | 45-62k events/s (80-97k before A2; a batch now writes up to three tables) |
+| Errors and Web Vitals views p95, 1M events, every range (error groups with their series; vitals overall, by page and device, and LCP over time) | ≤ 200 ms | 13 ms (24 hours) to 84 ms (a year) |
+| Peak memory through all of it | ≤ 512 MB (the container's limit) | 366-397 MB (234-259 MB before A2, mostly the ingest's vitals) |
 
 DuckDB holds memory outside its `memory_limit` (freed operator memory,
 exact distinct counts), so the store runs one query at a time with a
@@ -98,7 +101,8 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   SQLite queries, the retention pass, the alert engine's event handling,
   the access check for login-protected services, traffic counting, and
 the analytics ingest and spool (`BenchmarkIngestEvent`,
-`BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs). Use
+`BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs;
+`BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
   benchmarks use a 60-service project), and add one for every new hot
   path.

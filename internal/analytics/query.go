@@ -149,3 +149,162 @@ type LiveVisitor struct {
 	Visitor uint64 `json:"visitor"`
 	Last    int64  `json:"last"`
 }
+
+// ErrorDimensions are the dimensions error and vitals queries filter and
+// break down by: what an error or a page load's vitals record of their
+// page and visitor.
+var ErrorDimensions = []Dimension{
+	DimPage, DimHostname, DimCountry, DimBrowser, DimBrowserVersion, DimOS, DimDevice, DimService, DimRelease,
+}
+
+// ErrorsQuery asks for a site's error groups seen in a range, the most
+// frequent first, each with its series in Bucket (none if empty).
+type ErrorsQuery struct {
+	Query
+	Bucket Bucket `json:"bucket,omitempty"`
+	Limit  int    `json:"limit"`
+}
+
+// MaxErrorGroups caps an ErrorsQuery's groups.
+const MaxErrorGroups = 200
+
+// ErrorGroup is errors with the same fingerprint: type, message and top
+// frame. Counts, LastSeen and the message (the latest) are in the
+// query's range; FirstSeen and FirstRelease are the group's first error
+// ever (Unix ms).
+type ErrorGroup struct {
+	// Group is the fingerprint in hex: JSON numbers can't hold 64 bits.
+	Group   string `json:"group"`
+	Type    string `json:"type"`
+	Message string `json:"message"`
+	Frame   string `json:"frame"`
+	Count   int64  `json:"count"`
+	// Sessions and Visitors are how many saw it at least once.
+	Sessions  int64 `json:"sessions"`
+	Visitors  int64 `json:"visitors"`
+	FirstSeen int64 `json:"first_seen"`
+	LastSeen  int64 `json:"last_seen"`
+	// FirstRelease is the release that served the first one.
+	FirstRelease int64        `json:"first_release"`
+	Series       []CountPoint `json:"series,omitempty"`
+}
+
+// CountPoint is one bucket of a count over time; T is its start (Unix ms).
+type CountPoint struct {
+	T     int64 `json:"t"`
+	Count int64 `json:"count"`
+}
+
+// ErrorQuery asks for one error group in a range.
+type ErrorQuery struct {
+	Query
+	Group  string `json:"group"`
+	Bucket Bucket `json:"bucket,omitempty"`
+}
+
+// ErrorDetail is one error group: its latest stack, where it happened and
+// its latest occurrences. Breakdown rows count errors and visitors.
+type ErrorDetail struct {
+	ErrorGroup
+	Stack    string            `json:"stack"`
+	Pages    []Row             `json:"pages"`
+	Browsers []Row             `json:"browsers"`
+	OS       []Row             `json:"os"`
+	Devices  []Row             `json:"devices"`
+	Releases []Row             `json:"releases"`
+	Recent   []ErrorOccurrence `json:"recent"`
+}
+
+// MaxErrorRecent caps an ErrorDetail's occurrences.
+const MaxErrorRecent = 50
+
+// ErrorOccurrence is one error as a visitor met it.
+type ErrorOccurrence struct {
+	Time           int64  `json:"t"`
+	Path           string `json:"path"`
+	Browser        string `json:"browser"`
+	BrowserVersion string `json:"browser_version"`
+	OS             string `json:"os"`
+	Device         string `json:"device"`
+	Country        string `json:"country"`
+	Service        int64  `json:"service"`
+	Release        int64  `json:"release"`
+	// Session is the session's ID in hex, "" when the error came without
+	// a page view to tie it to.
+	Session string `json:"session"`
+}
+
+// Vital names a Web Vital.
+type Vital string
+
+// The Web Vitals, in the order dashboards show them.
+const (
+	VitalLCP  Vital = "lcp"
+	VitalINP  Vital = "inp"
+	VitalCLS  Vital = "cls"
+	VitalFCP  Vital = "fcp"
+	VitalTTFB Vital = "ttfb"
+)
+
+// VitalNames lists every Vital.
+var VitalNames = []Vital{VitalLCP, VitalINP, VitalCLS, VitalFCP, VitalTTFB}
+
+// VitalThreshold is where a vital stops being good and where it becomes
+// poor (Google's thresholds, at the 75th percentile): good is at most
+// Good, poor is over Poor.
+type VitalThreshold struct {
+	Good, Poor float64
+}
+
+// VitalThresholds are each vital's thresholds.
+var VitalThresholds = map[Vital]VitalThreshold{
+	VitalLCP: {2500, 4000}, VitalINP: {200, 500}, VitalCLS: {0.1, 0.25}, VitalFCP: {1800, 3000}, VitalTTFB: {800, 1800},
+}
+
+// VitalsQuery asks for a site's Web Vitals in a range: over all page
+// loads, by each of Dimensions' values (up to Limit each) and Metric's
+// 75th percentile over time in Bucket (none if either is empty).
+type VitalsQuery struct {
+	Query
+	Dimensions []Dimension `json:"dimensions,omitempty"`
+	Limit      int         `json:"limit,omitempty"`
+	Metric     Vital       `json:"metric,omitempty"`
+	Bucket     Bucket      `json:"bucket,omitempty"`
+}
+
+// VitalStat is one vital over some page loads: its 75th percentile (-1
+// with no samples), how many loads measured it, and how many of those
+// were good and poor (counted over all page loads, not in breakdowns).
+type VitalStat struct {
+	P75     float64 `json:"p75"`
+	Samples int64   `json:"samples"`
+	Good    int64   `json:"good"`
+	Poor    int64   `json:"poor"`
+}
+
+// VitalsRow is every vital over a set of page loads: all of them, or one
+// value's.
+type VitalsRow struct {
+	Value string    `json:"value"`
+	Loads int64     `json:"loads"`
+	LCP   VitalStat `json:"lcp"`
+	INP   VitalStat `json:"inp"`
+	CLS   VitalStat `json:"cls"`
+	FCP   VitalStat `json:"fcp"`
+	TTFB  VitalStat `json:"ttfb"`
+}
+
+// VitalPoint is one vital's 75th percentile in a bucket with samples;
+// T is its start (Unix ms).
+type VitalPoint struct {
+	T       int64   `json:"t"`
+	P75     float64 `json:"p75"`
+	Samples int64   `json:"samples"`
+}
+
+// VitalsResult answers a VitalsQuery.
+type VitalsResult struct {
+	All        VitalsRow                 `json:"all"`
+	Breakdowns map[Dimension][]VitalsRow `json:"breakdowns"`
+	Series     []VitalPoint              `json:"series"`
+}

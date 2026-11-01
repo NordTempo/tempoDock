@@ -26,17 +26,25 @@ type Store interface {
 	// UpdateGeoIP has the store fetch this month's location database
 	// unless it has it, and answers the month it has.
 	UpdateGeoIP(ctx context.Context) (GeoIP, error)
+	// Errors, Error and Vitals read errors and Web Vitals (phase A2).
+	Errors(ctx context.Context, q ErrorsQuery) ([]ErrorGroup, error)
+	Error(ctx context.Context, q ErrorQuery) (ErrorDetail, error)
+	Vitals(ctx context.Context, q VitalsQuery) (VitalsResult, error)
 }
 
-// PruneQuery names the raw events Prune deletes.
+// PruneQuery names the raw events Prune deletes: a site's events and
+// Web Vitals before Before, and its errors before ErrorsBefore (none if
+// 0). Error groups not seen since go with their errors.
 type PruneQuery struct {
-	Site   int64 `json:"site"`
-	Before int64 `json:"before"`
+	Site         int64 `json:"site"`
+	Before       int64 `json:"before"`
+	ErrorsBefore int64 `json:"errors_before,omitempty"`
 }
 
-// PruneResult says how many events went.
+// PruneResult says how many events and errors went.
 type PruneResult struct {
-	Deleted int64 `json:"deleted"`
+	Deleted       int64 `json:"deleted"`
+	ErrorsDeleted int64 `json:"errors_deleted,omitempty"`
 }
 
 // GeoIP is the store's location database.
@@ -59,6 +67,19 @@ type WriteResult struct {
 	Written int `json:"written"`
 	// Skipped counts lines that weren't events.
 	Skipped int `json:"skipped,omitempty"`
+	// NewErrors are the error groups the write saw for the first time:
+	// what the "new error" alert is raised for.
+	NewErrors []NewError `json:"new_errors,omitempty"`
+}
+
+// NewError is an error group's first error.
+type NewError struct {
+	Site    int64  `json:"site"`
+	Group   string `json:"group"`
+	Type    string `json:"type"`
+	Message string `json:"message"`
+	Path    string `json:"path"`
+	Release int64  `json:"release"`
 }
 
 // CursorResult answers a cursor request.
@@ -85,6 +106,12 @@ const (
 	BreakdownPath = "/v1/breakdown"
 	// LivePath takes POST with a LiveQuery and answers Live.
 	LivePath = "/v1/live"
+	// ErrorsPath, ErrorPath and VitalsPath take POST with an
+	// ErrorsQuery, ErrorQuery or VitalsQuery and answer []ErrorGroup,
+	// ErrorDetail or VitalsResult.
+	ErrorsPath = "/v1/errors"
+	ErrorPath  = "/v1/error"
+	VitalsPath = "/v1/vitals"
 	// PrunePath takes POST with a PruneQuery and answers PruneResult.
 	PrunePath = "/v1/prune"
 	// GeoIPPath takes POST and answers GeoIP once the store has this

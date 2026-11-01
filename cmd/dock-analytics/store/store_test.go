@@ -38,7 +38,7 @@ func at(visitor uint64, offset time.Duration, path string) analytics.Event {
 
 func write(t *testing.T, s *Store, source string, pos uint64, events ...analytics.Event) int {
 	t.Helper()
-	n, err := s.Write(context.Background(), source, pos, events, nil)
+	n, _, err := s.Write(context.Background(), source, pos, events, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,10 +183,11 @@ func ask(t *testing.T, s *Store, q analytics.Query) answers {
 type seedWriter struct{ s *Store }
 
 func (w seedWriter) Write(ctx context.Context, source string, pos uint64, events []analytics.Event) (int, error) {
-	return w.s.Write(ctx, source, pos, events, func(p string) Location {
+	n, _, err := w.s.Write(ctx, source, pos, events, func(p string) Location {
 		c, r, city := bench.SeedLocator(p)
 		return Location{c, r, city}
 	})
+	return n, err
 }
 
 func TestRollupsAnswerAsRawEvents(t *testing.T) {

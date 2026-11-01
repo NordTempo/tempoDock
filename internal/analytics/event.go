@@ -22,6 +22,12 @@ const (
 	KindEvent Kind = 2
 	// KindOutbound is a click on a link to another site.
 	KindOutbound Kind = 3
+	// KindError is an uncaught error or an unhandled promise rejection
+	// (phase A2); Name is its message and Error the rest.
+	KindError Kind = 4
+	// KindVitals is a page load's Web Vitals (phase A2), sent once as the
+	// page is hidden; Vitals holds them.
+	KindVitals Kind = 5
 )
 
 // Event is one thing a visitor did on a site, as the ingest records it and
@@ -80,6 +86,36 @@ type Event struct {
 	// Props are a custom event's properties: a JSON object of string,
 	// number and boolean values, at most MaxProps of them.
 	Props string `json:"pr,omitempty"`
+	// Error is a KindError's type, stack and group; nil otherwise.
+	Error *ErrorInfo `json:"er,omitempty"`
+	// Vitals are a KindVitals' measurements; nil otherwise.
+	Vitals *Vitals `json:"vt,omitempty"`
+}
+
+// ErrorInfo is what an error event carries besides its message.
+type ErrorInfo struct {
+	// Type is the error's constructor ("TypeError"), or "rejection" for
+	// a rejected promise whose reason isn't an Error.
+	Type string `json:"ty,omitempty"`
+	// Stack is the stack trace as the browser wrote it, capped.
+	Stack string `json:"st,omitempty"`
+	// Frame is the top frame: the function and the script's path,
+	// without its line and column or a bundler's content hash.
+	Frame string `json:"fr,omitempty"`
+	// Group is the error's fingerprint: errors of the same type, message
+	// (with numbers made alike) and top frame share it.
+	Group uint64 `json:"g"`
+}
+
+// Vitals are one page load's Web Vitals. A value the browser didn't
+// measure (no interaction for INP, an unsupported browser) is -1.
+// Times are milliseconds; CLS is the layout shift score.
+type Vitals struct {
+	LCP  float64 `json:"lcp"`
+	INP  float64 `json:"inp"`
+	CLS  float64 `json:"cls"`
+	FCP  float64 `json:"fcp"`
+	TTFB float64 `json:"ttfb"`
 }
 
 // MaxProps caps a custom event's properties.

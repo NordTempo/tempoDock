@@ -75,6 +75,10 @@ type Store struct {
 	lastWriteDay time.Time
 	// kick wakes RunRollups.
 	kick chan struct{}
+	// known are the error groups the database has (errors.go), and
+	// newGroups those the open write adds once it commits.
+	known     map[groupKey]struct{}
+	newGroups []groupKey
 
 	// rollMu guards rolledTo: every site is rolled up (but for stale
 	// days) up to that day.
@@ -142,6 +146,10 @@ func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 		_ = s.Close()
 		return nil, err
 	}
+	if err := s.loadGroups(ctx); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -204,7 +212,7 @@ CREATE TABLE IF NOT EXISTS cursors (
 
 // migrate creates the tables.
 func (s *Store) migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, schema+rollupSchema); err != nil {
+	if _, err := s.db.ExecContext(ctx, schema+rollupSchema+errorsSchema); err != nil {
 		return fmt.Errorf("create analytics tables: %w", err)
 	}
 	return nil
@@ -223,8 +231,9 @@ type Locator func(ipPrefix string) Location
 // are now all written. A batch whose position isn't past the source's
 // cursor was written before and is skipped (sent again after a crash or a
 // lost acknowledgement); the result says how many events were written.
-// locate may be nil (no locations).
-func (s *Store) Write(ctx context.Context, source string, position uint64, events []analytics.Event, locate Locator) (int, error) {
+// locate may be nil (no locations). Errors and Web Vitals go to their own
+// tables (errors.go); news are the error groups seen for the first time.
+func (s *Store) Write(ctx context.Context, source string, position uint64, events []analytics.Event, locate Locator) (written int, news []analytics.NewError, err error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	s.writeMu.Lock()
@@ -232,12 +241,12 @@ func (s *Store) Write(ctx context.Context, source string, position uint64, event
 
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer func() { _ = conn.Close() }()
 
-	var written int
 	var stale bool
+	regular, errs, vitals := splitKinds(events)
 	now := s.now()
 	err = conn.Raw(func(dc any) error {
 		c := dc.(driver.Conn)
@@ -248,6 +257,7 @@ func (s *Store) Write(ctx context.Context, source string, position uint64, event
 		}
 		committed := false
 		s.sessions.begin()
+		s.newGroups = nil
 		defer func() {
 			if !committed {
 				_, _ = ex.ExecContext(context.WithoutCancel(ctx), "ROLLBACK", nil)
@@ -263,12 +273,25 @@ func (s *Store) Write(ctx context.Context, source string, position uint64, event
 				return nil // written before
 			}
 		}
-		if len(events) > 0 {
-			if err := s.append(c, events, locate); err != nil {
+		if len(regular) > 0 {
+			if err := s.append(c, regular, locate); err != nil {
 				return err
 			}
 			var err error
-			if stale, err = s.markStale(ctx, ex, events, now); err != nil {
+			if stale, err = s.markStale(ctx, ex, regular, now); err != nil {
+				return err
+			}
+		}
+		// After the events: an error or a page load's vitals belong to
+		// the session their page view (in the same batch) started.
+		if len(errs) > 0 {
+			var err error
+			if news, err = s.appendErrors(ctx, c, ex, errs, locate); err != nil {
+				return err
+			}
+		}
+		if len(vitals) > 0 {
+			if err := appendVitals(c, vitals, locate); err != nil {
 				return err
 			}
 		}
@@ -283,17 +306,20 @@ func (s *Store) Write(ctx context.Context, source string, position uint64, event
 		}
 		committed = true
 		s.sessions.commit()
+		for _, k := range s.newGroups {
+			s.known[k] = struct{}{}
+		}
 		written = len(events)
 		return nil
 	})
 	if err != nil {
 		// A stale mark counted for nothing only costs a rebuild.
-		return 0, fmt.Errorf("write analytics events: %w", err)
+		return 0, nil, fmt.Errorf("write analytics events: %w", err)
 	}
-	if written > 0 {
+	if len(regular) > 0 && written > 0 {
 		s.kickRollups(now, stale)
 	}
-	return written, nil
+	return written, news, nil
 }
 
 // cursorOf reads source's position, 0 for a new source.
