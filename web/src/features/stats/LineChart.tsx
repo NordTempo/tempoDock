@@ -16,12 +16,22 @@ type Props = {
   /** Label of the top gridline when it means more than the value: "limit". */
   maxNote?: string;
   format: (v: number) => string;
-  /** Moments marked with a dashed line, like deploys; label is their title. */
-  markers?: readonly { t: number; label: string }[];
+  /**
+   * Moments marked with a dashed line, like deploys: label is what
+   * hovering their point says, short what stands at the line's top in a
+   * roomy chart ("r44").
+   */
+  markers?: readonly { t: number; label: string; short?: string }[];
   /** Values marked with a dashed line across, like thresholds. */
   guides?: readonly { v: number; label: string; tone: "ok" | "fail" }[];
   /** What an empty chart says. */
   empty?: string;
+  /**
+   * The Analytics tab's look: taller and blue, with a gridline and value
+   * every quarter, five dates, the markers' short labels, and no dot on
+   * the latest point. Without it, the compact look of small multiples.
+   */
+  roomy?: boolean;
 };
 
 // The plot's own coordinates; the SVG stretches to its box and strokes
@@ -47,6 +57,7 @@ export const LineChart = memo(function LineChart({
   markers,
   guides,
   empty = "No points yet. One is recorded every minute.",
+  roomy = false,
 }: Props) {
   const span = Math.max(1, to - from);
   const { xOf, yOf } = useMemo(() => {
@@ -87,16 +98,42 @@ export const LineChart = memo(function LineChart({
   const last = shown.at(-1);
   /** What a screen reader hears: the active point, or the latest. */
   const reading = point ?? last;
+  // A day's point is the day; shorter ones say when in it.
   const time = (t: number) =>
-    span > rangeDay
-      ? `${day(new Date(t).toISOString())} ${clockOf(t)}`
-      : clockOf(t);
+    resolution >= 86_400
+      ? day(new Date(t).toISOString())
+      : span > rangeDay
+        ? `${day(new Date(t).toISOString())} ${clockOf(t)}`
+        : clockOf(t);
   const tick = (t: number) =>
     span > rangeDay ? day(new Date(t).toISOString()) : clockOf(t);
 
   const described = stats.last
     ? `${title}: now ${format(stats.last.v)}, average ${format(stats.avg ?? 0)}, peak ${format(stats.peak?.v ?? 0)}`
     : `${title}: no data yet`;
+
+  // The markers in the hovered point's bucket, said with its value.
+  const step = resolution * 1000;
+  const marked = point
+    ? (markers ?? []).filter((m) => m.t >= point.t && m.t < point.t + step)
+    : [];
+  // Grid fractions from the top; dates as fractions across.
+  const rows = roomy ? steps(max) : [0, 0.5, 1];
+  const dates = roomy ? [0, 0.25, 0.5, 0.75] : [0, 0.5];
+  // Short labels that would overlap the one before them are left out.
+  const labelled = useMemo(() => {
+    if (!roomy) return new Set<number>();
+    const out = new Set<number>();
+    let prev = -1;
+    for (const [i, m] of (markers ?? []).entries()) {
+      const x = xOf(m.t) / W;
+      if (m.short && x - prev > 0.04) {
+        out.add(i);
+        prev = x;
+      }
+    }
+    return out;
+  }, [roomy, markers, xOf]);
 
   const onPointer = (event: PointerEvent<HTMLDivElement>) => {
     if (!shown.length) return;
@@ -116,18 +153,20 @@ export const LineChart = memo(function LineChart({
           </span>
         )}
       </figcaption>
-      <div className="grid grid-cols-[44px_minmax(0,1fr)] gap-x-2">
+      <div
+        className={`grid grid-cols-[44px_minmax(0,1fr)] gap-x-2 ${roomy && labelled.size ? "mt-3" : ""}`}
+      >
         <div className="relative text-right text-2xs text-faint tabular-nums">
-          <span className="absolute top-0 right-0 -translate-y-1/2">
-            {format(max)}
-          </span>
+          {rows.map((f) => (
+            <span
+              key={f}
+              className="absolute right-0 -translate-y-1/2"
+              style={{ top: `${f * 100}%` }}
+            >
+              {format(max * (1 - f))}
+            </span>
+          ))}
           {maxNote && <span className="absolute top-2 right-0">{maxNote}</span>}
-          <span className="absolute top-1/2 right-0 -translate-y-1/2">
-            {format(max / 2)}
-          </span>
-          <span className="absolute right-0 bottom-0 translate-y-1/2">
-            {format(0)}
-          </span>
         </div>
         {/* Arrow keys step through the points like a slider over time. */}
         <div
@@ -140,7 +179,7 @@ export const LineChart = memo(function LineChart({
           aria-valuetext={
             reading ? `${format(reading.v)} at ${time(reading.t)}` : "no data"
           }
-          className="relative h-[104px] outline-offset-4"
+          className={`relative outline-offset-4 ${roomy ? "h-[150px] text-info" : "h-[104px]"}`}
           onPointerMove={onPointer}
           onPointerLeave={() => setActive(null)}
           onBlur={() => setActive(null)}
@@ -160,9 +199,13 @@ export const LineChart = memo(function LineChart({
             } else if (event.key === "Escape") setActive(null);
           }}
         >
-          <div className="absolute inset-x-0 top-0 border-t border-line" />
-          <div className="absolute inset-x-0 top-1/2 border-t border-soft" />
-          <div className="absolute inset-x-0 bottom-0 border-t border-line" />
+          {rows.map((f) => (
+            <div
+              key={f}
+              className={`absolute inset-x-0 border-t ${f === 0 || f === 1 ? "border-line" : "border-soft"}`}
+              style={{ top: `${f * 100}%` }}
+            />
+          ))}
           <svg
             viewBox={`0 0 ${W} ${H}`}
             preserveAspectRatio="none"
@@ -193,13 +236,21 @@ export const LineChart = memo(function LineChart({
               </span>
             </span>
           ))}
-          {markers?.map((m) => (
+          {markers?.map((m, i) => (
             <span
               key={`${m.t} ${m.label}`}
               title={m.label}
               className="absolute -top-1 bottom-0 w-px border-l border-dashed border-dash"
               style={{ left: `${(xOf(m.t) / W) * 100}%` }}
-            />
+            >
+              {labelled.has(i) && (
+                <span
+                  className={`absolute -top-3.5 text-2xs text-faint whitespace-nowrap ${xOf(m.t) / W > 0.85 ? "right-1" : "left-1"}`}
+                >
+                  {m.short}
+                </span>
+              )}
+            </span>
           ))}
           {!shown.length && (
             <p className="absolute inset-0 grid place-items-center text-xs text-mut">
@@ -214,7 +265,7 @@ export const LineChart = memo(function LineChart({
               />
               <Dot x={xOf(point.t) / W} y={yOf(point.v) / H} />
               <div
-                className="absolute -top-1 z-10 rounded-ctl border border-edge bg-panel px-1.5 py-0.5 text-xs whitespace-nowrap tabular-nums"
+                className="absolute -top-1 z-10 rounded-ctl border border-edge bg-panel px-1.5 py-0.5 text-xs whitespace-nowrap text-fg tabular-nums"
                 style={
                   xOf(point.t) / W > 0.6
                     ? {
@@ -224,20 +275,30 @@ export const LineChart = memo(function LineChart({
                     : { left: `${(xOf(point.t) / W) * 100}%`, marginLeft: 8 }
                 }
               >
-                <b className="font-semibold">{format(point.v)}</b>{" "}
+                <b className="font-semibold text-fg">{format(point.v)}</b>{" "}
                 <span className="text-mut">{time(point.t)}</span>
+                {marked.map((m) => (
+                  <span key={`${m.t} ${m.label}`} className="block text-sec">
+                    {m.label}
+                  </span>
+                ))}
               </div>
             </>
           ) : (
-            last && <Dot x={xOf(last.t) / W} y={yOf(last.v) / H} />
+            last && !roomy && <Dot x={xOf(last.t) / W} y={yOf(last.v) / H} />
           )}
         </div>
         <div />
         <div className="relative h-4 text-2xs text-faint tabular-nums">
-          <span className="absolute left-0">{tick(from)}</span>
-          <span className="absolute left-1/2 -translate-x-1/2">
-            {tick(from + span / 2)}
-          </span>
+          {dates.map((f) => (
+            <span
+              key={f}
+              className={`absolute ${f ? "-translate-x-1/2" : ""}`}
+              style={{ left: `${f * 100}%` }}
+            >
+              {tick(from + span * f)}
+            </span>
+          ))}
           <span className="absolute right-0">now</span>
         </div>
       </div>
@@ -246,6 +307,22 @@ export const LineChart = memo(function LineChart({
 });
 
 const rangeDay = 86_400_000 + 60_000;
+
+/**
+ * A roomy chart's gridlines, as fractions from the top: max cut into 4, 5
+ * or 2 steps of 1, 2 or 5 times a power of ten (0 to 20 by 5, 0 to 5 by
+ * 1), or quarters when it can't be.
+ */
+function steps(max: number) {
+  for (const n of [4, 5, 2]) {
+    const step = max / n;
+    const lead = step / 10 ** Math.floor(Math.log10(step));
+    if ([1, 2, 5].some((x) => Math.abs(lead - x) < 1e-9)) {
+      return Array.from({ length: n + 1 }, (_, i) => i / n);
+    }
+  }
+  return [0, 0.25, 0.5, 0.75, 1];
+}
 
 const clockOf = (t: number) => clock(new Date(t).toISOString());
 
