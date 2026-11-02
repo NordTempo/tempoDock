@@ -284,3 +284,176 @@ export async function loadRecording(
   }
   return events.sort((a, b) => a.timestamp - b.timestamp);
 }
+
+/** The search every analytics view shares: the site, range and filters. */
+export type AnalyticsSearch = {
+  site?: string;
+  range?: StatsRange;
+  f?: string[];
+};
+
+/** Reads the shared search from a URL's, dropping what isn't valid. */
+export const analyticsSearch = (
+  s: Record<string, unknown>,
+): AnalyticsSearch => ({
+  ...(typeof s.site === "string" && { site: s.site }),
+  ...(statsRanges.includes(s.range as StatsRange) && {
+    range: s.range as StatsRange,
+  }),
+  ...(Array.isArray(s.f) && {
+    f: s.f.filter(
+      (f): f is string => typeof f === "string" && !!parseFilter(f),
+    ),
+  }),
+});
+
+/** A change a view makes to the shared search. */
+export type AnalyticsChange = {
+  site?: string;
+  range?: StatsRange;
+  filters?: Filter[];
+};
+
+/** s with change applied; defaults (30d, no filters) leave the URL. */
+export function applyChange<S extends AnalyticsSearch>(
+  s: S,
+  change: AnalyticsChange,
+): S {
+  const next = { ...s };
+  if ("site" in change) next.site = change.site;
+  if (change.range)
+    next.range = change.range === "30d" ? undefined : change.range;
+  if (change.filters)
+    next.f = change.filters.length
+      ? change.filters.map(filterParam)
+      : undefined;
+  return next;
+}
+
+/** The shared search of a site, range and filters, for links. */
+export const searchOf = (
+  site: string,
+  range: StatsRange,
+  filters: readonly Filter[],
+): AnalyticsSearch => ({
+  site,
+  ...(range !== "30d" && { range }),
+  ...(filters.length > 0 && { f: filters.map(filterParam) }),
+});
+
+export type SiteErrors = Schemas["SiteErrors"];
+export type ErrorGroup = Schemas["ErrorGroup"];
+export type SiteError = Schemas["SiteError"];
+export type SiteVitals = Schemas["SiteVitals"];
+export type VitalsRow = Schemas["VitalsRow"];
+export type VitalStat = Schemas["VitalStat"];
+
+/** What errors and vitals filter by: what they record. */
+export const errorDimensions = [
+  "page",
+  "hostname",
+  "country",
+  "browser",
+  "browser_version",
+  "os",
+  "device",
+  "service",
+  "release",
+] as const;
+
+/** A site's error groups for a range and filters, with the totals. */
+export const siteErrorsQuery = (
+  project: string,
+  site: string,
+  range: StatsRange,
+  filters: readonly Filter[],
+) =>
+  queryOptions({
+    queryKey: [
+      "analytics",
+      "errors",
+      project,
+      site,
+      range,
+      filters.map(filterParam),
+    ],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/errors", {
+          params: {
+            path: { project, site },
+            query: { range, filter: filters.map(filterParam), limit: 100 },
+          },
+        }),
+      ),
+    placeholderData: keepPreviousData,
+  });
+
+/** One error group: its stack, where it happened, latest occurrences. */
+export const siteErrorQuery = (
+  project: string,
+  site: string,
+  group: string,
+  range: StatsRange,
+  filters: readonly Filter[],
+) =>
+  queryOptions({
+    queryKey: [
+      "analytics",
+      "error",
+      project,
+      site,
+      group,
+      range,
+      filters.map(filterParam),
+    ],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/errors/{group}", {
+          params: {
+            path: { project, site, group },
+            query: { range, filter: filters.map(filterParam) },
+          },
+        }),
+      ),
+  });
+
+/** The vitals a view charts. */
+export const vitals = ["lcp", "inp", "cls", "fcp", "ttfb"] as const;
+export type Vital = (typeof vitals)[number];
+
+/** A site's Web Vitals with one metric over time and its breakdowns. */
+export const siteVitalsQuery = (
+  project: string,
+  site: string,
+  range: StatsRange,
+  filters: readonly Filter[],
+  metric: Vital,
+) =>
+  queryOptions({
+    queryKey: [
+      "analytics",
+      "vitals",
+      project,
+      site,
+      range,
+      filters.map(filterParam),
+      metric,
+    ],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/vitals", {
+          params: {
+            path: { project, site },
+            query: {
+              range,
+              filter: filters.map(filterParam),
+              dimension: ["page", "device", "browser", "country"],
+              metric,
+              limit: 20,
+            },
+          },
+        }),
+      ),
+    placeholderData: keepPreviousData,
+  });

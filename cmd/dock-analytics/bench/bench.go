@@ -22,7 +22,7 @@ type Querier interface {
 // ErrorsQuerier is a store with errors, Web Vitals, goals and funnels,
 // which Run times too (the SQLite comparison has none of them).
 type ErrorsQuerier interface {
-	Errors(ctx context.Context, q analytics.ErrorsQuery) ([]analytics.ErrorGroup, error)
+	Errors(ctx context.Context, q analytics.ErrorsQuery) (analytics.ErrorsResult, error)
 	Vitals(ctx context.Context, q analytics.VitalsQuery) (analytics.VitalsResult, error)
 	Goals(ctx context.Context, q analytics.GoalsQuery) ([]analytics.GoalResult, error)
 	Funnel(ctx context.Context, q analytics.FunnelQuery) ([]analytics.FunnelStep, error)

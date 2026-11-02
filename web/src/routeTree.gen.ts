@@ -57,6 +57,8 @@ import { Route as AppOrgProjectEnvironmentServiceResourcesRouteImport } from './
 import { Route as AppOrgProjectEnvironmentServiceSettingsRouteImport } from './routes/_app.$org.$project.$environment.$service.settings'
 import { Route as AppOrgProjectEnvironmentServiceTrafficRouteImport } from './routes/_app.$org.$project.$environment.$service.traffic'
 import { Route as AppOrgProjectEnvironmentServiceVariablesRouteImport } from './routes/_app.$org.$project.$environment.$service.variables'
+import { Route as AppOrgProjectEnvironmentServiceAnalyticsErrorsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.errors'
+import { Route as AppOrgProjectEnvironmentServiceAnalyticsVitalsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.vitals'
 import { Route as AppOrgProjectEnvironmentServiceReleasesNumberRouteImport } from './routes/_app.$org.$project.$environment.$service_.releases.$number'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.replays.$replay'
 
@@ -313,6 +315,18 @@ const AppOrgProjectEnvironmentServiceVariablesRoute =
     path: '/variables',
     getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
   } as any)
+const AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute =
+  AppOrgProjectEnvironmentServiceAnalyticsErrorsRouteImport.update({
+    id: '/analytics_/errors',
+    path: '/analytics/errors',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
+  } as any)
+const AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute =
+  AppOrgProjectEnvironmentServiceAnalyticsVitalsRouteImport.update({
+    id: '/analytics_/vitals',
+    path: '/analytics/vitals',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
+  } as any)
 const AppOrgProjectEnvironmentServiceReleasesNumberRoute =
   AppOrgProjectEnvironmentServiceReleasesNumberRouteImport.update({
     id: '/$project/$environment/$service_/releases/$number',
@@ -374,6 +388,8 @@ export interface FileRoutesByFullPath {
   '/$org/$project/$environment/$service/traffic': typeof AppOrgProjectEnvironmentServiceTrafficRoute
   '/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
+  '/$org/$project/$environment/$service/analytics/errors': typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
+  '/$org/$project/$environment/$service/analytics/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/$org/$project/$environment/$service/analytics/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
 }
@@ -422,6 +438,8 @@ export interface FileRoutesByTo {
   '/$org/$project/$environment/$service/traffic': typeof AppOrgProjectEnvironmentServiceTrafficRoute
   '/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceIndexRoute
+  '/$org/$project/$environment/$service/analytics/errors': typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
+  '/$org/$project/$environment/$service/analytics/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/$org/$project/$environment/$service/analytics/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
 }
@@ -475,6 +493,8 @@ export interface FileRoutesById {
   '/_app/$org/$project/$environment/$service/traffic': typeof AppOrgProjectEnvironmentServiceTrafficRoute
   '/_app/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/_app/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
+  '/_app/$org/$project/$environment/$service/analytics_/errors': typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
+  '/_app/$org/$project/$environment/$service/analytics_/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/_app/$org/$project/$environment/$service_/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/_app/$org/$project/$environment/$service/analytics_/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
 }
@@ -528,6 +548,8 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/traffic'
     | '/$org/$project/$environment/$service/variables'
     | '/$org/$project/$environment/$service/'
+    | '/$org/$project/$environment/$service/analytics/errors'
+    | '/$org/$project/$environment/$service/analytics/vitals'
     | '/$org/$project/$environment/$service/releases/$number'
     | '/$org/$project/$environment/$service/analytics/replays/$replay'
   fileRoutesByTo: FileRoutesByTo
@@ -576,6 +598,8 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/traffic'
     | '/$org/$project/$environment/$service/variables'
     | '/$org/$project/$environment/$service'
+    | '/$org/$project/$environment/$service/analytics/errors'
+    | '/$org/$project/$environment/$service/analytics/vitals'
     | '/$org/$project/$environment/$service/releases/$number'
     | '/$org/$project/$environment/$service/analytics/replays/$replay'
   id:
@@ -628,6 +652,8 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/$environment/$service/traffic'
     | '/_app/$org/$project/$environment/$service/variables'
     | '/_app/$org/$project/$environment/$service/'
+    | '/_app/$org/$project/$environment/$service/analytics_/errors'
+    | '/_app/$org/$project/$environment/$service/analytics_/vitals'
     | '/_app/$org/$project/$environment/$service_/releases/$number'
     | '/_app/$org/$project/$environment/$service/analytics_/replays/$replay'
   fileRoutesById: FileRoutesById
@@ -979,6 +1005,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgProjectEnvironmentServiceVariablesRouteImport
       parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
     }
+    '/_app/$org/$project/$environment/$service/analytics_/errors': {
+      id: '/_app/$org/$project/$environment/$service/analytics_/errors'
+      path: '/analytics/errors'
+      fullPath: '/$org/$project/$environment/$service/analytics/errors'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
+    }
+    '/_app/$org/$project/$environment/$service/analytics_/vitals': {
+      id: '/_app/$org/$project/$environment/$service/analytics_/vitals'
+      path: '/analytics/vitals'
+      fullPath: '/$org/$project/$environment/$service/analytics/vitals'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
+    }
     '/_app/$org/$project/$environment/$service_/releases/$number': {
       id: '/_app/$org/$project/$environment/$service_/releases/$number'
       path: '/$project/$environment/$service/releases/$number'
@@ -1009,6 +1049,8 @@ interface AppOrgProjectEnvironmentServiceRouteChildren {
   AppOrgProjectEnvironmentServiceTrafficRoute: typeof AppOrgProjectEnvironmentServiceTrafficRoute
   AppOrgProjectEnvironmentServiceVariablesRoute: typeof AppOrgProjectEnvironmentServiceVariablesRoute
   AppOrgProjectEnvironmentServiceIndexRoute: typeof AppOrgProjectEnvironmentServiceIndexRoute
+  AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
+  AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
 }
 
@@ -1038,6 +1080,10 @@ const AppOrgProjectEnvironmentServiceRouteChildren: AppOrgProjectEnvironmentServ
       AppOrgProjectEnvironmentServiceVariablesRoute,
     AppOrgProjectEnvironmentServiceIndexRoute:
       AppOrgProjectEnvironmentServiceIndexRoute,
+    AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute:
+      AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute,
+    AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute:
+      AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute,
     AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute:
       AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute,
   }

@@ -168,6 +168,25 @@ type ErrorsQuery struct {
 // MaxErrorGroups caps an ErrorsQuery's groups.
 const MaxErrorGroups = 200
 
+// ErrorsResult answers an ErrorsQuery: the top groups, every error's
+// series in the query's bucket (none without one) and the totals.
+type ErrorsResult struct {
+	Groups  []ErrorGroup `json:"groups"`
+	Series  []CountPoint `json:"series,omitempty"`
+	Summary ErrorSummary `json:"summary"`
+}
+
+// ErrorSummary is a range's errors in all: how many, the sessions and
+// visitors (HyperLogLog, about 2% off) that met one, the groups they fall
+// in and how many of those first appeared in the range.
+type ErrorSummary struct {
+	Errors    int64 `json:"errors"`
+	Sessions  int64 `json:"sessions"`
+	Visitors  int64 `json:"visitors"`
+	Groups    int64 `json:"groups"`
+	NewGroups int64 `json:"new_groups"`
+}
+
 // ErrorGroup is errors with the same fingerprint: type, message and top
 // frame. Counts, LastSeen and the message (the latest) are in the
 // query's range; FirstSeen and FirstRelease are the group's first error
@@ -232,6 +251,9 @@ type ErrorOccurrence struct {
 	// Session is the session's ID in hex, "" when the error came without
 	// a page view to tie it to.
 	Session string `json:"session"`
+	// Replay is a recorded page load of the visitor's at the time (a
+	// replay's segment, any of which opens it), "" when none was.
+	Replay string `json:"replay,omitempty"`
 }
 
 // Vital names a Web Vital.
@@ -274,7 +296,8 @@ type VitalsQuery struct {
 
 // VitalStat is one vital over some page loads: its 75th percentile (-1
 // with no samples), how many loads measured it, and how many of those
-// were good and poor (counted over all page loads, not in breakdowns).
+// were good and poor: over all page loads for every vital, in breakdowns
+// for the query's Metric only.
 type VitalStat struct {
 	P75     float64 `json:"p75"`
 	Samples int64   `json:"samples"`

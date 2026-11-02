@@ -76,7 +76,7 @@ own time window. Meanwhile they wait in the control plane's spool, 84 KB.
 | Cost | At 1M seeded events, ingest went from 80-97k to 45-62k events/s and the store's peak from about 250 to 370-400 MB: every page view brings a vitals row, and a batch writes up to three tables. Both are well within the budgets (5,000 events/s, the container's 512 MB) |
 | Retention | Errors by the site's error retention (90 days); a group left without errors goes, and is new again if it comes back. Vitals by the event retention |
 | Filters | Errors and vitals filter and break down by what they record: page, hostname, country, browser and version, OS, device, service, release |
-| Reading | API, CLI (`dock analytics errors`, `dock analytics vitals`) and UI. The UI follows the mocks' pick |
+| Reading | API, CLI (`dock analytics errors`, `dock analytics vitals`) and UI (Errors and Vitals sub-tabs). An errors read also gives the range's totals (errors, sessions and visitors that met one, groups, new groups), the period before's and the share of sessions with an error; visitors per group are exact (errors are few next to events), not HyperLogLog. Errors and vitals take the filters they can (page, hostname, country, browser, OS, device, service, release) and say which they leave out |
 | Alerts | Through the alert engine (ADR 0020) and its channels, with no timer of their own. **New error**: the store's write answers the groups it saw for the first time; each opens a warning, at most 5 open per site (a flood is a spike and a handful, not dozens), resolved after a day (no longer new). **Error spike**: the forwarder counts each site's errors per minute of their own time (a backlog from an outage isn't a spike) for the last hour, in memory; 20 or more in five minutes and five times the usual rate alerts at once, and the statistics tick resolves it when the rate is down. **Traffic drop**: once an hour, ten minutes into the next, the statistics tick asks the store for every site's page views in that hour and the same hour of the 7 days before (one query); under 30% of the median, for a site with a median of 50 or more, alerts; 60% resolves. The check skips an hour while servers came and went in the last 70 minutes or the store doesn't answer: events still on their way aren't a drop. Thresholds are constants until someone needs them configurable |
 
 ### Session replay (A3)
@@ -121,6 +121,12 @@ use:
 | Service Analytics tab | C: the dashboard with a live column (live visitors, the live feed, the chart's markers), plus A's Events and "Served by" panels under the grid |
 | Site settings | C: sections, each setting a "default (value) / custom" switch, the CLI equivalent under the form |
 | Replay player | A: player and scrubber, the session's pages, events and errors in a column that follows playback |
+| Navigation (A2-A4 mocks, Postplan `hvct0uz6yp5j`) | A: sub-tabs under the site bar (Overview, Errors, Vitals, then Replays and Funnels), the site, range and filters shared above them; each view its own URL |
+| Errors | B and C combined, Saile's pick: B's chart of every error over time and table with a sparkline per group, C's rows that open in place with the group's chart, stack and latest occurrences (each linking to its replay, if recorded) |
+| Vitals | B: the five vitals at p75 as tiles, the chosen one per day against its thresholds and the deploys, then pages (worst or most loads first), devices, browsers and countries with the good, needs improvement and poor split; device as a switch |
+| Replays list | B: rows with the visit's shape, page views and errors along its length |
+| Goals | C: goals as a panel on Overview next to Pages, the sub-tab becomes Funnels |
+| Public dashboard | Page A, one column; settings A, a section in the site's settings |
 
 A1 builds the Analytics tab and the site settings with what A1 collects:
 the panels for pages, sources, locations, devices, events and what

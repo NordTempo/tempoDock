@@ -1,38 +1,49 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
 import { useCanDeploy, useService } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { Act, CopyButton, ErrorText, Panel } from "../../ui/kit";
-import { Dashboard } from "./Dashboard";
 import {
+  type AnalyticsChange,
   type Filter,
+  type Site,
   type StatsRange,
   sitesQuery,
   useDisableHostname,
   useEnableHostname,
 } from "./data";
+import { SiteBar, type View, views } from "./SiteBar";
 
-// A service's Analytics tab (ADR 0037): the dashboard of the site its
-// hostnames count for, or, before any does, turning counting on.
+// A service's Analytics tab (ADR 0037): the site its hostnames count for,
+// with the bar every view shares above the view, or, before any does,
+// turning counting on.
 
 /** The script a counted hostname's pages load. */
 export const scriptTag = '<script src="/_dock/a/s.js" defer></script>';
 
 export function AnalyticsTab({
   serviceRef: ref,
+  view,
   site: picked,
   range,
   filters,
   onChange,
+  children,
 }: {
   serviceRef: ServiceRef;
+  view: View;
   site?: string;
   range: StatsRange;
   filters: Filter[];
-  onChange: (change: {
-    site?: string;
-    range?: StatsRange;
-    filters?: Filter[];
-  }) => void;
+  onChange: (change: AnalyticsChange) => void;
+  /**
+   * The view of the site; onPick filters by a clicked value, keeping its
+   * label for the filter's chip.
+   */
+  children: (
+    site: Site,
+    onPick: (dimension: string, row: { value: string; label?: string }) => void,
+  ) => ReactNode;
 }) {
   const { data: all } = useSuspenseQuery(sitesQuery(ref.project));
   const sites = all.filter(
@@ -42,36 +53,60 @@ export function AnalyticsTab({
       (s.hostnames ?? []).some((h) => h.service === ref.service),
   );
   const site = sites.find((s) => s.name === picked) ?? sites[0];
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const onPick = (
+    dimension: string,
+    row: { value: string; label?: string },
+  ) => {
+    if (row.label)
+      setLabels((l) => ({
+        ...l,
+        [`${dimension}:${row.value}`]: row.label ?? "",
+      }));
+    onChange({
+      filters: [
+        ...filters.filter((f) => f.dimension !== dimension),
+        { dimension, op: "is", value: row.value },
+      ],
+    });
+  };
   return (
     <div className="flex flex-col gap-6">
       {site ? (
-        <Dashboard
-          project={ref.project}
-          sites={sites}
-          site={site}
-          range={range}
-          filters={filters}
-          onSite={(name) => onChange({ site: name, filters: [] })}
-          onRenamed={(name) => onChange({ site: name })}
-          onRange={(r) => onChange({ range: r })}
-          onFilters={(f) => onChange({ filters: f })}
-        />
+        <div className="flex flex-col gap-4">
+          <SiteBar
+            serviceRef={ref}
+            sites={sites}
+            site={site}
+            view={view}
+            range={range}
+            filters={filters}
+            labels={labels}
+            onSite={(name) => onChange({ site: name, filters: [] })}
+            onRenamed={(name) => onChange({ site: name })}
+            onRange={(r) => onChange({ range: r })}
+            onFilters={(f) => onChange({ filters: f })}
+          />
+          {children(site, onPick)}
+        </div>
       ) : (
         <p className="text-mut">
           Dock Analytics counts visits to a hostname without cookies. Turn it on
           for one of this service's domains, then add the script to its pages.
         </p>
       )}
-      <Hostnames
-        serviceRef={ref}
-        counted={
-          new Map(
-            sites.flatMap((s) =>
-              (s.hostnames ?? []).map((h) => [h.hostname, s.name]),
-            ),
-          )
-        }
-      />
+      {(!site || view === views[0][1]) && (
+        <Hostnames
+          serviceRef={ref}
+          counted={
+            new Map(
+              sites.flatMap((s) =>
+                (s.hostnames ?? []).map((h) => [h.hostname, s.name]),
+              ),
+            )
+          }
+        />
+      )}
     </div>
   );
 }

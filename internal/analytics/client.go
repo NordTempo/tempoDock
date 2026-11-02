@@ -92,8 +92,8 @@ func (c *Client) Live(ctx context.Context, q LiveQuery) (Live, error) {
 }
 
 // Errors implements Store.
-func (c *Client) Errors(ctx context.Context, q ErrorsQuery) ([]ErrorGroup, error) {
-	var res []ErrorGroup
+func (c *Client) Errors(ctx context.Context, q ErrorsQuery) (ErrorsResult, error) {
+	var res ErrorsResult
 	return res, c.post(ctx, ErrorsPath, q, &res)
 }
 

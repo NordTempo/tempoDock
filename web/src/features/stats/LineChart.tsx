@@ -18,6 +18,8 @@ type Props = {
   format: (v: number) => string;
   /** Moments marked with a dashed line, like deploys; label is their title. */
   markers?: readonly { t: number; label: string }[];
+  /** Values marked with a dashed line across, like thresholds. */
+  guides?: readonly { v: number; label: string; tone: "ok" | "fail" }[];
   /** What an empty chart says. */
   empty?: string;
 };
@@ -43,6 +45,7 @@ export const LineChart = memo(function LineChart({
   maxNote,
   format,
   markers,
+  guides,
   empty = "No points yet. One is recorded every minute.",
 }: Props) {
   const span = Math.max(1, to - from);
@@ -177,6 +180,19 @@ export const LineChart = memo(function LineChart({
               vectorEffect="non-scaling-stroke"
             />
           </svg>
+          {guides?.map((g) => (
+            <span
+              key={g.label}
+              className={`absolute inset-x-0 border-t border-dashed ${g.tone === "ok" ? "border-ok/50" : "border-fail/50"}`}
+              style={{ top: `${(yOf(g.v) / H) * 100}%` }}
+            >
+              <span
+                className={`absolute right-0 -translate-y-full text-2xs ${g.tone === "ok" ? "text-ok" : "text-fail"}`}
+              >
+                {g.label}
+              </span>
+            </span>
+          ))}
           {markers?.map((m) => (
             <span
               key={`${m.t} ${m.label}`}
