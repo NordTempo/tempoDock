@@ -7,11 +7,25 @@ import {
   useEnableHostname,
   useUpdateSite,
 } from "./data";
-import { fields, flags, type Key, text, validDays, value } from "./settings";
+import {
+  type PublicDraft,
+  PublicSection,
+  publicChange,
+  publicDraft,
+} from "./PublicSection";
+import { SettingInput } from "./SettingInput";
+import {
+  fields,
+  flags,
+  type Key,
+  summary,
+  text,
+  valid,
+  value,
+} from "./settings";
 
 // A site's settings (ADR 0037, mock C): each one is the install's default
-// or the site's own. Only what phase A1 applies is here; replays, errors
-// and public dashboards come with their phases.
+// or the site's own.
 
 /** A setting's form value: text, one entry per line for lists. */
 type Draft = Record<Key, { custom: boolean; text: string }>;
@@ -53,13 +67,19 @@ export default function SiteSettingsDialog({
       cli.push(`--reset ${key}`);
     }
   }
+  const [pub, setPub] = useState<PublicDraft>(() => publicDraft(site));
+  const pubChange = publicChange(site, pub);
+  Object.assign(settings, pubChange.settings);
+  cli.push(...pubChange.flags);
   const renamed = name.trim() !== site.name && name.trim() !== "";
   if (renamed) cli.unshift(`--name ${name.trim()}`);
   const changed =
     renamed || reset.length > 0 || Object.keys(settings).length > 0;
-  const valid =
-    !draft.event_retention_days.custom ||
-    validDays(draft.event_retention_days.text);
+  const ok =
+    pubChange.valid &&
+    fields.every(
+      ({ key }) => !draft[key].custom || valid(key, draft[key].text),
+    );
 
   return (
     <Dialog title={`Site ${site.name}`} onClose={onClose} wide>
@@ -90,7 +110,8 @@ export default function SiteSettingsDialog({
           <span className="text-xs text-mut">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} />
         </label>
-        {fields.map(({ key, label, help, list }) => {
+        {fields.map((field) => {
+          const { key, label, help } = field;
           const d = draft[key];
           const set = (change: Partial<Draft[Key]>) =>
             setDraft((x) => ({ ...x, [key]: { ...x[key], ...change } }));
@@ -120,30 +141,23 @@ export default function SiteSettingsDialog({
                   Custom
                 </button>
               </span>
-              {d.custom &&
-                (list ? (
-                  <textarea
-                    rows={3}
-                    className="font-mono"
-                    aria-label={label}
-                    value={d.text}
-                    onChange={(e) => set({ text: e.target.value })}
-                  />
-                ) : (
-                  <input
-                    type="number"
-                    min={1}
-                    max={3650}
-                    aria-label={label}
-                    className="w-28"
-                    value={d.text}
-                    onChange={(e) => set({ text: e.target.value })}
-                  />
-                ))}
+              {d.custom && (
+                <SettingInput
+                  field={field}
+                  value={d.text}
+                  onChange={(t) => set({ text: t })}
+                />
+              )}
               <span className="text-xs text-faint">{help}</span>
             </fieldset>
           );
         })}
+        <PublicSection
+          project={project}
+          site={site}
+          draft={pub}
+          onChange={setPub}
+        />
         <ErrorText error={update.error} />
         <div className="flex items-center justify-end gap-2.5">
           <Button onClick={onClose}>Cancel</Button>
@@ -151,7 +165,7 @@ export default function SiteSettingsDialog({
             primary
             type="submit"
             cli={`dock analytics site set ${site.name} -p ${project}${cli.length ? ` ${cli.join(" ")}` : ""}`}
-            disabled={!changed || !valid || update.isPending}
+            disabled={!changed || !ok || update.isPending}
           >
             {update.isPending ? "Saving…" : "Save"}
           </Act>
@@ -160,13 +174,6 @@ export default function SiteSettingsDialog({
       <JoinHostname site={site} />
     </Dialog>
   );
-}
-
-/** A setting's default as the switch shows it: "none", "395 days". */
-function summary(s: SiteSettings, key: Key) {
-  const v = s[key];
-  if (Array.isArray(v)) return v.length ? `${v.length}` : "none";
-  return key === "event_retention_days" ? `${v} days` : String(v);
 }
 
 /** Counts another hostname of the environment for this site. */

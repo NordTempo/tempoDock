@@ -98,6 +98,16 @@ export function SiteBar({
           {services.size === 1 ? "service" : "services"}
         </span>
         <Button onClick={() => setSettings(true)}>Settings</Button>
+        {site.public_urls?.[0] && (
+          <a
+            href={site.public_urls[0]}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-info"
+          >
+            public ↗
+          </a>
+        )}
         <span className="ml-auto">
           <RangeSwitch value={range} options={statsRanges} onChange={onRange} />
         </span>

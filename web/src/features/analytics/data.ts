@@ -540,6 +540,22 @@ export const siteGoalsQuery = (
     placeholderData: keepPreviousData,
   });
 
+export type PublicAddress = Schemas["PublicAddress"];
+
+/** Where a site's public dashboard is and whether each address works,
+ * checked by the server when asked. */
+export const sitePublicQuery = (project: string, site: string) =>
+  queryOptions({
+    queryKey: ["analytics", "public", project, site],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/public", {
+          params: { path: { project, site } },
+        }),
+      ),
+    staleTime: 0,
+  });
+
 /** A site's funnels. */
 export const siteFunnelsQuery = (project: string, site: string) =>
   queryOptions({
