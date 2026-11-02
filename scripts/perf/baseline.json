@@ -30,6 +30,16 @@
       "bytes_op": 0,
       "allocs_op": 0
     },
+    "api.BenchmarkPublicPage": {
+      "ns_op": 2686,
+      "bytes_op": 6928,
+      "allocs_op": 18
+    },
+    "api.BenchmarkRenderPublic": {
+      "ns_op": 45917,
+      "bytes_op": 28656,
+      "allocs_op": 564
+    },
     "api.BenchmarkSSEWrite/batch=1": {
       "ns_op": 125.9,
       "bytes_op": 56,

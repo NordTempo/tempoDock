@@ -102,6 +102,16 @@ own time window. Meanwhile they wait in the control plane's spool, 84 KB.
 | Cost | At 1M events, five goals and a three-step funnel take 8 ms for a day and 69 ms for a year (budget 200 ms, `make perf`) |
 | MCP | Read-only tools for everything the Analytics tab shows: `analytics_sites`, `analytics_stats`, `analytics_breakdown`, `analytics_errors`, `analytics_vitals`, `analytics_replays` (listed, never their recordings: watching is for the UI, which audits it), `analytics_goals`, `analytics_funnel`. Filters as the API and CLI take them (`country:is:NO`). Changing goals stays with people (UI, CLI, API) |
 
+### Public dashboards (A4)
+
+| Topic | Decision |
+|---|---|
+| Addresses | Off by default. On, a site's dashboard is at `stats-<site>.<base domain>` (the control plane's base domain; `shop.example.com` is `stats-shop-example-com`) and, if set, at `public_domain`, a hostname of the site's own (best a CNAME to the first). A public domain can't be an app's domain, Dock's address or webhook hostname, or another site's dashboard, and apps can't take one |
+| Serving | The control plane's Caddy routes those hostnames to `[analytics] stats_listen` (127.0.0.1:7078), a listener serving nothing but the page, with certificates on demand as for Dock's address. The hostnames are kept in memory, rebuilt when a site's settings or the control plane's base domain change |
+| The page | Saile's pick A: one column, rendered on the server, no JavaScript but one line that names countries (a CSP allows only it). The range (7d, 30d, 12m), people on the site now, visitors and page views against the period before, bounce rate, visit length, visitors per day, then the top pages, sources and countries; error groups (type and message, no stacks) only with `public_errors` on. Never services, releases, replays, visitor IDs or settings. About 5 KB |
+| Load | Anyone may ask, so: each client address gets 20 requests and then one a second; at most four dashboards are read from the store at once; each dashboard and range is read at most once a minute and its page cached (at most 1,024); a change to a site's settings makes cached pages stale at once, so turning a dashboard or its errors off takes effect immediately. With the store offline a dashboard keeps showing its last numbers. A read is 7 store queries (8 showing errors) |
+| Status | `dock analytics site public SITE` and the site settings check each address now: DNS, then the certificate, as for Dock's address |
+
 ### Changed by the spike
 
 | Plan | Now | Why |

@@ -228,6 +228,13 @@ func registerSites(s *Server, a huma.API) {
 		}}, nil
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-site-public", Method: http.MethodGet, Path: sitesPath + "/{site}/public",
+		Summary: "Where a site's public dashboard is, and whether it works yet", Tags: tags,
+		Description: "Each address with the DNS records it needs and its status (DNS, then the certificate), checked now.",
+	}, func(ctx context.Context, actor core.Actor, in *SitePath) (*out[apitypes.SitePublic], error) {
+		return reply(s.core.SitePublic(ctx, actor, in.Project, in.Site))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "list-site-goals", Method: http.MethodGet, Path: sitesPath + "/{site}/goals",
 		Summary: "A site's goals and their conversions", Tags: tags,
 		Description: "Each goal with the visitors and sessions that reached it in the range (about 2% off), how often, and its share of the range's visitors. Takes the dashboard's filters.",

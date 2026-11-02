@@ -223,6 +223,8 @@ func (c *Core) checkNewDomain(ss svcScope, host string) error {
 		return errf(apitypes.CodeHostnameTaken, "%s is this server's webhook hostname ([hooks] public_host); use another hostname", host)
 	case host == c.publicHost():
 		return errf(apitypes.CodeHostnameTaken, "%s is Dock's own address (`dock address`); use another hostname", host)
+	case c.publicSite(host) != 0:
+		return errf(apitypes.CodeHostnameTaken, "%s is a site's public dashboard (`dock analytics site`); use another hostname", host)
 	}
 	return nil
 }
@@ -343,8 +345,8 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	if err != nil {
 		return false, nil
 	}
-	if host == c.cfg.Hooks.PublicHost || host == c.publicHost() {
-		return true, nil // the webhook route (ADR 0018), Dock's address (ADR 0029)
+	if host == c.cfg.Hooks.PublicHost || host == c.publicHost() || c.publicSite(host) != 0 {
+		return true, nil // the webhook route (ADR 0018), Dock's address (ADR 0029), a public dashboard (ADR 0037)
 	}
 	d, err := c.store.GetDomainByHostname(ctx, host)
 	if store.IsNotFound(err) {

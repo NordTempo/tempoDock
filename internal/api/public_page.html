@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{{.Site}} · stats</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#000;color:#ededef;font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:720px;margin:0 auto;padding:24px 20px 28px;display:flex;flex-direction:column;gap:18px}
+a{color:inherit}
+header{display:flex;align-items:center;gap:12px}
+h1{font-size:16px;font-weight:600;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+nav{display:flex;gap:2px;font-size:12px}
+nav a{padding:1px 7px;border-radius:5px;color:#a1a1aa;text-decoration:none}
+nav a[aria-current]{background:#1c1c1f;color:#ededef}
+p{margin:0}
+.mut{color:#a1a1aa}.faint{color:#8b8b94}.ok{color:#4ade80}.fail{color:#f87171}.warn{color:#fcd77a}
+.xs{font-size:12px}
+dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px 24px;margin:0}
+dt{font-size:12px;color:#a1a1aa}
+dd{margin:0;font-size:20px;font-weight:600}
+dd small{font-size:12px;font-weight:400;margin-left:6px}
+figure{margin:0}
+svg{display:block;width:100%;height:150px}
+.axis{display:flex;justify-content:space-between;font-size:11px;color:#8b8b94;margin-top:4px}
+h2{font-size:14px;font-weight:600;margin:0 0 6px}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{font-size:12px;font-weight:400;color:#8b8b94;text-align:right;padding:0 0 4px}
+td{padding:4px 0;border-top:1px solid #232326}
+td:first-child{position:relative;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:6px}
+th+th,td+td{width:90px;text-align:right}
+.bar{position:absolute;inset:2px auto 2px 0;background:#1e293b;border-radius:3px;z-index:-1}
+td:first-child{z-index:0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+footer{font-size:12px;color:#8b8b94}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>{{.Site}}</h1>
+<nav aria-label="Range">{{range .Ranges}}<a href="?range={{.Name}}"{{if .On}} aria-current="page"{{end}}>{{.Name}}</a>{{end}}</nav>
+</header>
+{{if .Offline}}<p class="warn">The numbers can't be read right now; try again in a few minutes.</p>{{else}}
+<p class="mut">{{.Live}}</p>
+<dl>{{range .KPIs}}<div><dt>{{.Name}}</dt><dd>{{.Value}}{{if .Delta}}<small class="{{.Tone}}">{{.Delta}}</small>{{end}}</dd></div>{{end}}</dl>
+<figure>
+<svg viewBox="0 0 700 150" preserveAspectRatio="none" role="img" aria-label="Visitors per day, at most {{.Peak}}">
+<path d="{{.Area}}" fill="#93c5fd" fill-opacity=".12"/>
+<path d="{{.Line}}" fill="none" stroke="#93c5fd" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+</svg>
+<div class="axis"><span>{{.First}}</span><span>Visitors per day · at most {{.Peak}}</span><span>{{.Last}}</span></div>
+</figure>
+{{range .Tables}}<section>
+<table><thead><tr><th style="text-align:left"><h2>{{.Name}}</h2></th><th>{{.Unit}}</th></tr></thead><tbody>
+{{range .Rows}}<tr><td title="{{.Value}}"><span class="bar" style="width:{{.Share}}%"></span>{{if .Country}}<span data-cc="{{.Country}}">{{.Value}}</span>{{else if .Mono}}<span class="mono">{{.Value}}</span>{{else}}{{.Value}}{{end}}</td><td>{{.Count}}</td></tr>
+{{else}}<tr><td class="faint">None in this range.</td><td></td></tr>{{end}}
+</tbody></table>
+</section>{{end}}
+{{end}}
+<footer>Counted without cookies by Tempo Dock. Locations: IP Geolocation by DB-IP (CC BY 4.0).{{if .Updated}} Updated {{.Updated}}.{{end}}</footer>
+</main>
+<script>{{.Script}}</script>
+</body>
+</html>

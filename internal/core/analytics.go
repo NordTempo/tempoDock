@@ -71,6 +71,8 @@ type analyticsState struct {
 	live liveSites
 	// alerts are the analytics alerts' state (analytics_alerts.go).
 	alerts analyticsAlerts
+	// public are the public dashboards' hostnames (analytics_public.go).
+	public publicIndex
 }
 
 // analyticsMinMemory is the least the store's container may get.
@@ -98,6 +100,11 @@ func (c *Core) startAnalytics(ctx context.Context) error {
 	c.analytics.wake = make(chan struct{})
 	c.analytics.forwarding = map[spoolOf]bool{}
 	c.analyticsServersChanged()
+	if hosts, err := c.loadPublicHosts(ctx); err == nil {
+		c.analytics.public.hosts.Store(&hosts)
+	} else {
+		c.log.Error("analytics: read the public dashboards; they aren't served until a site changes", "err", err)
+	}
 	c.rotateSalts(ctx, now())
 	st, err := c.store.GetAnalyticsSettings(ctx)
 	if store.IsNotFound(err) || (err == nil && !st.Enabled) {
@@ -395,8 +402,10 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 	return cfg, nil
 }
 
-// analyticsSitesChanged hands every server the sites' new rules.
+// analyticsSitesChanged hands every server the sites' new rules, and
+// routes the public dashboards anew.
 func (c *Core) analyticsSitesChanged(ctx context.Context) {
+	c.publicSitesChanged(ctx)
 	c.pushSalts(c.local.ID)
 	if c.nodes == nil {
 		return

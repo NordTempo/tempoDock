@@ -787,13 +787,68 @@ func newAnalyticsSiteCmd(g *globals) *cobra.Command {
 		},
 	}
 	f.add(cmd, needProject)
-	cmd.AddCommand(newAnalyticsSiteSetCmd(g))
+	cmd.AddCommand(newAnalyticsSiteSetCmd(g), newAnalyticsSitePublicCmd(g))
+	return cmd
+}
+
+// newAnalyticsSitePublicCmd shows where a site's public dashboard is and
+// whether each address works yet.
+func newAnalyticsSitePublicCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	cmd := &cobra.Command{
+		Use:   "public <site>",
+		Short: "Show a site's public dashboard addresses and their DNS",
+		Long: `Show where a site's public dashboard is, checking each address now: DNS,
+then its certificate. Turn the dashboard on with
+` + "`dock analytics site set SITE --public on`" + `, and add a domain of your own with
+` + "`--public-domain stats.example.com`" + `.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needProject)
+			if err != nil {
+				return err
+			}
+			p, err := get[apitypes.SitePublic](cmd.Context(), s, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/public")
+			if err != nil {
+				return err
+			}
+			return g.io.Print(p, func() error {
+				if !p.Public {
+					_, _ = fmt.Fprintf(g.io.Out, "Site %s has no public dashboard; turn it on with `dock analytics site set %s --public on`.\n", args[0], args[0])
+					return nil
+				}
+				for _, a := range p.Addresses {
+					status := strings.ReplaceAll(string(a.Status), "_", " ")
+					if a.StatusReason != "" {
+						status += ": " + a.StatusReason
+					}
+					_, _ = fmt.Fprintf(g.io.Out, "%s  %s\n", a.URL, status)
+					if a.Status == apitypes.DomainActive {
+						continue
+					}
+					for i, r := range a.DNSRecords {
+						label := "  Point DNS:"
+						if i > 0 {
+							label = "         or:"
+						}
+						_, _ = fmt.Fprintf(g.io.Out, "%s  %s  %s  →  %s\n", label, r.Type, r.Name, r.Value)
+					}
+				}
+				if len(p.Addresses) == 0 {
+					_, _ = io.WriteString(g.io.Out, "No addresses: the control plane has no base domain and the site no --public-domain (or [analytics] stats_listen is off).\n")
+				}
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needProject)
 	return cmd
 }
 
 // siteSettingFlags set a site's (or the defaults') settings from flags.
 type siteSettingFlags struct {
 	replay, maskText, errors, public    string
+	publicDomain, publicErrors          string
 	sample, events, replays, errorsDays int
 	paths, ips, reset                   []string
 	name                                string
@@ -810,7 +865,9 @@ func (sf *siteSettingFlags) add(cmd *cobra.Command) {
 	fl.IntVar(&sf.errorsDays, "error-retention-days", 0, "days errors are kept")
 	fl.StringArrayVar(&sf.paths, "exclude-path", nil, "a path not counted, * matches anything; repeat for more (replaces the list)")
 	fl.StringArrayVar(&sf.ips, "ignore-ip", nil, "an address or CIDR range not counted; repeat for more (replaces the list)")
-	fl.StringVar(&sf.public, "public", "", "public dashboard: on or off (phase A4)")
+	fl.StringVar(&sf.public, "public", "", "a public, read-only dashboard at stats-<site>.<base domain>: on or off")
+	fl.StringVar(&sf.publicDomain, "public-domain", "", "also show the public dashboard at this domain of yours, e.g. stats.example.com (a site's own; \"\" for none)")
+	fl.StringVar(&sf.publicErrors, "public-errors", "", "show error groups on the public dashboard: on or off")
 	fl.StringArrayVar(&sf.reset, "reset", nil, "set a setting back to the default, by its JSON name (e.g. replay_sample_rate); repeat for more")
 }
 
@@ -842,7 +899,7 @@ func (sf *siteSettingFlags) request(cmd *cobra.Command) (apitypes.UpdateSiteRequ
 	for flag, p := range map[string]struct {
 		v   string
 		dst **bool
-	}{"replay": {sf.replay, &set.Replay}, "mask-text": {sf.maskText, &set.MaskAllText}, "errors": {sf.errors, &set.ErrorsAndVitals}, "public": {sf.public, &set.Public}} {
+	}{"replay": {sf.replay, &set.Replay}, "mask-text": {sf.maskText, &set.MaskAllText}, "errors": {sf.errors, &set.ErrorsAndVitals}, "public": {sf.public, &set.Public}, "public-errors": {sf.publicErrors, &set.PublicErrors}} {
 		if err := onOff(flag, p.v, p.dst); err != nil {
 			return req, err
 		}
@@ -853,6 +910,9 @@ func (sf *siteSettingFlags) request(cmd *cobra.Command) (apitypes.UpdateSiteRequ
 	num("error-retention-days", sf.errorsDays, &set.ErrorRetentionDays)
 	if cmd.Flags().Changed("exclude-path") {
 		set.ExcludedPaths = &sf.paths
+	}
+	if cmd.Flags().Changed("public-domain") {
+		set.PublicDomain = &sf.publicDomain
 	}
 	if cmd.Flags().Changed("ignore-ip") {
 		set.IgnoredIPs = &sf.ips
@@ -951,7 +1011,8 @@ func printSite(g *globals, st apitypes.Site) error {
 			hosts[i] += " (" + h.Service + ")"
 		}
 	}
-	if err := g.io.Fields("site", st.Name, "environment", st.Environment, "hostnames", dash(strings.Join(hosts, ", "))); err != nil {
+	if err := g.io.Fields("site", st.Name, "environment", st.Environment, "hostnames", dash(strings.Join(hosts, ", ")),
+		"public dashboard", dash(strings.Join(st.PublicURLs, ", "))); err != nil {
 		return err
 	}
 	_, _ = io.WriteString(g.io.Out, "\n")
@@ -996,6 +1057,8 @@ func printSettings(g *globals, s, overrides apitypes.SiteSettings) error {
 		"excluded paths", mark(o.ExcludedPaths != nil, l(s.ExcludedPaths)),
 		"ignored addresses", mark(o.IgnoredIPs != nil, l(s.IgnoredIPs)),
 		"public dashboard", mark(o.Public != nil, b(s.Public)),
+		"public domain", mark(o.PublicDomain != nil, dash(deref(s.PublicDomain))),
+		"public errors", mark(o.PublicErrors != nil, b(s.PublicErrors)),
 	)
 }
 

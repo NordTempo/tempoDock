@@ -59,6 +59,8 @@ type Site struct {
 	Settings SiteSettings `json:"settings"`
 	// Overrides are the settings the site sets itself.
 	Overrides SiteSettings `json:"overrides"`
+	// PublicURLs are where its public dashboard is, while it has one.
+	PublicURLs []string `json:"public_urls,omitempty"`
 }
 
 // SiteHostname is one of a site's hostnames and the service it serves
@@ -80,7 +82,9 @@ type SiteSettings struct {
 	ErrorRetentionDays  *int      `json:"error_retention_days,omitempty" minimum:"1" maximum:"3650"`
 	ExcludedPaths       *[]string `json:"excluded_paths,omitempty" maxItems:"50" doc:"Paths not counted; * matches any run of characters"`
 	IgnoredIPs          *[]string `json:"ignored_ips,omitempty" maxItems:"50" doc:"Addresses or CIDR ranges whose visits aren't counted"`
-	Public              *bool     `json:"public,omitempty" doc:"Public dashboard (phase A4)"`
+	Public              *bool     `json:"public,omitempty" doc:"A public, read-only dashboard (phase A4): at stats-<site>.<base domain> and public_domain"`
+	PublicDomain        *string   `json:"public_domain,omitempty" maxLength:"253" doc:"A domain of your own for the public dashboard, e.g. stats.example.com; empty for none. Per site, not a default"`
+	PublicErrors        *bool     `json:"public_errors,omitempty" doc:"Show error groups (type, message, count; no stack traces) on the public dashboard"`
 }
 
 // UpdateSiteRequest renames a site or changes its settings.
@@ -488,4 +492,63 @@ type FunnelStep struct {
 	Sessions   int64   `json:"sessions"`
 	Visitors   int64   `json:"visitors"`
 	Conversion float64 `json:"conversion" doc:"0 to 1, of the first step's sessions"`
+}
+
+// PublicStats is a site's public dashboard (ADR 0037, phase A4): only its
+// aggregates, for anyone who has the address.
+type PublicStats struct {
+	Site     string            `json:"site"`
+	Range    string            `json:"range" enum:"7d,30d,12m"`
+	From     int64             `json:"from" doc:"Unix ms"`
+	To       int64             `json:"to" doc:"Unix ms"`
+	Overview AnalyticsOverview `json:"overview"`
+	Previous AnalyticsOverview `json:"previous"`
+	Series   []AnalyticsPoint  `json:"series"`
+	// Breakdowns are keyed by page, referrer and country.
+	Breakdowns   map[string][]PublicRow `json:"breakdowns"`
+	LiveVisitors int                    `json:"live_visitors"`
+	// ShowErrors is the site's choice to show its error groups.
+	ShowErrors  bool          `json:"show_errors"`
+	Errors      []PublicError `json:"errors"`
+	StoreOnline bool          `json:"store_online"`
+	StoreError  string        `json:"store_error,omitempty"`
+	// GeneratedAt is when the numbers were read: a dashboard whose
+	// analytics server is offline shows the last ones it had.
+	GeneratedAt time.Time `json:"generated_at"`
+}
+
+// PublicRow is one value of a public breakdown.
+type PublicRow struct {
+	Value    string `json:"value"`
+	Visitors int64  `json:"visitors"`
+	Count    int64  `json:"count"`
+}
+
+// PublicError is an error group as a public dashboard shows it: no stack,
+// pages or sessions.
+type PublicError struct {
+	Type     string    `json:"type"`
+	Message  string    `json:"message"`
+	Count    int64     `json:"count"`
+	Visitors int64     `json:"visitors"`
+	LastSeen time.Time `json:"last_seen"`
+}
+
+// SitePublic is where a site's public dashboard is served and whether
+// each address works yet, checked when read.
+type SitePublic struct {
+	Public    bool            `json:"public"`
+	Addresses []PublicAddress `json:"addresses"`
+}
+
+// PublicAddress is one of a public dashboard's addresses.
+type PublicAddress struct {
+	Hostname string `json:"hostname"`
+	URL      string `json:"url"`
+	// Own is the site's public_domain, not one under Dock's base domain.
+	Own          bool         `json:"own"`
+	Status       DomainStatus `json:"status" enum:"waiting_for_dns,issuing_certificate,active,error"`
+	StatusReason string       `json:"status_reason,omitempty"`
+	// DNSRecords point the hostname at Dock; any one of them is enough.
+	DNSRecords []DNSRecord `json:"dns_records"`
 }

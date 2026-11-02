@@ -386,11 +386,12 @@ func (q *Queries) ListAnalyticsHosts(ctx context.Context, serverID int64) ([]Lis
 }
 
 const listLiveSites = `-- name: ListLiveSites :many
-SELECT id, settings FROM sites WHERE archived_at IS NULL
+SELECT id, name, settings FROM sites WHERE archived_at IS NULL
 `
 
 type ListLiveSitesRow struct {
 	ID       int64
+	Name     string
 	Settings string
 }
 
@@ -405,7 +406,7 @@ func (q *Queries) ListLiveSites(ctx context.Context) ([]ListLiveSitesRow, error)
 	var items []ListLiveSitesRow
 	for rows.Next() {
 		var i ListLiveSitesRow
-		if err := rows.Scan(&i.ID, &i.Settings); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.Settings); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
