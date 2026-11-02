@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { servicePath } from "../data/queries";
+import { servicePath, useCanDeploy } from "../data/queries";
 import { AnalyticsTab } from "../features/analytics/AnalyticsTab";
 import { Dashboard } from "../features/analytics/Dashboard";
 import {
@@ -26,6 +26,7 @@ function Tab() {
   const navigate = Route.useNavigate();
   const filters = (search.f ?? []).flatMap((f) => parseFilter(f) ?? []);
   const range = search.range ?? "30d";
+  const canEdit = useCanDeploy(ref);
   return (
     <AnalyticsTab
       serviceRef={ref}
@@ -44,6 +45,7 @@ function Tab() {
           range={range}
           filters={filters}
           onPick={onPick}
+          canEdit={canEdit}
         />
       )}
     </AnalyticsTab>

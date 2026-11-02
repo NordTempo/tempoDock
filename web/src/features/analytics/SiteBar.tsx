@@ -26,6 +26,7 @@ export const views = [
   ["Errors", "/$org/$project/$environment/$service/analytics/errors"],
   ["Vitals", "/$org/$project/$environment/$service/analytics/vitals"],
   ["Replays", "/$org/$project/$environment/$service/analytics/replays"],
+  ["Funnels", "/$org/$project/$environment/$service/analytics/funnels"],
 ] as const;
 export type View = (typeof views)[number][1];
 

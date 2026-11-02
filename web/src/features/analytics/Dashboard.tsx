@@ -14,6 +14,7 @@ import {
   useBreakdown,
   useSiteLive,
 } from "./data";
+import { GoalsPanel } from "./GoalsPanel";
 import { count, country, delta, duration, Kpi, points, shown } from "./parts";
 
 // A site's dashboard (ADR 0037, mock C): the numbers against the period
@@ -26,6 +27,7 @@ export function Dashboard({
   range,
   filters,
   onPick,
+  canEdit,
 }: {
   project: string;
   site: Site;
@@ -33,6 +35,8 @@ export function Dashboard({
   filters: Filter[];
   /** A value was clicked: filter by it (row carries its label). */
   onPick: (dimension: string, row: AnalyticsRow) => void;
+  /** May add and remove goals (deploy). */
+  canEdit: boolean;
 }) {
   const { data: stats, error } = useQuery(
     siteStatsQuery(project, site.name, range, filters),
@@ -54,6 +58,7 @@ export function Dashboard({
               range={range}
               filters={filters}
               onPick={onPick}
+              canEdit={canEdit}
             />
           ) : (
             !error && <p className="text-mut">Loading…</p>
@@ -84,6 +89,7 @@ function Main({
   range,
   filters,
   onPick,
+  canEdit,
 }: {
   project: string;
   site: string;
@@ -91,6 +97,7 @@ function Main({
   range: StatsRange;
   filters: Filter[];
   onPick: (dimension: string, row: AnalyticsRow) => void;
+  canEdit: boolean;
 }) {
   const [metric, setMetric] = useState<Metric>("visitors");
   const o = stats.overview;
@@ -148,6 +155,13 @@ function Main({
             ["Entry", "entry_page"],
             ["Exit", "exit_page"],
           ]}
+        />
+        <GoalsPanel
+          project={project}
+          site={site}
+          range={range}
+          filters={filters}
+          canEdit={canEdit}
         />
         <Breakdown
           {...panel}

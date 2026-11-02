@@ -505,3 +505,153 @@ export const siteReplaysQuery = (
       ),
     placeholderData: keepPreviousData,
   });
+
+export type SiteGoals = Schemas["SiteGoals"];
+export type Goal = Schemas["Goal"];
+export type GoalStep = Schemas["GoalStep"];
+export type Funnel = Schemas["Funnel"];
+export type SiteFunnel = Schemas["SiteFunnel"];
+
+/** A site's goals with their conversions for a range and filters. */
+export const siteGoalsQuery = (
+  project: string,
+  site: string,
+  range: StatsRange,
+  filters: readonly Filter[],
+) =>
+  queryOptions({
+    queryKey: [
+      "analytics",
+      "goals",
+      project,
+      site,
+      range,
+      filters.map(filterParam),
+    ],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/goals", {
+          params: {
+            path: { project, site },
+            query: { range, filter: filters.map(filterParam) },
+          },
+        }),
+      ),
+    placeholderData: keepPreviousData,
+  });
+
+/** A site's funnels. */
+export const siteFunnelsQuery = (project: string, site: string) =>
+  queryOptions({
+    queryKey: ["analytics", "funnels", project, site],
+    queryFn: () =>
+      list(
+        api.GET("/api/v1/projects/{project}/sites/{site}/funnels", {
+          params: { path: { project, site } },
+        }),
+      ),
+  });
+
+/** One funnel over a range and filters. */
+export const siteFunnelQuery = (
+  project: string,
+  site: string,
+  funnel: string,
+  range: StatsRange,
+  filters: readonly Filter[],
+) =>
+  queryOptions({
+    queryKey: [
+      "analytics",
+      "funnel",
+      project,
+      site,
+      funnel,
+      range,
+      filters.map(filterParam),
+    ],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/funnels/{funnel}", {
+          params: {
+            path: { project, site, funnel },
+            query: { range, filter: filters.map(filterParam) },
+          },
+        }),
+      ),
+    placeholderData: keepPreviousData,
+  });
+
+export const useAddGoal = () =>
+  useAnalyticsAction(
+    ({
+      project,
+      site,
+      goal,
+    }: {
+      project: string;
+      site: string;
+      goal: Schemas["CreateGoalRequest"];
+    }) =>
+      body(
+        api.POST("/api/v1/projects/{project}/sites/{site}/goals", {
+          params: { path: { project, site } },
+          body: goal,
+        }),
+      ),
+  );
+
+export const useRemoveGoal = () =>
+  useAnalyticsAction(
+    ({
+      project,
+      site,
+      goal,
+    }: {
+      project: string;
+      site: string;
+      goal: string;
+    }) =>
+      done(
+        api.DELETE("/api/v1/projects/{project}/sites/{site}/goals/{goal}", {
+          params: { path: { project, site, goal } },
+        }),
+      ),
+  );
+
+export const useAddFunnel = () =>
+  useAnalyticsAction(
+    ({
+      project,
+      site,
+      funnel,
+    }: {
+      project: string;
+      site: string;
+      funnel: Schemas["CreateFunnelRequest"];
+    }) =>
+      body(
+        api.POST("/api/v1/projects/{project}/sites/{site}/funnels", {
+          params: { path: { project, site } },
+          body: funnel,
+        }),
+      ),
+  );
+
+export const useRemoveFunnel = () =>
+  useAnalyticsAction(
+    ({
+      project,
+      site,
+      funnel,
+    }: {
+      project: string;
+      site: string;
+      funnel: string;
+    }) =>
+      done(
+        api.DELETE("/api/v1/projects/{project}/sites/{site}/funnels/{funnel}", {
+          params: { path: { project, site, funnel } },
+        }),
+      ),
+  );
