@@ -67,6 +67,10 @@ func TestReplays(t *testing.T) {
 		list[2].Errors != 1 || list[2].Events != 1 || list[2].EntryPath != "/p0" || list[2].ExitPath != "/p0" || list[2].Browser != "Firefox" {
 		t.Fatalf("replays = %+v", list)
 	}
+	// Its shape: the page view before it began and the error.
+	if m := list[2].Marks; len(m) != 2 || m[0].Kind != analytics.KindPageview || m[1].Kind != analytics.KindError || m[1].Name != "TypeError" {
+		t.Errorf("marks = %+v", m)
+	}
 	// The chunk's times are in the server's clock: the browser was 2 s
 	// behind.
 	if want := day0.Add(time.Hour - 4*time.Second).UnixMilli(); list[2].Start != want {

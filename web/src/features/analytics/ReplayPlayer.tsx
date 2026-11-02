@@ -7,10 +7,14 @@ import { day } from "../../ui/format";
 import { Button } from "../../ui/kit";
 import {
   loadRecording,
+  parseFilter,
   type RecordedEvent,
   type ReplayDetail,
   replayQuery,
+  type StatsRange,
+  siteReplaysQuery,
 } from "./data";
+import { replayFilters } from "./ReplaysView";
 
 // The session replay player (ADR 0037, phase A3, mock A): rrweb's
 // replayer scaled into the page, a scrubber with the visit's page views
@@ -18,6 +22,14 @@ import {
 // Loading the recording is audited; the column says so.
 
 type Item = NonNullable<ReplayDetail["timeline"]>[number];
+
+/** The service a replay is watched under: its route's params. */
+type ServiceParams = {
+  org: string;
+  project: string;
+  environment: string;
+  service: string;
+};
 type Tab = "all" | "error" | "event";
 
 /** m:ss of a duration in milliseconds. */
@@ -35,16 +47,24 @@ export function ReplayPlayer({
   serviceLink,
   at,
   atTime,
+  list = {},
 }: {
   project: string;
   site: string;
   replay: string;
   /** Where the breadcrumb leads back to: the service's Analytics tab. */
-  serviceLink: { to: string; params: Record<string, string> };
+  serviceLink: { to: string; params: ServiceParams };
   /** Where to start, in seconds (a shared link). */
   at?: number;
   /** Or a moment to start a few seconds before (Unix ms): an error's. */
   atTime?: number;
+  /** The list this replay was opened from, for Previous and Next. */
+  list?: {
+    range?: StatsRange;
+    f?: string[];
+    errors?: boolean;
+    device?: string;
+  };
 }) {
   const { data: replay, error } = useQuery(replayQuery(project, site, id));
   const [events, setEvents] = useState<RecordedEvent[]>();
@@ -70,7 +90,14 @@ export function ReplayPlayer({
           Analytics
         </Link>
         <span className="text-faint">›</span>
-        <span className="text-mut">Replays</span>
+        <Link
+          to="/$org/$project/$environment/$service/analytics/replays"
+          params={serviceLink.params}
+          search={{ site, ...list }}
+          className="text-mut"
+        >
+          Replays
+        </Link>
         <span className="text-faint">›</span>
         <span className="font-semibold">
           Session <span className="font-mono">{id.slice(0, 6)}…</span>
@@ -79,6 +106,15 @@ export function ReplayPlayer({
           <span className="text-fail text-xs">
             {replay.errors} {replay.errors === 1 ? "error" : "errors"}
           </span>
+        )}
+        {replay && (
+          <Walk
+            project={project}
+            site={site}
+            current={replay.id}
+            list={list}
+            params={serviceLink.params}
+          />
         )}
       </div>
       {(error || loadError) && (
@@ -90,6 +126,64 @@ export function ReplayPlayer({
         !(error || loadError) && <p className="text-mut">Loading…</p>
       )}
     </div>
+  );
+}
+
+/**
+ * Previous and Next through the list the replay was opened from, newest
+ * first: its query is the list's, so mostly already loaded.
+ */
+function Walk({
+  project,
+  site,
+  current,
+  list,
+  params,
+}: {
+  project: string;
+  site: string;
+  current: string;
+  list: { range?: StatsRange; f?: string[]; errors?: boolean; device?: string };
+  params: ServiceParams;
+}) {
+  const filters = (list.f ?? []).flatMap((f) => parseFilter(f) ?? []);
+  const { data } = useQuery(
+    siteReplaysQuery(
+      project,
+      site,
+      list.range ?? "30d",
+      replayFilters(filters, list.device),
+      !!list.errors,
+    ),
+  );
+  const ids = (data?.replays ?? []).map((r) => r.id);
+  const at = ids.indexOf(current);
+  const link = (id: string | undefined, label: string) =>
+    id ? (
+      <Link
+        to="/$org/$project/$environment/$service/analytics/replays/$replay"
+        params={{
+          ...(params as {
+            org: string;
+            project: string;
+            environment: string;
+            service: string;
+          }),
+          replay: id,
+        }}
+        search={{ site, ...list }}
+      >
+        {label}
+      </Link>
+    ) : (
+      <span className="text-faint">{label}</span>
+    );
+  if (at < 0) return null;
+  return (
+    <span className="ml-auto flex gap-3 text-xs">
+      {link(ids[at - 1], "‹ Previous")}
+      {link(ids[at + 1], "Next ›")}
+    </span>
   );
 }
 

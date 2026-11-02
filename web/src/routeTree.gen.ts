@@ -60,6 +60,7 @@ import { Route as AppOrgProjectEnvironmentServiceVariablesRouteImport } from './
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsErrorsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.errors'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsVitalsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.vitals'
 import { Route as AppOrgProjectEnvironmentServiceReleasesNumberRouteImport } from './routes/_app.$org.$project.$environment.$service_.releases.$number'
+import { Route as AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.replays.index'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.replays.$replay'
 
 const AppRoute = AppRouteImport.update({
@@ -333,6 +334,12 @@ const AppOrgProjectEnvironmentServiceReleasesNumberRoute =
     path: '/$project/$environment/$service/releases/$number',
     getParentRoute: () => AppOrgRoute,
   } as any)
+const AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute =
+  AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRouteImport.update({
+    id: '/analytics_/replays/',
+    path: '/analytics/replays/',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
+  } as any)
 const AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute =
   AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRouteImport.update({
     id: '/analytics_/replays/$replay',
@@ -392,6 +399,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/$environment/$service/analytics/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/$org/$project/$environment/$service/analytics/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
+  '/$org/$project/$environment/$service/analytics/replays/': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute
 }
 export interface FileRoutesByTo {
   '/access': typeof AccessRoute
@@ -442,6 +450,7 @@ export interface FileRoutesByTo {
   '/$org/$project/$environment/$service/analytics/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/$org/$project/$environment/$service/analytics/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
+  '/$org/$project/$environment/$service/analytics/replays': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -497,6 +506,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/$environment/$service/analytics_/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/_app/$org/$project/$environment/$service_/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/_app/$org/$project/$environment/$service/analytics_/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
+  '/_app/$org/$project/$environment/$service/analytics_/replays/': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -552,6 +562,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/analytics/vitals'
     | '/$org/$project/$environment/$service/releases/$number'
     | '/$org/$project/$environment/$service/analytics/replays/$replay'
+    | '/$org/$project/$environment/$service/analytics/replays/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/access'
@@ -602,6 +613,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/analytics/vitals'
     | '/$org/$project/$environment/$service/releases/$number'
     | '/$org/$project/$environment/$service/analytics/replays/$replay'
+    | '/$org/$project/$environment/$service/analytics/replays'
   id:
     | '__root__'
     | '/_app'
@@ -656,6 +668,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/$environment/$service/analytics_/vitals'
     | '/_app/$org/$project/$environment/$service_/releases/$number'
     | '/_app/$org/$project/$environment/$service/analytics_/replays/$replay'
+    | '/_app/$org/$project/$environment/$service/analytics_/replays/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1026,6 +1039,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgProjectEnvironmentServiceReleasesNumberRouteImport
       parentRoute: typeof AppOrgRoute
     }
+    '/_app/$org/$project/$environment/$service/analytics_/replays/': {
+      id: '/_app/$org/$project/$environment/$service/analytics_/replays/'
+      path: '/analytics/replays'
+      fullPath: '/$org/$project/$environment/$service/analytics/replays/'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
+    }
     '/_app/$org/$project/$environment/$service/analytics_/replays/$replay': {
       id: '/_app/$org/$project/$environment/$service/analytics_/replays/$replay'
       path: '/analytics/replays/$replay'
@@ -1052,6 +1072,7 @@ interface AppOrgProjectEnvironmentServiceRouteChildren {
   AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
   AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
+  AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute
 }
 
 const AppOrgProjectEnvironmentServiceRouteChildren: AppOrgProjectEnvironmentServiceRouteChildren =
@@ -1086,6 +1107,8 @@ const AppOrgProjectEnvironmentServiceRouteChildren: AppOrgProjectEnvironmentServ
       AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute,
     AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute:
       AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute,
+    AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute:
+      AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute,
   }
 
 const AppOrgProjectEnvironmentServiceRouteWithChildren =

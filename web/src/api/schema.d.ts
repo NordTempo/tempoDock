@@ -4773,6 +4773,7 @@ export interface components {
             exit_path: string;
             /** @description The replay's first page load, 16 hex digits */
             id: string;
+            marks?: components["schemas"]["ReplayMark"][] | null;
             os?: string;
             /** @description The release that served its first page ("web r41") */
             release?: string;
@@ -4803,6 +4804,7 @@ export interface components {
             exit_path: string;
             /** @description The replay's first page load, 16 hex digits */
             id: string;
+            marks?: components["schemas"]["ReplayMark"][] | null;
             os?: string;
             /** @description The release that served its first page ("web r41") */
             release?: string;
@@ -4816,6 +4818,16 @@ export interface components {
             /** Format: date-time */
             start: string;
             timeline: components["schemas"]["TimelineItem"][] | null;
+        };
+        ReplayMark: {
+            /** @enum {string} */
+            kind: "pageview" | "error";
+            name?: string;
+            /**
+             * Format: int64
+             * @description Unix ms
+             */
+            t: number;
         };
         ReplaySegment: {
             /** Format: int64 */

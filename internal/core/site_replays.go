@@ -66,9 +66,13 @@ func (c *Core) SiteReplays(ctx context.Context, a Actor, project, name string, q
 
 // toReplay converts the store's replay.
 func toReplay(r analytics.Replay, labels map[int64]string) apitypes.Replay {
-	return apitypes.Replay{ID: r.ID, Start: time.UnixMilli(r.Start).UTC(), End: time.UnixMilli(r.End).UTC(), Segments: r.Segments,
+	out := apitypes.Replay{ID: r.ID, Start: time.UnixMilli(r.Start).UTC(), End: time.UnixMilli(r.End).UTC(), Segments: r.Segments,
 		EntryPath: r.EntryPath, ExitPath: r.ExitPath, Country: r.Country, Browser: r.Browser, OS: r.OS, Device: r.Device,
 		Release: labels[r.Release], Errors: r.Errors, Events: r.Events, Bytes: r.Bytes}
+	for _, m := range r.Marks {
+		out.Marks = append(out.Marks, apitypes.ReplayMark{T: m.T, Kind: kindNames[m.Kind], Name: m.Name})
+	}
+	return out
 }
 
 // kindNames name event kinds on a timeline.

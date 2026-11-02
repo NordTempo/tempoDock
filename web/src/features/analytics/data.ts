@@ -457,3 +457,51 @@ export const siteVitalsQuery = (
       ),
     placeholderData: keepPreviousData,
   });
+
+export type SiteReplays = Schemas["SiteReplays"];
+export type Replay = Schemas["Replay"];
+
+/** What replays filter by. */
+export const replayDimensions = [
+  "page",
+  "country",
+  "browser",
+  "os",
+  "device",
+  "release",
+] as const;
+
+/** A site's replays that began in a range, newest first. */
+export const siteReplaysQuery = (
+  project: string,
+  site: string,
+  range: StatsRange,
+  filters: readonly Filter[],
+  errorsOnly: boolean,
+) =>
+  queryOptions({
+    queryKey: [
+      "analytics",
+      "replays",
+      project,
+      site,
+      range,
+      filters.map(filterParam),
+      errorsOnly,
+    ],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/replays", {
+          params: {
+            path: { project, site },
+            query: {
+              range,
+              filter: filters.map(filterParam),
+              errors: errorsOnly,
+              limit: 200,
+            },
+          },
+        }),
+      ),
+    placeholderData: keepPreviousData,
+  });
