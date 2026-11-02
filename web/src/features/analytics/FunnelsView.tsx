@@ -141,7 +141,6 @@ function Chart({
       className="flex flex-col gap-3"
     >
       <p className="text-sm">
-        <b className="font-semibold">{funnel.name}</b>{" "}
         <span className="text-mut">
           {steps.length} steps, in order, within one visit
           {last &&
