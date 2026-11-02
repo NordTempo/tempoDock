@@ -73,6 +73,10 @@ type analyticsState struct {
 	alerts analyticsAlerts
 	// public are the public dashboards' hostnames (analytics_public.go).
 	public publicIndex
+	// pushing holds a lock per server, taken by each push of its salts and
+	// rules from reading them to handing them over (pushSalts). Guarded by
+	// mu; one entry per server.
+	pushing map[int64]*sync.Mutex
 }
 
 // analyticsMinMemory is the least the store's container may get.
@@ -346,9 +350,15 @@ func (c *Core) rotateSalts(ctx context.Context, t time.Time) {
 // pushSalts hands a server what its ingest needs, in the background:
 // today's and tomorrow's salts and every live site's rules. A server that
 // misses them (offline, or too old to collect) gets them on its next
-// connect.
+// connect. A server's pushes run one at a time, each reading what it hands
+// over once the one before is done, so the last to land is never older
+// than the one before it: without that, a push that read yesterday's
+// salts could land after the one with today's.
 func (c *Core) pushSalts(serverID int64) {
 	c.wg.Go(func() {
+		lock := c.pushLock(serverID)
+		lock.Lock()
+		defer lock.Unlock()
 		ctx, cancel := context.WithTimeout(c.ctx, time.Minute)
 		defer cancel()
 		cfg, err := c.analyticsConfig(ctx)
@@ -362,6 +372,21 @@ func (c *Core) pushSalts(serverID int64) {
 			c.log.Warn("analytics: hand out salts; this server's sites go uncounted until it gets them", "server", serverID, "err", err)
 		}
 	})
+}
+
+// pushLock is the lock a server's pushes take (pushSalts).
+func (c *Core) pushLock(serverID int64) *sync.Mutex {
+	c.analytics.mu.Lock()
+	defer c.analytics.mu.Unlock()
+	if c.analytics.pushing == nil {
+		c.analytics.pushing = map[int64]*sync.Mutex{}
+	}
+	l := c.analytics.pushing[serverID]
+	if l == nil {
+		l = new(sync.Mutex)
+		c.analytics.pushing[serverID] = l
+	}
+	return l
 }
 
 // analyticsConfig is what every server's ingest gets: the salts of today
