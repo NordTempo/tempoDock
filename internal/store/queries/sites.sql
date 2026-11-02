@@ -99,7 +99,7 @@ WHERE environments.server_id = +? AND sites.archived_at IS NULL;
 -- ListLiveSites returns every live site with its settings, for the
 -- ingest's per-site rules.
 -- name: ListLiveSites :many
-SELECT id, settings FROM sites WHERE archived_at IS NULL;
+SELECT id, name, settings FROM sites WHERE archived_at IS NULL;
 
 -- name: SetAnalyticsSiteDefaults :exec
 UPDATE analytics_settings SET site_defaults = ?, updated_by = ?, updated_at = ? WHERE id = 1;

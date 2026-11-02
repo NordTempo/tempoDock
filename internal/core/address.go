@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"slices"
 	"strconv"
@@ -155,6 +156,46 @@ func (c *Core) storePublicHost(ctx context.Context, a Actor, host string) error 
 	return nil
 }
 
+// hostRecords are the DNS records that point host at a server with ing:
+// its tunnel's CNAME, or an A or AAAA record per public address.
+func hostRecords(host string, ing serverIngress) []apitypes.DNSRecord {
+	out := []apitypes.DNSRecord{}
+	if ing.mode == apitypes.IngressCloudflareTunnel {
+		if ing.tunnel != "" {
+			out = append(out, apitypes.DNSRecord{Type: "CNAME", Name: host, Value: ing.tunnel})
+		}
+		return out
+	}
+	for _, ip := range ing.publicIPs {
+		out = append(out, apitypes.DNSRecord{Type: ipRecordType(ip), Name: host, Value: ip})
+	}
+	return out
+}
+
+// checkHost is a hostname of the control plane's own, like Dock's address
+// or a public dashboard, as it works now: DNS, then its certificate. One
+// DNS lookup and one TLS handshake with the local Caddy; the first
+// handshake is what makes Caddy issue the certificate.
+func (c *Core) checkHost(ctx context.Context, host string, ing serverIngress) (apitypes.DomainStatus, string, node.DomainCheck) {
+	check, err := c.rt.CheckDomain(ctx, host)
+	switch {
+	case err != nil:
+		return apitypes.DomainError, "could not check: " + err.Error(), check
+	case !check.DNSOK:
+		reason := check.Error
+		if reason == "" {
+			reason = fmt.Sprintf("%s resolves to %v; expected %v", host, check.ResolvedIPs, check.ExpectedIPs)
+		}
+		return apitypes.DomainWaitingForDNS, reason, check
+	case ing.plainHTTP || check.CertificateOK:
+		return apitypes.DomainActive, "", check
+	case check.Error != "":
+		return apitypes.DomainError, check.Error, check
+	default:
+		return apitypes.DomainIssuingCertificate, "DNS is right and Caddy is getting a certificate. If this lasts more than a few minutes, check that ports 80 and 443 reach this server.", check
+	}
+}
+
 // describeAddress is Address without the permission check. The check is
 // one DNS lookup and one TLS handshake with the local Caddy; the first
 // handshake is what makes Caddy issue the certificate.
@@ -170,33 +211,9 @@ func (c *Core) describeAddress(ctx context.Context) (apitypes.Address, error) {
 	}
 	ing := c.ingressOf(srv)
 	out.Hostname, out.URL = host, c.controlURL(host)
-	if ing.mode == apitypes.IngressCloudflareTunnel {
-		if ing.tunnel != "" {
-			out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: "CNAME", Name: host, Value: ing.tunnel})
-		}
-	} else {
-		for _, ip := range ing.publicIPs {
-			out.DNSRecords = append(out.DNSRecords, apitypes.DNSRecord{Type: ipRecordType(ip), Name: host, Value: ip})
-		}
-	}
-	check, err := c.rt.CheckDomain(ctx, host)
-	switch {
-	case err != nil:
-		out.Status, out.StatusReason = apitypes.DomainError, "could not check: "+err.Error()
-		return out, nil
-	case !check.DNSOK:
-		out.Status, out.StatusReason = apitypes.DomainWaitingForDNS, check.Error
-		if out.StatusReason == "" {
-			out.StatusReason = fmt.Sprintf("%s resolves to %v; expected %v", host, check.ResolvedIPs, check.ExpectedIPs)
-		}
-	case ing.plainHTTP || check.CertificateOK:
-		out.Status = apitypes.DomainActive
-	case check.Error != "":
-		out.Status, out.StatusReason = apitypes.DomainError, check.Error
-	default:
-		out.Status = apitypes.DomainIssuingCertificate
-		out.StatusReason = "DNS is right and Caddy is getting a certificate. If this lasts more than a few minutes, check that ports 80 and 443 reach this server."
-	}
+	out.DNSRecords = hostRecords(host, ing)
+	var check node.DomainCheck
+	out.Status, out.StatusReason, check = c.checkHost(ctx, host, ing)
 	at := now()
 	out.CheckedAt, out.ResolvedIPs = &at, slices.Clone(check.ResolvedIPs)
 	return out, nil
@@ -204,8 +221,10 @@ func (c *Core) describeAddress(ctx context.Context) (apitypes.Address, error) {
 
 // withControlRoutes adds the control plane's own routes to its server's
 // routing table: Dock's public address, proxied to [public_listen] with
-// the client's address, and the webhook route on [hooks] public_host,
-// only paths under gitHookPath, to the loopback hooks listener. A domain
+// the client's address; the webhook route on [hooks] public_host, only
+// paths under gitHookPath, to the loopback hooks listener; and sites'
+// public dashboards to [analytics] stats_listen, with the client's
+// address. A domain
 // with the same hostname (added before the setting) keeps it, and that
 // route is left out.
 func (c *Core) withControlRoutes(serverID int64, routes []node.Route) []node.Route {
@@ -227,6 +246,18 @@ func (c *Core) withControlRoutes(serverID int64, routes []node.Route) []node.Rou
 	}
 	if host := c.cfg.Hooks.PublicHost; host != "" && !taken(host) {
 		own = append(own, node.Route{Hostnames: []string{host}, Upstream: c.cfg.Hooks.Listen, PathPrefix: gitHookPath})
+	}
+	// Sites' public dashboards (ADR 0037), on a listener of their own.
+	if m := c.analytics.public.hosts.Load(); m != nil && len(*m) > 0 {
+		var hosts []string
+		for _, h := range slices.Sorted(maps.Keys(*m)) {
+			if !taken(h) {
+				hosts = append(hosts, h)
+			}
+		}
+		if len(hosts) > 0 {
+			own = append(own, node.Route{Hostnames: hosts, Upstream: c.cfg.Analytics.StatsListen, ClientIPHeader: ClientIPHeader})
+		}
 	}
 	return append(routes, own...)
 }

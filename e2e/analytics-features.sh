@@ -10,6 +10,9 @@
 #   A3: a sampled page load is recorded and replays: its chunks reach the
 #       store, the replay lists with the error on its timeline, what was
 #       typed into an input is masked, and watching it is audited.
+#   A4: a public dashboard is served through Caddy at
+#       stats-<site>.<base domain>, shows errors only when allowed, and is
+#       gone at once when turned off.
 #
 #   make web && make build && make analytics-binary
 #   e2e/analytics-features.sh
@@ -139,3 +142,19 @@ grep -q 'Checkout' "$rec" || fail "the recording doesn't have the page's text"
 grep -q '\*\*\*\*' "$rec" || fail "the masked input isn't in the recording"
 dock audit -p shop --json 2>/dev/null | jq -e '[.[] | select(.action == "analytics.replay_view")] | length >= 1' >/dev/null || fail "watching the replay wasn't audited"
 say "PASS A3: replay $replay, $(wc -c < "$rec") bytes of events, the error on its timeline, the input masked, the view audited"
+
+say "A4: the public dashboard"
+pub="stats-shop-test.$CP.test"
+page() { curl -s -H "Host: $pub" "http://$(ip "$CP")/"; }
+dock analytics site set "$HOST" -p shop --public on >/dev/null
+wait_for "the public dashboard" 30 sh -c "curl -sf -H 'Host: $pub' http://$(ip "$CP")/ | grep -q '<h1>$HOST</h1>'"
+p=$(page)
+grep -q 'Visitors' <<<"$p" || fail "no visitors on the public dashboard: $p"
+! grep -q 'TypeError' <<<"$p" || fail "the public dashboard shows errors the site didn't allow"
+dock analytics site public "$HOST" -p shop --json | jq -e '.addresses[0].hostname == "'"$pub"'"' >/dev/null || fail "dock analytics site public doesn't list $pub"
+dock analytics site set "$HOST" -p shop --public-errors on >/dev/null
+# Changing a setting takes effect at once, cached page or not.
+grep -q 'TypeError' <<<"$(page)" || fail "the public dashboard doesn't show errors the site allowed"
+dock analytics site set "$HOST" -p shop --public off >/dev/null
+[[ $(curl -s -o /dev/null -w '%{http_code}' -H "Host: $pub" "http://$(ip "$CP")/") != 200 ]] || fail "the public dashboard is still served once turned off"
+say "PASS A4: served at $pub, errors only when allowed, gone when off"

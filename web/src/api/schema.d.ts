@@ -2564,6 +2564,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/sites/{site}/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where a site's public dashboard is, and whether it works yet
+         * @description Each address with the DNS records it needs and its status (DNS, then the certificate), checked now.
+         */
+        get: operations["get-site-public"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/sites/{site}/replays": {
         parameters: {
             query?: never;
@@ -4628,6 +4648,15 @@ export interface components {
             release: components["schemas"]["Release"];
             service: string;
         };
+        PublicAddress: {
+            dns_records: components["schemas"]["DNSRecord"][] | null;
+            hostname: string;
+            own: boolean;
+            /** @enum {string} */
+            status: "waiting_for_dns" | "issuing_certificate" | "active" | "error";
+            status_reason?: string;
+            url: string;
+        };
         Registry: {
             collect_pending: boolean;
             enabled: boolean;
@@ -5287,6 +5316,7 @@ export interface components {
             hostnames: components["schemas"]["SiteHostname"][] | null;
             name: string;
             overrides: components["schemas"]["SiteSettings"];
+            public_urls?: string[] | null;
             settings: components["schemas"]["SiteSettings"];
         };
         SiteBreakdown: {
@@ -5407,6 +5437,10 @@ export interface components {
             kind: "deploy" | "added" | "moved" | "removed";
             message: string;
         };
+        SitePublic: {
+            addresses: components["schemas"]["PublicAddress"][] | null;
+            public: boolean;
+        };
         SiteReplays: {
             /**
              * Format: int64
@@ -5442,8 +5476,12 @@ export interface components {
             ignored_ips?: string[];
             /** @description Mask all text in replays; inputs are always masked */
             mask_all_text?: boolean;
-            /** @description Public dashboard (phase A4) */
+            /** @description A public, read-only dashboard (phase A4): at stats-<site>.<base domain> and public_domain */
             public?: boolean;
+            /** @description A domain of your own for the public dashboard, e.g. stats.example.com; empty for none. Per site, not a default */
+            public_domain?: string;
+            /** @description Show error groups (type, message, count; no stack traces) on the public dashboard */
+            public_errors?: boolean;
             /** @description Record sessions (phase A3); off by default */
             replay?: boolean;
             /** Format: int64 */
@@ -20475,6 +20513,100 @@ export interface operations {
                         event: "live" | "ready" | "end" | "error";
                         id?: string;
                     }[];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-site-public": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePublic"];
                 };
             };
             /** @description Bad Request */

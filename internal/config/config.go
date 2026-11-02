@@ -94,6 +94,11 @@ type Analytics struct {
 	StoreBinary string `toml:"store_binary"`
 	// StoreMemoryMB is the store container's memory limit.
 	StoreMemoryMB int `toml:"store_memory_mb"`
+	// StatsListen is the loopback address the control plane's Caddy
+	// sends sites' public dashboards to (ADR 0037, A4). Its own listener,
+	// serving nothing but those pages, so no other part of Dock is
+	// reachable through a dashboard's hostname. Empty turns them off.
+	StatsListen string `toml:"stats_listen"`
 }
 
 // DefaultUpdateSource is the GitHub repository releases are published to
@@ -329,6 +334,7 @@ func Default() Config {
 			SpoolMaxMB:    256,
 			StorePort:     7076,
 			StoreMemoryMB: 512,
+			StatsListen:   "127.0.0.1:7078",
 		},
 		BuildKit: BuildKit{
 			Enabled:        true,
@@ -437,6 +443,12 @@ func (c *Config) validate() error {
 			return fmt.Errorf("[analytics] ingest_listen %q must be a loopback IP and port, like 127.0.0.1:7077 (or empty to turn the ingest off)", a)
 		}
 	}
+	if a := c.Analytics.StatsListen; a != "" {
+		host, _, err := net.SplitHostPort(a)
+		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("[analytics] stats_listen %q must be a loopback IP and port, like 127.0.0.1:7078 (or empty to turn public dashboards off)", a)
+		}
+	}
 	switch {
 	case c.Analytics.SpoolMaxMB < 16:
 		return fmt.Errorf("[analytics] spool_max_mb is %d; it must be at least 16", c.Analytics.SpoolMaxMB)
@@ -515,7 +527,7 @@ func (c Config) checkTunnelPort() error {
 		return fmt.Errorf("[caddy] tunnel_port %d is not a port (0 turns the tunnel listener off)", p)
 	}
 	taken := []int{c.Caddy.HTTPPort, c.Caddy.HTTPSPort}
-	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen, c.Analytics.IngestListen} {
+	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen, c.Analytics.IngestListen, c.Analytics.StatsListen} {
 		if _, port, err := net.SplitHostPort(addr); err == nil {
 			if n, err := strconv.Atoi(port); err == nil {
 				taken = append(taken, n)

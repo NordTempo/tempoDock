@@ -5150,6 +5150,49 @@
         ],
         "type": "object"
       },
+      "PublicAddress": {
+        "additionalProperties": false,
+        "properties": {
+          "dns_records": {
+            "items": {
+              "$ref": "#/components/schemas/DNSRecord"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "own": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "waiting_for_dns",
+              "issuing_certificate",
+              "active",
+              "error"
+            ],
+            "type": "string"
+          },
+          "status_reason": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname",
+          "url",
+          "own",
+          "status",
+          "dns_records"
+        ],
+        "type": "object"
+      },
       "Registry": {
         "additionalProperties": false,
         "properties": {
@@ -7315,6 +7358,15 @@
           "overrides": {
             "$ref": "#/components/schemas/SiteSettings"
           },
+          "public_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "settings": {
             "$ref": "#/components/schemas/SiteSettings"
           }
@@ -7740,6 +7792,28 @@
         ],
         "type": "object"
       },
+      "SitePublic": {
+        "additionalProperties": false,
+        "properties": {
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/PublicAddress"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "public": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "public",
+          "addresses"
+        ],
+        "type": "object"
+      },
       "SiteReplays": {
         "additionalProperties": false,
         "properties": {
@@ -7831,7 +7905,16 @@
             "type": "boolean"
           },
           "public": {
-            "description": "Public dashboard (phase A4)",
+            "description": "A public, read-only dashboard (phase A4): at stats-\u003csite\u003e.\u003cbase domain\u003e and public_domain",
+            "type": "boolean"
+          },
+          "public_domain": {
+            "description": "A domain of your own for the public dashboard, e.g. stats.example.com; empty for none. Per site, not a default",
+            "maxLength": 253,
+            "type": "string"
+          },
+          "public_errors": {
+            "description": "Show error groups (type, message, count; no stack traces) on the public dashboard",
             "type": "boolean"
           },
           "replay": {
@@ -31414,6 +31497,147 @@
           }
         ],
         "summary": "Watch a site live",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/sites/{site}/public": {
+      "get": {
+        "description": "Each address with the DNS records it needs and its status (DNS, then the certificate), checked now.",
+        "operationId": "get-site-public",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Site name",
+            "in": "path",
+            "name": "site",
+            "required": true,
+            "schema": {
+              "description": "Site name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SitePublic"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Where a site's public dashboard is, and whether it works yet",
         "tags": [
           "analytics"
         ]

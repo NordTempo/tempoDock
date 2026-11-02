@@ -147,6 +147,14 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	if srv := ingestServer(cfg, in); srv != nil {
 		servers = append(servers, srv)
 	}
+	if cfg.Analytics.StatsListen != "" {
+		// Sites' public dashboards, through Caddy (ADR 0037): nothing but
+		// them on this listener.
+		servers = append(servers, &http.Server{
+			Addr: cfg.Analytics.StatsListen, Handler: api.PublicStats(c, log.With("component", "public-stats")),
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second,
+		})
+	}
 	if cfg.Hooks.PublicHost != "" {
 		// GitHub webhooks, the only thing Caddy exposes publicly (ADR 0018).
 		servers = append(servers, &http.Server{

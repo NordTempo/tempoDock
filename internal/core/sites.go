@@ -30,11 +30,11 @@ type siteScope struct {
 func defaultSiteSettings() apitypes.SiteSettings {
 	f, t := false, true
 	sample, events, replays, errs := 20, 396, 30, 90
-	paths, ips := []string{}, []string{}
+	paths, ips, domain := []string{}, []string{}, ""
 	return apitypes.SiteSettings{
 		Replay: &f, ReplaySampleRate: &sample, MaskAllText: &f, ErrorsAndVitals: &t,
 		EventRetentionDays: &events, ReplayRetentionDays: &replays, ErrorRetentionDays: &errs,
-		ExcludedPaths: &paths, IgnoredIPs: &ips, Public: &f,
+		ExcludedPaths: &paths, IgnoredIPs: &ips, Public: &f, PublicDomain: &domain, PublicErrors: &f,
 	}
 }
 
@@ -55,7 +55,8 @@ func mergeSettings(base, o apitypes.SiteSettings) apitypes.SiteSettings {
 		ReplayRetentionDays: over(base.ReplayRetentionDays, o.ReplayRetentionDays),
 		ErrorRetentionDays:  over(base.ErrorRetentionDays, o.ErrorRetentionDays),
 		ExcludedPaths:       over(base.ExcludedPaths, o.ExcludedPaths), IgnoredIPs: over(base.IgnoredIPs, o.IgnoredIPs),
-		Public: over(base.Public, o.Public),
+		Public: over(base.Public, o.Public), PublicDomain: over(base.PublicDomain, o.PublicDomain),
+		PublicErrors: over(base.PublicErrors, o.PublicErrors),
 	}
 }
 
@@ -83,6 +84,10 @@ func resetSettings(s *apitypes.SiteSettings, names []string) error {
 			s.IgnoredIPs = nil
 		case "public":
 			s.Public = nil
+		case "public_domain":
+			s.PublicDomain = nil
+		case "public_errors":
+			s.PublicErrors = nil
 		default:
 			return invalid("%q is not a site setting; see `dock analytics site set --help`", n)
 		}
@@ -237,11 +242,20 @@ func (c *Core) toSites(ctx context.Context, sites []store.Site, envs map[int64]s
 	if err != nil {
 		return nil, err
 	}
+	base, err := c.publicBase(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, s := range sites {
 		o := siteOverrides(s)
 		site := apitypes.Site{
 			Name: s.Name, Environment: envs[s.EnvironmentID], Archived: s.ArchivedAt != nil, CreatedAt: s.CreatedAt,
 			Settings: mergeSettings(defaults, o), Overrides: o, Hostnames: []apitypes.SiteHostname{},
+		}
+		if s.ArchivedAt == nil {
+			for _, h := range c.publicHosts(base, s.Name, site.Settings) {
+				site.PublicURLs = append(site.PublicURLs, c.controlURL(h))
+			}
 		}
 		for _, h := range hosts {
 			if h.SiteID == s.ID {
@@ -529,6 +543,13 @@ func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, re
 	if err := checkSettings(o); err != nil {
 		return apitypes.Site{}, err
 	}
+	if o.PublicDomain != nil {
+		host, err := c.checkPublicDomain(ctx, s.site.ID, *o.PublicDomain)
+		if err != nil {
+			return apitypes.Site{}, err
+		}
+		o.PublicDomain = &host
+	}
 	b, err := json.Marshal(o)
 	if err != nil {
 		return apitypes.Site{}, err
@@ -579,6 +600,9 @@ func (c *Core) SetSiteDefaults(ctx context.Context, a Actor, set apitypes.SiteSe
 		_ = json.Unmarshal([]byte(st.SiteDefaults), &cur)
 	} else if !store.IsNotFound(err) {
 		return apitypes.SiteSettings{}, err
+	}
+	if set.PublicDomain != nil {
+		return apitypes.SiteSettings{}, invalid("a public domain belongs to one site; set it on the site with `dock analytics site set SITE --public-domain HOST`")
 	}
 	cur = mergeSettings(cur, set)
 	if err := resetSettings(&cur, reset); err != nil {

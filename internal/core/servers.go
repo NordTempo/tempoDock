@@ -234,6 +234,9 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 		}
 		c.audit(ctx, a.platform(), "server.update", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s %s", srv.Name, strings.Join(changes, ", ")))
 		c.publishServer(ctx, srv.ID)
+		if srv.Local && settings.BaseDomain != srv.BaseDomain {
+			c.publicSitesChanged(ctx) // stats-<site>.<base domain> moved
+		}
 	}
 	return c.serverDetail(ctx, srv.ID)
 }
