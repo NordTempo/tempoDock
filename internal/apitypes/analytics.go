@@ -192,11 +192,31 @@ type SiteErrors struct {
 	To     int64        `json:"to" doc:"Unix ms"`
 	Bucket string       `json:"bucket" enum:"hour,day"`
 	Groups []ErrorGroup `json:"groups"`
+	// Series is every error per bucket, Summary the range's totals and
+	// Previous the period before's; Markers are the deploys and hostname
+	// changes in the range.
+	Series   []CountPoint `json:"series"`
+	Summary  ErrorSummary `json:"summary"`
+	Previous ErrorSummary `json:"previous"`
+	Markers  []SiteMarker `json:"markers"`
 	// Collecting is the site's errors_and_vitals setting: whether its
 	// script reports errors and Web Vitals.
 	Collecting  bool   `json:"collecting"`
 	StoreOnline bool   `json:"store_online"`
 	StoreError  string `json:"store_error,omitempty"`
+}
+
+// ErrorSummary is a range's errors in all: how many, the sessions and
+// visitors (about 2% off) that met one, the groups they fall in and how
+// many of those first appeared in the range.
+type ErrorSummary struct {
+	Errors    int64 `json:"errors"`
+	Sessions  int64 `json:"sessions"`
+	Visitors  int64 `json:"visitors"`
+	Groups    int64 `json:"groups"`
+	NewGroups int64 `json:"new_groups"`
+	// SessionShare is Sessions over the range's sessions, 0 to 1.
+	SessionShare float64 `json:"session_share"`
 }
 
 // ErrorGroup is errors with the same type, message and top frame. Counts,
@@ -254,6 +274,9 @@ type ErrorOccurrence struct {
 	// Session is the visit's ID, empty when the error came without a page
 	// view to tie it to.
 	Session string `json:"session,omitempty"`
+	// Replay is a recording of the visit at the time, empty when it wasn't
+	// recorded.
+	Replay string `json:"replay,omitempty"`
 }
 
 // SiteVitals is a site's Web Vitals in a range: over all page loads, by
@@ -272,6 +295,8 @@ type SiteVitals struct {
 	// samples.
 	Metric string       `json:"metric,omitempty" enum:"lcp,inp,cls,fcp,ttfb,"`
 	Series []VitalPoint `json:"series"`
+	// Markers are the deploys and hostname changes in the range.
+	Markers []SiteMarker `json:"markers"`
 	// Thresholds are each vital's good and poor limits, keyed lcp, inp,
 	// cls, fcp, ttfb.
 	Thresholds  map[string]VitalThreshold `json:"thresholds"`

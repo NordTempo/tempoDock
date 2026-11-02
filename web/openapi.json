@@ -3777,6 +3777,9 @@
             "description": "The release that served the page (\"web r41\")",
             "type": "string"
           },
+          "replay": {
+            "type": "string"
+          },
           "session": {
             "type": "string"
           }
@@ -3784,6 +3787,44 @@
         "required": [
           "at",
           "path"
+        ],
+        "type": "object"
+      },
+      "ErrorSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "groups": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "new_groups": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "session_share": {
+            "format": "double",
+            "type": "number"
+          },
+          "sessions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "visitors": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "errors",
+          "sessions",
+          "visitors",
+          "groups",
+          "new_groups",
+          "session_share"
         ],
         "type": "object"
       },
@@ -7446,6 +7487,27 @@
               "null"
             ]
           },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/SiteMarker"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "previous": {
+            "$ref": "#/components/schemas/ErrorSummary"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/CountPoint"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "site": {
             "type": "string"
           },
@@ -7454,6 +7516,9 @@
           },
           "store_online": {
             "type": "boolean"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ErrorSummary"
           },
           "to": {
             "description": "Unix ms",
@@ -7467,6 +7532,10 @@
           "to",
           "bucket",
           "groups",
+          "series",
+          "summary",
+          "previous",
+          "markers",
           "collecting",
           "store_online"
         ],
@@ -7858,6 +7927,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/SiteMarker"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "metric": {
             "enum": [
               "lcp",
@@ -7907,6 +7985,7 @@
           "all",
           "breakdowns",
           "series",
+          "markers",
           "thresholds",
           "collecting",
           "store_online"
@@ -29574,7 +29653,7 @@
           },
           {
             "description": "dimension:op:value, op is, is_not or contains; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "filter",
             "schema": {
@@ -29794,7 +29873,7 @@
           },
           {
             "description": "dimension:op:value, op is, is_not or contains; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "filter",
             "schema": {
@@ -30013,7 +30092,7 @@
           },
           {
             "description": "dimension:op:value, op is, is_not or contains; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "filter",
             "schema": {
@@ -30573,7 +30652,7 @@
           },
           {
             "description": "dimension:op:value, op is, is_not or contains; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "filter",
             "schema": {
@@ -30770,7 +30849,7 @@
           },
           {
             "description": "dimension:op:value, op is, is_not or contains; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "filter",
             "schema": {
@@ -31383,7 +31462,7 @@
           },
           {
             "description": "dimension:op:value, op is, is_not or contains; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "filter",
             "schema": {
@@ -31831,7 +31910,7 @@
           },
           {
             "description": "dimension:op:value, op is, is_not or contains; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "filter",
             "schema": {
@@ -32028,7 +32107,7 @@
           },
           {
             "description": "dimension:op:value, op is, is_not or contains; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "filter",
             "schema": {
@@ -32044,7 +32123,7 @@
           },
           {
             "description": "Break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more",
-            "explode": false,
+            "explode": true,
             "in": "query",
             "name": "dimension",
             "schema": {

@@ -315,18 +315,20 @@ func bucketOf(b analytics.Bucket, q analytics.Query) (string, error) {
 }
 
 // Errors returns q's error groups with errors in its range, the most
-// frequent first, each with its series when q asks for one.
-func (s *Store) Errors(ctx context.Context, q analytics.ErrorsQuery) ([]analytics.ErrorGroup, error) {
+// frequent first, every error's series when q asks for one, and the
+// range's totals.
+func (s *Store) Errors(ctx context.Context, q analytics.ErrorsQuery) (analytics.ErrorsResult, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
+	out := analytics.ErrorsResult{Groups: []analytics.ErrorGroup{}}
 	var p params
 	w, err := errorWhere(&p, q.Query)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	width, err := bucketOf(q.Bucket, q.Query)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	limit := q.Limit
 	if limit <= 0 || limit > analytics.MaxErrorGroups {
@@ -337,14 +339,13 @@ func (s *Store) Errors(ctx context.Context, q analytics.ErrorsQuery) ([]analytic
 FROM (
     SELECT grp, arg_max(type, ts) AS type, arg_max(message, ts) AS message, arg_max(frame, ts) AS frame,
            count(*) AS n, count(DISTINCT session_id) FILTER (WHERE session_id <> 0) AS sessions,
-           approx_count_distinct(visitor_id) AS visitors, min(ts) AS first, max(ts) AS last
+           count(DISTINCT visitor_id) AS visitors, min(ts) AS first, max(ts) AS last
     FROM errors WHERE `+w+` GROUP BY grp
 ) e LEFT JOIN error_groups g ON g.site_id = `+p.add(uint32(q.Site))+` AND g.grp = e.grp
 ORDER BY e.n DESC, e.last DESC LIMIT `+strconv.Itoa(limit), p...)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
-	out := []analytics.ErrorGroup{}
 	index := map[uint64]int{}
 	for rows.Next() {
 		var g analytics.ErrorGroup
@@ -352,32 +353,52 @@ ORDER BY e.n DESC, e.last DESC LIMIT `+strconv.Itoa(limit), p...)
 		var rel uint32
 		if err := rows.Scan(&grp, &g.Type, &g.Message, &g.Frame, &g.Count, &g.Sessions, &g.Visitors, &g.FirstSeen, &g.LastSeen, &rel); err != nil {
 			_ = rows.Close()
-			return nil, err
+			return out, err
 		}
 		g.Group, g.FirstRelease = groupHex(grp), int64(rel)
-		index[grp] = len(out)
-		out = append(out, g)
+		index[grp] = len(out.Groups)
+		out.Groups = append(out.Groups, g)
 	}
-	if err := rows.Close(); err != nil || width == "" || len(out) == 0 {
+	if err := rows.Close(); err != nil {
 		return out, err
 	}
+	// The totals: new groups are those whose first error ever is in the
+	// range.
 	var sp params
 	sw, _ := errorWhere(&sp, q.Query)
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*), count(DISTINCT session_id) FILTER (WHERE session_id <> 0),
+       count(DISTINCT visitor_id), count(DISTINCT grp),
+       count(DISTINCT grp) FILTER (WHERE grp IN (SELECT grp FROM error_groups WHERE site_id = $1 AND first_seen >= $2 AND first_seen < $3))
+FROM errors WHERE `+sw, sp...).Scan(&out.Summary.Errors, &out.Summary.Sessions, &out.Summary.Visitors, &out.Summary.Groups, &out.Summary.NewGroups); err != nil {
+		return out, err
+	}
+	if width == "" || out.Summary.Errors == 0 {
+		return out, nil
+	}
 	series, err := s.db.QueryContext(ctx, `SELECT grp, epoch_ms(time_bucket(`+width+`, ts)) AS b, count(*)
 FROM errors WHERE `+sw+` GROUP BY grp, b ORDER BY b`, sp...)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	defer func() { _ = series.Close() }()
+	total := map[int64]int64{}
+	var buckets []int64
 	for series.Next() {
 		var grp uint64
 		var pt analytics.CountPoint
 		if err := series.Scan(&grp, &pt.T, &pt.Count); err != nil {
-			return nil, err
+			return out, err
 		}
 		if i, ok := index[grp]; ok {
-			out[i].Series = append(out[i].Series, pt)
+			out.Groups[i].Series = append(out.Groups[i].Series, pt)
 		}
+		if _, ok := total[pt.T]; !ok {
+			buckets = append(buckets, pt.T)
+		}
+		total[pt.T] += pt.Count
+	}
+	for _, t := range buckets {
+		out.Series = append(out.Series, analytics.CountPoint{T: t, Count: total[t]})
 	}
 	return out, series.Err()
 }
@@ -422,13 +443,13 @@ func (s *Store) Error(ctx context.Context, q analytics.ErrorQuery) (analytics.Er
 	var typ, msg, frame, stack sql.NullString
 	var last sql.NullInt64
 	if err := s.db.QueryRowContext(ctx, `SELECT count(*), count(DISTINCT session_id) FILTER (WHERE session_id <> 0),
-       approx_count_distinct(visitor_id), arg_max(type, ts), arg_max(message, ts), arg_max(frame, ts), arg_max(stack, ts), epoch_ms(max(ts))
+       count(DISTINCT visitor_id), arg_max(type, ts), arg_max(message, ts), arg_max(frame, ts), arg_max(stack, ts), epoch_ms(max(ts))
 FROM errors WHERE `+w, p...).Scan(&d.Count, &d.Sessions, &d.Visitors, &typ, &msg, &frame, &stack, &last); err != nil {
 		return d, err
 	}
 	d.Type, d.Message, d.Frame, d.Stack, d.LastSeen = typ.String, msg.String, frame.String, stack.String, last.Int64
 	for _, dim := range errorBreakdowns {
-		rows, err := s.db.QueryContext(ctx, `SELECT `+errorColumns[dim]+` AS v, approx_count_distinct(visitor_id), count(*) AS n
+		rows, err := s.db.QueryContext(ctx, `SELECT `+errorColumns[dim]+` AS v, count(DISTINCT visitor_id), count(*) AS n
 FROM errors WHERE `+w+` GROUP BY v ORDER BY n DESC, v LIMIT `+strconv.Itoa(errorBreakdownRows), p...)
 		if err != nil {
 			return d, err
@@ -458,8 +479,13 @@ FROM errors WHERE `+w+` GROUP BY v ORDER BY n DESC, v LIMIT `+strconv.Itoa(error
 			d.Releases = append(d.Releases, out...)
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT epoch_ms(ts), path, browser, browser_version, os, device, country, service_id, release_id, session_id
-FROM errors WHERE `+w+` ORDER BY ts DESC LIMIT `+strconv.Itoa(analytics.MaxErrorRecent), p...)
+	// Each occurrence with a recorded page load of the visitor's around it,
+	// if one was.
+	rows, err := s.db.QueryContext(ctx, `SELECT epoch_ms(e.ts), e.path, e.browser, e.browser_version, e.os, e.device, e.country,
+       e.service_id, e.release_id, e.session_id,
+       (SELECT min(r.segment) FROM replay_chunks r WHERE r.site_id = e.site_id AND r.visitor_id = e.visitor_id
+          AND r.day >= e.ts::DATE - 1 AND r.day <= e.ts::DATE AND e.ts >= r.ts_first - INTERVAL 10 SECOND AND e.ts <= r.ts_last + INTERVAL 10 SECOND)
+FROM (SELECT * FROM errors WHERE `+w+` ORDER BY ts DESC LIMIT `+strconv.Itoa(analytics.MaxErrorRecent)+`) e ORDER BY e.ts DESC`, p...)
 	if err != nil {
 		return d, err
 	}
@@ -467,13 +493,17 @@ FROM errors WHERE `+w+` ORDER BY ts DESC LIMIT `+strconv.Itoa(analytics.MaxError
 		var o analytics.ErrorOccurrence
 		var svc, rel uint32
 		var session uint64
-		if err := rows.Scan(&o.Time, &o.Path, &o.Browser, &o.BrowserVersion, &o.OS, &o.Device, &o.Country, &svc, &rel, &session); err != nil {
+		var replay sql.Null[uint64]
+		if err := rows.Scan(&o.Time, &o.Path, &o.Browser, &o.BrowserVersion, &o.OS, &o.Device, &o.Country, &svc, &rel, &session, &replay); err != nil {
 			_ = rows.Close()
 			return d, err
 		}
 		o.Service, o.Release = int64(svc), int64(rel)
 		if session != 0 {
 			o.Session = groupHex(session)
+		}
+		if replay.Valid {
+			o.Replay = groupHex(replay.V)
 		}
 		d.Recent = append(d.Recent, o)
 	}
@@ -508,16 +538,17 @@ func p75(col string) string {
 	return "coalesce(reservoir_quantile(" + col + ", 0.75, " + strconv.Itoa(vitalsSample) + ")::DOUBLE, -1)"
 }
 
-// vitalsSelect computes every vital's 75th percentile, samples and, with
-// counts, good and poor counts, in VitalNames' order. Breakdowns leave
-// the counts out: each costs about as much as a percentile.
-func vitalsSelect(counts bool) string {
+// vitalsSelect computes every vital's 75th percentile and samples, and
+// the good and poor counts of those counts says, in VitalNames' order.
+// Breakdowns count only the vital the view shows: each count costs about
+// as much as a percentile.
+func vitalsSelect(counts func(analytics.Vital) bool) string {
 	var b strings.Builder
 	for _, v := range analytics.VitalNames {
 		t := analytics.VitalThresholds[v]
 		c := string(v)
 		fmt.Fprintf(&b, ", %s, count(%s)", p75(c), c)
-		if counts {
+		if counts(v) {
 			fmt.Fprintf(&b, ", count(*) FILTER (WHERE %[1]s <= %[2]g), count(*) FILTER (WHERE %[1]s > %[3]g)", c, t.Good, t.Poor)
 		}
 	}
@@ -525,16 +556,19 @@ func vitalsSelect(counts bool) string {
 }
 
 // scanVitals reads a row of vitalsSelect after its leading columns.
-func scanVitals(sc interface{ Scan(...any) error }, lead []any, counts bool, r *analytics.VitalsRow) error {
+func scanVitals(sc interface{ Scan(...any) error }, lead []any, counts func(analytics.Vital) bool, r *analytics.VitalsRow) error {
 	dest := lead
-	for _, st := range []*analytics.VitalStat{&r.LCP, &r.INP, &r.CLS, &r.FCP, &r.TTFB} {
+	for i, st := range []*analytics.VitalStat{&r.LCP, &r.INP, &r.CLS, &r.FCP, &r.TTFB} {
 		dest = append(dest, &st.P75, &st.Samples)
-		if counts {
+		if counts(analytics.VitalNames[i]) {
 			dest = append(dest, &st.Good, &st.Poor)
 		}
 	}
 	return sc.Scan(dest...)
 }
+
+// allVitals counts every vital.
+func allVitals(analytics.Vital) bool { return true }
 
 // Vitals returns q's Web Vitals: over all its page loads (with good and
 // poor counts), by each of its dimensions' values (the most loads first)
@@ -563,18 +597,19 @@ func (s *Store) Vitals(ctx context.Context, q analytics.VitalsQuery) (analytics.
 	if q.Metric != "" && !slices.Contains(analytics.VitalNames, q.Metric) {
 		return out, badQuery("unknown vital %q; use lcp, inp, cls, fcp or ttfb", q.Metric)
 	}
-	if err := scanVitals(s.db.QueryRowContext(ctx, `SELECT count(*)`+vitalsSelect(true)+` FROM vitals WHERE `+w, p...), []any{&out.All.Loads}, true, &out.All); err != nil {
+	if err := scanVitals(s.db.QueryRowContext(ctx, `SELECT count(*)`+vitalsSelect(allVitals)+` FROM vitals WHERE `+w, p...), []any{&out.All.Loads}, allVitals, &out.All); err != nil {
 		return out, err
 	}
 	limit := q.Limit
 	if limit <= 0 || limit > analytics.MaxBreakdown {
 		limit = 100
 	}
+	metric := func(v analytics.Vital) bool { return v == q.Metric }
 	for _, d := range q.Dimensions {
 		col := errorColumns[d]
 		// Percentiles only for the values shown: the top values by page
 		// loads first, then their vitals.
-		rows, err := s.db.QueryContext(ctx, `SELECT `+col+` AS v, count(*) AS n`+vitalsSelect(false)+` FROM vitals WHERE `+w+
+		rows, err := s.db.QueryContext(ctx, `SELECT `+col+` AS v, count(*) AS n`+vitalsSelect(metric)+` FROM vitals WHERE `+w+
 			` AND `+col+` IN (SELECT `+col+` FROM vitals WHERE `+w+` GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT `+strconv.Itoa(limit)+`)
 GROUP BY v ORDER BY n DESC, v`, p...)
 		if err != nil {
@@ -583,7 +618,7 @@ GROUP BY v ORDER BY n DESC, v`, p...)
 		out.Breakdowns[d] = []analytics.VitalsRow{}
 		for rows.Next() {
 			var r analytics.VitalsRow
-			if err := scanVitals(rows, []any{&r.Value, &r.Loads}, false, &r); err != nil {
+			if err := scanVitals(rows, []any{&r.Value, &r.Loads}, metric, &r); err != nil {
 				_ = rows.Close()
 				return out, err
 			}

@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { lazy, Suspense, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { clock, day } from "../../ui/format";
-import { Button, Panel } from "../../ui/kit";
+import { Panel } from "../../ui/kit";
 import { LineChart } from "../stats/LineChart";
-import { RangeSwitch } from "../stats/parts";
 import { niceMax } from "../traffic/series";
 import {
   type AnalyticsRow,
@@ -12,144 +11,34 @@ import {
   type SiteStats,
   type StatsRange,
   siteStatsQuery,
-  statsRanges,
   useBreakdown,
   useSiteLive,
 } from "./data";
+import { count, country, delta, duration, Kpi, points, shown } from "./parts";
 
 // A site's dashboard (ADR 0037, mock C): the numbers against the period
 // before, the chart with deploys and domain moves, the breakdowns, and a
 // live column. Clicking a value filters by it.
 
-const SiteSettingsDialog = lazy(() => import("./SiteSettingsDialog"));
-
-const count = (n: number) => n.toLocaleString("en-US");
-
-const regions = new Intl.DisplayNames(["en"], { type: "region" });
-/** A country's name from its ISO code ("NO": Norway). */
-const country = (code: string) => {
-  try {
-    return regions.of(code) ?? code;
-  } catch {
-    return code;
-  }
-};
-
-/** How a dimension's value reads; services and releases come labelled. */
-const shown = (dimension: string, row: { value: string; label?: string }) =>
-  row.label ||
-  (row.value === ""
-    ? dimension === "referrer" || dimension === "channel"
-      ? "Direct"
-      : "(none)"
-    : dimension === "country"
-      ? country(row.value)
-      : row.value);
-
 export function Dashboard({
   project,
-  sites,
   site,
   range,
   filters,
-  onSite,
-  onRenamed,
-  onRange,
-  onFilters,
+  onPick,
 }: {
   project: string;
-  /** The sites to choose from: those the service serves. */
-  sites: Site[];
   site: Site;
   range: StatsRange;
   filters: Filter[];
-  onSite: (name: string) => void;
-  /** The site was renamed: keep showing it, filters and all. */
-  onRenamed: (name: string) => void;
-  onRange: (range: StatsRange) => void;
-  onFilters: (filters: Filter[]) => void;
+  /** A value was clicked: filter by it (row carries its label). */
+  onPick: (dimension: string, row: AnalyticsRow) => void;
 }) {
   const { data: stats, error } = useQuery(
     siteStatsQuery(project, site.name, range, filters),
   );
-  const [settings, setSettings] = useState(false);
-  // Labels of filtered values (services, releases), from the rows clicked;
-  // a filter from the URL finds its label in the dashboard's rows.
-  const [labels, setLabels] = useState<Record<string, string>>({});
-  const addFilter = (dimension: string, row: AnalyticsRow) => {
-    if (row.label)
-      setLabels((l) => ({
-        ...l,
-        [`${dimension}:${row.value}`]: row.label ?? "",
-      }));
-    onFilters([
-      ...filters.filter((f) => f.dimension !== dimension),
-      { dimension, op: "is", value: row.value },
-    ]);
-  };
-  const hostnames = site.hostnames ?? [];
-  const services = new Set(hostnames.map((h) => h.service).filter(Boolean));
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        {sites.length > 1 ? (
-          <select
-            aria-label="Site"
-            value={site.name}
-            onChange={(e) => onSite(e.target.value)}
-          >
-            {sites.map((s) => (
-              <option key={s.name} value={s.name}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="font-semibold">{site.name}</span>
-        )}
-        <span className="text-xs text-faint">
-          site · {hostnames.length}{" "}
-          {hostnames.length === 1 ? "hostname" : "hostnames"} · {services.size}{" "}
-          {services.size === 1 ? "service" : "services"}
-        </span>
-        <Button onClick={() => setSettings(true)}>Settings</Button>
-        <span className="ml-auto">
-          <RangeSwitch value={range} options={statsRanges} onChange={onRange} />
-        </span>
-      </div>
-      {filters.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {filters.map((f) => (
-            <button
-              key={`${f.dimension}:${f.op}:${f.value}`}
-              type="button"
-              className="rounded-ctl bg-chip px-2 py-0.5 text-xs"
-              title="Remove this filter"
-              onClick={() => onFilters(filters.filter((g) => g !== f))}
-            >
-              <span className="text-mut">{f.dimension.replace("_", " ")}</span>{" "}
-              {f.op.replace("_", " ")}{" "}
-              {shown(f.dimension, {
-                value: f.value,
-                label:
-                  labels[`${f.dimension}:${f.value}`] ??
-                  stats?.breakdowns[f.dimension]?.find(
-                    (r) => r.value === f.value,
-                  )?.label,
-              })}{" "}
-              <span className="text-faint">✕</span>
-            </button>
-          ))}
-          <button
-            type="button"
-            className="text-xs text-mut"
-            onClick={() => onFilters([])}
-          >
-            Clear
-          </button>
-        </div>
-      )}
       {error && <p className="text-fail">{error.message}</p>}
       {stats && !stats.store_online && (
         <p className="text-warn-text">{stats.store_error}</p>
@@ -164,7 +53,7 @@ export function Dashboard({
               stats={stats}
               range={range}
               filters={filters}
-              onPick={addFilter}
+              onPick={onPick}
             />
           ) : (
             !error && <p className="text-mut">Loading…</p>
@@ -182,16 +71,6 @@ export function Dashboard({
         </a>{" "}
         (CC BY 4.0). Cookieless: a visitor is counted once per day.
       </p>
-      {settings && (
-        <Suspense fallback={null}>
-          <SiteSettingsDialog
-            project={project}
-            site={site}
-            onRenamed={onRenamed}
-            onClose={() => setSettings(false)}
-          />
-        </Suspense>
-      )}
     </div>
   );
 }
@@ -316,71 +195,6 @@ function Main({
         />
       </div>
     </>
-  );
-}
-
-/** "+12%" against the period before, with a tone; nothing without one. */
-function delta(now: number, before: number) {
-  if (!before) return undefined;
-  const pct = Math.round(((now - before) / before) * 100);
-  return { text: `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%`, up: pct >= 0 };
-}
-
-/** A rate's change in percentage points; a lower bounce rate is good. */
-function points(now: number, before: number) {
-  const pts = Math.round((now - before) * 100);
-  return {
-    text: `${pts > 0 ? "+" : pts < 0 ? "−" : "±"}${Math.abs(pts)} pts`,
-    up: pts <= 0,
-  };
-}
-
-/** 2m 48s. */
-function duration(ms: number) {
-  const s = Math.round(ms / 1000);
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-}
-
-function Kpi({
-  label,
-  value,
-  change,
-  on,
-  onClick,
-}: {
-  label: string;
-  value: string;
-  change?: { text: string; up: boolean };
-  /** The metric the chart shows; set only for those it can show. */
-  on?: boolean;
-  onClick?: () => void;
-}) {
-  const content = (
-    <>
-      <dt className={`text-xs ${on ? "text-fg" : "text-mut"}`}>{label}</dt>
-      <dd className="text-lg font-semibold">
-        {value}
-        {change && (
-          <small
-            className={`ml-1.5 text-xs font-normal ${change.up ? "text-ok" : "text-fail"}`}
-          >
-            {change.text}
-          </small>
-        )}
-      </dd>
-    </>
-  );
-  return onClick ? (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={`border-b-2 pb-1 text-left ${on ? "border-fg" : "border-transparent"}`}
-    >
-      {content}
-    </button>
-  ) : (
-    <div className="border-b-2 border-transparent pb-1">{content}</div>
   );
 }
 

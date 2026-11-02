@@ -4247,7 +4247,22 @@ export interface components {
             path: string;
             /** @description The release that served the page ("web r41") */
             release?: string;
+            replay?: string;
             session?: string;
+        };
+        ErrorSummary: {
+            /** Format: int64 */
+            errors: number;
+            /** Format: int64 */
+            groups: number;
+            /** Format: int64 */
+            new_groups: number;
+            /** Format: double */
+            session_share: number;
+            /** Format: int64 */
+            sessions: number;
+            /** Format: int64 */
+            visitors: number;
         };
         Event: {
             alert?: components["schemas"]["Alert"];
@@ -5316,9 +5331,13 @@ export interface components {
              */
             from: number;
             groups: components["schemas"]["ErrorGroup"][] | null;
+            markers: components["schemas"]["SiteMarker"][] | null;
+            previous: components["schemas"]["ErrorSummary"];
+            series: components["schemas"]["CountPoint"][] | null;
             site: string;
             store_error?: string;
             store_online: boolean;
+            summary: components["schemas"]["ErrorSummary"];
             /**
              * Format: int64
              * @description Unix ms
@@ -5461,6 +5480,7 @@ export interface components {
              * @description Unix ms
              */
             from: number;
+            markers: components["schemas"]["SiteMarker"][] | null;
             /** @enum {string} */
             metric?: "lcp" | "inp" | "cls" | "fcp" | "ttfb" | "";
             series: components["schemas"]["VitalPoint"][] | null;

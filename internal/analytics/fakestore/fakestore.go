@@ -112,7 +112,12 @@ func (s *Store) Handler() http.Handler {
 			http.Error(w, "bad query", http.StatusBadRequest)
 			return
 		}
-		reply(w, s.errorGroups(q.Query))
+		groups := s.errorGroups(q.Query)
+		res := analytics.ErrorsResult{Groups: groups, Summary: analytics.ErrorSummary{Groups: int64(len(groups))}}
+		for _, g := range groups {
+			res.Summary.Errors += g.Count
+		}
+		reply(w, res)
 	}))
 	mux.HandleFunc("POST "+analytics.ErrorPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.ErrorQuery

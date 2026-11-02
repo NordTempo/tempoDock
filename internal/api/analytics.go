@@ -47,7 +47,7 @@ type StatsParams struct {
 	Range  string   `query:"range" enum:"24h,7d,30d,90d,12m," doc:"A range ending now; default 30d"`
 	From   int64    `query:"from" doc:"Start of a custom range, Unix ms (with to)"`
 	To     int64    `query:"to" doc:"End of a custom range, Unix ms"`
-	Filter []string `query:"filter" doc:"dimension:op:value, op is, is_not or contains; repeat for more"`
+	Filter []string `query:"filter,explode" doc:"dimension:op:value, op is, is_not or contains; repeat for more"`
 }
 
 // query parses the parameters for core.
@@ -157,7 +157,7 @@ func registerSites(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		SitePath
 		StatsParams
-		Dimension []string `query:"dimension" doc:"Break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more"`
+		Dimension []string `query:"dimension,explode" doc:"Break down by page, hostname, country, browser, browser_version, os, device, service or release; repeat for more"`
 		Limit     int      `query:"limit" minimum:"1" maximum:"1000" default:"20" doc:"Values per breakdown"`
 		Metric    string   `query:"metric" enum:"lcp,inp,cls,fcp,ttfb," doc:"The vital to chart over time; empty for no series"`
 	}) (*out[apitypes.SiteVitals], error) {

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
@@ -105,24 +107,60 @@ func (c *Core) SiteErrors(ctx context.Context, a Actor, project, name string, q 
 		return apitypes.SiteErrors{}, err
 	}
 	out := apitypes.SiteErrors{Site: r.site.site.Name, From: r.query.From, To: r.query.To, Bucket: r.bucket,
-		Groups: []apitypes.ErrorGroup{}, Collecting: r.collecting}
+		Groups: []apitypes.ErrorGroup{}, Series: []apitypes.CountPoint{}, Markers: []apitypes.SiteMarker{}, Collecting: r.collecting}
 	if r.cl == nil {
 		out.StoreError = analyticsOff
 		return out, nil
 	}
-	groups, err := r.cl.Errors(ctx, analytics.ErrorsQuery{Query: r.query, Bucket: analytics.Bucket(r.bucket), Limit: min(max(limit, 1), analytics.MaxErrorGroups)})
-	if out.StoreOnline, out.StoreError, err = storeStatus(err); err != nil || !out.StoreOnline {
+	if out.Markers, err = c.siteMarkers(ctx, r.site.site.ID, r.query.From, r.query.To); err != nil {
 		return out, err
 	}
-	ids := make([]int64, len(groups))
-	for i, g := range groups {
+	prev := r.query
+	prev.From, prev.To = r.query.From-(r.query.To-r.query.From), r.query.From
+	// The store answers one at a time; asking together saves round trips
+	// to an analytics server elsewhere.
+	var res, before analytics.ErrorsResult
+	var now, then analytics.Overview
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) {
+		res, err = r.cl.Errors(gctx, analytics.ErrorsQuery{Query: r.query, Bucket: analytics.Bucket(r.bucket), Limit: min(max(limit, 1), analytics.MaxErrorGroups)})
+		return err
+	})
+	g.Go(func() (err error) {
+		before, err = r.cl.Errors(gctx, analytics.ErrorsQuery{Query: prev, Limit: 1})
+		return err
+	})
+	// The share of sessions with an error is of all sessions, unfiltered
+	// by what errors record but not events (a browser, a page).
+	g.Go(func() (err error) { now, err = r.cl.Overview(gctx, r.query); return err })
+	g.Go(func() (err error) { then, err = r.cl.Overview(gctx, prev); return err })
+	if out.StoreOnline, out.StoreError, err = storeStatus(g.Wait()); err != nil || !out.StoreOnline {
+		return out, err
+	}
+	out.Summary, out.Previous = toErrorSummary(res.Summary, now), toErrorSummary(before.Summary, then)
+	out.Series = make([]apitypes.CountPoint, 0, len(res.Series))
+	for _, p := range res.Series {
+		out.Series = append(out.Series, apitypes.CountPoint(p))
+	}
+	ids := make([]int64, len(res.Groups))
+	for i, g := range res.Groups {
 		ids[i] = g.FirstRelease
 	}
 	labels := c.releaseLabels(ctx, ids)
-	for _, g := range groups {
+	for _, g := range res.Groups {
 		out.Groups = append(out.Groups, toErrorGroup(g, labels))
 	}
 	return out, nil
+}
+
+// toErrorSummary converts the store's totals, with the share of the
+// overview's sessions that met an error.
+func toErrorSummary(s analytics.ErrorSummary, o analytics.Overview) apitypes.ErrorSummary {
+	out := apitypes.ErrorSummary{Errors: s.Errors, Sessions: s.Sessions, Visitors: s.Visitors, Groups: s.Groups, NewGroups: s.NewGroups}
+	if o.Sessions > 0 {
+		out.SessionShare = min(1, float64(s.Sessions)/float64(o.Sessions))
+	}
+	return out
 }
 
 // toErrorGroup converts the store's group.
@@ -185,7 +223,8 @@ func (c *Core) SiteError(ctx context.Context, a Actor, project, name, group stri
 		Releases: c.toRows(ctx, analytics.DimRelease, d.Releases), Recent: []apitypes.ErrorOccurrence{}}
 	for _, o := range d.Recent {
 		out.Recent = append(out.Recent, apitypes.ErrorOccurrence{At: time.UnixMilli(o.Time).UTC(), Path: o.Path, Browser: o.Browser,
-			BrowserVersion: o.BrowserVersion, OS: o.OS, Device: o.Device, Country: o.Country, Release: labels[o.Release], Session: o.Session})
+			BrowserVersion: o.BrowserVersion, OS: o.OS, Device: o.Device, Country: o.Country, Release: labels[o.Release], Session: o.Session,
+			Replay: o.Replay})
 	}
 	return out, nil
 }
@@ -220,12 +259,15 @@ func (c *Core) SiteVitals(ctx context.Context, a Actor, project, name string, v 
 	dims = slices.Compact(dims)
 	out := apitypes.SiteVitals{Site: r.site.site.Name, From: r.query.From, To: r.query.To, Bucket: r.bucket,
 		Breakdowns: map[string][]apitypes.VitalsRow{}, Metric: string(v.Metric), Series: []apitypes.VitalPoint{},
-		Thresholds: map[string]apitypes.VitalThreshold{}, Collecting: r.collecting}
+		Thresholds: map[string]apitypes.VitalThreshold{}, Collecting: r.collecting, Markers: []apitypes.SiteMarker{}}
 	for name, t := range analytics.VitalThresholds {
 		out.Thresholds[string(name)] = apitypes.VitalThreshold(t)
 	}
 	none := apitypes.VitalStat{P75: -1}
 	out.All = apitypes.VitalsRow{LCP: none, INP: none, CLS: none, FCP: none, TTFB: none}
+	if out.Markers, err = c.siteMarkers(ctx, r.site.site.ID, r.query.From, r.query.To); err != nil {
+		return out, err
+	}
 	if r.cl == nil {
 		out.StoreError = analyticsOff
 		return out, nil

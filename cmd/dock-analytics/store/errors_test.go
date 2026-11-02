@@ -41,24 +41,32 @@ func TestErrorGroups(t *testing.T) {
 	if o, err := s.Overview(ctx, dayQuery); err != nil || o.Events != 0 || o.Pageviews != 1 || o.Visitors != 1 {
 		t.Errorf("overview with errors: %+v, %v", o, err)
 	}
-	groups, err := s.Errors(ctx, analytics.ErrorsQuery{Query: dayQuery, Bucket: analytics.BucketHour})
+	res, err := s.Errors(ctx, analytics.ErrorsQuery{Query: dayQuery, Bucket: analytics.BucketHour})
 	if err != nil {
 		t.Fatal(err)
 	}
+	groups := res.Groups
 	if len(groups) != 2 {
 		t.Fatalf("groups %+v", groups)
+	}
+	if sum := res.Summary; sum.Errors != 4 || sum.Groups != 2 || sum.NewGroups != 2 || sum.Sessions != 1 || len(res.Series) != 2 || res.Series[0].Count != 3 {
+		t.Errorf("summary %+v, series %+v", sum, res.Series)
 	}
 	g := groups[0]
 	if g.Group != groupHex(big) || g.Count != 3 || g.Sessions != 1 || g.Message != "x of 3" || g.FirstRelease != 100 ||
 		g.FirstSeen != day0.Add(time.Minute).UnixMilli() || g.LastSeen != day0.Add(2*time.Hour).UnixMilli() || len(g.Series) != 2 {
 		t.Errorf("group 7: %+v", g)
 	}
+	// Visitor 1's page load at the first error was recorded.
+	if _, _, err := s.WriteReplay(ctx, "replay:server-1", 1, []analytics.ReplayChunk{chunk(1, hi|0xa1, 0, time.Minute+3*time.Second, `[]`)}, nil); err != nil {
+		t.Fatal(err)
+	}
 	d, err := s.Error(ctx, analytics.ErrorQuery{Query: dayQuery, Group: groupHex(big)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if d.Count != 3 || d.Stack == "" || len(d.Recent) != 3 || d.Recent[2].Session == "" || d.Recent[0].Session != "" ||
-		len(d.Pages) != 1 || d.Pages[0].Count != 3 || len(d.Releases) != 2 {
+		len(d.Pages) != 1 || d.Pages[0].Count != 3 || len(d.Releases) != 2 || d.Recent[2].Replay != groupHex(hi|0xa1) || d.Recent[1].Replay != "" {
 		t.Errorf("detail %+v", d)
 	}
 	if _, err := s.Errors(ctx, analytics.ErrorsQuery{Query: analytics.Query{Site: 1, From: dayQuery.From, To: dayQuery.To,
@@ -67,14 +75,14 @@ func TestErrorGroups(t *testing.T) {
 	}
 	filtered, err := s.Errors(ctx, analytics.ErrorsQuery{Query: analytics.Query{Site: 1, From: dayQuery.From, To: dayQuery.To,
 		Filters: []analytics.Filter{{Dimension: analytics.DimRelease, Op: analytics.OpIs, Value: "102"}}}})
-	if err != nil || len(filtered) != 1 || filtered[0].Count != 1 {
+	if err != nil || len(filtered.Groups) != 1 || filtered.Groups[0].Count != 1 {
 		t.Errorf("filtered by release: %+v, %v", filtered, err)
 	}
 
 	// Retention: errors go, and the groups not seen since.
-	res, err := s.Prune(ctx, analytics.PruneQuery{Site: 1, Before: day0.UnixMilli(), ErrorsBefore: day0.Add(time.Hour).UnixMilli()})
-	if err != nil || res.ErrorsDeleted != 3 {
-		t.Fatalf("prune: %+v, %v", res, err)
+	pruned, err := s.Prune(ctx, analytics.PruneQuery{Site: 1, Before: day0.UnixMilli(), ErrorsBefore: day0.Add(time.Hour).UnixMilli()})
+	if err != nil || pruned.ErrorsDeleted != 3 {
+		t.Fatalf("prune: %+v, %v", pruned, err)
 	}
 	if _, err := s.Error(ctx, analytics.ErrorQuery{Query: dayQuery, Group: groupHex(9)}); err == nil {
 		t.Error("group 9, last seen before the cut, is still there")
@@ -111,7 +119,7 @@ func TestVitals(t *testing.T) {
 	if a.LCP.Good != 6 || a.LCP.Poor != 9 || a.LCP.P75 < 5000 || a.LCP.P75 > 5600 {
 		t.Errorf("LCP %+v", a.LCP)
 	}
-	if d := v.Breakdowns[analytics.DimDevice]; len(d) != 2 || d[0].Loads != 10 || d[0].LCP.Samples != 10 || len(v.Breakdowns[analytics.DimPage]) != 2 ||
+	if d := v.Breakdowns[analytics.DimDevice]; len(d) != 2 || d[0].Loads != 10 || d[0].LCP.Samples != 10 || d[0].LCP.Good+d[0].LCP.Poor == 0 || len(v.Breakdowns[analytics.DimPage]) != 2 ||
 		len(v.Series) != 1 || v.Series[0].Samples != 20 {
 		t.Errorf("breakdowns %+v, series %+v", v.Breakdowns, v.Series)
 	}

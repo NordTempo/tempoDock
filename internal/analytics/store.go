@@ -30,7 +30,7 @@ type Store interface {
 	// unless it has it, and answers the month it has.
 	UpdateGeoIP(ctx context.Context) (GeoIP, error)
 	// Errors, Error and Vitals read errors and Web Vitals (phase A2).
-	Errors(ctx context.Context, q ErrorsQuery) ([]ErrorGroup, error)
+	Errors(ctx context.Context, q ErrorsQuery) (ErrorsResult, error)
 	Error(ctx context.Context, q ErrorQuery) (ErrorDetail, error)
 	Vitals(ctx context.Context, q VitalsQuery) (VitalsResult, error)
 	// Traffic counts every site's page views in an hour and the same hour
@@ -123,7 +123,7 @@ const (
 	// LivePath takes POST with a LiveQuery and answers Live.
 	LivePath = "/v1/live"
 	// ErrorsPath, ErrorPath and VitalsPath take POST with an
-	// ErrorsQuery, ErrorQuery or VitalsQuery and answer []ErrorGroup,
+	// ErrorsQuery, ErrorQuery or VitalsQuery and answer ErrorsResult,
 	// ErrorDetail or VitalsResult.
 	ErrorsPath = "/v1/errors"
 	ErrorPath  = "/v1/error"

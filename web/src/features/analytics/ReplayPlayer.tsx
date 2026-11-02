@@ -34,6 +34,7 @@ export function ReplayPlayer({
   replay: id,
   serviceLink,
   at,
+  atTime,
 }: {
   project: string;
   site: string;
@@ -42,6 +43,8 @@ export function ReplayPlayer({
   serviceLink: { to: string; params: Record<string, string> };
   /** Where to start, in seconds (a shared link). */
   at?: number;
+  /** Or a moment to start a few seconds before (Unix ms): an error's. */
+  atTime?: number;
 }) {
   const { data: replay, error } = useQuery(replayQuery(project, site, id));
   const [events, setEvents] = useState<RecordedEvent[]>();
@@ -82,7 +85,7 @@ export function ReplayPlayer({
         <p className="text-fail">{error?.message ?? loadError}</p>
       )}
       {replay && events ? (
-        <Player replay={replay} events={events} at={at} />
+        <Player replay={replay} events={events} at={at} atTime={atTime} />
       ) : (
         !(error || loadError) && <p className="text-mut">Loading…</p>
       )}
@@ -94,10 +97,12 @@ function Player({
   replay,
   events,
   at,
+  atTime,
 }: {
   replay: ReplayDetail;
   events: RecordedEvent[];
   at?: number;
+  atTime?: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -127,14 +132,17 @@ function Player({
     });
     r.on("finish", () => setPlaying(false));
     player.current = r;
-    const t = Math.min((at ?? 0) * 1000, total);
+    const t = Math.min(
+      atTime ? Math.max(0, atTime - start - 3000) : (at ?? 0) * 1000,
+      total,
+    );
     r.pause(t);
     setNow(t);
     return () => {
       r.destroy();
       player.current = null;
     };
-  }, [events, at, total]);
+  }, [events, at, atTime, start, total]);
 
   // Fit the recorded viewport into the frame.
   useEffect(() => {
