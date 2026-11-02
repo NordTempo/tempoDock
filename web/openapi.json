@@ -5627,6 +5627,15 @@
             "description": "The replay's first page load, 16 hex digits",
             "type": "string"
           },
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/ReplayMark"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "os": {
             "type": "string"
           },
@@ -5696,6 +5705,15 @@
             "description": "The replay's first page load, 16 hex digits",
             "type": "string"
           },
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/ReplayMark"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "os": {
             "type": "string"
           },
@@ -5747,6 +5765,31 @@
           "errors",
           "events",
           "bytes"
+        ],
+        "type": "object"
+      },
+      "ReplayMark": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "pageview",
+              "error"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "t": {
+            "description": "Unix ms",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "t",
+          "kind"
         ],
         "type": "object"
       },

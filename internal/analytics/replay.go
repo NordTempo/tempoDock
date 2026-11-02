@@ -86,7 +86,21 @@ type Replay struct {
 	Errors int64 `json:"errors"`
 	Events int64 `json:"events"`
 	Bytes  int64 `json:"bytes"`
+	// Marks are its page views and errors in order, at most MaxReplayMarks:
+	// the shape a list of replays draws. Only lists have them.
+	Marks []ReplayMark `json:"marks,omitempty"`
 }
+
+// ReplayMark is a page view or an error during a replay, at server time
+// T (Unix ms); Name is an error's type.
+type ReplayMark struct {
+	T    int64  `json:"t"`
+	Kind Kind   `json:"k"`
+	Name string `json:"n,omitempty"`
+}
+
+// MaxReplayMarks caps a listed replay's marks.
+const MaxReplayMarks = 50
 
 // ReplayQuery asks for one replay by the ID of any of its segments.
 type ReplayQuery struct {

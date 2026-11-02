@@ -324,25 +324,76 @@ counted AS (
            (SELECT count(*) FROM events WHERE site_id = `+site+` AND visitor_id = r.v AND kind = 2 AND ts >= r.s AND ts <= r.e + INTERVAL 5 SECOND) AS evs
     FROM r WHERE r.s >= `+lo+` AND r.s < `+hi+`
 )
-SELECT id, epoch_ms(s), epoch_ms(e), segs, entry, exit, country, browser, os, device, rel, errs, evs, bytes
+SELECT id, v, epoch_ms(s), epoch_ms(e), segs, entry, exit, country, browser, os, device, rel, errs, evs, bytes
 FROM counted`+errorsOnly+` ORDER BY s DESC LIMIT `+strconv.Itoa(limit), p...)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 	out := []analytics.Replay{}
+	var visitors []uint64
 	for rows.Next() {
 		var r analytics.Replay
-		var id uint64
+		var id, v uint64
 		var rel uint32
-		if err := rows.Scan(&id, &r.Start, &r.End, &r.Segments, &r.EntryPath, &r.ExitPath, &r.Country, &r.Browser, &r.OS, &r.Device,
+		if err := rows.Scan(&id, &v, &r.Start, &r.End, &r.Segments, &r.EntryPath, &r.ExitPath, &r.Country, &r.Browser, &r.OS, &r.Device,
 			&rel, &r.Errors, &r.Events, &r.Bytes); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		r.ID, r.Release = groupHex(id), int64(rel)
 		out = append(out, r)
+		visitors = append(visitors, v)
 	}
-	return out, rows.Err()
+	if err := rows.Close(); err != nil || len(out) == 0 {
+		return out, err
+	}
+	return out, s.replayMarks(ctx, q.Site, out, visitors)
+}
+
+// replayMarks fills listed replays' marks: their visitors' page views and
+// errors in their time spans, in one query for the list.
+func (s *Store) replayMarks(ctx context.Context, site int64, out []analytics.Replay, visitors []uint64) error {
+	lo, hi := out[0].Start, out[0].End
+	in := make([]string, 0, len(visitors))
+	var p params
+	sp := p.add(uint32(site))
+	seen := map[uint64]bool{}
+	for i, r := range out {
+		lo, hi = min(lo, r.Start), max(hi, r.End)
+		if !seen[visitors[i]] {
+			seen[visitors[i]] = true
+			in = append(in, p.addU64(visitors[i]))
+		}
+	}
+	from, to := p.add(time.UnixMilli(lo-1000).UTC()), p.add(time.UnixMilli(hi+5000).UTC())
+	vs := strings.Join(in, ",")
+	rows, err := s.db.QueryContext(ctx, `SELECT * FROM (
+    SELECT visitor_id, epoch_ms(ts) AS t, kind, '' FROM events
+    WHERE site_id = `+sp+` AND kind = 1 AND visitor_id IN (`+vs+`) AND ts >= `+from+` AND ts <= `+to+`
+    UNION ALL
+    SELECT visitor_id, epoch_ms(ts), 4, type FROM errors
+    WHERE site_id = `+sp+` AND visitor_id IN (`+vs+`) AND ts >= `+from+` AND ts <= `+to+`
+) ORDER BY t LIMIT `+strconv.Itoa(analytics.MaxReplayMarks*len(out)), p...)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var v uint64
+		var m analytics.ReplayMark
+		var kind uint8
+		if err := rows.Scan(&v, &m.T, &kind, &m.Name); err != nil {
+			return err
+		}
+		m.Kind = analytics.Kind(kind)
+		for i := range out {
+			r := &out[i]
+			if visitors[i] == v && m.T >= r.Start-1000 && m.T <= r.End+5000 && len(r.Marks) < analytics.MaxReplayMarks {
+				r.Marks = append(r.Marks, m)
+			}
+		}
+	}
+	return rows.Err()
 }
 
 // segmentRow is a segment as Replay reads it.

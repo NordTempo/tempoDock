@@ -374,6 +374,17 @@ type Replay struct {
 	Errors    int64     `json:"errors"`
 	Events    int64     `json:"events" doc:"Custom events"`
 	Bytes     int64     `json:"bytes"`
+	// Marks are its page views and errors in order (at most 50), for a
+	// list to draw its shape; lists only.
+	Marks []ReplayMark `json:"marks,omitempty"`
+}
+
+// ReplayMark is a page view or an error during a replay.
+type ReplayMark struct {
+	T    int64  `json:"t" doc:"Unix ms"`
+	Kind string `json:"kind" enum:"pageview,error"`
+	// Name is an error's type.
+	Name string `json:"name,omitempty"`
 }
 
 // ReplayDetail is one replay: its page loads, whose rrweb events are at
