@@ -18,7 +18,8 @@ import {
   useSetAnalyticsServer,
   useSetDefaults,
 } from "./data";
-import { fields, flags, text, validDays, value } from "./settings";
+import { SettingInput } from "./SettingInput";
+import { fields, flags, text, valid, value } from "./settings";
 
 // The console's Analytics page (ADR 0037), for operators: the analytics
 // store's state, the server it runs on, and every site's default settings.
@@ -170,7 +171,7 @@ function Defaults() {
   );
   const [draft, setDraft] = useState(base);
   const changed = fields.filter((f) => draft[f.key] !== base[f.key]);
-  const valid = validDays(draft.event_retention_days ?? "");
+  const ok = fields.every((f) => valid(f.key, draft[f.key] ?? ""));
   return (
     <section aria-labelledby="defaults" className="flex flex-col gap-2">
       <SectionHead id="defaults" aside="sites use these where they set nothing">
@@ -191,35 +192,21 @@ function Defaults() {
           );
         }}
       >
-        {fields.map(({ key, label, help, list }) => (
-          <div key={key} className="flex flex-col gap-1">
-            <label htmlFor={`default-${key}`} className="text-sm font-semibold">
-              {label}
+        {fields.map((field) => (
+          <div key={field.key} className="flex flex-col gap-1">
+            <label
+              htmlFor={`default-${field.key}`}
+              className="text-sm font-semibold"
+            >
+              {field.label}
             </label>
-            {list ? (
-              <textarea
-                id={`default-${key}`}
-                rows={3}
-                className="font-mono"
-                value={draft[key]}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, [key]: e.target.value }))
-                }
-              />
-            ) : (
-              <input
-                id={`default-${key}`}
-                type="number"
-                min={1}
-                max={3650}
-                className="w-28"
-                value={draft[key]}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, [key]: e.target.value }))
-                }
-              />
-            )}
-            <span className="text-xs text-faint">{help}</span>
+            <SettingInput
+              id={`default-${field.key}`}
+              field={field}
+              value={draft[field.key] ?? ""}
+              onChange={(t) => setDraft((d) => ({ ...d, [field.key]: t }))}
+            />
+            <span className="text-xs text-faint">{field.help}</span>
           </div>
         ))}
         <ErrorText error={set.error} />
@@ -231,7 +218,7 @@ function Defaults() {
               .flatMap((f) => flags(f.key, draft[f.key] ?? ""))
               .map((f) => ` ${f}`)
               .join("")}`}
-            disabled={!changed.length || !valid || set.isPending}
+            disabled={!changed.length || !ok || set.isPending}
           >
             {set.isPending ? "Saving…" : "Save defaults"}
           </Act>
