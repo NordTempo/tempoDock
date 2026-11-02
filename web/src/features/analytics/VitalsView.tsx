@@ -12,7 +12,8 @@ import {
   type VitalStat,
   vitals,
 } from "./data";
-import { count, shown } from "./parts";
+import { Labeled } from "./icons";
+import { chartMarkers, count, shown } from "./parts";
 
 // A site's Web Vitals (ADR 0037, phase A2; Saile's pick: B). All five at
 // p75 in a row of tiles; the chosen one per day against its thresholds
@@ -185,10 +186,7 @@ export function VitalsView({
         resolution={step / 1000}
         max={top || 1}
         format={(v) => value(metric, v)}
-        markers={(data.markers ?? []).map((m) => ({
-          t: Date.parse(m.at),
-          label: `${m.kind}: ${m.message}`,
-        }))}
+        markers={chartMarkers(data.markers)}
         guides={
           t
             ? [
@@ -206,6 +204,7 @@ export function VitalsView({
             : undefined
         }
         empty="No page loads measured in this range."
+        roomy
       />
       <div className="grid gap-x-6 gap-y-6 lg:grid-cols-2">
         <Breakdown
@@ -302,7 +301,9 @@ function Breakdown({
             {rows.map((r) => (
               <tr key={r.value}>
                 <td className="max-w-0 truncate" title={r.value}>
-                  {shown(dimension, r)}
+                  <Labeled dimension={dimension} value={r.value}>
+                    {shown(dimension, r)}
+                  </Labeled>
                 </td>
                 <td className="text-right text-mut">{count(r.loads)}</td>
                 <td className="text-right">

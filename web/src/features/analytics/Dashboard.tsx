@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { clock, day } from "../../ui/format";
+import { clock } from "../../ui/format";
 import { Panel } from "../../ui/kit";
 import { LineChart } from "../stats/LineChart";
 import { niceMax } from "../traffic/series";
@@ -15,7 +15,17 @@ import {
   useSiteLive,
 } from "./data";
 import { GoalsPanel } from "./GoalsPanel";
-import { count, country, delta, duration, Kpi, points, shown } from "./parts";
+import { Labeled } from "./icons";
+import {
+  chartMarkers,
+  count,
+  country,
+  delta,
+  duration,
+  Kpi,
+  points,
+  shown,
+} from "./parts";
 
 // A site's dashboard (ADR 0037, mock C): the numbers against the period
 // before, the chart with deploys and domain moves, the breakdowns, and a
@@ -66,7 +76,6 @@ export function Dashboard({
         </div>
         <aside className="flex flex-col gap-6">
           <Live project={project} site={site.name} />
-          {stats && <Markers stats={stats} />}
         </aside>
       </div>
       <p className="text-xs text-faint">
@@ -105,7 +114,7 @@ function Main({
   const panel = { project, site, stats, range, filters, onPick };
   return (
     <>
-      <dl className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-x-6 gap-y-3 tabular-nums">
+      <dl className="grid grid-cols-[repeat(auto-fit,minmax(104px,1fr))] gap-x-4 gap-y-3 tabular-nums">
         <Kpi
           label="Visitors"
           value={count(o.visitors)}
@@ -230,14 +239,7 @@ function Chart({ stats, metric }: { stats: SiteStats; metric: Metric }) {
     }
     return out;
   }, [stats, metric, step, start]);
-  const markers = useMemo(
-    () =>
-      (stats.markers ?? []).map((m) => ({
-        t: Date.parse(m.at),
-        label: `${m.kind}: ${m.message}`,
-      })),
-    [stats.markers],
-  );
+  const markers = useMemo(() => chartMarkers(stats.markers), [stats.markers]);
   return (
     <LineChart
       title={`${metric === "visitors" ? "Visitors" : "Page views"} per ${stats.bucket}`}
@@ -245,10 +247,11 @@ function Chart({ stats, metric }: { stats: SiteStats; metric: Metric }) {
       from={start}
       to={stats.to}
       resolution={step / 1000}
-      max={niceMax(Math.max(1, ...points.map((p) => p.v)))}
+      max={niceMax(Math.max(4, ...points.map((p) => p.v)))}
       format={(v) => count(Math.round(v))}
       markers={markers}
       empty="Nothing counted in this range."
+      roomy
     />
   );
 }
@@ -339,7 +342,9 @@ function Breakdown({
                     title={`Filter by ${shown(dimension, r)}`}
                     onClick={() => onPick(dimension, r)}
                   >
-                    {shown(dimension, r)}
+                    <Labeled dimension={dimension} value={r.value}>
+                      {shown(dimension, r)}
+                    </Labeled>
                   </button>
                 </td>
                 <td className="text-right">{count(r.visitors)}</td>
@@ -378,10 +383,14 @@ function Live({ project, site }: { project: string; site: string }) {
   const { live, lost, paused } = useSiteLive(project, site);
   return (
     <section aria-labelledby="live" className="flex flex-col gap-2">
-      <h3 id="live" className="flex items-baseline gap-2 text-sm font-semibold">
-        {live ? count(live.visitors) : "–"} live{" "}
-        {live?.visitors === 1 ? "visitor" : "visitors"}
-        <span className="text-xs font-normal text-faint">
+      <h3 id="live" className="flex flex-wrap items-baseline gap-x-2">
+        <span className="text-2xl leading-none font-semibold text-ok tabular-nums">
+          {live ? count(live.visitors) : "–"}
+        </span>
+        <span className="text-sm">
+          live {live?.visitors === 1 ? "visitor" : "visitors"}
+        </span>
+        <span className="text-xs text-faint">
           {lost ? (
             <span className="text-fail">{lost}</span>
           ) : paused ? (
@@ -414,33 +423,6 @@ function Live({ project, site }: { project: string; site: string }) {
         {live && !live.recent?.length && (
           <li className="text-mut">Nothing in the last five minutes.</li>
         )}
-      </ol>
-    </section>
-  );
-}
-
-/** The chart's markers, newest first: deploys and hostname changes. */
-function Markers({ stats }: { stats: SiteStats }) {
-  if (!stats.markers?.length) return null;
-  const markers = [...stats.markers].sort((a, b) => b.at.localeCompare(a.at));
-  return (
-    <section aria-labelledby="markers" className="flex flex-col gap-2">
-      <h3 id="markers" className="text-sm font-semibold">
-        On the chart
-      </h3>
-      <ol className="flex flex-col text-xs">
-        {markers.slice(0, 20).map((m) => (
-          <li
-            key={`${m.at} ${m.message}`}
-            className="grid grid-cols-[52px_minmax(0,1fr)_auto] gap-x-2 border-b border-soft py-1"
-          >
-            <span className="text-mut">{m.kind}</span>
-            <span className="truncate" title={m.message}>
-              {m.message}
-            </span>
-            <span className="text-faint">{day(m.at)}</span>
-          </li>
-        ))}
       </ol>
     </section>
   );

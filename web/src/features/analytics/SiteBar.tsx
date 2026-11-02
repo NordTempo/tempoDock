@@ -135,11 +135,11 @@ export function SiteBar({
             <button
               key={`${f.dimension}:${f.op}:${f.value}`}
               type="button"
-              className="rounded-ctl bg-chip px-2 py-0.5 text-xs"
+              className="rounded-ctl bg-info-bg px-2 py-0.5 text-xs text-fg ring-1 ring-info/30 ring-inset"
               title="Remove this filter"
               onClick={() => onFilters(filters.filter((g) => g !== f))}
             >
-              <span className="text-mut">{f.dimension.replace("_", " ")}</span>{" "}
+              <span className="text-info">{f.dimension.replace("_", " ")}</span>{" "}
               {f.op.replace("_", " ")}{" "}
               {shown(f.dimension, {
                 value: f.value,
@@ -149,15 +149,15 @@ export function SiteBar({
                     (r) => r.value === f.value,
                   )?.label,
               })}{" "}
-              <span className="text-faint">✕</span>
+              <span aria-hidden>✕</span>
             </button>
           ))}
           <button
             type="button"
-            className="text-xs text-mut"
+            className="text-xs text-info"
             onClick={() => onFilters([])}
           >
-            Clear
+            Clear all
           </button>
         </div>
       )}

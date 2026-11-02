@@ -1,5 +1,8 @@
+import type { SiteMarker } from "./data";
+
 // Pieces the analytics views share: number formats, a value's label,
-// changes against the period before and the KPI row's cells.
+// changes against the period before, the KPI row's cells and the chart's
+// markers.
 
 export const count = (n: number) => n.toLocaleString("en-US");
 
@@ -91,3 +94,13 @@ export function Kpi({
     <div className="border-b-2 border-transparent pb-1">{content}</div>
   );
 }
+
+/** A site's markers as its charts draw them: "deploy: web r44", "r44" at the line's top. */
+export const chartMarkers = (
+  markers: readonly SiteMarker[] | null | undefined,
+) =>
+  (markers ?? []).map((m) => ({
+    t: Date.parse(m.at),
+    label: `${m.kind}: ${m.message}`,
+    short: m.kind === "deploy" ? m.message.split(" ").at(-1) : m.kind,
+  }));

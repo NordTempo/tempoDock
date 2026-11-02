@@ -20,6 +20,7 @@ import { usePageVisible } from "../stats/live";
 type Schemas = components["schemas"];
 export type Site = Schemas["Site"];
 export type SiteStats = Schemas["SiteStats"];
+export type SiteMarker = Schemas["SiteMarker"];
 export type SiteSettings = Schemas["SiteSettings"];
 export type SiteLive = Schemas["SiteLive"];
 export type AnalyticsRow = Schemas["AnalyticsRow"];
@@ -300,10 +301,11 @@ export const analyticsSearch = (
   ...(statsRanges.includes(s.range as StatsRange) && {
     range: s.range as StatsRange,
   }),
-  ...(Array.isArray(s.f) && {
-    f: s.f.filter(
-      (f): f is string => typeof f === "string" && !!parseFilter(f),
-    ),
+  // One filter may come as a plain string (?f=country:is:NO), more as a list.
+  ...((Array.isArray(s.f) || typeof s.f === "string") && {
+    f: [s.f]
+      .flat()
+      .filter((f): f is string => typeof f === "string" && !!parseFilter(f)),
   }),
 });
 

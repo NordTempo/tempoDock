@@ -14,7 +14,7 @@ import {
   siteErrorQuery,
   siteErrorsQuery,
 } from "./data";
-import { count, delta, Kpi, points, shown } from "./parts";
+import { chartMarkers, count, delta, Kpi, points, shown } from "./parts";
 
 // A site's errors (ADR 0037, phase A2; Saile's pick: B's chart and table
 // with C's rows that open in place). All errors over time at the top, then
@@ -99,13 +99,11 @@ export function ErrorsView({
         from={data.from - (data.from % step)}
         to={data.to}
         resolution={step / 1000}
-        max={niceMax(Math.max(1, ...(data.series ?? []).map((p) => p.count)))}
+        max={niceMax(Math.max(4, ...(data.series ?? []).map((p) => p.count)))}
         format={(v) => count(Math.round(v))}
-        markers={(data.markers ?? []).map((m) => ({
-          t: Date.parse(m.at),
-          label: `${m.kind}: ${m.message}`,
-        }))}
+        markers={chartMarkers(data.markers)}
         empty="No errors in this range."
+        roomy
       />
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <input
@@ -352,14 +350,7 @@ function Detail({
     siteErrorQuery(project, site, group, range, filters),
   );
   const params = useParams({ strict: false });
-  const markerPoints = useMemo(
-    () =>
-      markers.map((m) => ({
-        t: Date.parse(m.at),
-        label: `${m.kind}: ${m.message}`,
-      })),
-    [markers],
-  );
+  const markerPoints = useMemo(() => chartMarkers(markers), [markers]);
   if (error) return <p className="text-fail">{error.message}</p>;
   if (!data) return <p className="text-mut">Loading…</p>;
   const step = data.bucket === "hour" ? 3_600_000 : 86_400_000;

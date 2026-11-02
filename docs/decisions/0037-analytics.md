@@ -137,6 +137,7 @@ use:
 | Replays list | B: rows with the visit's shape, page views and errors along its length |
 | Goals | C: goals as a panel on Overview next to Pages, the sub-tab becomes Funnels |
 | Public dashboard | Page A, one column; settings A, a section in the site's settings |
+| Polish (Postplan `ffs638zb6un0`) | The chart's markers only on the chart, said when hovering their day (no "On the chart" table); filters as blue chips with "Clear all"; flags before countries, muted glyphs before browsers, systems and devices (Overview and Vitals); the live count big and green; Analytics charts in the mocks' look (taller, blue, quarter gridlines, labelled deploys) |
 
 A1 builds the Analytics tab and the site settings with what A1 collects:
 the panels for pages, sources, locations, devices, events and what
