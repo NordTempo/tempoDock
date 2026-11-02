@@ -58,6 +58,7 @@ import { Route as AppOrgProjectEnvironmentServiceSettingsRouteImport } from './r
 import { Route as AppOrgProjectEnvironmentServiceTrafficRouteImport } from './routes/_app.$org.$project.$environment.$service.traffic'
 import { Route as AppOrgProjectEnvironmentServiceVariablesRouteImport } from './routes/_app.$org.$project.$environment.$service.variables'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsErrorsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.errors'
+import { Route as AppOrgProjectEnvironmentServiceAnalyticsFunnelsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.funnels'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsVitalsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.vitals'
 import { Route as AppOrgProjectEnvironmentServiceReleasesNumberRouteImport } from './routes/_app.$org.$project.$environment.$service_.releases.$number'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.replays.index'
@@ -322,6 +323,12 @@ const AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute =
     path: '/analytics/errors',
     getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
   } as any)
+const AppOrgProjectEnvironmentServiceAnalyticsFunnelsRoute =
+  AppOrgProjectEnvironmentServiceAnalyticsFunnelsRouteImport.update({
+    id: '/analytics_/funnels',
+    path: '/analytics/funnels',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
+  } as any)
 const AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute =
   AppOrgProjectEnvironmentServiceAnalyticsVitalsRouteImport.update({
     id: '/analytics_/vitals',
@@ -396,6 +403,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/$org/$project/$environment/$service/analytics/errors': typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
+  '/$org/$project/$environment/$service/analytics/funnels': typeof AppOrgProjectEnvironmentServiceAnalyticsFunnelsRoute
   '/$org/$project/$environment/$service/analytics/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/$org/$project/$environment/$service/analytics/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
@@ -447,6 +455,7 @@ export interface FileRoutesByTo {
   '/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/$org/$project/$environment/$service/analytics/errors': typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
+  '/$org/$project/$environment/$service/analytics/funnels': typeof AppOrgProjectEnvironmentServiceAnalyticsFunnelsRoute
   '/$org/$project/$environment/$service/analytics/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/$org/$project/$environment/$service/analytics/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
@@ -503,6 +512,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/_app/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/_app/$org/$project/$environment/$service/analytics_/errors': typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
+  '/_app/$org/$project/$environment/$service/analytics_/funnels': typeof AppOrgProjectEnvironmentServiceAnalyticsFunnelsRoute
   '/_app/$org/$project/$environment/$service/analytics_/vitals': typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   '/_app/$org/$project/$environment/$service_/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/_app/$org/$project/$environment/$service/analytics_/replays/$replay': typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
@@ -559,6 +569,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/variables'
     | '/$org/$project/$environment/$service/'
     | '/$org/$project/$environment/$service/analytics/errors'
+    | '/$org/$project/$environment/$service/analytics/funnels'
     | '/$org/$project/$environment/$service/analytics/vitals'
     | '/$org/$project/$environment/$service/releases/$number'
     | '/$org/$project/$environment/$service/analytics/replays/$replay'
@@ -610,6 +621,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/variables'
     | '/$org/$project/$environment/$service'
     | '/$org/$project/$environment/$service/analytics/errors'
+    | '/$org/$project/$environment/$service/analytics/funnels'
     | '/$org/$project/$environment/$service/analytics/vitals'
     | '/$org/$project/$environment/$service/releases/$number'
     | '/$org/$project/$environment/$service/analytics/replays/$replay'
@@ -665,6 +677,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/$environment/$service/variables'
     | '/_app/$org/$project/$environment/$service/'
     | '/_app/$org/$project/$environment/$service/analytics_/errors'
+    | '/_app/$org/$project/$environment/$service/analytics_/funnels'
     | '/_app/$org/$project/$environment/$service/analytics_/vitals'
     | '/_app/$org/$project/$environment/$service_/releases/$number'
     | '/_app/$org/$project/$environment/$service/analytics_/replays/$replay'
@@ -1025,6 +1038,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRouteImport
       parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
     }
+    '/_app/$org/$project/$environment/$service/analytics_/funnels': {
+      id: '/_app/$org/$project/$environment/$service/analytics_/funnels'
+      path: '/analytics/funnels'
+      fullPath: '/$org/$project/$environment/$service/analytics/funnels'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsFunnelsRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
+    }
     '/_app/$org/$project/$environment/$service/analytics_/vitals': {
       id: '/_app/$org/$project/$environment/$service/analytics_/vitals'
       path: '/analytics/vitals'
@@ -1070,6 +1090,7 @@ interface AppOrgProjectEnvironmentServiceRouteChildren {
   AppOrgProjectEnvironmentServiceVariablesRoute: typeof AppOrgProjectEnvironmentServiceVariablesRoute
   AppOrgProjectEnvironmentServiceIndexRoute: typeof AppOrgProjectEnvironmentServiceIndexRoute
   AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute
+  AppOrgProjectEnvironmentServiceAnalyticsFunnelsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsFunnelsRoute
   AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute
   AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute
   AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsReplaysIndexRoute
@@ -1103,6 +1124,8 @@ const AppOrgProjectEnvironmentServiceRouteChildren: AppOrgProjectEnvironmentServ
       AppOrgProjectEnvironmentServiceIndexRoute,
     AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute:
       AppOrgProjectEnvironmentServiceAnalyticsErrorsRoute,
+    AppOrgProjectEnvironmentServiceAnalyticsFunnelsRoute:
+      AppOrgProjectEnvironmentServiceAnalyticsFunnelsRoute,
     AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute:
       AppOrgProjectEnvironmentServiceAnalyticsVitalsRoute,
     AppOrgProjectEnvironmentServiceAnalyticsReplaysReplayRoute:
