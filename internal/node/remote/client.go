@@ -27,15 +27,24 @@ const ActionResync = "dock.resync"
 
 // Deadlines of calls on the control plane (ADR 0014 amendment, compromised
 // node). Control calls get DefaultCallTimeout (HubOptions.CallTimeout);
-// Stop and HealthCheck that plus their own timeout. Logs and Events
-// streams have none: a quiet stream is normal, a dead link is caught by
-// the keepalive, and their caller's ctx ends them.
+// Stop and HealthCheck that plus their own timeout. Work that takes as
+// long as the server needs gets a bound of its own: pulls, prunes, disk
+// usage, tunnels, the analytics store and updates. Builds and jobs have
+// none: a build is bounded by core, and a job (a backup, restore or
+// backup move) runs for as long as its data takes, until its caller's ctx
+// ends it. Logs and Events streams have none either: a quiet stream is
+// normal, a dead link is caught by the keepalive, and their caller's ctx
+// ends them.
 const (
 	DefaultCallTimeout = 30 * time.Second
 	// pullTimeout bounds a pull. Its progress isn't byte level, so a big
 	// layer can be silent for minutes; this only stops a node that never
 	// finishes.
 	pullTimeout = 30 * time.Minute
+	// pruneTimeout bounds PruneImages and PruneBuildCache: removing many
+	// images one by one, or trimming tens of gigabytes of BuildKit cache,
+	// takes minutes on a slow disk.
+	pruneTimeout = 10 * time.Minute
 )
 
 // Client is a remote server's node.Runtime on the control plane. Calls go
@@ -115,7 +124,7 @@ func (c *Client) PruneImages(ctx context.Context, req node.PruneImagesRequest) (
 	if err := c.needProtocol(ctx, ownImagesProtocol, "prune only its own images"); err != nil {
 		return node.PruneResult{}, err
 	}
-	r, err := unaryCall[pruneResult](ctx, c, opPruneImages, pruneImagesRequest{Keep: req.Keep, Repos: req.Repos})
+	r, err := callWithLogs[pruneResult](ctx, c, opPruneImages, pruneTimeout, pruneImagesRequest{Keep: req.Keep, Repos: req.Repos}, nil, nil)
 	return node.PruneResult(r), err
 }
 
@@ -189,7 +198,9 @@ func (c *Client) ReleaseContainers(ctx context.Context, want node.Labels) ([]str
 const jobProtocol = 2
 
 // RunJob implements node.Containers. It blocks on the node until the job
-// ends; a node too old to run jobs is an error saying so.
+// ends, with no deadline of its own: a backup takes as long as its data
+// does, and ending the call force-removes the job's container. A node too
+// old to run jobs is an error saying so.
 func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
 	if spec.Stdin != nil {
 		return node.JobResult{}, errors.New("jobs with input run on the control plane's own server only")
@@ -197,7 +208,7 @@ func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult,
 	if err := c.needProtocol(ctx, jobProtocol, "run backup jobs"); err != nil {
 		return node.JobResult{}, err
 	}
-	r, err := unaryCall[jobResult](ctx, c, opRunJob, toJobRequest(spec))
+	r, err := callWithLogs[jobResult](ctx, c, opRunJob, 0, toJobRequest(spec), nil, nil)
 	return node.JobResult{ExitCode: r.ExitCode, Output: r.Output}, err
 }
 
@@ -336,7 +347,7 @@ func (c *Client) CheckDomain(ctx context.Context, hostname string) (node.DomainC
 
 // PruneBuildCache implements node.Builder.
 func (c *Client) PruneBuildCache(ctx context.Context, keepBytes int64) (node.PruneResult, error) {
-	r, err := unaryCall[pruneResult](ctx, c, opPruneCache, pruneCacheRequest{KeepBytes: keepBytes})
+	r, err := callWithLogs[pruneResult](ctx, c, opPruneCache, pruneTimeout, pruneCacheRequest{KeepBytes: keepBytes}, nil, nil)
 	return node.PruneResult(r), err
 }
 
