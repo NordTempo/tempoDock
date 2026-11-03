@@ -443,6 +443,20 @@ func TestCallTimeout(t *testing.T) {
 	}
 }
 
+// A job runs as long as it takes: a backup outlasting the call timeout
+// isn't cut off (which would force-remove its container on the node).
+func TestRunJobOutlastsCallTimeout(t *testing.T) {
+	h := newHarness(t, func(o *HubOptions) { o.CallTimeout = 100 * time.Millisecond })
+	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
+		time.Sleep(400 * time.Millisecond)
+		return node.JobResult{Output: "dumped"}, nil
+	})
+	res, err := h.client.RunJob(context.Background(), node.JobSpec{Name: "backup-1", Image: "postgres:17", Script: "pg_dump"})
+	if err != nil || res.Output != "dumped" {
+		t.Fatalf("run job = %+v, %v", res, err)
+	}
+}
+
 // Only the client itself says events were missed: a resync sent by the
 // node is dropped, so it can't make core re-read the server at will.
 func TestNodeCantSendResync(t *testing.T) {
