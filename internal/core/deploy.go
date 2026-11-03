@@ -462,14 +462,50 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	// Before the release reads as failed, so "failed" means the changes it
 	// carried are staged again.
 	c.restage(ctx, d.ss, d.rel, msg)
-	if err := c.store.FailRelease(ctx, store.FailReleaseParams{Error: msg, ErrorCode: string(code), FinishedAt: ptr(now()), ID: d.rel.ID}); err != nil {
-		c.log.Error("mark release failed", "release", d.rel.ID, "err", err)
-	}
+	c.markFailed(d.rel, code, msg)
 	if removeErr == nil {
 		c.freePort(ctx, d.rel.ID)
 	}
 	d.event(ctx, fmt.Sprintf("Release %d failed: %s", d.rel.Number, msg))
 	d.publish(ctx)
+}
+
+// markFailed's attempts: the first wait is failRetryDelay, doubling after
+// each, about 3 s in all; each write gets failWriteTimeout.
+const (
+	failAttempts     = 6
+	failRetryDelay   = 100 * time.Millisecond
+	failWriteTimeout = 15 * time.Second
+)
+
+// markFailed records a failed release. A write that fails would leave the
+// release in flight, and the one-deploy-per-service index would refuse
+// every deploy of the service until a restart, so it is retried with a
+// short backoff and a fresh context per attempt. The timer runs only after
+// a failed write, never while idle. If the daemon stops meanwhile, or every
+// attempt fails, recovery fails the release on the next start.
+func (c *Core) markFailed(rel store.Release, code apitypes.ErrorCode, msg string) {
+	p := store.FailReleaseParams{Error: msg, ErrorCode: string(code), FinishedAt: ptr(now()), ID: rel.ID}
+	delay := failRetryDelay
+	for attempt := 1; ; attempt++ {
+		ctx, cancel := context.WithTimeout(c.ctx, failWriteTimeout)
+		err := c.store.FailRelease(ctx, p)
+		cancel()
+		if err == nil || c.ctx.Err() != nil {
+			return
+		}
+		c.log.Error("mark release failed", "release", rel.ID, "attempt", attempt, "err", err)
+		if attempt == failAttempts {
+			c.log.Error("release stays in flight until the daemon restarts; no deploy of its service starts before", "release", rel.ID)
+			return
+		}
+		select {
+		case <-time.After(delay):
+		case <-c.ctx.Done():
+			return
+		}
+		delay *= 2
+	}
 }
 
 func (d *deployment) setStatus(ctx context.Context, s apitypes.ReleaseStatus) {

@@ -1,12 +1,16 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 )
@@ -89,4 +93,56 @@ func TestGitStatusOfInterruptedDeploy(t *testing.T) {
 
 	h.crash()
 	eventually(t, "the failure status", func() bool { s, _, _ := gh.seen(); return slices.Equal(s, []string{pending, failure}) })
+}
+
+// A failed write of a release's failure is retried, so the service isn't
+// left with a deploy in flight that refuses every other.
+func TestFailedReleaseWriteIsRetried(t *testing.T) {
+	h := newHarness(t)
+	logged := make(chan struct{}, 1)
+	h.opts.Logger = slog.New(slog.NewTextHandler(signalWriter{"mark release failed", logged}, nil))
+	h.restart()
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	db := h.store.DB
+	if _, err := db.ExecContext(h.ctx, `CREATE TRIGGER no_fail BEFORE UPDATE ON releases WHEN NEW.status = 'failed'
+		BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`); err != nil {
+		t.Fatal(err)
+	}
+	h.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("not ready") })
+	rel, err := h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-logged:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the failure was never written")
+	}
+	if _, err := db.ExecContext(h.ctx, `DROP TRIGGER no_fail`); err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, rel.Number); r.Status != apitypes.ReleaseFailed {
+		t.Fatalf("release 1: %s", r.Status)
+	}
+	h.rt.FailHealthCheck(nil)
+	if r := h.deploy(web, "app:2"); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("release 2: %s", r.Status)
+	}
+}
+
+// signalWriter is a log destination that signals ch whenever a line
+// contains match.
+type signalWriter struct {
+	match string
+	ch    chan struct{}
+}
+
+func (w signalWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte(w.match)) {
+		select {
+		case w.ch <- struct{}{}:
+		default:
+		}
+	}
+	return len(p), nil
 }
