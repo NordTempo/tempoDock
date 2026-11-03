@@ -111,7 +111,8 @@ func scanLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
 }
 
 // Each reads r until the stream's `end` event, decoding every other event's
-// data into a T and passing it to fn. The server's `error` event becomes an
+// data into a T and passing it to fn. The `ready` event, which only says
+// the stream is live, is skipped. The server's `error` event becomes an
 // exit-coded error, like a problem response. A stream that stops without
 // `end` returns io.ErrUnexpectedEOF.
 func Each[T any](r *EventReader, fn func(T) error) error {
@@ -124,6 +125,8 @@ func Each[T any](r *EventReader, fn func(T) error) error {
 			return err
 		}
 		switch ev.Type {
+		case "ready":
+			continue
 		case "end":
 			return nil
 		case "error":
