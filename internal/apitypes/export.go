@@ -44,6 +44,8 @@ type ServiceExport struct {
 	BuildCommand              string          `json:"build_command,omitempty" toml:"build_command,omitempty"`
 	MemoryMB                  int             `json:"memory_mb,omitempty" toml:"memory_mb,omitempty"`
 	CPUs                      float64         `json:"cpus,omitempty" toml:"cpus,omitempty"`
+	PreDeployCommand          string          `json:"pre_deploy_command,omitempty" toml:"pre_deploy_command,omitempty"`
+	PreDeployTimeoutSeconds   int             `json:"pre_deploy_timeout_seconds,omitempty" toml:"pre_deploy_timeout_seconds,omitempty"`
 	Database                  DatabaseSetting `json:"database,omitempty" toml:"database,omitempty"`
 	DatabaseURLVariable       string          `json:"database_url_variable,omitempty" toml:"database_url_variable,omitempty"`
 	// Variables are the names of the service's own variables.

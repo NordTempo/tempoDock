@@ -118,19 +118,23 @@ func (d *deployment) run(ctx context.Context) error {
 		return err
 	}
 
-	// starting: new container next to the old one, or instead of it for
-	// stateful services.
+	// starting: the pre-deploy command first (ADR 0045), then a new
+	// container next to the old one, or instead of it for stateful
+	// services.
 	d.setStatus(ctx, apitypes.ReleaseStarting)
+	network := networkName(d.ss.envScope)
+	if err := d.rt.EnsureNetwork(ctx, network, c.labels(d.ss, 0)); err != nil {
+		return step(apitypes.CodeDeployFailed, "create network %s: %w", network, err)
+	}
+	if err := d.preDeploy(ctx); err != nil {
+		return err
+	}
 	if old, err := c.store.GetActiveRelease(ctx, d.ss.svc.ID); err == nil {
 		d.old = &old
 	} else if !store.IsNotFound(err) {
 		return err
 	}
 	d.stateful = len(d.cfg.Mounts) > 0
-	network := networkName(d.ss.envScope)
-	if err := d.rt.EnsureNetwork(ctx, network, c.labels(d.ss, 0)); err != nil {
-		return step(apitypes.CodeDeployFailed, "create network %s: %w", network, err)
-	}
 	for _, m := range d.cfg.Mounts {
 		if err := d.rt.EnsureVolume(ctx, m.DockerName, c.labels(d.ss, 0)); err != nil {
 			return step(apitypes.CodeDeployFailed, "create volume %s: %w", m.Volume, err)

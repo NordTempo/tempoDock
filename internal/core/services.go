@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -23,6 +24,7 @@ func settingsOf(s store.Service) apitypes.ServiceSettings {
 		HealthCheckProbeTimeoutSeconds: int(s.HealthCheckProbeTimeoutSeconds),
 		HealthCheckRetries:             int(s.HealthCheckRetries),
 		HealthCheckStartPeriodSeconds:  int(s.HealthCheckStartPeriodSeconds),
+		PreDeployCommand:               s.PreDeployCommand, PreDeployTimeoutSeconds: int(s.PreDeployTimeoutSeconds),
 	}
 }
 
@@ -47,7 +49,7 @@ func validateSettings(s apitypes.ServiceSettings, registry string) error {
 		return invalid("port must be between 0 and 65535")
 	case s.HealthCheckPath != "" && !strings.HasPrefix(s.HealthCheckPath, "/"):
 		return invalid("health check path must start with /")
-	case s.HealthCheckTimeoutSeconds < 0 || s.MemoryMB < 0 || s.CPUs < 0:
+	case s.HealthCheckTimeoutSeconds < 0 || s.MemoryMB < 0 || s.CPUs < 0 || s.PreDeployTimeoutSeconds < 0:
 		return invalid("timeouts and limits can't be negative")
 	case s.HealthCheckIntervalSeconds < -1 || s.HealthCheckIntervalSeconds > maxLivenessSeconds:
 		return invalid("health check interval must be between 0 and %d seconds (0 means %d), or -1 to turn the ongoing check off", maxLivenessSeconds, defaultLivenessInterval)
@@ -57,6 +59,10 @@ func validateSettings(s apitypes.ServiceSettings, registry string) error {
 		return invalid("health check retries must be between 0 and %d (0 means %d)", maxLivenessRetries, defaultLivenessRetries)
 	case s.HealthCheckStartPeriodSeconds < 0 || s.HealthCheckStartPeriodSeconds > maxLivenessSeconds:
 		return invalid("health check start period must be between 0 and %d seconds (0 means the health check timeout)", maxLivenessSeconds)
+	case s.PreDeployTimeoutSeconds > int(maxPreDeployTimeout/time.Second):
+		return invalid("pre-deploy timeout can be at most %d seconds (%s)", int(maxPreDeployTimeout/time.Second), maxPreDeployTimeout)
+	case s.PreDeployCommand != "" && strings.TrimSpace(s.PreDeployCommand) == "":
+		return invalid("pre-deploy command is blank; set it to an empty string to remove it")
 	}
 	return nil
 }
@@ -150,6 +156,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		HealthCheckProbeTimeoutSeconds: req.HealthCheckProbeTimeoutSeconds,
 		HealthCheckRetries:             req.HealthCheckRetries,
 		HealthCheckStartPeriodSeconds:  req.HealthCheckStartPeriodSeconds,
+		PreDeployCommand:               req.PreDeployCommand, PreDeployTimeoutSeconds: req.PreDeployTimeoutSeconds,
 	}
 	if err := validateSettings(set, c.registryHost()); err != nil {
 		return apitypes.Service{}, err
@@ -163,6 +170,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		HealthCheckProbeTimeoutSeconds: int64(set.HealthCheckProbeTimeoutSeconds),
 		HealthCheckRetries:             int64(set.HealthCheckRetries),
 		HealthCheckStartPeriodSeconds:  int64(set.HealthCheckStartPeriodSeconds),
+		PreDeployCommand:               set.PreDeployCommand, PreDeployTimeoutSeconds: int64(set.PreDeployTimeoutSeconds),
 	})
 	if store.IsUnique(err) {
 		return apitypes.Service{}, conflict("service %q already exists in %s", req.Name, es)
@@ -204,6 +212,8 @@ func (c *Core) UpdateService(ctx context.Context, a Actor, ref ServiceRef, req a
 	patch(&next.HealthCheckProbeTimeoutSeconds, req.HealthCheckProbeTimeoutSeconds)
 	patch(&next.HealthCheckRetries, req.HealthCheckRetries)
 	patch(&next.HealthCheckStartPeriodSeconds, req.HealthCheckStartPeriodSeconds)
+	patch(&next.PreDeployCommand, req.PreDeployCommand)
+	patch(&next.PreDeployTimeoutSeconds, req.PreDeployTimeoutSeconds)
 	if err := validateSettings(next, c.registryHost()); err != nil {
 		return apitypes.ChangeResult{}, err
 	}

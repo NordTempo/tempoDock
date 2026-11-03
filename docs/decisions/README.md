@@ -52,6 +52,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0042](0042-domain-verification.md) | Custom domains are verified with a TXT record | accepted |
 | [0043](0043-ongoing-health-checks.md) | Ongoing health checks | accepted |
 | [0044](0044-environment-lock.md) | Locked environments, and agents asking for access | accepted |
+| [0045](0045-pre-deploy-command.md) | Pre-deploy command | accepted |
 
 ## Template
 

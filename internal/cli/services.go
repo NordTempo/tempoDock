@@ -74,6 +74,8 @@ type settingsFlags struct {
 	port, memoryMB, healthCheckRetries                             int
 	healthCheckTimeout, probeTimeout, startPeriod                  time.Duration
 	interval                                                       intervalFlag
+	preDeployCommand                                               string
+	preDeployTimeout                                               time.Duration
 	cpus                                                           float64
 }
 
@@ -120,6 +122,8 @@ func (f *settingsFlags) add(fs *pflag.FlagSet) {
 	fs.StringVar(&f.buildCommand, "build-command", "", "Railpack build command (builds without a Dockerfile)")
 	fs.IntVar(&f.memoryMB, "memory", 0, "memory limit in MB")
 	fs.Float64Var(&f.cpus, "cpus", 0, "CPU limit, e.g. 0.5")
+	fs.StringVar(&f.preDeployCommand, "pre-deploy-command", "", "runs with each new image before it gets traffic, e.g. migrations (empty: none)")
+	fs.DurationVar(&f.preDeployTimeout, "pre-deploy-timeout", 0, "how long the pre-deploy command may run, e.g. 15m (0: 10m)")
 }
 
 func (f *settingsFlags) create(name string) apitypes.CreateServiceRequest {
@@ -131,6 +135,7 @@ func (f *settingsFlags) create(name string) apitypes.CreateServiceRequest {
 		HealthCheckProbeTimeoutSeconds: int(f.probeTimeout.Seconds()),
 		HealthCheckRetries:             f.healthCheckRetries,
 		HealthCheckStartPeriodSeconds:  int(f.startPeriod.Seconds()),
+		PreDeployCommand:               f.preDeployCommand, PreDeployTimeoutSeconds: int(f.preDeployTimeout.Seconds()),
 	}
 }
 
@@ -146,7 +151,7 @@ func (f *settingsFlags) update(fs *pflag.FlagSet) (apitypes.UpdateServiceRequest
 			changed = append(changed, flag)
 		}
 	}
-	timeout := int(f.healthCheckTimeout.Seconds())
+	timeout, preTimeout := int(f.healthCheckTimeout.Seconds()), int(f.preDeployTimeout.Seconds())
 	interval, probeTimeout, startPeriod := int(f.interval), int(f.probeTimeout.Seconds()), int(f.startPeriod.Seconds())
 	set("image", func() { req.Image = &f.image })
 	set("port", func() { req.Port = &f.port })
@@ -161,6 +166,8 @@ func (f *settingsFlags) update(fs *pflag.FlagSet) (apitypes.UpdateServiceRequest
 	set("health-check-probe-timeout", func() { req.HealthCheckProbeTimeoutSeconds = &probeTimeout })
 	set("health-check-retries", func() { req.HealthCheckRetries = &f.healthCheckRetries })
 	set("health-check-start-period", func() { req.HealthCheckStartPeriodSeconds = &startPeriod })
+	set("pre-deploy-command", func() { req.PreDeployCommand = &f.preDeployCommand })
+	set("pre-deploy-timeout", func() { req.PreDeployTimeoutSeconds = &preTimeout })
 	return req, changed
 }
 
@@ -253,6 +260,18 @@ func newServiceShowCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
+// preDeployNote is a service's pre-deploy command with its timeout, if
+// it has one.
+func preDeployNote(s apitypes.ServiceSettings) string {
+	if s.PreDeployCommand == "" {
+		return ""
+	}
+	if s.PreDeployTimeoutSeconds == 0 {
+		return s.PreDeployCommand
+	}
+	return fmt.Sprintf("%s (%s timeout)", s.PreDeployCommand, time.Duration(s.PreDeployTimeoutSeconds)*time.Second)
+}
+
 func printService(g *globals, svc apitypes.Service) error {
 	state := cmp.Or(serverNote(svc), runState(svc.Status))
 	if svc.ArchivedAt != nil {
@@ -298,6 +317,7 @@ func printService(g *globals, svc apitypes.Service) error {
 		"start command", svc.StartCommand,
 		"dockerfile", svc.DockerfilePath,
 		"build command", svc.BuildCommand,
+		"pre-deploy", preDeployNote(svc.ServiceSettings),
 		"limits", limits,
 		"pending", pending,
 	)

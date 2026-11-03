@@ -525,6 +525,8 @@ type Service struct {
 	HealthCheckProbeTimeoutSeconds int64
 	HealthCheckRetries             int64
 	HealthCheckStartPeriodSeconds  int64
+	PreDeployCommand               string
+	PreDeployTimeoutSeconds        int64
 }
 
 type ServiceAccess struct {

@@ -254,6 +254,10 @@ func revertSetting(next *apitypes.ServiceSettings, live apitypes.ServiceSettings
 		next.HealthCheckRetries = live.HealthCheckRetries
 	case "health_check_start_period_seconds":
 		next.HealthCheckStartPeriodSeconds = live.HealthCheckStartPeriodSeconds
+	case "pre_deploy_command":
+		next.PreDeployCommand = live.PreDeployCommand
+	case "pre_deploy_timeout_seconds":
+		next.PreDeployTimeoutSeconds = live.PreDeployTimeoutSeconds
 	}
 }
 
@@ -635,6 +639,8 @@ func settingChanges(service string, old, next apitypes.ServiceSettings) []apityp
 		{"health_check_probe_timeout_seconds", strconv.Itoa(old.HealthCheckProbeTimeoutSeconds), strconv.Itoa(next.HealthCheckProbeTimeoutSeconds)},
 		{"health_check_retries", strconv.Itoa(old.HealthCheckRetries), strconv.Itoa(next.HealthCheckRetries)},
 		{"health_check_start_period_seconds", strconv.Itoa(old.HealthCheckStartPeriodSeconds), strconv.Itoa(next.HealthCheckStartPeriodSeconds)},
+		{"pre_deploy_command", old.PreDeployCommand, next.PreDeployCommand},
+		{"pre_deploy_timeout_seconds", strconv.Itoa(old.PreDeployTimeoutSeconds), strconv.Itoa(next.PreDeployTimeoutSeconds)},
 	}
 	var out []apitypes.SettingChange
 	for _, f := range fields {

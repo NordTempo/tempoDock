@@ -18,6 +18,8 @@ export const settingLabel: Record<SettingKey, string> = {
   memory_mb: "memory limit",
   dockerfile_path: "dockerfile",
   build_command: "build command",
+  pre_deploy_command: "pre-deploy command",
+  pre_deploy_timeout_seconds: "pre-deploy timeout",
 };
 
 export const isSettingKey = (field: string): field is SettingKey =>
@@ -32,6 +34,7 @@ const numeric = new Set<SettingKey>([
   "health_check_start_period_seconds",
   "cpus",
   "memory_mb",
+  "pre_deploy_timeout_seconds",
 ]);
 
 /** Shows a setting. Zero values mean the platform default, so say which. */
@@ -64,6 +67,10 @@ export function formatSetting(key: SettingKey, value: string | number) {
       return String(value) || "Dockerfile";
     case "build_command":
       return String(value) || "none";
+    case "pre_deploy_command":
+      return String(value) || "none";
+    case "pre_deploy_timeout_seconds":
+      return n ? `${n}s` : "600s (default)";
   }
 }
 
@@ -158,6 +165,14 @@ export function parseSetting(
       return { dockerfile_path: input };
     case "build_command":
       return { build_command: input };
+    case "pre_deploy_command":
+      return { pre_deploy_command: input };
+    case "pre_deploy_timeout_seconds": {
+      const seconds = int(3600);
+      return seconds === null
+        ? new Error("Timeout in whole seconds, at most 3600")
+        : { pre_deploy_timeout_seconds: seconds };
+    }
   }
 }
 
