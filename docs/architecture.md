@@ -70,12 +70,16 @@ AuditEvent      who did what, when, with which token
   [ADR 0007](decisions/0007-config-db-plus-repo-file.md).
 - **Staged changes.** Setting variables, changing service settings and adding
   volumes are staged next to the live values, Railway-style. Applying an
-  environment's changes is one transaction followed by one `config` release per
-  affected running service, including services whose variables reference a
-  changed one. Each release records the changes it carried; if it fails they
-  are staged again, so live values always match the active release. A source or image deploy of a service takes that
-  service's own staged changes with it; environment-level variables wait for
-  an explicit apply because they affect every service.
+  environment's changes is one transaction that also queues one `config`
+  release per affected running service, including services whose variables
+  reference a changed one; it is refused while the server is offline, and a
+  service already deploying keeps its own changes staged. Each release
+  records the changes it carried; if it fails (or the daemon stops before it
+  finishes) they are staged again, so live values always match the active
+  release. A source or image deploy of a service takes that service's own
+  staged changes with it, and a failed one puts the image setting back;
+  environment-level variables wait for an explicit apply because they
+  affect every service.
 
 ## Deploy flow
 

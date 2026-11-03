@@ -41,9 +41,31 @@ type carriedVar struct {
 	New       []byte `json:"new,omitempty"` // value applied; nil: unset
 }
 
+// carriedSettings are the live settings before (Old) and after (New) the
+// release. A failure puts Old back and stages Staged again, or New when
+// Staged is nil.
 type carriedSettings struct {
 	Old apitypes.ServiceSettings `json:"old"`
 	New apitypes.ServiceSettings `json:"new"`
+	// Staged is set when the deploy itself changed the image setting: the
+	// image it asked for isn't staged again, only what was staged.
+	Staged *apitypes.ServiceSettings `json:"staged,omitempty"`
+}
+
+// withImage records that a deploy changed the live settings from before
+// (staged settings already applied) to after by setting the image. The
+// release then carries the image change, so a failure restores the image
+// along with the staged settings, which are staged again without it.
+func (c carried) withImage(before, after apitypes.ServiceSettings) carried {
+	if before == after {
+		return c
+	}
+	old := before
+	if c.Settings != nil {
+		old = c.Settings.Old
+	}
+	c.Settings = &carriedSettings{Old: old, New: after, Staged: &before}
+	return c
 }
 
 func (c carried) empty() bool {
@@ -68,8 +90,9 @@ func decodeCarried(s string) (carried, error) {
 }
 
 // restage stages the changes a failed release carried again, each one only
-// if it is still the live value (nothing changed it since), and notes the
-// failure on the environment. A change staged since stays staged.
+// if it is still the live value (nothing changed it since), puts back an
+// image setting its deploy changed, and notes the failure on the
+// environment. A change staged since stays staged.
 func (c *Core) restage(ctx context.Context, ss svcScope, rel store.Release, reason string) {
 	ch, err := decodeCarried(rel.Carried)
 	if err != nil {
@@ -82,43 +105,9 @@ func (c *Core) restage(ctx context.Context, ss svcScope, rel store.Release, reas
 	note := fmt.Sprintf("release %d of %s failed (%s); the changes it carried are staged again", rel.Number, ss.svc.Name, reason)
 	n := 0
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		n = 0
-		for _, v := range ch.Variables {
-			ok, err := restageVariable(ctx, q, ss.env.ID, v)
-			if err != nil {
-				return err
-			}
-			if ok {
-				n++
-			}
-		}
-		if s := ch.Settings; s != nil {
-			svc, err := q.GetService(ctx, ss.svc.ID)
-			if err != nil {
-				return err
-			}
-			if settingsOf(svc) == s.New {
-				if err := setSettings(ctx, q, svc.ID, s.Old); err != nil {
-					return err
-				}
-				if svc.PendingSettings == nil {
-					b, _ := json.Marshal(s.New)
-					next := string(b)
-					if err := q.SetPendingSettings(ctx, store.SetPendingSettingsParams{PendingSettings: &next, ID: svc.ID}); err != nil {
-						return err
-					}
-				}
-				n++
-			}
-		}
-		for _, id := range ch.Volumes {
-			if err := q.UnapplyVolume(ctx, id); err != nil {
-				return err
-			}
-			n++
-		}
-		if n == 0 {
-			return nil
+		var err error
+		if n, err = restageIn(ctx, q, ss.env.ID, ss.svc.ID, ch); err != nil || n == 0 {
+			return err
 		}
 		return q.SetEnvironmentApplyError(ctx, store.SetEnvironmentApplyErrorParams{ApplyError: note, ID: ss.env.ID})
 	})
@@ -134,6 +123,53 @@ func (c *Core) restage(ctx context.Context, ss svcScope, rel store.Release, reas
 		c.releaseEvent(ctx, ss, rel, what+" staged again; see `dock changes`")
 		c.audit(ctx, System, "changes.restage", &ss.project, &ss.env, ss.String(), note)
 	}
+}
+
+// restageIn stages ch, applied to a service of an environment, again in
+// q's transaction (see restage), and returns how many changes it staged.
+func restageIn(ctx context.Context, q *store.Queries, envID, serviceID int64, ch carried) (int, error) {
+	n := 0
+	for _, v := range ch.Variables {
+		ok, err := restageVariable(ctx, q, envID, v)
+		if err != nil {
+			return n, err
+		}
+		if ok {
+			n++
+		}
+	}
+	if s := ch.Settings; s != nil {
+		svc, err := q.GetService(ctx, serviceID)
+		if err != nil {
+			return n, err
+		}
+		if settingsOf(svc) == s.New {
+			if err := setSettings(ctx, q, svc.ID, s.Old); err != nil {
+				return n, err
+			}
+			staged := s.New
+			if s.Staged != nil {
+				staged = *s.Staged
+			}
+			if staged != s.Old {
+				if svc.PendingSettings == nil {
+					b, _ := json.Marshal(staged)
+					next := string(b)
+					if err := q.SetPendingSettings(ctx, store.SetPendingSettingsParams{PendingSettings: &next, ID: svc.ID}); err != nil {
+						return n, err
+					}
+				}
+				n++
+			}
+		}
+	}
+	for _, id := range ch.Volumes {
+		if err := q.UnapplyVolume(ctx, id); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }
 
 // restageVariable puts one applied variable change back to staged, if the

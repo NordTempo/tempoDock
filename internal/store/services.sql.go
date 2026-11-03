@@ -42,6 +42,16 @@ func (q *Queries) ArchiveService(ctx context.Context, arg ArchiveServiceParams) 
 	return err
 }
 
+const clearEnvironmentPendingSettings = `-- name: ClearEnvironmentPendingSettings :exec
+UPDATE services SET pending_settings = NULL WHERE environment_id = +? AND pending_settings IS NOT NULL
+`
+
+// Drops every staged settings change in an environment (apply and discard).
+func (q *Queries) ClearEnvironmentPendingSettings(ctx context.Context, environmentID int64) error {
+	_, err := q.exec(ctx, q.clearEnvironmentPendingSettingsStmt, clearEnvironmentPendingSettings, environmentID)
+	return err
+}
+
 const createService = `-- name: CreateService :one
 INSERT INTO services (environment_id, name, image, port, health_check_path, health_check_timeout_seconds,
                       start_command, dockerfile_path, build_command, memory_mb, cpus)

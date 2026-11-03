@@ -1,6 +1,8 @@
 package core
 
 import (
+	"archive/tar"
+	"bytes"
 	"errors"
 	"slices"
 	"strings"
@@ -169,5 +171,117 @@ func TestDiscardSelectedChanges(t *testing.T) {
 
 	if p, err := h.c.DiscardChanges(h.ctx, testSystem, env, apitypes.DiscardChangesRequest{}); err != nil || p.Count != 0 {
 		t.Fatalf("discard all: %+v %v", p, err)
+	}
+}
+
+// Applying while the environment's server is offline is refused before
+// anything goes live: the changes stay staged and no release exists.
+func TestApplyOnOfflineServerKeepsChangesStaged(t *testing.T) {
+	p, _ := labPool(t)
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	env := web.Env()
+	if _, err := p.c.SetVariables(p.ctx, testSystem, env, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"MODE": "one"}, Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	p.deploy(web, "app:1")
+	if _, err := p.c.SetVariables(p.ctx, testSystem, env, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"MODE": "two"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	p.setOffline("homelab", true)
+	if _, err := p.c.ApplyChanges(p.ctx, testSystem, env); CodeOf(err) != apitypes.CodeServerOffline {
+		t.Fatalf("apply on an offline server: %v", err)
+	}
+	pending, err := p.c.GetChanges(p.ctx, testSystem, env, true)
+	if err != nil || pending.Count != 1 || *pending.Variables[0].New != "two" {
+		t.Fatalf("staged after the refused apply: %+v %v", pending, err)
+	}
+	if rels, _ := p.c.ListReleases(p.ctx, testSystem, web, 10); len(rels) != 1 {
+		t.Fatalf("releases = %d, want only the first", len(rels))
+	}
+}
+
+// A service that is deploying when changes are applied gets no release
+// for them, so its own changes stay staged instead of going live unseen.
+func TestApplySkipsDeployingServiceKeepsItsChangesStaged(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	api := h.service("api", apitypes.CreateServiceRequest{})
+	env := web.Env()
+	h.deploy(web, "app:1")
+	h.deploy(api, "app:1")
+	gate := make(chan struct{})
+	h.rt.FailHealthCheck(func(node.ContainerSpec) error {
+		<-gate
+		return nil
+	})
+	rel, err := h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitStatus(web, rel.Number, apitypes.ReleaseHealthChecking)
+	h.set(env, "web", map[string]string{"A": "1"}, false)
+	h.set(env, "api", map[string]string{"B": "1"}, false)
+
+	applied, err := h.c.ApplyChanges(h.ctx, testSystem, env)
+	close(gate)
+	if err != nil || !slices.Equal(applied.Skipped, []string{"web"}) || len(applied.Releases) != 1 || applied.Releases[0].Service != "api" {
+		t.Fatalf("applied = %+v, %v", applied, err)
+	}
+	h.wait(api, applied.Releases[0].Number)
+	h.wait(web, rel.Number)
+	p, _ := h.c.GetChanges(h.ctx, testSystem, env, false)
+	if p.Count != 1 || p.Variables[0].Key != "A" || p.Variables[0].Service != "web" {
+		t.Fatalf("staged after the apply: %+v", p)
+	}
+}
+
+// A failed image or source deploy puts the image setting back, and the
+// staged settings it took with it are staged again.
+func TestFailedDeployRestoresSettings(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	memory := 256
+	if _, err := h.c.UpdateService(h.ctx, testSystem, web, apitypes.UpdateServiceRequest{MemoryMB: &memory}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.rt.FailPull(errors.New("manifest unknown"))
+	rel, err := h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:typo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, rel.Number); r.Status != apitypes.ReleaseFailed {
+		t.Fatalf("release %d = %s", r.Number, r.Status)
+	}
+	svc, _ := h.c.GetService(h.ctx, testSystem, web)
+	if svc.Image != "app:1" || svc.MemoryMB != 0 {
+		t.Fatalf("live after the failed image deploy: image %q memory %d", svc.Image, svc.MemoryMB)
+	}
+	p, _ := h.c.GetChanges(h.ctx, testSystem, web.Env(), false)
+	if p.Count != 1 || p.Settings[0].Field != "memory_mb" {
+		t.Fatalf("staged after the failed image deploy: %+v", p)
+	}
+
+	h.rt.FailPull(nil)
+	h.rt.FailBuild(errors.New("no Dockerfile"))
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	_ = tw.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: 11, Typeflag: tar.TypeReg})
+	_, _ = tw.Write([]byte("FROM app:1\n"))
+	_ = tw.Close()
+	rel, err = h.c.DeploySource(h.ctx, testSystem, web, &buf, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, rel.Number); r.Status != apitypes.ReleaseFailed {
+		t.Fatalf("release %d = %s", r.Number, r.Status)
+	}
+	if svc, _ := h.c.GetService(h.ctx, testSystem, web); svc.Image != "app:1" || svc.MemoryMB != 0 {
+		t.Fatalf("live after the failed source deploy: image %q memory %d", svc.Image, svc.MemoryMB)
+	}
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, web.Env(), false); p.Count != 1 || p.Settings[0].Field != "memory_mb" {
+		t.Fatalf("staged after the failed source deploy: %+v", p)
 	}
 }

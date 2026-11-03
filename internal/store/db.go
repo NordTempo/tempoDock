@@ -102,6 +102,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.clearArchivedHostPortsStmt, err = db.PrepareContext(ctx, clearArchivedHostPorts); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearArchivedHostPorts: %w", err)
 	}
+	if q.clearEnvironmentPendingSettingsStmt, err = db.PrepareContext(ctx, clearEnvironmentPendingSettings); err != nil {
+		return nil, fmt.Errorf("error preparing query ClearEnvironmentPendingSettings: %w", err)
+	}
 	if q.clearGitPendingStmt, err = db.PrepareContext(ctx, clearGitPending); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearGitPending: %w", err)
 	}
@@ -1345,6 +1348,11 @@ func (q *Queries) Close() error {
 	if q.clearArchivedHostPortsStmt != nil {
 		if cerr := q.clearArchivedHostPortsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing clearArchivedHostPortsStmt: %w", cerr)
+		}
+	}
+	if q.clearEnvironmentPendingSettingsStmt != nil {
+		if cerr := q.clearEnvironmentPendingSettingsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing clearEnvironmentPendingSettingsStmt: %w", cerr)
 		}
 	}
 	if q.clearGitPendingStmt != nil {
@@ -3262,6 +3270,7 @@ type Queries struct {
 	archiveServiceStmt                  *sql.Stmt
 	archiveSiteStmt                     *sql.Stmt
 	clearArchivedHostPortsStmt          *sql.Stmt
+	clearEnvironmentPendingSettingsStmt *sql.Stmt
 	clearGitPendingStmt                 *sql.Stmt
 	clearReleaseHostPortStmt            *sql.Stmt
 	consumeJoinTokenStmt                *sql.Stmt
@@ -3664,6 +3673,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		archiveServiceStmt:                  q.archiveServiceStmt,
 		archiveSiteStmt:                     q.archiveSiteStmt,
 		clearArchivedHostPortsStmt:          q.clearArchivedHostPortsStmt,
+		clearEnvironmentPendingSettingsStmt: q.clearEnvironmentPendingSettingsStmt,
 		clearGitPendingStmt:                 q.clearGitPendingStmt,
 		clearReleaseHostPortStmt:            q.clearReleaseHostPortStmt,
 		consumeJoinTokenStmt:                q.consumeJoinTokenStmt,
