@@ -138,6 +138,18 @@ func TestPermissionMatrix(t *testing.T) {
 	defer f.rt.HoldHealthChecks()() // keep deploys in flight
 	web, worker := shopProd+"/services/web", shopProd+"/services/worker"
 	blogAPI := "/api/v1/projects/blog/environments/production/services/api"
+	blogProd := "/api/v1/projects/blog/environments/production"
+	// A deploy token limited to shop's staging environment.
+	ctx := context.Background()
+	if _, err := f.core.CreateEnvironment(ctx, sys, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := f.core.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: "shop-staging", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.tokens["shop-staging"] = tok.Secret
+	toProd := apitypes.PromoteRequest{From: "staging", To: "production"}
 	cases := []struct {
 		name, token, method, path string
 		body                      any
@@ -161,6 +173,20 @@ func TestPermissionMatrix(t *testing.T) {
 		{"limited token can't deploy another project", "shop-deploy", "POST", blogAPI + "/releases", apitypes.DeployImageRequest{}, 403, apitypes.CodeForbidden, "limited to project shop"},
 		{"limited token deploys its project", "shop-deploy", "POST", worker + "/releases", apitypes.DeployImageRequest{}, 202, "", ""},
 		{"limited token can't create projects", "shop-deploy", "POST", "/api/v1/projects", apitypes.CreateProjectRequest{Name: "new"}, 403, apitypes.CodeForbidden, "unlimited"},
+		{"read can't roll back", "read", "POST", web + "/releases/1/rollback", nil, 403, apitypes.CodeForbidden, "rolling back requires deploy"},
+		{"read can't restart", "read", "POST", web + "/restart", nil, 403, apitypes.CodeForbidden, "restarting requires deploy"},
+		{"read can't promote", "read", "POST", "/api/v1/projects/shop/promote", toProd, 403, apitypes.CodeForbidden, "promoting requires deploy"},
+		{"read can't apply changes", "read", "POST", shopProd + "/changes/apply", nil, 403, apitypes.CodeForbidden, "applying staged changes requires deploy"},
+		{"limited token can't roll back another project", "shop-deploy", "POST", blogAPI + "/releases/1/rollback", nil, 403, apitypes.CodeForbidden, "limited to project shop"},
+		{"limited token can't restart another project", "shop-deploy", "POST", blogAPI + "/restart", nil, 403, apitypes.CodeForbidden, "limited to project shop"},
+		{"limited token can't promote in another project", "shop-deploy", "POST", "/api/v1/projects/blog/promote", apitypes.PromoteRequest{From: "production", To: "staging"}, 403, apitypes.CodeForbidden, "limited to project shop"},
+		{"limited token can't apply another project's changes", "shop-deploy", "POST", blogProd + "/changes/apply", nil, 403, apitypes.CodeForbidden, "limited to project shop"},
+		{"environment token can't promote into production", "shop-staging", "POST", "/api/v1/projects/shop/promote", toProd, 403, apitypes.CodeForbidden, "limited to environment shop/staging; it cannot access shop/production"},
+		{"environment token can't roll back production", "shop-staging", "POST", web + "/releases/1/rollback", nil, 403, apitypes.CodeForbidden, "limited to environment shop/staging"},
+		{"environment token can't restart production", "shop-staging", "POST", web + "/restart", nil, 403, apitypes.CodeForbidden, "limited to environment shop/staging"},
+		{"environment token can't apply production's changes", "shop-staging", "POST", shopProd + "/changes/apply", nil, 403, apitypes.CodeForbidden, "limited to environment shop/staging"},
+		{"environment token applies its own changes", "shop-staging", "POST", shopStaging + "/changes/apply", nil, 200, "", ""},
+		{"deploy can promote", "deploy", "POST", "/api/v1/projects/shop/promote", apitypes.PromoteRequest{From: "production", To: "staging"}, 202, "", ""},
 		{"admin can reveal", "admin", "GET", shopProd + "/variables?reveal=true", nil, 200, "", ""},
 		{"not found", "admin", "GET", shopProd + "/services/nope", nil, 404, apitypes.CodeNotFound, `service "nope" not found`},
 		{"validation", "admin", "POST", "/api/v1/projects", apitypes.CreateProjectRequest{Name: "Bad Name"}, 422, apitypes.CodeValidation, ""},
