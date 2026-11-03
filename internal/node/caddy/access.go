@@ -69,7 +69,7 @@ func signIn(w http.ResponseWriter, r *http.Request, key []byte, host string, q u
 	})
 	// The grant stays out of the next page's Referer.
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	redirectTo(w, localPath(q.Get("to")))
+	redirectTo(w, access.LocalPath(q.Get("to")))
 }
 
 // pageLoad reports whether the request is a browser loading a page, which
@@ -82,15 +82,6 @@ func pageLoad(r *http.Request) bool {
 		return mode == "navigate"
 	}
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
-}
-
-// localPath is to if it is a path on this hostname, else "/", so the
-// callback can't send anyone elsewhere.
-func localPath(to string) string {
-	if !strings.HasPrefix(to, "/") || strings.HasPrefix(to, "//") || strings.HasPrefix(to, "/\\") {
-		return "/"
-	}
-	return to
 }
 
 // redirectTo answers 302 to location as given (http.Redirect would clean

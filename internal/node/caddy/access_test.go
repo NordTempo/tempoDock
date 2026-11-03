@@ -86,7 +86,7 @@ func TestAccessHandler(t *testing.T) {
 			t.Errorf("%s: %d, want 403", name, w.Code)
 		}
 	}
-	for _, to := range []string{"https://evil.example", "//evil.example/", "/\\evil.example", ""} {
+	for _, to := range []string{"https://evil.example", "//evil.example/", "/\\evil.example", "/\t/evil.example", "/\n/evil.example", ""} {
 		cb := access.CallbackPath + "?" + url.Values{"grant": {grant}, "to": {to}}.Encode()
 		if w := serve(checkRequest(key, "GET", cb, nav)); w.Header().Get("Location") != "/" {
 			t.Errorf("to %q: redirected to %q", to, w.Header().Get("Location"))
