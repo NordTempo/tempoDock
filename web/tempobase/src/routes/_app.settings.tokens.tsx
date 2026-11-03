@@ -81,8 +81,14 @@ function tierOf(data: DataTokenAccess | undefined): Tier | undefined {
   });
 }
 
-/** A token's connection limit; empty: every one the policy allows. */
-const limited = (t: Token) => (t.connections?.length ? t.connections : null);
+/** A token's connection limit, null when it has none. A limited token
+ * whose connections were all removed may use none. */
+const limited = (t: Token) =>
+  t.limited || t.connections?.length ? (t.connections ?? []) : null;
+
+/** A connection limit as text. */
+const limitText = (only: string[]) =>
+  only.length ? only.join(", ") : "None left";
 
 /** A token's own levels when they match no tier. */
 const levelsText = (d: DataTokenAccess | undefined) =>
@@ -216,7 +222,7 @@ function AgentList({
                   </span>
                   <span className="truncate text-(--g-dim)">
                     {tier ? tiers[tier].label : levelsText(t.data)}
-                    {only && ` · ${only.join(", ")}`}
+                    {only && ` · ${limitText(only)}`}
                   </span>
                   <span className="text-right text-xs text-(--g-mut)">
                     {t.expires_at
@@ -304,6 +310,7 @@ function AgentPane({
   const update = useUpdateToken();
   const remove = useDeleteToken();
   const tier = tierOf(t.data);
+  const only = limited(t);
   return (
     <Pane
       title={t.name}
@@ -317,7 +324,7 @@ function AgentPane({
       <ErrorText error={update.error} />
       <div className="mt-5 flex flex-col gap-1">
         <span className="g-label">Connections</span>
-        <span>{limited(t)?.join(", ") ?? "Every one the policy allows"}</span>
+        <span>{only ? limitText(only) : "Every one the policy allows"}</span>
       </div>
       <Snippet secret={null} />
       <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-(--g-line) pt-5">

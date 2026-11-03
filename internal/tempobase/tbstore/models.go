@@ -125,17 +125,18 @@ type Session struct {
 }
 
 type Token struct {
-	ID                int64
-	Name              string
-	Prefix            string
-	SecretHash        string
-	UserID            int64
-	DataProduction    *string
-	DataNonProduction *string
-	DataSensitive     *string
-	CreatedAt         time.Time
-	ExpiresAt         *time.Time
-	RevokedAt         *time.Time
+	ID                 int64
+	Name               string
+	Prefix             string
+	SecretHash         string
+	UserID             int64
+	DataProduction     *string
+	DataNonProduction  *string
+	DataSensitive      *string
+	CreatedAt          time.Time
+	ExpiresAt          *time.Time
+	RevokedAt          *time.Time
+	ConnectionsLimited int64
 }
 
 type TokenConnection struct {

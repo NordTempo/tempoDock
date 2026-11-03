@@ -25,9 +25,11 @@ type Actor struct {
 	TokenID int64
 	// TokenData is a token's own data access; nil follows the tokens rule.
 	TokenData *apitypes.DataTokenAccess
-	// TokenConnections limits a token to these connection IDs; nil: no
-	// limit. TokenConnectionNames are their names, for messages and the
-	// MCP tools' default connection.
+	// TokenLimited limits a token to TokenConnections, which may be empty
+	// once those connections are removed: it then may use none.
+	// TokenConnectionNames are their names, for messages and the MCP
+	// tools' default connection.
+	TokenLimited         bool
 	TokenConnections     []int64
 	TokenConnectionNames []string
 }
@@ -52,7 +54,7 @@ func (a Actor) requireAdmin(action string) error {
 
 // mayUse reports whether a token's connection limit allows connection id.
 func (a Actor) mayUse(id int64) bool {
-	return a.TokenConnections == nil || slices.Contains(a.TokenConnections, id)
+	return !a.TokenLimited || slices.Contains(a.TokenConnections, id)
 }
 
 // panelActor is a as the data panel sees it. Tokens are agents: their

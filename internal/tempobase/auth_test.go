@@ -182,6 +182,42 @@ func TestTokens(t *testing.T) {
 	wantCode(t, err, apitypes.CodeUnauthorized)
 }
 
+// A token limited to some connections stays limited when they are all
+// removed: it then sees and uses none, rather than every connection.
+func TestTokenLimitOutlivesItsConnections(t *testing.T) {
+	h := newHarness(t)
+	admin := h.admin()
+	editor := h.user("editor@example.com", tbtypes.RoleEditor)
+	h.connection("orders", false)
+	h.connection("billing", false)
+	read := &apitypes.DataTokenAccess{Production: apitypes.LevelRead, NonProduction: apitypes.LevelRead, Sensitive: apitypes.SensitiveMasked}
+	created, err := h.CreateToken(h.ctx, editor, tbtypes.CreateTokenRequest{Name: "agent", Data: read, Connections: []string{"orders"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.DeleteConnection(h.ctx, admin, "orders"); err != nil {
+		t.Fatal(err)
+	}
+
+	tok, err := h.AuthenticateToken(h.ctx, created.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conns, err := h.ListConnections(h.ctx, tok)
+	if err != nil || len(conns) != 0 {
+		t.Fatalf("ListConnections = %+v, %v; want none", conns, err)
+	}
+	_, err = h.GetConnection(h.ctx, tok, "billing")
+	wantCode(t, err, apitypes.CodeNotFound)
+	me, err := h.Me(h.ctx, tok)
+	if err != nil || !me.TokenLimited || len(me.TokenConnections) != 0 {
+		t.Fatalf("Me = %+v, %v; want limited to no connections", me, err)
+	}
+	if list, err := h.ListTokens(h.ctx, editor); err != nil || len(list) != 1 || !list[0].Limited || len(list[0].Connections) != 0 {
+		t.Fatalf("ListTokens = %+v, %v; want it shown as limited to none", list, err)
+	}
+}
+
 // Invite and reset links work once, before they expire.
 func TestLinks(t *testing.T) {
 	h := newHarness(t)

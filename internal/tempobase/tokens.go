@@ -85,6 +85,7 @@ func (a *App) CreateToken(ctx context.Context, act Actor, req tbtypes.CreateToke
 	n := a.now()
 	params := tbstore.CreateTokenParams{Name: name, Prefix: secret[:tokenPrefixLen], SecretHash: hash, UserID: act.UserID, CreatedAt: n}
 	params.DataProduction, params.DataNonProduction, params.DataSensitive = tokenDataColumns(req.Data)
+	params.ConnectionsLimited = boolInt(len(ids) > 0)
 	if req.ExpiresInDays > 0 {
 		params.ExpiresAt = ptr(n.Add(time.Duration(req.ExpiresInDays) * 24 * time.Hour))
 	}
@@ -220,7 +221,7 @@ func tokenDataColumns(d *apitypes.DataTokenAccess) (prod, nonProd, sensitive *st
 // limit (comma-separated names).
 func toToken(t tbstore.Token, email, conns string) tbtypes.Token {
 	out := tbtypes.Token{
-		ID: t.ID, Name: t.Name, Prefix: t.Prefix, User: email, Connections: []string{}, Data: tokenData(t),
+		ID: t.ID, Name: t.Name, Prefix: t.Prefix, User: email, Connections: []string{}, Limited: t.ConnectionsLimited != 0, Data: tokenData(t),
 		CreatedAt: t.CreatedAt, ExpiresAt: t.ExpiresAt, RevokedAt: t.RevokedAt,
 	}
 	if conns != "" {

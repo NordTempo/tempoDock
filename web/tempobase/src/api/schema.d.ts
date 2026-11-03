@@ -1170,8 +1170,10 @@ export interface components {
              * @enum {string}
              */
             role: "viewer" | "editor" | "admin";
-            /** @description A token's connection limit; empty: no limit */
+            /** @description A token's connection limit; empty: no limit, unless token_limited */
             token_connections: string[] | null;
+            /** @description The token may use only token_connections, even when that is empty */
+            token_limited?: boolean;
         };
         SaveDataQueryRequest: {
             name: string;
@@ -1212,6 +1214,8 @@ export interface components {
             expires_at?: string;
             /** Format: int64 */
             id: number;
+            /** @description The token may use only connections, even when that is empty */
+            limited?: boolean;
             name: string;
             /** @description The secret's first characters, to recognise it */
             prefix: string;

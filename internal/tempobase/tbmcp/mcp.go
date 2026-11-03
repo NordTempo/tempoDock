@@ -75,6 +75,9 @@ func connectionOf(c *call, in ConnectionInput) (string, error) {
 	if names := c.Actor.TokenConnectionNames; len(names) == 1 {
 		return names[0], nil
 	}
+	if c.Actor.TokenLimited && len(c.Actor.TokenConnectionNames) == 0 {
+		return "", mcpkit.Invalid("your token's connections were all removed, so it may use none; ask its owner for a new token")
+	}
 	return "", mcpkit.Invalid("pass connection: your token isn't limited to one (list_connections shows them)")
 }
 
@@ -97,8 +100,11 @@ func addTools(s *mcpkit.Server[tempobase.Actor], app *tempobase.App) {
 				return mcpkit.Reply{}, err
 			}
 			limit := "every connection the policy allows"
-			if len(me.TokenConnections) > 0 {
+			switch {
+			case len(me.TokenConnections) > 0:
 				limit = strings.Join(me.TokenConnections, ", ")
+			case me.TokenLimited:
+				limit = "no connections (its connections were removed; ask its owner for a new token)"
 			}
 			return mcpkit.Reply{Summary: fmt.Sprintf("token %q of %s (role %s), limited to %s.", me.Name, me.Email, me.Role, limit), Data: me}, nil
 		})

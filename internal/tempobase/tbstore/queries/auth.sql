@@ -57,8 +57,8 @@ DELETE FROM sessions WHERE user_id = +?;
 DELETE FROM sessions WHERE expires_at < +?;
 
 -- name: CreateToken :one
-INSERT INTO tokens (name, prefix, secret_hash, user_id, data_production, data_non_production, data_sensitive, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tokens (name, prefix, secret_hash, user_id, data_production, data_non_production, data_sensitive, connections_limited, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: AddTokenConnection :exec
@@ -66,7 +66,8 @@ INSERT INTO token_connections (token_id, connection_id) VALUES (?, ?);
 
 -- name: GetTokenAuth :one
 -- Authenticates a bearer token: the token, its user and its connection
--- limit (comma-separated IDs and names, '' for none) in one query.
+-- limit (comma-separated IDs and names; tokens.connections_limited says
+-- whether it applies, so '' may mean "none left") in one query.
 SELECT sqlc.embed(tokens), users.email AS user_email, users.role AS user_role, users.disabled_at AS user_disabled_at,
     CAST(coalesce((SELECT group_concat(connection_id) FROM token_connections WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_ids,
     CAST(coalesce((SELECT group_concat(connections.name) FROM token_connections
