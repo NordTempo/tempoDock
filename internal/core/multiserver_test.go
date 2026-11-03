@@ -694,6 +694,46 @@ func TestPromoteStopsAtFirstFailure(t *testing.T) {
 	}
 }
 
+// A service whose release can't even be created after earlier ones
+// started stops the promotion there, like a failed release: it and the
+// services after it are skipped, and the started ones are audited.
+func TestPromoteStopsWhenAReleaseCantStart(t *testing.T) {
+	p, _ := labPool(t)
+	for _, name := range []string{"api", "web", "worker"} {
+		p.createService("staging", name, apitypes.CreateServiceRequest{})
+		p.createService("production", name, apitypes.CreateServiceRequest{})
+		p.deploy(ServiceRef{"shop", "staging", name}, "ghcr.io/acme/"+name+":1")
+	}
+	// Production's web references cache, which is archived since: web's
+	// next release can't resolve its variables.
+	prod := EnvRef{"shop", "production"}
+	cache := p.createService("production", "cache", apitypes.CreateServiceRequest{})
+	p.set(prod, "cache", map[string]string{"HOST": "cache"}, true)
+	p.set(prod, "web", map[string]string{"CACHE": "${{cache.HOST}}"}, true)
+	if _, err := p.c.ArchiveService(p.ctx, testSystem, cache); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := p.c.Promote(p.ctx, testSystem, "shop", apitypes.PromoteRequest{From: "staging", To: "production", Services: []string{"api", "web", "worker"}})
+	if err != nil || len(res.Promoted) != 1 || res.Promoted[0].Service != "api" || len(res.Skipped) != 2 {
+		t.Fatalf("promote: %+v, %v", res, err)
+	}
+	web, worker := res.Skipped[0], res.Skipped[1]
+	if web.Service != "web" || web.Reason != apitypes.SkipFailed || !strings.Contains(web.Message, `no service "cache"`) {
+		t.Fatalf("web skipped: %+v", web)
+	}
+	if worker.Service != "worker" || worker.Reason != apitypes.SkipFailed || worker.Message != "not promoted: web failed first" {
+		t.Fatalf("worker skipped: %+v", worker)
+	}
+	if r := p.wait(ServiceRef{"shop", "production", "api"}, res.Promoted[0].Release.Number); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("api: %s (%s)", r.Status, r.Error)
+	}
+	evs, err := p.c.ListAudit(p.ctx, testSystem, AuditFilter{Action: "release.promote"})
+	if err != nil || len(evs) != 1 || !strings.Contains(evs[0].Summary, "api (release 1 as 1); skipped web (failed); skipped worker (failed)") {
+		t.Fatalf("audit: %+v, %v", evs, err)
+	}
+}
+
 // Adding a server mints a join token; the node's join creates it; a
 // revoke drops its key and connection but keeps its environments, which
 // keep it from being removed.

@@ -8215,7 +8215,8 @@
               "missing_in_target",
               "no_active_release",
               "no_digest",
-              "deploy_in_progress"
+              "deploy_in_progress",
+              "failed"
             ],
             "type": "string"
           },
