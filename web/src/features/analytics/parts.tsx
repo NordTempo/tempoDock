@@ -6,6 +6,13 @@ import type { SiteMarker } from "./data";
 
 export const count = (n: number) => n.toLocaleString("en-US");
 
+/**
+ * A count chart's values: whole, or with one decimal below 10, so 7
+ * visitors over 30 days average 0.2 a day rather than 0.
+ */
+export const charted = (v: number) =>
+  v < 10 && !Number.isInteger(v) ? v.toFixed(1) : count(Math.round(v));
+
 const regions = new Intl.DisplayNames(["en"], { type: "region" });
 /** A country's name from its ISO code ("NO": Norway). */
 export const country = (code: string) => {

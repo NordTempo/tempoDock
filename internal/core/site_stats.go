@@ -320,8 +320,8 @@ func (c *Core) toRows(ctx context.Context, d analytics.Dimension, rows []analyti
 	return out
 }
 
-// siteMarkers are a site's markers in [from, to): its own (hostnames
-// added, moved, removed) and its services' deploys.
+// siteMarkers are a site's markers in [from, to), oldest first: its own
+// (hostnames added, moved, removed) and its services' deploys.
 func (c *Core) siteMarkers(ctx context.Context, siteID, from, to int64) ([]apitypes.SiteMarker, error) {
 	// The range is in milliseconds; its last one counts whole.
 	f, t := time.UnixMilli(from).UTC(), time.UnixMilli(to).Add(time.Millisecond).UTC()
@@ -342,5 +342,7 @@ func (c *Core) siteMarkers(ctx context.Context, siteID, from, to int64) ([]apity
 			out = append(out, apitypes.SiteMarker{At: *d.FinishedAt, Kind: "deploy", Message: d.ServiceName + " r" + strconv.FormatInt(d.Number, 10)})
 		}
 	}
+	// The chart labels them left to right, skipping ones too close.
+	slices.SortStableFunc(out, func(a, b apitypes.SiteMarker) int { return a.At.Compare(b.At) })
 	return out, nil
 }

@@ -17,6 +17,7 @@ import {
 import { GoalsPanel } from "./GoalsPanel";
 import { Labeled } from "./icons";
 import {
+  charted,
   chartMarkers,
   count,
   country,
@@ -248,7 +249,7 @@ function Chart({ stats, metric }: { stats: SiteStats; metric: Metric }) {
       to={stats.to}
       resolution={step / 1000}
       max={niceMax(Math.max(4, ...points.map((p) => p.v)))}
-      format={(v) => count(Math.round(v))}
+      format={charted}
       markers={markers}
       empty="Nothing counted in this range."
       roomy

@@ -14,7 +14,15 @@ import {
   siteErrorQuery,
   siteErrorsQuery,
 } from "./data";
-import { chartMarkers, count, delta, Kpi, points, shown } from "./parts";
+import {
+  charted,
+  chartMarkers,
+  count,
+  delta,
+  Kpi,
+  points,
+  shown,
+} from "./parts";
 
 // A site's errors (ADR 0037, phase A2; Saile's pick: B's chart and table
 // with C's rows that open in place). All errors over time at the top, then
@@ -100,7 +108,7 @@ export function ErrorsView({
         to={data.to}
         resolution={step / 1000}
         max={niceMax(Math.max(4, ...(data.series ?? []).map((p) => p.count)))}
-        format={(v) => count(Math.round(v))}
+        format={charted}
         markers={chartMarkers(data.markers)}
         empty="No errors in this range."
         roomy
@@ -377,7 +385,7 @@ function Detail({
         to={data.to}
         resolution={step / 1000}
         max={niceMax(Math.max(1, ...(data.series ?? []).map((p) => p.count)))}
-        format={(v) => count(Math.round(v))}
+        format={charted}
         markers={markerPoints}
       />
       {data.stack && (
