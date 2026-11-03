@@ -104,9 +104,11 @@ func (a *App) AuthenticateToken(ctx context.Context, secret string) (Actor, erro
 	}
 	act := Actor{
 		Kind: "token", Name: t.Name, UserID: t.UserID, Email: row.UserEmail, Role: tbtypes.Role(row.UserRole),
-		TokenID: t.ID, TokenData: tokenData(t),
+		TokenID: t.ID, TokenData: tokenData(t), TokenLimited: t.ConnectionsLimited != 0,
 	}
-	if row.ConnectionIds != "" {
+	// A limited token whose connections were all removed keeps its limit
+	// with nothing in it.
+	if act.TokenLimited && row.ConnectionIds != "" {
 		for s := range strings.SplitSeq(row.ConnectionIds, ",") {
 			id, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
@@ -125,7 +127,7 @@ func userActor(u tbstore.User) Actor {
 
 // Me describes the caller.
 func (a *App) Me(ctx context.Context, act Actor) (tbtypes.Me, error) {
-	me := tbtypes.Me{Kind: act.Kind, Name: act.Name, Email: act.Email, Role: act.Role, TokenConnections: []string{}}
+	me := tbtypes.Me{Kind: act.Kind, Name: act.Name, Email: act.Email, Role: act.Role, TokenLimited: act.TokenLimited, TokenConnections: []string{}}
 	// A person's actor name is their email (audit uses it); show the name
 	// they set, if any.
 	if act.Kind == "user" {

@@ -117,21 +117,22 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 }
 
 const createToken = `-- name: CreateToken :one
-INSERT INTO tokens (name, prefix, secret_hash, user_id, data_production, data_non_production, data_sensitive, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, prefix, secret_hash, user_id, data_production, data_non_production, data_sensitive, created_at, expires_at, revoked_at
+INSERT INTO tokens (name, prefix, secret_hash, user_id, data_production, data_non_production, data_sensitive, connections_limited, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, prefix, secret_hash, user_id, data_production, data_non_production, data_sensitive, created_at, expires_at, revoked_at, connections_limited
 `
 
 type CreateTokenParams struct {
-	Name              string
-	Prefix            string
-	SecretHash        string
-	UserID            int64
-	DataProduction    *string
-	DataNonProduction *string
-	DataSensitive     *string
-	CreatedAt         time.Time
-	ExpiresAt         *time.Time
+	Name               string
+	Prefix             string
+	SecretHash         string
+	UserID             int64
+	DataProduction     *string
+	DataNonProduction  *string
+	DataSensitive      *string
+	ConnectionsLimited int64
+	CreatedAt          time.Time
+	ExpiresAt          *time.Time
 }
 
 func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token, error) {
@@ -143,6 +144,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		arg.DataProduction,
 		arg.DataNonProduction,
 		arg.DataSensitive,
+		arg.ConnectionsLimited,
 		arg.CreatedAt,
 		arg.ExpiresAt,
 	)
@@ -159,6 +161,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.ConnectionsLimited,
 	)
 	return i, err
 }
@@ -320,7 +323,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, secretHash string) (GetSes
 }
 
 const getToken = `-- name: GetToken :one
-SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, users.email AS user_email,
+SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, tokens.connections_limited, users.email AS user_email,
     CAST(coalesce((SELECT group_concat(connections.name) FROM token_connections
         JOIN connections ON connections.id = token_connections.connection_id
         WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_names
@@ -350,6 +353,7 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (GetTokenRow, error) {
 		&i.Token.CreatedAt,
 		&i.Token.ExpiresAt,
 		&i.Token.RevokedAt,
+		&i.Token.ConnectionsLimited,
 		&i.UserEmail,
 		&i.ConnectionNames,
 	)
@@ -357,7 +361,7 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (GetTokenRow, error) {
 }
 
 const getTokenAuth = `-- name: GetTokenAuth :one
-SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, users.email AS user_email, users.role AS user_role, users.disabled_at AS user_disabled_at,
+SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, tokens.connections_limited, users.email AS user_email, users.role AS user_role, users.disabled_at AS user_disabled_at,
     CAST(coalesce((SELECT group_concat(connection_id) FROM token_connections WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_ids,
     CAST(coalesce((SELECT group_concat(connections.name) FROM token_connections
         JOIN connections ON connections.id = token_connections.connection_id
@@ -376,7 +380,8 @@ type GetTokenAuthRow struct {
 }
 
 // Authenticates a bearer token: the token, its user and its connection
-// limit (comma-separated IDs and names, ” for none) in one query.
+// limit (comma-separated IDs and names; tokens.connections_limited says
+// whether it applies, so ” may mean "none left") in one query.
 func (q *Queries) GetTokenAuth(ctx context.Context, secretHash string) (GetTokenAuthRow, error) {
 	row := q.queryRow(ctx, q.getTokenAuthStmt, getTokenAuth, secretHash)
 	var i GetTokenAuthRow
@@ -392,6 +397,7 @@ func (q *Queries) GetTokenAuth(ctx context.Context, secretHash string) (GetToken
 		&i.Token.CreatedAt,
 		&i.Token.ExpiresAt,
 		&i.Token.RevokedAt,
+		&i.Token.ConnectionsLimited,
 		&i.UserEmail,
 		&i.UserRole,
 		&i.UserDisabledAt,
@@ -480,7 +486,7 @@ func (q *Queries) ListOpenInvites(ctx context.Context) ([]Link, error) {
 }
 
 const listTokens = `-- name: ListTokens :many
-SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, users.email AS user_email,
+SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, tokens.connections_limited, users.email AS user_email,
     CAST(coalesce((SELECT group_concat(connections.name) FROM token_connections
         JOIN connections ON connections.id = token_connections.connection_id
         WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_names
@@ -516,6 +522,7 @@ func (q *Queries) ListTokens(ctx context.Context) ([]ListTokensRow, error) {
 			&i.Token.CreatedAt,
 			&i.Token.ExpiresAt,
 			&i.Token.RevokedAt,
+			&i.Token.ConnectionsLimited,
 			&i.UserEmail,
 			&i.ConnectionNames,
 		); err != nil {
@@ -533,7 +540,7 @@ func (q *Queries) ListTokens(ctx context.Context) ([]ListTokensRow, error) {
 }
 
 const listUserTokens = `-- name: ListUserTokens :many
-SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, users.email AS user_email,
+SELECT tokens.id, tokens.name, tokens.prefix, tokens.secret_hash, tokens.user_id, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.created_at, tokens.expires_at, tokens.revoked_at, tokens.connections_limited, users.email AS user_email,
     CAST(coalesce((SELECT group_concat(connections.name) FROM token_connections
         JOIN connections ON connections.id = token_connections.connection_id
         WHERE token_connections.token_id = tokens.id), '') AS TEXT) AS connection_names
@@ -570,6 +577,7 @@ func (q *Queries) ListUserTokens(ctx context.Context, userID int64) ([]ListUserT
 			&i.Token.CreatedAt,
 			&i.Token.ExpiresAt,
 			&i.Token.RevokedAt,
+			&i.Token.ConnectionsLimited,
 			&i.UserEmail,
 			&i.ConnectionNames,
 		); err != nil {

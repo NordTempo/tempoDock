@@ -1632,7 +1632,7 @@
             "type": "string"
           },
           "token_connections": {
-            "description": "A token's connection limit; empty: no limit",
+            "description": "A token's connection limit; empty: no limit, unless token_limited",
             "items": {
               "type": "string"
             },
@@ -1640,6 +1640,10 @@
               "array",
               "null"
             ]
+          },
+          "token_limited": {
+            "description": "The token may use only token_connections, even when that is empty",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1801,6 +1805,10 @@
           "id": {
             "format": "int64",
             "type": "integer"
+          },
+          "limited": {
+            "description": "The token may use only connections, even when that is empty",
+            "type": "boolean"
           },
           "name": {
             "type": "string"

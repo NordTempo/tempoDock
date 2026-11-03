@@ -53,9 +53,12 @@ type Me struct {
 	Name  string `json:"name"`
 	Email string `json:"email" doc:"The person, or the token's owner"`
 	Role  Role   `json:"role" enum:"viewer,editor,admin" doc:"The person's role; for a token its owner's, which caps it"`
+	// TokenLimited is set for a token limited to TokenConnections, which
+	// is empty once they are all removed: such a token may use none.
+	TokenLimited bool `json:"token_limited,omitempty" doc:"The token may use only token_connections, even when that is empty"`
 	// TokenConnections is a token's connection limit; empty for people and
-	// unlimited tokens.
-	TokenConnections []string `json:"token_connections" doc:"A token's connection limit; empty: no limit"`
+	// unlimited tokens, or a limited token whose connections were removed.
+	TokenConnections []string `json:"token_connections" doc:"A token's connection limit; empty: no limit, unless token_limited"`
 }
 
 // User is a person who can sign in.
@@ -126,9 +129,11 @@ type Token struct {
 	// User is the email of the person who owns it; the token is capped by
 	// their current role.
 	User string `json:"user"`
-	// Connections limits the token to these connections; empty: every
-	// connection the policy allows.
+	// Connections limits the token to these connections when Limited;
+	// otherwise it may use every connection the policy allows. A limited
+	// token whose connections were all removed may use none.
 	Connections []string                  `json:"connections"`
+	Limited     bool                      `json:"limited,omitempty" doc:"The token may use only connections, even when that is empty"`
 	Data        *apitypes.DataTokenAccess `json:"data,omitempty" doc:"The token's own data access; absent: the policy's tokens rule"`
 	CreatedAt   time.Time                 `json:"created_at"`
 	ExpiresAt   *time.Time                `json:"expires_at,omitempty"`
