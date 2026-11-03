@@ -210,7 +210,12 @@ func setSettings(ctx context.Context, q *store.Queries, id int64, s apitypes.Ser
 		Image: s.Image, Port: int64(s.Port), HealthCheckPath: s.HealthCheckPath,
 		HealthCheckTimeoutSeconds: int64(s.HealthCheckTimeoutSeconds), StartCommand: s.StartCommand,
 		DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
-		MemoryMb: int64(s.MemoryMB), Cpus: s.CPUs, ID: id,
+		MemoryMb: int64(s.MemoryMB), Cpus: s.CPUs,
+		HealthCheckIntervalSeconds:     int64(s.HealthCheckIntervalSeconds),
+		HealthCheckProbeTimeoutSeconds: int64(s.HealthCheckProbeTimeoutSeconds),
+		HealthCheckRetries:             int64(s.HealthCheckRetries),
+		HealthCheckStartPeriodSeconds:  int64(s.HealthCheckStartPeriodSeconds),
+		ID:                             id,
 	})
 	return err
 }

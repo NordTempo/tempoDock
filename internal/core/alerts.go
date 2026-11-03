@@ -182,6 +182,8 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 			// A new container serves: its restarts start from zero.
 			c.resolveAlert(ctx, "deploy:"+svc, now)
 			c.resolveAlert(ctx, "crash:"+svc, now)
+			c.resolveAlert(ctx, "health:"+svc, now)
+			c.health.forget(ev.serviceID)
 			c.alerts.mu.Lock()
 			delete(c.alerts.restarts, svc)
 			c.alerts.mu.Unlock()
@@ -262,6 +264,8 @@ func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st
 		delete(c.alerts.restarts, svc)
 		c.alerts.mu.Unlock()
 		c.resolveAlert(ctx, "crash:"+svc, now)
+		c.resolveAlert(ctx, "health:"+svc, now)
+		c.health.forget(ev.serviceID)
 		return
 	}
 	cfg := c.cfg.Alerts

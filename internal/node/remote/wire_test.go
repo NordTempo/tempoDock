@@ -20,6 +20,7 @@ func TestWireRoundTrip(t *testing.T) {
 		Name: "web-1", Image: "app:1", Labels: labels, Env: map[string]string{"A": "1"}, Cmd: "serve",
 		Network: "env-2", Aliases: []string{"web"}, Port: 8080, HostPort: 41000,
 		Mounts: []node.Mount{{Volume: "data", Path: "/data", ReadOnly: true}}, Resources: node.Resources{MemoryBytes: 1 << 28, NanoCPUs: 5e8},
+		Health: &node.LivenessCheck{Port: 8080, Path: "/up", Interval: 30 * time.Second, Timeout: 5 * time.Second, Retries: 3, StartPeriod: time.Minute, StartInterval: 2 * time.Second},
 	}, toWireSpec, wireSpec.node)
 	check(t, node.JobSpec{
 		Name: "backup-1", Image: "postgres:17", Labels: labels, Env: map[string]string{"A": "1"}, Script: "pg_dump",
@@ -31,12 +32,12 @@ func TestWireRoundTrip(t *testing.T) {
 		func(w jobResult) node.JobResult { return node.JobResult{ExitCode: w.ExitCode, Output: w.Output} })
 	check(t, node.Container{
 		ID: "abc", Name: "web-1", Image: "app:1", Labels: labels, State: node.StateRunning, HostPort: 41000,
-		StartedAt: at, ExitCode: 137, RestartCount: 2, OOMKilled: true,
+		StartedAt: at, ExitCode: 137, RestartCount: 2, OOMKilled: true, Health: node.HealthUnhealthy, HealthOutput: "GET /up: timed out",
 	}, toWireContainer, wireContainer.node)
 	check(t, node.HealthCheck{Path: "/up", Port: 5432, Timeout: time.Minute, Interval: 2 * time.Second, Grace: 3 * time.Second},
 		toWireHealthCheck, wireHealthCheck.node)
 	check(t, node.LogLine{Time: at, Stream: "stderr", Text: "boom"}, toWireLogLine, wireLogLine.node)
-	check(t, node.ContainerEvent{ContainerID: "abc", Labels: labels, Action: "die", ExitCode: 1, Time: at},
+	check(t, node.ContainerEvent{ContainerID: "abc", Labels: labels, Action: "health_status", ExitCode: 1, Health: node.HealthUnhealthy, Time: at},
 		toWireEvent, wireEvent.node)
 	check(t, node.Route{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", RedirectTo: "b.example.com", PathPrefix: "/p/", Traffic: true, TunnelOnly: true,
 		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"a.example.com"}, Tag: "3.40.981"}},

@@ -158,6 +158,9 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			}
 			v := viewService(svc)
 			summary := fmt.Sprintf("%s is %s", ref, v.State)
+			if v.State == apitypes.ServiceRunning && v.Health == apitypes.HealthUnhealthy {
+				summary += " but failing its health check"
+			}
 			short := func(r apitypes.Release) *releaseSummary {
 				return &releaseSummary{Number: r.Number, Status: r.Status, Image: r.ImageRef, Error: r.Error, ErrorCode: r.ErrorCode, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt}
 			}

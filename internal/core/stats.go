@@ -414,6 +414,7 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 
 	// Alerts and retention ride on the tick (ADR 0020).
 	c.alertTick(ctx, now, servers, hosts)
+	c.healthTick(ctx, now)
 	c.retentionTick(ctx, now, servers, hosts)
 }
 

@@ -19,6 +19,10 @@ func settingsOf(s store.Service) apitypes.ServiceSettings {
 		Image: s.Image, Port: int(s.Port), HealthCheckPath: s.HealthCheckPath,
 		HealthCheckTimeoutSeconds: int(s.HealthCheckTimeoutSeconds), StartCommand: s.StartCommand,
 		DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand, MemoryMB: int(s.MemoryMb), CPUs: s.Cpus,
+		HealthCheckIntervalSeconds:     int(s.HealthCheckIntervalSeconds),
+		HealthCheckProbeTimeoutSeconds: int(s.HealthCheckProbeTimeoutSeconds),
+		HealthCheckRetries:             int(s.HealthCheckRetries),
+		HealthCheckStartPeriodSeconds:  int(s.HealthCheckStartPeriodSeconds),
 	}
 }
 
@@ -45,6 +49,14 @@ func validateSettings(s apitypes.ServiceSettings, registry string) error {
 		return invalid("health check path must start with /")
 	case s.HealthCheckTimeoutSeconds < 0 || s.MemoryMB < 0 || s.CPUs < 0:
 		return invalid("timeouts and limits can't be negative")
+	case s.HealthCheckIntervalSeconds < -1 || s.HealthCheckIntervalSeconds > maxLivenessSeconds:
+		return invalid("health check interval must be between 0 and %d seconds (0 means %d), or -1 to turn the ongoing check off", maxLivenessSeconds, defaultLivenessInterval)
+	case s.HealthCheckProbeTimeoutSeconds < 0 || s.HealthCheckProbeTimeoutSeconds > maxProbeTimeoutSeconds:
+		return invalid("health check probe timeout must be between 0 and %d seconds (0 means %d)", maxProbeTimeoutSeconds, defaultProbeTimeout)
+	case s.HealthCheckRetries < 0 || s.HealthCheckRetries > maxLivenessRetries:
+		return invalid("health check retries must be between 0 and %d (0 means %d)", maxLivenessRetries, defaultLivenessRetries)
+	case s.HealthCheckStartPeriodSeconds < 0 || s.HealthCheckStartPeriodSeconds > maxLivenessSeconds:
+		return invalid("health check start period must be between 0 and %d seconds (0 means the health check timeout)", maxLivenessSeconds)
 	}
 	return nil
 }
@@ -134,6 +146,10 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		Image: req.Image, Port: req.Port, HealthCheckPath: req.HealthCheckPath,
 		HealthCheckTimeoutSeconds: req.HealthCheckTimeoutSeconds, StartCommand: req.StartCommand,
 		DockerfilePath: req.DockerfilePath, BuildCommand: req.BuildCommand, MemoryMB: req.MemoryMB, CPUs: req.CPUs,
+		HealthCheckIntervalSeconds:     req.HealthCheckIntervalSeconds,
+		HealthCheckProbeTimeoutSeconds: req.HealthCheckProbeTimeoutSeconds,
+		HealthCheckRetries:             req.HealthCheckRetries,
+		HealthCheckStartPeriodSeconds:  req.HealthCheckStartPeriodSeconds,
 	}
 	if err := validateSettings(set, c.registryHost()); err != nil {
 		return apitypes.Service{}, err
@@ -143,6 +159,10 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		HealthCheckPath: set.HealthCheckPath, HealthCheckTimeoutSeconds: int64(set.HealthCheckTimeoutSeconds),
 		StartCommand: set.StartCommand, DockerfilePath: set.DockerfilePath, BuildCommand: set.BuildCommand,
 		MemoryMb: int64(set.MemoryMB), Cpus: set.CPUs,
+		HealthCheckIntervalSeconds:     int64(set.HealthCheckIntervalSeconds),
+		HealthCheckProbeTimeoutSeconds: int64(set.HealthCheckProbeTimeoutSeconds),
+		HealthCheckRetries:             int64(set.HealthCheckRetries),
+		HealthCheckStartPeriodSeconds:  int64(set.HealthCheckStartPeriodSeconds),
 	})
 	if store.IsUnique(err) {
 		return apitypes.Service{}, conflict("service %q already exists in %s", req.Name, es)
@@ -180,6 +200,10 @@ func (c *Core) UpdateService(ctx context.Context, a Actor, ref ServiceRef, req a
 	patch(&next.BuildCommand, req.BuildCommand)
 	patch(&next.MemoryMB, req.MemoryMB)
 	patch(&next.CPUs, req.CPUs)
+	patch(&next.HealthCheckIntervalSeconds, req.HealthCheckIntervalSeconds)
+	patch(&next.HealthCheckProbeTimeoutSeconds, req.HealthCheckProbeTimeoutSeconds)
+	patch(&next.HealthCheckRetries, req.HealthCheckRetries)
+	patch(&next.HealthCheckStartPeriodSeconds, req.HealthCheckStartPeriodSeconds)
 	if err := validateSettings(next, c.registryHost()); err != nil {
 		return apitypes.ChangeResult{}, err
 	}

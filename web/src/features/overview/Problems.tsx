@@ -11,7 +11,9 @@ import { Button, ErrorText, Glyph, SectionHead } from "../../ui/kit";
 import {
   failurePhrase,
   type GlyphChar,
+  healthRestarts,
   isCrashLooping,
+  isUnhealthy,
   oomPhrase,
   type Tone,
   toneText,
@@ -122,12 +124,38 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           >
             <span className="font-mono">r{active_release}</span>{" "}
             {looping
-              ? `restarted ${status.restart_count} times, exit ${status.exit_code}`
+              ? `restarted ${status.restart_count} times, exit ${status.exit_code}${healthRestarts(status)}`
               : `exited with ${status.exit_code}`}
             {status.oom_killed && `, ${oomPhrase(status)}`}.{" "}
             {staged && (
               <span className="text-mut">Changes for it are staged.</span>
             )}
+          </Row>
+        );
+      }
+      if (isUnhealthy(status)) {
+        return (
+          <Row
+            n={key}
+            tone="fail"
+            glyph="✕"
+            title="Unhealthy"
+            where={where}
+            time={time}
+            action={
+              <Link
+                to="/$org/$project/$environment/$service/logs"
+                params={{ org, ...ref }}
+                className={actionClass}
+                data-problem={n}
+              >
+                Logs
+              </Link>
+            }
+          >
+            <span className="font-mono">r{active_release}</span> runs but fails
+            its health check{healthRestarts(status)}.{" "}
+            <span className="text-mut">Dock restarts it, with backoff.</span>
           </Row>
         );
       }

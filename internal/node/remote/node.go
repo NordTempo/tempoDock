@@ -363,6 +363,9 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h(opStop, unary(func(ctx context.Context, a stopRequest) (empty, error) {
 		return empty{}, rt.Stop(ctx, a.ID, ms(a.TimeoutMS))
 	}))
+	h(opRestart, unary(func(ctx context.Context, a stopRequest) (empty, error) {
+		return empty{}, rt.Restart(ctx, a.ID, ms(a.TimeoutMS))
+	}))
 	h(opRemove, unary(func(ctx context.Context, a containerRequest) (empty, error) { return empty{}, rt.Remove(ctx, a.ID) }))
 	h(opInspect, unary(func(ctx context.Context, a containerRequest) (containerResult, error) {
 		c, err := rt.Inspect(ctx, a.ID)

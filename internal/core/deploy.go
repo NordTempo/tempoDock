@@ -150,6 +150,7 @@ func (d *deployment) run(ctx context.Context) error {
 	if err := c.store.SetReleaseContainer(ctx, store.SetReleaseContainerParams{ContainerID: ctr.ID, ID: d.rel.ID}); err != nil {
 		return err
 	}
+	d.rel.ContainerID = ctr.ID
 	d.event(ctx, "Started container "+ctr.Name)
 
 	// health_checking
@@ -381,6 +382,7 @@ func (d *deployment) cutover(ctx context.Context) error {
 		d.event(ctx, fmt.Sprintf("Traffic switched to release %d", d.rel.Number))
 	}
 	c.setStatus(d.ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
+	c.adoptHealth(ctx, d.ss, d.rel.ContainerID)
 	d.event(ctx, fmt.Sprintf("Release %d is live", d.rel.Number))
 	d.publish(ctx)
 	if d.old != nil {
@@ -583,7 +585,41 @@ func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) 
 	for _, m := range cfg.Mounts {
 		spec.Mounts = append(spec.Mounts, node.Mount{Volume: m.DockerName, Path: m.Path})
 	}
+	spec.Health = liveness(cfg)
 	return spec
+}
+
+// livenessStartInterval is how often the ongoing check probes during its
+// start period, so a healthy start is seen quickly (ADR 0043).
+const livenessStartInterval = 2 * time.Second
+
+// liveness is the ongoing health check of a release's container (ADR
+// 0043), probing what the deploy's check does: a published service's port
+// (HTTP GET of the health check path when it has one, else a TCP
+// connect), or an unpublished template database's port over TCP. It is
+// nil for a container with nothing to probe (a worker without a port) and
+// when the check is off. Zeros, as in configs sealed before the check
+// existed, mean the defaults.
+func liveness(cfg releaseConfig) *node.LivenessCheck {
+	if cfg.HealthCheckInterval == livenessOff {
+		return nil
+	}
+	lc := node.LivenessCheck{
+		Interval:    time.Duration(cmp.Or(cfg.HealthCheckInterval, defaultLivenessInterval)) * time.Second,
+		Timeout:     time.Duration(cmp.Or(cfg.HealthCheckProbeTimeout, defaultProbeTimeout)) * time.Second,
+		Retries:     cmp.Or(cfg.HealthCheckRetries, defaultLivenessRetries),
+		StartPeriod: time.Duration(cmp.Or(cfg.HealthCheckStartPeriod, cfg.HealthCheckTimeout)) * time.Second,
+	}
+	lc.StartInterval = min(livenessStartInterval, lc.Interval)
+	switch {
+	case cfg.Published:
+		lc.Port, lc.Path = cfg.Port, cfg.HealthCheckPath
+	case cfg.HealthPort != 0:
+		lc.Port = cfg.HealthPort
+	default:
+		return nil
+	}
+	return &lc
 }
 
 // removeContainer stops (gracefully) and removes a container. Missing
@@ -605,6 +641,14 @@ func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) e
 		return fmt.Errorf("remove container %s: %w", id, err)
 	}
 	return nil
+}
+
+// isRemoving reports whether the daemon is stopping and removing a
+// container (removeContainer).
+func (c *Core) isRemoving(id string) bool {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+	return c.removing[id]
 }
 
 func (c *Core) setRemoving(id string, on bool) {

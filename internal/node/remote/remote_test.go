@@ -83,6 +83,11 @@ func TestCalls(t *testing.T) {
 		Env: map[string]string{"A": "1"}, Cmd: "serve", Mounts: []node.Mount{{Volume: "data", Path: "/data"}},
 		Resources: node.Resources{MemoryBytes: 256 << 20, NanoCPUs: 5e8},
 		Labels:    node.Labels{ControlPlane: "cp1", Project: "1", Environment: "2", Service: "3", Release: "7"},
+		Health:    &node.LivenessCheck{Port: 8080, Path: "/up", Interval: 30 * time.Second, Timeout: 5 * time.Second, Retries: 3, StartPeriod: time.Minute, StartInterval: time.Second},
+	}
+	events, err := h.client.Events(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
 	ct, err := h.client.Start(ctx, spec)
 	if err != nil {
@@ -115,8 +120,32 @@ func TestCalls(t *testing.T) {
 		t.Fatalf("log line = %+v", l)
 	}
 	waitClosed(t, lines)
+
+	// The ongoing health check (protocol 13): its state and events, and a
+	// restart of a hung container.
+	h.emitUntilReceived(events, ct.ID) // subscribed; the die stopped it
+	h.rt.Emit(node.ContainerEvent{ContainerID: ct.ID, Action: "start"})
+	if ev := recv(t, events); ev.Action != "start" {
+		t.Fatalf("event = %+v", ev)
+	}
+	h.rt.SetHealth(ct.ID, node.HealthUnhealthy, "GET /up: timed out")
+	if ev := recv(t, events); ev.Action != "health_status" || ev.Health != node.HealthUnhealthy || ev.ContainerID != ct.ID {
+		t.Fatalf("health event = %+v", ev)
+	}
+	if got, err := h.client.Inspect(ctx, ct.ID); err != nil || got.Health != node.HealthUnhealthy || got.HealthOutput != "GET /up: timed out" {
+		t.Fatalf("inspect unhealthy = %+v, %v", got, err)
+	}
+	if err := h.client.Restart(ctx, ct.ID, time.Second); err != nil || !slices.Contains(h.rt.Ops(), "restart web-1") {
+		t.Fatalf("restart: %v, node ops %v", err, h.rt.Ops())
+	}
+	if got, err := h.client.Inspect(ctx, ct.ID); err != nil || got.Health != node.HealthStarting {
+		t.Fatalf("inspect after restart = %+v, %v", got, err)
+	}
 	if err := h.client.Stop(ctx, ct.ID, time.Second); err != nil {
 		t.Fatal(err)
+	}
+	if err := h.client.Restart(ctx, ct.ID, time.Second); !errors.Is(err, node.ErrNotRunning) {
+		t.Fatalf("restart a stopped container = %v, want ErrNotRunning", err)
 	}
 	if got, err := h.client.Inspect(ctx, ct.ID); err != nil || got.State != node.StateExited || got.Name != "web-1" {
 		t.Fatalf("inspect after stop = %+v, %v", got, err)

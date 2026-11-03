@@ -1,16 +1,18 @@
 import { useSyncExternalStore } from "react";
+import { plural } from "../ui/format";
 import type { LiveEvent, ServiceRef } from "./types";
 
-// What happened while this tab was open: deploy progress lines and crashes
-// from the live event bus. The audit log has who did what; this has what
-// the platform did about it. Kept in memory only, newest first.
+// What happened while this tab was open: deploy progress lines, crashes
+// and failing health checks from the live event bus. The audit log has
+// who did what; this has what the platform did about it. Kept in memory
+// only, newest first.
 
 export type FeedItem = {
   id: string;
   time: string;
   ref: ServiceRef;
   release?: number;
-  kind: "progress" | "live" | "failed" | "restarting" | "crashed";
+  kind: "progress" | "live" | "failed" | "restarting" | "crashed" | "unhealthy";
   text: string;
 };
 
@@ -39,7 +41,8 @@ export function recordLiveEvent(event: LiveEvent) {
     push({ time: created_at, ref, release, kind, text: message });
   }
   if (event.type === "service_status" && event.service_status) {
-    const { state, restart_count, exit_code } = event.service_status;
+    const { state, restart_count, exit_code, health, health_restarts } =
+      event.service_status;
     if (state === "restarting") {
       push({
         time: event.time,
@@ -54,6 +57,21 @@ export function recordLiveEvent(event: LiveEvent) {
         kind: "crashed",
         text: `crashed, exit ${exit_code}`,
       });
+    } else if (state === "running" && health === "unhealthy") {
+      // Status events repeat while it stays unhealthy; a new health
+      // restart changes the text, so it shows again.
+      const text = health_restarts
+        ? `health check failing, ${plural(health_restarts, "health restart")}`
+        : "health check failing";
+      const last = items.find(
+        (i) =>
+          i.ref.project === project &&
+          i.ref.environment === environment &&
+          i.ref.service === service,
+      );
+      if (last?.kind !== "unhealthy" || last.text !== text) {
+        push({ time: event.time, ref, kind: "unhealthy", text });
+      }
     }
   }
 }

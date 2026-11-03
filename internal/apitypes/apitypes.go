@@ -242,6 +242,16 @@ const (
 	ServiceNone ServiceState = "none"
 )
 
+// HealthState is the state of a service's ongoing health check (ADR 0043).
+type HealthState string
+
+// Health states.
+const (
+	HealthStarting  HealthState = "starting"
+	HealthHealthy   HealthState = "healthy"
+	HealthUnhealthy HealthState = "unhealthy"
+)
+
 // ServiceStatus is the observed runtime status of a service.
 type ServiceStatus struct {
 	State        ServiceState `json:"state" enum:"running,restarting,crashed,stopped,none"`
@@ -259,6 +269,15 @@ type ServiceStatus struct {
 	ServerOffline bool         `json:"server_offline,omitempty" doc:"The service's server can't be reached: state is the last known one"`
 	Server        string       `json:"server,omitempty" doc:"With server_offline: the server's name"`
 	ServerStatus  ServerStatus `json:"server_status,omitempty" enum:"offline,incompatible,revoked" doc:"With server_offline: the server's status"`
+
+	// Health is the ongoing health check's state while the container
+	// runs (ADR 0043). Empty when the service has none: nothing to
+	// probe, turned off, or a container from before checks existed.
+	Health HealthState `json:"health,omitempty" enum:"starting,healthy,unhealthy" doc:"Ongoing health check state; empty without one"`
+	// HealthRestarts counts the restarts the control plane made because
+	// the health check kept failing, since the release went live (or the
+	// daemon started). RestartCount doesn't include them.
+	HealthRestarts int `json:"health_restarts,omitempty"`
 }
 
 // ServiceSettings are a service's DB-held settings. Zero values mean "use
@@ -276,6 +295,14 @@ type ServiceSettings struct {
 	BuildCommand              string  `json:"build_command"`
 	MemoryMB                  int     `json:"memory_mb"`
 	CPUs                      float64 `json:"cpus"`
+
+	// The ongoing health check while the service runs (ADR 0043). It
+	// probes what the deploy's check does: HealthCheckPath over HTTP, or
+	// a TCP connect to the port.
+	HealthCheckIntervalSeconds     int `json:"health_check_interval_seconds" doc:"Seconds between ongoing health probes while the service runs. 0 means 30; -1 turns the ongoing check off"`
+	HealthCheckProbeTimeoutSeconds int `json:"health_check_probe_timeout_seconds" doc:"Seconds one ongoing probe may take. 0 means 5"`
+	HealthCheckRetries             int `json:"health_check_retries" doc:"Failed probes in a row before the service counts as unhealthy and is restarted. 0 means 3"`
+	HealthCheckStartPeriodSeconds  int `json:"health_check_start_period_seconds" doc:"Seconds after a (re)start in which failed probes don't count. 0 means the deploy's health check timeout"`
 }
 
 // Service is a container built from source or an image.
@@ -333,6 +360,11 @@ type CreateServiceRequest struct {
 	BuildCommand              string   `json:"build_command,omitempty"`
 	MemoryMB                  int      `json:"memory_mb,omitempty" minimum:"0"`
 	CPUs                      float64  `json:"cpus,omitempty" minimum:"0"`
+
+	HealthCheckIntervalSeconds     int `json:"health_check_interval_seconds,omitempty" minimum:"-1" maximum:"3600"`
+	HealthCheckProbeTimeoutSeconds int `json:"health_check_probe_timeout_seconds,omitempty" minimum:"0" maximum:"300"`
+	HealthCheckRetries             int `json:"health_check_retries,omitempty" minimum:"0" maximum:"100"`
+	HealthCheckStartPeriodSeconds  int `json:"health_check_start_period_seconds,omitempty" minimum:"0" maximum:"3600"`
 }
 
 // UpdateServiceRequest stages settings changes. Only fields that are set
@@ -349,6 +381,11 @@ type UpdateServiceRequest struct {
 	MemoryMB                  *int     `json:"memory_mb,omitempty" minimum:"0"`
 	CPUs                      *float64 `json:"cpus,omitempty" minimum:"0"`
 	Apply                     bool     `json:"apply,omitempty" doc:"Also apply all staged changes in the environment"`
+
+	HealthCheckIntervalSeconds     *int `json:"health_check_interval_seconds,omitempty" minimum:"-1" maximum:"3600"`
+	HealthCheckProbeTimeoutSeconds *int `json:"health_check_probe_timeout_seconds,omitempty" minimum:"0" maximum:"300"`
+	HealthCheckRetries             *int `json:"health_check_retries,omitempty" minimum:"0" maximum:"100"`
+	HealthCheckStartPeriodSeconds  *int `json:"health_check_start_period_seconds,omitempty" minimum:"0" maximum:"3600"`
 }
 
 // ReleaseStatus is a step of the deploy state machine.

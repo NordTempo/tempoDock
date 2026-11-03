@@ -42,6 +42,10 @@ type Runtime struct {
 	netMu sync.Mutex
 	// DataDir is dock's data dir, which DiskUsage measures; "" skips it.
 	DataDir string
+	// Probe is the host path of the installed dock-probe (probe.Install),
+	// which Start bind-mounts into containers with a spec.Health; ""
+	// starts them without an ongoing health check.
+	Probe string
 }
 
 var _ node.Containers = (*Runtime)(nil)
@@ -370,7 +374,7 @@ func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Cont
 	if err := r.checkDeps(ctx, spec); err != nil {
 		return node.Container{}, err
 	}
-	opts := createOptions(spec)
+	opts := createOptions(spec, r.Probe)
 	created, err := r.cli.ContainerCreate(ctx, opts)
 	if cerrdefs.IsConflict(err) {
 		return node.Container{}, fmt.Errorf("container name %q is already in use", spec.Name)
@@ -448,8 +452,10 @@ func NoSwap(memory int64) int64 {
 	return memory + 1
 }
 
-// createOptions translates spec into Docker's create request.
-func createOptions(spec node.ContainerSpec) client.ContainerCreateOptions {
+// createOptions translates spec into Docker's create request. probe is the
+// host path of dock-probe (Runtime.Probe); without one, spec.Health is
+// ignored.
+func createOptions(spec node.ContainerSpec, probe string) client.ContainerCreateOptions {
 	cfg := &container.Config{
 		Image:  spec.Image,
 		Labels: spec.Labels.Map(),
@@ -487,12 +493,47 @@ func createOptions(spec node.ContainerSpec) client.ContainerCreateOptions {
 		}
 		host.PortBindings = network.PortMap{port: {binding}}
 	}
+	if spec.Health != nil && probe != "" {
+		cfg.Healthcheck = healthcheck(*spec.Health)
+		host.Mounts = append(host.Mounts, mount.Mount{Type: mount.TypeBind, Source: probe, Target: probePath, ReadOnly: true})
+	}
 
 	opts := client.ContainerCreateOptions{Name: spec.Name, Config: cfg, HostConfig: host}
 	if spec.Network != "" {
 		opts.NetworkingConfig = networking(spec.Network, spec.Aliases)
 	}
 	return opts
+}
+
+// probePath is where dock-probe is bind-mounted in a container.
+const probePath = "/.dock-probe"
+
+// probeMargin is how much longer Docker waits for a probe than the probe
+// waits for the app, so the probe prints why it timed out before Docker
+// kills it (Docker would only log that the check timed out).
+const probeMargin = time.Second
+
+// healthcheck is Docker's healthcheck running dock-probe for hc. A zero
+// Timeout is probeTimeout; Docker's defaults apply to the other zero
+// settings.
+func healthcheck(hc node.LivenessCheck) *container.HealthConfig {
+	timeout := hc.Timeout
+	if timeout <= 0 {
+		timeout = probeTimeout
+	}
+	test := []string{"CMD", probePath, "tcp", strconv.Itoa(hc.Port)}
+	if hc.Path != "" {
+		test = []string{"CMD", probePath, "http", strconv.Itoa(hc.Port), hc.Path}
+	}
+	test = append(test, strconv.FormatInt(timeout.Milliseconds(), 10))
+	return &container.HealthConfig{
+		Test:          test,
+		Interval:      hc.Interval,
+		Timeout:       timeout + probeMargin,
+		Retries:       hc.Retries,
+		StartPeriod:   hc.StartPeriod,
+		StartInterval: hc.StartInterval,
+	}
 }
 
 // volumeMount mounts a named volume.
@@ -525,6 +566,24 @@ func (r *Runtime) Stop(ctx context.Context, id string, timeout time.Duration) er
 	secs := int(math.Ceil(max(timeout, 0).Seconds()))
 	if _, err := r.cli.ContainerStop(ctx, id, client.ContainerStopOptions{Timeout: &secs}); err != nil {
 		return fmt.Errorf("stop container %s: %w", id, err)
+	}
+	return nil
+}
+
+// Restart restarts a running managed container in place, killing it after
+// timeout. One that isn't running is node.ErrNotRunning: a stopped
+// service is never started by a health restart.
+func (r *Runtime) Restart(ctx context.Context, id string, timeout time.Duration) error {
+	st, err := r.inspect(ctx, id)
+	if err != nil {
+		return err
+	}
+	if st.State == nil || !st.State.Running {
+		return fmt.Errorf("restart container %s: %w", id, node.ErrNotRunning)
+	}
+	secs := int(math.Ceil(max(timeout, 0).Seconds()))
+	if _, err := r.cli.ContainerRestart(ctx, id, client.ContainerRestartOptions{Timeout: &secs}); err != nil {
+		return fmt.Errorf("restart container %s: %w", id, err)
 	}
 	return nil
 }
@@ -695,11 +754,36 @@ func toContainer(c container.InspectResponse) node.Container {
 		if t, err := time.Parse(time.RFC3339Nano, s.StartedAt); err == nil && t.Year() > 1 {
 			out.StartedAt = t
 		}
+		if h := s.Health; h != nil {
+			out.Health = string(h.Status)
+			if h.Status == container.Unhealthy {
+				out.HealthOutput = lastFailure(h.Log)
+			}
+		}
 	}
 	if c.NetworkSettings != nil {
 		out.HostPort = hostPort(c.NetworkSettings.Ports)
 	}
 	return out
+}
+
+// maxHealthOutput caps node.Container.HealthOutput.
+const maxHealthOutput = 256
+
+// lastFailure is the trimmed output of the newest failed probe in log
+// (oldest first), at most maxHealthOutput bytes.
+func lastFailure(log []*container.HealthcheckResult) string {
+	for _, r := range slices.Backward(log) {
+		if r == nil || r.ExitCode == 0 {
+			continue
+		}
+		out := strings.TrimSpace(r.Output)
+		if len(out) > maxHealthOutput {
+			out = strings.ToValidUTF8(out[:maxHealthOutput], "")
+		}
+		return out
+	}
+	return ""
 }
 
 // hostPort returns the loopback host port of the first published TCP port.

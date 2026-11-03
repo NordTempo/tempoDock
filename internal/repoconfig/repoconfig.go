@@ -60,7 +60,21 @@ type Deploy struct {
 	HealthCheckPath string
 	// HealthCheckTimeout is how long a new release may take to pass.
 	HealthCheckTimeout time.Duration
+
+	// The ongoing health check while the release runs (ADR 0043).
+	// HealthCheckInterval is the time between probes, IntervalOff for
+	// "off"; HealthCheckProbeTimeout bounds one probe; HealthCheckRetries
+	// failed probes in a row make the service unhealthy; failures within
+	// HealthCheckStartPeriod after a start don't count.
+	HealthCheckInterval     time.Duration
+	HealthCheckProbeTimeout time.Duration
+	HealthCheckRetries      int
+	HealthCheckStartPeriod  time.Duration
 }
+
+// IntervalOff is Deploy.HealthCheckInterval for
+// `health_check_interval = "off"`: no ongoing health check.
+const IntervalOff time.Duration = -1
 
 // file mirrors the TOML layout. Durations stay strings until validation so
 // errors can name the key.
@@ -74,11 +88,23 @@ type file struct {
 		Port               *int    `toml:"port"`
 		HealthCheckPath    *string `toml:"health_check_path"`
 		HealthCheckTimeout *string `toml:"health_check_timeout"`
+
+		HealthCheckInterval     *string `toml:"health_check_interval"`
+		HealthCheckProbeTimeout *string `toml:"health_check_probe_timeout"`
+		HealthCheckRetries      *int    `toml:"health_check_retries"`
+		HealthCheckStartPeriod  *string `toml:"health_check_start_period"`
 	} `toml:"deploy"`
 }
 
-// maxHealthCheckTimeout bounds deploy.health_check_timeout.
-const maxHealthCheckTimeout = time.Hour
+// Bounds of the deploy section's health check keys; the platform's
+// service settings have the same ones.
+const (
+	maxHealthCheckTimeout = time.Hour
+	maxInterval           = time.Hour
+	maxProbeTimeout       = 5 * time.Minute
+	maxRetries            = 100
+	maxStartPeriod        = time.Hour
+)
 
 // Parse decodes and validates a dock.toml. Unknown keys, wrong types and
 // syntax errors are reported with line numbers; all validation problems are
@@ -125,16 +151,39 @@ func Parse(b []byte) (Config, error) {
 	if p := cfg.Deploy.HealthCheckPath; p != "" && !strings.HasPrefix(p, "/") {
 		bad("deploy.health_check_path", "%q must start with /", p)
 	}
-	if s := f.Deploy.HealthCheckTimeout; s != nil {
+	// duration parses an optional duration key, 1s to most.
+	duration := func(key string, s *string, most time.Duration) time.Duration {
+		if s == nil {
+			return 0
+		}
 		d, err := time.ParseDuration(*s)
 		switch {
 		case err != nil:
-			bad("deploy.health_check_timeout", "%q is not a duration; use a unit, e.g. \"30s\" or \"2m\"", *s)
-		case d < time.Second || d > maxHealthCheckTimeout:
-			bad("deploy.health_check_timeout", "must be between 1s and %s, got %s", maxHealthCheckTimeout, d)
+			bad(key, "%q is not a duration; use a unit, e.g. \"30s\" or \"2m\"", *s)
+		case d < time.Second || d > most:
+			bad(key, "must be between 1s and %s, got %s", most, d)
 		}
-		cfg.Deploy.HealthCheckTimeout = d
+		return d
 	}
+	cfg.Deploy.HealthCheckTimeout = duration("deploy.health_check_timeout", f.Deploy.HealthCheckTimeout, maxHealthCheckTimeout)
+	switch s := f.Deploy.HealthCheckInterval; {
+	case s != nil && *s == "off":
+		cfg.Deploy.HealthCheckInterval = IntervalOff
+	case s != nil:
+		if _, err := time.ParseDuration(*s); err != nil {
+			bad("deploy.health_check_interval", "%q is not a duration; use a unit, e.g. \"30s\", or \"off\" to turn the ongoing check off", *s)
+			break
+		}
+		cfg.Deploy.HealthCheckInterval = duration("deploy.health_check_interval", s, maxInterval)
+	}
+	cfg.Deploy.HealthCheckProbeTimeout = duration("deploy.health_check_probe_timeout", f.Deploy.HealthCheckProbeTimeout, maxProbeTimeout)
+	if n := f.Deploy.HealthCheckRetries; n != nil {
+		if *n < 1 || *n > maxRetries {
+			bad("deploy.health_check_retries", "must be between 1 and %d, got %d", maxRetries, *n)
+		}
+		cfg.Deploy.HealthCheckRetries = *n
+	}
+	cfg.Deploy.HealthCheckStartPeriod = duration("deploy.health_check_start_period", f.Deploy.HealthCheckStartPeriod, maxStartPeriod)
 
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)

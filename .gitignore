@@ -8,3 +8,5 @@
 /.data/
 *.test
 coverage.out
+/internal/node/probe/bin/*
+!/internal/node/probe/bin/.gitkeep

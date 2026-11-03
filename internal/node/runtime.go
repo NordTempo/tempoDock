@@ -91,10 +91,19 @@ type Containers interface {
 	EnsureVolume(ctx context.Context, name string, labels Labels) error
 
 	// Start creates and starts a container. Restart policy is always
-	// unless-stopped, logs use the local driver with rotation.
+	// unless-stopped, logs use the local driver with rotation. With
+	// spec.Health set the container gets Docker's own healthcheck, run
+	// by the server's dock-probe (ADR 0043).
 	Start(ctx context.Context, spec ContainerSpec) (Container, error)
 	// Stop stops a container, waiting up to timeout for a graceful exit.
 	Stop(ctx context.Context, id string, timeout time.Duration) error
+	// Restart stops a running container (waiting up to timeout for a
+	// graceful exit) and starts the same container again: same ID,
+	// port and volumes. A container that isn't running is left alone
+	// (ErrNotRunning, wrapped), so a stopped service is never started
+	// by it. Core calls it for a container whose health check keeps
+	// failing (ADR 0043).
+	Restart(ctx context.Context, id string, timeout time.Duration) error
 	// Remove removes a stopped container. Never removes volumes.
 	Remove(ctx context.Context, id string) error
 	// Inspect returns the current state of one container.
@@ -499,7 +508,42 @@ type ContainerSpec struct {
 	HostPort  int
 	Mounts    []Mount
 	Resources Resources
+	// Health, when set, has Docker probe the running container (ADR
+	// 0043). Nil means no ongoing check.
+	Health *LivenessCheck
 }
+
+// LivenessCheck is the ongoing health check of a running container: Docker
+// runs the server's dock-probe inside the container every Interval, so
+// the daemon never polls (ADR 0043). The probe connects to Port on the
+// container's own loopback:
+//   - Path set: HTTP GET Path must answer 2xx or 3xx within Timeout.
+//   - No Path: a TCP connect must succeed within Timeout.
+//
+// Retries failed probes in a row make the container unhealthy. Failures
+// within StartPeriod after a start don't count; probes run every
+// StartInterval then, so a healthy start is seen quickly.
+type LivenessCheck struct {
+	Port          int
+	Path          string
+	Interval      time.Duration
+	Timeout       time.Duration
+	Retries       int
+	StartPeriod   time.Duration
+	StartInterval time.Duration
+}
+
+// Health states of a container with a LivenessCheck, as Docker reports
+// them. A container without one has none ("").
+const (
+	HealthStarting  = "starting"
+	HealthHealthy   = "healthy"
+	HealthUnhealthy = "unhealthy"
+)
+
+// ErrNotRunning is returned (wrapped) by Restart for a container that
+// isn't running.
+var ErrNotRunning = errors.New("container is not running")
 
 // Mount attaches a named volume at Path.
 type Mount struct {
@@ -539,6 +583,11 @@ type Container struct {
 	ExitCode     int
 	RestartCount int
 	OOMKilled    bool
+	// Health is the LivenessCheck's state (HealthStarting, HealthHealthy,
+	// HealthUnhealthy), empty without one. HealthOutput is what the last
+	// failed probe said, at most 256 bytes.
+	Health       string
+	HealthOutput string
 }
 
 // HealthCheck describes when a new container counts as healthy.
@@ -580,10 +629,14 @@ type LogLine struct {
 type ContainerEvent struct {
 	ContainerID string
 	Labels      Labels
-	// Action is Docker's action: start, die, stop, oom, restart, destroy, ...
+	// Action is Docker's action: start, die, stop, oom, restart, destroy,
+	// ..., and "health_status" when a LivenessCheck's state changes.
 	Action   string
 	ExitCode int
-	Time     time.Time
+	// Health is the new state of a "health_status" event: HealthHealthy
+	// or HealthUnhealthy.
+	Health string
+	Time   time.Time
 }
 
 // BuildRequest describes one image build.

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -70,8 +71,31 @@ func (c *Core) setStatus(ss svcScope, s apitypes.ServiceStatus) {
 	}
 }
 
+// changeStatus changes a service's stored status with fn, under the lock,
+// and publishes it if it changed: for changes made beside the event
+// stream (health restarts), which a read and a later setStatus could
+// undo.
+func (c *Core) changeStatus(ss svcScope, fn func(*apitypes.ServiceStatus)) {
+	c.statusMu.Lock()
+	s, ok := c.status[ss.svc.ID]
+	if !ok {
+		s = apitypes.ServiceStatus{State: apitypes.ServiceNone}
+	}
+	prev := s
+	fn(&s)
+	if ok && s == prev {
+		c.statusMu.Unlock()
+		return
+	}
+	t := now()
+	s.UpdatedAt = &t
+	c.status[ss.svc.ID] = s
+	c.statusMu.Unlock()
+	c.publish(ss, apitypes.Event{Type: apitypes.EventServiceStatus, ServiceStatus: &s})
+}
+
 func statusOf(ct node.Container) apitypes.ServiceStatus {
-	s := apitypes.ServiceStatus{RestartCount: ct.RestartCount, OOMKilled: ct.OOMKilled, ExitCode: ct.ExitCode}
+	s := apitypes.ServiceStatus{RestartCount: ct.RestartCount, OOMKilled: ct.OOMKilled, ExitCode: ct.ExitCode, Health: apitypes.HealthState(ct.Health)}
 	switch ct.State {
 	case node.StateRunning:
 		s.State = apitypes.ServiceRunning
@@ -159,12 +183,35 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	}
 	s := c.getStatus(ss.svc.ID)
 	s.UpdatedAt = nil
+	if (ev.Action == "die" || ev.Action == "start" || ev.Action == "restart") && c.health.ownEvent(ev, time.Now()) {
+		// A health restart (health.go): not a crash, and not counted in
+		// RestartCount; HealthRestarts counts it.
+		switch ev.Action {
+		case "die":
+			s.State = apitypes.ServiceRestarting
+		case "start":
+			s.State = apitypes.ServiceRunning
+			if s.Health != "" {
+				s.Health = apitypes.HealthStarting
+			}
+		default: // its restart event: the restart is over
+			return
+		}
+		c.setStatus(ss, s)
+		return
+	}
 	switch ev.Action {
 	case "start", "restart":
 		if s.State == apitypes.ServiceCrashed || s.State == apitypes.ServiceRestarting || ev.Action == "restart" {
 			s.RestartCount++
 		}
 		s.State = apitypes.ServiceRunning
+		if ev.Action == "start" && s.Health != "" {
+			s.Health = apitypes.HealthStarting // Docker starts its check over
+		}
+	case "health_status":
+		s.Health = apitypes.HealthState(ev.Health)
+		s.HealthRestarts = c.onHealth(ss, ev.ContainerID, ev.Health, time.Now())
 	case "die":
 		s.State, s.ExitCode = apitypes.ServiceCrashed, ev.ExitCode
 	case "oom":
@@ -411,6 +458,12 @@ func (c *Core) reconcileServer(ctx context.Context, serverID int64, rt node.Runt
 		s := statusOf(ct)
 		if s.OOMKilled {
 			s.MemoryLimitMB = c.memoryLimitMB(r)
+		}
+		s.HealthRestarts = c.health.restarts(ss.svc.ID, ct.ID)
+		if s.Health == apitypes.HealthUnhealthy && ct.State == node.StateRunning {
+			// It turned unhealthy while the daemon (or the server's link)
+			// was down: handle it as if the event had just come.
+			c.onHealth(ss, ct.ID, ct.Health, time.Now())
 		}
 		c.setStatus(ss, s)
 	}

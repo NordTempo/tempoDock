@@ -10,6 +10,10 @@ export const settingLabel: Record<SettingKey, string> = {
   start_command: "start command",
   health_check_path: "health check path",
   health_check_timeout_seconds: "health check timeout",
+  health_check_interval_seconds: "health check interval",
+  health_check_probe_timeout_seconds: "health probe timeout",
+  health_check_retries: "health check retries",
+  health_check_start_period_seconds: "health check start period",
   cpus: "cpu limit",
   memory_mb: "memory limit",
   dockerfile_path: "dockerfile",
@@ -22,6 +26,10 @@ export const isSettingKey = (field: string): field is SettingKey =>
 const numeric = new Set<SettingKey>([
   "port",
   "health_check_timeout_seconds",
+  "health_check_interval_seconds",
+  "health_check_probe_timeout_seconds",
+  "health_check_retries",
+  "health_check_start_period_seconds",
   "cpus",
   "memory_mb",
 ]);
@@ -40,6 +48,14 @@ export function formatSetting(key: SettingKey, value: string | number) {
       return String(value) || "none, TCP connect";
     case "health_check_timeout_seconds":
       return n ? `${n}s` : "default";
+    case "health_check_interval_seconds":
+      return n < 0 ? "off" : n ? `${n}s` : "30s (default)";
+    case "health_check_probe_timeout_seconds":
+      return n ? `${n}s` : "5s (default)";
+    case "health_check_retries":
+      return n ? String(n) : "3 (default)";
+    case "health_check_start_period_seconds":
+      return n ? `${n}s` : "health check timeout (default)";
     case "cpus":
       return n ? String(n) : "no limit";
     case "memory_mb":
@@ -51,17 +67,25 @@ export function formatSetting(key: SettingKey, value: string | number) {
   }
 }
 
-/** The text an editor starts from: empty for defaults. */
+/** The text an editor starts from: empty for defaults, "off" for -1. */
 export function editText(key: SettingKey, value: string | number) {
   if (!numeric.has(key)) return String(value);
   const n = Number(value);
   if (!n) return "";
+  if (n < 0) return "off";
   return key === "memory_mb" ? mb(n) : String(n);
 }
 
+/** What an empty editor shows: the default, and for the interval how to turn the check off. */
+export const editPlaceholder = (key: SettingKey) =>
+  key === "health_check_interval_seconds"
+    ? "30s, or off"
+    : formatSetting(key, "");
+
 /**
  * Validates input for one setting and builds the patch to stage. Empty
- * input means the default (zero).
+ * input means the default (zero); "off" turns the ongoing health check
+ * off (interval -1).
  */
 export function parseSetting(
   key: SettingKey,
@@ -82,6 +106,33 @@ export function parseSetting(
       return seconds === null
         ? new Error("Timeout in whole seconds")
         : { health_check_timeout_seconds: seconds };
+    }
+    case "health_check_interval_seconds": {
+      if (input.toLowerCase() === "off") {
+        return { health_check_interval_seconds: -1 };
+      }
+      const seconds = int(3600);
+      return seconds === null
+        ? new Error("Interval in whole seconds up to 3600, or off")
+        : { health_check_interval_seconds: seconds };
+    }
+    case "health_check_probe_timeout_seconds": {
+      const seconds = int(300);
+      return seconds === null
+        ? new Error("Probe timeout in whole seconds up to 300")
+        : { health_check_probe_timeout_seconds: seconds };
+    }
+    case "health_check_retries": {
+      const retries = int(100);
+      return retries === null
+        ? new Error("Retries must be 0 to 100")
+        : { health_check_retries: retries };
+    }
+    case "health_check_start_period_seconds": {
+      const seconds = int(3600);
+      return seconds === null
+        ? new Error("Start period in whole seconds up to 3600")
+        : { health_check_start_period_seconds: seconds };
     }
     case "cpus": {
       const cpus = Number(input || 0);

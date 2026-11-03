@@ -1,7 +1,9 @@
 -- name: CreateService :one
 INSERT INTO services (environment_id, name, image, port, health_check_path, health_check_timeout_seconds,
-                      start_command, dockerfile_path, build_command, memory_mb, cpus)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      start_command, dockerfile_path, build_command, memory_mb, cpus,
+                      health_check_interval_seconds, health_check_probe_timeout_seconds,
+                      health_check_retries, health_check_start_period_seconds)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetService :one
@@ -16,7 +18,9 @@ SELECT * FROM services WHERE environment_id = +? ORDER BY name;
 -- name: UpdateService :one
 UPDATE services SET
     image = ?, port = ?, health_check_path = ?, health_check_timeout_seconds = ?,
-    start_command = ?, dockerfile_path = ?, build_command = ?, memory_mb = ?, cpus = ?
+    start_command = ?, dockerfile_path = ?, build_command = ?, memory_mb = ?, cpus = ?,
+    health_check_interval_seconds = ?, health_check_probe_timeout_seconds = ?,
+    health_check_retries = ?, health_check_start_period_seconds = ?
 WHERE id = +?
 RETURNING *;
 

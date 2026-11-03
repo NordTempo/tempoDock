@@ -127,6 +127,8 @@ type Core struct {
 	// and removing, so their die and destroy events aren't taken for a
 	// crash or drift. An ID leaves the set on its destroy event.
 	removing map[string]bool
+	// health follows the services' ongoing health checks (health.go).
+	health healthWatch
 
 	// loginLimit throttles password attempts per client IP, per (email,
 	// IP) and, more loosely, per email (httpkit.LoginLimiter); bcryptSem
@@ -207,6 +209,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		lookupTXT:  o.LookupTXT,
 		status:     map[int64]apitypes.ServiceStatus{},
 		removing:   map[string]bool{},
+		health:     newHealthWatch(),
 		uploads:    map[int64]bool{},
 		loginLimit: httpkit.NewLoginLimiter(),
 		bcryptSem:  make(chan struct{}, 2),

@@ -1,11 +1,17 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-integration lint generate dev perf perf-baseline
+.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-integration lint generate dev perf perf-baseline
 
-## build: the single static binary (UI embedded if web/dist is built)
-build:
+## build: the single static binary (UI embedded if web/dist is built, and
+## dock-probe)
+build: probe
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/dock ./cmd/dock
+
+## probe: dock-probe, the health probe dock embeds and Docker runs inside
+## app containers (ADR 0043), for GOOS/GOARCH from the environment
+probe:
+	CGO_ENABLED=0 go build -trimpath -ldflags '-s -w -buildid=' -o internal/node/probe/bin/dock-probe ./cmd/dock-probe
 
 ## build-cli: the client alone (`-tags dockcli`: no serve/admin/openapi or
 ## daemon dependencies), for this machine and for macOS and Linux
@@ -77,7 +83,7 @@ test:
 	go test ./...
 
 ## test-integration: tests against a real Docker Engine (and Caddy, BuildKit)
-test-integration:
+test-integration: probe
 	go test -tags integration -count=1 ./...
 
 lint:
