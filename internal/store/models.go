@@ -546,6 +546,7 @@ type Site struct {
 	ArchivedAt    *time.Time
 	CreatedBy     string
 	CreatedAt     time.Time
+	PublicSlug    *string
 }
 
 type SiteFunnel struct {

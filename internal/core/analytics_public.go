@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -15,12 +16,13 @@ import (
 
 // Public dashboards (ADR 0037, phase A4). A site with its public setting
 // on has a read-only dashboard at stats-<site>.<base domain> and at its
-// own public_domain, if set. The control plane's Caddy routes those
-// hostnames to [analytics] stats_listen, a listener serving nothing else
-// (api.PublicStats), with certificates on demand like Dock's address. The
-// page shows only the site's aggregates: no services, releases, visitor
-// IDs or replays, and error groups (without stacks) only when the site
-// says so.
+// own public_domain, if set. Both are one live site's across every org
+// (unique indexes), so no org can take or shadow another's. The control
+// plane's Caddy routes those hostnames to [analytics] stats_listen, a
+// listener serving nothing else (api.PublicStats), with certificates on
+// demand like Dock's address. The page shows only the site's aggregates:
+// no services, releases, visitor IDs or replays, and error groups
+// (without stacks) only when the site says so.
 //
 // The control plane keeps which hostname is which site in memory, built
 // from the sites when it starts and whenever a site's settings change:
@@ -34,7 +36,9 @@ type publicIndex struct {
 }
 
 // publicSlug is a site's name as a hostname label: "shop.example.com" is
-// "shop-example-com".
+// "shop-example-com", and a name with no letters or digits is "site". A
+// site holds its label (sites.public_slug), unique across every org, so
+// its address is its own: see freePublicSlug.
 func publicSlug(name string) string {
 	var b strings.Builder
 	dash := false
@@ -51,7 +55,51 @@ func publicSlug(name string) string {
 	if len(slug) > 50 {
 		slug = slug[:50]
 	}
-	return strings.TrimSuffix(slug, "-")
+	if slug = strings.TrimSuffix(slug, "-"); slug == "" {
+		return "site"
+	}
+	return slug
+}
+
+// freePublicSlug is slug, or slug-2, slug-3..., whichever no live site
+// but siteID (0 for one being made) holds in any org: a site made, or
+// given an address from before they were stored, never takes another's.
+func freePublicSlug(ctx context.Context, q *store.Queries, siteID int64, slug string) (string, error) {
+	for i := 1; ; i++ {
+		candidate := slug
+		if i > 1 {
+			candidate += "-" + strconv.Itoa(i)
+		}
+		switch holder, err := q.PublicSlugHolder(ctx, &candidate); {
+		case store.IsNotFound(err) || (err == nil && holder == siteID):
+			return candidate, nil
+		case err != nil:
+			return "", err
+		}
+	}
+}
+
+// assignPublicSlugs gives the live sites from before public addresses
+// were stored (migration 0037) theirs, oldest first, so of two that
+// share one the oldest keeps it. Run when analytics starts; one query
+// once every site has its address.
+func (c *Core) assignPublicSlugs(ctx context.Context) error {
+	sites, err := c.store.ListSitesWithoutPublicSlug(ctx)
+	if err != nil || len(sites) == 0 {
+		return err
+	}
+	return c.store.Tx(ctx, func(q *store.Queries) error {
+		for _, s := range sites {
+			slug, err := freePublicSlug(ctx, q, s.ID, publicSlug(s.Name))
+			if err != nil {
+				return err
+			}
+			if err := q.SetSitePublicSlug(ctx, store.SetSitePublicSlugParams{PublicSlug: &slug, ID: s.ID}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // publicBase is the base domain public dashboards are under: the
@@ -64,17 +112,16 @@ func (c *Core) publicBase(ctx context.Context) (string, error) {
 	return c.ingressOf(srv).baseDomain, nil
 }
 
-// publicHosts are a site's public dashboard hostnames under its settings
-// and the base domain: none while it isn't public.
-func (c *Core) publicHosts(base, name string, set apitypes.SiteSettings) []string {
+// publicHosts are a site's public dashboard hostnames under its address
+// (sites.public_slug), its settings and the base domain: none while it
+// isn't public.
+func (c *Core) publicHosts(base string, slug *string, set apitypes.SiteSettings) []string {
 	if set.Public == nil || !*set.Public || c.cfg.Analytics.StatsListen == "" {
 		return nil
 	}
 	var out []string
-	if base != "" {
-		if slug := publicSlug(name); slug != "" {
-			out = append(out, "stats-"+slug+"."+base)
-		}
+	if base != "" && slug != nil && *slug != "" {
+		out = append(out, "stats-"+*slug+"."+base)
 	}
 	if set.PublicDomain != nil && *set.PublicDomain != "" {
 		out = append(out, *set.PublicDomain)
@@ -116,13 +163,16 @@ func (c *Core) publicSitesChanged(ctx context.Context) {
 	}
 }
 
-// loadPublicHosts reads every live site's public hostnames.
+// loadPublicHosts reads every live site's public hostnames. Addresses
+// and public domains are each one site's (unique indexes); a public
+// domain that became a stats-<site> address when the base domain changed
+// stays the older site's.
 func (c *Core) loadPublicHosts(ctx context.Context) (map[string]int64, error) {
 	hosts := map[string]int64{}
 	if c.cfg.Analytics.StatsListen == "" {
 		return hosts, nil
 	}
-	sites, err := c.store.ListLiveSites(ctx)
+	sites, err := c.store.ListPublicSites(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +186,7 @@ func (c *Core) loadPublicHosts(ctx context.Context) (map[string]int64, error) {
 	}
 	for _, s := range sites {
 		set := mergeSettings(defaults, siteOverrides(store.Site{Settings: s.Settings}))
-		for _, h := range c.publicHosts(base, s.Name, set) {
+		for _, h := range c.publicHosts(base, s.PublicSlug, set) {
 			if _, taken := hosts[h]; !taken {
 				hosts[h] = s.ID
 			}
@@ -147,8 +197,11 @@ func (c *Core) loadPublicHosts(ctx context.Context) (map[string]int64, error) {
 
 // checkPublicDomain normalizes a site's public domain ("" for none) and
 // refuses one that something else has: an app's domain, Dock's address or
-// webhook hostname, or another site's dashboard.
-func (c *Core) checkPublicDomain(ctx context.Context, siteID int64, host string) (string, error) {
+// webhook hostname, a public dashboard's address (stats-<site>.<base
+// domain>), or another site's public domain, shown or not, in any org.
+// q is the transaction the domain is saved in, so no other site takes it
+// meanwhile.
+func (c *Core) checkPublicDomain(ctx context.Context, q *store.Queries, siteID int64, host string) (string, error) {
 	if host == "" {
 		return "", nil
 	}
@@ -156,7 +209,7 @@ func (c *Core) checkPublicDomain(ctx context.Context, siteID int64, host string)
 	if err != nil {
 		return "", invalid("public domain %q isn't a hostname, like stats.example.com", host)
 	}
-	switch _, err := c.store.GetDomainByHostname(ctx, h); {
+	switch _, err := q.GetDomainByHostname(ctx, h); {
 	case err == nil:
 		return "", errf(apitypes.CodeHostnameTaken, "%s is a service's domain; a public dashboard needs a hostname of its own", h)
 	case !store.IsNotFound(err):
@@ -164,6 +217,19 @@ func (c *Core) checkPublicDomain(ctx context.Context, siteID int64, host string)
 	}
 	if h == c.cfg.Hooks.PublicHost || h == c.publicHost() {
 		return "", errf(apitypes.CodeHostnameTaken, "%s is Dock's own hostname; use another one", h)
+	}
+	base, err := c.publicBase(ctx)
+	if err != nil {
+		return "", err
+	}
+	if label, ok := strings.CutSuffix(h, "."+base); base != "" && ok && strings.HasPrefix(label, "stats-") {
+		return "", errf(apitypes.CodeHostnameTaken, "%s is a Dock address for public dashboards; use a hostname of your own, like stats.example.com", h)
+	}
+	switch holder, err := q.PublicDomainHolder(ctx, h); {
+	case err == nil && holder != siteID:
+		return "", errf(apitypes.CodeHostnameTaken, "%s is another site's public domain; use another hostname", h)
+	case err != nil && !store.IsNotFound(err):
+		return "", err
 	}
 	if other := c.publicSite(h); other != 0 && other != siteID {
 		return "", errf(apitypes.CodeHostnameTaken, "%s is another site's public dashboard", h)
@@ -285,7 +351,7 @@ func (c *Core) SitePublic(ctx context.Context, a Actor, project, name string) (a
 	ing := c.ingressOf(srv)
 	set := mergeSettings(defaults, siteOverrides(s.site))
 	out := apitypes.SitePublic{Public: *set.Public, Addresses: []apitypes.PublicAddress{}}
-	hosts := c.publicHosts(ing.baseDomain, s.site.Name, set)
+	hosts := c.publicHosts(ing.baseDomain, s.site.PublicSlug, set)
 	if s.site.ArchivedAt != nil {
 		hosts = nil
 	}

@@ -753,6 +753,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listPromotableReleasesStmt, err = db.PrepareContext(ctx, listPromotableReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPromotableReleases: %w", err)
 	}
+	if q.listPublicSitesStmt, err = db.PrepareContext(ctx, listPublicSites); err != nil {
+		return nil, fmt.Errorf("error preparing query ListPublicSites: %w", err)
+	}
 	if q.listRegistryServicesStmt, err = db.PrepareContext(ctx, listRegistryServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListRegistryServices: %w", err)
 	}
@@ -824,6 +827,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listSiteMarkersStmt, err = db.PrepareContext(ctx, listSiteMarkers); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSiteMarkers: %w", err)
+	}
+	if q.listSitesWithoutPublicSlugStmt, err = db.PrepareContext(ctx, listSitesWithoutPublicSlug); err != nil {
+		return nil, fmt.Errorf("error preparing query ListSitesWithoutPublicSlug: %w", err)
 	}
 	if q.listStatsNamesStmt, err = db.PrepareContext(ctx, listStatsNames); err != nil {
 		return nil, fmt.Errorf("error preparing query ListStatsNames: %w", err)
@@ -914,6 +920,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.pruneTrafficStatsStmt, err = db.PrepareContext(ctx, pruneTrafficStats); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneTrafficStats: %w", err)
+	}
+	if q.publicDomainHolderStmt, err = db.PrepareContext(ctx, publicDomainHolder); err != nil {
+		return nil, fmt.Errorf("error preparing query PublicDomainHolder: %w", err)
+	}
+	if q.publicSlugHolderStmt, err = db.PrepareContext(ctx, publicSlugHolder); err != nil {
+		return nil, fmt.Errorf("error preparing query PublicSlugHolder: %w", err)
 	}
 	if q.registerNodeServerStmt, err = db.PrepareContext(ctx, registerNodeServer); err != nil {
 		return nil, fmt.Errorf("error preparing query RegisterNodeServer: %w", err)
@@ -1106,6 +1118,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setSiteHostnameServiceStmt, err = db.PrepareContext(ctx, setSiteHostnameService); err != nil {
 		return nil, fmt.Errorf("error preparing query SetSiteHostnameService: %w", err)
+	}
+	if q.setSitePublicSlugStmt, err = db.PrepareContext(ctx, setSitePublicSlug); err != nil {
+		return nil, fmt.Errorf("error preparing query SetSitePublicSlug: %w", err)
 	}
 	if q.setSiteSettingsStmt, err = db.PrepareContext(ctx, setSiteSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetSiteSettings: %w", err)
@@ -2417,6 +2432,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listPromotableReleasesStmt: %w", cerr)
 		}
 	}
+	if q.listPublicSitesStmt != nil {
+		if cerr := q.listPublicSitesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listPublicSitesStmt: %w", cerr)
+		}
+	}
 	if q.listRegistryServicesStmt != nil {
 		if cerr := q.listRegistryServicesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listRegistryServicesStmt: %w", cerr)
@@ -2535,6 +2555,11 @@ func (q *Queries) Close() error {
 	if q.listSiteMarkersStmt != nil {
 		if cerr := q.listSiteMarkersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listSiteMarkersStmt: %w", cerr)
+		}
+	}
+	if q.listSitesWithoutPublicSlugStmt != nil {
+		if cerr := q.listSitesWithoutPublicSlugStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listSitesWithoutPublicSlugStmt: %w", cerr)
 		}
 	}
 	if q.listStatsNamesStmt != nil {
@@ -2685,6 +2710,16 @@ func (q *Queries) Close() error {
 	if q.pruneTrafficStatsStmt != nil {
 		if cerr := q.pruneTrafficStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing pruneTrafficStatsStmt: %w", cerr)
+		}
+	}
+	if q.publicDomainHolderStmt != nil {
+		if cerr := q.publicDomainHolderStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing publicDomainHolderStmt: %w", cerr)
+		}
+	}
+	if q.publicSlugHolderStmt != nil {
+		if cerr := q.publicSlugHolderStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing publicSlugHolderStmt: %w", cerr)
 		}
 	}
 	if q.registerNodeServerStmt != nil {
@@ -3005,6 +3040,11 @@ func (q *Queries) Close() error {
 	if q.setSiteHostnameServiceStmt != nil {
 		if cerr := q.setSiteHostnameServiceStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setSiteHostnameServiceStmt: %w", cerr)
+		}
+	}
+	if q.setSitePublicSlugStmt != nil {
+		if cerr := q.setSitePublicSlugStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setSitePublicSlugStmt: %w", cerr)
 		}
 	}
 	if q.setSiteSettingsStmt != nil {
@@ -3439,6 +3479,7 @@ type Queries struct {
 	listProjectVolumesStmt              *sql.Stmt
 	listProjectsStmt                    *sql.Stmt
 	listPromotableReleasesStmt          *sql.Stmt
+	listPublicSitesStmt                 *sql.Stmt
 	listRegistryServicesStmt            *sql.Stmt
 	listReleaseEventsStmt               *sql.Stmt
 	listReleasesStmt                    *sql.Stmt
@@ -3463,6 +3504,7 @@ type Queries struct {
 	listSiteGoalsStmt                   *sql.Stmt
 	listSiteHostnamesStmt               *sql.Stmt
 	listSiteMarkersStmt                 *sql.Stmt
+	listSitesWithoutPublicSlugStmt      *sql.Stmt
 	listStatsNamesStmt                  *sql.Stmt
 	listStatsTargetsStmt                *sql.Stmt
 	listStorageConnectionsStmt          *sql.Stmt
@@ -3493,6 +3535,8 @@ type Queries struct {
 	pruneServiceStatsStmt               *sql.Stmt
 	pruneTrafficPathsStmt               *sql.Stmt
 	pruneTrafficStatsStmt               *sql.Stmt
+	publicDomainHolderStmt              *sql.Stmt
+	publicSlugHolderStmt                *sql.Stmt
 	registerNodeServerStmt              *sql.Stmt
 	relabelBackupRepositoryStmt         *sql.Stmt
 	relabelControlPlaneRepositoryStmt   *sql.Stmt
@@ -3557,6 +3601,7 @@ type Queries struct {
 	setServiceTemplateStmt              *sql.Stmt
 	setSiteEnvironmentStmt              *sql.Stmt
 	setSiteHostnameServiceStmt          *sql.Stmt
+	setSitePublicSlugStmt               *sql.Stmt
 	setSiteSettingsStmt                 *sql.Stmt
 	setTokenDataAccessStmt              *sql.Stmt
 	setUserDisabledStmt                 *sql.Stmt
@@ -3836,6 +3881,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listProjectVolumesStmt:              q.listProjectVolumesStmt,
 		listProjectsStmt:                    q.listProjectsStmt,
 		listPromotableReleasesStmt:          q.listPromotableReleasesStmt,
+		listPublicSitesStmt:                 q.listPublicSitesStmt,
 		listRegistryServicesStmt:            q.listRegistryServicesStmt,
 		listReleaseEventsStmt:               q.listReleaseEventsStmt,
 		listReleasesStmt:                    q.listReleasesStmt,
@@ -3860,6 +3906,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listSiteGoalsStmt:                   q.listSiteGoalsStmt,
 		listSiteHostnamesStmt:               q.listSiteHostnamesStmt,
 		listSiteMarkersStmt:                 q.listSiteMarkersStmt,
+		listSitesWithoutPublicSlugStmt:      q.listSitesWithoutPublicSlugStmt,
 		listStatsNamesStmt:                  q.listStatsNamesStmt,
 		listStatsTargetsStmt:                q.listStatsTargetsStmt,
 		listStorageConnectionsStmt:          q.listStorageConnectionsStmt,
@@ -3890,6 +3937,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		pruneServiceStatsStmt:               q.pruneServiceStatsStmt,
 		pruneTrafficPathsStmt:               q.pruneTrafficPathsStmt,
 		pruneTrafficStatsStmt:               q.pruneTrafficStatsStmt,
+		publicDomainHolderStmt:              q.publicDomainHolderStmt,
+		publicSlugHolderStmt:                q.publicSlugHolderStmt,
 		registerNodeServerStmt:              q.registerNodeServerStmt,
 		relabelBackupRepositoryStmt:         q.relabelBackupRepositoryStmt,
 		relabelControlPlaneRepositoryStmt:   q.relabelControlPlaneRepositoryStmt,
@@ -3954,6 +4003,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setServiceTemplateStmt:              q.setServiceTemplateStmt,
 		setSiteEnvironmentStmt:              q.setSiteEnvironmentStmt,
 		setSiteHostnameServiceStmt:          q.setSiteHostnameServiceStmt,
+		setSitePublicSlugStmt:               q.setSitePublicSlugStmt,
 		setSiteSettingsStmt:                 q.setSiteSettingsStmt,
 		setTokenDataAccessStmt:              q.setTokenDataAccessStmt,
 		setUserDisabledStmt:                 q.setUserDisabledStmt,

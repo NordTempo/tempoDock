@@ -150,13 +150,14 @@ func (q *Queries) CountSiteHostnames(ctx context.Context, siteID int64) (int64, 
 
 const createSite = `-- name: CreateSite :one
 
-INSERT INTO sites (environment_id, name, created_by, created_at) VALUES (?, ?, ?, ?)
-RETURNING id, environment_id, name, settings, archived_at, created_by, created_at
+INSERT INTO sites (environment_id, name, public_slug, created_by, created_at) VALUES (?, ?, ?, ?, ?)
+RETURNING id, environment_id, name, settings, archived_at, created_by, created_at, public_slug
 `
 
 type CreateSiteParams struct {
 	EnvironmentID int64
 	Name          string
+	PublicSlug    *string
 	CreatedBy     string
 	CreatedAt     time.Time
 }
@@ -166,6 +167,7 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 	row := q.queryRow(ctx, q.createSiteStmt, createSite,
 		arg.EnvironmentID,
 		arg.Name,
+		arg.PublicSlug,
 		arg.CreatedBy,
 		arg.CreatedAt,
 	)
@@ -178,6 +180,7 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 		&i.ArchivedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.PublicSlug,
 	)
 	return i, err
 }
@@ -227,7 +230,7 @@ func (q *Queries) DomainScope(ctx context.Context, hostname string) (DomainScope
 }
 
 const getSite = `-- name: GetSite :one
-SELECT id, environment_id, name, settings, archived_at, created_by, created_at FROM sites WHERE id = +?
+SELECT id, environment_id, name, settings, archived_at, created_by, created_at, public_slug FROM sites WHERE id = +?
 `
 
 func (q *Queries) GetSite(ctx context.Context, id int64) (Site, error) {
@@ -241,12 +244,13 @@ func (q *Queries) GetSite(ctx context.Context, id int64) (Site, error) {
 		&i.ArchivedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.PublicSlug,
 	)
 	return i, err
 }
 
 const getSiteByName = `-- name: GetSiteByName :one
-SELECT sites.id, sites.environment_id, sites.name, sites.settings, sites.archived_at, sites.created_by, sites.created_at FROM sites
+SELECT sites.id, sites.environment_id, sites.name, sites.settings, sites.archived_at, sites.created_by, sites.created_at, sites.public_slug FROM sites
 JOIN environments ON environments.id = sites.environment_id
 WHERE environments.project_id = +?1 AND sites.name = +?2 AND sites.archived_at IS NULL
 ORDER BY sites.id LIMIT 1
@@ -270,6 +274,7 @@ func (q *Queries) GetSiteByName(ctx context.Context, arg GetSiteByNameParams) (S
 		&i.ArchivedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.PublicSlug,
 	)
 	return i, err
 }
@@ -421,7 +426,7 @@ func (q *Queries) ListLiveSites(ctx context.Context) ([]ListLiveSitesRow, error)
 }
 
 const listProjectSites = `-- name: ListProjectSites :many
-SELECT sites.id, sites.environment_id, sites.name, sites.settings, sites.archived_at, sites.created_by, sites.created_at, environments.name AS environment_name FROM sites
+SELECT sites.id, sites.environment_id, sites.name, sites.settings, sites.archived_at, sites.created_by, sites.created_at, sites.public_slug, environments.name AS environment_name FROM sites
 JOIN environments ON environments.id = sites.environment_id
 WHERE environments.project_id = +?
 ORDER BY sites.archived_at IS NOT NULL, sites.name, sites.id
@@ -435,6 +440,7 @@ type ListProjectSitesRow struct {
 	ArchivedAt      *time.Time
 	CreatedBy       string
 	CreatedAt       time.Time
+	PublicSlug      *string
 	EnvironmentName string
 }
 
@@ -457,8 +463,45 @@ func (q *Queries) ListProjectSites(ctx context.Context, projectID int64) ([]List
 			&i.ArchivedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.PublicSlug,
 			&i.EnvironmentName,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicSites = `-- name: ListPublicSites :many
+SELECT id, public_slug, settings FROM sites WHERE archived_at IS NULL ORDER BY id
+`
+
+type ListPublicSitesRow struct {
+	ID         int64
+	PublicSlug *string
+	Settings   string
+}
+
+// ListPublicSites returns every live site's public address and settings,
+// oldest first: the public dashboards' hostnames, the oldest site's
+// where two would share one.
+func (q *Queries) ListPublicSites(ctx context.Context) ([]ListPublicSitesRow, error) {
+	rows, err := q.query(ctx, q.listPublicSitesStmt, listPublicSites)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicSitesRow
+	for rows.Next() {
+		var i ListPublicSitesRow
+		if err := rows.Scan(&i.ID, &i.PublicSlug, &i.Settings); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -688,6 +731,68 @@ func (q *Queries) ListSiteMarkers(ctx context.Context, arg ListSiteMarkersParams
 	return items, nil
 }
 
+const listSitesWithoutPublicSlug = `-- name: ListSitesWithoutPublicSlug :many
+SELECT id, name FROM sites WHERE public_slug IS NULL AND archived_at IS NULL ORDER BY id
+`
+
+type ListSitesWithoutPublicSlugRow struct {
+	ID   int64
+	Name string
+}
+
+// ListSitesWithoutPublicSlug returns the live sites from before public
+// addresses were stored (migration 0037), oldest first.
+func (q *Queries) ListSitesWithoutPublicSlug(ctx context.Context) ([]ListSitesWithoutPublicSlugRow, error) {
+	rows, err := q.query(ctx, q.listSitesWithoutPublicSlugStmt, listSitesWithoutPublicSlug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSitesWithoutPublicSlugRow
+	for rows.Next() {
+		var i ListSitesWithoutPublicSlugRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const publicDomainHolder = `-- name: PublicDomainHolder :one
+SELECT id FROM sites
+WHERE json_extract(settings, '$.public_domain') = +CAST(?1 AS TEXT)
+  AND json_extract(settings, '$.public_domain') <> '' AND archived_at IS NULL
+`
+
+// PublicDomainHolder returns the live site whose public domain is
+// domain, in any org. The terms match sites_live_public_domain's.
+func (q *Queries) PublicDomainHolder(ctx context.Context, domain string) (int64, error) {
+	row := q.queryRow(ctx, q.publicDomainHolderStmt, publicDomainHolder, domain)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const publicSlugHolder = `-- name: PublicSlugHolder :one
+SELECT id FROM sites WHERE public_slug = +?1 AND archived_at IS NULL
+`
+
+// PublicSlugHolder returns the live site holding a public dashboard
+// address (stats-<slug>.<base domain>), in any org.
+func (q *Queries) PublicSlugHolder(ctx context.Context, slug *string) (int64, error) {
+	row := q.queryRow(ctx, q.publicSlugHolderStmt, publicSlugHolder, slug)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const releaseNames = `-- name: ReleaseNames :many
 SELECT r.id, s.name, r.number FROM releases r JOIN services s ON s.id = r.service_id
 WHERE r.id IN (/*SLICE:ids*/?)
@@ -877,6 +982,20 @@ func (q *Queries) SetSiteHostnameService(ctx context.Context, arg SetSiteHostnam
 	return err
 }
 
+const setSitePublicSlug = `-- name: SetSitePublicSlug :exec
+UPDATE sites SET public_slug = ? WHERE id = +?
+`
+
+type SetSitePublicSlugParams struct {
+	PublicSlug *string
+	ID         int64
+}
+
+func (q *Queries) SetSitePublicSlug(ctx context.Context, arg SetSitePublicSlugParams) error {
+	_, err := q.exec(ctx, q.setSitePublicSlugStmt, setSitePublicSlug, arg.PublicSlug, arg.ID)
+	return err
+}
+
 const setSiteSettings = `-- name: SetSiteSettings :exec
 UPDATE sites SET settings = ? WHERE id = +?
 `
@@ -892,7 +1011,7 @@ func (q *Queries) SetSiteSettings(ctx context.Context, arg SetSiteSettingsParams
 }
 
 const siteOfService = `-- name: SiteOfService :one
-SELECT sites.id, sites.environment_id, sites.name, sites.settings, sites.archived_at, sites.created_by, sites.created_at FROM site_hostnames
+SELECT sites.id, sites.environment_id, sites.name, sites.settings, sites.archived_at, sites.created_by, sites.created_at, sites.public_slug FROM site_hostnames
 JOIN sites ON sites.id = site_hostnames.site_id
 WHERE site_hostnames.service_id = +? AND sites.archived_at IS NULL
 ORDER BY sites.id LIMIT 1
@@ -911,6 +1030,7 @@ func (q *Queries) SiteOfService(ctx context.Context, serviceID *int64) (Site, er
 		&i.ArchivedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.PublicSlug,
 	)
 	return i, err
 }

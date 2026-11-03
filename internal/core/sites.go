@@ -205,7 +205,8 @@ func (c *Core) ListSites(ctx context.Context, a Actor, project string) ([]apityp
 		if a.checkEnv(apitypes.ScopeRead, "listing sites", p, store.Environment{ID: r.EnvironmentID, Name: r.EnvironmentName, ProjectID: p.ID}) != nil {
 			continue
 		}
-		sites = append(sites, store.Site{ID: r.ID, EnvironmentID: r.EnvironmentID, Name: r.Name, Settings: r.Settings, ArchivedAt: r.ArchivedAt, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt})
+		sites = append(sites, store.Site{ID: r.ID, EnvironmentID: r.EnvironmentID, Name: r.Name, Settings: r.Settings, ArchivedAt: r.ArchivedAt,
+			CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, PublicSlug: r.PublicSlug})
 		envs[r.EnvironmentID] = r.EnvironmentName
 	}
 	return c.toSites(ctx, sites, envs)
@@ -253,7 +254,7 @@ func (c *Core) toSites(ctx context.Context, sites []store.Site, envs map[int64]s
 			Settings: mergeSettings(defaults, o), Overrides: o, Hostnames: []apitypes.SiteHostname{},
 		}
 		if s.ArchivedAt == nil {
-			for _, h := range c.publicHosts(base, s.Name, site.Settings) {
+			for _, h := range c.publicHosts(base, s.PublicSlug, site.Settings) {
 				site.PublicURLs = append(site.PublicURLs, c.controlURL(h))
 			}
 		}
@@ -356,13 +357,19 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 
 // createSite makes a live site in an environment of a project, named
 // name or, when the project has a live site called that, name-2, name-3:
-// site names are unique in their project, as they address the site.
+// site names are unique in their project, as they address the site. Its
+// public dashboard address is its name's, suffixed the same way when
+// another site, in any org, holds that.
 func (c *Core) createSite(ctx context.Context, q *store.Queries, projectID, envID int64, name, by string, t time.Time) (store.Site, error) {
 	name, err := freeSiteName(ctx, q, projectID, name)
 	if err != nil {
 		return store.Site{}, err
 	}
-	return q.CreateSite(ctx, store.CreateSiteParams{EnvironmentID: envID, Name: name, CreatedBy: by, CreatedAt: t})
+	slug, err := freePublicSlug(ctx, q, 0, publicSlug(name))
+	if err != nil {
+		return store.Site{}, err
+	}
+	return q.CreateSite(ctx, store.CreateSiteParams{EnvironmentID: envID, Name: name, PublicSlug: &slug, CreatedBy: by, CreatedAt: t})
 }
 
 // freeSiteName is name, or name-2, name-3..., whichever no live site of
@@ -530,7 +537,10 @@ func (c *Core) siteDomainAdded(ctx context.Context, a Actor, ss svcScope, host, 
 	return !keepHere || site.EnvironmentID != ss.env.ID, nil
 }
 
-// UpdateSite renames a site or changes its settings.
+// UpdateSite renames a site or changes its settings. A new name moves
+// its public dashboard address to the name's, suffixed -2, -3 when
+// another site, in any org, holds that one (as createSite does), so a
+// rename never takes another site's address or says that one exists.
 func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, req apitypes.UpdateSiteRequest) (apitypes.Site, error) {
 	s, err := c.loadSite(ctx, a, project, name, apitypes.ScopeDeploy, "changing a site")
 	if err != nil {
@@ -541,17 +551,6 @@ func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, re
 		return apitypes.Site{}, err
 	}
 	if err := checkSettings(o); err != nil {
-		return apitypes.Site{}, err
-	}
-	if o.PublicDomain != nil {
-		host, err := c.checkPublicDomain(ctx, s.site.ID, *o.PublicDomain)
-		if err != nil {
-			return apitypes.Site{}, err
-		}
-		o.PublicDomain = &host
-	}
-	b, err := json.Marshal(o)
-	if err != nil {
 		return apitypes.Site{}, err
 	}
 	newName := s.site.Name
@@ -565,13 +564,34 @@ func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, re
 		newName = req.Name
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if o.PublicDomain != nil {
+			host, err := c.checkPublicDomain(ctx, q, s.site.ID, *o.PublicDomain)
+			if err != nil {
+				return err
+			}
+			o.PublicDomain = &host
+		}
+		b, err := json.Marshal(o)
+		if err != nil {
+			return err
+		}
 		if err := q.SetSiteSettings(ctx, store.SetSiteSettingsParams{Settings: string(b), ID: s.site.ID}); err != nil {
 			return err
 		}
-		if newName != s.site.Name {
-			return q.RenameSite(ctx, store.RenameSiteParams{Name: newName, ID: s.site.ID})
+		if newName == s.site.Name {
+			return nil
 		}
-		return nil
+		if err := q.RenameSite(ctx, store.RenameSiteParams{Name: newName, ID: s.site.ID}); err != nil {
+			return err
+		}
+		if publicSlug(newName) == publicSlug(s.site.Name) {
+			return nil
+		}
+		slug, err := freePublicSlug(ctx, q, s.site.ID, publicSlug(newName))
+		if err != nil {
+			return err
+		}
+		return q.SetSitePublicSlug(ctx, store.SetSitePublicSlugParams{PublicSlug: &slug, ID: s.site.ID})
 	})
 	if err != nil {
 		return apitypes.Site{}, err
