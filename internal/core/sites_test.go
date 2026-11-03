@@ -125,8 +125,8 @@ func TestSiteFollowsADomainMove(t *testing.T) {
 	for _, m := range stats.Markers {
 		moved = moved || (m.Kind == "moved" && m.Message == "shop.example.com moved to web-v2")
 	}
-	if !moved {
-		t.Errorf("markers = %+v", stats.Markers)
+	if !moved || !slices.IsSortedFunc(stats.Markers, func(a, b apitypes.SiteMarker) int { return a.At.Compare(b.At) }) {
+		t.Errorf("markers = %+v, want the move among them, oldest first", stats.Markers)
 	}
 
 	// Moved back with a new site: the old one is archived.
