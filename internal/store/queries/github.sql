@@ -33,6 +33,15 @@ INSERT INTO github_installations (installation_id, org_id, account, assigned_by,
 ON CONFLICT (installation_id) DO UPDATE SET
     org_id = excluded.org_id, account = excluded.account, assigned_by = excluded.assigned_by, assigned_at = excluded.assigned_at;
 
+-- name: ClaimGitHubInstallation :execrows
+-- Assigns an installation to an org unless another org has it; an
+-- assignment to the same org is refreshed. No row affected means another
+-- org has it. The check is part of the write, so no race gets past it.
+INSERT INTO github_installations (installation_id, org_id, account, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (installation_id) DO UPDATE SET
+    account = excluded.account, assigned_by = excluded.assigned_by, assigned_at = excluded.assigned_at
+WHERE github_installations.org_id = excluded.org_id;
+
 -- name: DeleteGitHubInstallation :exec
 DELETE FROM github_installations WHERE installation_id = +?;
 

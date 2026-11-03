@@ -102,6 +102,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.archiveSiteStmt, err = db.PrepareContext(ctx, archiveSite); err != nil {
 		return nil, fmt.Errorf("error preparing query ArchiveSite: %w", err)
 	}
+	if q.claimGitHubInstallationStmt, err = db.PrepareContext(ctx, claimGitHubInstallation); err != nil {
+		return nil, fmt.Errorf("error preparing query ClaimGitHubInstallation: %w", err)
+	}
 	if q.clearArchivedHostPortsStmt, err = db.PrepareContext(ctx, clearArchivedHostPorts); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearArchivedHostPorts: %w", err)
 	}
@@ -1357,6 +1360,11 @@ func (q *Queries) Close() error {
 	if q.archiveSiteStmt != nil {
 		if cerr := q.archiveSiteStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing archiveSiteStmt: %w", cerr)
+		}
+	}
+	if q.claimGitHubInstallationStmt != nil {
+		if cerr := q.claimGitHubInstallationStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing claimGitHubInstallationStmt: %w", cerr)
 		}
 	}
 	if q.clearArchivedHostPortsStmt != nil {
@@ -3294,6 +3302,7 @@ type Queries struct {
 	archiveProjectStmt                  *sql.Stmt
 	archiveServiceStmt                  *sql.Stmt
 	archiveSiteStmt                     *sql.Stmt
+	claimGitHubInstallationStmt         *sql.Stmt
 	clearArchivedHostPortsStmt          *sql.Stmt
 	clearEnvironmentPendingSettingsStmt *sql.Stmt
 	clearGitPendingStmt                 *sql.Stmt
@@ -3700,6 +3709,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		archiveProjectStmt:                  q.archiveProjectStmt,
 		archiveServiceStmt:                  q.archiveServiceStmt,
 		archiveSiteStmt:                     q.archiveSiteStmt,
+		claimGitHubInstallationStmt:         q.claimGitHubInstallationStmt,
 		clearArchivedHostPortsStmt:          q.clearArchivedHostPortsStmt,
 		clearEnvironmentPendingSettingsStmt: q.clearEnvironmentPendingSettingsStmt,
 		clearGitPendingStmt:                 q.clearGitPendingStmt,
