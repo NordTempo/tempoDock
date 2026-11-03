@@ -15,12 +15,13 @@ import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
 import { followProjectRename, reconcileProjectNames } from "./projectRename";
-import { keys, queries } from "./queries";
+import { findService, keys, queries } from "./queries";
 import type {
   LiveEvent,
   LogLine,
   ProjectOverview,
   Release,
+  ReleaseSummary,
   Server,
   ServerDetail,
   ServerStats,
@@ -92,10 +93,75 @@ function upsertRelease(list: Release[] | undefined, release: Release) {
   return [release, ...rest].sort((a, b) => b.number - a.number);
 }
 
+/** A release as the overview summarizes it (core.summarize). */
+const summarize = ({
+  number,
+  status,
+  source,
+  image_ref,
+  image_id,
+  commit,
+  created_by,
+  created_at,
+  error,
+  error_code,
+}: Release): ReleaseSummary => ({
+  number,
+  status,
+  source,
+  image_ref,
+  image_id,
+  commit,
+  created_by,
+  created_at,
+  error,
+  error_code,
+});
+
+const inFlight = (status: Release["status"]) =>
+  status !== "active" && status !== "failed" && status !== "superseded";
+
 /**
- * Applies one event to the query cache. Frequent, small events (progress
- * lines, status, domains) patch it in place; the rest invalidate what they
- * affect and let active queries refetch.
+ * Patches a release's new state into its service on the overview, as
+ * core.Overview derives it: the active release, the one in flight and the
+ * newest. A release that went active is published before the one it
+ * superseded, so that one only clears its own role. A service the cached
+ * overview doesn't have yet refetches the overview instead.
+ */
+function applyRelease(
+  queryClient: QueryClient,
+  ref: ServiceRef,
+  release: Release,
+) {
+  const overview = queryClient.getQueryData<ProjectOverview>(
+    keys.overview(ref.project),
+  );
+  if (!overview) return;
+  if (!findService(overview, ref)) {
+    queryClient.invalidateQueries({ queryKey: keys.overview(ref.project) });
+    return;
+  }
+  const summary = summarize(release);
+  const { number, status } = release;
+  const role = (r: ReleaseSummary | undefined, has: boolean) =>
+    has ? summary : r?.number === number ? undefined : r;
+  patchService(queryClient, ref, (s) => {
+    const active = role(s.active_release, status === "active");
+    return {
+      ...s,
+      service: { ...s.service, active_release: active?.number },
+      active_release: active,
+      deploying: role(s.deploying, inFlight(status)),
+      latest_release:
+        (s.latest_release?.number ?? 0) > number ? s.latest_release : summary,
+    };
+  });
+}
+
+/**
+ * Applies one event to the query cache. Frequent, small events (releases,
+ * progress lines, status, domains) patch it in place; the rest invalidate
+ * what they affect and let active queries refetch.
  */
 export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
   const ref = refOf(event);
@@ -112,10 +178,16 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
         keys.release(ref, release.number),
         (old) => old && { ...release, events: old.events },
       );
-      // Which release is active, deploying or latest lives in the overview.
-      queryClient.invalidateQueries({ queryKey: keys.overview(ref.project) });
-      // A push may have been dequeued; refetches only while it is shown.
-      queryClient.invalidateQueries({ queryKey: keys.git(ref) });
+      applyRelease(queryClient, ref, release);
+      // A queued push leaves the git view as its release starts building
+      // (after core.gitDeployStart), and the next one may start once a
+      // deploy ends. Refetches only while the view is shown.
+      if (
+        release.status === "building" ||
+        release.status === "active" ||
+        release.status === "failed"
+      )
+        queryClient.invalidateQueries({ queryKey: keys.git(ref) });
       return;
     }
     case "release_event": {
@@ -432,9 +504,15 @@ function invalidateForAudit(
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;
-  // Release progress has its own events; everything else in a project
-  // (variables, settings, changes, services, environments) refetches.
-  if (kind === "release") return;
+  // Release progress patches the overview (applyRelease), but starting a
+  // release takes the service's staged changes and may set its image, and
+  // a promotion may add services: the overview refetches, once per action.
+  if (kind === "release") {
+    invalidate(keys.overview(audit.project));
+    return;
+  }
+  // Everything else in a project (variables, settings, changes, services,
+  // environments) refetches.
   invalidate(
     audit.environment
       ? keys.env({ project: audit.project, environment: audit.environment })
