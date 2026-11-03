@@ -63,8 +63,17 @@ func (noBuilder) PruneBuildCache(context.Context, int64) (node.PruneResult, erro
 // dockerHarness starts Core on the local Docker Engine with a temp data
 // dir. DB IDs start at a random high number, so container labels and names
 // (dock_p<id>_...) can't match those of another daemon on the same Docker
-// host, and host ports come from a range of their own.
+// host, and host ports come from a range of their own. Containers get no
+// ongoing health check (dockerHarnessWithProbe gives them one).
 func dockerHarness(t *testing.T) *Core {
+	t.Helper()
+	return dockerHarnessWithProbe(t, "")
+}
+
+// dockerHarnessWithProbe is dockerHarness with probe (a dock-probe binary
+// on this host) as the runtime's probe, so containers get their ongoing
+// health check (ADR 0041).
+func dockerHarnessWithProbe(t *testing.T, probe string) *Core {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -77,6 +86,7 @@ func dockerHarness(t *testing.T) *Core {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rt.Probe = probe
 	cfg := config.Default()
 	cfg.DataDir = dir
 	base := freePortRange(t)
