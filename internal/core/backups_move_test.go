@@ -239,7 +239,7 @@ func TestRepoOfKeepsSettingsWrittenMeanwhile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pw, _ := h.c.box.Seal([]byte("moved-pw"))
+	pw, _ := h.c.box.Seal([]byte("moved-pw"), backupPasswordAAD)
 	if _, err := h.store.UpsertBackupSettings(h.ctx, store.UpsertBackupSettingsParams{
 		Password: pw, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 6, Hour: 3, UpdatedAt: time.Now(), StorageID: &conn.ID, StoragePath: "dock",
 	}); err != nil {
