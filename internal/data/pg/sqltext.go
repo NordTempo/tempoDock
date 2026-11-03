@@ -41,16 +41,27 @@ func checkReadStatement(sql string) error {
 	return checkFunctions(first)
 }
 
-// blockedFunctions are functions a read can't call: their effects outlive
-// the read-only transaction that is rolled back (session advisory locks,
-// non-transactional logical decoding messages that reach CDC consumers),
-// or they run SQL from a string, which would hide such a call from this
-// check. They are executable by PUBLIC, so revoking them from Dock's roles
-// alone wouldn't stop them. Names ending in _ are prefixes.
+// blockedFunctions are functions a read can't call because their effects
+// outlive the read-only transaction that is rolled back, or they escape it:
+//   - session advisory locks; non-transactional logical decoding messages
+//     that reach CDC consumers; replication slots and restore points, and
+//     reading a slot's changes, which consumes them;
+//   - signalling other backends (cancel, terminate);
+//   - running SQL from a string (query_to_xml, ts_stat, ...), which would
+//     hide any of these from this check;
+//   - extensions that open their own connection or worker, which isn't read
+//     only (dblink and every dblink_*, pg_background), or write server files
+//     (adminpack's pg_file_*, lo_import/lo_export).
+//
+// Most are executable by PUBLIC, so revoking them from Dock's roles alone
+// wouldn't stop them. Names ending in _ are prefixes.
 var blockedFunctions = []string{
 	"pg_advisory_", "pg_try_advisory_", "pg_logical_emit_message",
+	"pg_logical_slot_get_", "pg_replication_slot_advance", "pg_create_", "pg_copy_", "pg_drop_replication_slot",
+	"pg_cancel_backend", "pg_terminate_backend",
 	"query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema",
-	"cursor_to_xml", "cursor_to_xmlschema", "ts_stat", "ts_rewrite", "dblink",
+	"cursor_to_xml", "cursor_to_xmlschema", "ts_stat", "ts_rewrite",
+	"dblink", "dblink_", "pg_background_", "pg_file_", "lo_import", "lo_export",
 }
 
 // checkFunctions rejects a statement that names a blocked function,
@@ -72,7 +83,7 @@ func checkFunctions(sql string) error {
 		}
 		for _, b := range blockedFunctions {
 			if name == b || strings.HasSuffix(b, "_") && strings.HasPrefix(name, b) {
-				return fmt.Errorf("%w: %s can't be called here: its effects outlive the read, or it runs SQL from a string", data.ErrInvalid, name)
+				return fmt.Errorf("%w: %s can't be called here: its effects outlive the read, it runs SQL from a string, or it opens its own connection", data.ErrInvalid, name)
 			}
 		}
 		return nil
