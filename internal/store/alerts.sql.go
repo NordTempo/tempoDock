@@ -477,7 +477,7 @@ func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, er
 }
 
 const pruneResolvedAlerts = `-- name: PruneResolvedAlerts :execrows
-DELETE FROM alerts WHERE resolved_at < ?
+DELETE FROM alerts WHERE resolved_at < +?
 `
 
 func (q *Queries) PruneResolvedAlerts(ctx context.Context, resolvedAt *time.Time) (int64, error) {

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // Manual tokens get their creator's user_id from the email they recorded,
@@ -39,5 +40,26 @@ func TestTokenCreatorMigration(t *testing.T) {
 	}
 	if theirs, err := s.ListUserTokens(ctx, ListUserTokensParams{UserID: &two, OrgID: &one}); err != nil || len(theirs) != 0 {
 		t.Errorf("user 2's tokens = %+v, %v; want none (the token predates them)", theirs, err)
+	}
+}
+
+// The members list counts the tokens a user created by user_id, so a token
+// recorded under their email by an earlier user of that address isn't
+// theirs, as on their account page.
+func TestOrgMembersCountTheirTokens(t *testing.T) {
+	ctx := context.Background()
+	f := newDataFixture(t)
+	org := f.project.OrgID
+	if err := f.s.AddOrgMember(ctx, AddOrgMemberParams{OrgID: org, UserID: f.user.ID, Role: "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, by := range []*int64{&f.user.ID, nil} {
+		if _, err := f.s.CreateToken(ctx, CreateTokenParams{Name: "t", Hash: string(rune('a' + i)), Scope: "read", OrgID: &org, CreatedBy: f.user.Email, UserID: by}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := f.s.ListOrgMembers(ctx, ListOrgMembersParams{Now: time.Now(), OrgID: org})
+	if err != nil || len(rows) != 1 || rows[0].Tokens != 1 {
+		t.Fatalf("members = %+v, %v; want one with 1 token", rows, err)
 	}
 }

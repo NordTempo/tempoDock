@@ -6,7 +6,7 @@
 SELECT releases.id FROM releases
 WHERE releases.history_trimmed = 0
   AND releases.status IN ('failed', 'superseded')
-  AND releases.created_at < sqlc.arg(cutoff)
+  AND releases.created_at < +sqlc.arg(cutoff)
   AND releases.number <= (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
                          - CAST(sqlc.arg(keep) AS INTEGER)
 ORDER BY releases.id
@@ -32,7 +32,7 @@ DELETE FROM audit_events WHERE id <= ?;
 -- Details up to an ID that no remaining event points at (details are
 -- written just before their event, so a trimmed event's is below it).
 DELETE FROM audit_details WHERE audit_details.id <= sqlc.arg(through)
-  AND audit_details.id NOT IN (SELECT kept.detail_id FROM audit_events kept WHERE kept.detail_id IS NOT NULL AND kept.detail_id <= sqlc.arg(through));
+  AND audit_details.id NOT IN (SELECT kept.detail_id FROM audit_events kept WHERE kept.detail_id IS NOT NULL AND kept.detail_id <= +sqlc.arg(through));
 
 -- name: ListKeptImageIDs :many
 -- The image IDs on one server a rollback may still need: its services'

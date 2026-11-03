@@ -410,7 +410,7 @@ func (q *Queries) ListUserQueryHistory(ctx context.Context, arg ListUserQueryHis
 const pruneAuditDetails = `-- name: PruneAuditDetails :exec
 DELETE FROM audit_details WHERE id IN (
     SELECT detail_id FROM audit_events
-    WHERE created_at < ?1 AND detail_id IS NOT NULL
+    WHERE created_at < +?1 AND detail_id IS NOT NULL
     ORDER BY created_at LIMIT 1000
 )
 `
@@ -424,7 +424,7 @@ func (q *Queries) PruneAuditDetails(ctx context.Context, before time.Time) error
 
 const pruneAuditEvents = `-- name: PruneAuditEvents :exec
 DELETE FROM audit_events WHERE id IN (
-    SELECT old.id FROM audit_events AS old WHERE old.created_at < ?1
+    SELECT old.id FROM audit_events AS old WHERE old.created_at < +?1
     ORDER BY old.created_at LIMIT 1000
 )
 `

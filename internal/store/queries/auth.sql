@@ -83,12 +83,12 @@ DELETE FROM users WHERE id = +?;
 DELETE FROM sessions WHERE user_id = +?;
 
 -- ListOrgMembers is an org's users with their role, live sessions and
--- usable tokens. Tokens record their creator by name, which for users is
--- their email.
+-- usable tokens: the tokens they created (user_id), as their account page
+-- lists them.
 -- name: ListOrgMembers :many
 SELECT sqlc.embed(users), org_members.role,
     CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +sqlc.arg(now)) AS INTEGER) AS sessions,
-    CAST((SELECT count(*) FROM tokens WHERE tokens.created_by = users.email AND tokens.revoked_at IS NULL
+    CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
         AND (tokens.expires_at IS NULL OR tokens.expires_at > +sqlc.arg(now))) AS INTEGER) AS tokens
 FROM org_members JOIN users ON users.id = org_members.user_id
 WHERE org_members.org_id = +sqlc.arg(org_id)

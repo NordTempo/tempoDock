@@ -51,7 +51,7 @@ SELECT service_id FROM git_connections WHERE pending_sha > '';
 INSERT INTO git_deliveries (delivery_id, body_hash, created_at) VALUES (?, ?, ?);
 
 -- name: PruneGitDeliveries :exec
-DELETE FROM git_deliveries WHERE created_at < ?;
+DELETE FROM git_deliveries WHERE created_at < +?;
 
 -- name: SetReleaseCommit :exec
 UPDATE releases SET commit_sha = ?, commit_message = ?, commit_author = ? WHERE id = +?;

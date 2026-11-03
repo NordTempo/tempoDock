@@ -526,7 +526,7 @@ const listSiteDeploys = `-- name: ListSiteDeploys :many
 SELECT releases.number, releases.finished_at, services.name AS service_name
 FROM releases
 JOIN services ON services.id = releases.service_id
-WHERE releases.service_id IN (SELECT DISTINCT site_hostnames.service_id FROM site_hostnames WHERE site_hostnames.site_id = +?1)
+WHERE releases.service_id IN (SELECT site_hostnames.service_id FROM site_hostnames WHERE site_hostnames.site_id = +?1)
   AND releases.status IN ('active', 'superseded')
   AND releases.finished_at >= +?2 AND releases.finished_at < +?3
 ORDER BY releases.finished_at

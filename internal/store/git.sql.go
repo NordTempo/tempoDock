@@ -264,7 +264,7 @@ func (q *Queries) ListGitPendingServices(ctx context.Context) ([]int64, error) {
 }
 
 const pruneGitDeliveries = `-- name: PruneGitDeliveries :exec
-DELETE FROM git_deliveries WHERE created_at < ?
+DELETE FROM git_deliveries WHERE created_at < +?
 `
 
 func (q *Queries) PruneGitDeliveries(ctx context.Context, createdAt time.Time) error {

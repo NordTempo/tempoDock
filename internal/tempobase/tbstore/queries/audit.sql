@@ -63,13 +63,13 @@ LIMIT +sqlc.arg(max_rows);
 -- older than before, which deletes those events (ON DELETE CASCADE).
 DELETE FROM audit_details WHERE id IN (
     SELECT detail_id FROM audit_events
-    WHERE created_at < sqlc.arg(before) AND detail_id IS NOT NULL
+    WHERE created_at < +sqlc.arg(before) AND detail_id IS NOT NULL
     ORDER BY created_at LIMIT 1000
 );
 
 -- name: PruneAuditEvents :exec
 -- The retention pass, step two: up to 1000 more events older than before.
 DELETE FROM audit_events WHERE id IN (
-    SELECT old.id FROM audit_events AS old WHERE old.created_at < sqlc.arg(before)
+    SELECT old.id FROM audit_events AS old WHERE old.created_at < +sqlc.arg(before)
     ORDER BY old.created_at LIMIT 1000
 );

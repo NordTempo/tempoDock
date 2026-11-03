@@ -12,7 +12,7 @@ import (
 
 const deleteAuditDetailsThrough = `-- name: DeleteAuditDetailsThrough :exec
 DELETE FROM audit_details WHERE audit_details.id <= ?1
-  AND audit_details.id NOT IN (SELECT kept.detail_id FROM audit_events kept WHERE kept.detail_id IS NOT NULL AND kept.detail_id <= ?1)
+  AND audit_details.id NOT IN (SELECT kept.detail_id FROM audit_events kept WHERE kept.detail_id IS NOT NULL AND kept.detail_id <= +?1)
 `
 
 // Details up to an ID that no remaining event points at (details are
@@ -44,7 +44,7 @@ const listExpiredReleaseHistory = `-- name: ListExpiredReleaseHistory :many
 SELECT releases.id FROM releases
 WHERE releases.history_trimmed = 0
   AND releases.status IN ('failed', 'superseded')
-  AND releases.created_at < ?1
+  AND releases.created_at < +?1
   AND releases.number <= (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
                          - CAST(?2 AS INTEGER)
 ORDER BY releases.id
