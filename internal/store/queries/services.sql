@@ -26,6 +26,10 @@ UPDATE services SET archived_at = ? WHERE id = +?;
 -- name: SetPendingSettings :exec
 UPDATE services SET pending_settings = ? WHERE id = +?;
 
+-- name: ClearEnvironmentPendingSettings :exec
+-- Drops every staged settings change in an environment (apply and discard).
+UPDATE services SET pending_settings = NULL WHERE environment_id = +? AND pending_settings IS NOT NULL;
+
 -- name: CreateVolume :one
 INSERT INTO volumes (service_id, name, docker_name, mount_path, pending) VALUES (?, ?, ?, ?, ?) RETURNING *;
 

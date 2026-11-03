@@ -16,8 +16,8 @@ import (
 
 // Staged changes (Railway-style): setting variables, changing service
 // settings and adding volumes are stored next to the live values and only go
-// live when applied. Applying an environment's changes is one transaction,
-// followed by one config release per affected service that is running.
+// live when applied. Applying an environment's changes is one transaction
+// that also queues one config release per affected service that is running.
 // Deploying a service from source or an image applies that service's own
 // staged changes first; environment-level variables stay staged until an
 // explicit apply because they affect every service.
@@ -78,23 +78,17 @@ func (c *Core) DiscardChanges(ctx context.Context, a Actor, ref EnvRef, sel apit
 				return err
 			}
 		}
-		svcs, err := q.ListServices(ctx, es.env.ID)
+		if err := q.ClearEnvironmentPendingSettings(ctx, es.env.ID); err != nil {
+			return err
+		}
+		vols, err := q.ListEnvironmentVolumes(ctx, es.env.ID)
 		if err != nil {
 			return err
 		}
-		for _, s := range svcs {
-			if err := q.SetPendingSettings(ctx, store.SetPendingSettingsParams{PendingSettings: nil, ID: s.ID}); err != nil {
-				return err
-			}
-			vols, err := q.ListVolumes(ctx, s.ID)
-			if err != nil {
-				return err
-			}
-			for _, v := range vols {
-				if v.Pending {
-					if err := q.DeleteVolume(ctx, v.ID); err != nil {
-						return err
-					}
+		for _, v := range vols {
+			if v.Pending {
+				if err := q.DeleteVolume(ctx, v.ID); err != nil {
+					return err
 				}
 			}
 		}
@@ -324,6 +318,16 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 	if err != nil {
 		return res, err
 	}
+	var vols []store.Volume
+	if only != nil {
+		vols, err = q.ListVolumes(ctx, *only)
+	} else {
+		vols, err = q.ListEnvironmentVolumes(ctx, envID)
+	}
+	if err != nil {
+		return res, err
+	}
+	staged := false // some service had staged settings
 	for _, s := range svcs {
 		if only != nil && s.ID != *only {
 			continue
@@ -333,11 +337,9 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 			return res, err
 		}
 		if next != nil {
+			staged = true
 			live := settingsOf(s)
 			if err := setSettings(ctx, q, s.ID, *next); err != nil {
-				return res, err
-			}
-			if err := q.SetPendingSettings(ctx, store.SetPendingSettingsParams{PendingSettings: nil, ID: s.ID}); err != nil {
 				return res, err
 			}
 			res.count += len(settingChanges(s.Name, live, *next))
@@ -349,34 +351,50 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 				res.services[s.ID] = res.services[s.ID] || (next.Image != live.Image && next.Image != "")
 			}
 		}
-		vols, err := q.ListVolumes(ctx, s.ID)
-		if err != nil {
-			return res, err
-		}
-		for _, v := range vols {
-			if v.Pending {
-				if err := q.ApplyVolume(ctx, v.ID); err != nil {
-					return res, err
-				}
-				res.count++
-				own := res.ownOf(s.ID)
-				own.Volumes = append(own.Volumes, v.ID)
-				res.services[s.ID] = res.services[s.ID] || false
+	}
+	for _, v := range vols {
+		if v.Pending {
+			if err := q.ApplyVolume(ctx, v.ID); err != nil {
+				return res, err
 			}
+			res.count++
+			own := res.ownOf(v.ServiceID)
+			own.Volumes = append(own.Volumes, v.ID)
+			res.services[v.ServiceID] = res.services[v.ServiceID] || false
 		}
 	}
-	return res, nil
+	switch {
+	case !staged:
+	case only != nil:
+		err = q.SetPendingSettings(ctx, store.SetPendingSettingsParams{PendingSettings: nil, ID: *only})
+	default:
+		err = q.ClearEnvironmentPendingSettings(ctx, envID)
+	}
+	return res, err
 }
 
-// applyEnv applies all staged changes in an environment atomically, then
-// starts a release for every affected service that has an active release:
-// those with changes of their own, and those whose resolved variables
-// change, through shared variables or references to another service's
-// (`${{postgres.DATABASE_URL}}`), however indirect.
+// applyEnv applies all staged changes in an environment and queues a
+// release for every affected service that has an active release: those
+// with changes of their own, and those whose resolved variables change,
+// through shared variables or references to another service's
+// (`${{postgres.DATABASE_URL}}`), however indirect. Both happen in one
+// transaction, so no change goes live without a release carrying it: a
+// crash after the commit leaves queued releases, which recovery fails
+// and whose changes it stages again. A service that is deploying already
+// is skipped and its own changes stay staged. While the server is
+// offline, an apply that would release anything is refused.
 func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.AppliedChanges, error) {
 	out := apitypes.AppliedChanges{Releases: []apitypes.Release{}, Skipped: []string{}}
-	var res applied
-	affected := map[int64]bool{}
+	type queued struct {
+		ss   svcScope
+		rel  store.Release
+		spec releaseSpec
+	}
+	var (
+		res  applied
+		jobs []queued
+	)
+	cantDeploy := c.canDeploy(es.env)
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.SetEnvironmentApplyError(ctx, store.SetEnvironmentApplyErrorParams{ApplyError: "", ID: es.env.ID}); err != nil {
 			return err
@@ -385,7 +403,7 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 		if err != nil {
 			return err
 		}
-		if res, err = applyPending(ctx, q, es.env.ID, nil); err != nil {
+		if res, err = applyPending(ctx, q, es.env.ID, nil); err != nil || res.count == 0 {
 			return err
 		}
 		after, broken, err := c.resolveEnvs(ctx, q, es, false)
@@ -397,44 +415,51 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 			return err
 		}
 		for _, s := range svcs {
-			if _, own := res.services[s.ID]; s.ArchivedAt == nil && (own || !maps.Equal(before[s.ID], after[s.ID])) {
-				// A broken reference rolls the whole apply back instead of
-				// failing releases one by one.
-				if err := broken[s.ID]; err != nil {
-					return err
-				}
-				affected[s.ID] = true
+			if _, own := res.services[s.ID]; s.ArchivedAt != nil || !own && maps.Equal(before[s.ID], after[s.ID]) {
+				continue
 			}
+			// A broken reference rolls the whole apply back instead of
+			// failing releases one by one.
+			if err := broken[s.ID]; err != nil {
+				return err
+			}
+			spec := releaseSpec{source: apitypes.SourceConfig, carried: res.carriedBy(s.ID)}
+			if res.services[s.ID] {
+				spec.source, spec.imageRef = apitypes.SourceImage, s.Image
+			}
+			ss, rel, err := c.createRelease(ctx, q, a, svcScope{es, s}, spec)
+			switch {
+			case errors.Is(err, errNoActiveRelease):
+				continue // gets the new config on its first deploy
+			case CodeOf(err) == apitypes.CodeDeployInProgress:
+				// Its deploy runs without them; they stay staged.
+				out.Skipped = append(out.Skipped, s.Name)
+				if own := res.own[s.ID]; own != nil {
+					n, err := restageIn(ctx, q, es.env.ID, s.ID, *own)
+					if err != nil {
+						return err
+					}
+					res.count -= n
+				}
+				continue
+			case err != nil:
+				return fmt.Errorf("release %s: %w", ss, err)
+			case cantDeploy != nil:
+				return cantDeploy
+			}
+			jobs = append(jobs, queued{ss, rel, spec})
 		}
 		return nil
 	})
-	if err != nil || res.count == 0 {
-		return out, err
-	}
-	svcs, err := c.store.ListServices(ctx, es.env.ID)
 	if err != nil {
-		return out, err
+		return apitypes.AppliedChanges{}, err
 	}
-	for _, s := range svcs {
-		if !affected[s.ID] {
-			continue
-		}
-		ss := svcScope{es, s}
-		spec := releaseSpec{source: apitypes.SourceConfig, carried: res.carriedBy(s.ID)}
-		if res.services[s.ID] {
-			spec.source, spec.imageRef = apitypes.SourceImage, s.Image
-		}
-		rel, err := c.startRelease(ctx, a, ss, spec)
-		switch {
-		case errors.Is(err, errNoActiveRelease):
-			continue // gets the new config on its first deploy
-		case CodeOf(err) == apitypes.CodeDeployInProgress:
-			out.Skipped = append(out.Skipped, s.Name)
-			continue
-		case err != nil:
-			return out, fmt.Errorf("release %s: %w", ss, err)
-		}
-		r, err := c.toRelease(ctx, ss, rel, false)
+	if res.count == 0 {
+		return out, nil
+	}
+	for _, j := range jobs {
+		c.launch(ctx, a, j.ss, j.rel, j.spec)
+		r, err := c.toRelease(ctx, j.ss, j.rel, false)
 		if err != nil {
 			return out, err
 		}

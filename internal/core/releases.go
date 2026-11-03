@@ -449,147 +449,14 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	if ss.svc.ArchivedAt != nil {
 		return store.Release{}, invalid("service %s is archived", ss)
 	}
-	if c.ctx.Err() != nil {
-		return store.Release{}, errf(apitypes.CodeConflict, "the daemon is shutting down; try again in a moment")
-	}
-	// Deploys to a server that can't be reached are refused before a
-	// release exists; nothing queues for later.
-	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
+	if err := c.canDeploy(ss.env); err != nil {
 		return store.Release{}, err
 	}
 	var rel store.Release
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
-		if r, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
-			return deployInProgress(ss, r)
-		}
-		// Re-checked in the transaction: ArchiveService may have won a race.
-		svc, err := q.GetService(ctx, ss.svc.ID)
-		if err != nil {
-			return err
-		}
-		if svc.ArchivedAt != nil {
-			return invalid("service %s is archived", ss)
-		}
-		ss.svc = svc
-		ch := spec.carried
-		if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged {
-			// A deploy takes the service's own staged changes with it.
-			res, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID)
-			if err != nil {
-				return err
-			}
-			if own := res.own[ss.svc.ID]; own != nil {
-				ch.Variables = append(slices.Clone(ch.Variables), own.Variables...)
-				ch.Volumes = append(slices.Clone(ch.Volumes), own.Volumes...)
-				if own.Settings != nil {
-					ch.Settings = own.Settings
-				}
-			}
-			if ss.svc, err = q.GetService(ctx, ss.svc.ID); err != nil {
-				return err
-			}
-		}
-		carriedJSON, err := ch.encode()
-		if err != nil {
-			return err
-		}
-		number, err := q.NextReleaseNumber(ctx, ss.svc.ID)
-		if err != nil {
-			return err
-		}
-		params := store.CreateReleaseParams{ServiceID: ss.svc.ID, Number: number, Source: string(spec.source), CreatedBy: a.Name, Carried: carriedJSON}
-		var repo *repoDeploy
-		commit := spec.commit
-		switch spec.source {
-		case apitypes.SourceImage:
-			params.ImageRef = spec.imageRef
-			if params.ImageRef == "" {
-				params.ImageRef = ss.svc.Image
-			}
-			if params.ImageRef == "" {
-				return invalid("no image given and service %s has no image setting", ss)
-			}
-			if err := validateImageRef(params.ImageRef, c.registryHost()); err != nil {
-				return err
-			}
-			// The image setting follows image deploys, so deploying the
-			// setting again (the UI's Deploy) redeploys this image.
-			if ss.svc, err = setServiceImage(ctx, q, ss.svc, params.ImageRef); err != nil {
-				return err
-			}
-		case apitypes.SourceUpload:
-			params.ImageRef = buildTag(ss, number)
-			repo = repoDeployOf(spec.repo)
-			// A source deploy makes it a source service again.
-			if ss.svc, err = setServiceImage(ctx, q, ss.svc, ""); err != nil {
-				return err
-			}
-		case apitypes.SourceConfig:
-			active, err := q.GetActiveRelease(ctx, ss.svc.ID)
-			if store.IsNotFound(err) {
-				return errNoActiveRelease
-			}
-			if err != nil {
-				return err
-			}
-			params.ImageRef, params.ImageID = active.ImageRef, active.ImageID
-			params.ImageDigest, params.BuiltOnServerID = active.ImageDigest, active.BuiltOnServerID
-			activeCfg, err := c.openConfig(active.Config)
-			if err != nil {
-				return err
-			}
-			repo = activeCfg.Repo // same code, same dock.toml
-			commit = commitOf(active)
-		case apitypes.SourcePromote:
-			p := spec.promote
-			params.ImageRef, params.ImageID = p.imageRef, p.imageID
-			params.ImageDigest, params.BuiltOnServerID = p.from.ImageDigest, p.from.BuiltOnServerID
-			fromCfg, err := c.openConfig(p.from.Config)
-			if err != nil {
-				return err
-			}
-			repo = fromCfg.Repo // same code, same dock.toml
-			commit = commitOf(p.from)
-		}
-		var cfg releaseConfig
-		if spec.from != nil {
-			commit = commitOf(*spec.from)
-			params.FromRelease = spec.from.Number
-			params.ImageRef, params.ImageID = spec.from.ImageRef, spec.from.ImageID
-			params.ImageDigest, params.BuiltOnServerID = spec.from.ImageDigest, spec.from.BuiltOnServerID
-			params.Config = spec.from.Config
-			if cfg, err = c.openConfig(spec.from.Config); err != nil {
-				return err
-			}
-		} else {
-			if cfg, err = c.resolveConfig(ctx, q, ss, repo); err != nil {
-				return err
-			}
-			if params.Config, err = c.sealConfig(cfg); err != nil {
-				return err
-			}
-		}
-		if cfg.Published {
-			if params.HostPort, err = c.allocateHostPort(ctx, q, ss.env.ServerID); err != nil {
-				return err
-			}
-		}
-		if spec.source == apitypes.SourcePromote {
-			rel, err = q.CreatePromotedRelease(ctx, store.CreatePromotedReleaseParams{
-				ServiceID: params.ServiceID, Number: params.Number, ImageRef: params.ImageRef, ImageID: params.ImageID,
-				ImageDigest: params.ImageDigest, BuiltOnServerID: params.BuiltOnServerID, PromotedFromReleaseID: spec.promote.from.ID,
-				Config: params.Config, HostPort: params.HostPort, CreatedBy: params.CreatedBy, Carried: params.Carried,
-			})
-		} else {
-			rel, err = q.CreateRelease(ctx, params)
-		}
-		if err != nil || commit == nil {
-			return err
-		}
-		rel.CommitSha, rel.CommitMessage, rel.CommitAuthor = commit.SHA, commit.Message, commit.Author
-		return q.SetReleaseCommit(ctx, store.SetReleaseCommitParams{
-			CommitSha: commit.SHA, CommitMessage: commit.Message, CommitAuthor: commit.Author, ID: rel.ID,
-		})
+		var err error
+		ss, rel, err = c.createRelease(ctx, q, a, ss, spec)
+		return err
 	})
 	if store.IsUnique(err) {
 		return rel, errf(apitypes.CodeDeployInProgress, "another deploy of %s just started; wait for it to finish", ss)
@@ -597,6 +464,166 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	if err != nil {
 		return rel, err
 	}
+	c.launch(ctx, a, ss, rel, spec)
+	return rel, nil
+}
+
+// canDeploy refuses a release in env while the daemon is shutting down or
+// env's server can't be reached: nothing queues for later.
+func (c *Core) canDeploy(env store.Environment) error {
+	if c.ctx.Err() != nil {
+		return errf(apitypes.CodeConflict, "the daemon is shutting down; try again in a moment")
+	}
+	_, err := c.runtimeFor(env.ServerID)
+	return err
+}
+
+// createRelease creates a queued release in q's transaction, taking the
+// service's own staged changes live with it when spec says so, and
+// returns it with the service as it now is. Once the transaction commits,
+// launch starts it; until then nothing outside the database happened.
+func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss svcScope, spec releaseSpec) (svcScope, store.Release, error) {
+	var rel store.Release
+	if r, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+		return ss, rel, deployInProgress(ss, r)
+	}
+	// Re-checked in the transaction: ArchiveService may have won a race.
+	svc, err := q.GetService(ctx, ss.svc.ID)
+	if err != nil {
+		return ss, rel, err
+	}
+	if svc.ArchivedAt != nil {
+		return ss, rel, invalid("service %s is archived", ss)
+	}
+	ss.svc = svc
+	ch := spec.carried
+	if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged {
+		// A deploy takes the service's own staged changes with it.
+		res, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID)
+		if err != nil {
+			return ss, rel, err
+		}
+		if own := res.own[ss.svc.ID]; own != nil {
+			ch.Variables = append(slices.Clone(ch.Variables), own.Variables...)
+			ch.Volumes = append(slices.Clone(ch.Volumes), own.Volumes...)
+			if own.Settings != nil {
+				ch.Settings = own.Settings
+			}
+		}
+		if ss.svc, err = q.GetService(ctx, ss.svc.ID); err != nil {
+			return ss, rel, err
+		}
+	}
+	number, err := q.NextReleaseNumber(ctx, ss.svc.ID)
+	if err != nil {
+		return ss, rel, err
+	}
+	params := store.CreateReleaseParams{ServiceID: ss.svc.ID, Number: number, Source: string(spec.source), CreatedBy: a.Name}
+	before := settingsOf(ss.svc)
+	var repo *repoDeploy
+	commit := spec.commit
+	switch spec.source {
+	case apitypes.SourceImage:
+		params.ImageRef = spec.imageRef
+		if params.ImageRef == "" {
+			params.ImageRef = ss.svc.Image
+		}
+		if params.ImageRef == "" {
+			return ss, rel, invalid("no image given and service %s has no image setting", ss)
+		}
+		if err := validateImageRef(params.ImageRef, c.registryHost()); err != nil {
+			return ss, rel, err
+		}
+		// The image setting follows image deploys, so deploying the
+		// setting again (the UI's Deploy) redeploys this image.
+		if ss.svc, err = setServiceImage(ctx, q, ss.svc, params.ImageRef); err != nil {
+			return ss, rel, err
+		}
+	case apitypes.SourceUpload:
+		params.ImageRef = buildTag(ss, number)
+		repo = repoDeployOf(spec.repo)
+		// A source deploy makes it a source service again.
+		if ss.svc, err = setServiceImage(ctx, q, ss.svc, ""); err != nil {
+			return ss, rel, err
+		}
+	case apitypes.SourceConfig:
+		active, err := q.GetActiveRelease(ctx, ss.svc.ID)
+		if store.IsNotFound(err) {
+			return ss, rel, errNoActiveRelease
+		}
+		if err != nil {
+			return ss, rel, err
+		}
+		params.ImageRef, params.ImageID = active.ImageRef, active.ImageID
+		params.ImageDigest, params.BuiltOnServerID = active.ImageDigest, active.BuiltOnServerID
+		activeCfg, err := c.openConfig(active.Config)
+		if err != nil {
+			return ss, rel, err
+		}
+		repo = activeCfg.Repo // same code, same dock.toml
+		commit = commitOf(active)
+	case apitypes.SourcePromote:
+		p := spec.promote
+		params.ImageRef, params.ImageID = p.imageRef, p.imageID
+		params.ImageDigest, params.BuiltOnServerID = p.from.ImageDigest, p.from.BuiltOnServerID
+		fromCfg, err := c.openConfig(p.from.Config)
+		if err != nil {
+			return ss, rel, err
+		}
+		repo = fromCfg.Repo // same code, same dock.toml
+		commit = commitOf(p.from)
+	}
+	// An image or source deploy changed the image setting itself: a failure
+	// puts it back too.
+	ch = ch.withImage(before, settingsOf(ss.svc))
+	if params.Carried, err = ch.encode(); err != nil {
+		return ss, rel, err
+	}
+	var cfg releaseConfig
+	if spec.from != nil {
+		commit = commitOf(*spec.from)
+		params.FromRelease = spec.from.Number
+		params.ImageRef, params.ImageID = spec.from.ImageRef, spec.from.ImageID
+		params.ImageDigest, params.BuiltOnServerID = spec.from.ImageDigest, spec.from.BuiltOnServerID
+		params.Config = spec.from.Config
+		if cfg, err = c.openConfig(spec.from.Config); err != nil {
+			return ss, rel, err
+		}
+	} else {
+		if cfg, err = c.resolveConfig(ctx, q, ss, repo); err != nil {
+			return ss, rel, err
+		}
+		if params.Config, err = c.sealConfig(cfg); err != nil {
+			return ss, rel, err
+		}
+	}
+	if cfg.Published {
+		if params.HostPort, err = c.allocateHostPort(ctx, q, ss.env.ServerID); err != nil {
+			return ss, rel, err
+		}
+	}
+	if spec.source == apitypes.SourcePromote {
+		rel, err = q.CreatePromotedRelease(ctx, store.CreatePromotedReleaseParams{
+			ServiceID: params.ServiceID, Number: params.Number, ImageRef: params.ImageRef, ImageID: params.ImageID,
+			ImageDigest: params.ImageDigest, BuiltOnServerID: params.BuiltOnServerID, PromotedFromReleaseID: spec.promote.from.ID,
+			Config: params.Config, HostPort: params.HostPort, CreatedBy: params.CreatedBy, Carried: params.Carried,
+		})
+	} else {
+		rel, err = q.CreateRelease(ctx, params)
+	}
+	if err != nil || commit == nil {
+		return ss, rel, err
+	}
+	rel.CommitSha, rel.CommitMessage, rel.CommitAuthor = commit.SHA, commit.Message, commit.Author
+	err = q.SetReleaseCommit(ctx, store.SetReleaseCommitParams{
+		CommitSha: commit.SHA, CommitMessage: commit.Message, CommitAuthor: commit.Author, ID: rel.ID,
+	})
+	return ss, rel, err
+}
+
+// launch announces a committed queued release and starts deploying it in
+// the background.
+func (c *Core) launch(ctx context.Context, a Actor, ss svcScope, rel store.Release, spec releaseSpec) {
 	c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Release %d queued by %s (%s)", rel.Number, a.Name, rel.Source))
 	c.publishRelease(ctx, ss, rel)
 	if rel.CommitSha != "" {
@@ -604,7 +631,6 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	}
 	c.wg.Add(1)
 	go c.deploy(ss, rel, spec)
-	return rel, nil
 }
 
 // setServiceImage changes a service's live image setting, if it differs.
