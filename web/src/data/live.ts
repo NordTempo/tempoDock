@@ -1,6 +1,6 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { currentOrg } from "../api/client";
 import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
@@ -227,9 +227,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       });
       return;
     case "lagged":
-      // Events were dropped: everything on screen may be stale.
-      queryClient.invalidateQueries();
-      return;
+      return; // useLiveUpdates refetches, once however many arrive.
     case "usage":
       applyUsage(queryClient, event);
       return;
@@ -613,10 +611,36 @@ export function useLiveUpdates() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const org = useOrg();
-  const recover = async (invalidate: boolean) => {
+  // After missed events: names first (a rename may be among them), then
+  // every active query refetches and the rest are only marked stale, for
+  // their next use. The project list was just fetched, so it is left out.
+  const recoverOnce = useEffectEvent(async () => {
     await reconcileProjectNames(queryClient, router, org);
-    if (invalidate && org === currentOrg())
-      await queryClient.invalidateQueries();
+    if (org !== currentOrg()) return;
+    const projects = queryClient
+      .getQueryCache()
+      .find({ queryKey: keys.projects, exact: true });
+    await queryClient.invalidateQueries({ predicate: (q) => q !== projects });
+  });
+  // One recovery at a time: gaps reported while one runs (a lagging
+  // client gets lagged per batch) share a single rerun, since the running
+  // one may have read before them.
+  const gap = useRef({ running: false, again: false });
+  const recover = async () => {
+    const g = gap.current;
+    if (g.running) {
+      g.again = true;
+      return;
+    }
+    g.running = true;
+    try {
+      do {
+        g.again = false;
+        await recoverOnce();
+      } while (g.again);
+    } finally {
+      g.running = false;
+    }
   };
   useEventStream<LiveEvent>(
     org ? `/api/v1/events?org=${encodeURIComponent(org)}` : "/api/v1/events",
@@ -629,10 +653,10 @@ export function useLiveUpdates() {
           org,
           event.project_renamed,
         )
-          .catch(() => recover(true))
+          .catch(recover)
           .catch(() => router.invalidate());
       } else if (event.type === "lagged") {
-        void recover(true).catch(() => router.invalidate());
+        void recover().catch(() => router.invalidate());
       } else {
         applyLiveEvent(queryClient, event);
       }
@@ -641,7 +665,11 @@ export function useLiveUpdates() {
     {
       // Reconcile after subscribing, including the initial read/subscribe gap.
       onReady: (reconnected) => {
-        void recover(reconnected).catch(() => router.invalidate());
+        void (
+          reconnected
+            ? recover()
+            : reconcileProjectNames(queryClient, router, org)
+        ).catch(() => router.invalidate());
       },
       // A refused stream usually means the session ended.
       onClose: async () => {
