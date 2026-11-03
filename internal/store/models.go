@@ -260,6 +260,8 @@ type Domain struct {
 	Status       string
 	StatusReason string
 	CreatedAt    time.Time
+	VerifyToken  string
+	VerifiedAt   *time.Time
 }
 
 type EnsureRunning struct {

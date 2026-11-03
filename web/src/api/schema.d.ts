@@ -1863,7 +1863,7 @@ export interface paths {
         put?: never;
         /**
          * Add a domain
-         * @description Any hostname, unique across all services. DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0036): on a direct server it is served to the tunnel only, next to the public IP; a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.
+         * @description Any hostname, unique across all services. A custom hostname routes once its TXT record (verification) proves the org controls it, unless it needs none: generated, under the server's base domain, from Cloudflare, or added by an operator (ADR 0042). Another org's verified hostname is refused (hostname_taken). DNS can be set up before or after. With cloudflare, a hostname in a zone connected to Dock, which Dock routes through the server's Cloudflare tunnel (creating or adopting it) with a proxied CNAME (ADR 0036): on a direct server it is served to the tunnel only, next to the public IP; a record Dock didn't make at that name is refused (hostname_taken). Scope: deploy.
          */
         post: operations["add-domain"];
         delete?: never;
@@ -1907,6 +1907,26 @@ export interface paths {
          * @description Scope: deploy.
          */
         delete: operations["remove-domain"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains/{hostname}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a domain now
+         * @description Checks its TXT record (while it isn't verified), DNS and certificate now instead of at the next retry, and returns it. Scope: deploy.
+         */
+        post: operations["check-domain"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3854,7 +3874,7 @@ export interface components {
         DNSRecord: {
             name: string;
             /** @enum {string} */
-            type: "A" | "CNAME";
+            type: "A" | "AAAA" | "CNAME" | "TXT";
             value: string;
         };
         DataChange: {
@@ -4170,6 +4190,8 @@ export interface components {
             status_reason?: string;
             /** @example https://shop.example.com */
             url: string;
+            verification?: components["schemas"]["DNSRecord"];
+            verified: boolean;
         };
         DomainChange: {
             domain: components["schemas"]["Domain"];
@@ -16715,6 +16737,103 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "check-domain": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+                hostname: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Domain"];
+                };
             };
             /** @description Bad Request */
             400: {

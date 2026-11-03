@@ -1,7 +1,11 @@
 package core
 
 import (
+	"context"
+	"net"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,5 +46,144 @@ func TestDomainURLAndLastCheck(t *testing.T) {
 	h.restart()
 	if ds, _ := h.c.ListDomains(h.ctx, testSystem, web); ds[0].URL != "http://shop.example.com" {
 		t.Fatalf("URL without TLS: %s", ds[0].URL)
+	}
+}
+
+// fakeDNS answers TXT lookups from a map, as a zone the test edits.
+type fakeDNS struct {
+	mu  sync.Mutex
+	txt map[string][]string
+}
+
+// set gives name one TXT record holding value.
+func (f *fakeDNS) set(name, value string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.txt == nil {
+		f.txt = map[string][]string{}
+	}
+	f.txt[name] = []string{value}
+}
+
+// lookupTXT is Options.LookupTXT: NXDOMAIN for a name without records.
+func (f *fakeDNS) lookupTXT(_ context.Context, name string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if txt, ok := f.txt[name]; ok {
+		return txt, nil
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
+}
+
+// routed reports whether host is in the local server's routes.
+func (h *harness) routed(host string) bool {
+	for _, r := range h.rt.Routes() {
+		if slices.Contains(r.Hostnames, host) {
+			return true
+		}
+	}
+	return false
+}
+
+// A custom domain an org member adds routes and gets a certificate only
+// once its TXT record proves the org controls the hostname.
+func TestCustomDomainVerifiesWithTXTRecord(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.deploy(web, "app:1")
+	alice := h.in(h.member("alice@x", map[string]apitypes.Scope{"test": apitypes.ScopeDeploy}), "test")
+
+	dc, err := h.c.AddDomain(h.ctx, alice, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := dc.Domain.Verification
+	if dc.Domain.Verified || rec == nil || rec.Type != "TXT" || rec.Name != "_dock-challenge.shop.example.com" || !strings.HasPrefix(rec.Value, "dock-verify=") {
+		t.Fatalf("new domain: %+v", dc.Domain)
+	}
+	if dc.Release != nil { // publishing the port
+		h.wait(web, dc.Release.Number)
+	}
+	if h.routed("shop.example.com") {
+		t.Fatal("unverified domain is routed")
+	}
+	if ok, _ := h.c.AllowCertificate(h.ctx, "shop.example.com"); ok {
+		t.Fatal("unverified domain gets a certificate")
+	}
+	d, err := h.c.CheckDomainNow(h.ctx, alice, web, "shop.example.com")
+	if err != nil || d.Verified || d.Status != apitypes.DomainWaitingForDNS || !strings.Contains(d.StatusReason, rec.Value) {
+		t.Fatalf("checked without the record: %+v, %v", d, err)
+	}
+
+	h.dns.set(rec.Name, rec.Value)
+	if d, err = h.c.CheckDomainNow(h.ctx, alice, web, "shop.example.com"); err != nil || !d.Verified || d.Verification != nil {
+		t.Fatalf("checked with the record: %+v, %v", d, err)
+	}
+	if !h.routed("shop.example.com") {
+		t.Fatal("verified domain isn't routed")
+	}
+	if ok, _ := h.c.AllowCertificate(h.ctx, "shop.example.com"); !ok {
+		t.Fatal("verified domain gets no certificate")
+	}
+}
+
+// Unverified claims don't block another org's; the first to verify holds
+// the hostname, the others lose, and no one can claim it after.
+func TestVerifiedHostnameBelongsToOneOrg(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{}) // shop/web in every org
+	alice := h.in(h.member("alice@x", map[string]apitypes.Scope{"test": apitypes.ScopeDeploy}), "test")
+	bob := h.in(h.member("bob@x", map[string]apitypes.Scope{"acme": apitypes.ScopeAdmin}), "acme")
+	carol := h.in(h.member("carol@x", map[string]apitypes.Scope{"other": apitypes.ScopeAdmin}), "other")
+	for _, a := range []Actor{bob, carol} {
+		if _, err := h.c.CreateProject(h.ctx, a, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.c.CreateService(h.ctx, a, web.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := h.c.AddDomain(h.ctx, alice, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	dc, err := h.c.AddDomain(h.ctx, bob, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})
+	if err != nil {
+		t.Fatalf("a second org's claim beside an unverified one: %v", err)
+	}
+	h.dns.set(dc.Domain.Verification.Name, dc.Domain.Verification.Value)
+	if d, err := h.c.CheckDomainNow(h.ctx, bob, web, "shop.example.com"); err != nil || !d.Verified {
+		t.Fatalf("bob verifies: %+v, %v", d, err)
+	}
+
+	if _, err := h.c.AddDomain(h.ctx, carol, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); CodeOf(err) != apitypes.CodeHostnameTaken {
+		t.Fatalf("claiming a verified hostname: %v, want hostname_taken", err)
+	}
+	// Alice's claim lost, and her record doesn't help now.
+	ds, err := h.c.ListDomains(h.ctx, alice, web)
+	if err != nil || len(ds) != 1 || ds[0].Verification == nil {
+		t.Fatalf("alice's domains: %+v, %v", ds, err)
+	}
+	h.dns.set(ds[0].Verification.Name, ds[0].Verification.Value)
+	d, err := h.c.CheckDomainNow(h.ctx, alice, web, "shop.example.com")
+	if err != nil || d.Verified || d.Status != apitypes.DomainError || !strings.Contains(d.StatusReason, "another organization") {
+		t.Fatalf("alice's lost claim: %+v, %v", d, err)
+	}
+}
+
+// Hostnames under the platform's base domain need no TXT record: generated
+// ones, and custom ones an org member picks there.
+func TestPlatformHostnamesSkipVerification(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	alice := h.in(h.member("alice@x", map[string]apitypes.Scope{"test": apitypes.ScopeDeploy}), "test")
+
+	gen, err := h.c.GenerateDomain(h.ctx, alice, web)
+	if err != nil || !gen.Domain.Verified || gen.Domain.Verification != nil {
+		t.Fatalf("generated: %+v, %v", gen.Domain, err)
+	}
+	dc, err := h.c.AddDomain(h.ctx, alice, web, apitypes.AddDomainRequest{Hostname: "shop.apps.test"})
+	if err != nil || !dc.Domain.Verified {
+		t.Fatalf("under the base domain: %+v, %v", dc.Domain, err)
 	}
 }

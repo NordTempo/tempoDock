@@ -7,25 +7,32 @@ package store
 
 import (
 	"context"
+	"time"
 )
 
 const createDomain = `-- name: CreateDomain :one
-INSERT INTO domains (hostname, service_id, generated, redirect_to) VALUES (?, ?, ?, ?) RETURNING id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at
+INSERT INTO domains (hostname, service_id, generated, redirect_to, verify_token, verified_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at, verify_token, verified_at
 `
 
 type CreateDomainParams struct {
-	Hostname   string
-	ServiceID  int64
-	Generated  bool
-	RedirectTo string
+	Hostname    string
+	ServiceID   int64
+	Generated   bool
+	RedirectTo  string
+	VerifyToken string
+	VerifiedAt  *time.Time
 }
 
+// CreateDomain adds a claim on a hostname: verified_at is set for one
+// that needs no TXT record (ADR 0042), else NULL until it verifies.
 func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Domain, error) {
 	row := q.queryRow(ctx, q.createDomainStmt, createDomain,
 		arg.Hostname,
 		arg.ServiceID,
 		arg.Generated,
 		arg.RedirectTo,
+		arg.VerifyToken,
+		arg.VerifiedAt,
 	)
 	var i Domain
 	err := row.Scan(
@@ -37,6 +44,8 @@ func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Dom
 		&i.Status,
 		&i.StatusReason,
 		&i.CreatedAt,
+		&i.VerifyToken,
+		&i.VerifiedAt,
 	)
 	return i, err
 }
@@ -51,9 +60,11 @@ func (q *Queries) DeleteDomain(ctx context.Context, id int64) error {
 }
 
 const getDomainByHostname = `-- name: GetDomainByHostname :one
-SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at FROM domains WHERE hostname = +?
+SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at, verify_token, verified_at FROM domains WHERE hostname = +? AND verified_at IS NOT NULL
 `
 
+// GetDomainByHostname returns the domain that holds a hostname: its
+// verified claim, the one that routes (ADR 0042).
 func (q *Queries) GetDomainByHostname(ctx context.Context, hostname string) (Domain, error) {
 	row := q.queryRow(ctx, q.getDomainByHostnameStmt, getDomainByHostname, hostname)
 	var i Domain
@@ -66,6 +77,37 @@ func (q *Queries) GetDomainByHostname(ctx context.Context, hostname string) (Dom
 		&i.Status,
 		&i.StatusReason,
 		&i.CreatedAt,
+		&i.VerifyToken,
+		&i.VerifiedAt,
+	)
+	return i, err
+}
+
+const getServiceDomain = `-- name: GetServiceDomain :one
+SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at, verify_token, verified_at FROM domains WHERE hostname = +? AND service_id = +?
+`
+
+type GetServiceDomainParams struct {
+	Hostname  string
+	ServiceID int64
+}
+
+// GetServiceDomain returns a service's claim on a hostname, verified or
+// not.
+func (q *Queries) GetServiceDomain(ctx context.Context, arg GetServiceDomainParams) (Domain, error) {
+	row := q.queryRow(ctx, q.getServiceDomainStmt, getServiceDomain, arg.Hostname, arg.ServiceID)
+	var i Domain
+	err := row.Scan(
+		&i.ID,
+		&i.Hostname,
+		&i.ServiceID,
+		&i.Generated,
+		&i.RedirectTo,
+		&i.Status,
+		&i.StatusReason,
+		&i.CreatedAt,
+		&i.VerifyToken,
+		&i.VerifiedAt,
 	)
 	return i, err
 }
@@ -74,6 +116,8 @@ const hostnameExists = `-- name: HostnameExists :one
 SELECT EXISTS (SELECT 1 FROM domains WHERE hostname = +?)
 `
 
+// HostnameExists reports whether any service claims a hostname, verified
+// or not.
 func (q *Queries) HostnameExists(ctx context.Context, hostname string) (bool, error) {
 	row := q.queryRow(ctx, q.hostnameExistsStmt, hostnameExists, hostname)
 	var exists bool
@@ -82,7 +126,7 @@ func (q *Queries) HostnameExists(ctx context.Context, hostname string) (bool, er
 }
 
 const listDomainsByService = `-- name: ListDomainsByService :many
-SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at FROM domains WHERE service_id = +? ORDER BY id
+SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at, verify_token, verified_at FROM domains WHERE service_id = +? ORDER BY id
 `
 
 func (q *Queries) ListDomainsByService(ctx context.Context, serviceID int64) ([]Domain, error) {
@@ -103,6 +147,8 @@ func (q *Queries) ListDomainsByService(ctx context.Context, serviceID int64) ([]
 			&i.Status,
 			&i.StatusReason,
 			&i.CreatedAt,
+			&i.VerifyToken,
+			&i.VerifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -118,7 +164,7 @@ func (q *Queries) ListDomainsByService(ctx context.Context, serviceID int64) ([]
 }
 
 const listEnvironmentDomains = `-- name: ListEnvironmentDomains :many
-SELECT domains.id, domains.hostname, domains.service_id, domains."generated", domains.redirect_to, domains.status, domains.status_reason, domains.created_at FROM domains
+SELECT domains.id, domains.hostname, domains.service_id, domains."generated", domains.redirect_to, domains.status, domains.status_reason, domains.created_at, domains.verify_token, domains.verified_at FROM domains
 JOIN services ON services.id = domains.service_id
 WHERE services.environment_id = +?
 `
@@ -142,6 +188,55 @@ func (q *Queries) ListEnvironmentDomains(ctx context.Context, environmentID int6
 			&i.Status,
 			&i.StatusReason,
 			&i.CreatedAt,
+			&i.VerifyToken,
+			&i.VerifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listHostnameClaims = `-- name: ListHostnameClaims :many
+SELECT domains.id, domains.service_id, domains.verified_at, projects.org_id
+FROM domains
+JOIN services ON services.id = domains.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE domains.hostname = +?
+ORDER BY domains.id
+`
+
+type ListHostnameClaimsRow struct {
+	ID         int64
+	ServiceID  int64
+	VerifiedAt *time.Time
+	OrgID      int64
+}
+
+// ListHostnameClaims returns every claim on a hostname with the org that
+// made it, for adding and verifying one (ADR 0042).
+func (q *Queries) ListHostnameClaims(ctx context.Context, hostname string) ([]ListHostnameClaimsRow, error) {
+	rows, err := q.query(ctx, q.listHostnameClaimsStmt, listHostnameClaims, hostname)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListHostnameClaimsRow
+	for rows.Next() {
+		var i ListHostnameClaimsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.VerifiedAt,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}
@@ -157,7 +252,7 @@ func (q *Queries) ListEnvironmentDomains(ctx context.Context, environmentID int6
 }
 
 const listPendingDomains = `-- name: ListPendingDomains :many
-SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at FROM domains WHERE status != 'active' ORDER BY id
+SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason, created_at, verify_token, verified_at FROM domains WHERE status != 'active' ORDER BY id
 `
 
 func (q *Queries) ListPendingDomains(ctx context.Context) ([]Domain, error) {
@@ -178,6 +273,8 @@ func (q *Queries) ListPendingDomains(ctx context.Context) ([]Domain, error) {
 			&i.Status,
 			&i.StatusReason,
 			&i.CreatedAt,
+			&i.VerifyToken,
+			&i.VerifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -193,7 +290,7 @@ func (q *Queries) ListPendingDomains(ctx context.Context) ([]Domain, error) {
 }
 
 const listProjectDomains = `-- name: ListProjectDomains :many
-SELECT domains.id, domains.hostname, domains.service_id, domains."generated", domains.redirect_to, domains.status, domains.status_reason, domains.created_at FROM domains
+SELECT domains.id, domains.hostname, domains.service_id, domains."generated", domains.redirect_to, domains.status, domains.status_reason, domains.created_at, domains.verify_token, domains.verified_at FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.project_id = +?
@@ -219,6 +316,8 @@ func (q *Queries) ListProjectDomains(ctx context.Context, projectID int64) ([]Do
 			&i.Status,
 			&i.StatusReason,
 			&i.CreatedAt,
+			&i.VerifyToken,
+			&i.VerifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -247,7 +346,7 @@ FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
 LEFT JOIN service_access ON service_access.service_id = services.id
-WHERE environments.server_id = +? AND services.archived_at IS NULL
+WHERE environments.server_id = +? AND services.archived_at IS NULL AND domains.verified_at IS NOT NULL
 ORDER BY domains.service_id, domains.id
 `
 
@@ -263,8 +362,8 @@ type ListRoutableDomainsRow struct {
 	AccessKey          []byte
 }
 
-// Every domain of a non-archived service in an environment on one server,
-// with the host port and ID of the service's active release (0 if none)
+// Every verified domain of a non-archived service in an environment on
+// one server, with the host port and ID of the service's active release (0 if none)
 // and the service's access protection (mode ” when public).
 func (q *Queries) ListRoutableDomains(ctx context.Context, serverID int64) ([]ListRoutableDomainsRow, error) {
 	rows, err := q.query(ctx, q.listRoutableDomainsStmt, listRoutableDomains, serverID)
@@ -312,4 +411,23 @@ type UpdateDomainStatusParams struct {
 func (q *Queries) UpdateDomainStatus(ctx context.Context, arg UpdateDomainStatusParams) error {
 	_, err := q.exec(ctx, q.updateDomainStatusStmt, updateDomainStatus, arg.Status, arg.StatusReason, arg.ID)
 	return err
+}
+
+const verifyDomain = `-- name: VerifyDomain :execrows
+UPDATE domains SET verified_at = ? WHERE id = +? AND verified_at IS NULL
+`
+
+type VerifyDomainParams struct {
+	VerifiedAt *time.Time
+	ID         int64
+}
+
+// VerifyDomain marks a claim verified; it affects no row when it already
+// was. The partial unique index refuses a second verified claim.
+func (q *Queries) VerifyDomain(ctx context.Context, arg VerifyDomainParams) (int64, error) {
+	result, err := q.exec(ctx, q.verifyDomainStmt, verifyDomain, arg.VerifiedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

@@ -97,7 +97,9 @@ func (c *Core) envIngress(ctx context.Context, es envScope) (serverIngress, erro
 }
 
 // AddDomain adds any hostname to a service. It routes as soon as the
-// service is running; DNS can be set up before or after.
+// service is running and the domain is verified (ADR 0042): a custom
+// hostname once its TXT record proves the org controls it. DNS can be
+// set up before or after.
 func (c *Core) AddDomain(ctx context.Context, a Actor, ref ServiceRef, req apitypes.AddDomainRequest) (apitypes.DomainChange, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "adding a domain")
 	if err != nil {
@@ -126,11 +128,12 @@ func (c *Core) AddDomain(ctx context.Context, a Actor, ref ServiceRef, req apity
 		}
 	}
 	change, err := c.addDomain(ctx, a, ss, host, redirect, false, zone)
-	if err != nil || redirect != "" {
+	if err != nil || redirect != "" || !change.Domain.Verified {
 		return change, err
 	}
 	// A hostname that collected analytics before keeps its site's history
-	// here, or starts a new site (ADR 0037).
+	// here, or starts a new site (ADR 0037). An unverified one waits until
+	// it verifies (proveDomain): it might not be this org's.
 	if moved, err := c.siteDomainAdded(ctx, a, ss, host, req.Analytics); err != nil {
 		c.log.Error("analytics: carry a site over to a domain", "domain", host, "err", err)
 	} else if moved {
@@ -149,10 +152,11 @@ func (c *Core) cloudflareZoneFor(ctx context.Context, a Actor, ss svcScope, host
 	if err := c.checkNewDomain(ss, host); err != nil {
 		return nil, err
 	}
-	if exists, err := c.store.HostnameExists(ctx, host); err != nil || exists {
-		if err == nil {
-			err = errf(apitypes.CodeHostnameTaken, "%s is already in use by a service; a hostname can belong to only one service", host)
-		}
+	claims, err := c.store.ListHostnameClaims(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkClaims(claims, ss, host); err != nil {
 		return nil, err
 	}
 	srv, err := c.store.GetServer(ctx, ss.env.ServerID)
@@ -230,16 +234,45 @@ func (c *Core) checkNewDomain(ss svcScope, host string) error {
 }
 
 // addDomain adds host to a service; zone, when set, is the Cloudflare
-// zone Dock routes it through the server's tunnel from (ADR 0036).
+// zone Dock routes it through the server's tunnel from (ADR 0036). A
+// claim that needs no proof (needsProof) is verified at once, and other
+// orgs' unverified claims on host lose; any other waits for its TXT
+// record (proveDomain).
 func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redirect string, generated bool, zone *store.CloudflareZone) (apitypes.DomainChange, error) {
 	if err := c.checkNewDomain(ss, host); err != nil {
 		return apitypes.DomainChange{}, err
 	}
+	ing, err := c.envIngress(ctx, ss.envScope)
+	if err != nil {
+		return apitypes.DomainChange{}, err
+	}
+	params := store.CreateDomainParams{Hostname: host, ServiceID: ss.svc.ID, Generated: generated, RedirectTo: redirect}
+	if needsProof(a, host, generated, zone, ing) {
+		params.VerifyToken = newVerifyToken()
+	} else {
+		t := now()
+		params.VerifiedAt = &t
+	}
 	var d store.Domain
-	err := c.store.Tx(ctx, func(q *store.Queries) error {
-		var err error
-		if d, err = q.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: ss.svc.ID, Generated: generated, RedirectTo: redirect}); err != nil || zone == nil {
+	var lost []int64
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		claims, err := q.ListHostnameClaims(ctx, host)
+		if err != nil {
 			return err
+		}
+		if err := checkClaims(claims, ss, host); err != nil {
+			return err
+		}
+		if d, err = q.CreateDomain(ctx, params); err != nil {
+			return err
+		}
+		if d.VerifiedAt != nil {
+			if lost, err = outclaim(ctx, q, d, claims); err != nil {
+				return err
+			}
+		}
+		if zone == nil {
+			return nil
 		}
 		// Dock routes it through the server's tunnel (ADR 0036).
 		return q.SaveCloudflareRecord(ctx, store.SaveCloudflareRecordParams{
@@ -254,6 +287,7 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		return apitypes.DomainChange{}, err
 	}
 	c.audit(ctx, a, "domain.add", &ss.project, &ss.env, ss.String(), "added domain "+host)
+	c.tellLosers(ctx, host, lost)
 	if zone != nil {
 		c.kickCloudflare()
 	}
@@ -284,10 +318,6 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 	if err != nil {
 		return out, err
 	}
-	ing, err := c.envIngress(ctx, ss.envScope)
-	if err != nil {
-		return out, err
-	}
 	out.Domain = c.toDomain(ss, d, rows, ing)
 	if r, err := c.store.GetCloudflareRecord(ctx, host); err == nil {
 		c.withRoute(&out.Domain, &r)
@@ -307,8 +337,8 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 	if err != nil {
 		return err
 	}
-	d, err := c.store.GetDomainByHostname(ctx, host)
-	if store.IsNotFound(err) || (err == nil && d.ServiceID != ss.svc.ID) {
+	d, err := c.store.GetServiceDomain(ctx, store.GetServiceDomainParams{Hostname: host, ServiceID: ss.svc.ID})
+	if store.IsNotFound(err) {
 		return notFound("%s is not a domain of %s", host, ss)
 	}
 	if err != nil {
@@ -338,7 +368,8 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 }
 
 // AllowCertificate answers the local Caddy's on-demand TLS `ask`: only
-// hostnames of non-archived services on this server get certificates.
+// verified hostnames of non-archived services on this server get
+// certificates.
 // Remote servers answer their own Caddy from their last routes.
 func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, error) {
 	host, err := normalizeHostname(hostname)
@@ -386,6 +417,11 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, in
 		Hostname: d.Hostname, URL: scheme + d.Hostname, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		Generated: d.Generated, RedirectTo: d.RedirectTo, Status: apitypes.DomainStatus(d.Status),
 		StatusReason: d.StatusReason, DNSRecords: []apitypes.DNSRecord{}, CreatedAt: d.CreatedAt,
+		Verified: d.VerifiedAt != nil,
+	}
+	if !out.Verified {
+		rec := verifyRecord(d)
+		out.Verification = &rec
 	}
 	c.checksMu.Lock()
 	if check, ok := c.checks[d.ID]; ok {
@@ -434,7 +470,8 @@ const (
 )
 
 // checkDomains moves domains through waiting_for_dns → issuing_certificate
-// → active using the runtime's DNS and certificate checks.
+// → active: a custom domain's TXT record first (proveDomain), then the
+// runtime's DNS and certificate checks.
 func (c *Core) checkDomains() {
 	defer c.wg.Done()
 	type backoff struct {
@@ -443,6 +480,9 @@ func (c *Core) checkDomains() {
 		// dnsOK is when DNS was first seen right, i.e. when the first
 		// HTTPS handshake asked Caddy to issue a certificate.
 		dnsOK time.Time
+		// verified is whether the domain was verified when last seen: one
+		// verified since (CheckDomainNow) starts over at the minimum.
+		verified bool
 	}
 	type check struct {
 		d store.Domain
@@ -464,6 +504,9 @@ func (c *Core) checkDomains() {
 			if b == nil {
 				b = &backoff{delay: domainCheckMin}
 				state[d.ID] = b
+			}
+			if v := d.VerifiedAt != nil; v != b.verified {
+				b.verified, b.delay, b.next = v, domainCheckMin, time.Time{}
 			}
 			if !time.Now().Before(b.next) {
 				var server int64
@@ -525,6 +568,8 @@ const certPatience = 10 * time.Minute
 
 // checkDomain updates one domain's status. dnsOK tracks when its DNS was
 // first seen right, to tell a pending certificate from one that never comes.
+// A domain not yet verified is checked for its TXT record only, and goes
+// on to the DNS and certificate check once it verifies.
 func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time) {
 	ss, err := c.scopeOf(ctx, d.ServiceID)
 	if err != nil || ss.svc.ArchivedAt != nil {
@@ -533,6 +578,16 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 	ing, err := c.envIngress(ctx, ss.envScope)
 	if err != nil {
 		return
+	}
+	if d.VerifiedAt == nil {
+		status, reason, ok := c.proveDomain(ctx, ss, &d)
+		if ctx.Err() != nil {
+			return
+		}
+		if !ok {
+			c.saveDomainStatus(ctx, ss, ing, d, status, reason, nil)
+			return
+		}
 	}
 	check, err := c.runtime(ss.env.ServerID).CheckDomain(ctx, d.Hostname)
 	// A domain Dock routes through the server's tunnel (ADR 0036).
@@ -578,6 +633,12 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 		c.checks[d.ID] = domainCheck{at: now(), resolved: slices.Clone(check.ResolvedIPs)}
 		c.checksMu.Unlock()
 	}
+	c.saveDomainStatus(ctx, ss, ing, d, status, reason, route)
+}
+
+// saveDomainStatus stores a checked domain's status when it changed and
+// publishes the domain; route is its Cloudflare record, nil for none.
+func (c *Core) saveDomainStatus(ctx context.Context, ss svcScope, ing serverIngress, d store.Domain, status apitypes.DomainStatus, reason string, route *store.CloudflareRecord) {
 	if string(status) != d.Status || reason != d.StatusReason {
 		if err := c.store.UpdateDomainStatus(ctx, store.UpdateDomainStatusParams{Status: string(status), StatusReason: reason, ID: d.ID}); err != nil {
 			c.log.Error("update domain status", "domain", d.Hostname, "err", err)

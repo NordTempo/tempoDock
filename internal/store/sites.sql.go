@@ -193,8 +193,13 @@ FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
-WHERE domains.hostname = +?
+WHERE domains.hostname = +?1 AND projects.org_id = +?2
 `
+
+type DomainScopeParams struct {
+	Hostname string
+	OrgID    int64
+}
 
 type DomainScopeRow struct {
 	Hostname        string
@@ -209,10 +214,12 @@ type DomainScopeRow struct {
 	OrgID           int64
 }
 
-// DomainScope returns a domain with its service, environment and
-// project, for operations named by hostname.
-func (q *Queries) DomainScope(ctx context.Context, hostname string) (DomainScopeRow, error) {
-	row := q.queryRow(ctx, q.domainScopeStmt, domainScope, hostname)
+// DomainScope returns an org's domain with its service, environment and
+// project, for operations named by hostname. Orgs may each claim a
+// hostname until one verifies it (ADR 0042); within an org it is one
+// service's.
+func (q *Queries) DomainScope(ctx context.Context, arg DomainScopeParams) (DomainScopeRow, error) {
+	row := q.queryRow(ctx, q.domainScopeStmt, domainScope, arg.Hostname, arg.OrgID)
 	var i DomainScopeRow
 	err := row.Scan(
 		&i.Hostname,

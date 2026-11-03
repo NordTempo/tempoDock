@@ -1,11 +1,38 @@
+-- CreateDomain adds a claim on a hostname: verified_at is set for one
+-- that needs no TXT record (ADR 0042), else NULL until it verifies.
 -- name: CreateDomain :one
-INSERT INTO domains (hostname, service_id, generated, redirect_to) VALUES (?, ?, ?, ?) RETURNING *;
+INSERT INTO domains (hostname, service_id, generated, redirect_to, verify_token, verified_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING *;
 
+-- GetDomainByHostname returns the domain that holds a hostname: its
+-- verified claim, the one that routes (ADR 0042).
 -- name: GetDomainByHostname :one
-SELECT * FROM domains WHERE hostname = +?;
+SELECT * FROM domains WHERE hostname = +? AND verified_at IS NOT NULL;
 
+-- GetServiceDomain returns a service's claim on a hostname, verified or
+-- not.
+-- name: GetServiceDomain :one
+SELECT * FROM domains WHERE hostname = +? AND service_id = +?;
+
+-- HostnameExists reports whether any service claims a hostname, verified
+-- or not.
 -- name: HostnameExists :one
 SELECT EXISTS (SELECT 1 FROM domains WHERE hostname = +?);
+
+-- ListHostnameClaims returns every claim on a hostname with the org that
+-- made it, for adding and verifying one (ADR 0042).
+-- name: ListHostnameClaims :many
+SELECT domains.id, domains.service_id, domains.verified_at, projects.org_id
+FROM domains
+JOIN services ON services.id = domains.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE domains.hostname = +?
+ORDER BY domains.id;
+
+-- VerifyDomain marks a claim verified; it affects no row when it already
+-- was. The partial unique index refuses a second verified claim.
+-- name: VerifyDomain :execrows
+UPDATE domains SET verified_at = ? WHERE id = +? AND verified_at IS NULL;
 
 -- name: ListDomainsByService :many
 SELECT * FROM domains WHERE service_id = +? ORDER BY id;
@@ -20,8 +47,8 @@ UPDATE domains SET status = ?, status_reason = ? WHERE id = +?;
 DELETE FROM domains WHERE id = +?;
 
 -- name: ListRoutableDomains :many
--- Every domain of a non-archived service in an environment on one server,
--- with the host port and ID of the service's active release (0 if none)
+-- Every verified domain of a non-archived service in an environment on
+-- one server, with the host port and ID of the service's active release (0 if none)
 -- and the service's access protection (mode '' when public).
 SELECT domains.hostname, domains.redirect_to, domains.service_id,
        CAST(coalesce((SELECT releases.host_port FROM releases
@@ -36,7 +63,7 @@ FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
 LEFT JOIN service_access ON service_access.service_id = services.id
-WHERE environments.server_id = +? AND services.archived_at IS NULL
+WHERE environments.server_id = +? AND services.archived_at IS NULL AND domains.verified_at IS NOT NULL
 ORDER BY domains.service_id, domains.id;
 
 -- name: ListProjectDomains :many
