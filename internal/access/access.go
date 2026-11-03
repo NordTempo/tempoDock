@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -93,4 +94,25 @@ func mac(key []byte, payload string) []byte {
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte(payload))
 	return m.Sum(nil)
+}
+
+// LocalPath is to if it is a path on the same hostname, else "/". Both the
+// control plane (building the grant link) and the access callback (sending
+// the visitor on) use it, so a sign-in link can't redirect anywhere else.
+// Browsers drop tabs and newlines from a Location and read a backslash as
+// a slash, so "/\t/evil.com" or "/\\evil.com" would become "//evil.com":
+// any of them, or any other control character, sends the visitor to "/".
+func LocalPath(to string) string {
+	if !strings.HasPrefix(to, "/") || strings.HasPrefix(to, "//") {
+		return "/"
+	}
+	for i := range len(to) {
+		if c := to[i]; c < 0x20 || c == 0x7f || c == '\\' {
+			return "/"
+		}
+	}
+	if u, err := url.Parse(to); err != nil || u.Scheme != "" || u.Host != "" || u.User != nil {
+		return "/"
+	}
+	return to
 }

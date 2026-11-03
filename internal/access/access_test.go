@@ -35,3 +35,24 @@ func TestVerify(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalPath(t *testing.T) {
+	for to, want := range map[string]string{
+		"/orders?id=7#top":  "/orders?id=7#top",
+		"/a:b/c":            "/a:b/c",
+		"":                  "/",
+		"orders":            "/",
+		"https://evil.com/": "/",
+		"//evil.com":        "/",
+		"/\\evil.com":       "/",
+		"/\t/evil.com":      "/",
+		"/\r\n/evil.com":    "/",
+		"/\x00/evil.com":    "/",
+		"/x\\..\\/evil.com": "/",
+		"/%zz":              "/",
+	} {
+		if got := LocalPath(to); got != want {
+			t.Errorf("LocalPath(%q) = %q, want %q", to, got, want)
+		}
+	}
+}

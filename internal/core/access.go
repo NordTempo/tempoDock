@@ -220,20 +220,11 @@ func (c *Core) GrantAccess(ctx context.Context, a Actor, req apitypes.AccessGran
 		user = a.Name
 	}
 	grant := access.Sign(key, access.Grant, host, user, now().Add(access.GrantTTL))
-	q := url.Values{"grant": {grant}, "to": {cleanAccessPath(req.To)}}
+	q := url.Values{"grant": {grant}, "to": {access.LocalPath(req.To)}}
 	return apitypes.AccessGrant{
 		URL:      c.toDomain(ss, d, nil, ing).URL + access.CallbackPath + "?" + q.Encode(),
 		Hostname: host, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 	}, nil
-}
-
-// cleanAccessPath is to if it is a path on the domain, else "/". The
-// access check makes the same test; this keeps the URL tidy.
-func cleanAccessPath(to string) string {
-	if !strings.HasPrefix(to, "/") || strings.HasPrefix(to, "//") || strings.HasPrefix(to, "/\\") {
-		return "/"
-	}
-	return to
 }
 
 // routeAccess is a routable domain's protection for Caddy, nil when its
