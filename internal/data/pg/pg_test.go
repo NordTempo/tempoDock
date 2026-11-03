@@ -74,6 +74,15 @@ func TestCheckReadStatement(t *testing.T) {
 		`SELECT "pg_try_advisory_lock_shared"(1)`,
 		"SELECT PG_LOGICAL_EMIT_MESSAGE(false, 'p', 'x')",
 		"SELECT ts_stat('SELECT 1')",
+		"SELECT dblink('dbname=app', 'SELECT 1')",
+		"SELECT public.dblink_exec('dbname=app', 'DROP TABLE t')",
+		`SELECT "dblink_connect"('c', 'dbname=app')`,
+		"SELECT DBLINK_SEND_QUERY('c', 'DELETE FROM t')",
+		"SELECT pg_terminate_backend(42)",
+		"SELECT pg_background_launch('DELETE FROM t')",
+		"SELECT pg_logical_slot_get_changes('s', NULL, NULL)",
+		"SELECT pg_create_logical_replication_slot('s', 'pgoutput')",
+		"SELECT pg_file_write('x', 'y', false)",
 		`SELECT u&"x"`,
 	}
 	for _, sql := range bad {
