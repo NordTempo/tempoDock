@@ -1,7 +1,12 @@
 import { lazy, Suspense, useState } from "react";
-import { useGenerateDomain, useRemoveDomain } from "../../data/mutations";
+import { api, body } from "../../api/client";
+import {
+  useAction,
+  useGenerateDomain,
+  useRemoveDomain,
+} from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
-import { listenPort, useService } from "../../data/queries";
+import { listenPort, servicePath, useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
 import { ago, since } from "../../ui/format";
 import {
@@ -26,7 +31,9 @@ const AddDomainDialog = lazy(() => import("./AddDomainDialog"));
 export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service, domains } = useService(ref);
   const port = listenPort(service);
-  const waiting = domains.filter(domainNeedsAttention);
+  const waiting = domains.filter(
+    (d) => domainNeedsAttention(d) || d.verification,
+  );
 
   return (
     <>
@@ -36,7 +43,7 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       />
       <AccessLine serviceRef={ref} />
       {waiting.map((d) => (
-        <DnsCard key={d.hostname} domain={d} />
+        <DnsCard key={d.hostname} serviceRef={ref} domain={d} />
       ))}
       <section aria-labelledby="all-domains">
         <SectionHead id="all-domains">All domains</SectionHead>
@@ -128,13 +135,48 @@ function routedWords(dns: NonNullable<Domain["dns"]>) {
   }
 }
 
-/** The DNS record to create, what the name resolves to now, and progress. */
-function DnsCard({ domain }: { domain: Domain }) {
-  const records = domain.dns_records ?? [];
+/**
+ * Checks a domain now instead of at the server's next retry. The domain
+ * event it publishes updates the page.
+ */
+const useCheckDomain = () =>
+  useAction(
+    ({ ref, hostname }: { ref: ServiceRef; hostname: string }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains/{hostname}/check",
+          { params: { path: { ...servicePath(ref), hostname } } },
+        ),
+      ),
+    () => [],
+  );
+
+/**
+ * The DNS records to create (the TXT record that proves control first,
+ * while the domain isn't verified), what the name resolves to now, and
+ * progress.
+ */
+function DnsCard({
+  serviceRef: ref,
+  domain,
+}: {
+  serviceRef: ServiceRef;
+  domain: Domain;
+}) {
+  const check = useCheckDomain();
+  const proof = domain.verification;
+  const records = [...(proof ? [proof] : []), ...(domain.dns_records ?? [])];
   const resolved = domain.resolved_ips ?? [];
   const error = domain.status === "error";
-  const step =
-    domain.status === "waiting_for_dns" || domain.status === "added"
+  const steps = [
+    ...(proof ? ["Verify"] : []),
+    "Waiting for DNS",
+    "Issuing certificate",
+    "Active",
+  ];
+  const step = proof
+    ? 1
+    : domain.status === "waiting_for_dns" || domain.status === "added"
       ? 1
       : domain.status === "issuing_certificate"
         ? 2
@@ -152,12 +194,21 @@ function DnsCard({ domain }: { domain: Domain }) {
           {domain.hostname}
         </h2>
         <StateText state={domainState(domain)} />
-        {domain.checked_at && (
-          <span className="ml-auto text-mut">
-            Checked {ago(domain.checked_at)}
-          </span>
-        )}
+        <span className="ml-auto flex items-center gap-2.5">
+          {domain.checked_at && (
+            <span className="text-mut">Checked {ago(domain.checked_at)}</span>
+          )}
+          <Act
+            small
+            cli={`dock domain check ${domain.hostname} -s ${ref.service} -e ${ref.environment}`}
+            disabled={check.isPending}
+            onClick={() => check.mutate({ ref, hostname: domain.hostname })}
+          >
+            Check now
+          </Act>
+        </span>
       </div>
+      <ErrorText error={check.error} />
       {domain.dns ? (
         <p
           className={`text-md ${domain.dns.status === "error" ? "text-fail" : ""}`}
@@ -171,6 +222,19 @@ function DnsCard({ domain }: { domain: Domain }) {
       ) : error ? (
         <p className="text-md text-fail">
           {domain.status_reason ?? "The certificate could not be issued."}
+        </p>
+      ) : proof ? (
+        <p className="text-md">
+          Create the TXT record to prove you control this hostname
+          {records.length > 2
+            ? ", and one of the others to point it here"
+            : records.length > 1
+              ? ", and the other to point it here"
+              : ""}
+          . Dock routes it once it finds the TXT record.
+          {domain.status_reason && (
+            <span className="block text-mut">{domain.status_reason}</span>
+          )}
         </p>
       ) : (
         <p className="text-md">
@@ -223,23 +287,17 @@ function DnsCard({ domain }: { domain: Domain }) {
         </div>
       )}
       <div className="flex flex-wrap gap-x-[22px] gap-y-1.5 text-xs">
-        {["Waiting for DNS", "Issuing certificate", "Active"].map(
-          (label, i) => (
-            <span
-              key={label}
-              className={
-                i + 1 === step
-                  ? error
-                    ? "text-fail"
-                    : "text-warn"
-                  : "text-mut"
-              }
-            >
-              {i + 1 === step ? (error ? "✕" : "▲") : i + 1 < step ? "✓" : "○"}{" "}
-              {i + 1} {label}
-            </span>
-          ),
-        )}
+        {steps.map((label, i) => (
+          <span
+            key={label}
+            className={
+              i + 1 === step ? (error ? "text-fail" : "text-warn") : "text-mut"
+            }
+          >
+            {i + 1 === step ? (error ? "✕" : "▲") : i + 1 < step ? "✓" : "○"}{" "}
+            {i + 1} {label}
+          </span>
+        ))}
       </div>
     </section>
   );
@@ -261,6 +319,9 @@ function detail(d: Domain) {
       return `Cloudflare: ${d.dns.reason ?? "error"}`;
     if (d.status === "error") return d.status_reason ?? "error";
     return `through the tunnel · Cloudflare ${d.dns.status}`;
+  }
+  if (d.verification && d.status !== "error") {
+    return `not routed · needs TXT ${d.verification.name}`;
   }
   switch (d.status) {
     case "active":

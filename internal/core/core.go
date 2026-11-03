@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -74,6 +75,10 @@ type Options struct {
 	// the updater is installed. Tests set both.
 	Updates     update.Source
 	UpdaterUnit string
+	// LookupTXT looks up a name's TXT records, for custom domain
+	// verification (ADR 0042); nil uses the system resolver. Tests answer
+	// from a map.
+	LookupTXT func(ctx context.Context, name string) ([]string, error)
 }
 
 // Core is the control plane.
@@ -109,6 +114,8 @@ type Core struct {
 	// restart, active ones no longer matter.
 	checksMu sync.Mutex
 	checks   map[int64]domainCheck
+	// lookupTXT is Options.LookupTXT, or the system resolver's.
+	lookupTXT func(ctx context.Context, name string) ([]string, error)
 
 	// routesMu serialises render-and-apply, so a slow render can't
 	// overwrite a newer routing table.
@@ -197,6 +204,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		servers:    map[int64]*serverState{},
 		domainKick: make(chan struct{}, 1),
 		checks:     map[int64]domainCheck{},
+		lookupTXT:  o.LookupTXT,
 		status:     map[int64]apitypes.ServiceStatus{},
 		removing:   map[string]bool{},
 		uploads:    map[int64]bool{},
@@ -212,6 +220,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	}
 	if c.data == nil {
 		c.data = pg.New(pg.Options{})
+	}
+	if c.lookupTXT == nil {
+		c.lookupTXT = net.DefaultResolver.LookupTXT
 	}
 	c.panel = newDataPanel(c)
 	if o.CutoverDrain > 0 {

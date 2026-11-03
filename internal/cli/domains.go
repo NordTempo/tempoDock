@@ -17,7 +17,7 @@ import (
 
 func newDomainCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "domain", Short: "Manage a service's public hostnames"})
-	cmd.AddCommand(newDomainListCmd(g), newDomainAddCmd(g), newDomainGenerateCmd(g), newDomainRemoveCmd(g))
+	cmd.AddCommand(newDomainListCmd(g), newDomainAddCmd(g), newDomainGenerateCmd(g), newDomainCheckCmd(g), newDomainRemoveCmd(g))
 	return cmd
 }
 
@@ -28,8 +28,9 @@ func newDomainListCmd(g *globals) *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List domains with their status and the DNS records to create",
-		Long: `List the service's domains with their status and the DNS record to create.
---wide adds each domain's URL, when the server last checked its DNS, and
+		Long: `List the service's domains with their status and the DNS record to create:
+the TXT record that proves you control a custom hostname first, while it
+isn't verified. --wide adds each domain's URL, when the server last checked its DNS, and
 what the hostname resolved to then.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -54,6 +55,9 @@ what the hostname resolved to then.`,
 				for _, d := range domains {
 					dns := "-"
 					switch {
+					case d.Verification != nil:
+						r := d.Verification
+						dns = r.Type + " " + r.Name + " → " + r.Value
 					case d.DNS != nil:
 						dns = dnsWords(d.DNS)
 					case d.Status != apitypes.DomainActive && len(d.DNSRecords) > 0:
@@ -104,6 +108,12 @@ DNS can be set up before or after. Unless --detach, waits (up to --timeout)
 while the server checks DNS and issues the certificate. Still waiting after
 that is not an error: the server keeps checking.
 
+A custom hostname is routed only once a TXT record proves your organization
+controls it; the record to create is printed first, and ` + "`dock domain check`" + `
+looks for it at once. Hostnames under the server's base domain, from
+Cloudflare, or added by an operator need none. A hostname another
+organization has proved is refused.
+
 --cloudflare adds a hostname in a zone connected to Dock (` + "`dock cloudflare zones`" + `)
 and has Dock set up all it needs: it routes the hostname through the
 server's Cloudflare tunnel (creating or adopting one) and creates its
@@ -141,8 +151,9 @@ func newDomainGenerateCmd(g *globals) *cobra.Command {
 // and waits for it to go live, like this:
 //
 //	Added shop.example.com → web (production)
+//	Prove control:  TXT  _dock-challenge.shop.example.com  →  dock-verify=…
 //	Point DNS:  A  shop.example.com  →  203.0.113.10
-//	Waiting for DNS... ok. Issuing certificate... ok.
+//	Waiting for the TXT record... ok. Waiting for DNS... ok. Issuing certificate... ok.
 //	https://shop.example.com is live.
 func (g *globals) addDomain(ctx context.Context, f domainFlags, path string, body any) error {
 	s, t, err := g.open(f.targetFlags, needService)
@@ -167,6 +178,9 @@ func (g *globals) addDomain(ctx context.Context, f domainFlags, path string, bod
 			target = "redirect to " + d.RedirectTo
 		}
 		_, _ = fmt.Fprintf(g.io.Out, "Added %s → %s (%s)\n", d.Hostname, target, d.Environment)
+		if r := d.Verification; r != nil {
+			_, _ = fmt.Fprintf(g.io.Out, "Prove control:  %s  %s  →  %s\n", r.Type, r.Name, r.Value)
+		}
 		if d.DNS != nil {
 			_, _ = fmt.Fprintf(g.io.Out, "DNS: Dock routes it through the server's Cloudflare tunnel (zone %s)\n", d.DNS.Zone)
 		}
@@ -258,7 +272,11 @@ func (g *globals) waitForDomain(ctx context.Context, w *watcher, t target, d api
 		case apitypes.DomainIssuingCertificate:
 			step("Issuing certificate")
 		default:
-			step("Waiting for DNS")
+			if d.Verified {
+				step("Waiting for DNS")
+			} else {
+				step("Waiting for the TXT record")
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -280,6 +298,42 @@ func (g *globals) waitForDomain(ctx context.Context, w *watcher, t target, d api
 			}
 		}
 	}
+}
+
+func newDomainCheckCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	cmd := &cobra.Command{
+		Use:   "check <hostname>",
+		Short: "Check a domain's TXT record, DNS and certificate now",
+		Long: `Check a domain now instead of at the server's next retry: its TXT record
+while it isn't verified, then its DNS and certificate. Prints its status and
+the record still to create.`,
+		Example: `  dock domain check shop.example.com -s web`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			d, err := send[apitypes.Domain](cmd.Context(), s, http.MethodPost, t.servicePath()+"/domains/"+url.PathEscape(args[0])+"/check", nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(d, func() error {
+				status := strings.ReplaceAll(string(d.Status), "_", " ")
+				if d.StatusReason != "" {
+					status += ": " + d.StatusReason
+				}
+				_, err := fmt.Fprintf(g.io.Out, "%s: %s\n", d.Hostname, status)
+				if r := d.Verification; err == nil && r != nil {
+					_, err = fmt.Fprintf(g.io.Out, "Prove control:  %s  %s  →  %s\n", r.Type, r.Name, r.Value)
+				}
+				return err
+			})
+		},
+	}
+	f.add(cmd, needService)
+	return cmd
 }
 
 func newDomainRemoveCmd(g *globals) *cobra.Command {

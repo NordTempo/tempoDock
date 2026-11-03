@@ -39,13 +39,14 @@ func BenchmarkTrafficTick50(b *testing.B) {
 	}
 	env := EnvRef{"shop", "production"}
 	hosts := make([]node.HostTraffic, 50)
+	verified := now() // routed, so the collector knows them (ADR 0042)
 	for i := range hosts {
 		svc, err := c.CreateService(ctx, testSystem, env, apitypes.CreateServiceRequest{Name: fmt.Sprintf("s%d", i), Image: "app:1"})
 		if err != nil {
 			b.Fatal(err)
 		}
 		host := fmt.Sprintf("s%d.example.com", i)
-		if _, err := st.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: svc.ID}); err != nil {
+		if _, err := st.CreateDomain(ctx, store.CreateDomainParams{Hostname: host, ServiceID: svc.ID, VerifiedAt: &verified}); err != nil {
 			b.Fatal(err)
 		}
 		paths := make([]node.PathCount, traffic.DrainPaths)

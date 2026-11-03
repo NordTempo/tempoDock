@@ -206,7 +206,8 @@ func TestCaddyAsk(t *testing.T) {
 		_ = resp.Body.Close()
 		return resp.StatusCode
 	}
-	if resp, body := f.do("deploy", "POST", shopProd+"/services/web/domains", apitypes.AddDomainRequest{Hostname: "shop.example.com"}); resp.StatusCode != 201 {
+	// An operator's domain needs no TXT record (ADR 0042).
+	if resp, body := f.do("operator", "POST", shopProd+"/services/web/domains", apitypes.AddDomainRequest{Hostname: "shop.example.com"}); resp.StatusCode != 201 {
 		t.Fatalf("add domain: %d %s", resp.StatusCode, body)
 	}
 	if got := check("shop.example.com"); got != 200 {

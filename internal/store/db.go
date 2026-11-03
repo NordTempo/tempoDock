@@ -528,6 +528,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getServiceByNameStmt, err = db.PrepareContext(ctx, getServiceByName); err != nil {
 		return nil, fmt.Errorf("error preparing query GetServiceByName: %w", err)
 	}
+	if q.getServiceDomainStmt, err = db.PrepareContext(ctx, getServiceDomain); err != nil {
+		return nil, fmt.Errorf("error preparing query GetServiceDomain: %w", err)
+	}
 	if q.getSessionUserStmt, err = db.PrepareContext(ctx, getSessionUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSessionUser: %w", err)
 	}
@@ -677,6 +680,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listGitPendingServicesStmt, err = db.PrepareContext(ctx, listGitPendingServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListGitPendingServices: %w", err)
+	}
+	if q.listHostnameClaimsStmt, err = db.PrepareContext(ctx, listHostnameClaims); err != nil {
+		return nil, fmt.Errorf("error preparing query ListHostnameClaims: %w", err)
 	}
 	if q.listInFlightReleasesStmt, err = db.PrepareContext(ctx, listInFlightReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListInFlightReleases: %w", err)
@@ -1238,6 +1244,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.upsertPlacementStmt, err = db.PrepareContext(ctx, upsertPlacement); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertPlacement: %w", err)
+	}
+	if q.verifyDomainStmt, err = db.PrepareContext(ctx, verifyDomain); err != nil {
+		return nil, fmt.Errorf("error preparing query VerifyDomain: %w", err)
 	}
 	return &q, nil
 }
@@ -2084,6 +2093,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getServiceByNameStmt: %w", cerr)
 		}
 	}
+	if q.getServiceDomainStmt != nil {
+		if cerr := q.getServiceDomainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getServiceDomainStmt: %w", cerr)
+		}
+	}
 	if q.getSessionUserStmt != nil {
 		if cerr := q.getSessionUserStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getSessionUserStmt: %w", cerr)
@@ -2332,6 +2346,11 @@ func (q *Queries) Close() error {
 	if q.listGitPendingServicesStmt != nil {
 		if cerr := q.listGitPendingServicesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listGitPendingServicesStmt: %w", cerr)
+		}
+	}
+	if q.listHostnameClaimsStmt != nil {
+		if cerr := q.listHostnameClaimsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listHostnameClaimsStmt: %w", cerr)
 		}
 	}
 	if q.listInFlightReleasesStmt != nil {
@@ -3269,6 +3288,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing upsertPlacementStmt: %w", cerr)
 		}
 	}
+	if q.verifyDomainStmt != nil {
+		if cerr := q.verifyDomainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing verifyDomainStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -3476,6 +3500,7 @@ type Queries struct {
 	getServiceStmt                      *sql.Stmt
 	getServiceAccessStmt                *sql.Stmt
 	getServiceByNameStmt                *sql.Stmt
+	getServiceDomainStmt                *sql.Stmt
 	getSessionUserStmt                  *sql.Stmt
 	getSiteStmt                         *sql.Stmt
 	getSiteByNameStmt                   *sql.Stmt
@@ -3526,6 +3551,7 @@ type Queries struct {
 	listFailedLatestReleasesStmt        *sql.Stmt
 	listGitHubInstallationsStmt         *sql.Stmt
 	listGitPendingServicesStmt          *sql.Stmt
+	listHostnameClaimsStmt              *sql.Stmt
 	listInFlightReleasesStmt            *sql.Stmt
 	listKeptDigestsStmt                 *sql.Stmt
 	listKeptImageIDsStmt                *sql.Stmt
@@ -3713,6 +3739,7 @@ type Queries struct {
 	upsertDataAccessStmt                *sql.Stmt
 	upsertOrgVariableStmt               *sql.Stmt
 	upsertPlacementStmt                 *sql.Stmt
+	verifyDomainStmt                    *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -3887,6 +3914,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getServiceStmt:                      q.getServiceStmt,
 		getServiceAccessStmt:                q.getServiceAccessStmt,
 		getServiceByNameStmt:                q.getServiceByNameStmt,
+		getServiceDomainStmt:                q.getServiceDomainStmt,
 		getSessionUserStmt:                  q.getSessionUserStmt,
 		getSiteStmt:                         q.getSiteStmt,
 		getSiteByNameStmt:                   q.getSiteByNameStmt,
@@ -3937,6 +3965,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listFailedLatestReleasesStmt:        q.listFailedLatestReleasesStmt,
 		listGitHubInstallationsStmt:         q.listGitHubInstallationsStmt,
 		listGitPendingServicesStmt:          q.listGitPendingServicesStmt,
+		listHostnameClaimsStmt:              q.listHostnameClaimsStmt,
 		listInFlightReleasesStmt:            q.listInFlightReleasesStmt,
 		listKeptDigestsStmt:                 q.listKeptDigestsStmt,
 		listKeptImageIDsStmt:                q.listKeptImageIDsStmt,
@@ -4124,5 +4153,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		upsertDataAccessStmt:                q.upsertDataAccessStmt,
 		upsertOrgVariableStmt:               q.upsertOrgVariableStmt,
 		upsertPlacementStmt:                 q.upsertPlacementStmt,
+		verifyDomainStmt:                    q.verifyDomainStmt,
 	}
 }

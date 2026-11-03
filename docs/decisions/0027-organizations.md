@@ -140,7 +140,12 @@ platform channels. Fresh installs create their first org at bootstrap.
    payment system, later.
 4. **Hosted**: running strangers' code on servers we own needs its own
    ADR: sandboxed runtime and builds, per-org quotas, egress limits,
-   custom domain verification, metering and billing, abuse handling.
+   metering and billing, abuse handling. Custom domain verification
+   came first: with any account able to have an org, a hostname was
+   first come, first served across orgs, so one could squat a name
+   another wanted. Since [0042](0042-domain-verification.md) an org's
+   custom hostname routes only once a TXT record proves it controls it,
+   and a hostname another org has proved is refused.
 
 ## Consequences
 

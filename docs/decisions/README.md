@@ -49,6 +49,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0039](0039-backups-on-storage-connections.md) | Backups on storage connections, and moving them | accepted |
 | [0040](0040-traffic-counts-requests.md) | Traffic counts requests; visitors are Analytics' | accepted |
 | [0041](0041-sealed-values-bound-to-their-place.md) | Sealed values are bound to where they are stored | accepted |
+| [0042](0042-domain-verification.md) | Custom domains are verified with a TXT record | accepted |
 
 ## Template
 

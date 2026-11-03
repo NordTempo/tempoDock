@@ -37,6 +37,8 @@ type harness struct {
 	opts  Options
 	// nodes, when set, are plugged in with SetNodes on every start.
 	nodes Nodes
+	// dns answers custom domain verification's TXT lookups (ADR 0042).
+	dns *fakeDNS
 }
 
 // openTestStore opens a database with the test org (ID 1) in it.
@@ -71,8 +73,8 @@ func newHarness(t *testing.T) *harness {
 	if err := os.WriteFile(cfg.Analytics.StoreBinary, []byte("store"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{t: t, ctx: ctx, rt: fake.New(), store: st}
-	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond}
+	h := &harness{t: t, ctx: ctx, rt: fake.New(), store: st, dns: &fakeDNS{}}
+	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, LookupTXT: h.dns.lookupTXT}
 	h.c = h.start()
 	t.Cleanup(func() {
 		h.c.Close()

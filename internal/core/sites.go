@@ -278,8 +278,8 @@ func (c *Core) domainScope(ctx context.Context, a Actor, hostname string, need a
 	if err != nil {
 		return store.DomainScopeRow{}, envScope{}, err
 	}
-	d, err := c.store.DomainScope(ctx, host)
-	if store.IsNotFound(err) || (err == nil && d.OrgID != a.OrgID) {
+	d, err := c.store.DomainScope(ctx, store.DomainScopeParams{Hostname: host, OrgID: a.OrgID})
+	if store.IsNotFound(err) {
 		return d, envScope{}, notFound("no service has the domain %s; add it with `dock domain add %s` first", host, host)
 	}
 	if err != nil {

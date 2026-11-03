@@ -625,7 +625,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "list_domains", "List domains",
-		"A service's domains with their status (waiting_for_dns, issuing_certificate, active, error) and the exact DNS records to create for custom ones.",
+		"A service's domains with their status (waiting_for_dns, issuing_certificate, active, error) and the exact DNS records to create for custom ones; one not yet verified also has the TXT record that proves control (verification), and isn't routed until it is found.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in)
 			if err != nil {
@@ -644,6 +644,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 
 	mcpkit.AddTool(s, "add_domain", "Add a domain",
 		"Add a custom hostname to a service. A hostname belongs to one service only. The result lists the DNS records the user must create; the certificate is issued once DNS points at the server. "+
+			"Unless verified is true, it routes only once the user also creates the TXT record in verification, which proves their organization controls the hostname (check_domain looks for it at once). A hostname another organization has proved is refused. "+
 			"If the service's port wasn't published yet, this redeploys it and waits.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
@@ -674,6 +675,23 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 			}
 			return h.domainReply(ctx, c, ref, dc)
 		})
+
+	mcpkit.AddTool(s, "check_domain", "Check a domain now",
+		"Check a domain at once instead of at the server's next retry: its verification TXT record while it isn't verified, then its DNS and certificate. Returns the domain with its status.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
+			ServiceInput
+			Hostname string `json:"hostname" doc:"The domain's hostname, e.g. shop.example.com."`
+		}) (mcpkit.Reply, error) {
+			ref, err := serviceOf(c, in.ServiceInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			d, err := h.core.CheckDomainNow(ctx, c.Actor, ref, in.Hostname)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			return mcpkit.Reply{Summary: domainLine(d) + ".", Data: d}, nil
+		})
 }
 
 // domainReply waits for the release a domain change started, if any, and
@@ -681,6 +699,9 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 func (h *handler) domainReply(ctx context.Context, c *call, ref core.ServiceRef, dc apitypes.DomainChange) (mcpkit.Reply, error) {
 	out := map[string]any{"domain": dc.Domain}
 	summary := fmt.Sprintf("Added %s to %s", domainLine(dc.Domain), ref)
+	if r := dc.Domain.Verification; r != nil {
+		summary += fmt.Sprintf(". It routes once this TXT record proves control: %s %s %s", r.Type, r.Name, r.Value)
+	}
 	if len(dc.Domain.DNSRecords) > 0 && dc.Domain.Status != apitypes.DomainActive {
 		recs := make([]string, len(dc.Domain.DNSRecords))
 		for i, r := range dc.Domain.DNSRecords {

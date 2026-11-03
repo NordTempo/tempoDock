@@ -83,7 +83,7 @@ FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
-WHERE domains.redirect_to = ''
+WHERE domains.redirect_to = '' AND domains.verified_at IS NOT NULL
 `
 
 type ListTrafficHostsRow struct {
@@ -99,7 +99,7 @@ type ListTrafficHostsRow struct {
 }
 
 // ListTrafficHosts maps the hostnames Caddy proxies to services (redirect
-// domains aren't counted) and their server, for the traffic the minute
+// domains aren't counted, and unverified claims aren't proxied) and their server, for the traffic the minute
 // tick drains. The collector reads it again only when a drained hostname
 // is missing.
 func (q *Queries) ListTrafficHosts(ctx context.Context) ([]ListTrafficHostsRow, error) {

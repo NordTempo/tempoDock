@@ -130,8 +130,10 @@ SELECT id, name, settings FROM sites WHERE archived_at IS NULL;
 -- name: SetAnalyticsSiteDefaults :exec
 UPDATE analytics_settings SET site_defaults = ?, updated_by = ?, updated_at = ? WHERE id = 1;
 
--- DomainScope returns a domain with its service, environment and
--- project, for operations named by hostname.
+-- DomainScope returns an org's domain with its service, environment and
+-- project, for operations named by hostname. Orgs may each claim a
+-- hostname until one verifies it (ADR 0042); within an org it is one
+-- service's.
 -- name: DomainScope :one
 SELECT domains.hostname, domains.redirect_to, services.id AS service_id, services.name AS service_name,
        environments.id AS environment_id, environments.name AS environment_name, environments.server_id,
@@ -140,7 +142,7 @@ FROM domains
 JOIN services ON services.id = domains.service_id
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
-WHERE domains.hostname = +?;
+WHERE domains.hostname = +sqlc.arg(hostname) AND projects.org_id = +sqlc.arg(org_id);
 
 -- ServiceNames names services by ID (analytics breakdowns by service).
 -- name: ServiceNames :many

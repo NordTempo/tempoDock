@@ -638,7 +638,7 @@ const (
 
 // DNSRecord is a record the user must create for a domain to work.
 type DNSRecord struct {
-	Type  string `json:"type" enum:"A,CNAME"`
+	Type  string `json:"type" enum:"A,AAAA,CNAME,TXT"`
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
@@ -667,6 +667,14 @@ type Domain struct {
 	CheckedAt   *time.Time `json:"checked_at,omitempty"`
 	ResolvedIPs []string   `json:"resolved_ips,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+	// Verified says the service's org holds the hostname (ADR 0042): it
+	// proved control with Verification, or needed no proof (generated,
+	// under the server's base domain, from Cloudflare, or added by an
+	// operator). Only verified domains are routed and get certificates.
+	Verified bool `json:"verified"`
+	// Verification is the TXT record that proves control, set while the
+	// domain isn't verified. The daemon looks for it with every check.
+	Verification *DNSRecord `json:"verification,omitempty"`
 	// DNS is set for a domain Dock routes through its server's Cloudflare
 	// tunnel (added from Cloudflare, ADR 0036): how far it is. Only in a
 	// service's domain list and domain changes.
