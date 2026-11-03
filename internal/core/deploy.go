@@ -357,6 +357,11 @@ func (d *deployment) cutover(ctx context.Context) error {
 		// The old release never stopped serving and keeps doing so.
 		return step(apitypes.CodeDeployFailed, "routes could not be updated: %w", routeErr)
 	}
+	// Running before the release reads as active, so whoever sees it
+	// active (a deploy's caller polling, a backup, the data panel) sees
+	// the service running too.
+	prev := c.getStatus(d.ss.svc.ID)
+	c.setStatus(d.ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		if d.old != nil {
 			if err := q.SupersedeRelease(ctx, d.old.ID); err != nil {
@@ -366,6 +371,7 @@ func (d *deployment) cutover(ctx context.Context) error {
 		return q.ActivateRelease(ctx, store.ActivateReleaseParams{FinishedAt: ptr(now()), ID: d.rel.ID})
 	})
 	if err != nil {
+		c.setStatus(d.ss, prev)
 		// Point routes back at what the DB says is active.
 		if rerr := c.applyRoutesLocked(ctx, serverID, nil); rerr != nil {
 			c.log.Error("restore routes", "err", rerr)
@@ -381,7 +387,6 @@ func (d *deployment) cutover(ctx context.Context) error {
 	} else {
 		d.event(ctx, fmt.Sprintf("Traffic switched to release %d", d.rel.Number))
 	}
-	c.setStatus(d.ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
 	c.adoptHealth(ctx, d.ss, d.rel.ContainerID)
 	d.event(ctx, fmt.Sprintf("Release %d is live", d.rel.Number))
 	d.publish(ctx)
