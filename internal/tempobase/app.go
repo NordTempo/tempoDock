@@ -47,8 +47,8 @@ type App struct {
 	// bcrypt caps concurrent password hashes (each is ~50 ms of CPU).
 	bcrypt chan struct{}
 	// loginLimit rate limits sign-in, setup and password attempts per
-	// client IP and per email.
-	loginLimit *httpkit.Limiter
+	// client IP and email (httpkit.LoginLimiter).
+	loginLimit *httpkit.LoginLimiter
 
 	// setupMu guards setupCode, the one-time code that creates the first
 	// admin; empty once used, or when there are users.
@@ -86,7 +86,7 @@ func New(cfg Config, st *tbstore.Store, box *secrets.Box, log *slog.Logger) *App
 		cfg: cfg, store: st, box: box, log: log, now: time.Now,
 		engine:     pg.New(pg.Options{Roles: data.TempoBaseRoles, AppName: "tempobase"}),
 		bcrypt:     make(chan struct{}, 2),
-		loginLimit: httpkit.NewLimiter(5, 10*time.Second),
+		loginLimit: httpkit.NewLoginLimiter(),
 	}
 	a.panel = datapanel.New(datapanel.Options[*tbstore.Connection]{
 		Host: host{a}, Engine: a.engine, Box: box, Roles: data.TempoBaseRoles, Words: Words, Logger: log,

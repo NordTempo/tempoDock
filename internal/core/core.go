@@ -121,9 +121,10 @@ type Core struct {
 	// crash or drift. An ID leaves the set on its destroy event.
 	removing map[string]bool
 
-	// loginLimit throttles password attempts per client IP and per email;
-	// bcryptSem caps concurrent password checks (each is ~50ms of CPU).
-	loginLimit *httpkit.Limiter
+	// loginLimit throttles password attempts per client IP, per (email,
+	// IP) and, more loosely, per email (httpkit.LoginLimiter); bcryptSem
+	// caps concurrent password checks (each is ~50ms of CPU).
+	loginLimit *httpkit.LoginLimiter
 	bcryptSem  chan struct{}
 
 	// stats holds the latest resource samples and the live samplers.
@@ -199,7 +200,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		status:     map[int64]apitypes.ServiceStatus{},
 		removing:   map[string]bool{},
 		uploads:    map[int64]bool{},
-		loginLimit: httpkit.NewLimiter(5, 10*time.Second),
+		loginLimit: httpkit.NewLoginLimiter(),
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),
 		backups:    newBackupState(),
