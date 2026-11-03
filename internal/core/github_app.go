@@ -458,8 +458,9 @@ func (c *Core) StartGitHubInstall(ctx context.Context, a Actor, req apitypes.Git
 
 // CompleteGitHubInstall handles GitHub's redirect after the App was
 // installed or its repositories changed: it assigns the installation to
-// the org the link was for. It returns the org's slug and what happened,
-// for the page the browser lands on. The state is the authority.
+// the org the link was for, unless another org has it (conflict). It
+// returns the org's slug and what happened, for the page the browser
+// lands on. The state is the authority for the org, not the installation.
 func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, setupAction, state string) (string, error) {
 	f, err := c.git.app.flow(state, true, true)
 	if err != nil {
@@ -468,7 +469,9 @@ func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, 
 	if setupAction == "request" {
 		return fmt.Sprintf("The installation was requested. Once an owner of the GitHub account approves it, assign it with `dock github assign <id> %s`.", f.org.Slug), nil
 	}
-	inst, err := c.assignInstallation(ctx, f.actor, installationID, f.org)
+	// The installation ID comes from the redirect, not the state: it may
+	// only be claimed, never moved from another org.
+	inst, err := c.assignInstallation(ctx, f.actor, installationID, f.org, false)
 	if err != nil {
 		return "", err
 	}
@@ -486,12 +489,14 @@ func (c *Core) AssignGitHubInstallation(ctx context.Context, a Actor, id int64, 
 	if err != nil {
 		return err
 	}
-	_, err = c.assignInstallation(ctx, a, id, org)
+	_, err = c.assignInstallation(ctx, a, id, org, true)
 	return err
 }
 
-// assignInstallation checks the installation is the App's and assigns it.
-func (c *Core) assignInstallation(ctx context.Context, a Actor, id int64, org store.Org) (githubInstallation, error) {
+// assignInstallation checks the installation is the App's and assigns it
+// to org. Unless move is set, an installation another org has is refused
+// (conflict) and stays with it.
+func (c *Core) assignInstallation(ctx context.Context, a Actor, id int64, org store.Org, move bool) (githubInstallation, error) {
 	jwt, err := c.appJWT(ctx)
 	if err != nil {
 		return githubInstallation{}, err
@@ -501,9 +506,20 @@ func (c *Core) assignInstallation(ctx context.Context, a Actor, id int64, org st
 		return githubInstallation{}, err
 	}
 	account := cleanLine(inst.Account.Login, 39)
-	if err := c.store.SetGitHubInstallation(ctx, store.SetGitHubInstallationParams{
-		InstallationID: id, OrgID: org.ID, Account: account, AssignedBy: a.Name, AssignedAt: now(),
-	}); err != nil {
+	if move {
+		err = c.store.SetGitHubInstallation(ctx, store.SetGitHubInstallationParams{
+			InstallationID: id, OrgID: org.ID, Account: account, AssignedBy: a.Name, AssignedAt: now(),
+		})
+	} else {
+		var n int64
+		n, err = c.store.ClaimGitHubInstallation(ctx, store.ClaimGitHubInstallationParams{
+			InstallationID: id, OrgID: org.ID, Account: account, AssignedBy: a.Name, AssignedAt: now(),
+		})
+		if err == nil && n == 0 {
+			err = conflict("installation %d (%s) is assigned to another org; to move it to org %s, an operator runs `dock github assign %d %s`", id, account, org.Slug, id, org.Slug)
+		}
+	}
+	if err != nil {
 		return githubInstallation{}, err
 	}
 	in := a

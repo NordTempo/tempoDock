@@ -10,6 +10,38 @@ import (
 	"time"
 )
 
+const claimGitHubInstallation = `-- name: ClaimGitHubInstallation :execrows
+INSERT INTO github_installations (installation_id, org_id, account, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (installation_id) DO UPDATE SET
+    account = excluded.account, assigned_by = excluded.assigned_by, assigned_at = excluded.assigned_at
+WHERE github_installations.org_id = excluded.org_id
+`
+
+type ClaimGitHubInstallationParams struct {
+	InstallationID int64
+	OrgID          int64
+	Account        string
+	AssignedBy     string
+	AssignedAt     time.Time
+}
+
+// Assigns an installation to an org unless another org has it; an
+// assignment to the same org is refreshed. No row affected means another
+// org has it. The check is part of the write, so no race gets past it.
+func (q *Queries) ClaimGitHubInstallation(ctx context.Context, arg ClaimGitHubInstallationParams) (int64, error) {
+	result, err := q.exec(ctx, q.claimGitHubInstallationStmt, claimGitHubInstallation,
+		arg.InstallationID,
+		arg.OrgID,
+		arg.Account,
+		arg.AssignedBy,
+		arg.AssignedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countInstallationConnections = `-- name: CountInstallationConnections :many
 SELECT installation_id, COUNT(*) AS connections FROM git_connections
 WHERE installation_id > 0 GROUP BY installation_id
