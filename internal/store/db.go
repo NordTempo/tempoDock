@@ -48,6 +48,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addDataPolicyRuleStmt, err = db.PrepareContext(ctx, addDataPolicyRule); err != nil {
 		return nil, fmt.Errorf("error preparing query AddDataPolicyRule: %w", err)
 	}
+	if q.addEnsureRunningStmt, err = db.PrepareContext(ctx, addEnsureRunning); err != nil {
+		return nil, fmt.Errorf("error preparing query AddEnsureRunning: %w", err)
+	}
 	if q.addGitDeliveryStmt, err = db.PrepareContext(ctx, addGitDelivery); err != nil {
 		return nil, fmt.Errorf("error preparing query AddGitDelivery: %w", err)
 	}
@@ -254,6 +257,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteDomainStmt, err = db.PrepareContext(ctx, deleteDomain); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteDomain: %w", err)
+	}
+	if q.deleteEnsureRunningStmt, err = db.PrepareContext(ctx, deleteEnsureRunning); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteEnsureRunning: %w", err)
 	}
 	if q.deleteExpiredCLILoginsStmt, err = db.PrepareContext(ctx, deleteExpiredCLILogins); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteExpiredCLILogins: %w", err)
@@ -635,6 +641,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listEffectiveDataPolicyRulesStmt, err = db.PrepareContext(ctx, listEffectiveDataPolicyRules); err != nil {
 		return nil, fmt.Errorf("error preparing query ListEffectiveDataPolicyRules: %w", err)
+	}
+	if q.listEnsureRunningStmt, err = db.PrepareContext(ctx, listEnsureRunning); err != nil {
+		return nil, fmt.Errorf("error preparing query ListEnsureRunning: %w", err)
 	}
 	if q.listEnvironmentActiveReleasesStmt, err = db.PrepareContext(ctx, listEnvironmentActiveReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListEnvironmentActiveReleases: %w", err)
@@ -1260,6 +1269,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing addDataPolicyRuleStmt: %w", cerr)
 		}
 	}
+	if q.addEnsureRunningStmt != nil {
+		if cerr := q.addEnsureRunningStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addEnsureRunningStmt: %w", cerr)
+		}
+	}
 	if q.addGitDeliveryStmt != nil {
 		if cerr := q.addGitDeliveryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addGitDeliveryStmt: %w", cerr)
@@ -1603,6 +1617,11 @@ func (q *Queries) Close() error {
 	if q.deleteDomainStmt != nil {
 		if cerr := q.deleteDomainStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteDomainStmt: %w", cerr)
+		}
+	}
+	if q.deleteEnsureRunningStmt != nil {
+		if cerr := q.deleteEnsureRunningStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteEnsureRunningStmt: %w", cerr)
 		}
 	}
 	if q.deleteExpiredCLILoginsStmt != nil {
@@ -2238,6 +2257,11 @@ func (q *Queries) Close() error {
 	if q.listEffectiveDataPolicyRulesStmt != nil {
 		if cerr := q.listEffectiveDataPolicyRulesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listEffectiveDataPolicyRulesStmt: %w", cerr)
+		}
+	}
+	if q.listEnsureRunningStmt != nil {
+		if cerr := q.listEnsureRunningStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listEnsureRunningStmt: %w", cerr)
 		}
 	}
 	if q.listEnvironmentActiveReleasesStmt != nil {
@@ -3252,6 +3276,7 @@ type Queries struct {
 	addAuditEventStmt                   *sql.Stmt
 	addAuditEventWithDetailStmt         *sql.Stmt
 	addDataPolicyRuleStmt               *sql.Stmt
+	addEnsureRunningStmt                *sql.Stmt
 	addGitDeliveryStmt                  *sql.Stmt
 	addOrgMemberStmt                    *sql.Stmt
 	addReleaseEventStmt                 *sql.Stmt
@@ -3321,6 +3346,7 @@ type Queries struct {
 	deleteCloudflareZonesStmt           *sql.Stmt
 	deleteDataPolicyRulesStmt           *sql.Stmt
 	deleteDomainStmt                    *sql.Stmt
+	deleteEnsureRunningStmt             *sql.Stmt
 	deleteExpiredCLILoginsStmt          *sql.Stmt
 	deleteExpiredSessionsStmt           *sql.Stmt
 	deleteGitConnectionStmt             *sql.Stmt
@@ -3448,6 +3474,7 @@ type Queries struct {
 	listDueCloudflareTunnelsStmt        *sql.Stmt
 	listDueRemindersStmt                *sql.Stmt
 	listEffectiveDataPolicyRulesStmt    *sql.Stmt
+	listEnsureRunningStmt               *sql.Stmt
 	listEnvironmentActiveReleasesStmt   *sql.Stmt
 	listEnvironmentDomainsStmt          *sql.Stmt
 	listEnvironmentVolumesStmt          *sql.Stmt
@@ -3655,6 +3682,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addAuditEventStmt:                   q.addAuditEventStmt,
 		addAuditEventWithDetailStmt:         q.addAuditEventWithDetailStmt,
 		addDataPolicyRuleStmt:               q.addDataPolicyRuleStmt,
+		addEnsureRunningStmt:                q.addEnsureRunningStmt,
 		addGitDeliveryStmt:                  q.addGitDeliveryStmt,
 		addOrgMemberStmt:                    q.addOrgMemberStmt,
 		addReleaseEventStmt:                 q.addReleaseEventStmt,
@@ -3724,6 +3752,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteCloudflareZonesStmt:           q.deleteCloudflareZonesStmt,
 		deleteDataPolicyRulesStmt:           q.deleteDataPolicyRulesStmt,
 		deleteDomainStmt:                    q.deleteDomainStmt,
+		deleteEnsureRunningStmt:             q.deleteEnsureRunningStmt,
 		deleteExpiredCLILoginsStmt:          q.deleteExpiredCLILoginsStmt,
 		deleteExpiredSessionsStmt:           q.deleteExpiredSessionsStmt,
 		deleteGitConnectionStmt:             q.deleteGitConnectionStmt,
@@ -3851,6 +3880,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listDueCloudflareTunnelsStmt:        q.listDueCloudflareTunnelsStmt,
 		listDueRemindersStmt:                q.listDueRemindersStmt,
 		listEffectiveDataPolicyRulesStmt:    q.listEffectiveDataPolicyRulesStmt,
+		listEnsureRunningStmt:               q.listEnsureRunningStmt,
 		listEnvironmentActiveReleasesStmt:   q.listEnvironmentActiveReleasesStmt,
 		listEnvironmentDomainsStmt:          q.listEnvironmentDomainsStmt,
 		listEnvironmentVolumesStmt:          q.listEnvironmentVolumesStmt,

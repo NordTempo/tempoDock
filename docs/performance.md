@@ -171,6 +171,7 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Registry restart wait | `internal/registry/platform.go` | every 100 ms, up to 1 min | the registry restarted for a storage change or migration (ADR 0034) | one `GET /v2/` per step until it answers, about a second |
 | Health check | `internal/node/docker/health.go` | at once, then 50, 100, 200, 400 ms, then 1 s | a release is health checking | one inspect + HTTP/TCP probe |
 | Cutover drain | `internal/core/deploy.go` | once, 12 s after a cutover | a release was replaced | one timer |
+| Failed release write retry | `internal/core/deploy.go` | 100 ms, doubling, 6 attempts (about 3 s) | writing a failed deploy's outcome to SQLite failed | one `UPDATE` per attempt |
 | Docker event stream reconnect | `internal/node/docker/events.go` | backoff | the stream failed | one reconnect |
 | BuildKit readiness | `internal/node/build/buildkitd.go` | 250 ms | BuildKit is starting for a build | one gRPC call |
 | Node event stream retry | `internal/node/remote/client.go` | 1 s | a node's event stream failed | one reconnect |

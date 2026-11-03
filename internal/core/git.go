@@ -714,6 +714,26 @@ func (c *Core) gitDeployDone(ss svcScope, rel store.Release, deployErr error) {
 	}
 }
 
+// gitDeployInterrupted posts the failure status of a release built from a
+// push that a daemon restart cut short (recover fails it with msg).
+// gitDeployDone never ran for it, so its pending status would otherwise
+// stay pending.
+func (c *Core) gitDeployInterrupted(ctx context.Context, ss svcScope, rel store.Release, msg string) {
+	if rel.CommitSha == "" || rel.Source != string(apitypes.SourceUpload) {
+		return
+	}
+	conn, err := c.store.GetGitConnectionByService(ctx, ss.svc.ID)
+	if err != nil {
+		if !store.IsNotFound(err) {
+			c.log.Error("git after an interrupted deploy", "service", ss.String(), "err", err)
+		}
+		return
+	}
+	if conn.PostStatus {
+		c.postGitStatus(ss, conn, rel, "failure", fmt.Sprintf("Release %d failed: %s", rel.Number, msg))
+	}
+}
+
 // postGitStatus posts a commit status in the background, after the
 // service's earlier posts. Failures are logged; a deploy never waits for
 // or fails on GitHub.

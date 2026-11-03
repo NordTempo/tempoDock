@@ -182,37 +182,91 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 // removes their containers, along with any other container of a failed or
 // superseded release (a drain cut short by a restart, a stop that failed).
 // If a stateful deploy had already stopped the previous release, that
-// release is started again, after the new container is gone. On remote
-// servers, which aren't connected yet, both happen when each reconnects.
+// release is started again, after the new container is gone. Each
+// interrupted service is recorded to start again (ensure_running) in the
+// same transaction that fails its release, so a crash in between loses
+// nothing; on remote servers, which aren't connected yet, it starts when
+// each reconnects (startInterrupted).
 func (c *Core) recover(ctx context.Context) error {
 	inflight, err := c.store.ListInFlightReleases(ctx)
 	if err != nil {
 		return err
 	}
-	var interrupted []svcScope
 	for _, r := range inflight {
 		ss, err := c.scopeOf(ctx, r.ServiceID)
 		if err != nil {
 			return err
 		}
 		msg := "daemon restarted during deploy"
-		if err := c.store.FailRelease(ctx, store.FailReleaseParams{Error: msg, ErrorCode: string(apitypes.CodeDeployFailed), FinishedAt: ptr(now()), ID: r.ID}); err != nil {
+		err = c.store.Tx(ctx, func(q *store.Queries) error {
+			if err := q.FailRelease(ctx, store.FailReleaseParams{Error: msg, ErrorCode: string(apitypes.CodeDeployFailed), FinishedAt: ptr(now()), ID: r.ID}); err != nil {
+				return err
+			}
+			return q.AddEnsureRunning(ctx, r.ServiceID)
+		})
+		if err != nil {
 			return err
 		}
 		c.releaseEvent(ctx, ss, r, fmt.Sprintf("Release %d failed: %s", r.Number, msg))
 		c.restage(ctx, ss, r, msg)
-		interrupted = append(interrupted, ss)
+		c.gitDeployInterrupted(ctx, ss, r, msg)
 	}
-	if err := c.sweepRetired(ctx, c.local.ID, c.rt); err != nil {
+	return c.startInterrupted(ctx, c.local.ID, c.rt)
+}
+
+// ensureLater records that a service's active release must be started
+// again once its server is reachable and the interrupted release's
+// container is gone (startInterrupted, on the next reconnect or start).
+func (c *Core) ensureLater(ctx context.Context, serviceID int64) {
+	if err := c.store.AddEnsureRunning(ctx, serviceID); err != nil {
+		c.log.Error("record release to start again", "service", serviceID, "err", err)
+	}
+}
+
+// startInterrupted finishes interrupted deploys on a server: recover runs
+// it for the local server, reconnected for a remote one. It removes the
+// server's leftover containers (sweepRetired), then starts the active
+// release of each service recorded in ensure_running again and clears its
+// row. A service whose leftover container couldn't be removed keeps its
+// row (two containers must never share a volume), as do one with a deploy
+// in flight and one whose server became unreachable meanwhile: the next
+// start or reconnect tries again.
+func (c *Core) startInterrupted(ctx context.Context, serverID int64, rt node.Runtime) error {
+	blocked, err := c.sweepRetired(ctx, serverID, rt)
+	if err != nil {
 		return err
 	}
-	for _, ss := range interrupted {
-		if ss.env.ServerID != c.local.ID {
-			c.ensureLater(ss.env.ServerID, ss.svc.ID)
+	ids, err := c.store.ListEnsureRunning(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if blocked[id] {
 			continue
 		}
-		if active, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
-			c.ensureRunning(ctx, ss, active)
+		if _, err := c.store.GetInFlightRelease(ctx, id); err == nil {
+			// A deploy started since the server came back owns the
+			// service: it stops the old release itself, and restarts it
+			// if it fails. The row stays for the next pass.
+			continue
+		}
+		ss, err := c.scopeOf(ctx, id)
+		if err != nil {
+			return err
+		}
+		active, err := c.store.GetActiveRelease(ctx, id)
+		switch {
+		case err == nil:
+			if isOffline(c.ensureRunning(ctx, ss, active)) {
+				continue
+			}
+		case !store.IsNotFound(err):
+			return err
+		}
+		// Started (or it couldn't be, which is drift), or there is nothing
+		// to start: the service was archived or never went live.
+		if err := c.store.DeleteEnsureRunning(ctx, id); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -224,11 +278,13 @@ func (c *Core) recover(ctx context.Context) error {
 // release's project, environment and service, and it carries this control
 // plane's label or none (node.Labels.Matches). This is also how an archive
 // on an unreachable server finishes: its release is superseded, so its
-// container goes when the server reconnects.
-func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime) error {
+// container goes when the server reconnects. It returns the IDs of the
+// services whose leftover containers it couldn't remove (reported as
+// drift): their active release must not start next to them.
+func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime) (blocked map[int64]bool, err error) {
 	ctrs, err := rt.List(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	byRelease := map[int64][]node.Container{}
 	for _, ct := range ctrs {
@@ -239,6 +295,7 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 			byRelease[id] = append(byRelease[id], ct)
 		}
 	}
+	blocked = map[int64]bool{}
 	remaining := map[int64]bool{}
 	for id, cs := range byRelease {
 		rel, err := c.store.GetRelease(ctx, id)
@@ -246,7 +303,7 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 			continue // reconcile reports it
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if rel.Status != string(apitypes.ReleaseFailed) && rel.Status != string(apitypes.ReleaseSuperseded) {
 			continue
@@ -254,7 +311,7 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 		remaining[id] = true
 		ss, err := c.scopeOf(ctx, rel.ServiceID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		want := c.labels(ss, rel.ID)
 		if ss.env.ServerID != serverID || slices.ContainsFunc(cs, func(ct node.Container) bool { return !ct.Labels.Matches(want) }) {
@@ -263,31 +320,34 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Removing leftover container of release %d (%s)", rel.Number, rel.Status))
 		if err := c.removeContainers(ctx, ss.env.ServerID, cs); err != nil {
 			c.drift(ctx, &ss, fmt.Sprintf("could not remove leftover container of release %d of %s: %v", rel.Number, ss, err))
+			blocked[ss.svc.ID] = true
 			continue
 		}
 		remaining[id] = false
 	}
 	holders, err := c.store.ListRetiredPortHolders(ctx, serverID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, id := range holders {
 		if !remaining[id] {
 			c.freePort(ctx, id)
 		}
 	}
-	return nil
+	return blocked, nil
 }
 
 // ensureRunning makes sure an active release has a running container:
 // one started just before a crash is adopted, a stopped or missing one is
-// replaced (after an interrupted stateful recreate).
-func (c *Core) ensureRunning(ctx context.Context, ss svcScope, active store.Release) {
+// replaced (after an interrupted stateful recreate). A failure to start it
+// is reported as drift; isOffline(err) says the server couldn't be
+// reached.
+func (c *Core) ensureRunning(ctx context.Context, ss svcScope, active store.Release) error {
 	rt := c.runtime(ss.env.ServerID)
 	ctrs, err := rt.List(ctx)
 	if err != nil {
 		c.log.Warn("list containers", "err", err)
-		return
+		return err
 	}
 	var stopped []node.Container
 	for _, ct := range c.ofRelease(ctrs, ss, active.ID) {
@@ -300,16 +360,17 @@ func (c *Core) ensureRunning(ctx context.Context, ss svcScope, active store.Rele
 				c.log.Error("adopt container", "release", active.ID, "err", err)
 			}
 		}
-		return
+		return nil
 	}
-	if err := c.removeContainers(ctx, ss.env.ServerID, stopped); err != nil {
+	err = c.removeContainers(ctx, ss.env.ServerID, stopped)
+	if err == nil {
+		c.releaseEvent(ctx, ss, active, fmt.Sprintf("Starting release %d again", active.Number))
+		err = c.restartRelease(ctx, ss, active)
+	}
+	if err != nil {
 		c.drift(ctx, &ss, fmt.Sprintf("could not start release %d of %s again: %v", active.Number, ss, err))
-		return
 	}
-	c.releaseEvent(ctx, ss, active, fmt.Sprintf("Starting release %d again", active.Number))
-	if err := c.restartRelease(ctx, ss, active); err != nil {
-		c.drift(ctx, &ss, fmt.Sprintf("could not start release %d of %s again: %v", active.Number, ss, err))
-	}
+	return err
 }
 
 // reconcileServer compares the active releases on a server with its

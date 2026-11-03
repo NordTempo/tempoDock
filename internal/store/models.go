@@ -262,6 +262,10 @@ type Domain struct {
 	CreatedAt    time.Time
 }
 
+type EnsureRunning struct {
+	ServiceID int64
+}
+
 type Environment struct {
 	ID         int64
 	ProjectID  int64

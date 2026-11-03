@@ -34,10 +34,6 @@ type serverState struct {
 	// non-nil once the watcher runs. stop ends the watcher.
 	kick chan struct{}
 	stop context.CancelFunc
-	// ensure holds the services whose active release must be started
-	// again when the server is back (a stateful recreate cut short while
-	// it was unreachable), by service ID.
-	ensure map[int64]bool
 	// revoked is set from RevokeServer (and Start, for servers revoked
 	// before) until the server joins again. A revoked server gets no
 	// calls whatever the hub says (connected).
@@ -79,31 +75,6 @@ func (c *Core) buildLock(serverID int64) chan struct{} {
 		st.build = make(chan struct{}, 1)
 	}
 	return st.build
-}
-
-// ensureLater records that a service's active release must be started
-// again when its server reconnects.
-func (c *Core) ensureLater(serverID, serviceID int64) {
-	c.serversMu.Lock()
-	defer c.serversMu.Unlock()
-	st := c.stateLocked(serverID)
-	if st.ensure == nil {
-		st.ensure = map[int64]bool{}
-	}
-	st.ensure[serviceID] = true
-}
-
-// takeEnsure returns and forgets the services to start again on a server.
-func (c *Core) takeEnsure(serverID int64) map[int64]bool {
-	c.serversMu.Lock()
-	defer c.serversMu.Unlock()
-	st := c.servers[serverID]
-	if st == nil {
-		return nil
-	}
-	e := st.ensure
-	st.ensure = nil
-	return e
 }
 
 // forgetServer stops a removed server's watcher and drops its state.
@@ -380,17 +351,8 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	if rt == nil {
 		return // gone again; the next connect kicks again
 	}
-	if err := c.sweepRetired(ctx, serverID, rt); err != nil {
-		c.log.Warn("server reconnected: remove leftover containers", "server", serverID, "err", err)
-	}
-	for svc := range c.takeEnsure(serverID) {
-		ss, err := c.scopeOf(ctx, svc)
-		if err != nil {
-			continue
-		}
-		if active, err := c.store.GetActiveRelease(ctx, svc); err == nil {
-			c.ensureRunning(ctx, ss, active)
-		}
+	if err := c.startInterrupted(ctx, serverID, rt); err != nil {
+		c.log.Warn("server reconnected: remove leftover containers and start interrupted releases", "server", serverID, "err", err)
 	}
 	if err := c.reconcileServer(ctx, serverID, rt, true); err != nil {
 		c.log.Warn("server reconnected: reconcile", "server", serverID, "err", err)
