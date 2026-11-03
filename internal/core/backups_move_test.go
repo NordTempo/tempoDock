@@ -196,8 +196,8 @@ func TestMoveBackupsFailsBeforeTheSwitch(t *testing.T) {
 func TestConvertBackupRepository(t *testing.T) {
 	h := newHarness(t)
 	keys, _ := json.Marshal(s3Credentials{AccessKeyID: "AK", SecretAccessKey: "SK", Region: "fsn1"})
-	sealed, _ := h.c.box.Seal(keys)
-	pw, _ := h.c.box.Seal([]byte("pw"))
+	sealed, _ := h.c.box.Seal(keys, backupKeysAAD)
+	pw, _ := h.c.box.Seal([]byte("pw"), backupPasswordAAD)
 	old := "s3:https://fsn1.your-objectstorage.com/Old.Backups/dock/"
 	if _, err := h.store.UpsertBackupSettings(h.ctx, store.UpsertBackupSettingsParams{
 		Repository: old, Credentials: sealed, Password: pw, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 6, Hour: 3, UpdatedAt: time.Now(),

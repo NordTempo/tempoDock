@@ -637,7 +637,7 @@ func (c *Core) SetSiteDefaults(ctx context.Context, a Actor, set apitypes.SiteSe
 	}
 	// The row exists once analytics was ever on; defaults set before
 	// that make it (off).
-	sealed, err := c.box.Seal([]byte(newAnalyticsToken()))
+	sealed, err := c.box.Seal([]byte(newAnalyticsToken()), analyticsTokenAAD)
 	if err != nil {
 		return apitypes.SiteSettings{}, err
 	}

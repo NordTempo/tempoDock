@@ -132,11 +132,12 @@ func (p *Panel[D]) useConn(tg *target[D], conn Conn) error {
 	tg.conn = conn
 	tg.t = data.Target{ServiceID: tg.db.ID, Dial: conn.Dial, TLS: conn.TLS, TLSOptional: conn.TLSOptional, Database: conn.Database}
 	if tg.access != nil {
-		reader, err := p.box.Open(tg.access.ReaderSecret)
+		readerAAD, writerAAD := accessAADs(tg.db.ID)
+		reader, err := p.box.Open(tg.access.ReaderSecret, readerAAD)
 		if err != nil {
 			return fmt.Errorf("open reader password: %w", err)
 		}
-		writer, err := p.box.Open(tg.access.WriterSecret)
+		writer, err := p.box.Open(tg.access.WriterSecret, writerAAD)
 		if err != nil {
 			return fmt.Errorf("open writer password: %w", err)
 		}
@@ -361,10 +362,11 @@ func (p *Panel[D]) Setup(ctx context.Context, a Actor, db *Database[D]) (apitype
 		return apitypes.DataInfo{}, p.dataError(db, err)
 	}
 	acc := Access{Engine: db.Engine, ServerVersion: srv.Version, SetUpAt: now(), SetUpBy: a.Name}
-	if acc.ReaderSecret, err = p.box.Seal([]byte(tg.t.Reader.Password)); err != nil {
+	readerAAD, writerAAD := accessAADs(db.ID)
+	if acc.ReaderSecret, err = p.box.Seal([]byte(tg.t.Reader.Password), readerAAD); err != nil {
 		return apitypes.DataInfo{}, err
 	}
-	if acc.WriterSecret, err = p.box.Seal([]byte(tg.t.Writer.Password)); err != nil {
+	if acc.WriterSecret, err = p.box.Seal([]byte(tg.t.Writer.Password), writerAAD); err != nil {
 		return apitypes.DataInfo{}, err
 	}
 	if err := p.host.PutAccess(ctx, db.ID, acc); err != nil {

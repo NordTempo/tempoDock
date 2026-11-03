@@ -71,7 +71,7 @@ func (c *Core) AddStorage(ctx context.Context, a Actor, req apitypes.CreateStora
 	if err := checkBucket(ctx, b); err != nil {
 		return apitypes.Storage{}, err
 	}
-	keys, err := c.sealKeys(b)
+	keys, err := c.sealKeys(b, req.Name)
 	if err != nil {
 		return apitypes.Storage{}, err
 	}
@@ -148,12 +148,14 @@ func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apit
 	if !changed && newName == name {
 		return toStorage(row, uses), nil
 	}
-	keys := row.Credentials
+	// The keys are bound to the name (ADR 0041), so a rename seals them
+	// again too.
+	keys, err := c.sealKeys(b, newName)
+	if err != nil {
+		return apitypes.Storage{}, err
+	}
 	if changed {
 		if err := checkBucket(ctx, b); err != nil {
-			return apitypes.Storage{}, err
-		}
-		if keys, err = c.sealKeys(b); err != nil {
 			return apitypes.Storage{}, err
 		}
 		if inUse {
@@ -246,7 +248,7 @@ func (c *Core) storageByID(ctx context.Context, id int64) (store.StorageConnecti
 
 // bucketOf is a connection's bucket with its keys opened.
 func (c *Core) bucketOf(row store.StorageConnection) (s3.Bucket, error) {
-	plain, err := c.box.Open(row.Credentials)
+	plain, err := c.box.Open(row.Credentials, sealedStorageKeys.AAD(row.Name))
 	if err != nil {
 		return s3.Bucket{}, fmt.Errorf("open the keys of storage %s: %w", row.Name, err)
 	}
@@ -260,13 +262,14 @@ func (c *Core) bucketOf(row store.StorageConnection) (s3.Bucket, error) {
 	}, nil
 }
 
-// sealKeys seals b's keys for storage_connections.credentials.
-func (c *Core) sealKeys(b s3.Bucket) ([]byte, error) {
+// sealKeys seals b's keys for storage_connections.credentials of the
+// connection called name.
+func (c *Core) sealKeys(b s3.Bucket, name string) ([]byte, error) {
 	plain, err := json.Marshal(storageKeys{AccessKeyID: b.AccessKeyID, SecretAccessKey: b.SecretAccessKey})
 	if err != nil {
 		return nil, err
 	}
-	return c.box.Seal(plain)
+	return c.box.Seal(plain, sealedStorageKeys.AAD(name))
 }
 
 // checkBucket validates b and lists its bucket once, so mistakes show

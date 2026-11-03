@@ -222,6 +222,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if c.install, err = c.store.GetInstallID(ctx); err != nil {
 		return nil, fmt.Errorf("read install ID: %w", err)
 	}
+	if err := c.resealSecrets(ctx); err != nil {
+		return nil, fmt.Errorf("bind sealed values to where they are stored (ADR 0041): %w", err)
+	}
 	if err := c.registerLocalServer(ctx); err != nil {
 		return nil, err
 	}

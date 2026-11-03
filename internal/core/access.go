@@ -99,7 +99,7 @@ func (c *Core) SetServiceAccess(ctx context.Context, a Actor, ref ServiceRef, re
 		}
 		row.Key = cur.Key
 		if cur.Mode != string(apitypes.AccessLogin) {
-			if row.Key, err = c.box.Seal(access.NewKey()); err != nil {
+			if row.Key, err = c.box.Seal(access.NewKey(), accessKeyAAD(ss.svc.ID)); err != nil {
 				return apitypes.Access{}, err
 			}
 		}
@@ -207,7 +207,7 @@ func (c *Core) GrantAccess(ctx context.Context, a Actor, req apitypes.AccessGran
 	if err != nil {
 		return apitypes.AccessGrant{}, err
 	}
-	key, err := c.box.Open(row.Key)
+	key, err := c.box.Open(row.Key, accessKeyAAD(row.ServiceID))
 	if err != nil {
 		return apitypes.AccessGrant{}, fmt.Errorf("open access key of %s: %w", ss, err)
 	}
@@ -234,7 +234,7 @@ func (c *Core) routeAccess(d store.ListRoutableDomainsRow) (*node.Access, error)
 	case apitypes.AccessPassword:
 		return &node.Access{Username: d.AccessUsername, PasswordHash: d.AccessPasswordHash}, nil
 	case apitypes.AccessLogin:
-		key, err := c.box.Open(d.AccessKey)
+		key, err := c.box.Open(d.AccessKey, accessKeyAAD(d.ServiceID))
 		if err != nil {
 			return nil, fmt.Errorf("open access key of %s: %w", d.Hostname, err)
 		}

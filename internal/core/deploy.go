@@ -100,7 +100,7 @@ func (d *deployment) run(ctx context.Context) error {
 	if d.server, err = c.store.GetServer(ctx, d.ss.env.ServerID); err != nil {
 		return err
 	}
-	if d.cfg, err = c.openConfig(d.rel.Config); err != nil {
+	if d.cfg, err = c.openConfig(d.rel); err != nil {
 		return err
 	}
 	if d.log, err = c.newBuildLog(d.ss, d.rel, newRedactor(d.cfg.Env)); err != nil {
@@ -527,7 +527,7 @@ func (d *deployment) event(ctx context.Context, msg string) { d.c.releaseEvent(c
 // restartRelease starts an existing release's container again (after a
 // stateful deploy failed, or when recovery finds it missing).
 func (c *Core) restartRelease(ctx context.Context, ss svcScope, rel store.Release) error {
-	cfg, err := c.openConfig(rel.Config)
+	cfg, err := c.openConfig(rel)
 	if err != nil {
 		return err
 	}

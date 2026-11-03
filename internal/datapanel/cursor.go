@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/secrets"
 )
 
 // Page cursors. The engine's cursors hold the last row's key values in the
@@ -18,6 +19,10 @@ import (
 // errBadCursor is the answer to any cursor that doesn't open.
 var errBadCursor = Errorf(apitypes.CodeValidation, "the cursor isn't valid for this table and caller; start from the first page")
 
+// cursorAAD is a cursor's AAD. A cursor isn't stored; cursorContext, in
+// the plaintext, binds it to the database and the caller.
+var cursorAAD = secrets.Bind("datapanel.cursor")
+
 // cursorContext binds a sealed cursor to a database and an actor.
 func cursorContext(a Actor, database int64) string {
 	return strconv.FormatInt(database, 10) + "\x00" + ActorKey(a) + "\x00"
@@ -29,7 +34,7 @@ func (p *Panel[D]) sealCursor(a Actor, database int64, raw string) (string, erro
 	if raw == "" {
 		return "", nil
 	}
-	b, err := p.box.Seal([]byte(cursorContext(a, database) + raw))
+	b, err := p.box.Seal([]byte(cursorContext(a, database)+raw), cursorAAD)
 	if err != nil {
 		return "", err
 	}
@@ -46,7 +51,7 @@ func (p *Panel[D]) openCursor(a Actor, database int64, sealed string) (string, e
 	if err != nil {
 		return "", errBadCursor
 	}
-	if b, err = p.box.Open(b); err != nil {
+	if b, err = p.box.Open(b, cursorAAD); err != nil {
 		return "", errBadCursor
 	}
 	raw, ok := strings.CutPrefix(string(b), cursorContext(a, database))

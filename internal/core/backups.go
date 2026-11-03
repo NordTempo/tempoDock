@@ -130,7 +130,7 @@ type s3Credentials struct {
 // without any configuration.
 func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, error) {
 	if s.Password == nil {
-		sealed, err := c.box.Seal([]byte(newPassword()))
+		sealed, err := c.box.Seal([]byte(newPassword()), backupPasswordAAD)
 		if err != nil {
 			return backup.Repo{}, err
 		}
@@ -139,7 +139,7 @@ func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, 
 			return backup.Repo{}, err
 		}
 	}
-	pw, err := c.box.Open(s.Password)
+	pw, err := c.box.Open(s.Password, backupPasswordAAD)
 	if err != nil {
 		return backup.Repo{}, fmt.Errorf("open the backup password: %w", err)
 	}
@@ -157,7 +157,7 @@ func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, 
 		return repo, nil
 	}
 	if s.Credentials != nil {
-		b, err := c.box.Open(s.Credentials)
+		b, err := c.box.Open(s.Credentials, backupKeysAAD)
 		if err != nil {
 			return backup.Repo{}, fmt.Errorf("open the backup credentials: %w", err)
 		}
@@ -306,7 +306,7 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 	var password string
 	if generated {
 		password = newPassword()
-		if s.Password, err = c.box.Seal([]byte(password)); err != nil {
+		if s.Password, err = c.box.Seal([]byte(password), backupPasswordAAD); err != nil {
 			return apitypes.BackupSettings{}, err
 		}
 		changed = append(changed, "generated the repository password")
@@ -646,7 +646,7 @@ func (c *Core) activeEnv(ctx context.Context, ss svcScope) (map[string]string, e
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := c.openConfig(rel.Config)
+	cfg, err := c.openConfig(rel)
 	if err != nil {
 		return nil, err
 	}

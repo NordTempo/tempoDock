@@ -75,7 +75,7 @@ func (c *Core) usedBy(ctx context.Context, ss svcScope) ([]string, error) {
 		if v.ServiceID == nil || names[*v.ServiceID] == "" || slices.Contains(out, names[*v.ServiceID]) {
 			continue
 		}
-		val, err := c.openValue(v.Value)
+		val, err := c.openValue(v.Value, variableAAD(v.EnvironmentID, v.ServiceID, v.Key), v.Key)
 		if err != nil {
 			return nil, err
 		}

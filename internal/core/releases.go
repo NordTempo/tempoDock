@@ -110,17 +110,19 @@ type configMount struct {
 	Path       string `json:"path"`
 }
 
-func (c *Core) sealConfig(cfg releaseConfig) ([]byte, error) {
+// sealConfig seals a release's config for release number of service serviceID.
+func (c *Core) sealConfig(cfg releaseConfig, serviceID, number int64) ([]byte, error) {
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return c.box.Seal(b)
+	return c.box.Seal(b, releaseAAD(serviceID, number))
 }
 
-func (c *Core) openConfig(sealed []byte) (releaseConfig, error) {
+// openConfig opens a release's config.
+func (c *Core) openConfig(r store.Release) (releaseConfig, error) {
 	var cfg releaseConfig
-	b, err := c.box.Open(sealed)
+	b, err := c.box.Open(r.Config, releaseAAD(r.ServiceID, r.Number))
 	if err != nil {
 		return cfg, err
 	}
@@ -290,7 +292,7 @@ func (c *Core) envResolver(ev envVars, include int64, staged bool) (*resolver, e
 				continue
 			}
 		}
-		val, err := c.openValue(sealed)
+		val, err := c.openValue(sealed, variableAAD(v.EnvironmentID, v.ServiceID, v.Key), v.Key)
 		if err != nil {
 			return nil, err
 		}
@@ -312,7 +314,7 @@ func (c *Core) envResolver(ev envVars, include int64, staged bool) (*resolver, e
 	// environment's variables.
 	org := map[string]string{}
 	for _, v := range ev.org {
-		val, err := c.openValue(v.Value)
+		val, err := c.openValue(v.Value, orgVariableAAD(v.OrgID, v.Key), "org."+v.Key)
 		if err != nil {
 			return nil, err
 		}
@@ -556,7 +558,7 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 		}
 		params.ImageRef, params.ImageID = active.ImageRef, active.ImageID
 		params.ImageDigest, params.BuiltOnServerID = active.ImageDigest, active.BuiltOnServerID
-		activeCfg, err := c.openConfig(active.Config)
+		activeCfg, err := c.openConfig(active)
 		if err != nil {
 			return ss, rel, err
 		}
@@ -566,7 +568,7 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 		p := spec.promote
 		params.ImageRef, params.ImageID = p.imageRef, p.imageID
 		params.ImageDigest, params.BuiltOnServerID = p.from.ImageDigest, p.from.BuiltOnServerID
-		fromCfg, err := c.openConfig(p.from.Config)
+		fromCfg, err := c.openConfig(p.from)
 		if err != nil {
 			return ss, rel, err
 		}
@@ -585,17 +587,15 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 		params.FromRelease = spec.from.Number
 		params.ImageRef, params.ImageID = spec.from.ImageRef, spec.from.ImageID
 		params.ImageDigest, params.BuiltOnServerID = spec.from.ImageDigest, spec.from.BuiltOnServerID
-		params.Config = spec.from.Config
-		if cfg, err = c.openConfig(spec.from.Config); err != nil {
+		if cfg, err = c.openConfig(*spec.from); err != nil {
 			return ss, rel, err
 		}
-	} else {
-		if cfg, err = c.resolveConfig(ctx, q, ss, repo); err != nil {
-			return ss, rel, err
-		}
-		if params.Config, err = c.sealConfig(cfg); err != nil {
-			return ss, rel, err
-		}
+	} else if cfg, err = c.resolveConfig(ctx, q, ss, repo); err != nil {
+		return ss, rel, err
+	}
+	// Sealed for this release, a copy too: configs are bound to theirs.
+	if params.Config, err = c.sealConfig(cfg, params.ServiceID, params.Number); err != nil {
+		return ss, rel, err
 	}
 	if cfg.Published {
 		if params.HostPort, err = c.allocateHostPort(ctx, q, ss.env.ServerID); err != nil {
@@ -920,7 +920,7 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 		ImageRef: r.ImageRef, ImageID: r.ImageID, ImageDigest: r.ImageDigest, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
 		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, Commit: commitOf(r),
 	}
-	cfg, err := c.openConfig(r.Config)
+	cfg, err := c.openConfig(r)
 	if err != nil {
 		return out, fmt.Errorf("release %d config: %w", r.ID, err)
 	}

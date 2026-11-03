@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -219,7 +220,7 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			continue // never live: only staged
 		}
 		name := apitypes.VariableRef{Service: cl.svc.Name, Key: v.Key}
-		value, how, err := c.clonedValue(v.Value, cl.gen, v.Key, copyLiterals)
+		value, how, err := c.clonedValue(v, variableAAD(dst.env.ID, serviceID, v.Key), cl.gen, copyLiterals)
 		if err != nil {
 			return left, err
 		}
@@ -266,26 +267,28 @@ const (
 	cloneSkip                      // not created
 )
 
-// clonedValue is the sealed value a variable gets in a clone: the
-// source's, when it is nothing but references or copyLiterals is set;
-// otherwise the template's new value for key (gen), if it has one. A
-// copied value keeps its ciphertext: the box binds no row.
-func (c *Core) clonedValue(sealed []byte, gen map[string]string, key string, copyLiterals bool) ([]byte, cloneHow, error) {
-	plain, err := c.openValue(sealed)
+// clonedValue is the value a variable gets in a clone, sealed for where
+// the clone stores it (to): the source's, when it is nothing but
+// references or copyLiterals is set; otherwise the template's new value
+// for key (gen), if it has one. A copied value is sealed again: the box
+// binds each value to its row.
+func (c *Core) clonedValue(src store.Variable, to secrets.AAD, gen map[string]string, copyLiterals bool) ([]byte, cloneHow, error) {
+	plain, err := c.openValue(src.Value, variableAAD(src.EnvironmentID, src.ServiceID, src.Key), src.Key)
 	if err != nil {
 		return nil, cloneSkip, err
 	}
-	switch {
-	case onlyReferences(*plain):
-		return sealed, cloneCopied, nil
+	value, how := *plain, cloneCopied
+	switch v, generated := gen[src.Key]; {
+	case onlyReferences(value):
 	case copyLiterals:
-		return sealed, cloneLiteral, nil
+		how = cloneLiteral
+	case generated:
+		value, how = v, cloneGenerated
+	default:
+		return nil, cloneSkip, nil
 	}
-	if v, ok := gen[key]; ok {
-		b, err := c.box.Seal([]byte(v))
-		return b, cloneGenerated, err
-	}
-	return nil, cloneSkip, nil
+	b, err := c.box.Seal([]byte(value), to)
+	return b, how, err
 }
 
 // onlyReferences reports whether a value is one or more ${{...}}

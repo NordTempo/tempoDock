@@ -513,7 +513,7 @@ func oneLine(s string) string { return strings.NewReplacer("\r", " ", "\n", " ")
 
 func (c *Core) openChannel(ch store.AlertChannel) (channelConfig, error) {
 	var cfg channelConfig
-	plain, err := c.box.Open(ch.Config)
+	plain, err := c.box.Open(ch.Config, sealedAlertChannel.AAD(ch.Name))
 	if err != nil {
 		return cfg, fmt.Errorf("open channel settings: %w", err)
 	}
@@ -580,7 +580,7 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, req apitypes.Cre
 	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
-	sealed, err := c.box.Seal(plain)
+	sealed, err := c.box.Seal(plain, sealedAlertChannel.AAD(req.Name))
 	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}

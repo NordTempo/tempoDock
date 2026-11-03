@@ -70,7 +70,7 @@ func (c *Core) ListVariables(ctx context.Context, a Actor, ref EnvRef, service s
 			item.Pending = variableAction(v)
 		}
 		if reveal {
-			if item.Value, err = c.openValue(v.Value); err != nil {
+			if item.Value, err = c.openValue(v.Value, variableAAD(v.EnvironmentID, v.ServiceID, v.Key), v.Key); err != nil {
 				return nil, err
 			}
 		}
@@ -131,7 +131,8 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 }
 
 func (c *Core) stageSet(ctx context.Context, q *store.Queries, envID int64, serviceID *int64, key, value string) error {
-	sealed, err := c.box.Seal([]byte(value))
+	aad := variableAAD(envID, serviceID, key)
+	sealed, err := c.box.Seal([]byte(value), aad)
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func (c *Core) stageSet(ctx context.Context, q *store.Queries, envID int64, serv
 		return err
 	}
 	// Setting a variable back to its live value un-stages it.
-	if live, err := c.openValue(cur.Value); err == nil && live != nil && *live == value {
+	if live, err := c.openValue(cur.Value, aad, key); err == nil && live != nil && *live == value {
 		return q.SetVariablePending(ctx, store.SetVariablePendingParams{Pending: "", PendingValue: nil, UpdatedAt: now(), ID: cur.ID})
 	}
 	return q.SetVariablePending(ctx, store.SetVariablePendingParams{Pending: "set", PendingValue: sealed, UpdatedAt: now(), ID: cur.ID})

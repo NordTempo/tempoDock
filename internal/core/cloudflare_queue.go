@@ -308,7 +308,7 @@ func (c *Core) makeTunnel(ctx context.Context, cc *cfConn, t store.CloudflareTun
 	if err != nil {
 		return err
 	}
-	sealed, err := c.box.Seal([]byte(token))
+	sealed, err := c.box.Seal([]byte(token), sealedTunnelToken.AAD(t.TunnelID))
 	if err != nil {
 		return err
 	}
@@ -421,7 +421,7 @@ func (c *Core) runServerTunnel(ctx context.Context, serverID int64, rt node.Runt
 	if err != nil || t.Status != "ok" || t.Want != cfPresent || len(t.Token) == 0 {
 		return
 	}
-	token, err := c.box.Open(t.Token)
+	token, err := c.box.Open(t.Token, sealedTunnelToken.AAD(t.TunnelID))
 	if err != nil {
 		c.log.Error("open a tunnel token", "server", t.ServerName, "err", err)
 		return
@@ -550,7 +550,7 @@ func (c *Core) adoptTunnel(ctx context.Context, a Actor, srv store.Server, ing s
 	if err != nil {
 		return cfCheckErr(err, "read the tunnel's token")
 	}
-	sealed, err := c.box.Seal([]byte(token))
+	sealed, err := c.box.Seal([]byte(token), sealedTunnelToken.AAD(id))
 	if err != nil {
 		return err
 	}

@@ -87,7 +87,7 @@ func statusOf(ct node.Container) apitypes.ServiceStatus {
 
 // memoryLimitMB is a release's memory limit (0 if its config can't be read).
 func (c *Core) memoryLimitMB(rel store.Release) int {
-	cfg, err := c.openConfig(rel.Config)
+	cfg, err := c.openConfig(rel)
 	if err != nil {
 		return 0
 	}

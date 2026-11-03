@@ -28,7 +28,8 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
 - Errors are `datapanel.Error` with an `apitypes` code; the API maps codes
   to statuses. Messages are for humans and say what to do next.
 - Secret values (variables, org variables, connection URLs) are sealed
-  with `c.box` before they reach the store.
+  with `c.box` before they reach the store, bound to their column and
+  row: a new sealed column goes in `sealedColumns` (sealed.go, ADR 0041).
 - Background goroutines are counted in `c.wg` so `Close` waits for them.
   A new ticker or timer needs a doc comment saying why and a row in
   docs/performance.md.

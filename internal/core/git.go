@@ -216,7 +216,7 @@ func (c *Core) GitConnect(ctx context.Context, a Actor, ref ServiceRef, req apit
 	if mode == apitypes.GitModeApp {
 		err = c.appTarget(ctx, ss, req, &repo, &t, !wasApp)
 	} else {
-		err = c.webhookTarget(req, &t, !exists || wasApp)
+		err = c.webhookTarget(ss.svc.ID, req, &t, !exists || wasApp)
 	}
 	if err != nil {
 		return apitypes.GitConnectResult{}, err
@@ -308,7 +308,7 @@ func (c *Core) appTarget(ctx context.Context, ss svcScope, req apitypes.GitConne
 		// The webhook columns stay filled, unused, so switching to a
 		// webhook later is an update; the per-service hook refuses App
 		// connections.
-		if t.secret, err = c.box.Seal([]byte(randomHex(32))); err != nil {
+		if t.secret, err = c.box.Seal([]byte(randomHex(32)), gitSecretAAD(ss.svc.ID)); err != nil {
 			return err
 		}
 		t.hookID = randomHex(16)
@@ -325,10 +325,11 @@ func (c *Core) appTarget(ctx context.Context, ss svcScope, req apitypes.GitConne
 	return nil
 }
 
-// webhookTarget fills in a webhook connection: its token and, when fresh
-// (new, or switched from the App) or rotated, a new webhook URL and
-// secret. A fresh one starts with no token and statuses off.
-func (c *Core) webhookTarget(req apitypes.GitConnectRequest, t *gitTargetChange, fresh bool) error {
+// webhookTarget fills in service serviceID's webhook connection: its
+// token and, when fresh (new, or switched from the App) or rotated, a new
+// webhook URL and secret. A fresh one starts with no token and statuses
+// off.
+func (c *Core) webhookTarget(serviceID int64, req apitypes.GitConnectRequest, t *gitTargetChange, fresh bool) error {
 	t.installationID, t.repoID = 0, 0
 	t.change = "token unchanged"
 	if fresh {
@@ -344,7 +345,7 @@ func (c *Core) webhookTarget(req apitypes.GitConnectRequest, t *gitTargetChange,
 		case len(tok) > 512 || strings.ContainsAny(tok, " \t\r\n"):
 			return invalid("the GitHub token must be a single token with no spaces")
 		default:
-			sealed, err := c.box.Seal([]byte(tok))
+			sealed, err := c.box.Seal([]byte(tok), gitTokenAAD(serviceID))
 			if err != nil {
 				return err
 			}
@@ -359,7 +360,7 @@ func (c *Core) webhookTarget(req apitypes.GitConnectRequest, t *gitTargetChange,
 	}
 	if fresh || req.RotateSecret {
 		t.hookID, t.newSecret = randomHex(16), randomHex(32)
-		sealed, err := c.box.Seal([]byte(t.newSecret))
+		sealed, err := c.box.Seal([]byte(t.newSecret), gitSecretAAD(serviceID))
 		if err != nil {
 			return err
 		}
@@ -451,7 +452,7 @@ func (c *Core) gitToken(conn store.GitConnection) (string, error) {
 	if len(conn.Token) == 0 {
 		return "", nil
 	}
-	b, err := c.box.Open(conn.Token)
+	b, err := c.box.Open(conn.Token, gitTokenAAD(conn.ServiceID))
 	if err != nil {
 		return "", fmt.Errorf("open GitHub token: %w", err)
 	}

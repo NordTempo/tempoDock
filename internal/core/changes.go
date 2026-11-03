@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -520,10 +521,10 @@ func (c *Core) stagedChanges(ctx context.Context, q *store.Queries, es envScope,
 			vc.Scope, vc.Service = apitypes.ScopeService, svcNames[*v.ServiceID]
 		}
 		if reveal {
-			if vc.Old, err = c.openValue(v.Value); err != nil {
+			if vc.Old, err = c.openValue(v.Value, variableAAD(v.EnvironmentID, v.ServiceID, v.Key), v.Key); err != nil {
 				return out, nil, nil, err
 			}
-			if vc.New, err = c.openValue(v.PendingValue); err != nil {
+			if vc.New, err = c.openValue(v.PendingValue, variableAAD(v.EnvironmentID, v.ServiceID, v.Key), v.Key); err != nil {
 				return out, nil, nil, err
 			}
 		}
@@ -590,14 +591,18 @@ func variableAction(v store.Variable) apitypes.ChangeAction {
 	}
 }
 
-// openValue decrypts a nullable variable value.
-func (c *Core) openValue(sealed []byte) (*string, error) {
+// openValue decrypts a nullable value of the variable named key, stored
+// where aad names (variableAAD, orgVariableAAD). A value that doesn't open
+// (moved from another row, or corrupted) is a conflict naming the key, so
+// whoever sees it knows which variable to set again.
+func (c *Core) openValue(sealed []byte, aad secrets.AAD, key string) (*string, error) {
 	if sealed == nil {
 		return nil, nil
 	}
-	b, err := c.box.Open(sealed)
+	b, err := c.box.Open(sealed, aad)
 	if err != nil {
-		return nil, err
+		c.log.Error("secrets: a variable's value doesn't open", "key", key, "err", err)
+		return nil, conflict("variable %s's stored value doesn't decrypt here (it was corrupted, or moved from another variable); set it again", key)
 	}
 	s := string(b)
 	return &s, nil

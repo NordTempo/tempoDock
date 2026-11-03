@@ -163,7 +163,7 @@ func (c *Core) recordComment() string { return "dock:" + c.install }
 
 // cfClient is a Cloudflare client with a connection's token.
 func (c *Core) cfClient(conn store.CloudflareConnection) (*cloudflare.Client, error) {
-	token, err := c.box.Open(conn.Token)
+	token, err := c.box.Open(conn.Token, sealedCloudflareToken.AAD(conn.Name))
 	if err != nil {
 		return nil, fmt.Errorf("open the token of Cloudflare connection %s: %w", conn.Name, err)
 	}
@@ -227,7 +227,7 @@ func (c *Core) AddCloudflare(ctx context.Context, a Actor, req apitypes.CreateCl
 	if err != nil {
 		return apitypes.Cloudflare{}, err
 	}
-	sealed, err := c.box.Seal([]byte(token))
+	sealed, err := c.box.Seal([]byte(token), sealedCloudflareToken.AAD(req.Name))
 	if err != nil {
 		return apitypes.Cloudflare{}, err
 	}
@@ -309,7 +309,7 @@ func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.Cloudfl
 	if err != nil {
 		return 0, err
 	}
-	sealed, err := c.box.Seal([]byte(token))
+	sealed, err := c.box.Seal([]byte(token), sealedCloudflareToken.AAD(row.Name))
 	if err != nil {
 		return 0, err
 	}
