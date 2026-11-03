@@ -477,7 +477,7 @@ function invalidateForAudit(
   const invalidate = (queryKey: readonly unknown[]) =>
     queryClient.invalidateQueries({ queryKey });
   invalidate(["audit"]);
-  if (!audit) return;
+  if (!audit || auditedReads.has(audit.action)) return;
   if (audit.action === "project.rename") return; // Its typed event moves the cache.
   const [kind] = audit.action.split(".");
   if (kind === "project") invalidate(keys.projects);
@@ -497,10 +497,10 @@ function invalidateForAudit(
     (kind === "server" && audit.action.startsWith("server.tunnel"))
   )
     invalidate(cloudflareKey);
-  // Dock Analytics: sites, settings, the analytics server (ADR 0037). A
-  // domain added or removed may carry a site along or leave it.
-  if (kind === "analytics") invalidate(["analytics"]);
-  if (kind === "domain") invalidate(["analytics", "sites"]);
+  if (kind === "analytics") invalidateForAnalytics(queryClient, audit);
+  // A domain added or removed may carry a site along or leave it.
+  if (kind === "domain" && audit.project)
+    invalidate(["analytics", "sites", audit.project]);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;
@@ -519,6 +519,53 @@ function invalidateForAudit(
       : keys.project(audit.project),
   );
   invalidate(keys.overview(audit.project));
+}
+
+// Audited reads: they add to the audit log and change nothing else. The
+// data panel's reads (browse, reveal, connect) are left out by dataParts.
+const auditedReads: ReadonlySet<string> = new Set([
+  "analytics.replay_view",
+  "org.variables_reveal",
+  "user.login",
+  "user.login_failed",
+]);
+
+// Analytics actions that name their site in the audit target.
+const siteActions: ReadonlySet<string> = new Set([
+  "analytics.goal_add",
+  "analytics.goal_remove",
+  "analytics.funnel_add",
+  "analytics.funnel_remove",
+]);
+
+/**
+ * Refreshes what a Dock Analytics action changed (ADR 0037). A site's
+ * views are keyed ["analytics", view, project, site, ...] and a project's
+ * sites ["analytics", "sites", project] (features/analytics/data.ts).
+ */
+function invalidateForAnalytics(
+  queryClient: QueryClient,
+  audit: components["schemas"]["AuditEvent"],
+) {
+  const { project, action, target } = audit;
+  if (!project) {
+    // The store moved or the install's defaults changed: every site's
+    // views, and the status.
+    queryClient.invalidateQueries({ queryKey: ["analytics"] });
+    return;
+  }
+  // Goals and funnels change one site's views. Hostnames turned on or off
+  // and site changes (a rename names only the new name) change the
+  // project's sites and their views.
+  const site = siteActions.has(action) ? target : undefined;
+  queryClient.invalidateQueries({
+    queryKey: ["analytics"],
+    predicate: ({ queryKey: [, , p, s] }) =>
+      p === project && (site === undefined || s === site),
+  });
+  // The first hostname turns analytics on.
+  if (action === "analytics.enable")
+    queryClient.invalidateQueries({ queryKey: ["analytics", "status"] });
 }
 
 // The parts of the database panel (keys.data(ref)[4]) each data.* action
