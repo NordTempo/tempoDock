@@ -1,11 +1,118 @@
 package core
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
+
+// A public dashboard's address belongs to one site across every org: the
+// first to hold it keeps it, and another org can't take or shadow it by
+// naming a site the same, nor by claiming it, or the same domain of its
+// own, as a public domain.
+func TestPublicAddressesAreUnique(t *testing.T) {
+	h := newHarness(t)
+	h.c.cfg.BaseDomain = "dock.example.net"
+	countingSite(h)
+	on, off := true, false
+	org, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "other", Name: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	them := System.InOrg(org.ID)
+	if _, err := h.c.CreateProject(h.ctx, them, apitypes.CreateProjectRequest{Name: "theirs"}); err != nil {
+		t.Fatal(err)
+	}
+	for svc, host := range map[string]string{"web": "blog.other.example", "api": "shop-example.com"} {
+		if _, err := h.c.CreateService(h.ctx, them, EnvRef{"theirs", "production"}, apitypes.CreateServiceRequest{Name: svc, Port: 8080}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.c.AddDomain(h.ctx, them, ServiceRef{"theirs", "production", svc}, apitypes.AddDomainRequest{Hostname: host}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.c.EnableHostnameAnalytics(h.ctx, them, host, apitypes.EnableAnalyticsRequest{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A publishes "blog". B's shop-example.com came after A's
+	// shop.example.com, so it was made with an address of its own, and
+	// keeps it now that A's old one is free.
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "shop.example.com", apitypes.UpdateSiteRequest{
+		Name: "blog", Settings: apitypes.SiteSettings{Public: &on}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Renamed to a name with A's address: it gets one of its own.
+	for _, name := range []string{"Blog", "blog"} {
+		site, err := h.c.UpdateSite(h.ctx, them, "theirs", "blog.other.example", apitypes.UpdateSiteRequest{
+			Name: name, Settings: apitypes.SiteSettings{Public: &on}})
+		if err != nil || len(site.PublicURLs) != 1 || site.PublicURLs[0] != "https://stats-blog-2.dock.example.net" {
+			t.Errorf("another org renamed its site %q: %v, %v", name, site.PublicURLs, err)
+		}
+		if _, err := h.c.UpdateSite(h.ctx, them, "theirs", name, apitypes.UpdateSiteRequest{Name: "blog.other.example"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Claimed as a public domain: refused.
+	squat := "stats-blog.dock.example.net"
+	if _, err := h.c.UpdateSite(h.ctx, them, "theirs", "blog.other.example", apitypes.UpdateSiteRequest{
+		Settings: apitypes.SiteSettings{PublicDomain: &squat}}); CodeOf(err) != apitypes.CodeHostnameTaken {
+		t.Errorf("another org took A's address as its public domain: %v", err)
+	}
+	site, err := h.c.UpdateSite(h.ctx, them, "theirs", "shop-example.com", apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{Public: &on}})
+	if err != nil || len(site.PublicURLs) != 1 || site.PublicURLs[0] != "https://stats-shop-example-com-2.dock.example.net" {
+		t.Errorf("a site made with a taken address: %v, %v", site.PublicURLs, err)
+	}
+	// A's own domain, set while A's dashboard is off, stays A's.
+	domain := "stats.shop.example"
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "blog", apitypes.UpdateSiteRequest{
+		Settings: apitypes.SiteSettings{Public: &off, PublicDomain: &domain}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.UpdateSite(h.ctx, them, "theirs", "blog.other.example", apitypes.UpdateSiteRequest{
+		Settings: apitypes.SiteSettings{Public: &on, PublicDomain: &domain}}); CodeOf(err) != apitypes.CodeHostnameTaken {
+		t.Errorf("another org took A's public domain: %v", err)
+	}
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "blog", apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{Public: &on}}); err != nil {
+		t.Fatal(err)
+	}
+
+	eventually(t, "the store", func() bool { return h.rt.AnalyticsStore() != nil })
+	for _, host := range []string{"stats-blog.dock.example.net", "stats.shop.example"} {
+		if st, err := h.c.PublicStats(h.ctx, host, ""); err != nil || st.Site != "blog" {
+			t.Errorf("%s shows %q, %v", host, st.Site, err)
+		}
+	}
+}
+
+// Sites from before addresses were stored get theirs when Dock starts,
+// the oldest first: it keeps an address that two names share.
+func TestPublicAddressesAssignedOldestFirst(t *testing.T) {
+	h := newHarness(t)
+	h.c.cfg.BaseDomain = "dock.example.net"
+	for i, host := range []string{"shop-example.com", "shop.example.com"} {
+		h.domain(h.service(fmt.Sprint("web", i), apitypes.CreateServiceRequest{Port: 8080}), host, "")
+		if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, host, apitypes.EnableAnalyticsRequest{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// As migration 0037 leaves them.
+	if _, err := h.store.DB.ExecContext(h.ctx, `UPDATE sites SET public_slug = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	h.restart()
+	h.c.cfg.BaseDomain = "dock.example.net"
+	on := true
+	for name, want := range map[string]string{"shop-example.com": "https://stats-shop-example-com.dock.example.net", "shop.example.com": "https://stats-shop-example-com-2.dock.example.net"} {
+		site, err := h.c.UpdateSite(h.ctx, testSystem, "shop", name, apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{Public: &on}})
+		if err != nil || len(site.PublicURLs) != 1 || site.PublicURLs[0] != want {
+			t.Errorf("%s: %v, %v; want %s", name, site.PublicURLs, err, want)
+		}
+	}
+}
 
 func TestPublicDashboards(t *testing.T) {
 	h := newHarness(t)

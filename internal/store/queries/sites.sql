@@ -1,7 +1,7 @@
 -- Dock Analytics' sites (ADR 0037).
 
 -- name: CreateSite :one
-INSERT INTO sites (environment_id, name, created_by, created_at) VALUES (?, ?, ?, ?)
+INSERT INTO sites (environment_id, name, public_slug, created_by, created_at) VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetSite :one
@@ -28,6 +28,32 @@ UPDATE sites SET settings = ? WHERE id = +?;
 
 -- name: RenameSite :exec
 UPDATE sites SET name = ? WHERE id = +?;
+
+-- name: SetSitePublicSlug :exec
+UPDATE sites SET public_slug = ? WHERE id = +?;
+
+-- PublicSlugHolder returns the live site holding a public dashboard
+-- address (stats-<slug>.<base domain>), in any org.
+-- name: PublicSlugHolder :one
+SELECT id FROM sites WHERE public_slug = +sqlc.arg(slug) AND archived_at IS NULL;
+
+-- PublicDomainHolder returns the live site whose public domain is
+-- domain, in any org. The terms match sites_live_public_domain's.
+-- name: PublicDomainHolder :one
+SELECT id FROM sites
+WHERE json_extract(settings, '$.public_domain') = +CAST(sqlc.arg(domain) AS TEXT)
+  AND json_extract(settings, '$.public_domain') <> '' AND archived_at IS NULL;
+
+-- ListSitesWithoutPublicSlug returns the live sites from before public
+-- addresses were stored (migration 0037), oldest first.
+-- name: ListSitesWithoutPublicSlug :many
+SELECT id, name FROM sites WHERE public_slug IS NULL AND archived_at IS NULL ORDER BY id;
+
+-- ListPublicSites returns every live site's public address and settings,
+-- oldest first: the public dashboards' hostnames, the oldest site's
+-- where two would share one.
+-- name: ListPublicSites :many
+SELECT id, public_slug, settings FROM sites WHERE archived_at IS NULL ORDER BY id;
 
 -- name: SetSiteEnvironment :exec
 UPDATE sites SET environment_id = ? WHERE id = +?;

@@ -104,6 +104,9 @@ func (c *Core) startAnalytics(ctx context.Context) error {
 	c.analytics.wake = make(chan struct{})
 	c.analytics.forwarding = map[spoolOf]bool{}
 	c.analyticsServersChanged()
+	if err := c.assignPublicSlugs(ctx); err != nil {
+		c.log.Error("analytics: give sites their public dashboard addresses", "err", err)
+	}
 	if hosts, err := c.loadPublicHosts(ctx); err == nil {
 		c.analytics.public.hosts.Store(&hosts)
 	} else {
