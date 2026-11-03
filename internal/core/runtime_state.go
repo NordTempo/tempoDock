@@ -228,9 +228,9 @@ func (c *Core) ensureLater(ctx context.Context, serviceID int64) {
 // server's leftover containers (sweepRetired), then starts the active
 // release of each service recorded in ensure_running again and clears its
 // row. A service whose leftover container couldn't be removed keeps its
-// row (two containers must never share a volume), as does one whose
-// server became unreachable meanwhile: the next start or reconnect tries
-// again.
+// row (two containers must never share a volume), as do one with a deploy
+// in flight and one whose server became unreachable meanwhile: the next
+// start or reconnect tries again.
 func (c *Core) startInterrupted(ctx context.Context, serverID int64, rt node.Runtime) error {
 	blocked, err := c.sweepRetired(ctx, serverID, rt)
 	if err != nil {
@@ -242,6 +242,12 @@ func (c *Core) startInterrupted(ctx context.Context, serverID int64, rt node.Run
 	}
 	for _, id := range ids {
 		if blocked[id] {
+			continue
+		}
+		if _, err := c.store.GetInFlightRelease(ctx, id); err == nil {
+			// A deploy started since the server came back owns the
+			// service: it stops the old release itself, and restarts it
+			// if it fails. The row stays for the next pass.
 			continue
 		}
 		ss, err := c.scopeOf(ctx, id)
