@@ -103,7 +103,7 @@ func (d *deployment) run(ctx context.Context) error {
 	if d.cfg, err = c.openConfig(d.rel.Config); err != nil {
 		return err
 	}
-	if d.log, err = c.newBuildLog(d.ss, d.rel); err != nil {
+	if d.log, err = c.newBuildLog(d.ss, d.rel, newRedactor(d.cfg.Env)); err != nil {
 		return err
 	}
 
@@ -658,13 +658,16 @@ func (c *Core) buildLogPath(releaseID int64) string {
 	return filepath.Join(c.cfg.DataDir, "builds", strconv.FormatInt(releaseID, 10)+".log")
 }
 
-func (c *Core) newBuildLog(ss svcScope, rel store.Release) (*logWriter, error) {
+// newBuildLog opens a release's build log for writing; each line goes out
+// as a live event too, with red's secrets masked for those who can't
+// reveal them (publishBuildLog).
+func (c *Core) newBuildLog(ss svcScope, rel store.Release, red *redactor) (*logWriter, error) {
 	f, err := os.OpenFile(c.buildLogPath(rel.ID), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
 	return &logWriter{f: f, emit: func(seq int, line string) {
-		c.publish(ss, apitypes.Event{Type: apitypes.EventBuildLog, BuildLog: &apitypes.BuildLogLine{ReleaseNumber: rel.Number, Seq: seq, Text: line}})
+		c.publishBuildLog(ss, red, apitypes.BuildLogLine{ReleaseNumber: rel.Number, Seq: seq, Text: line})
 	}}, nil
 }
 

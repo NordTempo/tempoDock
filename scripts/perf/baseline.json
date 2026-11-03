@@ -160,6 +160,16 @@
       "bytes_op": 254111,
       "allocs_op": 3721
     },
+    "core.BenchmarkRedactBuildLog": {
+      "ns_op": 1380000,
+      "bytes_op": 82273,
+      "allocs_op": 6
+    },
+    "core.BenchmarkRedactLine": {
+      "ns_op": 160,
+      "bytes_op": 2,
+      "allocs_op": 0
+    },
     "core.BenchmarkRetentionPass": {
       "ns_op": 49007,
       "bytes_op": 1984,

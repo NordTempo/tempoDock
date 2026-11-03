@@ -24,7 +24,20 @@ type busEvent struct {
 	// alert, when set, raises or resolves an alert along with the event
 	// (alerts.go). Subscribers other than the alert engine never see it.
 	alert *alertSignal
+	// secrets marks a log line with secret values in it, published twice
+	// (publishBuildLog): as written for subscribers that may reveal them,
+	// masked for the rest.
+	secrets secretsView
 }
+
+// secretsView says which subscribers get an event (busEvent.secrets).
+type secretsView uint8
+
+const (
+	secretsNone     secretsView = iota // no secrets: everyone
+	secretsRevealed                    // as written: subscribers that reveal secrets
+	secretsMasked                      // masked: the other subscribers
+)
 
 // LiveEvent is an event as delivered to subscribers. Every subscriber that
 // receives an event shares one LiveEvent, so its JSON is encoded once
@@ -65,8 +78,10 @@ type bus struct {
 }
 
 type subscription struct {
-	ch     chan LiveEvent
-	match  func(busEvent) bool
+	ch    chan LiveEvent
+	match func(busEvent) bool
+	// reveal: the subscriber may see secret values (busEvent.secrets).
+	reveal bool
 	lagged atomic.Bool
 	bus    *bus
 	once   sync.Once
@@ -77,7 +92,13 @@ const subscriptionBuffer = 256
 func newBus() *bus { return &bus{subs: map[*subscription]struct{}{}, names: map[int64]string{}} }
 
 func (b *bus) subscribe(match func(busEvent) bool) *subscription {
-	s := &subscription{ch: make(chan LiveEvent, subscriptionBuffer), match: match, bus: b}
+	return b.subscribeAs(false, match)
+}
+
+// subscribeAs is subscribe for a subscriber that may reveal secret values
+// or not: it gets log lines as written or masked (busEvent.secrets).
+func (b *bus) subscribeAs(reveal bool, match func(busEvent) bool) *subscription {
+	s := &subscription{ch: make(chan LiveEvent, subscriptionBuffer), match: match, reveal: reveal, bus: b}
 	b.mu.Lock()
 	b.subs[s] = struct{}{}
 	b.mu.Unlock()
@@ -94,7 +115,7 @@ func (b *bus) publish(e busEvent) {
 	live := newLiveEvent(e.ev)
 	live.signal, live.projectID, live.serviceID = e.alert, e.projectID, e.serviceID
 	for s := range b.subs {
-		if !s.match(e) {
+		if (e.secrets == secretsRevealed && !s.reveal) || (e.secrets == secretsMasked && s.reveal) || !s.match(e) {
 			continue
 		}
 		select {
