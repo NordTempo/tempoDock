@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,8 +16,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// gitReplayWindow is how long delivery IDs are remembered: a delivery
-// seen again within it is answered without effect.
+// gitReplayWindow is how long deliveries (their IDs and body hashes) are
+// remembered: a delivery seen again within it is answered without effect.
 const gitReplayWindow = 7 * 24 * time.Hour
 
 // gitMaxPushCommits is the most commits GitHub lists in a push payload; a
@@ -43,6 +44,9 @@ type pushPayload struct {
 	Repository struct {
 		ID       int64  `json:"id"`
 		FullName string `json:"full_name"`
+		// PushedAt is when the push happened: a Unix time in push events
+		// (GitHub sends a timestamp string in other events).
+		PushedAt json.RawMessage `json:"pushed_at"`
 	} `json:"repository"`
 	// Installation is set on deliveries to the GitHub App.
 	Installation struct {
@@ -53,6 +57,21 @@ type pushPayload struct {
 	} `json:"pusher"`
 	HeadCommit *pushCommit  `json:"head_commit"`
 	Commits    []pushCommit `json:"commits"`
+}
+
+// pushedAt is when the push happened, false when the payload doesn't say.
+func (p pushPayload) pushedAt() (time.Time, bool) {
+	raw := p.Repository.PushedAt
+	if n, err := strconv.ParseInt(string(raw), 10, 64); err == nil {
+		return time.Unix(n, 0), true
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 type pushCommit struct {
@@ -144,7 +163,7 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 	default:
 		return fmt.Sprintf("ignored: %q events don't deploy; send only pushes", d.Event), nil
 	}
-	if seen, err := c.gitDelivery(ctx, d.ID); seen != "" || err != nil {
+	if seen, err := c.gitDelivery(ctx, d); seen != "" || err != nil {
 		return seen, err
 	}
 	var p pushPayload
@@ -154,15 +173,22 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 	return c.queuePush(ctx, conn, p)
 }
 
-// gitDelivery records a delivery ID; a non-empty answer means it was seen
-// before and the delivery has no effect.
-func (c *Core) gitDelivery(ctx context.Context, id string) (string, error) {
-	if !deliveryRe.MatchString(id) {
+// gitDelivery records a signature-checked delivery by its ID and by a
+// hash of its hook and body; a non-empty answer means either was seen
+// within the replay window and the delivery has no effect. The ID alone
+// isn't enough: it isn't signed, so a captured body could be resent under
+// a new one. The hook is in the hash because GitHub sends the same body
+// to every webhook of a repository.
+func (c *Core) gitDelivery(ctx context.Context, d GitDelivery) (string, error) {
+	if !deliveryRe.MatchString(d.ID) {
 		return "", invalid("X-GitHub-Delivery header missing or malformed")
 	}
+	h := sha256.New()
+	h.Write([]byte(d.HookID + "\n"))
+	h.Write(d.Body)
 	t := now()
-	if err := c.store.AddGitDelivery(ctx, store.AddGitDeliveryParams{DeliveryID: id, CreatedAt: t}); store.IsUnique(err) {
-		return "ignored: delivery " + id + " was already received", nil
+	if err := c.store.AddGitDelivery(ctx, store.AddGitDeliveryParams{DeliveryID: d.ID, BodyHash: h.Sum(nil), CreatedAt: t}); store.IsUnique(err) {
+		return "ignored: delivery " + d.ID + " was already received", nil
 	} else if err != nil {
 		return "", err
 	}
@@ -191,14 +217,15 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 	switch d.Event {
 	case "ping":
 		return "pong", nil
-	case "installation":
-		return c.gitAppInstallation(ctx, d.Body)
-	case "push":
+	case "installation", "push":
 	default:
 		return fmt.Sprintf("ignored: %q events don't deploy", d.Event), nil
 	}
-	if seen, err := c.gitDelivery(ctx, d.ID); seen != "" || err != nil {
+	if seen, err := c.gitDelivery(ctx, d); seen != "" || err != nil {
 		return seen, err
+	}
+	if d.Event == "installation" {
+		return c.gitAppInstallation(ctx, d.Body)
 	}
 	var p pushPayload
 	if err := json.Unmarshal(d.Body, &p); err != nil {
@@ -254,6 +281,14 @@ func (c *Core) gitAppInstallation(ctx context.Context, body []byte) (string, err
 // connection doesn't deploy it or it is already live or deploying, and
 // returns what happened.
 func (c *Core) queuePush(ctx context.Context, conn store.GitConnection, p pushPayload) (string, error) {
+	// A push older than the replay window may have been forgotten by
+	// gitDelivery, so a captured body could be replayed: refuse it.
+	if at, ok := p.pushedAt(); ok && now().Sub(at) > gitReplayWindow {
+		msg := fmt.Sprintf("push %s: ignored, it was pushed %s, longer ago than deliveries are remembered; push again to deploy it",
+			shortSHA(p.After), at.UTC().Format(time.DateOnly))
+		c.gitEvent(conn.ID, msg)
+		return msg, nil
+	}
 	commit, ignored := pushDecision(conn, p)
 	if ignored != "" {
 		c.gitEvent(conn.ID, ignored)

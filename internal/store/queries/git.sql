@@ -46,7 +46,9 @@ UPDATE git_connections SET last_event = ?, last_event_at = ? WHERE id = +?;
 SELECT service_id FROM git_connections WHERE pending_sha > '';
 
 -- name: AddGitDelivery :exec
-INSERT INTO git_deliveries (delivery_id, created_at) VALUES (?, ?);
+-- Records a delivery; a unique violation means its ID or its body hash
+-- (sha256 of hook ID and body) was seen within the replay window.
+INSERT INTO git_deliveries (delivery_id, body_hash, created_at) VALUES (?, ?, ?);
 
 -- name: PruneGitDeliveries :exec
 DELETE FROM git_deliveries WHERE created_at < ?;
