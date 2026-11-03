@@ -44,6 +44,10 @@ const (
 	// AlertTrafficDrop: a site's page views in the last hour fell far
 	// below the same hour's usual number.
 	AlertTrafficDrop AlertKind = "traffic_drop"
+	// AlertUnhealthy: a running service's health check keeps failing
+	// (ADR 0043). The control plane restarts it, with backoff; the alert
+	// resolves when the check passes again.
+	AlertUnhealthy AlertKind = "unhealthy"
 )
 
 // Alert is one occurrence of a problem, open until its condition clears or
@@ -51,7 +55,7 @@ const (
 // fuller, the same deploy failing again), never raised twice.
 type Alert struct {
 	ID       int64         `json:"id"`
-	Kind     AlertKind     `json:"kind" doc:"disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop; more may be added"`
+	Kind     AlertKind     `json:"kind" doc:"disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy; more may be added"`
 	Severity AlertSeverity `json:"severity" enum:"warning,critical"`
 	Title    string        `json:"title" example:"Disk 91% full on vps-1"`
 	Message  string        `json:"message,omitempty"`

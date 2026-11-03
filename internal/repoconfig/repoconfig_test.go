@@ -19,6 +19,10 @@ start_command = "node server.js"
 port = 3000
 health_check_path = "/healthz"
 health_check_timeout = "45s"
+health_check_interval = "1m"
+health_check_probe_timeout = "3s"
+health_check_retries = 5
+health_check_start_period = "90s"
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -26,14 +30,25 @@ health_check_timeout = "45s"
 	want := Config{
 		Build: Build{Dockerfile: "docker/Dockerfile.prod"},
 		Deploy: Deploy{
-			StartCommand:       "node server.js",
-			Port:               3000,
-			HealthCheckPath:    "/healthz",
-			HealthCheckTimeout: 45 * time.Second,
+			StartCommand:            "node server.js",
+			Port:                    3000,
+			HealthCheckPath:         "/healthz",
+			HealthCheckTimeout:      45 * time.Second,
+			HealthCheckInterval:     time.Minute,
+			HealthCheckProbeTimeout: 3 * time.Second,
+			HealthCheckRetries:      5,
+			HealthCheckStartPeriod:  90 * time.Second,
 		},
 	}
 	if cfg != want {
 		t.Fatalf("got %+v, want %+v", cfg, want)
+	}
+}
+
+func TestParseIntervalOff(t *testing.T) {
+	cfg, err := Parse([]byte("[deploy]\nhealth_check_interval = \"off\"\n"))
+	if err != nil || cfg.Deploy.HealthCheckInterval != IntervalOff {
+		t.Fatalf("got %v, %v; want IntervalOff", cfg.Deploy.HealthCheckInterval, err)
 	}
 }
 
@@ -93,6 +108,26 @@ start_command = " "
 				`deploy.health_check_timeout: "30" is not a duration`,
 				"deploy.start_command: must not be empty",
 			},
+		},
+		{
+			name: "ongoing health check bounds",
+			in: `[deploy]
+health_check_interval = "never"
+health_check_probe_timeout = "10m"
+health_check_retries = 0
+health_check_start_period = "500ms"
+`,
+			want: []string{
+				`deploy.health_check_interval: "never" is not a duration; use a unit, e.g. "30s", or "off"`,
+				"deploy.health_check_probe_timeout: must be between 1s and 5m0s, got 10m0s",
+				"deploy.health_check_retries: must be between 1 and 100, got 0",
+				"deploy.health_check_start_period: must be between 1s and 1h0m0s, got 500ms",
+			},
+		},
+		{
+			name: "interval too long",
+			in:   "[deploy]\nhealth_check_interval = \"2h\"\n",
+			want: []string{"deploy.health_check_interval: must be between 1s and 1h0m0s, got 2h0m0s"},
 		},
 	}
 	for _, tt := range tests {

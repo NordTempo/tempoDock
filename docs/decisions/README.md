@@ -50,6 +50,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0040](0040-traffic-counts-requests.md) | Traffic counts requests; visitors are Analytics' | accepted |
 | [0041](0041-sealed-values-bound-to-their-place.md) | Sealed values are bound to where they are stored | accepted |
 | [0042](0042-domain-verification.md) | Custom domains are verified with a TXT record | accepted |
+| [0043](0043-ongoing-health-checks.md) | Ongoing health checks | accepted |
 
 ## Template
 

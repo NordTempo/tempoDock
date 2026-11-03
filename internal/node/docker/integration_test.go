@@ -341,7 +341,7 @@ func TestUpgradeSwapLimits(t *testing.T) {
 		Name: e.name("oldswap"), Image: shellImage, Cmd: "sleep 600",
 		Labels:    node.Labels{Project: "p", Environment: "e", Service: "s", Release: "1"},
 		Resources: node.Resources{MemoryBytes: mem},
-	})
+	}, "")
 	opts.HostConfig.MemorySwap = mem
 	created, err := e.cli.ContainerCreate(ctx, opts)
 	if err != nil {

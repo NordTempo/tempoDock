@@ -24,6 +24,20 @@ import (
 // defaultPort is the container port (and PORT) for services without one.
 const defaultPort = 8080
 
+// The ongoing health check's defaults and bounds (ADR 0043), in seconds
+// (retries in probes). A service setting of 0 means the default; an
+// interval of -1 (livenessOff) turns the check off. The start period's
+// default is the deploy's health check timeout.
+const (
+	defaultLivenessInterval = 30
+	defaultProbeTimeout     = 5
+	defaultLivenessRetries  = 3
+	livenessOff             = -1
+	maxLivenessSeconds      = 3600
+	maxProbeTimeoutSeconds  = 300
+	maxLivenessRetries      = 100
+)
+
 // releaseConfig is a release's fully resolved container config. It is
 // stored encrypted (it holds variable values) so a release can be started
 // again exactly as it was.
@@ -36,7 +50,14 @@ type releaseConfig struct {
 	Published          bool   `json:"published"`
 	HealthCheckPath    string `json:"health_check_path,omitempty"`
 	HealthCheckTimeout int    `json:"health_check_timeout_seconds"`
-	MemoryMB           int    `json:"memory_mb"`
+	// The ongoing health check (ADR 0043), resolved: seconds, and an
+	// interval of -1 for off. Configs sealed before it have zeros, which
+	// liveness reads as the defaults.
+	HealthCheckInterval     int `json:"health_check_interval_seconds,omitempty"`
+	HealthCheckProbeTimeout int `json:"health_check_probe_timeout_seconds,omitempty"`
+	HealthCheckRetries      int `json:"health_check_retries,omitempty"`
+	HealthCheckStartPeriod  int `json:"health_check_start_period_seconds,omitempty"`
+	MemoryMB                int `json:"memory_mb"`
 	// HealthPort is the container port a template database is probed on
 	// over its environment network (it publishes none).
 	HealthPort int           `json:"health_port,omitempty"`
@@ -55,6 +76,11 @@ type repoDeploy struct {
 	Port                      int    `json:"port,omitempty"`
 	HealthCheckPath           string `json:"health_check_path,omitempty"`
 	HealthCheckTimeoutSeconds int    `json:"health_check_timeout_seconds,omitempty"`
+	// The ongoing health check; an interval of -1 is "off".
+	HealthCheckIntervalSeconds     int `json:"health_check_interval_seconds,omitempty"`
+	HealthCheckProbeTimeoutSeconds int `json:"health_check_probe_timeout_seconds,omitempty"`
+	HealthCheckRetries             int `json:"health_check_retries,omitempty"`
+	HealthCheckStartPeriodSeconds  int `json:"health_check_start_period_seconds,omitempty"`
 }
 
 func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
@@ -63,8 +89,21 @@ func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
 	}
 	return &repoDeploy{
 		StartCommand: rc.Deploy.StartCommand, Port: rc.Deploy.Port, HealthCheckPath: rc.Deploy.HealthCheckPath,
-		HealthCheckTimeoutSeconds: int(rc.Deploy.HealthCheckTimeout / time.Second),
+		HealthCheckTimeoutSeconds:      int(rc.Deploy.HealthCheckTimeout / time.Second),
+		HealthCheckIntervalSeconds:     intervalSeconds(rc.Deploy.HealthCheckInterval),
+		HealthCheckProbeTimeoutSeconds: int(rc.Deploy.HealthCheckProbeTimeout / time.Second),
+		HealthCheckRetries:             rc.Deploy.HealthCheckRetries,
+		HealthCheckStartPeriodSeconds:  int(rc.Deploy.HealthCheckStartPeriod / time.Second),
 	}
+}
+
+// intervalSeconds is dock.toml's health check interval in seconds, with
+// "off" (repoconfig.IntervalOff) as livenessOff.
+func intervalSeconds(d time.Duration) int {
+	if d == repoconfig.IntervalOff {
+		return livenessOff
+	}
+	return int(d / time.Second)
 }
 
 // apply overrides s with the file's set fields.
@@ -84,6 +123,18 @@ func (r *repoDeploy) apply(s *store.Service) {
 	if r.HealthCheckTimeoutSeconds != 0 {
 		s.HealthCheckTimeoutSeconds = int64(r.HealthCheckTimeoutSeconds)
 	}
+	if r.HealthCheckIntervalSeconds != 0 {
+		s.HealthCheckIntervalSeconds = int64(r.HealthCheckIntervalSeconds)
+	}
+	if r.HealthCheckProbeTimeoutSeconds != 0 {
+		s.HealthCheckProbeTimeoutSeconds = int64(r.HealthCheckProbeTimeoutSeconds)
+	}
+	if r.HealthCheckRetries != 0 {
+		s.HealthCheckRetries = int64(r.HealthCheckRetries)
+	}
+	if r.HealthCheckStartPeriodSeconds != 0 {
+		s.HealthCheckStartPeriodSeconds = int64(r.HealthCheckStartPeriodSeconds)
+	}
 }
 
 // fields lists the settings the file set, by API field name.
@@ -95,6 +146,10 @@ func (r *repoDeploy) fields() []string {
 	for name, set := range map[string]bool{
 		"start_command": r.StartCommand != "", "port": r.Port != 0,
 		"health_check_path": r.HealthCheckPath != "", "health_check_timeout_seconds": r.HealthCheckTimeoutSeconds != 0,
+		"health_check_interval_seconds":      r.HealthCheckIntervalSeconds != 0,
+		"health_check_probe_timeout_seconds": r.HealthCheckProbeTimeoutSeconds != 0,
+		"health_check_retries":               r.HealthCheckRetries != 0,
+		"health_check_start_period_seconds":  r.HealthCheckStartPeriodSeconds != 0,
 	} {
 		if set {
 			out = append(out, name)
@@ -197,9 +252,17 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 		CPUs:               target.Cpus,
 		Mounts:             []configMount{},
 		Aliases:            []string{target.Name},
+
+		HealthCheckInterval:     cmp.Or(int(target.HealthCheckIntervalSeconds), defaultLivenessInterval),
+		HealthCheckProbeTimeout: cmp.Or(int(target.HealthCheckProbeTimeoutSeconds), defaultProbeTimeout),
+		HealthCheckRetries:      cmp.Or(int(target.HealthCheckRetries), defaultLivenessRetries),
+		HealthCheckStartPeriod:  int(target.HealthCheckStartPeriodSeconds),
 	}
 	if cfg.HealthCheckTimeout == 0 {
 		cfg.HealthCheckTimeout = c.cfg.Defaults.HealthCheckTimeout
+	}
+	if cfg.HealthCheckStartPeriod == 0 {
+		cfg.HealthCheckStartPeriod = cfg.HealthCheckTimeout
 	}
 	if t, ok := templateOf(target); ok {
 		cfg.HealthPort = t.port
@@ -641,7 +704,10 @@ func setServiceImage(ctx context.Context, q *store.Queries, s store.Service, ima
 	return q.UpdateService(ctx, store.UpdateServiceParams{
 		Image: image, Port: s.Port, HealthCheckPath: s.HealthCheckPath, HealthCheckTimeoutSeconds: s.HealthCheckTimeoutSeconds,
 		StartCommand: s.StartCommand, DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
-		MemoryMb: s.MemoryMb, Cpus: s.Cpus, ID: s.ID,
+		MemoryMb: s.MemoryMb, Cpus: s.Cpus,
+		HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
+		HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
+		ID: s.ID,
 	})
 }
 

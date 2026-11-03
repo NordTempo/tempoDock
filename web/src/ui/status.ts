@@ -6,6 +6,7 @@ import type {
   ServerStatus,
   ServiceView,
 } from "../data/types";
+import { plural } from "./format";
 
 /** Status colors: green, yellow, red, blue, gray. */
 export type Tone = "ok" | "warn" | "fail" | "prog" | "mut";
@@ -63,6 +64,19 @@ export const oomPhrase = (status: ServiceView["service"]["status"]) =>
     ? `ran out of memory (limit ${status.memory_limit_mb} MB)`
     : "ran out of memory";
 
+/** ", 2 health restarts": the control plane's restarts for a failing health check, or "". */
+export const healthRestarts = (status: ServiceView["service"]["status"]) =>
+  status.health_restarts
+    ? `, ${plural(status.health_restarts, "health restart")}`
+    : "";
+
+/**
+ * A running container whose ongoing health check keeps failing: the
+ * process runs but doesn't answer (ADR 0043).
+ */
+export const isUnhealthy = (status: ServiceView["service"]["status"]) =>
+  status.state === "running" && status.health === "unhealthy";
+
 /** How recent a restart must be for a running container to count as looping. */
 const LOOP_WINDOW_MS = 10 * 60_000;
 
@@ -98,11 +112,22 @@ export function containerState({
     return {
       tone: "fail",
       glyph: "↻",
-      label: `crash loop, ${status.restart_count}×, exit ${status.exit_code}`,
+      label: `crash loop, ${status.restart_count}×, exit ${status.exit_code}${healthRestarts(status)}`,
     };
   }
   switch (status.state) {
     case "running":
+      // Health only qualifies running: empty means no ongoing check.
+      if (status.health === "unhealthy") {
+        return {
+          tone: "fail",
+          glyph: "✕",
+          label: `unhealthy${healthRestarts(status)}`,
+        };
+      }
+      if (status.health === "starting") {
+        return { tone: "mut", glyph: "◐", label: "starting" };
+      }
       return { tone: "ok", glyph: "●", label: "running" };
     case "restarting":
       return {

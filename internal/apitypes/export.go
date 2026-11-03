@@ -51,6 +51,12 @@ type ServiceExport struct {
 	Volumes   []VolumeExport `json:"volumes,omitempty" toml:"volumes,omitempty,inline"`
 	Domains   []DomainExport `json:"domains,omitempty" toml:"domains,omitempty,inline"`
 	Git       *GitExport     `json:"git,omitempty" toml:"git,omitempty,inline"`
+
+	// The ongoing health check (ADR 0043); an interval of -1 is off.
+	HealthCheckIntervalSeconds     int `json:"health_check_interval_seconds,omitempty" toml:"health_check_interval_seconds,omitempty"`
+	HealthCheckProbeTimeoutSeconds int `json:"health_check_probe_timeout_seconds,omitempty" toml:"health_check_probe_timeout_seconds,omitempty"`
+	HealthCheckRetries             int `json:"health_check_retries,omitempty" toml:"health_check_retries,omitempty"`
+	HealthCheckStartPeriodSeconds  int `json:"health_check_start_period_seconds,omitempty" toml:"health_check_start_period_seconds,omitempty"`
 }
 
 // VolumeExport is a volume of an exported service.

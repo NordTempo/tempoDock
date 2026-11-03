@@ -64,9 +64,36 @@ func serviceState(svc apitypes.Service) string {
 	case svc.ArchivedAt != nil:
 		return "archived"
 	case svc.Status.ServerOffline:
-		return string(svc.Status.State) + " (last known)"
+		return runState(svc.Status) + " (last known)"
 	}
-	return string(svc.Status.State)
+	return runState(svc.Status)
+}
+
+// runState is a container's state with its ongoing health check (ADR
+// 0043): a running container reads "unhealthy" while the check keeps
+// failing and "starting" until it first passes, else "running".
+func runState(s apitypes.ServiceStatus) string {
+	if s.State == apitypes.ServiceRunning && (s.Health == apitypes.HealthUnhealthy || s.Health == apitypes.HealthStarting) {
+		return string(s.Health)
+	}
+	return string(s.State)
+}
+
+// restartsNote counts a service's restarts, Docker's and the control
+// plane's for a failing health check: " (2 restarts, 1 health restart)",
+// or empty without any.
+func restartsNote(s apitypes.ServiceStatus) string {
+	var parts []string
+	if s.RestartCount > 0 {
+		parts = append(parts, plural(s.RestartCount, "restart"))
+	}
+	if s.HealthRestarts > 0 {
+		parts = append(parts, plural(s.HealthRestarts, "health restart"))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
 }
 
 // serverNote says a live service's server can't be reached, so its state
@@ -77,7 +104,7 @@ func serverNote(svc apitypes.Service) string {
 	if !s.ServerOffline || svc.ArchivedAt != nil {
 		return ""
 	}
-	return fmt.Sprintf("server %s is %s: last known %s", s.Server, s.ServerStatus, s.State)
+	return fmt.Sprintf("server %s is %s: last known %s", s.Server, s.ServerStatus, runState(s))
 }
 
 // oomNote says a service's container was killed for running out of
@@ -134,9 +161,7 @@ func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 func printServiceStatus(g *globals, so apitypes.ServiceOverview) error {
 	svc := so.Service
 	state := cmp.Or(serverNote(svc), serviceState(svc))
-	if svc.Status.RestartCount > 0 {
-		state += fmt.Sprintf(" (%d restarts)", svc.Status.RestartCount)
-	}
+	state += restartsNote(svc.Status)
 	state += oomNote(svc.Status)
 	summary := func(r *apitypes.ReleaseSummary) string {
 		if r == nil {

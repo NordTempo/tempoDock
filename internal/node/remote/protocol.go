@@ -63,8 +63,10 @@ const (
 	// put-analytics-binary and remove-analytics-store, and answers
 	// ensure-analytics-store (an image) with an error (ADR 0037); 12 adds
 	// the replay spool: tail-spool's and ack-spool's spool, and the site
-	// rules' replay settings (ADR 0037, A3).
-	Protocol = 12
+	// rules' replay settings (ADR 0037, A3). 13 added restart and the
+	// ongoing health check: the container spec's health, a container's
+	// health state and health_status events (ADR 0043).
+	Protocol = 13
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -131,6 +133,7 @@ const (
 	opEnsureVolume  = "ensure-volume"
 	opStart         = "start"
 	opStop          = "stop"
+	opRestart       = "restart"
 	opRemove        = "remove"
 	opInspect       = "inspect"
 	opList          = "list"
@@ -180,7 +183,8 @@ type frame struct {
 }
 
 // Error is a runtime error that crossed the connection. errors.Is matches
-// node.ErrNotFound and the context errors through its code.
+// node.ErrNotFound, node.ErrNotRunning and the context errors through its
+// code.
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -195,6 +199,8 @@ const (
 	// codeNoBinary is a node without the analytics binary it was asked
 	// to run: the control plane sends it (put-analytics-binary).
 	codeNoBinary = "no_analytics_binary"
+	// codeNotRunning is Restart's node.ErrNotRunning (protocol 13).
+	codeNotRunning = "not_running"
 )
 
 func (e *Error) Error() string { return e.Message }
@@ -210,6 +216,8 @@ func (e *Error) Is(target error) bool {
 		return target == context.DeadlineExceeded
 	case codeNoBinary:
 		return target == errNoAnalyticsBinary
+	case codeNotRunning:
+		return target == node.ErrNotRunning
 	}
 	return false
 }
@@ -226,6 +234,8 @@ func wireError(err error) *Error {
 		code = codeDeadline
 	case errors.Is(err, errNoAnalyticsBinary):
 		code = codeNoBinary
+	case errors.Is(err, node.ErrNotRunning):
+		code = codeNotRunning
 	}
 	return &Error{Code: code, Message: truncate(err.Error(), maxErrorMessage)}
 }

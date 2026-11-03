@@ -162,6 +162,20 @@ func (c *Client) Stop(ctx context.Context, id string, timeout time.Duration) err
 	return err
 }
 
+// healthProtocol is the first protocol with restart and the ongoing
+// health check (ADR 0043).
+const healthProtocol = 13
+
+// Restart implements node.Containers. Older nodes can't restart a
+// container in place.
+func (c *Client) Restart(ctx context.Context, id string, timeout time.Duration) error {
+	if err := c.needProtocol(ctx, healthProtocol, "restart a container"); err != nil {
+		return err
+	}
+	_, err := callWithLogs[empty](ctx, c, opRestart, timeout+c.hub.callTimeout(), stopRequest{ID: id, TimeoutMS: timeout.Milliseconds()}, nil, nil)
+	return err
+}
+
 // Remove implements node.Containers.
 func (c *Client) Remove(ctx context.Context, id string) error {
 	_, err := unaryCall[empty](ctx, c, opRemove, containerRequest{ID: id})

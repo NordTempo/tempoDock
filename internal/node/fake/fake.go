@@ -44,6 +44,7 @@ type Runtime struct {
 	pullErr     error
 	startErr    error
 	stopErr     error
+	restartErr  error
 	healthErr   func(node.ContainerSpec) error
 	exitOnStart bool
 	routesErr   error
@@ -95,6 +96,31 @@ func (r *Runtime) FailStart(err error) { r.mu.Lock(); r.startErr = err; r.mu.Unl
 
 // FailStop makes every Stop return err, leaving the container running.
 func (r *Runtime) FailStop(err error) { r.mu.Lock(); r.stopErr = err; r.mu.Unlock() }
+
+// FailRestart makes every Restart return err, leaving the container
+// running as it was.
+func (r *Runtime) FailRestart(err error) { r.mu.Lock(); r.restartErr = err; r.mu.Unlock() }
+
+// SetHealth changes the health check state of container id, as Docker's
+// probe would: Health and, when unhealthy, HealthOutput (otherwise
+// cleared). Like Docker, it emits a health_status event only when the
+// state changes.
+func (r *Runtime) SetHealth(id, health, output string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.containers[id]
+	if !ok {
+		return
+	}
+	if health != node.HealthUnhealthy {
+		output = ""
+	}
+	changed := c.Health != health
+	c.Health, c.HealthOutput = health, output
+	if changed {
+		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "health_status", Health: health})
+	}
+}
 
 // FailHealthCheck makes health checks fail for containers where fn returns
 // an error. Nil makes every check pass.
@@ -217,7 +243,8 @@ func (r *Runtime) AddContainer(c node.Container) {
 }
 
 // Emit sends a container event to all Events subscribers and applies it to
-// the container's state (die → exited, start → running, oom → OOMKilled).
+// the container's state (die → exited, start → running, oom → OOMKilled,
+// health_status → Health).
 func (r *Runtime) Emit(ev node.ContainerEvent) {
 	r.mu.Lock()
 	if c, ok := r.containers[ev.ContainerID]; ok {
@@ -232,6 +259,8 @@ func (r *Runtime) Emit(ev node.ContainerEvent) {
 			c.RestartCount++
 		case "oom":
 			c.OOMKilled = true
+		case "health_status":
+			c.Health = ev.Health
 		}
 	}
 	r.sendLocked(ev)
@@ -433,6 +462,9 @@ func (r *Runtime) Start(_ context.Context, spec node.ContainerSpec) (node.Contai
 		State:     node.StateRunning,
 		StartedAt: time.Now(),
 	}
+	if spec.Health != nil {
+		c.Health = node.HealthStarting
+	}
 	if spec.Port != 0 {
 		c.HostPort = spec.HostPort
 		if c.HostPort == 0 {
@@ -480,6 +512,38 @@ func (r *Runtime) Stop(ctx context.Context, id string, _ time.Duration) error {
 	if c.State == node.StateRunning {
 		c.State, c.ExitCode = node.StateExited, 0
 		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "die"})
+	}
+	return nil
+}
+
+// Restart implements node.Containers. Like Docker, it emits die, start and
+// restart events; the container keeps its ID and its health is reset to
+// starting if it has a check. FailRestart's error fails it, and so does
+// FailStop's (a restart stops first).
+func (r *Runtime) Restart(_ context.Context, id string, _ time.Duration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.containers[id]
+	if !ok {
+		return fmt.Errorf("container %s: %w", id, node.ErrNotFound)
+	}
+	if c.State != node.StateRunning {
+		return fmt.Errorf("container %s: %w", c.Name, node.ErrNotRunning)
+	}
+	r.op("restart %s", c.Name)
+	if err := cmp.Or(r.restartErr, r.stopErr); err != nil {
+		return err
+	}
+	c.StartedAt = time.Now()
+	if c.Health != "" {
+		c.Health, c.HealthOutput = node.HealthStarting, ""
+	}
+	for _, action := range []string{"die", "start", "restart"} {
+		ev := node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: action}
+		if action == "die" {
+			ev.ExitCode = 137
+		}
+		r.sendLocked(ev)
 	}
 	return nil
 }

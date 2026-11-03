@@ -170,6 +170,8 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			HealthCheckPath: s.HealthCheckPath, HealthCheckTimeoutSeconds: s.HealthCheckTimeoutSeconds,
 			StartCommand: s.StartCommand, DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
 			MemoryMb: s.MemoryMb, Cpus: s.Cpus,
+			HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
+			HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
 		})
 		if err != nil {
 			return left, err

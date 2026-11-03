@@ -98,6 +98,8 @@ queued → building → starting → health_checking → active
    environment's network, with resource limits.
 4. **health_checking:** HTTP path or TCP port until it passes or times out.
 5. **active:** switch the Caddy route, drain and stop the old container.
+   From here Docker keeps running the health check inside the container;
+   core restarts it when it keeps failing ([ADR 0043](decisions/0043-ongoing-health-checks.md)).
    **failed:** stop the new container. The old one never stopped serving.
 6. Write an AuditEvent, release the lock, publish events to SSE subscribers.
 

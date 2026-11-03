@@ -1,5 +1,5 @@
 import { useOpenAlertsIfAdmin } from "../features/alerts/data";
-import { isCrashLooping } from "../ui/status";
+import { isCrashLooping, isUnhealthy } from "../ui/status";
 import { useProjectOverview, useServers } from "./queries";
 import type { Problem, ServiceView } from "./types";
 
@@ -9,12 +9,15 @@ export const domainNeedsAttention = (d: { status: string }) =>
 
 /**
  * A service is failing when it should be running but isn't: its container
- * crashed or keeps restarting, or its active release has no running
- * container (stopped, or lost).
+ * crashed, keeps restarting or fails its health check, or its active
+ * release has no running container (stopped, or lost).
  */
 export function isFailing(s: ServiceView) {
-  const { state } = s.service.status;
-  if (state === "crashed" || isCrashLooping(s.service.status)) return true;
+  const { status } = s.service;
+  const { state } = status;
+  if (state === "crashed" || isCrashLooping(status) || isUnhealthy(status)) {
+    return true;
+  }
   const expected = !!s.service.active_release && !s.deploying;
   return expected && (state === "stopped" || state === "none");
 }
@@ -46,6 +49,7 @@ const severity = (p: Problem) => {
 const derived = new Set([
   "deploy_failed",
   "crash_loop",
+  "unhealthy",
   "domain_error",
   "server_offline",
   "backup_failed",
@@ -53,7 +57,7 @@ const derived = new Set([
 
 /**
  * What needs a human on a project, derived from live state, worst first:
- * crashed services, failed latest releases, failed latest backups,
+ * crashed or unhealthy services, failed latest releases, failed latest backups,
  * offline servers, domains failing or waiting for DNS, and staged changes
  * not applied yet. For admins, open alerts live state doesn't show join
  * them, such as a full disk on a server the project uses. Deploys in

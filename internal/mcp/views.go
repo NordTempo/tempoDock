@@ -98,6 +98,12 @@ type serviceView struct {
 	Image    string                `json:"image,omitempty"`
 	State    apitypes.ServiceState `json:"state"`
 	Restarts int                   `json:"restarts,omitempty"`
+	// Health is the ongoing health check's state while it runs (ADR
+	// 0043): unhealthy means the process runs but doesn't answer.
+	Health apitypes.HealthState `json:"health,omitempty"`
+	// HealthRestarts are the control plane's restarts for a failing
+	// health check; Restarts doesn't include them.
+	HealthRestarts int `json:"health_restarts,omitempty"`
 	// OOMKilled: the container hit its memory limit (MemoryMB).
 	OOMKilled bool `json:"oom_killed,omitempty"`
 	ExitCode  int  `json:"exit_code,omitempty"`
@@ -117,6 +123,7 @@ type serviceView struct {
 func viewService(s apitypes.Service) serviceView {
 	return serviceView{
 		Name: s.Name, Image: s.Image, State: s.Status.State, Restarts: s.Status.RestartCount, OOMKilled: s.Status.OOMKilled,
+		Health: s.Status.Health, HealthRestarts: s.Status.HealthRestarts,
 		ExitCode: s.Status.ExitCode, MemoryMB: s.EffectiveMemoryMB, Stateful: s.Stateful, Database: s.DataEngine,
 		PendingChanges: s.PendingChanges, Archived: s.ArchivedAt != nil,
 	}

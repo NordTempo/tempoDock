@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"net/netip"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/jsonstream"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -31,7 +33,7 @@ func TestCreateOptions(t *testing.T) {
 		Mounts:    []node.Mount{{Volume: "data", Path: "/data"}},
 		Resources: node.Resources{MemoryBytes: 256 << 20, NanoCPUs: 5e8},
 	}
-	o := createOptions(spec)
+	o := createOptions(spec, "")
 
 	if got := o.Config.Env; !slices.Equal(got, []string{"A=1", "B=2"}) {
 		t.Errorf("Env = %v", got)
@@ -71,9 +73,38 @@ func TestCreateOptions(t *testing.T) {
 }
 
 func TestCreateOptionsMinimal(t *testing.T) {
-	o := createOptions(node.ContainerSpec{Name: "x", Image: "alpine"})
+	o := createOptions(node.ContainerSpec{Name: "x", Image: "alpine"}, "")
 	if o.Config.Cmd != nil || o.Config.ExposedPorts != nil || o.HostConfig.PortBindings != nil || o.NetworkingConfig != nil {
 		t.Errorf("unexpected defaults: %+v %+v %+v", o.Config, o.HostConfig, o.NetworkingConfig)
+	}
+}
+
+// A spec with Health gets Docker's healthcheck running the bind-mounted
+// probe, which times out a second before Docker would kill it. Without an
+// installed probe there is no check.
+func TestCreateOptionsHealth(t *testing.T) {
+	spec := node.ContainerSpec{Name: "x", Image: "alpine", Health: &node.LivenessCheck{
+		Port: 8080, Path: "/up", Interval: 30 * time.Second, Timeout: 5 * time.Second, Retries: 3,
+		StartPeriod: time.Minute, StartInterval: 2 * time.Second,
+	}}
+	o := createOptions(spec, "/var/lib/dock/probe/dock-probe")
+	want := container.HealthConfig{
+		Test:     []string{"CMD", "/.dock-probe", "http", "8080", "/up", "5000"},
+		Interval: 30 * time.Second, Timeout: 6 * time.Second, Retries: 3, StartPeriod: time.Minute, StartInterval: 2 * time.Second,
+	}
+	if hc := o.Config.Healthcheck; hc == nil || !reflect.DeepEqual(*hc, want) {
+		t.Errorf("Healthcheck = %+v, want %+v", hc, want)
+	}
+	if m := o.HostConfig.Mounts; len(m) != 1 || m[0].Type != mount.TypeBind || m[0].Source != "/var/lib/dock/probe/dock-probe" || m[0].Target != "/.dock-probe" || !m[0].ReadOnly {
+		t.Errorf("Mounts = %+v", m)
+	}
+
+	spec.Health.Path = ""
+	if hc := createOptions(spec, "/p").Config.Healthcheck; !slices.Equal(hc.Test, []string{"CMD", "/.dock-probe", "tcp", "8080", "5000"}) {
+		t.Errorf("tcp Test = %v", hc.Test)
+	}
+	if o := createOptions(spec, ""); o.Config.Healthcheck != nil || o.HostConfig.Mounts != nil {
+		t.Errorf("without a probe: Healthcheck %+v, Mounts %+v", o.Config.Healthcheck, o.HostConfig.Mounts)
 	}
 }
 
@@ -105,6 +136,32 @@ func TestToContainer(t *testing.T) {
 	c.StartedAt = want.StartedAt
 	if c != want {
 		t.Errorf("got %+v\nwant %+v", c, want)
+	}
+}
+
+// An unhealthy container reports what its newest failed probe said.
+func TestToContainerHealth(t *testing.T) {
+	long := strings.Repeat("x", 300)
+	c := toContainer(container.InspectResponse{State: &container.State{Status: container.StateRunning, Health: &container.Health{
+		Status: container.Unhealthy,
+		Log: []*container.HealthcheckResult{
+			{ExitCode: 1, Output: "old"}, {ExitCode: 1, Output: "GET /up: timed out\n"}, {ExitCode: 0, Output: ""},
+		},
+	}}})
+	if c.Health != node.HealthUnhealthy || c.HealthOutput != "GET /up: timed out" {
+		t.Errorf("Health = %q, %q", c.Health, c.HealthOutput)
+	}
+	c = toContainer(container.InspectResponse{State: &container.State{Health: &container.Health{
+		Status: container.Unhealthy, Log: []*container.HealthcheckResult{{ExitCode: -1, Output: long}},
+	}}})
+	if len(c.HealthOutput) != 256 {
+		t.Errorf("HealthOutput is %d bytes, want 256", len(c.HealthOutput))
+	}
+	c = toContainer(container.InspectResponse{State: &container.State{Health: &container.Health{
+		Status: container.Healthy, Log: []*container.HealthcheckResult{{ExitCode: 1, Output: "blip"}},
+	}}})
+	if c.Health != node.HealthHealthy || c.HealthOutput != "" {
+		t.Errorf("healthy: %q, %q", c.Health, c.HealthOutput)
 	}
 }
 
@@ -238,6 +295,10 @@ func TestToEvent(t *testing.T) {
 	}
 	if ev.Time.UnixNano() != 1_700_000_000_000_000_001 {
 		t.Errorf("Time = %v", ev.Time)
+	}
+	ev = toEvent(events.Message{Action: events.ActionHealthStatusUnhealthy, Actor: events.Actor{ID: "abc"}})
+	if ev.Action != "health_status" || ev.Health != node.HealthUnhealthy {
+		t.Errorf("health event = %+v", ev)
 	}
 }
 

@@ -3310,7 +3310,7 @@ export interface components {
             environment?: string;
             /** Format: int64 */
             id: number;
-            /** @description disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop; more may be added */
+            /** @description disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy; more may be added */
             kind: string;
             message?: string;
             /** Format: date-time */
@@ -3801,7 +3801,15 @@ export interface components {
             /** Format: double */
             cpus?: number;
             dockerfile_path?: string;
+            /** Format: int64 */
+            health_check_interval_seconds?: number;
             health_check_path?: string;
+            /** Format: int64 */
+            health_check_probe_timeout_seconds?: number;
+            /** Format: int64 */
+            health_check_retries?: number;
+            /** Format: int64 */
+            health_check_start_period_seconds?: number;
             /** Format: int64 */
             health_check_timeout_seconds?: number;
             image?: string;
@@ -5123,8 +5131,28 @@ export interface components {
             /** Format: int64 */
             effective_memory_mb: number;
             environment: string;
+            /**
+             * Format: int64
+             * @description Seconds between ongoing health probes while the service runs. 0 means 30; -1 turns the ongoing check off
+             */
+            health_check_interval_seconds: number;
             /** @description HTTP path; empty means a TCP check */
             health_check_path: string;
+            /**
+             * Format: int64
+             * @description Seconds one ongoing probe may take. 0 means 5
+             */
+            health_check_probe_timeout_seconds: number;
+            /**
+             * Format: int64
+             * @description Failed probes in a row before the service counts as unhealthy and is restarted. 0 means 3
+             */
+            health_check_retries: number;
+            /**
+             * Format: int64
+             * @description Seconds after a (re)start in which failed probes don't count. 0 means the deploy's health check timeout
+             */
+            health_check_start_period_seconds: number;
             /** Format: int64 */
             health_check_timeout_seconds: number;
             /** Format: int64 */
@@ -5168,7 +5196,15 @@ export interface components {
             dockerfile_path?: string;
             domains?: components["schemas"]["DomainExport"][] | null;
             git?: components["schemas"]["GitExport"];
+            /** Format: int64 */
+            health_check_interval_seconds?: number;
             health_check_path?: string;
+            /** Format: int64 */
+            health_check_probe_timeout_seconds?: number;
+            /** Format: int64 */
+            health_check_retries?: number;
+            /** Format: int64 */
+            health_check_start_period_seconds?: number;
             /** Format: int64 */
             health_check_timeout_seconds?: number;
             image?: string;
@@ -5219,6 +5255,13 @@ export interface components {
         ServiceStatus: {
             /** Format: int64 */
             exit_code: number;
+            /**
+             * @description Ongoing health check state; empty without one
+             * @enum {string}
+             */
+            health?: "starting" | "healthy" | "unhealthy";
+            /** Format: int64 */
+            health_restarts?: number;
             /** Format: int64 */
             memory_limit_mb?: number;
             oom_killed: boolean;
@@ -5780,7 +5823,15 @@ export interface components {
             /** Format: double */
             cpus?: number;
             dockerfile_path?: string;
+            /** Format: int64 */
+            health_check_interval_seconds?: number;
             health_check_path?: string;
+            /** Format: int64 */
+            health_check_probe_timeout_seconds?: number;
+            /** Format: int64 */
+            health_check_retries?: number;
+            /** Format: int64 */
+            health_check_start_period_seconds?: number;
             /** Format: int64 */
             health_check_timeout_seconds?: number;
             image?: string;

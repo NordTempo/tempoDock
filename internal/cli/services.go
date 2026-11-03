@@ -71,16 +71,50 @@ func releaseNumber(n *int64) string {
 // `service update`.
 type settingsFlags struct {
 	image, healthCheckPath, startCommand, dockerfile, buildCommand string
-	port, memoryMB                                                 int
-	healthCheckTimeout                                             time.Duration
+	port, memoryMB, healthCheckRetries                             int
+	healthCheckTimeout, probeTimeout, startPeriod                  time.Duration
+	interval                                                       intervalFlag
 	cpus                                                           float64
 }
+
+// intervalFlag is --health-check-interval in whole seconds: a duration,
+// 0 for the default, or "off" (-1, the API's value for no ongoing check).
+type intervalFlag int
+
+func (v *intervalFlag) Set(s string) error {
+	if s == "off" {
+		*v = -1
+		return nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d < 0 {
+		return fmt.Errorf("%q is not a duration; use e.g. 30s, 0 for the default, or off", s)
+	}
+	*v = intervalFlag(d / time.Second)
+	return nil
+}
+
+func (v *intervalFlag) String() string {
+	switch *v {
+	case 0:
+		return ""
+	case -1:
+		return "off"
+	}
+	return (time.Duration(*v) * time.Second).String()
+}
+
+func (v *intervalFlag) Type() string { return "duration|off" }
 
 func (f *settingsFlags) add(fs *pflag.FlagSet) {
 	fs.StringVar(&f.image, "image", "", "image to deploy, e.g. postgres:17 (image deploys keep it up to date)")
 	fs.IntVar(&f.port, "port", 0, "container port that receives traffic (0: 8080)")
 	fs.StringVar(&f.healthCheckPath, "health-check-path", "", "HTTP path that must answer 2xx/3xx (empty: TCP check)")
 	fs.DurationVar(&f.healthCheckTimeout, "health-check-timeout", 0, "how long a new release may take to pass, e.g. 60s")
+	fs.Var(&f.interval, "health-check-interval", "time between health probes while the service runs, or off (0: 30s)")
+	fs.DurationVar(&f.probeTimeout, "health-check-probe-timeout", 0, "how long one ongoing health probe may take (0: 5s)")
+	fs.IntVar(&f.healthCheckRetries, "health-check-retries", 0, "failed probes in a row before the service is restarted (0: 3)")
+	fs.DurationVar(&f.startPeriod, "health-check-start-period", 0, "time after a (re)start in which failed probes don't count (0: the health check timeout)")
 	fs.StringVar(&f.startCommand, "start-command", "", "command that overrides the image's")
 	fs.StringVar(&f.dockerfile, "dockerfile", "", "Dockerfile path relative to the source root")
 	fs.StringVar(&f.buildCommand, "build-command", "", "Railpack build command (builds without a Dockerfile)")
@@ -93,6 +127,10 @@ func (f *settingsFlags) create(name string) apitypes.CreateServiceRequest {
 		Name: name, Image: f.image, Port: f.port, HealthCheckPath: f.healthCheckPath,
 		HealthCheckTimeoutSeconds: int(f.healthCheckTimeout.Seconds()), StartCommand: f.startCommand,
 		DockerfilePath: f.dockerfile, BuildCommand: f.buildCommand, MemoryMB: f.memoryMB, CPUs: f.cpus,
+		HealthCheckIntervalSeconds:     int(f.interval),
+		HealthCheckProbeTimeoutSeconds: int(f.probeTimeout.Seconds()),
+		HealthCheckRetries:             f.healthCheckRetries,
+		HealthCheckStartPeriodSeconds:  int(f.startPeriod.Seconds()),
 	}
 }
 
@@ -109,6 +147,7 @@ func (f *settingsFlags) update(fs *pflag.FlagSet) (apitypes.UpdateServiceRequest
 		}
 	}
 	timeout := int(f.healthCheckTimeout.Seconds())
+	interval, probeTimeout, startPeriod := int(f.interval), int(f.probeTimeout.Seconds()), int(f.startPeriod.Seconds())
 	set("image", func() { req.Image = &f.image })
 	set("port", func() { req.Port = &f.port })
 	set("health-check-path", func() { req.HealthCheckPath = &f.healthCheckPath })
@@ -118,6 +157,10 @@ func (f *settingsFlags) update(fs *pflag.FlagSet) (apitypes.UpdateServiceRequest
 	set("build-command", func() { req.BuildCommand = &f.buildCommand })
 	set("memory", func() { req.MemoryMB = &f.memoryMB })
 	set("cpus", func() { req.CPUs = &f.cpus })
+	set("health-check-interval", func() { req.HealthCheckIntervalSeconds = &interval })
+	set("health-check-probe-timeout", func() { req.HealthCheckProbeTimeoutSeconds = &probeTimeout })
+	set("health-check-retries", func() { req.HealthCheckRetries = &f.healthCheckRetries })
+	set("health-check-start-period", func() { req.HealthCheckStartPeriodSeconds = &startPeriod })
 	return req, changed
 }
 
@@ -211,13 +254,11 @@ func newServiceShowCmd(g *globals) *cobra.Command {
 }
 
 func printService(g *globals, svc apitypes.Service) error {
-	state := cmp.Or(serverNote(svc), string(svc.Status.State))
+	state := cmp.Or(serverNote(svc), runState(svc.Status))
 	if svc.ArchivedAt != nil {
 		state = "archived " + ago(*svc.ArchivedAt)
 	}
-	if svc.Status.RestartCount > 0 {
-		state += fmt.Sprintf(" (%d restarts)", svc.Status.RestartCount)
-	}
+	state += restartsNote(svc.Status)
 	state += oomNote(svc.Status)
 	kind := ""
 	if svc.Stateful {
@@ -253,12 +294,27 @@ func printService(g *globals, svc apitypes.Service) error {
 		"image", svc.Image,
 		"port", port,
 		"health check", health,
+		"ongoing check", livenessNote(svc.ServiceSettings),
 		"start command", svc.StartCommand,
 		"dockerfile", svc.DockerfilePath,
 		"build command", svc.BuildCommand,
 		"limits", limits,
 		"pending", pending,
 	)
+}
+
+// livenessNote describes a service's ongoing health check settings, with
+// the defaults the API's zeros stand for (ADR 0043).
+func livenessNote(s apitypes.ServiceSettings) string {
+	if s.HealthCheckIntervalSeconds == -1 {
+		return "off"
+	}
+	start := "start period = health check timeout"
+	if s.HealthCheckStartPeriodSeconds != 0 {
+		start = fmt.Sprintf("%ds start period", s.HealthCheckStartPeriodSeconds)
+	}
+	return fmt.Sprintf("every %ds, %ds probe timeout, %d retries, %s",
+		cmp.Or(s.HealthCheckIntervalSeconds, 30), cmp.Or(s.HealthCheckProbeTimeoutSeconds, 5), cmp.Or(s.HealthCheckRetries, 3), start)
 }
 
 func newServiceUpdateCmd(g *globals) *cobra.Command {

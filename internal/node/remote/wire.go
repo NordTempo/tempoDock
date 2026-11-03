@@ -328,6 +328,9 @@ type wireSpec struct {
 	Mounts      []wireMount       `json:"mounts,omitempty"`
 	MemoryBytes int64             `json:"memory_bytes,omitempty"`
 	NanoCPUs    int64             `json:"nano_cpus,omitempty"`
+	// Health is new in protocol 13 (healthProtocol); older nodes ignore
+	// it and start the container without an ongoing check.
+	Health *wireLivenessCheck `json:"health,omitempty"`
 }
 
 func toWireSpec(s node.ContainerSpec) wireSpec {
@@ -335,6 +338,12 @@ func toWireSpec(s node.ContainerSpec) wireSpec {
 		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Cmd: s.Cmd,
 		Network: s.Network, Aliases: s.Aliases, Port: s.Port, HostPort: s.HostPort,
 		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Mounts: toWireMounts(s.Mounts),
+	}
+	if hc := s.Health; hc != nil {
+		w.Health = &wireLivenessCheck{
+			Port: hc.Port, Path: hc.Path, IntervalMS: hc.Interval.Milliseconds(), TimeoutMS: hc.Timeout.Milliseconds(),
+			Retries: hc.Retries, StartPeriodMS: hc.StartPeriod.Milliseconds(), StartIntervalMS: hc.StartInterval.Milliseconds(),
+		}
 	}
 	return w
 }
@@ -345,7 +354,24 @@ func (w wireSpec) node() node.ContainerSpec {
 		Network: w.Network, Aliases: w.Aliases, Port: w.Port, HostPort: w.HostPort,
 		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Mounts: fromWireMounts(w.Mounts),
 	}
+	if hc := w.Health; hc != nil {
+		s.Health = &node.LivenessCheck{
+			Port: hc.Port, Path: hc.Path, Interval: ms(hc.IntervalMS), Timeout: ms(hc.TimeoutMS),
+			Retries: hc.Retries, StartPeriod: ms(hc.StartPeriodMS), StartInterval: ms(hc.StartIntervalMS),
+		}
+	}
 	return s
+}
+
+// wireLivenessCheck is node.LivenessCheck on the wire (protocol 13).
+type wireLivenessCheck struct {
+	Port            int    `json:"port"`
+	Path            string `json:"path,omitempty"`
+	IntervalMS      int64  `json:"interval_ms,omitempty"`
+	TimeoutMS       int64  `json:"timeout_ms,omitempty"`
+	Retries         int    `json:"retries,omitempty"`
+	StartPeriodMS   int64  `json:"start_period_ms,omitempty"`
+	StartIntervalMS int64  `json:"start_interval_ms,omitempty"`
 }
 
 // jobRequest is RunJob's argument (protocol 2).
@@ -396,13 +422,16 @@ type wireContainer struct {
 	ExitCode     int        `json:"exit_code,omitempty"`
 	RestartCount int        `json:"restart_count,omitempty"`
 	OOMKilled    bool       `json:"oom_killed,omitempty"`
+	// Health and HealthOutput are new in protocol 13.
+	Health       string `json:"health,omitempty"`
+	HealthOutput string `json:"health_output,omitempty"`
 }
 
 func toWireContainer(c node.Container) wireContainer {
 	return wireContainer{
 		ID: c.ID, Name: c.Name, Image: c.Image, Labels: toWireLabels(c.Labels), State: string(c.State),
 		HostPort: c.HostPort, StartedAt: c.StartedAt, ExitCode: c.ExitCode, RestartCount: c.RestartCount,
-		OOMKilled: c.OOMKilled,
+		OOMKilled: c.OOMKilled, Health: c.Health, HealthOutput: c.HealthOutput,
 	}
 }
 
@@ -410,7 +439,7 @@ func (w wireContainer) node() node.Container {
 	return node.Container{
 		ID: w.ID, Name: w.Name, Image: w.Image, Labels: w.Labels.node(), State: node.ContainerState(w.State),
 		HostPort: w.HostPort, StartedAt: w.StartedAt, ExitCode: w.ExitCode, RestartCount: w.RestartCount,
-		OOMKilled: w.OOMKilled,
+		OOMKilled: w.OOMKilled, Health: w.Health, HealthOutput: w.HealthOutput,
 	}
 }
 
@@ -470,15 +499,17 @@ type wireEvent struct {
 	Labels      wireLabels `json:"labels"`
 	Action      string     `json:"action"`
 	ExitCode    int        `json:"exit_code,omitempty"`
-	Time        time.Time  `json:"time"`
+	// Health is new in protocol 13: a health_status event's new state.
+	Health string    `json:"health,omitempty"`
+	Time   time.Time `json:"time"`
 }
 
 func toWireEvent(e node.ContainerEvent) wireEvent {
-	return wireEvent{ContainerID: e.ContainerID, Labels: toWireLabels(e.Labels), Action: e.Action, ExitCode: e.ExitCode, Time: e.Time}
+	return wireEvent{ContainerID: e.ContainerID, Labels: toWireLabels(e.Labels), Action: e.Action, ExitCode: e.ExitCode, Health: e.Health, Time: e.Time}
 }
 
 func (w wireEvent) node() node.ContainerEvent {
-	return node.ContainerEvent{ContainerID: w.ContainerID, Labels: w.Labels.node(), Action: w.Action, ExitCode: w.ExitCode, Time: w.Time}
+	return node.ContainerEvent{ContainerID: w.ContainerID, Labels: w.Labels.node(), Action: w.Action, ExitCode: w.ExitCode, Health: w.Health, Time: w.Time}
 }
 
 type wireRoute struct {

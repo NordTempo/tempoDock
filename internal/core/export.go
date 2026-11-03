@@ -111,6 +111,10 @@ func serviceExport(s store.Service) *apitypes.ServiceExport {
 		HealthCheckPath: s.HealthCheckPath, HealthCheckTimeoutSeconds: int(s.HealthCheckTimeoutSeconds),
 		StartCommand: s.StartCommand, DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
 		MemoryMB: int(s.MemoryMb), CPUs: s.Cpus,
-		Database: apitypes.DatabaseSetting(s.Database), DatabaseURLVariable: s.DatabaseUrlVariable,
+		HealthCheckIntervalSeconds:     int(s.HealthCheckIntervalSeconds),
+		HealthCheckProbeTimeoutSeconds: int(s.HealthCheckProbeTimeoutSeconds),
+		HealthCheckRetries:             int(s.HealthCheckRetries),
+		HealthCheckStartPeriodSeconds:  int(s.HealthCheckStartPeriodSeconds),
+		Database:                       apitypes.DatabaseSetting(s.Database), DatabaseURLVariable: s.DatabaseUrlVariable,
 	}
 }

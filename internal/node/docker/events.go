@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/api/types/events"
@@ -14,10 +15,13 @@ import (
 )
 
 // lifecycleActions are the container events worth reporting. Exec, attach,
-// resize and similar noise is filtered out by Docker.
+// resize and similar noise (including the health probe's exec_start and
+// exec_die) is filtered out by Docker. "health_status" matches Docker's
+// "health_status: healthy" and "health_status: unhealthy", sent when a
+// container's health check changes state (ADR 0043).
 var lifecycleActions = []string{
 	"create", "start", "restart", "stop", "kill", "die", "oom",
-	"pause", "unpause", "destroy",
+	"pause", "unpause", "destroy", string(events.ActionHealthStatus),
 }
 
 const (
@@ -81,6 +85,8 @@ func (r *Runtime) Events(ctx context.Context) (<-chan node.ContainerEvent, error
 
 // toEvent maps a Docker container event to node.ContainerEvent. Docker puts
 // the container's labels and, for die events, the exit code in Attributes.
+// A "health_status: <state>" action becomes "health_status" with Health
+// set to the state.
 func toEvent(msg events.Message) node.ContainerEvent {
 	ev := node.ContainerEvent{
 		ContainerID: msg.Actor.ID,
@@ -90,6 +96,9 @@ func toEvent(msg events.Message) node.ContainerEvent {
 	}
 	if msg.TimeNano == 0 {
 		ev.Time = time.Unix(msg.Time, 0)
+	}
+	if state, ok := strings.CutPrefix(ev.Action, string(events.ActionHealthStatus)+":"); ok {
+		ev.Action, ev.Health = string(events.ActionHealthStatus), strings.TrimSpace(state)
 	}
 	if code, ok := msg.Actor.Attributes["exitCode"]; ok {
 		ev.ExitCode, _ = strconv.Atoi(code)

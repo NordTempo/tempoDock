@@ -16,7 +16,7 @@ import type { ServiceRef, ServiceView } from "../../data/types";
 import { EnvSwitch } from "../../shell/context";
 import { type Shortcut, useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
-import { ago, since } from "../../ui/format";
+import { ago, plural, since } from "../../ui/format";
 import {
   Act,
   Button,
@@ -27,7 +27,9 @@ import {
 } from "../../ui/kit";
 import {
   failurePhrase,
+  healthRestarts,
   isCrashLooping,
+  isUnhealthy,
   oomPhrase,
   serviceState,
   stepPhrase,
@@ -309,7 +311,8 @@ export function StatusSentence({ view }: { view: ServiceView }) {
       <>
         <span className="text-fail">↻</span> Crash looping:{" "}
         {mono(`r${serving}`)} restarted {status.restart_count} times, last exit{" "}
-        {status.exit_code}.{" "}
+        {status.exit_code}
+        {healthRestarts(status)}.{" "}
         {status.oom_killed && mut(`It ${oomPhrase(status)}.`)}
       </>
     );
@@ -340,6 +343,18 @@ export function StatusSentence({ view }: { view: ServiceView }) {
         running container. {mut("Restart it, or roll back.")}
       </>
     );
+  } else if (isUnhealthy(status)) {
+    sentence = (
+      <>
+        <span className="text-fail">✕</span> {mono(`r${serving}`)} runs but
+        fails its health check
+        {service.health_check_path && (
+          <> {mono(`GET ${service.health_check_path}`)}</>
+        )}
+        {healthRestarts(status)}.{" "}
+        {mut("Dock restarts it, with backoff. Check its logs.")}
+      </>
+    );
   } else {
     const domain = view.domains.find((d) => d.status === "active");
     sentence = (
@@ -350,6 +365,11 @@ export function StatusSentence({ view }: { view: ServiceView }) {
             ? ", just started"
             : `, up ${since(status.updated_at)}`)}
         . {domain && mut(`At ${domain.hostname}.`)}{" "}
+        {status.health === "starting" && mut("Health check starting.")}{" "}
+        {!!status.health_restarts &&
+          mut(
+            `Restarted ${plural(status.health_restarts, "time")} for failing health checks.`,
+          )}{" "}
         {latest?.status === "failed" && latest.number > serving && (
           <span className="text-fail">
             r{latest.number} {failurePhrase(latest)} {ago(latest.created_at)}.

@@ -116,6 +116,32 @@ Checked every second until it passes or the timeout ends.
 Set a path for anything that serves HTTP. A TCP check passes as soon as the
 port is open, before the app is ready.
 
+### While the service runs
+
+The same check keeps running after the release is live: Docker runs it
+inside the container every 30 seconds, with `dock-probe`, a small probe
+Dock mounts into the container, so it works in any image ([ADR
+0043](../decisions/0043-ongoing-health-checks.md)). Workers without a port
+have nothing to probe and get no ongoing check.
+
+After 3 failed probes in a row the service is unhealthy: `dock status`,
+the console and the MCP endpoint say so, an `unhealthy` alert goes to the
+alert channels, and Dock restarts the container (same container, port and
+volumes). If it keeps failing, restarts wait 1, 5, 15 and then 30 minutes.
+When the check passes again the alert resolves, and the channels are told.
+
+| Setting | Default | dock.toml `[deploy]` |
+|---|---|---|
+| `health_check_interval_seconds` | 30; -1 turns the ongoing check off | `health_check_interval = "30s"` or `"off"` |
+| `health_check_probe_timeout_seconds` | 5 | `health_check_probe_timeout = "5s"` |
+| `health_check_retries` | 3 | `health_check_retries = 3` |
+| `health_check_start_period_seconds` | the deploy's health check timeout (60) | `health_check_start_period = "60s"` |
+
+Failed probes during the start period after a start don't count, so a
+slow app isn't restarted while it starts. A TCP check can't tell a hung
+app from a working one (the kernel accepts connections for it): set a
+health check path to catch hangs.
+
 ## How a release goes live
 
 ```

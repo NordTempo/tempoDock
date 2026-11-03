@@ -246,6 +246,14 @@ func revertSetting(next *apitypes.ServiceSettings, live apitypes.ServiceSettings
 		next.MemoryMB = live.MemoryMB
 	case "cpus":
 		next.CPUs = live.CPUs
+	case "health_check_interval_seconds":
+		next.HealthCheckIntervalSeconds = live.HealthCheckIntervalSeconds
+	case "health_check_probe_timeout_seconds":
+		next.HealthCheckProbeTimeoutSeconds = live.HealthCheckProbeTimeoutSeconds
+	case "health_check_retries":
+		next.HealthCheckRetries = live.HealthCheckRetries
+	case "health_check_start_period_seconds":
+		next.HealthCheckStartPeriodSeconds = live.HealthCheckStartPeriodSeconds
 	}
 }
 
@@ -623,6 +631,10 @@ func settingChanges(service string, old, next apitypes.ServiceSettings) []apityp
 		{"build_command", old.BuildCommand, next.BuildCommand},
 		{"memory_mb", strconv.Itoa(old.MemoryMB), strconv.Itoa(next.MemoryMB)},
 		{"cpus", strconv.FormatFloat(old.CPUs, 'g', -1, 64), strconv.FormatFloat(next.CPUs, 'g', -1, 64)},
+		{"health_check_interval_seconds", strconv.Itoa(old.HealthCheckIntervalSeconds), strconv.Itoa(next.HealthCheckIntervalSeconds)},
+		{"health_check_probe_timeout_seconds", strconv.Itoa(old.HealthCheckProbeTimeoutSeconds), strconv.Itoa(next.HealthCheckProbeTimeoutSeconds)},
+		{"health_check_retries", strconv.Itoa(old.HealthCheckRetries), strconv.Itoa(next.HealthCheckRetries)},
+		{"health_check_start_period_seconds", strconv.Itoa(old.HealthCheckStartPeriodSeconds), strconv.Itoa(next.HealthCheckStartPeriodSeconds)},
 	}
 	var out []apitypes.SettingChange
 	for _, f := range fields {

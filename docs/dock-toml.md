@@ -27,6 +27,16 @@ port = 3000
 health_check_path = "/healthz"
 # How long a new release may take to pass. Go duration: "30s", "2m".
 health_check_timeout = "60s"
+# The ongoing check while the release runs (ADR 0043): it probes what the
+# deploy's check does, and a service that keeps failing is restarted.
+# Time between probes, or "off". Default 30s.
+health_check_interval = "30s"
+# How long one probe may take. Default 5s.
+health_check_probe_timeout = "5s"
+# Failed probes in a row before the service counts as unhealthy. Default 3.
+health_check_retries = 3
+# Failures this soon after a (re)start don't count. Default: health_check_timeout.
+health_check_start_period = "60s"
 ```
 
 | Key | Type | Rules |
@@ -37,6 +47,10 @@ health_check_timeout = "60s"
 | `deploy.port` | integer | 1-65535 |
 | `deploy.health_check_path` | string | Starts with `/` |
 | `deploy.health_check_timeout` | duration string | 1s to 1h |
+| `deploy.health_check_interval` | duration string or `"off"` | 1s to 1h |
+| `deploy.health_check_probe_timeout` | duration string | 1s to 5m |
+| `deploy.health_check_retries` | integer | 1-100 |
+| `deploy.health_check_start_period` | duration string | 1s to 1h |
 
 Parsing is strict: unknown keys, wrong types and empty strings are errors
 (reported with line numbers where possible), so a typo never silently does

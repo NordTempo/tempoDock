@@ -29,6 +29,7 @@ import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
 import { ApplyBox } from "../variables/ApplyBox";
 import {
+  editPlaceholder,
   editText,
   formatSetting,
   isSettingKey,
@@ -79,6 +80,21 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Item label="Health check">
           {field("health_check_path")} <span className="text-mut">timeout</span>{" "}
           {field("health_check_timeout_seconds")}
+        </Item>
+        <Item label="Ongoing check">
+          <span className="text-mut">every</span>{" "}
+          {field("health_check_interval_seconds")}
+          {service.health_check_interval_seconds >= 0 && (
+            <>
+              {" "}
+              <span className="text-mut">timeout</span>{" "}
+              {field("health_check_probe_timeout_seconds")}{" "}
+              <span className="text-mut">retries</span>{" "}
+              {field("health_check_retries")}{" "}
+              <span className="text-mut">start period</span>{" "}
+              {field("health_check_start_period_seconds")}
+            </>
+          )}
         </Item>
         <Item label="Strategy">
           {service.stateful
@@ -285,7 +301,7 @@ function Editable({
           autoFocus
           value={draft}
           aria-label={settingLabel[key]}
-          placeholder={formatSetting(key, "")}
+          placeholder={editPlaceholder(key)}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") submit(draft);

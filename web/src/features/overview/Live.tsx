@@ -37,6 +37,7 @@ const feedGlyph = {
   failed: <span className="text-fail">✕</span>,
   restarting: <span className="text-fail">↻</span>,
   crashed: <span className="text-fail">✕</span>,
+  unhealthy: <span className="text-fail">✕</span>,
 } satisfies Record<FeedItem["kind"], ReactNode>;
 
 function feedEntry(item: FeedItem): Entry {

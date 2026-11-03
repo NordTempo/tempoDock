@@ -498,24 +498,28 @@ type ServerStat struct {
 }
 
 type Service struct {
-	ID                        int64
-	EnvironmentID             int64
-	Name                      string
-	Image                     string
-	Port                      int64
-	HealthCheckPath           string
-	HealthCheckTimeoutSeconds int64
-	StartCommand              string
-	DockerfilePath            string
-	BuildCommand              string
-	MemoryMb                  int64
-	Cpus                      float64
-	PendingSettings           *string
-	CreatedAt                 time.Time
-	ArchivedAt                *time.Time
-	Database                  string
-	DatabaseUrlVariable       string
-	Template                  string
+	ID                             int64
+	EnvironmentID                  int64
+	Name                           string
+	Image                          string
+	Port                           int64
+	HealthCheckPath                string
+	HealthCheckTimeoutSeconds      int64
+	StartCommand                   string
+	DockerfilePath                 string
+	BuildCommand                   string
+	MemoryMb                       int64
+	Cpus                           float64
+	PendingSettings                *string
+	CreatedAt                      time.Time
+	ArchivedAt                     *time.Time
+	Database                       string
+	DatabaseUrlVariable            string
+	Template                       string
+	HealthCheckIntervalSeconds     int64
+	HealthCheckProbeTimeoutSeconds int64
+	HealthCheckRetries             int64
+	HealthCheckStartPeriodSeconds  int64
 }
 
 type ServiceAccess struct {

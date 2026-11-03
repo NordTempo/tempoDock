@@ -24,6 +24,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/collect"
 	"github.com/NordTempo/tempoDock/internal/node/docker"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
+	"github.com/NordTempo/tempoDock/internal/node/probe"
 	"github.com/NordTempo/tempoDock/internal/node/stats"
 	"github.com/NordTempo/tempoDock/internal/node/traffic"
 )
@@ -32,7 +33,8 @@ import (
 // Caddy, for `dock serve` and `dock node`. marker is the server's Caddy
 // marker (remote.ServerMarker of its key). The proxy is returned too: a node answers Caddy's
 // `ask` from it. So is the analytics ingest (ADR 0037), which the caller
-// serves on [analytics] ingest_listen. DOCK_FAKE_RUNTIME=1 uses an
+// serves on [analytics] ingest_listen. It installs dock-probe under the
+// data dir for the containers' health checks. DOCK_FAKE_RUNTIME=1 uses an
 // in-memory fake (no Docker, nil proxy and ingest), for local development
 // of the API, CLI and UI.
 func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog.Logger) (node.Runtime, *caddy.Proxy, *ingest.Ingest, error) {
@@ -44,6 +46,11 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		return nil, nil, nil, err
 	}
 	containers.DataDir = cfg.DataDir
+	// Without the probe apps run as before, only without ongoing health
+	// checks (ADR 0043).
+	if containers.Probe, err = probe.Install(cfg.DataDir); err != nil {
+		log.Warn("ongoing health checks are off", "err", err)
+	}
 	// Apps keep running if this fails; only their swap limit stays loose.
 	if n, err := containers.UpgradeSwapLimits(ctx); err != nil {
 		log.Error("upgrade container swap limits", "err", err)
