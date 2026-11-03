@@ -168,7 +168,7 @@ func (c *Core) appJWT(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	pemBytes, err := c.box.Open(app.PrivateKey)
+	pemBytes, err := c.box.Open(app.PrivateKey, appKeyAAD)
 	if err != nil {
 		return "", fmt.Errorf("open the GitHub App's private key: %w", err)
 	}
@@ -380,11 +380,11 @@ func (c *Core) CompleteGitHubApp(ctx context.Context, code, state string) (apity
 	if _, err := parseAppKey([]byte(created.PEM)); err != nil {
 		return apitypes.GitHubApp{}, err
 	}
-	key, err := c.box.Seal([]byte(created.PEM))
+	key, err := c.box.Seal([]byte(created.PEM), appKeyAAD)
 	if err != nil {
 		return apitypes.GitHubApp{}, err
 	}
-	secret, err := c.box.Seal([]byte(created.WebhookSecret))
+	secret, err := c.box.Seal([]byte(created.WebhookSecret), appWebhookSecretAAD)
 	if err != nil {
 		return apitypes.GitHubApp{}, err
 	}

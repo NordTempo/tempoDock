@@ -148,7 +148,7 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 	if !c.git.limit.Allow(conn.HookID, time.Now()) {
 		return "", errf(apitypes.CodeRateLimited, "too many deliveries for this webhook; try again in a minute")
 	}
-	secret, err := c.box.Open(conn.Secret)
+	secret, err := c.box.Open(conn.Secret, gitSecretAAD(conn.ServiceID))
 	if err != nil {
 		return "", fmt.Errorf("open webhook secret: %w", err)
 	}
@@ -207,7 +207,7 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 	if !c.git.appLimit.Allow(app.HookID, time.Now()) {
 		return "", errf(apitypes.CodeRateLimited, "too many deliveries for the GitHub App; try again in a minute")
 	}
-	secret, err := c.box.Open(app.WebhookSecret)
+	secret, err := c.box.Open(app.WebhookSecret, appWebhookSecretAAD)
 	if err != nil {
 		return "", fmt.Errorf("open the GitHub App's webhook secret: %w", err)
 	}

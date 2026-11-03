@@ -351,7 +351,7 @@ func (c *Core) ListOrgVariables(ctx context.Context, a Actor, reveal bool) ([]ap
 			out[i].UsedBy = []apitypes.VariableUse{}
 		}
 		if reveal {
-			if out[i].Value, err = c.openValue(r.Value); err != nil {
+			if out[i].Value, err = c.openValue(r.Value, orgVariableAAD(r.OrgID, r.Key), "org."+r.Key); err != nil {
 				return nil, err
 			}
 		}
@@ -373,7 +373,7 @@ func (c *Core) orgVariableUses(ctx context.Context, orgID int64) (map[string][]a
 	for _, r := range rows {
 		use := apitypes.VariableUse{Project: r.ProjectName, Environment: r.EnvironmentName, Service: r.ServiceName}
 		for _, sealed := range [][]byte{r.Value, r.PendingValue} {
-			v, err := c.openValue(sealed)
+			v, err := c.openValue(sealed, variableAAD(r.EnvironmentID, r.ServiceID, r.Key), r.Key)
 			if err != nil {
 				return nil, err
 			}
@@ -399,7 +399,7 @@ func (c *Core) SetOrgVariable(ctx context.Context, a Actor, key, value string) (
 	if err := validKey(key); err != nil {
 		return apitypes.OrgVariable{}, err
 	}
-	sealed, err := c.box.Seal([]byte(value))
+	sealed, err := c.box.Seal([]byte(value), orgVariableAAD(a.OrgID, key))
 	if err != nil {
 		return apitypes.OrgVariable{}, err
 	}

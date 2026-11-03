@@ -61,7 +61,7 @@ type App struct {
 }
 
 // Open opens the data directory: the key file (created on first start)
-// and the database (migrated).
+// and the database (migrated, its sealed values bound: resealSecrets).
 func Open(ctx context.Context, cfg Config, log *slog.Logger) (*App, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("data directory: %w", err)
@@ -74,7 +74,12 @@ func Open(ctx context.Context, cfg Config, log *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return New(cfg, st, box, log), nil
+	a := New(cfg, st, box, log)
+	if err := a.resealSecrets(ctx); err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("bind sealed values to where they are stored (ADR 0041): %w", err)
+	}
+	return a, nil
 }
 
 // New returns an App over an open store and key; Open is the usual way.

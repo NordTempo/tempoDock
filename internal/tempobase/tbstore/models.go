@@ -86,6 +86,11 @@ type DataPolicyRule struct {
 	Sensitive    string
 }
 
+type Install struct {
+	ID            int64
+	SecretsFormat int64
+}
+
 type Link struct {
 	ID         int64
 	Kind       string

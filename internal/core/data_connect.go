@@ -110,7 +110,7 @@ func (c *Core) tunnelTarget(ctx context.Context, ss svcScope, withURL bool) (tun
 	if err != nil {
 		return tunnelTarget{}, err
 	}
-	cfg, err := c.openConfig(rel.Config)
+	cfg, err := c.openConfig(rel)
 	if err != nil {
 		return tunnelTarget{}, fmt.Errorf("read release %d config: %w", rel.Number, err)
 	}

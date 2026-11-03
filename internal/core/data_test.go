@@ -428,9 +428,9 @@ func TestDataInfoWithoutAccess(t *testing.T) {
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	h.deploy(db, "postgres:17")
 	ss, _ := h.c.loadService(h.ctx, 1, db)
-	sealed, _ := h.c.box.Seal([]byte("pw"))
+	reader, writer := h.sealedRoles(ss.svc.ID)
 	if _, err := h.c.store.UpsertDataAccess(h.ctx, store.UpsertDataAccessParams{
-		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: sealed, WriterSecret: sealed, SetUpAt: now(), SetUpBy: "admin@x",
+		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: reader, WriterSecret: writer, SetUpAt: now(), SetUpBy: "admin@x",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -522,9 +522,9 @@ func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealed, _ := h.c.box.Seal([]byte("pw"))
+	reader, writer := h.sealedRoles(ss.svc.ID)
 	if _, err := h.c.store.UpsertDataAccess(h.ctx, store.UpsertDataAccessParams{
-		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: sealed, WriterSecret: sealed, SetUpAt: now(), SetUpBy: "admin@x",
+		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: reader, WriterSecret: writer, SetUpAt: now(), SetUpBy: "admin@x",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -681,9 +681,9 @@ func TestDataReveal(t *testing.T) {
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	h.deploy(db, "postgres:17")
 	ss, _ := h.c.loadService(h.ctx, 1, db)
-	sealed, _ := h.c.box.Seal([]byte("pw"))
+	reader, writer := h.sealedRoles(ss.svc.ID)
 	if _, err := h.c.store.UpsertDataAccess(h.ctx, store.UpsertDataAccessParams{
-		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: sealed, WriterSecret: sealed, SetUpAt: now(), SetUpBy: "admin@x",
+		ServiceID: ss.svc.ID, Engine: "postgres", ServerVersion: "17.2", ReaderSecret: reader, WriterSecret: writer, SetUpAt: now(), SetUpBy: "admin@x",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -755,4 +755,19 @@ func TestDataReveal(t *testing.T) {
 	if _, after := eng.last(); after != before || len(reveals()) != 1 {
 		t.Fatal("a refused reveal read the table or was audited")
 	}
+}
+
+// sealedRoles are role passwords ("pw") sealed for a database service's
+// data_access row.
+func (h *harness) sealedRoles(serviceID int64) (reader, writer []byte) {
+	h.t.Helper()
+	key := strconv.FormatInt(serviceID, 10)
+	reader, err := h.c.box.Seal([]byte("pw"), sealedDataReader.AAD(key))
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if writer, err = h.c.box.Seal([]byte("pw"), sealedDataWriter.AAD(key)); err != nil {
+		h.t.Fatal(err)
+	}
+	return reader, writer
 }

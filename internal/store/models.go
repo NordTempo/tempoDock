@@ -329,8 +329,9 @@ type GithubInstallation struct {
 }
 
 type Install struct {
-	ID        int64
-	InstallID string
+	ID            int64
+	InstallID     string
+	SecretsFormat int64
 }
 
 type JoinToken struct {

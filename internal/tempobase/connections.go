@@ -164,7 +164,7 @@ func (c connURL) describe() string {
 // conn opens and parses a connection's sealed URL and says how to reach
 // it: the datapanel.Conn that Host.Connect returns.
 func (a *App) conn(c *tbstore.Connection) (datapanel.Conn, error) {
-	raw, err := a.box.Open(c.UrlSecret)
+	raw, err := a.box.Open(c.UrlSecret, sealedConnURL.AAD(c.Name))
 	if err != nil {
 		return datapanel.Conn{}, fmt.Errorf("connection %s: %w", c.Name, err)
 	}
@@ -249,7 +249,7 @@ func (a *App) CreateConnection(ctx context.Context, act Actor, req tbtypes.Creat
 	if _, _, err := tlsConfig(u.TLS, u.Host, req.CAPEM); err != nil {
 		return tbtypes.Connection{}, err
 	}
-	sealed, err := a.box.Seal([]byte(req.URL))
+	sealed, err := a.box.Seal([]byte(req.URL), sealedConnURL.AAD(req.Name))
 	if err != nil {
 		return tbtypes.Connection{}, err
 	}
@@ -286,14 +286,22 @@ func (a *App) UpdateConnection(ctx context.Context, act Actor, name string, req 
 			return tbtypes.Connection{}, invalid("connection name %q must be 1-63 lowercase letters, digits and dashes", *req.Name)
 		}
 		changes = append(changes, "renamed to "+*req.Name)
+		// The URL is bound to the name (ADR 0041): seal it for the new one.
+		raw, err := a.box.Open(c.UrlSecret, sealedConnURL.AAD(c.Name))
+		if err != nil {
+			return tbtypes.Connection{}, fmt.Errorf("connection %s: %w", c.Name, err)
+		}
 		c.Name = *req.Name
+		if c.UrlSecret, err = a.box.Seal(raw, sealedConnURL.AAD(c.Name)); err != nil {
+			return tbtypes.Connection{}, err
+		}
 	}
 	if req.URL != nil {
 		u, err := parseConnURL(*req.URL)
 		if err != nil {
 			return tbtypes.Connection{}, err
 		}
-		if c.UrlSecret, err = a.box.Seal([]byte(*req.URL)); err != nil {
+		if c.UrlSecret, err = a.box.Seal([]byte(*req.URL), sealedConnURL.AAD(c.Name)); err != nil {
 			return tbtypes.Connection{}, err
 		}
 		c.Host, c.Port, c.Database, c.Username, c.TlsMode = u.Host, int64(u.Port), u.Database, u.User, string(u.TLS)

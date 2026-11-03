@@ -127,7 +127,7 @@ func (c *Core) startAnalytics(ctx context.Context) error {
 // background: an image pull takes a while) and starts the forwarders of
 // the servers that are online.
 func (c *Core) runAnalytics(ctx context.Context, st store.AnalyticsSetting) error {
-	token, err := c.box.Open(st.Token)
+	token, err := c.box.Open(st.Token, analyticsTokenAAD)
 	if err != nil {
 		return fmt.Errorf("open the analytics token: %w", err)
 	}
@@ -317,7 +317,7 @@ func (c *Core) rotateSalts(ctx context.Context, t time.Time) {
 	for _, d := range []int64{today, today + 1} {
 		salt := make([]byte, ingest.SaltBytes)
 		_, _ = rand.Read(salt)
-		sealed, err := c.box.Seal(salt)
+		sealed, err := c.box.Seal(salt, saltAAD(d))
 		if err == nil {
 			err = c.store.AddAnalyticsSalt(ctx, store.AddAnalyticsSaltParams{Day: d, Salt: sealed})
 		}
@@ -404,7 +404,7 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 	}
 	cfg := node.AnalyticsConfig{Salts: make(map[int64][]byte, len(rows))}
 	for _, r := range rows {
-		if salt, err := c.box.Open(r.Salt); err == nil {
+		if salt, err := c.box.Open(r.Salt, saltAAD(r.Day)); err == nil {
 			cfg.Salts[r.Day] = salt
 		}
 	}
@@ -609,7 +609,7 @@ func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64) 
 	if cl, _ := c.analyticsClient(); cl != nil {
 		return nil
 	}
-	sealed, err := c.box.Seal([]byte(newAnalyticsToken()))
+	sealed, err := c.box.Seal([]byte(newAnalyticsToken()), analyticsTokenAAD)
 	if err != nil {
 		return err
 	}

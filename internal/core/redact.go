@@ -42,7 +42,7 @@ func (c *Core) logRedactor(a Actor, rel store.Release) (*redactor, error) {
 	if a.revealsSecrets() {
 		return nil, nil
 	}
-	cfg, err := c.openConfig(rel.Config)
+	cfg, err := c.openConfig(rel)
 	if err != nil {
 		return nil, err
 	}

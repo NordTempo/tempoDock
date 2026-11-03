@@ -507,6 +507,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getReleaseByNumberStmt, err = db.PrepareContext(ctx, getReleaseByNumber); err != nil {
 		return nil, fmt.Errorf("error preparing query GetReleaseByNumber: %w", err)
 	}
+	if q.getSecretsFormatStmt, err = db.PrepareContext(ctx, getSecretsFormat); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSecretsFormat: %w", err)
+	}
 	if q.getServerStmt, err = db.PrepareContext(ctx, getServer); err != nil {
 		return nil, fmt.Errorf("error preparing query GetServer: %w", err)
 	}
@@ -608,6 +611,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listBackupRepositoriesStmt, err = db.PrepareContext(ctx, listBackupRepositories); err != nil {
 		return nil, fmt.Errorf("error preparing query ListBackupRepositories: %w", err)
+	}
+	if q.listCarriedVariablesStmt, err = db.PrepareContext(ctx, listCarriedVariables); err != nil {
+		return nil, fmt.Errorf("error preparing query ListCarriedVariables: %w", err)
 	}
 	if q.listChangesetsStmt, err = db.PrepareContext(ctx, listChangesets); err != nil {
 		return nil, fmt.Errorf("error preparing query ListChangesets: %w", err)
@@ -1086,6 +1092,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setRegistryStorageStmt, err = db.PrepareContext(ctx, setRegistryStorage); err != nil {
 		return nil, fmt.Errorf("error preparing query SetRegistryStorage: %w", err)
 	}
+	if q.setReleaseCarriedStmt, err = db.PrepareContext(ctx, setReleaseCarried); err != nil {
+		return nil, fmt.Errorf("error preparing query SetReleaseCarried: %w", err)
+	}
 	if q.setReleaseCommitStmt, err = db.PrepareContext(ctx, setReleaseCommit); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseCommit: %w", err)
 	}
@@ -1100,6 +1109,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setReleaseStatusStmt, err = db.PrepareContext(ctx, setReleaseStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseStatus: %w", err)
+	}
+	if q.setSecretsFormatStmt, err = db.PrepareContext(ctx, setSecretsFormat); err != nil {
+		return nil, fmt.Errorf("error preparing query SetSecretsFormat: %w", err)
 	}
 	if q.setServerDisconnectedStmt, err = db.PrepareContext(ctx, setServerDisconnected); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServerDisconnected: %w", err)
@@ -2037,6 +2049,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getReleaseByNumberStmt: %w", cerr)
 		}
 	}
+	if q.getSecretsFormatStmt != nil {
+		if cerr := q.getSecretsFormatStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSecretsFormatStmt: %w", cerr)
+		}
+	}
 	if q.getServerStmt != nil {
 		if cerr := q.getServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getServerStmt: %w", cerr)
@@ -2205,6 +2222,11 @@ func (q *Queries) Close() error {
 	if q.listBackupRepositoriesStmt != nil {
 		if cerr := q.listBackupRepositoriesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listBackupRepositoriesStmt: %w", cerr)
+		}
+	}
+	if q.listCarriedVariablesStmt != nil {
+		if cerr := q.listCarriedVariablesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listCarriedVariablesStmt: %w", cerr)
 		}
 	}
 	if q.listChangesetsStmt != nil {
@@ -3002,6 +3024,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setRegistryStorageStmt: %w", cerr)
 		}
 	}
+	if q.setReleaseCarriedStmt != nil {
+		if cerr := q.setReleaseCarriedStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setReleaseCarriedStmt: %w", cerr)
+		}
+	}
 	if q.setReleaseCommitStmt != nil {
 		if cerr := q.setReleaseCommitStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setReleaseCommitStmt: %w", cerr)
@@ -3025,6 +3052,11 @@ func (q *Queries) Close() error {
 	if q.setReleaseStatusStmt != nil {
 		if cerr := q.setReleaseStatusStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setReleaseStatusStmt: %w", cerr)
+		}
+	}
+	if q.setSecretsFormatStmt != nil {
+		if cerr := q.setSecretsFormatStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setSecretsFormatStmt: %w", cerr)
 		}
 	}
 	if q.setServerDisconnectedStmt != nil {
@@ -3437,6 +3469,7 @@ type Queries struct {
 	getRegistryStorageIDStmt            *sql.Stmt
 	getReleaseStmt                      *sql.Stmt
 	getReleaseByNumberStmt              *sql.Stmt
+	getSecretsFormatStmt                *sql.Stmt
 	getServerStmt                       *sql.Stmt
 	getServerByFingerprintStmt          *sql.Stmt
 	getServerByNameStmt                 *sql.Stmt
@@ -3471,6 +3504,7 @@ type Queries struct {
 	listAuditEventsByTargetStmt         *sql.Stmt
 	listBackupCandidatesStmt            *sql.Stmt
 	listBackupRepositoriesStmt          *sql.Stmt
+	listCarriedVariablesStmt            *sql.Stmt
 	listChangesetsStmt                  *sql.Stmt
 	listCloudflareConnectionsStmt       *sql.Stmt
 	listCloudflareRecordsStmt           *sql.Stmt
@@ -3630,11 +3664,13 @@ type Queries struct {
 	setPendingSettingsStmt              *sql.Stmt
 	setPublicHostStmt                   *sql.Stmt
 	setRegistryStorageStmt              *sql.Stmt
+	setReleaseCarriedStmt               *sql.Stmt
 	setReleaseCommitStmt                *sql.Stmt
 	setReleaseContainerStmt             *sql.Stmt
 	setReleaseDigestStmt                *sql.Stmt
 	setReleaseImageStmt                 *sql.Stmt
 	setReleaseStatusStmt                *sql.Stmt
+	setSecretsFormatStmt                *sql.Stmt
 	setServerDisconnectedStmt           *sql.Stmt
 	setServerHelloStmt                  *sql.Stmt
 	setServerMemoryStmt                 *sql.Stmt
@@ -3844,6 +3880,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRegistryStorageIDStmt:            q.getRegistryStorageIDStmt,
 		getReleaseStmt:                      q.getReleaseStmt,
 		getReleaseByNumberStmt:              q.getReleaseByNumberStmt,
+		getSecretsFormatStmt:                q.getSecretsFormatStmt,
 		getServerStmt:                       q.getServerStmt,
 		getServerByFingerprintStmt:          q.getServerByFingerprintStmt,
 		getServerByNameStmt:                 q.getServerByNameStmt,
@@ -3878,6 +3915,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listAuditEventsByTargetStmt:         q.listAuditEventsByTargetStmt,
 		listBackupCandidatesStmt:            q.listBackupCandidatesStmt,
 		listBackupRepositoriesStmt:          q.listBackupRepositoriesStmt,
+		listCarriedVariablesStmt:            q.listCarriedVariablesStmt,
 		listChangesetsStmt:                  q.listChangesetsStmt,
 		listCloudflareConnectionsStmt:       q.listCloudflareConnectionsStmt,
 		listCloudflareRecordsStmt:           q.listCloudflareRecordsStmt,
@@ -4037,11 +4075,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setPendingSettingsStmt:              q.setPendingSettingsStmt,
 		setPublicHostStmt:                   q.setPublicHostStmt,
 		setRegistryStorageStmt:              q.setRegistryStorageStmt,
+		setReleaseCarriedStmt:               q.setReleaseCarriedStmt,
 		setReleaseCommitStmt:                q.setReleaseCommitStmt,
 		setReleaseContainerStmt:             q.setReleaseContainerStmt,
 		setReleaseDigestStmt:                q.setReleaseDigestStmt,
 		setReleaseImageStmt:                 q.setReleaseImageStmt,
 		setReleaseStatusStmt:                q.setReleaseStatusStmt,
+		setSecretsFormatStmt:                q.setSecretsFormatStmt,
 		setServerDisconnectedStmt:           q.setServerDisconnectedStmt,
 		setServerHelloStmt:                  q.setServerHelloStmt,
 		setServerMemoryStmt:                 q.setServerMemoryStmt,

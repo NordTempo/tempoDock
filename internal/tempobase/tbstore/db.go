@@ -120,6 +120,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getLinkByHashStmt, err = db.PrepareContext(ctx, getLinkByHash); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLinkByHash: %w", err)
 	}
+	if q.getSecretsFormatStmt, err = db.PrepareContext(ctx, getSecretsFormat); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSecretsFormat: %w", err)
+	}
 	if q.getSessionUserStmt, err = db.PrepareContext(ctx, getSessionUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSessionUser: %w", err)
 	}
@@ -203,6 +206,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setGrantsSyncedHashStmt, err = db.PrepareContext(ctx, setGrantsSyncedHash); err != nil {
 		return nil, fmt.Errorf("error preparing query SetGrantsSyncedHash: %w", err)
+	}
+	if q.setSecretsFormatStmt, err = db.PrepareContext(ctx, setSecretsFormat); err != nil {
+		return nil, fmt.Errorf("error preparing query SetSecretsFormat: %w", err)
 	}
 	if q.setTokenDataStmt, err = db.PrepareContext(ctx, setTokenData); err != nil {
 		return nil, fmt.Errorf("error preparing query SetTokenData: %w", err)
@@ -390,6 +396,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getLinkByHashStmt: %w", cerr)
 		}
 	}
+	if q.getSecretsFormatStmt != nil {
+		if cerr := q.getSecretsFormatStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSecretsFormatStmt: %w", cerr)
+		}
+	}
 	if q.getSessionUserStmt != nil {
 		if cerr := q.getSessionUserStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getSessionUserStmt: %w", cerr)
@@ -530,6 +541,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setGrantsSyncedHashStmt: %w", cerr)
 		}
 	}
+	if q.setSecretsFormatStmt != nil {
+		if cerr := q.setSecretsFormatStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setSecretsFormatStmt: %w", cerr)
+		}
+	}
 	if q.setTokenDataStmt != nil {
 		if cerr := q.setTokenDataStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setTokenDataStmt: %w", cerr)
@@ -636,6 +652,7 @@ type Queries struct {
 	getConnectionByNameStmt               *sql.Stmt
 	getDataAccessStmt                     *sql.Stmt
 	getLinkByHashStmt                     *sql.Stmt
+	getSecretsFormatStmt                  *sql.Stmt
 	getSessionUserStmt                    *sql.Stmt
 	getTokenStmt                          *sql.Stmt
 	getTokenAuthStmt                      *sql.Stmt
@@ -664,6 +681,7 @@ type Queries struct {
 	revokeTokenStmt                       *sql.Stmt
 	saveQueryStmt                         *sql.Stmt
 	setGrantsSyncedHashStmt               *sql.Stmt
+	setSecretsFormatStmt                  *sql.Stmt
 	setTokenDataStmt                      *sql.Stmt
 	setUserPasswordStmt                   *sql.Stmt
 	updateConnectionStmt                  *sql.Stmt
@@ -709,6 +727,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getConnectionByNameStmt:               q.getConnectionByNameStmt,
 		getDataAccessStmt:                     q.getDataAccessStmt,
 		getLinkByHashStmt:                     q.getLinkByHashStmt,
+		getSecretsFormatStmt:                  q.getSecretsFormatStmt,
 		getSessionUserStmt:                    q.getSessionUserStmt,
 		getTokenStmt:                          q.getTokenStmt,
 		getTokenAuthStmt:                      q.getTokenAuthStmt,
@@ -737,6 +756,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		revokeTokenStmt:                       q.revokeTokenStmt,
 		saveQueryStmt:                         q.saveQueryStmt,
 		setGrantsSyncedHashStmt:               q.setGrantsSyncedHashStmt,
+		setSecretsFormatStmt:                  q.setSecretsFormatStmt,
 		setTokenDataStmt:                      q.setTokenDataStmt,
 		setUserPasswordStmt:                   q.setUserPasswordStmt,
 		updateConnectionStmt:                  q.updateConnectionStmt,

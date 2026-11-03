@@ -492,17 +492,13 @@ func (c *Core) convertBackupRepository(ctx context.Context) error {
 	}
 	var keys s3Credentials
 	if s.Credentials != nil {
-		plain, err := c.box.Open(s.Credentials)
+		plain, err := c.box.Open(s.Credentials, backupKeysAAD)
 		if err != nil {
 			return fmt.Errorf("open the backup credentials: %w", err)
 		}
 		if err := json.Unmarshal(plain, &keys); err != nil {
 			return err
 		}
-	}
-	sealed, err := c.sealKeys(s3.Bucket{AccessKeyID: keys.AccessKeyID, SecretAccessKey: keys.SecretAccessKey})
-	if err != nil {
-		return err
 	}
 	base := strings.Trim(connectionName.ReplaceAllString(strings.ToLower(bucket), "-"), "-")
 	base = cmp.Or(base[:min(len(base), 24)], "backups")
@@ -514,6 +510,10 @@ func (c *Core) convertBackupRepository(ctx context.Context) error {
 			return err
 		}
 		name = base + "-" + strconv.Itoa(i)
+	}
+	sealed, err := c.sealKeys(s3.Bucket{AccessKeyID: keys.AccessKeyID, SecretAccessKey: keys.SecretAccessKey}, name)
+	if err != nil {
+		return err
 	}
 	url := backup.S3URL(endpoint, bucket, path)
 	t := now()

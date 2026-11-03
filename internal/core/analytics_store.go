@@ -416,7 +416,7 @@ func (c *Core) moveStore(ctx context.Context, a Actor, m *analyticsMove, copyDat
 	if err != nil {
 		return "", err
 	}
-	token, err := c.box.Open(st.Token)
+	token, err := c.box.Open(st.Token, analyticsTokenAAD)
 	if err != nil {
 		return "", fmt.Errorf("open the analytics token: %w", err)
 	}

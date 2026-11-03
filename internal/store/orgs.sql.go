@@ -453,7 +453,7 @@ func (q *Queries) ListOrgSlugs(ctx context.Context) ([]string, error) {
 }
 
 const listOrgVariableUses = `-- name: ListOrgVariableUses :many
-SELECT variables.environment_id, variables.service_id, variables.value, variables.pending_value,
+SELECT variables.environment_id, variables.service_id, variables.key, variables.value, variables.pending_value,
     projects.name AS project_name, environments.name AS environment_name,
     coalesce(services.name, '') AS service_name
 FROM projects
@@ -466,6 +466,7 @@ WHERE projects.org_id = +? AND projects.archived_at IS NULL
 type ListOrgVariableUsesRow struct {
 	EnvironmentID   int64
 	ServiceID       *int64
+	Key             string
 	Value           []byte
 	PendingValue    []byte
 	ProjectName     string
@@ -487,6 +488,7 @@ func (q *Queries) ListOrgVariableUses(ctx context.Context, orgID int64) ([]ListO
 		if err := rows.Scan(
 			&i.EnvironmentID,
 			&i.ServiceID,
+			&i.Key,
 			&i.Value,
 			&i.PendingValue,
 			&i.ProjectName,

@@ -94,7 +94,7 @@ func (c *Core) dbConnection(ctx context.Context, ss svcScope) (dbConn, error) {
 	if c.getStatus(ss.svc.ID).State != apitypes.ServiceRunning {
 		return dbConn{}, errNotRunning
 	}
-	cfg, err := c.openConfig(rel.Config)
+	cfg, err := c.openConfig(rel)
 	if err != nil {
 		return dbConn{}, fmt.Errorf("read release %d config: %w", rel.Number, err)
 	}

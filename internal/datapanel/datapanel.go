@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"log/slog"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -181,6 +182,21 @@ type Decision struct {
 	RowsAffected []int64
 	Conflicts    []apitypes.DataConflict
 	Reason       string
+}
+
+// AccessColumns are the role passwords' columns in a host's data_access
+// table, whose key column (named key) is the Database's ID, for the host's
+// reseal (secrets.ResealColumn, ADR 0041). The Panel seals with their AADs.
+func AccessColumns(key string) (reader, writer secrets.Column) {
+	return secrets.Column{Table: "data_access", Name: "reader_secret", Key: []string{key}},
+		secrets.Column{Table: "data_access", Name: "writer_secret", Key: []string{key}}
+}
+
+// accessAADs are the AADs of a database's role passwords.
+func accessAADs(id int64) (reader, writer secrets.AAD) {
+	r, w := AccessColumns("")
+	key := strconv.FormatInt(id, 10)
+	return r.AAD(key), w.AAD(key)
 }
 
 // Access is a database's setup record: the roles' passwords, sealed with
