@@ -303,6 +303,7 @@ type GitConnection struct {
 type GitDelivery struct {
 	DeliveryID string
 	CreatedAt  time.Time
+	BodyHash   []byte
 }
 
 type GithubApp struct {

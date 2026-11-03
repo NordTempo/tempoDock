@@ -11,16 +11,19 @@ import (
 )
 
 const addGitDelivery = `-- name: AddGitDelivery :exec
-INSERT INTO git_deliveries (delivery_id, created_at) VALUES (?, ?)
+INSERT INTO git_deliveries (delivery_id, body_hash, created_at) VALUES (?, ?, ?)
 `
 
 type AddGitDeliveryParams struct {
 	DeliveryID string
+	BodyHash   []byte
 	CreatedAt  time.Time
 }
 
+// Records a delivery; a unique violation means its ID or its body hash
+// (sha256 of hook ID and body) was seen within the replay window.
 func (q *Queries) AddGitDelivery(ctx context.Context, arg AddGitDeliveryParams) error {
-	_, err := q.exec(ctx, q.addGitDeliveryStmt, addGitDelivery, arg.DeliveryID, arg.CreatedAt)
+	_, err := q.exec(ctx, q.addGitDeliveryStmt, addGitDelivery, arg.DeliveryID, arg.BodyHash, arg.CreatedAt)
 	return err
 }
 

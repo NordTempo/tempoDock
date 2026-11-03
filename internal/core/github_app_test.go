@@ -390,6 +390,28 @@ func TestGitHubInstallKeepsItsOrg(t *testing.T) {
 	}
 }
 
+// An installation event resent under a new delivery ID does nothing: a
+// captured "deleted" can't unassign a reassigned installation again.
+func TestGitAppInstallationReplay(t *testing.T) {
+	h, _, appHook := appHarness(t)
+	body := []byte(`{"action":"deleted","installation":{"id":7}}`)
+	deliver := func(id string) (string, error) {
+		return h.c.GitWebhook(h.ctx, GitDelivery{HookID: appHook, Event: "installation", ID: id, Signature: sign("app-secret", body), Body: body})
+	}
+	if msg, err := deliver("d1"); err != nil || msg != "installation 7 removed" {
+		t.Fatalf("installation deleted: %q, %v", msg, err)
+	}
+	if err := h.c.AssignGitHubInstallation(h.ctx, testSystem, fakeInstall, apitypes.GitHubOrgRequest{Org: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if msg, err := deliver("d2"); err != nil || !strings.Contains(msg, "already received") {
+		t.Fatalf("replayed body: %q, %v", msg, err)
+	}
+	if inst, err := h.store.GetGitHubInstallation(h.ctx, fakeInstall); err != nil || inst.OrgID != 1 {
+		t.Fatalf("installation after the replay: %+v, %v", inst, err)
+	}
+}
+
 func TestAppJWT(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

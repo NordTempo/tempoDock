@@ -301,7 +301,7 @@ func TestGitWebhookDeploys(t *testing.T) {
 		t.Fatalf("replayed delivery: %q, %v", msg, err)
 	}
 	// A new delivery of the live commit: nothing to deploy.
-	if msg, err := h.push(k, body); err != nil || !strings.Contains(msg, "already live in release 1") {
+	if msg, err := h.push(k, pushBody("refs/heads/main", shaA, "apps/web/server.js", "apps/web/index.html")); err != nil || !strings.Contains(msg, "already live in release 1") {
 		t.Fatalf("same commit: %q, %v", msg, err)
 	}
 	// Bad, missing and foreign signatures; an unknown hook.
@@ -351,6 +351,58 @@ func TestGitWebhookDeploys(t *testing.T) {
 	if j, _ := json.Marshal(src); bytes.Contains(j, []byte(token)) || bytes.Contains(j, []byte(k.secret)) {
 		t.Fatalf("status leaks a credential: %s", j)
 	}
+}
+
+// A signed push resent under a new delivery ID (by someone who captured
+// it) is answered without effect, so an old commit can't be put back live.
+func TestGitWebhookReplayedBody(t *testing.T) {
+	h, _ := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
+	old := pushBody("refs/heads/main", shaA)
+	if msg, err := h.push(k, old); err != nil || msg != "push aaaaaaa: queued" {
+		t.Fatalf("push: %q, %v", msg, err)
+	}
+	h.waitReleases(web, 1)
+	h.wait(web, 1)
+	if _, err := h.push(k, pushBody("refs/heads/main", shaB)); err != nil {
+		t.Fatal(err)
+	}
+	h.waitReleases(web, 2)
+	if r := h.wait(web, 2); r.Status != apitypes.ReleaseActive || r.Commit.SHA != shaB {
+		t.Fatalf("second release: %s %+v", r.Status, r.Commit)
+	}
+	if msg, err := h.push(k, old); err != nil || !strings.Contains(msg, "already received") {
+		t.Fatalf("replayed body: %q, %v", msg, err)
+	}
+	if src, _ := h.c.GitStatus(h.ctx, testSystem, web); src.Connection.Pending != nil {
+		t.Fatalf("replay queued %+v", src.Connection.Pending)
+	}
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 2 {
+		t.Fatalf("%d releases, want 2", len(rels))
+	}
+}
+
+// A push older than the replay window, whose delivery may have been
+// forgotten, is refused; a recent one deploys.
+func TestGitWebhookOldPush(t *testing.T) {
+	h, _ := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
+	withPushedAt := func(sha string, at time.Time) []byte {
+		var m map[string]any
+		_ = json.Unmarshal(pushBody("refs/heads/main", sha), &m)
+		m["repository"] = map[string]any{"full_name": "acme/shop", "pushed_at": at.Unix()}
+		b, _ := json.Marshal(m)
+		return b
+	}
+	if msg, err := h.push(k, withPushedAt(shaA, now().Add(-gitReplayWindow-time.Hour))); err != nil || !strings.Contains(msg, "push again") {
+		t.Fatalf("old push: %q, %v", msg, err)
+	}
+	if msg, err := h.push(k, withPushedAt(shaB, now().Add(-time.Minute))); err != nil || msg != "push bbbbbbb: queued" {
+		t.Fatalf("recent push: %q, %v", msg, err)
+	}
+	h.waitReleases(web, 1)
 }
 
 // While a deploy runs, newer pushes replace the queued one; the running
