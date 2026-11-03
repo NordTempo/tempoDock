@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -190,7 +191,42 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 		return // set up already, or unknown: leave it to an admin
 	}
 	ref := ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name}
-	if _, err := c.SetupData(ctx, System.InOrg(ss.project.OrgID), ref); err != nil && ctx.Err() == nil {
-		c.log.Warn("set up data access for template database", "service", ss.String(), "err", err)
+	setup := func() error {
+		_, err := c.SetupData(ctx, System.InOrg(ss.project.OrgID), ref)
+		return err
 	}
+	if setup() == nil || ctx.Err() != nil {
+		return
+	}
+	// The retries run in the background: the deploy is done.
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		delay := setupRetryDelay
+		for attempt := 2; ; attempt++ {
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return
+			}
+			err := setup()
+			if err == nil || ctx.Err() != nil {
+				return
+			}
+			if attempt == setupAttempts {
+				c.log.Warn("set up data access for template database", "service", ss.String(), "err", err)
+				return
+			}
+			delay *= 2
+		}
+	}()
 }
+
+// Setting up a new template database is retried: Postgres accepts TCP
+// (which passes the health check) a moment before it accepts logins, and
+// on a busy server that moment is long enough to miss. The waits (1, 2,
+// 4 and 8 s) run only after a failed attempt, never while idle.
+const (
+	setupAttempts   = 5
+	setupRetryDelay = time.Second
+)
