@@ -10,6 +10,7 @@ import { useEventStream } from "../../api/events";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
+import { frames } from "../data/ndjson";
 import { usePageVisible } from "../stats/live";
 
 // Dock Analytics (ADR 0037): sites, their dashboards and settings, the
@@ -257,7 +258,9 @@ export type RecordedEvent = { type: number; timestamp: number; data: unknown };
  * A replay's recording: every page load's rrweb events, their times moved
  * to the server's clock (each page load's own skew), oldest first. The
  * API streams JSON lines, a {"segment": id} line before each page load's
- * chunks; fetching it is audited, once per call.
+ * chunks; fetching it is audited, once per call. Lines are parsed as they
+ * arrive and events are shifted in place, so the peak is the parsed
+ * events plus one line, not the whole body and a copy of every event.
  */
 export async function loadRecording(
   project: string,
@@ -268,22 +271,30 @@ export async function loadRecording(
   const path = `/api/v1/projects/${encodeURIComponent(project)}/sites/${encodeURIComponent(site)}/replays/${encodeURIComponent(replay.id)}/events`;
   const res = await fetch(withOrg(path), { credentials: "include", signal });
   if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  if (!res.body) return [];
   const skews = new Map(
     (replay.segment_list ?? []).map((s) => [s.id, s.skew_ms]),
   );
   const events: RecordedEvent[] = [];
   let skew = 0;
-  for (const line of (await res.text()).split("\n")) {
-    if (!line) continue;
-    const v: unknown = JSON.parse(line);
+  let last = Number.NEGATIVE_INFINITY;
+  let ordered = true;
+  for await (const v of frames<unknown>(res.body)) {
     if (Array.isArray(v)) {
-      for (const e of v as RecordedEvent[])
-        events.push({ ...e, timestamp: e.timestamp + skew });
+      for (const e of v as RecordedEvent[]) {
+        e.timestamp += skew;
+        if (e.timestamp < last) ordered = false;
+        last = e.timestamp;
+        events.push(e);
+      }
     } else if (v && typeof v === "object" && "segment" in v) {
       skew = skews.get(String(v.segment)) ?? 0;
     }
   }
-  return events.sort((a, b) => a.timestamp - b.timestamp);
+  // A page load is recorded in time order and its skew moves all of it,
+  // so the events are a few sorted runs, usually one: sorting (TimSort,
+  // which merges runs) is needed only where page loads overlap.
+  return ordered ? events : events.sort((a, b) => a.timestamp - b.timestamp);
 }
 
 /** The search every analytics view shares: the site, range and filters. */
