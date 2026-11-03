@@ -106,7 +106,8 @@ the analytics ingest and spool (`BenchmarkIngestEvent`,
 `BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs;
 `BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs;
 `BenchmarkIngestReplay`, 27 µs for a 20 KB replay chunk) and the
-forwarder's error counting for alerts (`BenchmarkAnalyticsWritten`). Use
+forwarder's error counting for alerts (`BenchmarkAnalyticsWritten`), and
+masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
   benchmarks use a 60-service project), and add one for every new hot
   path.

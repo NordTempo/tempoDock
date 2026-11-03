@@ -78,8 +78,9 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 			(eid == 0 || e.envID == eid || e.ev.Type == apitypes.EventProjectRenamed) &&
 			(sid == 0 || e.serviceID == sid || e.ev.Type == apitypes.EventProjectRenamed)
 	}
+	reveal := a.revealsSecrets()
 	return func(ctx context.Context, ready func(), send func(...LiveEvent) error) error {
-		sub := c.bus.subscribe(match)
+		sub := c.bus.subscribeAs(reveal, match)
 		defer sub.close()
 		ready()
 		for {
@@ -97,7 +98,8 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 	}, nil
 }
 
-// BuildLog opens a release's build log (empty if there is none yet).
+// BuildLog opens a release's build log (empty if there is none yet), with
+// secret values masked unless the actor may reveal them.
 func (c *Core) BuildLog(ctx context.Context, a Actor, ref ServiceRef, number int64) (io.ReadCloser, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "reading build logs")
 	if err != nil {
@@ -107,15 +109,23 @@ func (c *Core) BuildLog(ctx context.Context, a Actor, ref ServiceRef, number int
 	if err != nil {
 		return nil, err
 	}
+	red, err := c.logRedactor(a, rel)
+	if err != nil {
+		return nil, err
+	}
 	f, err := os.Open(c.buildLogPath(rel.ID))
 	if errors.Is(err, os.ErrNotExist) {
 		return io.NopCloser(strings.NewReader("")), nil
 	}
-	return f, err
+	if err != nil {
+		return nil, err
+	}
+	return red.reader(f), nil
 }
 
 // FollowBuildLog streams a release's build log: what's written so far, then
-// new lines until the build phase ends.
+// new lines until the build phase ends. Secret values are masked unless the
+// actor may reveal them.
 func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, number int64) (Stream[apitypes.BuildLogLine], error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "reading build logs")
 	if err != nil {
@@ -125,13 +135,18 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 	if err != nil {
 		return nil, err
 	}
+	red, err := c.logRedactor(a, rel)
+	if err != nil {
+		return nil, err
+	}
+	reveal := a.revealsSecrets()
 	building := func(status string) bool {
 		return status == string(apitypes.ReleaseQueued) || status == string(apitypes.ReleaseBuilding)
 	}
 	return func(ctx context.Context, ready func(), send func(...apitypes.BuildLogLine) error) error {
 		// Subscribe before reading the file so no line falls in between;
 		// line numbers (Seq) drop the duplicates.
-		sub := c.bus.subscribe(func(e busEvent) bool {
+		sub := c.bus.subscribeAs(reveal, func(e busEvent) bool {
 			return e.serviceID == ss.svc.ID &&
 				((e.ev.BuildLog != nil && e.ev.BuildLog.ReleaseNumber == number) ||
 					(e.ev.Release != nil && e.ev.Release.Number == number))
@@ -152,6 +167,7 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 				}
 				batch := make([]apitypes.BuildLogLine, len(lines))
 				for i, l := range lines {
+					l, _ = red.line(l)
 					batch[i] = apitypes.BuildLogLine{ReleaseNumber: number, Seq: first + i, Text: l}
 				}
 				if err := send(batch...); err != nil {
@@ -319,6 +335,7 @@ func readSavedLogs(path string) ([]apitypes.LogLine, error) {
 // ServiceLogs streams a release container's output from the runtime. Logs
 // are read from Docker; the platform only keeps the last lines of failed
 // releases' containers (saveContainerLogs), which are served instead.
+// Secret values are masked unless the actor may reveal them.
 func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQuery) (Stream[apitypes.LogLine], error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "reading logs")
 	if err != nil {
@@ -336,11 +353,22 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 	if err != nil {
 		return nil, err
 	}
+	red, err := c.logRedactor(a, rel)
+	if err != nil {
+		return nil, err
+	}
+	logLine := func(l node.LogLine) apitypes.LogLine {
+		text, _ := red.line(l.Text)
+		return apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: text}
+	}
 	if saved, err := readSavedLogs(c.containerLogPath(rel.ID)); err != nil {
 		return nil, err
 	} else if saved != nil && rel.Status == string(apitypes.ReleaseFailed) {
 		if q.Tail > 0 && len(saved) > q.Tail {
 			saved = saved[len(saved)-q.Tail:]
+		}
+		for i := range saved {
+			saved[i].Text, _ = red.line(saved[i].Text)
 		}
 		return func(_ context.Context, ready func(), send func(...apitypes.LogLine) error) error {
 			ready()
@@ -366,14 +394,14 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 		// Lines queued behind the first go out in the same write.
 		batch := make([]apitypes.LogLine, 0, logSendBatch)
 		for l := range lines {
-			batch = append(batch[:0], apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text})
+			batch = append(batch[:0], logLine(l))
 			open := true
 		drain:
 			for open && len(batch) < logSendBatch {
 				select {
 				case l, ok := <-lines:
 					if open = ok; ok {
-						batch = append(batch, apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text})
+						batch = append(batch, logLine(l))
 					}
 				default:
 					break drain
