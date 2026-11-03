@@ -127,17 +127,24 @@ type s3Credentials struct {
 
 // repoOf opens the repository settings: credentials and password. A
 // missing password is created (and stored) on first use, so backups work
-// without any configuration.
+// without any configuration. Only the password is written, and only if
+// no settings exist: s may be defaults read before another caller (a
+// backup move) stored settings, which must stay; the stored password is
+// used.
 func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, error) {
 	if s.Password == nil {
 		sealed, err := c.box.Seal([]byte(newPassword()), backupPasswordAAD)
 		if err != nil {
 			return backup.Repo{}, err
 		}
-		s.Password, s.UpdatedAt = sealed, now()
-		if _, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
+		if err := c.store.CreateBackupPassword(ctx, store.CreateBackupPasswordParams{Password: sealed, UpdatedAt: now()}); err != nil {
 			return backup.Repo{}, err
 		}
+		stored, err := c.store.GetBackupSettings(ctx)
+		if err != nil {
+			return backup.Repo{}, err
+		}
+		s.Password = stored.Password
 	}
 	pw, err := c.box.Open(s.Password, backupPasswordAAD)
 	if err != nil {

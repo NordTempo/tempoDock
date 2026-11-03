@@ -153,6 +153,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createBackupStmt, err = db.PrepareContext(ctx, createBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateBackup: %w", err)
 	}
+	if q.createBackupPasswordStmt, err = db.PrepareContext(ctx, createBackupPassword); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateBackupPassword: %w", err)
+	}
 	if q.createCLILoginStmt, err = db.PrepareContext(ctx, createCLILogin); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateCLILogin: %w", err)
 	}
@@ -1466,6 +1469,11 @@ func (q *Queries) Close() error {
 	if q.createBackupStmt != nil {
 		if cerr := q.createBackupStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createBackupStmt: %w", cerr)
+		}
+	}
+	if q.createBackupPasswordStmt != nil {
+		if cerr := q.createBackupPasswordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createBackupPasswordStmt: %w", cerr)
 		}
 	}
 	if q.createCLILoginStmt != nil {
@@ -3375,6 +3383,7 @@ type Queries struct {
 	createAlertChannelStmt              *sql.Stmt
 	createAnalyticsSettingsStmt         *sql.Stmt
 	createBackupStmt                    *sql.Stmt
+	createBackupPasswordStmt            *sql.Stmt
 	createCLILoginStmt                  *sql.Stmt
 	createCLILoginTokenStmt             *sql.Stmt
 	createChangesetStmt                 *sql.Stmt
@@ -3789,6 +3798,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createAlertChannelStmt:              q.createAlertChannelStmt,
 		createAnalyticsSettingsStmt:         q.createAnalyticsSettingsStmt,
 		createBackupStmt:                    q.createBackupStmt,
+		createBackupPasswordStmt:            q.createBackupPasswordStmt,
 		createCLILoginStmt:                  q.createCLILoginStmt,
 		createCLILoginTokenStmt:             q.createCLILoginTokenStmt,
 		createChangesetStmt:                 q.createChangesetStmt,

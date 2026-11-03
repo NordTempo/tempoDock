@@ -223,6 +223,39 @@ func TestConvertBackupRepository(t *testing.T) {
 	}
 }
 
+// A caller still holding the defaults (read before a move created the
+// settings and switched storage) only gets the stored password from
+// repoOf: the move's storage and password stay.
+func TestRepoOfKeepsSettingsWrittenMeanwhile(t *testing.T) {
+	h := newHarness(t)
+	stale, err := h.c.backupSettings(h.ctx)
+	if err != nil || stale.Password != nil {
+		t.Fatalf("defaults = %+v, %v", stale, err)
+	}
+	if _, err := h.c.AddStorage(h.ctx, testSystem, apitypes.CreateStorageRequest{Name: "hetzner", Endpoint: fakeS3(t), Bucket: "images", AccessKeyID: "k", SecretAccessKey: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := h.store.GetStorageConnection(h.ctx, "hetzner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pw, _ := h.c.box.Seal([]byte("moved-pw"))
+	if _, err := h.store.UpsertBackupSettings(h.ctx, store.UpsertBackupSettingsParams{
+		Password: pw, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 6, Hour: 3, UpdatedAt: time.Now(), StorageID: &conn.ID, StoragePath: "dock",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	repo, err := h.c.repoOf(h.ctx, stale)
+	if err != nil || repo.Password != "moved-pw" {
+		t.Fatalf("repo = %+v, %v", repo, err)
+	}
+	row, err := h.store.GetBackupSettings(h.ctx)
+	if err != nil || row.StorageID == nil || *row.StorageID != conn.ID || row.StoragePath != "dock" || string(row.Password) != string(pw) {
+		t.Fatalf("settings after repoOf = %+v, %v", row, err)
+	}
+}
+
 // Without backups there is nothing to copy or check: the move switches
 // where new backups go at once.
 func TestMoveBackupsWithNothingToCopy(t *testing.T) {
