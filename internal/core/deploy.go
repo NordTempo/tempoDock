@@ -444,17 +444,19 @@ func (d *deployment) fail(ctx context.Context, err error) {
 		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, c.nodeErr(serverID, removeErr)))
 	}
 	if d.oldRemoved && d.old != nil {
+		later := isOffline(removeErr)
 		switch {
 		case removeErr == nil:
-			c.ensureRunning(ctx, d.ss, *d.old)
-		case isOffline(removeErr):
-			// Its new container goes when the server reconnects; then this
-			// one starts again.
-			c.ensureLater(serverID, d.ss.svc.ID)
-			d.event(ctx, fmt.Sprintf("Release %d starts again when the server is back", d.old.Number))
-		default:
+			later = isOffline(c.ensureRunning(ctx, d.ss, *d.old))
+		case !later:
 			// Two containers must never share a volume.
 			d.event(ctx, fmt.Sprintf("Not starting release %d again while the new container may still be running; redeploy or roll back once it is gone", d.old.Number))
+		}
+		if later {
+			// Any new container goes when the server reconnects; then this
+			// one starts again, even after a daemon restart.
+			c.ensureLater(ctx, d.ss.svc.ID)
+			d.event(ctx, fmt.Sprintf("Release %d starts again when the server is back", d.old.Number))
 		}
 	}
 	// Before the release reads as failed, so "failed" means the changes it
