@@ -143,14 +143,15 @@ func (a *App) Me(ctx context.Context, act Actor) (tbtypes.Me, error) {
 
 var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password")
 
-// allow spends a sign-in attempt for each key, refusing when one has none
-// left.
-func (a *App) allow(keys ...string) error {
+// errRateLimited is the answer to an attempt loginLimit refuses.
+var errRateLimited = errf(apitypes.CodeRateLimited, "too many attempts; wait a minute and try again")
+
+// allow spends an attempt to sign in as email from clientIP; an empty
+// email is an attempt that names no account (a setup code, a link).
+func (a *App) allow(email, clientIP string) error {
 	t := a.now()
-	for _, k := range keys {
-		if !a.loginLimit.Allow(k, t) {
-			return errf(apitypes.CodeRateLimited, "too many attempts; wait a minute and try again")
-		}
+	if email == "" && !a.loginLimit.AllowIP(clientIP, t) || email != "" && !a.loginLimit.Allow(email, clientIP, t) {
+		return errRateLimited
 	}
 	return nil
 }
@@ -159,7 +160,7 @@ func (a *App) allow(keys ...string) error {
 // session secret for the cookie. Attempts are rate limited per client IP
 // and per email; failures are logged and audited (never the password).
 func (a *App) Login(ctx context.Context, email, password, clientIP string) (secret string, expires time.Time, act Actor, err error) {
-	if err := a.allow("ip:"+clientIP, "email:"+strings.ToLower(email)); err != nil {
+	if err := a.allow(email, clientIP); err != nil {
 		a.log.Warn("sign-in rate limited", "email", email, "ip", clientIP)
 		return "", time.Time{}, Actor{}, err
 	}
@@ -260,7 +261,7 @@ func (a *App) ChangePassword(ctx context.Context, act Actor, req apitypes.Change
 	if !act.isUser() {
 		return "", time.Time{}, invalid("only people have passwords; sign in to change yours")
 	}
-	if err := a.allow("ip:"+clientIP, "email:"+strings.ToLower(act.Email)); err != nil {
+	if err := a.allow(act.Email, clientIP); err != nil {
 		return "", time.Time{}, err
 	}
 	u, err := a.checkPassword(ctx, act.Email, req.CurrentPassword)
@@ -317,7 +318,7 @@ func (a *App) StartSetup(ctx context.Context) (code string, ok bool, err error) 
 // Setup creates the first admin with the setup code and signs them in.
 // The code is spent on success.
 func (a *App) Setup(ctx context.Context, req tbtypes.SetupRequest, clientIP string) (secret string, expires time.Time, act Actor, err error) {
-	if err := a.allow("ip:" + clientIP); err != nil {
+	if err := a.allow("", clientIP); err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
 	a.setupMu.Lock()

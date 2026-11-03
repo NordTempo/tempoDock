@@ -176,10 +176,11 @@ var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password"
 
 // Login checks a user's password and starts a session. It returns the
 // session secret for the cookie. Attempts are rate limited per client IP
-// and per email; failures are logged and audited (never the password).
+// and email (httpkit.LoginLimiter), so a guesser can't lock the owner out;
+// failures are logged and audited (never the password).
 func (c *Core) Login(ctx context.Context, email, password, clientIP string) (secret string, expires time.Time, a Actor, err error) {
 	t := now()
-	if !c.loginLimit.Allow("ip:"+clientIP, t) || !c.loginLimit.Allow("email:"+strings.ToLower(email), t) {
+	if !c.loginLimit.Allow(email, clientIP, t) {
 		c.log.Warn("login rate limited", "email", email, "ip", clientIP)
 		return "", time.Time{}, Actor{}, errf(apitypes.CodeRateLimited, "too many login attempts; wait a minute and try again")
 	}
@@ -248,7 +249,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	if a.Email == "" {
 		return "", time.Time{}, invalid("only users have passwords; API tokens can't change them. Log in with `dock login` to change yours from the CLI")
 	}
-	if !c.loginLimit.Allow("email:"+strings.ToLower(a.Email), now()) {
+	if !c.loginLimit.Allow(a.Email, clientIP, now()) {
 		return "", time.Time{}, errf(apitypes.CodeRateLimited, "too many password attempts; wait a minute and try again")
 	}
 	if len(req.NewPassword) < 12 {

@@ -180,7 +180,7 @@ func (a *App) LinkInfo(ctx context.Context, code string) (tbtypes.LinkInfo, erro
 // UseLink accepts an invite (creating the person) or sets a new password
 // from a reset link (ending the person's sessions), and signs them in.
 func (a *App) UseLink(ctx context.Context, code string, req tbtypes.UseLinkRequest, clientIP string) (secret string, expires time.Time, act Actor, err error) {
-	if err := a.allow("ip:" + clientIP); err != nil {
+	if err := a.allow("", clientIP); err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
 	l, err := a.openLink(ctx, code)
