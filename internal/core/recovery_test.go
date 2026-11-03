@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -67,4 +68,25 @@ func TestRecoveryNeverSharesAVolume(t *testing.T) {
 	h.rt.FailStop(nil)
 	h.restart()
 	h.waitRunning(h.ctr(db, 1))
+}
+
+// A push deploy cut short by a crash gets a failure commit status instead
+// of staying pending.
+func TestGitStatusOfInterruptedDeploy(t *testing.T) {
+	h, gh := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	token, on := "tok", true
+	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/web", Token: &token, Status: &on})
+	h.rt.HoldHealthChecks() // never released: the crashed daemon's deploy ends with its context
+	if _, err := h.push(k, pushBody("refs/heads/main", shaA, "apps/web/server.js")); err != nil {
+		t.Fatal(err)
+	}
+	h.waitReleases(web, 1)
+	h.waitStatus(web, 1, apitypes.ReleaseHealthChecking)
+	prefix := "aaaaaaa %s dock/shop/production/web https://dock.example.com/test/shop/production/web/releases/1"
+	pending, failure := fmt.Sprintf(prefix, "pending"), fmt.Sprintf(prefix, "failure")
+	eventually(t, "the pending status", func() bool { s, _, _ := gh.seen(); return slices.Equal(s, []string{pending}) })
+
+	h.crash()
+	eventually(t, "the failure status", func() bool { s, _, _ := gh.seen(); return slices.Equal(s, []string{pending, failure}) })
 }

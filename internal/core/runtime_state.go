@@ -209,6 +209,7 @@ func (c *Core) recover(ctx context.Context) error {
 		}
 		c.releaseEvent(ctx, ss, r, fmt.Sprintf("Release %d failed: %s", r.Number, msg))
 		c.restage(ctx, ss, r, msg)
+		c.gitDeployInterrupted(ctx, ss, r, msg)
 	}
 	return c.startInterrupted(ctx, c.local.ID, c.rt)
 }
