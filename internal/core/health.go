@@ -42,8 +42,9 @@ const ownRestartWindow = stopTimeout + time.Minute
 // healthWatch is the state of every service's ongoing health check.
 type healthWatch struct {
 	mu sync.Mutex
-	// svc is by service ID: bounded by services, and an entry goes when
-	// its service stops or a new release goes live (forget).
+	// svc is by service ID: bounded by services. A new release's
+	// container replaces its service's entry (state); the entry goes when
+	// the service stops (forget).
 	svc map[int64]*serviceHealth
 	// own holds the containers being restarted for their health check,
 	// until when: their die and start events are the restart, not a
@@ -97,7 +98,7 @@ func (w *healthWatch) restarts(serviceID int64, container string) int {
 	return 0
 }
 
-// forget drops a service's entry: it stopped, or a new release went live.
+// forget drops a service's entry: it stopped.
 func (w *healthWatch) forget(serviceID int64) {
 	w.mu.Lock()
 	delete(w.svc, serviceID)
@@ -313,7 +314,9 @@ func (c *Core) healthDone(serviceID int64, containerID string, restarted bool, n
 // adoptHealth reads the health of a container that just became active:
 // its first health_status events may have come while its release was
 // still deploying, when they don't count for the service.
+// A health alert open for the container it replaced resolves here.
 func (c *Core) adoptHealth(ctx context.Context, ss svcScope, containerID string) {
+	c.resolveAlert(ctx, healthAlertKey(ss.svc.ID), time.Now())
 	ct, err := c.runtime(ss.env.ServerID).Inspect(ctx, containerID)
 	if err != nil || ct.Health == "" {
 		return
@@ -322,6 +325,16 @@ func (c *Core) adoptHealth(ctx context.Context, ss svcScope, containerID string)
 	c.changeStatus(ss, func(s *apitypes.ServiceStatus) {
 		s.Health, s.HealthRestarts = apitypes.HealthState(ct.Health), restarts
 	})
+}
+
+// containerHealth is a container's ongoing health check state, empty
+// without one or when it can't be read.
+func (c *Core) containerHealth(ctx context.Context, ss svcScope, containerID string) apitypes.HealthState {
+	ct, err := c.runtime(ss.env.ServerID).Inspect(ctx, containerID)
+	if err != nil {
+		return ""
+	}
+	return apitypes.HealthState(ct.Health)
 }
 
 // healthAlertKey is the key of a service's unhealthy alert.

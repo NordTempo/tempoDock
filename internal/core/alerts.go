@@ -182,8 +182,9 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 			// A new container serves: its restarts start from zero.
 			c.resolveAlert(ctx, "deploy:"+svc, now)
 			c.resolveAlert(ctx, "crash:"+svc, now)
-			c.resolveAlert(ctx, "health:"+svc, now)
-			c.health.forget(ev.serviceID)
+			// The health alert is resolved at the cutover (adoptHealth):
+			// by the time this event is read, the new container may be
+			// failing its own check already.
 			c.alerts.mu.Lock()
 			delete(c.alerts.restarts, svc)
 			c.alerts.mu.Unlock()
@@ -264,8 +265,12 @@ func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st
 		delete(c.alerts.restarts, svc)
 		c.alerts.mu.Unlock()
 		c.resolveAlert(ctx, "crash:"+svc, now)
-		c.resolveAlert(ctx, "health:"+svc, now)
-		c.health.forget(ev.serviceID)
+		// This event may be read late: only a service that is still
+		// stopped loses its health check state and alert.
+		if s := c.getStatus(ev.serviceID).State; ev.serviceID != 0 && (s == apitypes.ServiceNone || s == apitypes.ServiceStopped) {
+			c.resolveAlert(ctx, "health:"+svc, now)
+			c.health.forget(ev.serviceID)
+		}
 		return
 	}
 	cfg := c.cfg.Alerts

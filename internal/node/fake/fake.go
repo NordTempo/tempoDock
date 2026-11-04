@@ -48,6 +48,7 @@ type Runtime struct {
 	healthErr   func(node.ContainerSpec) error
 	exitOnStart bool
 	routesErr   error
+	routesHold  *routesHold
 	healthGate  chan struct{}
 	stopGate    chan struct{}
 	domainCheck func(hostname string) node.DomainCheck
@@ -133,6 +134,34 @@ func (r *Runtime) FailHealthCheck(fn func(node.ContainerSpec) error) {
 // ExitOnStart makes new containers exit immediately (code 1), so their
 // health checks fail and a die event is emitted.
 func (r *Runtime) ExitOnStart(exit bool) { r.mu.Lock(); r.exitOnStart = exit; r.mu.Unlock() }
+
+// routesHold blocks the ApplyRoutes calls match picks until release.
+type routesHold struct {
+	match   func([]node.Route) bool
+	held    chan struct{} // closed when the first matching call waits
+	release chan struct{}
+	once    sync.Once
+}
+
+// HoldApplyRoutes blocks ApplyRoutes calls whose routes match picks until
+// the returned release is called, like a proxy that takes its time; held
+// is closed once one waits. Tests use it to stop a deploy's cutover after
+// it rendered routes and before its release reads as active.
+func (r *Runtime) HoldApplyRoutes(match func([]node.Route) bool) (held <-chan struct{}, release func()) {
+	h := &routesHold{match: match, held: make(chan struct{}), release: make(chan struct{})}
+	r.mu.Lock()
+	r.routesHold = h
+	r.mu.Unlock()
+	var once sync.Once
+	return h.held, func() {
+		once.Do(func() {
+			r.mu.Lock()
+			r.routesHold = nil
+			r.mu.Unlock()
+			close(h.release)
+		})
+	}
+}
 
 // FailApplyRoutes makes ApplyRoutes return err, keeping the previous routes.
 func (r *Runtime) FailApplyRoutes(err error) { r.mu.Lock(); r.routesErr = err; r.mu.Unlock() }
@@ -795,8 +824,18 @@ func (r *Runtime) PruneBuildCache(_ context.Context, keepBytes int64) (node.Prun
 }
 
 // ApplyRoutes implements node.Proxy.
-func (r *Runtime) ApplyRoutes(_ context.Context, routes []node.Route) error {
+func (r *Runtime) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 	r.mu.Lock()
+	if h := r.routesHold; h != nil && h.match(routes) {
+		r.mu.Unlock()
+		h.once.Do(func() { close(h.held) })
+		select {
+		case <-h.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		r.mu.Lock()
+	}
 	defer r.mu.Unlock()
 	if r.routesErr != nil {
 		return r.routesErr

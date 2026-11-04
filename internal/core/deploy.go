@@ -350,6 +350,9 @@ func (d *deployment) cutover(ctx context.Context) error {
 	serverID := d.ss.env.ServerID
 	canFallBack := d.old != nil && !d.oldRemoved
 
+	// Its health so far, read before taking the lock, so the release
+	// reads as active with it; adoptHealth takes what changes after.
+	health := c.containerHealth(ctx, d.ss, d.rel.ContainerID)
 	c.routesMu.Lock()
 	routeErr := c.applyRoutesLocked(ctx, serverID, map[int64]routeOverride{d.ss.svc.ID: {port: d.rel.HostPort, release: d.rel.ID}})
 	if routeErr != nil && canFallBack {
@@ -361,7 +364,7 @@ func (d *deployment) cutover(ctx context.Context) error {
 	// active (a deploy's caller polling, a backup, the data panel) sees
 	// the service running too.
 	prev := c.getStatus(d.ss.svc.ID)
-	c.setStatus(d.ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
+	c.setStatus(d.ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning, Health: health})
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		if d.old != nil {
 			if err := q.SupersedeRelease(ctx, d.old.ID); err != nil {

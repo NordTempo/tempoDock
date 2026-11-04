@@ -307,6 +307,13 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		case CodeOf(err) == apitypes.CodeDeployInProgress:
 			// The in-flight deploy resolves config after this insert only if
 			// it hasn't yet; the next deploy publishes the port either way.
+			// Its cutover may have rendered routes before this insert while
+			// its release didn't read as active yet: routes are applied
+			// here too, under routesMu, so they wait for that cutover and
+			// include the domain once its release has a port.
+			if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
+				c.log.Error("apply routes after adding domain", "domain", host, "err", err)
+			}
 		default:
 			return out, err
 		}
