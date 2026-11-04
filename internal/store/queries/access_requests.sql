@@ -62,9 +62,9 @@ SELECT count(*) FROM access_requests WHERE org_id = +? AND status = 'pending' AN
 SELECT CAST(coalesce(max(id), 0) AS INTEGER) FROM audit_events WHERE environment_id = +?;
 
 -- CountEnvironmentAuditSince counts the environment's changes after an
--- audit event.
+-- audit event, leaving out access requests' own (asked, decided).
 -- name: CountEnvironmentAuditSince :one
-SELECT count(*) FROM audit_events WHERE environment_id = +? AND id > +?;
+SELECT count(*) FROM audit_events WHERE environment_id = +? AND id > +? AND action NOT LIKE 'request.%';
 
 -- name: SetOrgRequestTTL :exec
 UPDATE orgs SET request_ttl_hours = ? WHERE id = +?;

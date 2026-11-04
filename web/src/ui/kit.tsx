@@ -8,6 +8,7 @@ import {
 import type { AuditEvent, EnvironmentLock } from "../data/types";
 import { CliHint } from "./CliHint";
 import { clock } from "./format";
+import { Icon } from "./icons";
 import { type GlyphChar, type State, toneText } from "./status";
 
 /**
@@ -68,7 +69,7 @@ export const lockHolds = (lock: EnvironmentLock, now = Date.now()) =>
   !lock.open_until || Date.parse(lock.open_until) <= now;
 
 /**
- * ▣ after a locked environment's name; faint while it is open for a
+ * A padlock after a locked environment's name; faint while it is open for a
  * while. Nothing for an unlocked one.
  */
 export function LockMark({ lock }: { lock: EnvironmentLock | undefined }) {
@@ -76,14 +77,15 @@ export function LockMark({ lock }: { lock: EnvironmentLock | undefined }) {
   const holds = lockHolds(lock);
   return (
     <span
-      className={holds ? "text-warn-text" : "text-faint"}
+      className={`inline-flex align-[-1px] ${holds ? "text-warn-text" : "text-faint"}`}
       title={
         holds
           ? "locked"
           : `open until ${clock(lock.open_until ?? "")}, then locked`
       }
     >
-      ▣<span className="sr-only">{holds ? " locked" : " open"}</span>
+      <Icon name="lock" size={11} />
+      <span className="sr-only">{holds ? " locked" : " open"}</span>
     </span>
   );
 }

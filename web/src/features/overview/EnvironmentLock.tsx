@@ -12,6 +12,7 @@ import type {
 } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago, clock, plural } from "../../ui/format";
+import { Icon } from "../../ui/icons";
 import {
   Act,
   Button,
@@ -119,15 +120,18 @@ export function LockStrip({
     <div className={strip}>
       {lockHolds(lock) ? (
         <>
-          <span>▣ Locked</span>
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="lock" size={12} /> Locked
+          </span>
           <span className="min-w-0 text-mut">
             by {lock.locked_by}, {ago(lock.locked_at)}
             {lock.reason && <> · {lock.reason}</>}
           </span>
         </>
       ) : (
-        <span>
-          ▣ Open until {clock(lock.open_until ?? "")}, then locked again
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="lock" size={12} /> Open until{" "}
+          {clock(lock.open_until ?? "")}, then locked again
         </span>
       )}
       <span className="ml-auto flex flex-wrap items-center gap-2">
@@ -213,7 +217,9 @@ export function LockForm({
         lock.mutate({ ref, reason: reason.trim() }, { onSuccess: onDone });
       }}
     >
-      <span>▣ Lock {ref.environment}</span>
+      <span className="inline-flex items-center gap-1.5">
+        <Icon name="lock" size={12} /> Lock {ref.environment}
+      </span>
       <input
         aria-label="Reason (optional)"
         placeholder="Reason (optional)"

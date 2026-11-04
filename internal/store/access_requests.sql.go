@@ -11,7 +11,7 @@ import (
 )
 
 const countEnvironmentAuditSince = `-- name: CountEnvironmentAuditSince :one
-SELECT count(*) FROM audit_events WHERE environment_id = +? AND id > +?
+SELECT count(*) FROM audit_events WHERE environment_id = +? AND id > +? AND action NOT LIKE 'request.%'
 `
 
 type CountEnvironmentAuditSinceParams struct {
@@ -20,7 +20,7 @@ type CountEnvironmentAuditSinceParams struct {
 }
 
 // CountEnvironmentAuditSince counts the environment's changes after an
-// audit event.
+// audit event, leaving out access requests' own (asked, decided).
 func (q *Queries) CountEnvironmentAuditSince(ctx context.Context, arg CountEnvironmentAuditSinceParams) (int64, error) {
 	row := q.queryRow(ctx, q.countEnvironmentAuditSinceStmt, countEnvironmentAuditSince, arg.EnvironmentID, arg.ID)
 	var count int64

@@ -18,7 +18,7 @@ import (
 // ProjectPath addresses a project.
 type ProjectPath struct {
 	Project    string `path:"project" doc:"Project name"`
-	ExpectedID int64  `header:"Dock-Project-ID" minimum:"1" doc:"Expected project identity for linked clients"`
+	ExpectedID int64  `json:"-" header:"Dock-Project-ID" minimum:"1" doc:"Expected project identity for linked clients"`
 }
 
 // expectedProjectID lets authed constrain name-based requests to their identity.
