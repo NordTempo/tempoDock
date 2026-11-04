@@ -353,6 +353,25 @@ export function SectionHead({
   );
 }
 
+/**
+ * One term and its value in a <dl>: the release page's facts, the CLI
+ * login and access pages. The <dl> sets the grid (and `.props` the lines).
+ */
+export function Prop({
+  label,
+  children,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </>
+  );
+}
+
 /** A table that scrolls sideways instead of squeezing on narrow screens. */
 export function Scroll({ children }: { children: ReactNode }) {
   return <div className="overflow-x-auto">{children}</div>;

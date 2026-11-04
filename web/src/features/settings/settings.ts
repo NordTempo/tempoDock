@@ -175,7 +175,3 @@ export function parseSetting(
     }
   }
 }
-
-/** Whether a setting takes effect on the next build rather than a release. */
-export const buildOnly = (key: SettingKey) =>
-  key === "dockerfile_path" || key === "build_command";

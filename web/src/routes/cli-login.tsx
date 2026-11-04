@@ -4,7 +4,7 @@ import { type ReactNode, useState } from "react";
 import { api, body, done } from "../api/client";
 import { queries, useSession } from "../data/queries";
 import { ago, clock } from "../ui/format";
-import { ErrorText } from "../ui/kit";
+import { ErrorText, Prop } from "../ui/kit";
 
 // Approval page for `dock login`: the CLI prints a link to here and a code
 // the user types in. The link never carries the code, so nobody can send a
@@ -105,28 +105,28 @@ function CliLogin() {
     );
   } else {
     found = (
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1.5">
-        <Field label="Client">
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1.5 [&>dt]:text-mut">
+        <Prop label="Client">
           {l.client_name} on <span className="font-mono">{l.hostname}</span>{" "}
           <span className="text-mut">{l.os}</span>
-        </Field>
-        <Field label="From">
+        </Prop>
+        <Prop label="From">
           <span className="font-mono">{l.ip}</span>
-        </Field>
-        <Field label="Requested">
+        </Prop>
+        <Prop label="Requested">
           {clock(l.created_at)}{" "}
           <span className="text-mut">
             {ago(l.created_at)}, code expires {clock(l.expires_at)}
           </span>
-        </Field>
-        <Field label="Access">
+        </Prop>
+        <Prop label="Access">
           <b className="font-semibold">{l.scope}</b>{" "}
           <span className="text-mut">same as you, {session?.name}</span>
-        </Field>
-        <Field label="Token">
+        </Prop>
+        <Prop label="Token">
           <span className="font-mono">{l.token_name}</span>{" "}
           <span className="text-mut">expires in {l.token_days} days</span>
-        </Field>
+        </Prop>
       </dl>
     );
   }
@@ -197,14 +197,5 @@ function Shell({ children }: { children: ReactNode }) {
         {children}
       </main>
     </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <dt className="text-mut">{label}</dt>
-      <dd>{children}</dd>
-    </>
   );
 }
