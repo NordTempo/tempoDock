@@ -20,7 +20,7 @@ a small server, so a runner's core count doesn't move their memory.
 | Daemon memory with 20 SSE clients | ≤ 30 MB | 14-17 MB |
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 4.5-5 ms |
 | API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.4-6 ms; with a staged change, overview 6-8 ms and changes 3-4.5 ms |
-| UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 116 KB |
+| UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 128 KB (13 files) |
 | UI initial JS as the daemon serves it | ≤ 200 KB on the wire, cacheable | 113 KB, then 0 (immutable) |
 | UI initial CSS (gzip) | ≤ 30 KB | 4.6 KB |
 | UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 64 KB (Inter and JetBrains Mono, Latin subsets) |

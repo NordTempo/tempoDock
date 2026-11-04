@@ -1,15 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { servicePath } from "../data/queries";
 import { AnalyticsTab } from "../features/analytics/AnalyticsTab";
+import { applyChange, parseFilter } from "../features/analytics/data";
 import {
   type AnalyticsSearch,
   analyticsSearch,
-  applyChange,
-  parseFilter,
   sitesQuery,
   type Vital,
   vitals,
-} from "../features/analytics/data";
+} from "../features/analytics/loaders";
 import { VitalsView } from "../features/analytics/VitalsView";
 
 // A site's Web Vitals (ADR 0037): …/web/analytics/vitals?site=…&m=inp&device=mobile,

@@ -1,14 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { servicePath } from "../data/queries";
 import { AnalyticsTab } from "../features/analytics/AnalyticsTab";
+import { applyChange, parseFilter } from "../features/analytics/data";
+import { ErrorsView } from "../features/analytics/ErrorsView";
 import {
   type AnalyticsSearch,
   analyticsSearch,
-  applyChange,
-  parseFilter,
   sitesQuery,
-} from "../features/analytics/data";
-import { ErrorsView } from "../features/analytics/ErrorsView";
+} from "../features/analytics/loaders";
 
 // A site's errors (ADR 0037): …/web/analytics/errors?site=…&range=7d&g=<group>,
 // g the group opened under its row.

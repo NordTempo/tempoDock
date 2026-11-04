@@ -2,12 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { servicePath, useCanDeploy } from "../data/queries";
 import { AnalyticsTab } from "../features/analytics/AnalyticsTab";
 import { Dashboard } from "../features/analytics/Dashboard";
-import {
-  analyticsSearch,
-  applyChange,
-  parseFilter,
-  sitesQuery,
-} from "../features/analytics/data";
+import { applyChange, parseFilter } from "../features/analytics/data";
+import { analyticsSearch, sitesQuery } from "../features/analytics/loaders";
 
 // A service's Analytics tab (ADR 0037): its site's dashboard.
 // /shop/production/web/analytics?site=shop.example.com&range=7d&f=country:is:NO

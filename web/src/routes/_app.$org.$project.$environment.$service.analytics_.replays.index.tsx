@@ -1,13 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { servicePath } from "../data/queries";
 import { AnalyticsTab } from "../features/analytics/AnalyticsTab";
+import { applyChange, parseFilter } from "../features/analytics/data";
 import {
   type AnalyticsSearch,
   analyticsSearch,
-  applyChange,
-  parseFilter,
   sitesQuery,
-} from "../features/analytics/data";
+} from "../features/analytics/loaders";
 import { ReplaysView } from "../features/analytics/ReplaysView";
 
 // A site's session replays (ADR 0037): …/web/analytics/replays?site=…&errors=true&device=mobile.
