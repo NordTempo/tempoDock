@@ -4,7 +4,7 @@ import {
   Outlet,
   useMatches,
 } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   findService,
   queries,
@@ -12,9 +12,8 @@ import {
   useCanDeploy,
 } from "../data/queries";
 import {
-  type DeployStart,
-  DeployWindow,
   DropOverlay,
+  openDeploy,
   useDropTarget,
 } from "../features/deploy/start";
 import { ServiceBar, ServiceTabs } from "../features/service/ServiceHeader";
@@ -49,19 +48,16 @@ function ServiceLayout() {
   const tab = useMatches({ select: (matches) => matches.at(-1)?.routeId });
   const onOverview = tab === "/_app/$org/$project/$environment/$service/";
   useEffect(() => rememberProject(ref.project), [ref.project]);
-  // The open Deploy window; each drop opens a fresh one.
-  const [deploy, setDeploy] = useState<{ start: DeployStart; n: number }>();
-  const open = (start: DeployStart) =>
-    setDeploy((d) => ({ start, n: (d?.n ?? 0) + 1 }));
+  // Each drop opens a fresh Deploy window (hosted by the shell).
   const dragging = useDropTarget(useCanDeploy(ref), (dropped) =>
-    open({ dropped }),
+    openDeploy(ref, { dropped }),
   );
   return (
     <>
       <ServiceBar
         serviceRef={ref}
         full={onOverview}
-        onDeploy={() => open({})}
+        onDeploy={() => openDeploy(ref)}
       />
       <ServiceTabs serviceRef={ref} />
       {onOverview ? (
@@ -79,14 +75,6 @@ function ServiceLayout() {
         </Page>
       )}
       {dragging && <DropOverlay service={ref.service} />}
-      {deploy && (
-        <DeployWindow
-          key={deploy.n}
-          serviceRef={ref}
-          start={deploy.start}
-          onClose={() => setDeploy(undefined)}
-        />
-      )}
     </>
   );
 }

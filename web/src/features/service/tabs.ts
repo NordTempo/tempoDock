@@ -1,0 +1,97 @@
+import { isDatabase } from "../../data/queries";
+import type { ServiceView } from "../../data/types";
+
+/**
+ * A service's tabs: label, route and G-sequence key. The tab strip, the
+ * palette's "Logs · web production" commands and the ? help all read
+ * this list, so a new tab shows up everywhere. Kept out of
+ * ServiceHeader so the shell chunk doesn't pull the header in.
+ */
+export const serviceTabs = [
+  { label: "Overview", to: "/$org/$project/$environment/$service", key: "g o" },
+  // Database services only (isDatabase). G B, "base": G D is Domains.
+  {
+    label: "Data",
+    to: "/$org/$project/$environment/$service/data",
+    key: "g b",
+  },
+  // Stateful services only. G K, "keep": G B is Data.
+  {
+    label: "Backups",
+    to: "/$org/$project/$environment/$service/backups",
+    key: "g k",
+  },
+  {
+    label: "Logs",
+    to: "/$org/$project/$environment/$service/logs",
+    key: "g l",
+  },
+  // One-off commands (ADR 0049). G C, "command": G R is Releases.
+  {
+    label: "Run",
+    to: "/$org/$project/$environment/$service/run",
+    key: "g c",
+  },
+  // CPU and memory. G M, from its old name Metrics: G R is Releases.
+  {
+    label: "Resources",
+    to: "/$org/$project/$environment/$service/resources",
+    key: "g m",
+  },
+  // Services with a domain only: what their domains served (ADR 0033).
+  {
+    label: "Traffic",
+    to: "/$org/$project/$environment/$service/traffic",
+    key: "g t",
+  },
+  // Services with a domain only: Dock Analytics' dashboard (ADR 0037).
+  // G Y, "analytics": G A is Audit.
+  {
+    label: "Analytics",
+    to: "/$org/$project/$environment/$service/analytics",
+    key: "g y",
+  },
+  {
+    label: "Releases",
+    to: "/$org/$project/$environment/$service/releases",
+    key: "g r",
+  },
+  {
+    label: "Domains",
+    to: "/$org/$project/$environment/$service/domains",
+    key: "g d",
+  },
+  {
+    label: "Variables",
+    to: "/$org/$project/$environment/$service/variables",
+    key: "g v",
+  },
+  {
+    label: "Settings",
+    to: "/$org/$project/$environment/$service/settings",
+    key: "g s",
+  },
+  {
+    label: "Audit",
+    to: "/$org/$project/$environment/$service/audit",
+    key: "g a",
+  },
+] as const;
+
+export type ServiceTab = (typeof serviceTabs)[number];
+
+/** The tabs this service has: Data, Backups, Traffic and Analytics only where they apply. */
+export const tabsFor = (view: Pick<ServiceView, "service" | "domains">) =>
+  serviceTabs.filter((tab) => {
+    switch (tab.label) {
+      case "Data":
+        return isDatabase(view.service);
+      case "Backups":
+        return view.service.stateful;
+      case "Traffic":
+      case "Analytics":
+        return view.domains.length > 0;
+      default:
+        return true;
+    }
+  });

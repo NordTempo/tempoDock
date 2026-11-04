@@ -14,11 +14,12 @@ import { isTyping, modKey, useKeydown, useLegend } from "./keys";
  * When idle it lists the current page's shortcuts.
  */
 export function CommandLine() {
-  const commands = useCommands();
-  const legend = useLegend();
   const input = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
+  // Release history (for rollback commands) loads once it's in use.
+  const commands = useCommands({ withHistory: focused });
+  const legend = useLegend();
   const [help, setHelp] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [busy, setBusy] = useState(false);

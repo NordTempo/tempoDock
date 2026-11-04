@@ -3,7 +3,6 @@ import { type ReactNode, useState } from "react";
 import { useRestart, useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
-  isDatabase,
   listenPort,
   useCanDeploy,
   useChanges,
@@ -37,78 +36,8 @@ import {
 import { EnvServer } from "../servers/parts";
 import { useStartService, useStopService } from "./data";
 import { copiedConfig, errorSummary, rollbackTarget } from "./releases";
+import { type ServiceTab, tabsFor } from "./tabs";
 import { CpuUsage, MemoryUsage } from "./Usage";
-
-const tabs = [
-  { label: "Overview", to: "/$org/$project/$environment/$service", key: "g o" },
-  // Database services only (isDatabase). G B, "base": G D is Domains.
-  {
-    label: "Data",
-    to: "/$org/$project/$environment/$service/data",
-    key: "g b",
-  },
-  // Stateful services only. G K, "keep": G B is Data.
-  {
-    label: "Backups",
-    to: "/$org/$project/$environment/$service/backups",
-    key: "g k",
-  },
-  {
-    label: "Logs",
-    to: "/$org/$project/$environment/$service/logs",
-    key: "g l",
-  },
-  // One-off commands (ADR 0049). G C, "command": G R is Releases.
-  {
-    label: "Run",
-    to: "/$org/$project/$environment/$service/run",
-    key: "g c",
-  },
-  // CPU and memory. G M, from its old name Metrics: G R is Releases.
-  {
-    label: "Resources",
-    to: "/$org/$project/$environment/$service/resources",
-    key: "g m",
-  },
-  // Services with a domain only: what their domains served (ADR 0033).
-  {
-    label: "Traffic",
-    to: "/$org/$project/$environment/$service/traffic",
-    key: "g t",
-  },
-  // Services with a domain only: Dock Analytics' dashboard (ADR 0037).
-  // G Y, "analytics": G A is Audit.
-  {
-    label: "Analytics",
-    to: "/$org/$project/$environment/$service/analytics",
-    key: "g y",
-  },
-  {
-    label: "Releases",
-    to: "/$org/$project/$environment/$service/releases",
-    key: "g r",
-  },
-  {
-    label: "Domains",
-    to: "/$org/$project/$environment/$service/domains",
-    key: "g d",
-  },
-  {
-    label: "Variables",
-    to: "/$org/$project/$environment/$service/variables",
-    key: "g v",
-  },
-  {
-    label: "Settings",
-    to: "/$org/$project/$environment/$service/settings",
-    key: "g s",
-  },
-  {
-    label: "Audit",
-    to: "/$org/$project/$environment/$service/audit",
-    key: "g a",
-  },
-] as const;
 
 /**
  * A service's header bar: project / service, the environment switch, its
@@ -174,14 +103,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const view = useService(ref);
   const changes = useChanges(ref);
   const navigate = useNavigate();
-  const { service } = view;
-  const shown = tabs.filter(
-    (tab) =>
-      (tab.label !== "Data" || isDatabase(service)) &&
-      (tab.label !== "Backups" || service.stateful) &&
-      ((tab.label !== "Traffic" && tab.label !== "Analytics") ||
-        view.domains.length > 0),
-  );
+  const shown = tabsFor(view);
   useShortcuts(
     shown.map((tab) => ({
       key: tab.key,
@@ -190,7 +112,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
   const mine = (c: { service?: string }) =>
     !c.service || c.service === ref.service;
-  const marks: Partial<Record<(typeof tabs)[number]["label"], boolean>> = {
+  const marks: Partial<Record<ServiceTab["label"], boolean>> = {
     Domains:
       view.domains.some(domainNeedsAttention) ||
       changes.domains.some((d) => d.service === ref.service),
@@ -482,7 +404,10 @@ function Actions({
           run: () => setConfirming("stop"),
         },
   ];
-  useShortcuts(shortcuts);
+  useShortcuts(mayDeploy ? shortcuts : []);
+
+  // Read-only callers see the state, not buttons they can't use.
+  if (!mayDeploy) return null;
 
   if (confirming === "stop") {
     return (

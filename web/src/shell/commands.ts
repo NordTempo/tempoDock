@@ -1,15 +1,9 @@
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  useDeploy,
-  useLogout,
-  useRestart,
-  useRollback,
-} from "../data/mutations";
+import { useLogout, useRestart, useRollback } from "../data/mutations";
 import {
   canDeploy,
   deployBlock,
-  isDatabase,
   queries,
   serviceRef,
   useIsOperator,
@@ -22,8 +16,10 @@ import {
   canCreateProject,
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
+import { openDeploy } from "../features/deploy/start";
 import { promoteCli, promotionPairs } from "../features/promote/plan";
 import { rollbackTarget } from "../features/service/releases";
+import { tabsFor } from "../features/service/tabs";
 import { serviceState, type Tone } from "../ui/status";
 import { useCurrentContext, useOrg } from "./location";
 
@@ -43,26 +39,21 @@ export type Command = {
   run: () => unknown;
 };
 
-const serviceTabs = [
-  // Database services only (isDatabase).
-  ["data", "Data", "g b"],
-  // Stateful services only.
-  ["backups", "Backups", "g k"],
-  ["logs", "Logs", "g l"],
-  ["resources", "Resources", "g m"],
-  ["releases", "Releases", "g r"],
-  ["domains", "Domains", "g d"],
-  ["settings", "Settings", "g s"],
-  ["audit", "Audit", "g a"],
-] as const;
-
-/** Every palette command, built from the project tree and current location. */
-export function useCommands(): Command[] {
+/**
+ * Every palette command, built from the project tree and current location.
+ * Rollback commands need release history, which is fetched only while
+ * `withHistory` (the palette open, the command line in use); until then
+ * only histories already cached count.
+ */
+export function useCommands({
+  withHistory,
+}: {
+  withHistory: boolean;
+}): Command[] {
   const projects = useProjectTree();
   const here = useCurrentContext();
   const org = useOrg();
   const navigate = useNavigate();
-  const deploy = useDeploy();
   const restart = useRestart();
   const rollback = useRollback();
   const logout = useLogout();
@@ -72,7 +63,7 @@ export function useCommands(): Command[] {
   const blockOf = (server: string) =>
     deployBlock(servers.find((s) => s.name === server));
 
-  // Rollback targets need release history, cached for the current project.
+  // Rollback targets need release history, for the current project.
   const local = projects
     .filter((p) => p.project.name === here.project)
     .flatMap((p) => p.environments.flatMap((e) => e.services))
@@ -81,6 +72,7 @@ export function useCommands(): Command[] {
     queries: local.map((ref) => ({
       ...queries.releases(ref),
       staleTime: 60_000,
+      enabled: withHistory,
     })),
   });
   const historyOf = (project: string, environment: string, service: string) =>
@@ -195,6 +187,7 @@ export function useCommands(): Command[] {
             openCreate({ kind: "service", env: ref, source: "database" }),
         });
       }
+      const mayDeploy = canDeploy(session, { project, environment });
       add({
         id: `vars:${project}/${environment}`,
         group: "Go to",
@@ -240,8 +233,8 @@ export function useCommands(): Command[] {
               }
             : undefined);
 
-        // Image deploys only; source deploys upload from the CLI.
-        if (svc.service.image) {
+        // The Deploy window takes a folder, an image or the GitHub branch.
+        if (mayDeploy) {
           add({
             id: `deploy:${id}`,
             group: "Actions",
@@ -250,15 +243,10 @@ export function useCommands(): Command[] {
             note: busy ?? note,
             cli: `dock deploy${flags}`,
             weight,
-            run:
-              refuse ??
-              (async () => {
-                await deploy.mutateAsync(params);
-                await open();
-              }),
+            run: refuse ?? (() => openDeploy(params)),
           });
         }
-        if (svc.service.active_release) {
+        if (mayDeploy && svc.service.active_release) {
           add({
             id: `restart:${id}`,
             group: "Actions",
@@ -273,7 +261,7 @@ export function useCommands(): Command[] {
         const target = rollbackTarget(
           historyOf(project, environment, service) ?? [],
         );
-        if (target) {
+        if (mayDeploy && target) {
           add({
             id: `rollback:${id}`,
             group: "Actions",
@@ -300,21 +288,16 @@ export function useCommands(): Command[] {
           weight,
           run: open,
         });
-        for (const [tab, title, keys] of serviceTabs) {
-          if (tab === "data" && !isDatabase(svc.service)) continue;
-          if (tab === "backups" && !svc.service.stateful) continue;
+        for (const tab of tabsFor(svc)) {
+          if (tab.label === "Overview") continue;
           add({
-            id: `go:${id}:${tab}`,
+            id: `go:${id}:${tab.label}`,
             group: "Go to",
-            label: `${title} · ${service} ${where}`,
+            label: `${tab.label} · ${service} ${where}`,
             strong: service,
-            cli: isHere ? keys.toUpperCase() : "",
+            cli: isHere ? tab.key.toUpperCase() : "",
             weight: weight - 1,
-            run: () =>
-              navigate({
-                to: `/$project/$environment/$service/${tab}`,
-                params,
-              }),
+            run: () => navigate({ to: tab.to, params: { org, ...params } }),
           });
         }
       }
@@ -333,20 +316,29 @@ export function useCommands(): Command[] {
   }
 
   // Operators reach the platform console's pages; everyone else the
-  // activity they may see. Admins reach their organization's tokens.
-  const pages = operator
-    ? ([
-        ["Platform console", "/console", ""],
-        ["Servers", "/console/servers", "dock server list"],
-        ["Registry", "/console/registry", "dock registry"],
-        ["Backups", "/console/backups", "dock backup status"],
-        ["Users", "/console/users", "dock user list"],
-        ["Data access policy", "/console/data-access", "dock db policy show"],
-        ["Alerts", "/console/alerts", "dock alerts"],
-        ["Audit log", "/console/audit", "dock audit"],
-        ["Account", "/account", "dock whoami"],
-      ] as const)
-    : ([["Account", "/account", "dock whoami"]] as const);
+  // activity they may see. Admins reach their organization's members and
+  // tokens; everyone its general settings and variables.
+  const pages = [
+    ...(operator
+      ? ([
+          ["Platform console", "/console", ""],
+          ["Servers", "/console/servers", "dock server list"],
+          ["Registry", "/console/registry", "dock registry"],
+          ["Storage", "/console/storage", "dock storage"],
+          ["Backups", "/console/backups", "dock backup status"],
+          ["Users", "/console/users", "dock user list"],
+          ["Data access policy", "/console/data-access", "dock db policy show"],
+          ["Alerts", "/console/alerts", "dock alerts"],
+          ["Audit log", "/console/audit", "dock audit"],
+          ["GitHub App", "/console/github", "dock github"],
+          ["Cloudflare", "/console/cloudflare", "dock cloudflare"],
+          ["Address", "/console/address", "dock address"],
+          ["Updates", "/console/updates", "dock update"],
+          ["Analytics", "/console/analytics", "dock analytics"],
+        ] as const)
+      : []),
+    ["Account", "/account", "dock whoami"],
+  ] as const;
   for (const [label, to, cli] of pages) {
     add({
       id: `go:${to}`,
@@ -360,14 +352,17 @@ export function useCommands(): Command[] {
   const orgPages = [
     ...(session?.scope === "admin"
       ? ([
+          ["Members", "/$org/settings/members", "dock org members"],
           ["Tokens", "/$org/settings/tokens", "dock token list"],
           ["Requests", "/$org/requests", "dock request list"],
         ] as const)
       : []),
+    ["Organization variables", "/$org/settings/variables", "dock org env list"],
+    ["Organization settings", "/$org/settings/general", "dock org list"],
     ...(operator
       ? []
       : ([["Audit log", "/$org/audit", "dock audit"]] as const)),
-  ];
+  ] as const;
   for (const [label, to, cli] of orgPages) {
     add({
       id: `go:${to}`,

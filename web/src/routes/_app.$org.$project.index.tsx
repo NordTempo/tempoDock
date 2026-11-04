@@ -3,7 +3,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { withOrg } from "../api/client";
 import { useArchiveProject } from "../data/mutations";
-import { queries, serviceRef, useIsAdmin, useSession } from "../data/queries";
+import {
+  canDeploy,
+  queries,
+  serviceRef,
+  useIsAdmin,
+  useSession,
+} from "../data/queries";
 import { canCreateEnvironment } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { ArchivedProject } from "../features/overview/Archived";
@@ -29,9 +35,10 @@ export const Route = createFileRoute("/_app/$org/$project/")({
       queryClient.ensureQueryData(queries.audit({ project: params.project })),
       queryClient.ensureQueryData(queries.placements(params.project)),
     ]);
-    await Promise.all([
-      // Staged problems say which releases applying creates.
-      ...overview.environments
+    // Staged problems say which releases applying creates. (The palette
+    // loads release history for rollbacks itself, once opened.)
+    await Promise.all(
+      overview.environments
         .filter((e) => e.pending_changes > 0)
         .map((e) =>
           queryClient.ensureQueryData(
@@ -41,13 +48,7 @@ export const Route = createFileRoute("/_app/$org/$project/")({
             }),
           ),
         ),
-      // Rollback commands in the palette need each service's history.
-      ...overview.environments
-        .flatMap((e) => e.services)
-        .map((s) =>
-          queryClient.prefetchQuery(queries.releases(serviceRef(s.service))),
-        ),
-    ]);
+    );
   },
   component: Overview,
 });
@@ -95,7 +96,13 @@ function LiveOverview() {
   const deploying = services.filter((s) => s.deploying);
   const varsEnv =
     environments.find((e) => e.pending_changes > 0) ?? environments[0];
-  const canNewEnv = canCreateEnvironment(useSession(), project);
+  const canNewEnv = canCreateEnvironment(session, project);
+  // Deploy rights may be limited to one environment; any one will do.
+  const mayDeploy =
+    services.length > 0 &&
+    environments.some((e) =>
+      canDeploy(session, { project, environment: e.environment.name }),
+    );
   const newEnvironment = () => openCreate({ kind: "environment", project });
 
   useEffect(() => rememberProject(project), [project]);
@@ -128,7 +135,9 @@ function LiveOverview() {
           },
         ]
       : []),
-    { key: "d", label: "deploy", run: () => openPalette("deploy ") },
+    ...(mayDeploy
+      ? [{ key: "d", label: "deploy", run: () => openPalette("deploy ") }]
+      : []),
     ...(watch
       ? [
           {
@@ -193,9 +202,11 @@ function LiveOverview() {
                 Variables <kbd>V</kbd>
               </Link>
             )}
-            <Button primary onClick={() => openPalette("deploy ")}>
-              Deploy a service <kbd>D</kbd>
-            </Button>
+            {mayDeploy && (
+              <Button primary onClick={() => openPalette("deploy ")}>
+                Deploy a service <kbd>D</kbd>
+              </Button>
+            )}
           </>
         }
       />

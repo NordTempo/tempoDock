@@ -1,9 +1,17 @@
-import { lazy, Suspense, useEffect, useEffectEvent, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useEffectEvent,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { ServiceRef } from "../../data/types";
 
-// What the service layout needs to start a deploy: the window's options,
-// reading a drop, and the drop target. The window itself and the packer
-// load only when it opens.
+// What the shell needs to start a deploy: opening the Deploy window from
+// anywhere (the service header, the palette, a release page), reading a
+// drop, and the drop target. The window itself and the packer load only
+// when it opens.
 
 export type DeployMode = "folder" | "image" | "git";
 
@@ -15,15 +23,40 @@ export type DeployStart = { mode?: DeployMode; dropped?: Dropped };
 
 const Window = lazy(() => import("./DeployDialog"));
 
-/** The Deploy window, loaded on first open. */
-export function DeployWindow(props: {
-  serviceRef: ServiceRef;
-  start: DeployStart;
-  onClose: () => void;
-}) {
+type Open = { serviceRef: ServiceRef; start: DeployStart; n: number };
+
+// The open window lives outside React, like the create dialogs, so the
+// palette and pages can open one without a provider of their own.
+let current: Open | null = null;
+let opened = 0;
+const listeners = new Set<() => void>();
+
+function set(next: Open | null) {
+  current = next;
+  for (const listener of listeners) listener();
+}
+
+/** Opens the Deploy window for a service; each call opens a fresh one. */
+export const openDeploy = (serviceRef: ServiceRef, start: DeployStart = {}) =>
+  set({ serviceRef, start, n: ++opened });
+
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+/** Renders the open Deploy window, loaded on first open. The shell mounts it once. */
+export function DeployHost() {
+  const open = useSyncExternalStore(subscribe, () => current);
+  if (!open) return null;
   return (
     <Suspense fallback={null}>
-      <Window {...props} />
+      <Window
+        key={open.n}
+        serviceRef={open.serviceRef}
+        start={open.start}
+        onClose={() => set(null)}
+      />
     </Suspense>
   );
 }
