@@ -1452,6 +1452,11 @@
               "null"
             ]
           },
+          "release": {
+            "description": "With deploy_in_progress: the release that is deploying; wait for it, then retry",
+            "format": "int64",
+            "type": "integer"
+          },
           "request": {
             "format": "int64",
             "type": "integer"

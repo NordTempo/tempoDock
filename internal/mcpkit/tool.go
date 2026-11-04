@@ -233,13 +233,15 @@ func (s *Server[A]) run(ctx context.Context, t *tool[A], c *Call[A], args json.R
 
 // toolError is the JSON of a failed call, in the shape of the CLI's
 // errors: {"error": {"code", "message", "hint"}}, plus the access request
-// a refused change filed.
+// a refused change filed and the release a deploy_in_progress error is
+// about.
 type toolError struct {
 	Error struct {
 		Code    apitypes.ErrorCode `json:"code"`
 		Message string             `json:"message"`
 		Hint    string             `json:"hint,omitempty"`
 		Request int64              `json:"request,omitempty"`
+		Release int64              `json:"release,omitempty"`
 	} `json:"error"`
 }
 
@@ -258,7 +260,7 @@ func (s *Server[A]) fail(err error) toolResult {
 	te.Error.Code, te.Error.Message = apitypes.CodeInternal, "internal error; see the daemon log"
 	switch de, ok := errors.AsType[*datapanel.Error](err); {
 	case ok:
-		te.Error.Code, te.Error.Message = de.Code, de.Msg
+		te.Error.Code, te.Error.Message, te.Error.Release = de.Code, de.Msg, de.Release
 	case errors.Is(err, context.Canceled):
 		te.Error.Message = "the call was cancelled" // the client went away
 	default:

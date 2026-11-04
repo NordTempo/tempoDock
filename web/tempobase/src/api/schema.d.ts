@@ -1109,6 +1109,11 @@ export interface components {
             /** @example this token has scope deploy; archiving a service requires admin */
             detail: string;
             errors?: components["schemas"]["ErrorDetail"][] | null;
+            /**
+             * Format: int64
+             * @description With deploy_in_progress: the release that is deploying; wait for it, then retry
+             */
+            release?: number;
             /** Format: int64 */
             request?: number;
             /**

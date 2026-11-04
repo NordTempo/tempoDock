@@ -16,8 +16,9 @@ import (
 
 // Waiting for releases. Tools that start releases (deploy, redeploy, start,
 // rollback, promote, apply) wait until each is active or failed, up to the
-// caller's wait_seconds, and return the final state. They follow the
-// event bus like `dock deploy` follows /events: nothing polls.
+// caller's wait_seconds, and return the final state; wait_for_release
+// does the same for a release already running. They follow the event bus
+// like `dock deploy` follows /events: nothing polls.
 
 const (
 	defaultWait = 300 * time.Second
@@ -260,7 +261,7 @@ func waitSummary(action string, vs []releaseView) string {
 		out = action + ": no releases started"
 	}
 	if unfinished > 0 {
-		out += ". Still deploying; check later with release_details."
+		out += ". Still deploying; call wait_for_release to keep waiting."
 	}
 	for _, v := range vs {
 		if v.Status == apitypes.ReleaseFailed {

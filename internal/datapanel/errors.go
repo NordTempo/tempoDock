@@ -14,6 +14,9 @@ import (
 type Error struct {
 	Code apitypes.ErrorCode
 	Msg  string
+	// Release is the release a deploy_in_progress error is about (the
+	// one deploying), so callers can wait for it; 0 when unknown.
+	Release int64
 }
 
 func (e *Error) Error() string { return e.Msg }

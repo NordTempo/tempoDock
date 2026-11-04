@@ -54,6 +54,9 @@ type Error struct {
 	Errors []ErrorDetail `json:"errors,omitempty"`
 	// Request is the access request an environment_locked error filed.
 	Request int64 `json:"request,omitempty"`
+	// Release is the release a deploy_in_progress error is about: the
+	// one deploying, to wait for before retrying.
+	Release int64 `json:"release,omitempty" doc:"With deploy_in_progress: the release that is deploying; wait for it, then retry"`
 }
 
 // ErrorDetail points at one invalid input.
