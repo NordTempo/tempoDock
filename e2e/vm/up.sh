@@ -67,6 +67,8 @@ if [[ -n $token ]]; then
 	sed -n 's/.*with password \([^ ]*\) .*/\1/p' "$STATE/install-cp.log" >"$STATE/admin-password"
 fi
 token=$(cat "$STATE/token")
+# An offline node raises its alert after a minute instead of five (health scenario).
+docker exec e2e2-cp bash -c "grep -q server_offline_minutes /etc/dock/config.toml || printf '\n[alerts]\nserver_offline_minutes = 1\n' >>/etc/dock/config.toml"
 docker exec e2e2-cp bash -c "grep -q allow_private /etc/dock/config.toml && sed -i 's|^allow_private.*|allow_private = [\"$SUBNET\"]|' /etc/dock/config.toml || printf '\n[network]\nallow_private = [\"$SUBNET\"]\n' >>/etc/dock/config.toml; systemctl restart dock-firewall dock"
 
 export DOCK_URL=http://$CP_IP:7070 DOCK_TOKEN=$token

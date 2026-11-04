@@ -367,8 +367,69 @@ scenario_snapshot() {
 	check "the in-place restore left a safety snapshot" test "$(api GET "$(svc_path $p db)/snapshots" | jq 'if type == "array" then . else .snapshots end | length')" -ge 2
 }
 
+# svc_status P S FIELD prints a field of the service's status.
+svc_status() { api GET "$(svc_path "$1" "$2")" | jq -r ".status.$3"; }
+status_is() { [[ $(svc_status "$1" "$2" "$3") == "$4" ]]; }
+
+# alert_open KIND [PROJECT|SERVER]: an open alert of KIND (naming it) exists.
+alert_open() { api GET /alerts | jq -e --arg k "$1" --arg w "${2:-}" '[.[]? // .alerts[]? | select(.kind == $k and .resolved_at == null and ($w == "" or .project == $w or .server == $w))] | length > 0' >/dev/null; }
+alert_closed() { ! alert_open "$@"; }
+
+scenario_health() {
+	local p=e2e2-health-$RUN h ctr srv n
+	fresh $p || return
+	ensure_service $p web '{"image":"busybox:1.37","port":8080,"health_check_path":"/health",
+		"health_check_interval_seconds":2,"health_check_retries":2,"health_check_probe_timeout_seconds":1,"health_check_start_period_seconds":3,
+		"start_command":"sh -c \"mkdir -p /tmp/w && echo ok > /tmp/w/health && echo up > /tmp/w/index.html && exec httpd -f -p 8080 -h /tmp/w\""}'
+	n=$(api POST "$(svc_path $p web)/releases" '{}' | jq -r .number)
+	expect_release $p web "$n" active
+	h=$(generate_domain $p web)
+	check "settings took the ongoing check" jq -e '.health_check_interval_seconds == 2' <<<"$(api GET "$(svc_path $p web)")"
+	check "the service reads healthy" wait_for 30 status_is $p web health healthy
+	srv=$(env_server $p)
+	ctr=$(service_containers $p web)
+	# The app breaks without crashing: its health path starts failing.
+	docker exec "$srv" docker exec "$ctr" rm /tmp/w/health
+	check "the service reads unhealthy" wait_for 60 status_is $p web health unhealthy
+	check "an unhealthy alert opens" wait_for 30 alert_open unhealthy $p
+	check "the health check restarts the container in place" wait_for 60 bash -c "[[ \$(curl -s -H 'Authorization: Bearer $DOCK_TOKEN' '$API$(svc_path $p web)' | jq -r '.status.health_restarts // 0') -ge 1 ]]"
+	check "same container after the restart" test "$ctr" == "$(service_containers $p web)"
+	check "healthy again after the restart" wait_for 60 status_is $p web health healthy
+	check "the unhealthy alert resolves" wait_for 60 alert_closed unhealthy $p
+	check "health restarts aren't counted as crashes" status_is $p web restart_count 0
+	check "$h serves" body_has "$h" / up
+}
+
+# server_is NAME STATUS: dock server list says NAME is STATUS.
+server_is() { [[ $(api GET /servers | jq -r --arg n "$1" '.[] | select(.name == $n) | .status') == "$2" ]]; }
+
+scenario_nodedown() {
+	local p=e2e2-down-$RUN node=${E2E_NODE_CONTAINER:-e2e2-node1} h n
+	fresh $p || return
+	# Its staging environment goes on the node: pinned before it exists.
+	local ENV_NAME=staging
+	check "pin the project's non-production to $node" api PUT "/projects/$p/placements/non_production" "{\"server\":\"$node\"}"
+	check "create staging" dk environment create staging -p $p
+	if [[ $(env_server $p) != "$node" ]]; then fail "staging is on $(env_server $p), not $node"; return; fi
+	use_proxy_of $p
+	h=$(busybox_web $p web node-up) || return
+	check "$h serves from the node" body_has "$h" / node-up
+	log "stopping $node"
+	docker stop "$node" >/dev/null
+	check "the node reads offline" wait_for 60 server_is "$node" offline
+	check "the service status says its server is offline" wait_for 30 status_is $p web server_offline true
+	check "a server offline alert opens (1 minute here)" wait_for 180 alert_open server_offline "$node"
+	log "starting $node"
+	docker start "$node" >/dev/null
+	check "the node is back online" wait_for 180 server_is "$node" online
+	check "$h serves again after the node's reboot" wait_for 120 body_has "$h" / node-up
+	check "the offline alert resolves" wait_for 120 alert_closed server_offline "$node"
+	n=$(api POST "$(svc_path $p web)/releases" '{}' | jq -r .number)
+	expect_release $p web "$n" active
+}
+
 main() {
-	local all=(predeploy stopstart run lock logs snapshot move apply health)
+	local all=(predeploy stopstart run lock logs snapshot apply health nodedown)
 	for s in "${@:-${all[@]}}"; do
 		log "scenario $s"
 		"scenario_$s"
