@@ -393,6 +393,22 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			return mcpkit.Reply{Summary: fmt.Sprintf("%d servers: %s.", len(out), strings.Join(parts, ", ")), Data: out}, nil
 		})
 
+	// Read-only on purpose: a tool that takes or returns registry
+	// passwords would put them in an agent's context (ADR 0051).
+	mcpkit.AddTool(s, "list_registry_credentials", "List registry credentials",
+		"The private image registries the organization signs in to when a deploy pulls an image from them: host and username, never the password. An image from any other host is pulled anonymously; a person adds credentials with `dock registry login`. Admin tokens only.",
+		mcpkit.ReadOnly, func(ctx context.Context, c *call, _ struct{}) (mcpkit.Reply, error) {
+			list, err := h.core.ListRegistryCredentials(ctx, c.Actor)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			parts := make([]string, len(list))
+			for i, rc := range list {
+				parts[i] = rc.Host + " as " + rc.Username
+			}
+			return mcpkit.Reply{Summary: fmt.Sprintf("%d registry credentials: %s.", len(list), strings.Join(parts, ", ")), Data: list}, nil
+		})
+
 	mcpkit.AddTool(s, "audit_log", "Audit log",
 		"Audit events, newest first: who (user or token) did what, where and when. Every change is recorded, yours included. Tokens limited to a project or environment only see events there.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {

@@ -266,6 +266,10 @@ type PullOptions struct {
 	// pull (internal/registry, ADR 0014 section 4): scoped to the image's
 	// repository, valid for minutes. Empty pulls anonymously.
 	Token string
+	// Username and Password sign in to any other registry: the org's
+	// credential for the image's registry host (ADR 0051). Password is a
+	// secret; never log it. Unused when Token is set.
+	Username, Password string
 }
 
 // DialRequest names what Containers.Dial connects to.

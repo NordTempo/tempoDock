@@ -24,6 +24,7 @@ var (
 	sealedVariableValue                = secrets.Column{Table: "variables", Name: "value", Key: []string{"environment_id", "coalesce(service_id, 0)", "key"}}
 	sealedVariablePending              = secrets.Column{Table: "variables", Name: "pending_value", Slot: "variables.value", Key: sealedVariableValue.Key}
 	sealedOrgVariable                  = secrets.Column{Table: "org_variables", Name: "value", Key: []string{"org_id", "key"}}
+	sealedRegistrySecret               = secrets.Column{Table: "registry_credentials", Name: "secret", Key: []string{"org_id", "host"}}
 	sealedReleaseConfig                = secrets.Column{Table: "releases", Name: "config", Key: []string{"service_id", "number"}}
 	sealedAlertChannel                 = secrets.Column{Table: "alert_channels", Name: "config", Key: []string{"name"}}
 	sealedLogDrain                     = secrets.Column{Table: "log_drains", Name: "config", Key: []string{"environment_id", "name"}}
@@ -46,7 +47,7 @@ var (
 		sealedAlertChannel, sealedGitSecret, sealedGitToken, sealedAccessKey, sealedStorageKeys,
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret,
-		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain,
+		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret,
 	}
 )
 
@@ -72,6 +73,12 @@ func variableAAD(envID int64, serviceID *int64, key string) secrets.AAD {
 // orgVariableAAD binds an org variable's value.
 func orgVariableAAD(orgID int64, key string) secrets.AAD {
 	return sealedOrgVariable.AAD(strconv.FormatInt(orgID, 10), key)
+}
+
+// registrySecretAAD binds an org's password or token for a registry host
+// (ADR 0051).
+func registrySecretAAD(orgID int64, host string) secrets.AAD {
+	return sealedRegistrySecret.AAD(strconv.FormatInt(orgID, 10), host)
 }
 
 // releaseAAD binds a release's config.

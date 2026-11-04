@@ -69,9 +69,13 @@ func TestWireRoundTrip(t *testing.T) {
 		func(w logsRequest) node.LogOptions {
 			return node.LogOptions{Follow: w.Follow, Tail: w.Tail, Since: w.Since}
 		})
-	check(t, node.PullOptions{Token: "pull"},
-		func(o node.PullOptions) pullRequest { return pullRequest{Ref: "r", Token: o.Token} },
-		func(w pullRequest) node.PullOptions { return node.PullOptions{Token: w.Token} })
+	check(t, node.PullOptions{Token: "pull", Username: "bot", Password: "s3cret"},
+		func(o node.PullOptions) pullRequest {
+			return pullRequest{Ref: "r", Token: o.Token, Username: o.Username, Password: o.Password}
+		},
+		func(w pullRequest) node.PullOptions {
+			return node.PullOptions{Token: w.Token, Username: w.Username, Password: w.Password}
+		})
 	check(t, node.DialRequest{ContainerID: "abc", Port: 5432},
 		func(d node.DialRequest) dialRequest { return dialRequest{ContainerID: d.ContainerID, Port: d.Port} },
 		func(w dialRequest) node.DialRequest {

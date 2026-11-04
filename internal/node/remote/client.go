@@ -78,11 +78,23 @@ func (c *Client) session(ctx context.Context) (*session, error) {
 	return s, nil
 }
 
-// Pull implements node.Containers. Progress arrives as log frames.
+// registryLoginProtocol is the first node protocol that takes a pull's
+// username and password.
+const registryLoginProtocol = 18
+
+// Pull implements node.Containers. Progress arrives as log frames. An
+// older node would drop a username and password and pull anonymously, so
+// a pull with them is refused there, saying to upgrade it.
 func (c *Client) Pull(ctx context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
 	req := pullRequest{Ref: ref}
 	if len(opts) > 0 {
-		req.Token = opts[0].Token
+		o := opts[0]
+		req.Token, req.Username, req.Password = o.Token, o.Username, o.Password
+	}
+	if req.Username != "" {
+		if err := c.needProtocol(ctx, registryLoginProtocol, "pull with registry credentials"); err != nil {
+			return "", err
+		}
 	}
 	r, err := callWithLogs[imageIDResult](ctx, c, opPull, pullTimeout, req, nil, logs)
 	return r.ImageID, err

@@ -168,6 +168,15 @@ func (q *Queries) DeleteOrgMembers(ctx context.Context, orgID int64) error {
 	return err
 }
 
+const deleteOrgRegistryCredentials = `-- name: DeleteOrgRegistryCredentials :exec
+DELETE FROM registry_credentials WHERE org_id = +?
+`
+
+func (q *Queries) DeleteOrgRegistryCredentials(ctx context.Context, orgID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteOrgRegistryCredentials, orgID)
+	return err
+}
+
 const deleteOrgVariable = `-- name: DeleteOrgVariable :execrows
 DELETE FROM org_variables WHERE org_id = +? AND key = +?
 `
@@ -192,6 +201,23 @@ DELETE FROM org_variables WHERE org_id = +?
 func (q *Queries) DeleteOrgVariables(ctx context.Context, orgID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteOrgVariables, orgID)
 	return err
+}
+
+const deleteRegistryCredential = `-- name: DeleteRegistryCredential :execrows
+DELETE FROM registry_credentials WHERE org_id = +? AND host = +?
+`
+
+type DeleteRegistryCredentialParams struct {
+	OrgID int64
+	Host  string
+}
+
+func (q *Queries) DeleteRegistryCredential(ctx context.Context, arg DeleteRegistryCredentialParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteRegistryCredential, arg.OrgID, arg.Host)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getInviteByHash = `-- name: GetInviteByHash :one
@@ -357,6 +383,33 @@ func (q *Queries) GetOrgInvite(ctx context.Context, arg GetOrgInviteParams) (Org
 		&i.ExpiresAt,
 		&i.AcceptedAt,
 		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getRegistryCredential = `-- name: GetRegistryCredential :one
+SELECT org_id, host, username, secret, created_at, created_by, updated_at, updated_by FROM registry_credentials WHERE org_id = +? AND host = +?
+`
+
+type GetRegistryCredentialParams struct {
+	OrgID int64
+	Host  string
+}
+
+// GetRegistryCredential is the org's credential for one registry host,
+// for a pull from it.
+func (q *Queries) GetRegistryCredential(ctx context.Context, arg GetRegistryCredentialParams) (RegistryCredential, error) {
+	row := q.db.QueryRowContext(ctx, getRegistryCredential, arg.OrgID, arg.Host)
+	var i RegistryCredential
+	err := row.Scan(
+		&i.OrgID,
+		&i.Host,
+		&i.Username,
+		&i.Secret,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
 	)
 	return i, err
 }
@@ -535,6 +588,44 @@ func (q *Queries) ListOrgVariables(ctx context.Context, orgID int64) ([]OrgVaria
 			&i.OrgID,
 			&i.Key,
 			&i.Value,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRegistryCredentials = `-- name: ListRegistryCredentials :many
+SELECT org_id, host, username, secret, created_at, created_by, updated_at, updated_by FROM registry_credentials WHERE org_id = +? ORDER BY host
+`
+
+// ListRegistryCredentials is an org's registry credentials by host,
+// sealed secrets included: callers never return them.
+func (q *Queries) ListRegistryCredentials(ctx context.Context, orgID int64) ([]RegistryCredential, error) {
+	rows, err := q.db.QueryContext(ctx, listRegistryCredentials, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistryCredential
+	for rows.Next() {
+		var i RegistryCredential
+		if err := rows.Scan(
+			&i.OrgID,
+			&i.Host,
+			&i.Username,
+			&i.Secret,
+			&i.CreatedAt,
+			&i.CreatedBy,
 			&i.UpdatedAt,
 			&i.UpdatedBy,
 		); err != nil {
@@ -736,4 +827,50 @@ func (q *Queries) UpsertOrgVariable(ctx context.Context, arg UpsertOrgVariablePa
 		arg.UpdatedBy,
 	)
 	return err
+}
+
+const upsertRegistryCredential = `-- name: UpsertRegistryCredential :one
+INSERT INTO registry_credentials (org_id, host, username, secret, created_at, created_by, updated_at, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (org_id, host) DO UPDATE SET username = excluded.username, secret = excluded.secret,
+    updated_at = excluded.updated_at, updated_by = excluded.updated_by
+RETURNING org_id, host, username, secret, created_at, created_by, updated_at, updated_by
+`
+
+type UpsertRegistryCredentialParams struct {
+	OrgID     int64
+	Host      string
+	Username  string
+	Secret    []byte
+	CreatedAt time.Time
+	CreatedBy string
+	UpdatedAt time.Time
+	UpdatedBy string
+}
+
+// UpsertRegistryCredential adds or replaces an org's credential for a
+// host; a replaced one keeps when and by whom it was first added.
+func (q *Queries) UpsertRegistryCredential(ctx context.Context, arg UpsertRegistryCredentialParams) (RegistryCredential, error) {
+	row := q.db.QueryRowContext(ctx, upsertRegistryCredential,
+		arg.OrgID,
+		arg.Host,
+		arg.Username,
+		arg.Secret,
+		arg.CreatedAt,
+		arg.CreatedBy,
+		arg.UpdatedAt,
+		arg.UpdatedBy,
+	)
+	var i RegistryCredential
+	err := row.Scan(
+		&i.OrgID,
+		&i.Host,
+		&i.Username,
+		&i.Secret,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
 }

@@ -5,7 +5,8 @@ import { keys } from "../../data/queries";
 import type { OrgLockSettings, Scope } from "../../data/types";
 
 // An organization's settings (ADR 0027): the org, members, invites,
-// variables and lock settings of the org the UI acts in.
+// variables, lock settings and registry credentials (ADR 0051) of the
+// org the UI acts in.
 
 const orgKeys = {
   org: ["org"],
@@ -13,6 +14,8 @@ const orgKeys = {
   invites: ["org", "invites"],
   variables: (reveal: boolean) => ["org", "variables", reveal],
   lockSettings: ["org", "lock-settings"],
+  // live.ts refetches it on org.registry_credential_* audit events.
+  registryCredentials: ["org", "registry-credentials"],
 };
 
 export const orgQueries = {
@@ -46,6 +49,11 @@ export const orgQueries = {
     queryOptions({
       queryKey: orgKeys.lockSettings,
       queryFn: () => body(api.GET("/api/v1/org/lock-settings")),
+    }),
+  registryCredentials: () =>
+    queryOptions({
+      queryKey: orgKeys.registryCredentials,
+      queryFn: () => list(api.GET("/api/v1/org/registry-credentials")),
     }),
   invite: (code: string) =>
     queryOptions({
@@ -175,3 +183,34 @@ export function useSetLockSettings() {
     () => [orgKeys.lockSettings, ["audit"]],
   );
 }
+
+export const useSetRegistryCredential = () =>
+  useAction(
+    ({
+      host,
+      username,
+      password,
+    }: {
+      host: string;
+      username: string;
+      password: string;
+    }) =>
+      body(
+        api.PUT("/api/v1/org/registry-credentials/{host}", {
+          params: { path: { host } },
+          body: { username, password },
+        }),
+      ),
+    () => [orgKeys.registryCredentials, ["audit"]],
+  );
+
+export const useDeleteRegistryCredential = () =>
+  useAction(
+    (host: string) =>
+      done(
+        api.DELETE("/api/v1/org/registry-credentials/{host}", {
+          params: { path: { host } },
+        }),
+      ),
+    () => [orgKeys.registryCredentials, ["audit"]],
+  );

@@ -133,7 +133,7 @@ instead; that is your login, so don't hand it to an agent.
 
 | Tools | |
 |---|---|
-| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `list_releases`, `release_details`, `logs`, `list_servers`, `audit_log` |
+| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `list_releases`, `release_details`, `logs`, `list_servers`, `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
 | Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment` |
 | Configure | `list_variables`, `set_variables`, `set_pre_deploy_command`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain` |
 | Analytics | `analytics_sites`, `analytics_stats`, `analytics_breakdown`, `analytics_errors`, `analytics_vitals`, `analytics_replays` (listed only; watched in the UI), `analytics_goals`, `analytics_funnel` |
@@ -299,8 +299,11 @@ The token can deploy `shop/staging` only.
 
 ## CI
 
-Deploy an image built in CI; the server only pulls it. The server needs pull
-access to the registry.
+Deploy an image built in CI; the server only pulls it. For a private
+registry, an admin adds the organization's credentials for its host once
+(`dock registry login ghcr.io --username NAME --password-stdin`, see
+[private registries](deploying.md#private-registries)); deploys pull with
+them.
 
 The runner needs the CLI: download `dock-cli-linux-amd64` from the release
 the server runs (`dock version` shows it) and check it against
@@ -330,4 +333,3 @@ and `DOCK_TOKEN`.
 The runner must reach the API: use Dock's [public address](install.md#public-address)
 as `DOCK_URL`, or join the runner to the tailnet (e.g.
 `tailscale/github-action`). Never expose the API port itself.
-<!-- verify: how the server authenticates to private registries (not implemented as of 56c9cfa). -->

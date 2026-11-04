@@ -529,6 +529,9 @@ function invalidateForAudit(
   if (kind === "project") invalidate(keys.projects);
   if (kind === "token") invalidate(keys.tokens);
   if (kind === "user") invalidate(keys.users);
+  // Registry credentials (features/org/data.ts), set from the CLI too.
+  if (audit.action.startsWith("org.registry_credential"))
+    invalidate(["org", "registry-credentials"]);
   // Channels added, removed or alerts resolved (from the CLI too).
   if (kind === "alert") invalidate(["alerts"]);
   if (kind === "data") return invalidateForData(queryClient, audit);

@@ -247,6 +247,7 @@ func TestScopedToken(t *testing.T) {
 		{"set_variables", map[string]any{"environment": "production", "set": map[string]any{"A": "1"}}},
 		{"set_pre_deploy_command", map[string]any{"project": "blog", "environment": "production", "service": "api", "command": "x"}},
 		{"list_variables", map[string]any{"reveal": true}},
+		{"list_registry_credentials", nil},
 	} {
 		if code := call(t, s, tc.tool, tc.args).errorCode(t); code != apitypes.CodeForbidden {
 			t.Errorf("%s %v: code %s, want forbidden", tc.tool, tc.args, code)

@@ -346,13 +346,21 @@ func imageID(ref string) string {
 }
 
 // Pull implements node.Containers. A pull with a token is recorded as
-// "pull <ref> token=<token>".
+// "pull <ref> token=<token>", one with a username and password as
+// "pull <ref> user=<username> password=<password>".
 func (r *Runtime) Pull(_ context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(opts) > 0 && opts[0].Token != "" {
-		r.op("pull %s token=%s", ref, opts[0].Token)
-	} else {
+	var o node.PullOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	switch {
+	case o.Token != "":
+		r.op("pull %s token=%s", ref, o.Token)
+	case o.Username != "":
+		r.op("pull %s user=%s password=%s", ref, o.Username, o.Password)
+	default:
 		r.op("pull %s", ref)
 	}
 	if r.pullErr != nil {
