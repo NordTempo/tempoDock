@@ -74,7 +74,7 @@ func (e *LockedError) AccessRequest() int64 { return e.Request }
 // lockedErr is the error checkEnv returns when the lock stops a token.
 func (a Actor) lockedErr(p store.Project, e store.Environment, action string) *LockedError {
 	le := &LockedError{OrgID: p.OrgID, ProjectID: p.ID, EnvID: e.ID, Project: p.Name, Environment: e.Name, Action: action,
-		askedFirst: a.askFirst && !(a.Kind == "token" && lockHolds(e, now()))}
+		askedFirst: a.askFirst && (a.Kind != "token" || !lockHolds(e, now()))}
 	le.err = &Error{Code: apitypes.CodeEnvironmentLocked, Msg: le.message()}
 	return le
 }
