@@ -5614,7 +5614,7 @@ export interface components {
         SkippedService: {
             message: string;
             /** @enum {string} */
-            reason: "missing_in_target" | "no_active_release" | "no_digest" | "deploy_in_progress";
+            reason: "missing_in_target" | "no_active_release" | "no_digest" | "deploy_in_progress" | "failed";
             service: string;
         };
         StartUpdateRequest: {

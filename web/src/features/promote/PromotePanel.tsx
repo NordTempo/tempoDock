@@ -21,6 +21,7 @@ const skipReasons: Record<SkippedService["reason"], string> = {
   no_active_release: "nothing active in the source",
   no_digest: "image not in the registry; redeploy it in the source first",
   deploy_in_progress: "a deploy is in progress there",
+  failed: "stopped by a release that couldn't start",
 };
 
 const servicesWord = (n: number) => (n === 1 ? "service" : "services");

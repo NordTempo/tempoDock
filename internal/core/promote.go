@@ -41,8 +41,10 @@ func (p *promoteStep) failed() string {
 // deployed through the normal health-checked path, one at a time in name
 // order. Nothing is rebuilt. Services missing in To, without an active
 // release in From, whose image can't reach To's server, or already
-// deploying in To are skipped and listed. Requires deploy on To and read
-// on From; To's server must be online.
+// deploying in To are skipped and listed. A release that can't be created
+// stops the promotion: once earlier ones started, it and the services
+// after it are skipped as failed; before that, its error is returned.
+// Requires deploy on To and read on From; To's server must be online.
 func (c *Core) Promote(ctx context.Context, a Actor, project string, req apitypes.PromoteRequest) (apitypes.PromoteResult, error) {
 	out := apitypes.PromoteResult{From: req.From, To: req.To, Promoted: []apitypes.PromotedService{}, Skipped: []apitypes.SkippedService{}}
 	if req.From == req.To {
@@ -108,7 +110,10 @@ func (c *Core) promote(ctx context.Context, a Actor, src, dst envScope, names []
 	}
 	sameServer := src.env.ServerID == dst.env.ServerID
 	var prev *promoteStep
-	for _, name := range names {
+	// failed is an error reading back a release that started; it is
+	// returned once the promotion is audited.
+	var failed error
+	for n, name := range names {
 		i := slices.IndexFunc(actives, func(r store.ListPromotableReleasesRow) bool { return r.ServiceName == name })
 		if i < 0 {
 			skip(name, apitypes.SkipNoActiveRelease, "%s has no active release in %s", name, src.env.Name)
@@ -133,19 +138,29 @@ func (c *Core) promote(ctx context.Context, a Actor, src, dst envScope, names []
 			skip(name, apitypes.SkipDeployInProgress, "%s is deploying in %s already; promote it when that finished", name, dst.env.Name)
 			continue
 		}
+		if err != nil && prev == nil {
+			return out, err // nothing started
+		}
 		if err != nil {
-			return out, err
+			// Earlier releases are deploying: stop here, as a failed
+			// release would stop the ones after it.
+			skip(name, apitypes.SkipFailed, "%s couldn't start in %s: %s", name, dst.env.Name, errorLine(err))
+			for _, rest := range names[n+1:] {
+				skip(rest, apitypes.SkipFailed, "not promoted: %s failed first", name)
+			}
+			break
 		}
 		prev = step
 		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Promoting release %d of %s (%s)", from.Number, src.env.Name, ref))
 		r, err := c.toRelease(ctx, ss, rel, false)
 		if err != nil {
-			return out, err
+			failed = err
+			break
 		}
 		out.Promoted = append(out.Promoted, apitypes.PromotedService{Service: name, FromRelease: from.Number, Release: r})
 	}
 	c.audit(ctx, a, "release.promote", &dst.project, &dst.env, dst.String(), promoteSummary(out))
-	return out, nil
+	return out, failed
 }
 
 // promotedImage is the image a promoted release runs: the source
