@@ -213,6 +213,9 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
         ) : (
           <StateText state={serviceState(view)} />
         )}
+        {service.staged === "archive" && (
+          <div className="text-2xs text-mut">archive staged</div>
+        )}
       </td>
       <td className="py-2.5 font-mono">
         {active ? `r${active.number}` : <span className="text-mut">none</span>}

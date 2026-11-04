@@ -20,6 +20,7 @@ import { plural } from "../ui/format";
 import { Act, Button, ErrorText, Glyph, Page, PageBar } from "../ui/kit";
 
 const RenameProject = lazy(() => import("../features/overview/RenameProject"));
+const ApplyFile = lazy(() => import("../features/apply/ApplyFile"));
 
 export const Route = createFileRoute("/_app/$org/$project/")({
   loader: async ({ context: { queryClient }, params }) => {
@@ -81,6 +82,13 @@ function LiveOverview() {
     !session.environment &&
     (!session.project || session.project === project);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  // Staging a file needs deploy in the project (environment-limited
+  // tokens only their own environment, which the dialog fixes).
+  const canApply =
+    !!session &&
+    session.scope !== "read" &&
+    (!session.project || session.project === project);
   const navigate = useNavigate();
   const openPalette = usePalette();
   const services = environments.flatMap((e) => e.services);
@@ -191,6 +199,11 @@ function LiveOverview() {
           </>
         }
       />
+      {applying && (
+        <Suspense fallback={null}>
+          <ApplyFile project={project} onClose={() => setApplying(false)} />
+        </Suspense>
+      )}
       {renaming === project && (
         <Suspense fallback={null}>
           <RenameProject
@@ -243,7 +256,10 @@ function LiveOverview() {
           <span className="text-info">◇</span> token · ○ person
         </p>
 
-        <Export project={project} />
+        <Export
+          project={project}
+          onApply={canApply ? () => setApplying(true) : undefined}
+        />
         <ArchiveProject project={project} />
       </Page>
     </>
@@ -252,9 +268,16 @@ function LiveOverview() {
 
 /**
  * `dock project export`: the project's config as a download, TOML as the
- * CLI prints it or the API's JSON. Variable values are never in it.
+ * CLI prints it or the API's JSON. Variable values are never in it. With
+ * onApply, "Apply file" opens `dock apply FILE` (live projects only).
  */
-function Export({ project }: { project: string }) {
+function Export({
+  project,
+  onApply,
+}: {
+  project: string;
+  onApply?: () => void;
+}) {
   const path = `/api/v1/projects/${encodeURIComponent(project)}/export`;
   return (
     <p className="flex flex-wrap items-baseline gap-x-3 text-xs text-faint">
@@ -275,6 +298,16 @@ function Export({ project }: { project: string }) {
       >
         {project}.dock.json
       </a>
+      {onApply && (
+        <button
+          type="button"
+          className="lnk"
+          title={`dock apply ${project}.dock.toml -p ${project}`}
+          onClick={onApply}
+        >
+          Apply file
+        </button>
+      )}
     </p>
   );
 }

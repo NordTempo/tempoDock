@@ -29,7 +29,8 @@ type envOp struct {
 // envOps lists every operation of the API that changes something under
 // /projects/{project}/environments/{environment}: the paths are filled in
 // for shop/production/web, and request bodies made from their schemas.
-// New operations are picked up without listing them.
+// New operations are picked up without listing them; project-level ones
+// that change environments are listed at the end.
 func envOps(t *testing.T) []envOp {
 	t.Helper()
 	a := newAPI(http.NewServeMux(), &Server{})
@@ -66,6 +67,10 @@ func envOps(t *testing.T) []envOp {
 			ops = append(ops, envOp{op.OperationID, method, p, body})
 		}
 	}
+	// Project-level operations that change environments named in their
+	// body: a project file (ADR 0049) for shop/production.
+	file := "version = 1\n[[environments]]\nname = \"production\"\n[[environments.services]]\nname = \"web\"\nport = 9999\n"
+	ops = append(ops, envOp{"apply-project-file", "POST", "/api/v1/projects/shop/apply", apitypes.ApplyRequest{File: file}})
 	slices.SortFunc(ops, func(a, b envOp) int { return strings.Compare(a.id, b.id) })
 	return ops
 }

@@ -141,6 +141,71 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			return mcpkit.Reply{Summary: fmt.Sprintf("Project %s: %d environments.", ex.Project, len(ex.Environments)), Data: ex}, nil
 		})
 
+	mcpkit.AddTool(s, "plan_project_file", "Plan a project file",
+		"Compare a project file (the format export_project returns, as TOML or JSON) with the live state, like terraform plan: changes (what apply_project_file would stage), "+
+			"kept (live things the file doesn't mention; prune lists the removable ones as removals) and manual (what needs a person: secrets without a value, git connections). "+
+			"The project may not exist yet. Secrets are never in a file: list their names in variables and send values separately.",
+		mcpkit.ReadOnly, func(ctx context.Context, c *call, in projectFileInput) (mcpkit.Reply, error) {
+			p, err := projectOf(c, in.ProjectInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			plan, err := h.core.PlanProject(ctx, c.Actor, p, in.request())
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			return mcpkit.Reply{Summary: planSummary(plan), Data: plan}, nil
+		})
+
+	mcpkit.AddTool(s, "apply_project_file", "Stage a project file",
+		"Stage a project file's plan as staged changes in each of its environments (review them with show_changes); nothing goes live unless deploy, which applies each environment's staged changes and waits for the releases. "+
+			"A missing project or environment is created empty. Removals only with prune, which never removes volumes or environments (archiving services needs an admin token). "+
+			"values sets secrets the file names in variables; they are never shown back.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
+			ProjectInput
+			File        string                   `json:"file" doc:"The project file: TOML or JSON, as export_project returns it."`
+			Environment string                   `json:"environment,omitempty" doc:"Only this environment of the file (needed with a token limited to one environment)."`
+			Prune       bool                     `json:"prune,omitempty" doc:"Also remove variables, domains and services the file doesn't mention. Off by default: a partial file never deletes anything."`
+			Values      []apitypes.VariableValue `json:"values,omitempty" doc:"Values for variables the file names without one (secrets); staged, never shown back."`
+			Deploy      bool                     `json:"deploy,omitempty" doc:"Apply each environment's staged changes afterwards and wait for the releases."`
+			WaitInput
+		}) (mcpkit.Reply, error) {
+			p, err := projectOf(c, in.ProjectInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			wait, err := in.duration()
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			req := apitypes.ApplyRequest{File: in.File, Environment: in.Environment, Prune: in.Prune, Values: in.Values, Deploy: in.Deploy}
+			res, err := h.core.ApplyProject(ctx, c.Actor, p, req)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			staged := 0
+			for _, pc := range res.Staged {
+				staged += pc.Count
+			}
+			summary := planSummary(res.Plan) + fmt.Sprintf(" %d changes now staged across %d environments.", staged, len(res.Staged))
+			if !in.Deploy {
+				return mcpkit.Reply{Summary: summary + " Review with show_changes, then apply_changes per environment.", Data: res}, nil
+			}
+			views := map[string][]releaseView{}
+			for _, a := range res.Applied {
+				vs, err := h.waitReleases(ctx, c, a.Releases, wait)
+				if err != nil {
+					return mcpkit.Reply{}, err
+				}
+				views[a.Environment] = vs
+				summary += " " + a.Environment + ": " + waitSummary("Applied", vs)
+				if len(a.Failed) > 0 {
+					summary += " Still staged: " + strings.Join(a.Failed, "; ") + "."
+				}
+			}
+			return mcpkit.Reply{Summary: summary, Data: map[string]any{"plan": res.Plan, "staged": res.Staged, "applied": res.Applied, "releases": views}}, nil
+		})
+
 	mcpkit.AddTool(s, "service_status", "Service status",
 		"One service's live state: running, crashed (with exit code and restarts, OOM kills), its active release and its latest release if that one failed or is still deploying.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
@@ -757,4 +822,25 @@ func list(names []string) string {
 		return "none"
 	}
 	return strings.Join(names, ", ")
+}
+
+// projectFileInput is a project file to plan or apply (ADR 0049).
+type projectFileInput struct {
+	ProjectInput
+	File        string `json:"file" doc:"The project file: TOML or JSON, as export_project returns it."`
+	Environment string `json:"environment,omitempty" doc:"Only this environment of the file (needed with a token limited to one environment)."`
+	Prune       bool   `json:"prune,omitempty" doc:"Also remove variables, domains and services the file doesn't mention. Off by default: a partial file never deletes anything."`
+}
+
+func (in projectFileInput) request() apitypes.ApplyRequest {
+	return apitypes.ApplyRequest{File: in.File, Environment: in.Environment, Prune: in.Prune}
+}
+
+// planSummary counts a plan's lines for a tool's summary.
+func planSummary(p apitypes.ApplyPlan) string {
+	s := fmt.Sprintf("Plan for %s: %d changes, %d kept (not in the file), %d need a person.", p.Project, len(p.Changes), len(p.Kept), len(p.Manual))
+	for _, m := range p.Manual {
+		s += fmt.Sprintf(" %s/%s %s %s: %s.", m.Environment, m.Service, m.Kind, m.Name, m.Note)
+	}
+	return s
 }

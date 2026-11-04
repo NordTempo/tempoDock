@@ -25,13 +25,21 @@ type ProjectExport struct {
 type EnvironmentExport struct {
 	Name string          `json:"name" toml:"name"`
 	Kind EnvironmentKind `json:"kind" toml:"kind"`
-	// SharedVariables are the names of the environment's shared variables.
-	SharedVariables []string        `json:"shared_variables,omitempty" toml:"shared_variables,omitempty"`
-	Services        []ServiceExport `json:"services,omitempty" toml:"services,omitempty"`
+	// SharedVariables are the names of the environment's shared variables
+	// whose values are set separately (secrets); a project file only
+	// requires them to exist.
+	SharedVariables []string `json:"shared_variables,omitempty" toml:"shared_variables,omitempty"`
+	// SharedValues are shared variables with their value in the file:
+	// literals written there on purpose, and references. The export writes
+	// reference-only values here (ADR 0049), never a literal.
+	SharedValues map[string]string `json:"shared_values,omitempty" toml:"shared_values,omitempty"`
+	Services     []ServiceExport   `json:"services,omitempty" toml:"services,omitempty"`
 }
 
 // ServiceExport is one service of an export: its settings (zero values
-// left out), variable names, volumes, domains and git connection.
+// left out), variables, volumes, domains and git connection. As a project
+// file (`dock apply FILE`), a left-out setting means zero, or the
+// template's value for a template service.
 type ServiceExport struct {
 	Name                      string          `json:"name" toml:"name"`
 	Template                  Template        `json:"template,omitempty" toml:"template,omitempty"`
@@ -48,8 +56,16 @@ type ServiceExport struct {
 	PreDeployTimeoutSeconds   int             `json:"pre_deploy_timeout_seconds,omitempty" toml:"pre_deploy_timeout_seconds,omitempty"`
 	Database                  DatabaseSetting `json:"database,omitempty" toml:"database,omitempty"`
 	DatabaseURLVariable       string          `json:"database_url_variable,omitempty" toml:"database_url_variable,omitempty"`
-	// Variables are the names of the service's own variables.
-	Variables []string       `json:"variables,omitempty" toml:"variables,omitempty"`
+	// Variables are the names of the service's own variables whose values
+	// are set separately (secrets); a project file only requires them.
+	Variables []string `json:"variables,omitempty" toml:"variables,omitempty"`
+	// Values are the service's variables with their value in the file
+	// (literals and references), like SharedValues.
+	Values map[string]string `json:"values,omitempty" toml:"values,omitempty"`
+	// DependsOn names services in the same environment that start first
+	// when an apply creates them (ADR 0049). An order hint for project
+	// files: not stored, never exported.
+	DependsOn []string       `json:"depends_on,omitempty" toml:"depends_on,omitempty"`
 	Volumes   []VolumeExport `json:"volumes,omitempty" toml:"volumes,omitempty,inline"`
 	Domains   []DomainExport `json:"domains,omitempty" toml:"domains,omitempty,inline"`
 	Git       *GitExport     `json:"git,omitempty" toml:"git,omitempty,inline"`
@@ -88,7 +104,8 @@ type GitExport struct {
 func (ex ProjectExport) TOML() ([]byte, error) {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "# Tempo Dock project %s, exported with `dock project export`.\n", ex.Project)
-	b.WriteString("# Settings as they are live. Variables are names only: values are never exported.\n\n")
+	b.WriteString("# Settings as they are live. Secrets are names only (variables); values holds only references.\n")
+	b.WriteString("# Apply it with `dock apply FILE --plan`, then without --plan to stage it.\n\n")
 	enc := toml.NewEncoder(&b)
 	enc.SetIndentTables(true)
 	if err := enc.Encode(ex); err != nil {

@@ -169,6 +169,8 @@ function toChanges(c: components["schemas"]["PendingChanges"]): PendingChanges {
     variables: c.variables ?? [],
     settings: c.settings ?? [],
     volumes: c.volumes ?? [],
+    services: c.services ?? [],
+    domains: c.domains ?? [],
     affected: c.affected ?? [],
   };
 }

@@ -613,6 +613,15 @@
       "AppliedChanges": {
         "additionalProperties": false,
         "properties": {
+          "failed": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "releases": {
             "items": {
               "$ref": "#/components/schemas/Release"
@@ -635,6 +644,114 @@
         "required": [
           "releases",
           "skipped"
+        ],
+        "type": "object"
+      },
+      "ApplyPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/PlanChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kept": {
+            "items": {
+              "$ref": "#/components/schemas/PlanChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "manual": {
+            "items": {
+              "$ref": "#/components/schemas/PlanChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "changes",
+          "kept",
+          "manual"
+        ],
+        "type": "object"
+      },
+      "ApplyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "deploy": {
+            "description": "Apply each touched environment's staged changes afterwards (apply only)",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Only this environment of the file",
+            "type": "string"
+          },
+          "file": {
+            "description": "The project file, TOML or JSON, as dock project export writes it",
+            "type": "string"
+          },
+          "prune": {
+            "description": "Also remove variables, domains and services the file doesn't mention",
+            "type": "boolean"
+          },
+          "values": {
+            "description": "Values for variables the file names without one; staged, never shown back",
+            "items": {
+              "$ref": "#/components/schemas/VariableValue"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "ApplyResult": {
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentApplied"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ApplyPlan"
+          },
+          "staged": {
+            "items": {
+              "$ref": "#/components/schemas/PendingChanges"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "plan",
+          "staged"
         ],
         "type": "object"
       },
@@ -3505,6 +3622,24 @@
       "DiscardChangesRequest": {
         "additionalProperties": false,
         "properties": {
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/DomainRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "settings": {
             "items": {
               "$ref": "#/components/schemas/SettingRef"
@@ -3759,6 +3894,50 @@
         ],
         "type": "object"
       },
+      "DomainRef": {
+        "additionalProperties": false,
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service"
+        ],
+        "type": "object"
+      },
+      "DomainStaging": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "remove"
+            ],
+            "type": "string"
+          },
+          "generated": {
+            "type": "boolean"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "redirect_to": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "action"
+        ],
+        "type": "object"
+      },
       "EnableAnalyticsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3810,6 +3989,47 @@
         ],
         "type": "object"
       },
+      "EnvironmentApplied": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "failed": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/Release"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "environment",
+          "releases",
+          "skipped"
+        ],
+        "type": "object"
+      },
       "EnvironmentExport": {
         "additionalProperties": false,
         "properties": {
@@ -3827,6 +4047,12 @@
               "array",
               "null"
             ]
+          },
+          "shared_values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
           },
           "shared_variables": {
             "items": {
@@ -5204,6 +5430,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/DomainStaging"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "environment": {
             "type": "string"
           },
@@ -5212,6 +5447,15 @@
           },
           "project": {
             "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceStaging"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "settings": {
             "items": {
@@ -5248,6 +5492,8 @@
           "variables",
           "settings",
           "volumes",
+          "services",
+          "domains",
           "affected"
         ],
         "type": "object"
@@ -5286,6 +5532,56 @@
           "kind",
           "server",
           "pinned"
+        ],
+        "type": "object"
+      },
+      "PlanChange": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "update",
+              "remove"
+            ],
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "project",
+              "environment",
+              "service",
+              "setting",
+              "variable",
+              "volume",
+              "domain",
+              "git",
+              "database"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "new": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "old": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "action"
         ],
         "type": "object"
       },
@@ -7070,6 +7366,13 @@
           "project": {
             "type": "string"
           },
+          "staged": {
+            "enum": [
+              "create",
+              "archive"
+            ],
+            "type": "string"
+          },
           "start_command": {
             "type": "string"
           },
@@ -7185,6 +7488,15 @@
           "database_url_variable": {
             "type": "string"
           },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "dockerfile_path": {
             "type": "string"
           },
@@ -7249,6 +7561,12 @@
           },
           "template": {
             "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
           },
           "variables": {
             "items": {
@@ -7351,6 +7669,29 @@
           "keep_days",
           "snapshots",
           "restores"
+        ],
+        "type": "object"
+      },
+      "ServiceStaging": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "remove"
+            ],
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "action"
         ],
         "type": "object"
       },
@@ -9857,6 +10198,30 @@
         "required": [
           "project",
           "environment"
+        ],
+        "type": "object"
+      },
+      "VariableValue": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "service": {
+            "description": "Empty for a shared (environment-level) variable",
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "key",
+          "value"
         ],
         "type": "object"
       },
@@ -19110,6 +19475,157 @@
           }
         ],
         "summary": "Rename a project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/apply": {
+      "post": {
+        "description": "Turns a project file's plan into staged changes in each of its environments; nothing goes live. A missing project and missing environments are created empty. Removals only with `prune` (archiving services needs admin). With `deploy`, each touched environment's staged changes are applied afterwards, as `changes/apply` does. Scope: deploy.",
+        "operationId": "apply-project-file",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Stage a project file",
         "tags": [
           "projects"
         ]
@@ -32401,6 +32917,157 @@
           }
         ],
         "summary": "Pin a project to a server",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/plan": {
+      "post": {
+        "description": "Compares a project file (the export's format, TOML or JSON) with the live state: what applying it stages (`changes`), live things the file doesn't mention (`kept`; `prune` lists the removable ones as removals instead) and what needs a person (`manual`). The project may not exist yet. Variable values are never in a plan. Scope: read.",
+        "operationId": "plan-project-file",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyPlan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Plan a project file",
         "tags": [
           "projects"
         ]

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,7 +45,7 @@ func (c *Core) ApplyChanges(ctx context.Context, a Actor, ref EnvRef) (apitypes.
 	if err != nil {
 		return apitypes.AppliedChanges{}, err
 	}
-	return c.applyEnv(ctx, a, es)
+	return c.applyEnv(ctx, a, es, nil)
 }
 
 // DiscardChanges drops the selected staged changes of an environment, or
@@ -89,6 +90,25 @@ func (c *Core) DiscardChanges(ctx context.Context, a Actor, ref EnvRef, sel apit
 		for _, v := range vols {
 			if v.Pending {
 				if err := q.DeleteVolume(ctx, v.ID); err != nil {
+					return err
+				}
+			}
+		}
+		if err := q.DeleteEnvironmentStagedDomains(ctx, es.env.ID); err != nil {
+			return err
+		}
+		svcs, err := q.ListServices(ctx, es.env.ID)
+		if err != nil {
+			return err
+		}
+		for _, s := range svcs {
+			switch s.Staged {
+			case "create":
+				if err := discardStagedService(ctx, q, es.env.ID, s.ID); err != nil {
+					return err
+				}
+			case "archive":
+				if err := q.SetServiceStaged(ctx, store.SetServiceStagedParams{Staged: "", ID: s.ID}); err != nil {
 					return err
 				}
 			}
@@ -221,6 +241,46 @@ func discardSelected(ctx context.Context, q *store.Queries, es envScope, sel api
 		}
 		done = append(done, "volume "+ref.Name+" ("+s.Name+")")
 	}
+
+	if len(sel.Domains) > 0 {
+		domains, err := q.ListEnvironmentStagedDomains(ctx, es.env.ID)
+		if err != nil {
+			return "", err
+		}
+		for _, ref := range sel.Domains {
+			i := slices.IndexFunc(domains, func(d store.ListEnvironmentStagedDomainsRow) bool {
+				return d.ServiceName == ref.Service && d.Hostname == ref.Hostname
+			})
+			if i < 0 {
+				return "", notFound("domain %q of %s has no staged change", ref.Hostname, ref.Service)
+			}
+			if err := q.DeleteStagedDomain(ctx, domains[i].ID); err != nil {
+				return "", err
+			}
+			done = append(done, "domain "+cmp.Or(ref.Hostname, "(generated)")+" ("+ref.Service+")")
+		}
+	}
+	for _, name := range sel.Services {
+		s, err := service(name)
+		if err != nil {
+			return "", err
+		}
+		switch s.Staged {
+		case "create":
+			// Deletes what is staged on it, selected or not.
+			if err := discardStagedService(ctx, q, es.env.ID, s.ID); err != nil {
+				return "", err
+			}
+			done = append(done, "service "+s.Name+" (created)")
+		case "archive":
+			if err := q.SetServiceStaged(ctx, store.SetServiceStagedParams{Staged: "", ID: s.ID}); err != nil {
+				return "", err
+			}
+			done = append(done, "service "+s.Name+" (archive)")
+		default:
+			return "", notFound("service %s has no staged creation or archive", s.Name)
+		}
+	}
 	return "discarded staged " + strings.Join(done, ", "), nil
 }
 
@@ -265,7 +325,7 @@ func revertSetting(next *apitypes.ServiceSettings, live apitypes.ServiceSettings
 func (c *Core) changeResult(ctx context.Context, a Actor, es envScope, apply bool) (apitypes.ChangeResult, error) {
 	var out apitypes.ChangeResult
 	if apply {
-		applied, err := c.applyEnv(ctx, a, es)
+		applied, err := c.applyEnv(ctx, a, es, nil)
 		if err != nil {
 			return out, err
 		}
@@ -287,6 +347,10 @@ type applied struct {
 	// service's own changes, as releases carry them (see carried).
 	shared []carriedVar
 	own    map[int64]*carried
+	// created are services whose staged creation went live, and archive
+	// those staged for archiving (an environment apply archives them).
+	created []int64
+	archive []int64
 }
 
 func (a *applied) ownOf(serviceID int64) *carried {
@@ -345,6 +409,17 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 		if only != nil && s.ID != *only {
 			continue
 		}
+		switch {
+		case s.Staged == "create":
+			if err := q.SetServiceStaged(ctx, store.SetServiceStagedParams{Staged: "", ID: s.ID}); err != nil {
+				return res, err
+			}
+			res.count++
+			res.created = append(res.created, s.ID)
+		case s.Staged == "archive" && only == nil:
+			res.count++
+			res.archive = append(res.archive, s.ID)
+		}
 		next, err := pendingSettings(s)
 		if err != nil {
 			return res, err
@@ -396,7 +471,14 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 // and whose changes it stages again. A service that is deploying already
 // is skipped and its own changes stay staged. While the server is
 // offline, an apply that would release anything is refused.
-func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.AppliedChanges, error) {
+//
+// Staged structure from project files (ADR 0049) goes live in the same
+// transaction: services whose staged creation it applies get their first
+// release if they run from an image (in firstDeployOrder; deps is a
+// project file's depends_on, nil otherwise), and services staged for
+// archiving are archived (that needs admin). Staged domain changes run
+// last, each through the code `dock domain` uses.
+func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope, deps map[string][]string) (apitypes.AppliedChanges, error) {
 	out := apitypes.AppliedChanges{Releases: []apitypes.Release{}, Skipped: []string{}}
 	type queued struct {
 		ss   svcScope
@@ -404,11 +486,13 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 		spec releaseSpec
 	}
 	var (
-		res  applied
-		jobs []queued
+		res      applied
+		jobs     []queued
+		archived []archivedService
 	)
 	cantDeploy := c.canDeploy(es.env)
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		jobs, archived = nil, nil
 		if err := q.SetEnvironmentApplyError(ctx, store.SetEnvironmentApplyErrorParams{ApplyError: "", ID: es.env.ID}); err != nil {
 			return err
 		}
@@ -419,6 +503,11 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 		if res, err = applyPending(ctx, q, es.env.ID, nil); err != nil || res.count == 0 {
 			return err
 		}
+		if len(res.archive) > 0 {
+			if err := a.require(apitypes.ScopeAdmin, "applying staged changes that archive a service"); err != nil {
+				return err
+			}
+		}
 		after, broken, err := c.resolveEnvs(ctx, q, es, false)
 		if err != nil {
 			return err
@@ -427,23 +516,11 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 		if err != nil {
 			return err
 		}
-		for _, s := range svcs {
-			if _, own := res.services[s.ID]; s.ArchivedAt != nil || !own && maps.Equal(before[s.ID], after[s.ID]) {
-				continue
-			}
-			// A broken reference rolls the whole apply back instead of
-			// failing releases one by one.
-			if err := broken[s.ID]; err != nil {
-				return err
-			}
-			spec := releaseSpec{source: apitypes.SourceConfig, carried: res.carriedBy(s.ID)}
-			if res.services[s.ID] {
-				spec.source, spec.imageRef = apitypes.SourceImage, s.Image
-			}
+		queue := func(s store.Service, spec releaseSpec) error {
 			ss, rel, err := c.createRelease(ctx, q, a, svcScope{es, s}, spec)
 			switch {
 			case errors.Is(err, errNoActiveRelease):
-				continue // gets the new config on its first deploy
+				return nil // gets the new config on its first deploy
 			case CodeOf(err) == apitypes.CodeDeployInProgress:
 				// Its deploy runs without them; they stay staged.
 				out.Skipped = append(out.Skipped, s.Name)
@@ -454,21 +531,74 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 					}
 					res.count -= n
 				}
-				continue
+				return nil
 			case err != nil:
 				return fmt.Errorf("release %s: %w", ss, err)
 			case cantDeploy != nil:
 				return cantDeploy
 			}
 			jobs = append(jobs, queued{ss, rel, spec})
+			return nil
+		}
+		var first []store.Service
+		for _, s := range svcs {
+			if slices.Contains(res.archive, s.ID) {
+				if err := q.SetServiceStaged(ctx, store.SetServiceStagedParams{Staged: "", ID: s.ID}); err != nil {
+					return err
+				}
+				as, ok, err := archiveTx(ctx, q, svcScope{es, s})
+				if err != nil {
+					return err
+				}
+				if ok {
+					archived = append(archived, as)
+				}
+				continue
+			}
+			if _, own := res.services[s.ID]; s.ArchivedAt != nil || !own && maps.Equal(before[s.ID], after[s.ID]) && !slices.Contains(res.created, s.ID) {
+				continue
+			}
+			// A broken reference rolls the whole apply back instead of
+			// failing releases one by one.
+			if err := broken[s.ID]; err != nil {
+				return err
+			}
+			if slices.Contains(res.created, s.ID) {
+				// New: a first release if it runs from an image; a source
+				// service waits for `dock deploy` or a git push.
+				if s.Image != "" || s.Template != "" {
+					first = append(first, s)
+				}
+				continue
+			}
+			spec := releaseSpec{source: apitypes.SourceConfig, carried: res.carriedBy(s.ID)}
+			if res.services[s.ID] {
+				spec.source, spec.imageRef = apitypes.SourceImage, s.Image
+			}
+			if err := queue(s, spec); err != nil {
+				return err
+			}
+		}
+		for _, s := range firstDeployOrder(first, deps) {
+			if err := queue(s, releaseSpec{source: apitypes.SourceImage, carried: res.carriedBy(s.ID)}); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		return apitypes.AppliedChanges{}, err
 	}
-	if res.count == 0 {
-		return out, nil
+	domains, err := c.store.ListEnvironmentStagedDomains(ctx, es.env.ID)
+	if err != nil || res.count+len(domains) == 0 {
+		return out, err
+	}
+	if len(archived) > 0 {
+		notes, _ := c.finishArchive(ctx, archived)
+		c.maybePruneRegistry()
+		for _, as := range archived {
+			c.audit(ctx, a, "service.archive", &as.project, &as.env, as.String(), archiveSummary("archived service (staged); volumes kept", notes))
+		}
 	}
 	for _, j := range jobs {
 		c.launch(ctx, a, j.ss, j.rel, j.spec)
@@ -478,9 +608,43 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope) (apitypes.App
 		}
 		out.Releases = append(out.Releases, r)
 	}
+	n := c.applyStagedDomains(ctx, a, es, domains, &out)
 	c.audit(ctx, a, "changes.apply", &es.project, &es.env, es.String(),
-		fmt.Sprintf("applied %d staged changes; started %d releases", res.count, len(out.Releases)))
+		fmt.Sprintf("applied %d staged changes; started %d releases", res.count+n, len(out.Releases)))
 	return out, nil
+}
+
+// applyStagedDomains runs an environment's staged domain changes after the
+// rest of an apply, each with the code `dock domain add`, `generate` and
+// `remove` use (and their permission checks). A change that fails stays
+// staged and is listed in out.Failed. It returns how many it applied.
+func (c *Core) applyStagedDomains(ctx context.Context, a Actor, es envScope, domains []store.ListEnvironmentStagedDomainsRow, out *apitypes.AppliedChanges) int {
+	n := 0
+	for _, d := range domains {
+		ref := ServiceRef{es.project.Name, es.env.Name, d.ServiceName}
+		var err error
+		switch {
+		case d.Action == "remove":
+			err = c.RemoveDomain(ctx, a, ref, d.Hostname)
+		case d.Generated:
+			_, err = c.GenerateDomain(ctx, a, ref)
+		default:
+			_, err = c.AddDomain(ctx, a, ref, apitypes.AddDomainRequest{Hostname: d.Hostname, RedirectTo: d.RedirectTo})
+		}
+		if err != nil {
+			what := d.Hostname
+			if d.Generated {
+				what = "a generated domain"
+			}
+			out.Failed = append(out.Failed, fmt.Sprintf("domain %s of %s (%s): %v", what, d.ServiceName, d.Action, err))
+			continue
+		}
+		if err := c.store.DeleteStagedDomain(ctx, d.ID); err != nil {
+			c.log.Error("drop applied staged domain", "domain", d.Hostname, "err", err)
+		}
+		n++
+	}
+	return n
 }
 
 // stagedChanges lists an environment's staged changes and counts them,
@@ -491,6 +655,7 @@ func (c *Core) stagedChanges(ctx context.Context, q *store.Queries, es envScope,
 	out := apitypes.PendingChanges{
 		Project: es.project.Name, Environment: es.env.Name,
 		Variables: []apitypes.VariableChange{}, Settings: []apitypes.SettingChange{}, Volumes: []apitypes.VolumeAddition{},
+		Services: []apitypes.ServiceStaging{}, Domains: []apitypes.DomainStaging{},
 	}
 	svcs, err := q.ListServices(ctx, es.env.ID)
 	if err != nil {
@@ -509,6 +674,12 @@ func (c *Core) stagedChanges(ctx context.Context, q *store.Queries, es envScope,
 	svcNames := map[int64]string{}
 	for _, s := range svcs {
 		svcNames[s.ID] = s.Name
+		switch s.Staged {
+		case "create":
+			out.Services = append(out.Services, apitypes.ServiceStaging{Service: s.Name, Action: apitypes.ChangeAdd, Summary: stagedSummary(s)})
+		case "archive":
+			out.Services = append(out.Services, apitypes.ServiceStaging{Service: s.Name, Action: apitypes.ChangeRemove})
+		}
 		next, err := pendingSettings(s)
 		if err != nil {
 			return out, nil, nil, err
@@ -542,7 +713,16 @@ func (c *Core) stagedChanges(ctx context.Context, q *store.Queries, es envScope,
 		}
 		out.Variables = append(out.Variables, vc)
 	}
-	out.Count = len(out.Variables) + len(out.Settings) + len(out.Volumes)
+	domains, err := q.ListEnvironmentStagedDomains(ctx, es.env.ID)
+	if err != nil {
+		return out, nil, nil, err
+	}
+	for _, d := range domains {
+		out.Domains = append(out.Domains, apitypes.DomainStaging{
+			Service: d.ServiceName, Hostname: d.Hostname, Action: apitypes.ChangeAction(d.Action), Generated: d.Generated, RedirectTo: d.RedirectTo,
+		})
+	}
+	out.Count = len(out.Variables) + len(out.Settings) + len(out.Volumes) + len(out.Services) + len(out.Domains)
 	out.Affected = []string{}
 	return out, svcs, vars, nil
 }
@@ -570,6 +750,12 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 	}
 	for _, v := range out.Volumes {
 		own[v.Service] = true
+	}
+	for _, sv := range out.Services {
+		own[sv.Service] = true
+	}
+	for _, d := range out.Domains {
+		own[d.Service] = true
 	}
 	// Loaded once, resolved as it is and as it would be.
 	ev, err := loadEnvVars(ctx, q, es, svcs, vars)

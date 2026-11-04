@@ -11,9 +11,11 @@ import (
 
 // ExportProject returns a project's configuration as a manifest (ADR
 // 0022): the environments the actor can see, their live services and
-// settings, variable names, volumes, domains and git connections. Staged
-// changes, archived services, releases and placement are left out.
-// Values are never exported: the variable query doesn't even select them.
+// settings, variables, volumes, domains and git connections. Staged
+// changes (services staged for creation too), archived services, releases
+// and placement are left out. Values are exported only when they are made
+// of references and nothing else (ADR 0049): they wire services together
+// and hold no secret. Every other variable is exported by name.
 // Everything is sorted by name so the export diffs well. A fixed number of
 // queries, however big the project. Needs read.
 func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apitypes.ProjectExport, error) {
@@ -30,7 +32,7 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 	if err != nil {
 		return out, err
 	}
-	vars, err := c.store.ListProjectVariableNames(ctx, p.ID)
+	vars, err := c.store.ListProjectLiveVariables(ctx, p.ID)
 	if err != nil {
 		return out, err
 	}
@@ -51,7 +53,7 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 	bySvc := map[int64]*apitypes.ServiceExport{}
 	byEnv := map[int64][]*apitypes.ServiceExport{}
 	for _, s := range svcs {
-		if s.ArchivedAt != nil {
+		if s.ArchivedAt != nil || s.Staged == "create" {
 			continue
 		}
 		se := serviceExport(s)
@@ -59,10 +61,33 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 		byEnv[s.EnvironmentID] = append(byEnv[s.EnvironmentID], se)
 	}
 	shared := map[int64][]string{}
+	sharedValues := map[int64]map[string]string{}
 	for _, v := range vars {
-		if v.ServiceID == nil {
+		var se *apitypes.ServiceExport
+		if v.ServiceID != nil {
+			if se = bySvc[*v.ServiceID]; se == nil {
+				continue
+			}
+		}
+		value, err := c.openValue(v.Value, variableAAD(v.EnvironmentID, v.ServiceID, v.Key), v.Key)
+		if err != nil {
+			return out, err
+		}
+		ref := value != nil && onlyReferences(*value)
+		switch {
+		case se == nil && ref:
+			if sharedValues[v.EnvironmentID] == nil {
+				sharedValues[v.EnvironmentID] = map[string]string{}
+			}
+			sharedValues[v.EnvironmentID][v.Key] = *value
+		case se == nil:
 			shared[v.EnvironmentID] = append(shared[v.EnvironmentID], v.Key)
-		} else if se := bySvc[*v.ServiceID]; se != nil {
+		case ref:
+			if se.Values == nil {
+				se.Values = map[string]string{}
+			}
+			se.Values[v.Key] = *value
+		default:
 			se.Variables = append(se.Variables, v.Key)
 		}
 	}
@@ -86,7 +111,7 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 		if !a.canSee(p.OrgID, p.ID, e.ID) {
 			continue
 		}
-		ee := apitypes.EnvironmentExport{Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), SharedVariables: shared[e.ID]}
+		ee := apitypes.EnvironmentExport{Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), SharedVariables: shared[e.ID], SharedValues: sharedValues[e.ID]}
 		for _, se := range byEnv[e.ID] {
 			// The queries sort by name or key already, except domains
 			// (by ID); sort everything here so the order never depends

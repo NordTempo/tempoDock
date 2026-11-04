@@ -344,9 +344,12 @@ type Service struct {
 	// PendingChanges counts staged changes to this service (settings,
 	// volumes, its own variables). Environment-level ones are counted on
 	// the environment.
-	PendingChanges int        `json:"pending_changes"`
-	CreatedAt      time.Time  `json:"created_at"`
-	ArchivedAt     *time.Time `json:"archived_at,omitempty"`
+	PendingChanges int `json:"pending_changes"`
+	// Staged is "create" for a service a project file staged that isn't
+	// applied yet (it runs nothing), "archive" for one staged for archiving.
+	Staged     string     `json:"staged,omitempty" enum:"create,archive"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 	// ArchiveNotes, only in an archive's answer, say what couldn't be
 	// done at once: containers on a server that is offline (stopped when
 	// it reconnects) or revoked (left running there).
@@ -462,7 +465,7 @@ type Release struct {
 	CreatedAt  time.Time     `json:"created_at"`
 	FinishedAt *time.Time    `json:"finished_at,omitempty"`
 	// LogsKept says the output of the release's removed container was
-	// kept (ADR 0046), so its logs can be read; [logs] limits may have
+	// kept (ADR 0049), so its logs can be read; [logs] limits may have
 	// dropped it since.
 	LogsKept bool           `json:"logs_kept" doc:"The output of the release's removed container was kept, so its logs can be read until [logs] limits drop it"`
 	Events   []ReleaseEvent `json:"events,omitempty" doc:"Progress lines; only included when fetching one release"`
@@ -572,6 +575,10 @@ type PendingChanges struct {
 	Variables   []VariableChange `json:"variables"`
 	Settings    []SettingChange  `json:"settings"`
 	Volumes     []VolumeAddition `json:"volumes"`
+	// Services are staged service creations and archives, and Domains
+	// staged domain changes (from project files, ADR 0049).
+	Services []ServiceStaging `json:"services"`
+	Domains  []DomainStaging  `json:"domains"`
 	// Affected names the services whose config applying would change:
 	// those with changes of their own, and those whose resolved variables
 	// change through shared variables or references to another service's.
@@ -583,9 +590,20 @@ type PendingChanges struct {
 }
 
 // CountFor counts the staged changes that belong to one service (its own
-// variables, settings and volumes; not environment-level variables).
+// variables, settings, volumes, domains and its creation or archive; not
+// environment-level variables).
 func (p PendingChanges) CountFor(service string) int {
 	n := 0
+	for _, s := range p.Services {
+		if s.Service == service {
+			n++
+		}
+	}
+	for _, d := range p.Domains {
+		if d.Service == service {
+			n++
+		}
+	}
 	for _, v := range p.Variables {
 		if v.Service == service {
 			n++
@@ -630,6 +648,26 @@ type VolumeAddition struct {
 	MountPath string `json:"mount_path"`
 }
 
+// ServiceStaging is a staged service creation (add) or archive (remove).
+// A staged new service exists, can get variables and be deployed, but runs
+// nothing until applied.
+type ServiceStaging struct {
+	Service string       `json:"service"`
+	Action  ChangeAction `json:"action" enum:"add,remove"`
+	// Summary describes a new service: its image, template or build.
+	Summary string `json:"summary,omitempty"`
+}
+
+// DomainStaging is a staged domain addition or removal. A generated domain
+// to add has no hostname yet.
+type DomainStaging struct {
+	Service    string       `json:"service"`
+	Hostname   string       `json:"hostname,omitempty"`
+	Action     ChangeAction `json:"action" enum:"add,remove"`
+	Generated  bool         `json:"generated,omitempty"`
+	RedirectTo string       `json:"redirect_to,omitempty"`
+}
+
 // DiscardChangesRequest picks staged changes to discard. Without any
 // selection (or without a body) every staged change in the environment is
 // discarded. Selecting a change that isn't staged is an error.
@@ -637,11 +675,22 @@ type DiscardChangesRequest struct {
 	Variables []VariableRef `json:"variables,omitempty"`
 	Settings  []SettingRef  `json:"settings,omitempty"`
 	Volumes   []VolumeRef   `json:"volumes,omitempty"`
+	// Services names services whose staged creation or archive to discard.
+	// Discarding a creation deletes the service with everything staged on it.
+	Services []string    `json:"services,omitempty"`
+	Domains  []DomainRef `json:"domains,omitempty"`
 }
 
 // Empty reports whether nothing is selected, i.e. discard everything.
 func (r DiscardChangesRequest) Empty() bool {
-	return len(r.Variables)+len(r.Settings)+len(r.Volumes) == 0
+	return len(r.Variables)+len(r.Settings)+len(r.Volumes)+len(r.Services)+len(r.Domains) == 0
+}
+
+// DomainRef names a staged domain change of a service; an empty hostname
+// is a generated domain still to be generated.
+type DomainRef struct {
+	Service  string `json:"service"`
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // VariableRef names a variable: a service's, or a shared one when Service
@@ -671,6 +720,9 @@ type AppliedChanges struct {
 	// Skipped names services that weren't redeployed because a deploy was
 	// already in progress; they pick up the change on their next release.
 	Skipped []string `json:"skipped"`
+	// Failed are staged changes that couldn't be applied (a domain whose
+	// hostname is taken, say) and stay staged, each with why.
+	Failed []string `json:"failed,omitempty"`
 }
 
 // ChangeResult is returned by endpoints that stage a change: the
@@ -1453,7 +1505,7 @@ const (
 	// asked get it.
 	EventAccessRequest EventType = "access_request"
 	// EventRun carries a service's command run as it starts and ends
-	// (ADR 0048), without its output (read the run for that).
+	// (ADR 0049), without its output (read the run for that).
 	EventRun EventType = "run"
 )
 

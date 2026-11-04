@@ -54,6 +54,8 @@ export type ServiceBackups = Omit<Schemas["ServiceBackups"], "runs"> & {
 export type Variable = Schemas["Variable"];
 export type VariableChange = Schemas["VariableChange"];
 export type SettingChange = Schemas["SettingChange"];
+export type ServiceStaging = Schemas["ServiceStaging"];
+export type DomainStaging = Schemas["DomainStaging"];
 export type Token = Schemas["Token"];
 /** A token's own database access, overriding the data policy (ADR 0016). */
 export type TokenDataAccess = NonNullable<Schemas["DataTokenAccess"]>;
@@ -65,6 +67,12 @@ export type LiveEvent = Schemas["Event"];
 export type SettingsPatch = Schemas["UpdateServiceRequest"];
 /** Staged changes to discard; an empty selection means all of them. */
 export type DiscardSelection = Schemas["DiscardChangesRequest"];
+/** What applying staged changes started, and what stays staged. */
+export type AppliedChanges = Schemas["AppliedChanges"];
+/** A project file to plan or stage (`dock apply FILE`, ADR 0049). */
+export type ApplyRequest = Schemas["ApplyRequest"];
+export type ApplyPlan = Schemas["ApplyPlan"];
+export type PlanChange = Schemas["PlanChange"];
 
 /** An environment, addressed by name like every API path. */
 export type EnvRef = { project: string; environment: string };
@@ -126,11 +134,14 @@ export type ServiceTraffic = Omit<
 
 export type PendingChanges = Omit<
   Schemas["PendingChanges"],
-  "variables" | "settings" | "volumes" | "affected"
+  "variables" | "settings" | "volumes" | "services" | "domains" | "affected"
 > & {
   variables: VariableChange[];
   settings: SettingChange[];
   volumes: Schemas["VolumeAddition"][];
+  /** Staged service creations and archives (project files, ADR 0049). */
+  services: ServiceStaging[];
+  domains: DomainStaging[];
   /** Services that get a release on apply, including dependents. */
   affected: string[];
 };

@@ -56,6 +56,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0046](0046-log-history-and-drains.md) | Log history past the container, and log drains | accepted |
 | [0047](0047-volume-snapshots.md) | Volume snapshots | accepted |
 | [0048](0048-one-off-commands.md) | One-off commands (`dock run`) | accepted |
+| [0049](0049-apply-and-compose-import.md) | Config as code with `dock apply FILE`, and importing Compose files | accepted |
 
 ## Template
 
