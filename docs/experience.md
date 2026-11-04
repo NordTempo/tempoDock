@@ -34,8 +34,9 @@ Users: developers who want an overview, and anyone who prefers clicking.
 - **Overview first.** Landing on a project shows every service in every
   environment with status, current release, domain and resource use at a
   glance. Problems surface at the top.
-- **Information dense.** Dark, true black background, white text, no
-  decorative cards or chrome. Built for scanning, not for screenshots.
+- **Information dense.** Dark near-black backgrounds (the tokens in
+  [design/README.md](design/README.md)), white text, no decorative cards
+  or chrome. Built for scanning, not for screenshots.
 - **Live, without polling.** Status, deploy progress and logs update over
   Server-Sent Events.
 - **Everything has a URL.** Every project, service, release and log view is

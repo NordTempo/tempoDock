@@ -35,6 +35,7 @@ import {
   Glyph,
   Page,
   PageBar,
+  Prop,
   SectionHead,
 } from "../ui/kit";
 import { failurePhrase, inFlight, releaseWhat } from "../ui/status";
@@ -156,25 +157,25 @@ function ReleasePage() {
             </p>
           )}
           <dl className="props max-w-[960px] grid-cols-[140px_minmax(0,1fr)]">
-            <Fact label="Service">
+            <Prop label="Service">
               <span className="font-mono">{ref.service}</span> in{" "}
               {ref.environment}
-            </Fact>
-            <Fact label="Deployed by">
+            </Prop>
+            <Prop label="Deployed by">
               <Actor
                 name={release.created_by}
                 kind={actorKind(release.created_by)}
               />{" "}
               · {ago(release.created_at)}
-            </Fact>
-            <Fact label="What">
+            </Prop>
+            <Prop label="What">
               {releaseWhat(release)}{" "}
               <span className="font-mono">{release.image_ref}</span>
-            </Fact>
+            </Prop>
             {previous && (
-              <Fact label={`Changed since r${previous.number}`}>
+              <Prop label={`Changed since r${previous.number}`}>
                 <Changes from={previous} to={release} />
-              </Fact>
+              </Prop>
             )}
           </dl>
           <div className="mt-1 flex flex-wrap items-start gap-2.5">
@@ -376,15 +377,6 @@ function Title({ release }: { release: Release }) {
         </>
       );
   }
-}
-
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
-    </>
-  );
 }
 
 /** Image and variable names that differ between two releases. */

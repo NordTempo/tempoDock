@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { type ReactNode, useEffect } from "react";
+import { useEffect } from "react";
 import { api, body } from "../api/client";
 import { useLogout } from "../data/mutations";
 import { queries, useSession } from "../data/queries";
-import { ErrorText } from "../ui/kit";
+import { ErrorText, Prop } from "../ui/kit";
 
 // Where a visitor of a login-protected service lands (ADR 0030): its
 // server's access check sends them here with the hostname and the path
@@ -58,14 +58,14 @@ function Access() {
           </span>
         </div>
         {grant.data && (
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1.5">
-            <Field label="Service">
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1.5 [&>dt]:text-mut">
+            <Prop label="Service">
               <span className="font-mono">
                 {grant.data.project} / {grant.data.environment} /{" "}
                 {grant.data.service}
               </span>
-            </Field>
-            <Field label="As">{session?.name}</Field>
+            </Prop>
+            <Prop label="As">{session?.name}</Prop>
           </dl>
         )}
         {!host ? (
@@ -97,14 +97,5 @@ function Access() {
         )}
       </main>
     </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <dt className="text-mut">{label}</dt>
-      <dd>{children}</dd>
-    </>
   );
 }
