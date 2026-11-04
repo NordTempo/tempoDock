@@ -44,7 +44,7 @@ fresh() {
 out_has() {
 	local re=$1
 	shift
-	"$@" 2>&1 | grep -qE -- "$re"
+	{ "$@" 2>&1 || true; } | grep -qE -- "$re"
 }
 
 # release_field P S N FIELD prints a release's field.
@@ -215,6 +215,7 @@ scenario_lock() {
 	local p=e2e2-lock-$RUN h tok out st req n
 	fresh $p || return
 	h=$(busybox_web $p web lock-v1) || return
+	ensure_service $p site '{}'
 	tok=$(dk token create agent-$RUN --project $p --scope deploy --json 2>/dev/null | jq -r .secret)
 	[[ $tok == dock_* ]] || { fail "no project deploy token"; return; }
 	check "dock environment lock" dk environment lock $ENV_NAME -p $p --reason "e2e: live"
@@ -277,7 +278,6 @@ scenario_lock() {
 	check "a rejected change isn't staged" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' changes $(pe $p) 2>&1 | grep -q never"
 
 	# A source upload into the locked environment is kept and built on approval.
-	ensure_service $p site '{}'
 	local sh
 	sh=$(generate_domain $p site)
 	TOKEN_OVERRIDE=$tok deploy_source $p site "$APPS/static-site" >/dev/null 2>&1 &&
