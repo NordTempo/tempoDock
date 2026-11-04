@@ -127,17 +127,24 @@ type s3Credentials struct {
 
 // repoOf opens the repository settings: credentials and password. A
 // missing password is created (and stored) on first use, so backups work
-// without any configuration.
+// without any configuration. Only the password is written, and only if
+// no settings exist: s may be defaults read before another caller (a
+// backup move) stored settings, which must stay; the stored password is
+// used.
 func (c *Core) repoOf(ctx context.Context, s store.BackupSetting) (backup.Repo, error) {
 	if s.Password == nil {
 		sealed, err := c.box.Seal([]byte(newPassword()), backupPasswordAAD)
 		if err != nil {
 			return backup.Repo{}, err
 		}
-		s.Password, s.UpdatedAt = sealed, now()
-		if _, err = c.store.UpsertBackupSettings(ctx, upsertParams(s)); err != nil {
+		if err := c.store.CreateBackupPassword(ctx, store.CreateBackupPasswordParams{Password: sealed, UpdatedAt: now()}); err != nil {
 			return backup.Repo{}, err
 		}
+		stored, err := c.store.GetBackupSettings(ctx)
+		if err != nil {
+			return backup.Repo{}, err
+		}
+		s.Password = stored.Password
 	}
 	pw, err := c.box.Open(s.Password, backupPasswordAAD)
 	if err != nil {
@@ -198,6 +205,7 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 			return apitypes.BackupSettings{}, err
 		}
 	}
+	move := c.backupMove() // before the settings: see backupMove
 	s, err := c.backupSettings(ctx)
 	if err != nil {
 		return apitypes.BackupSettings{}, err
@@ -206,7 +214,7 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 	if out.ControlPlane, err = c.controlPlaneBackups(ctx); err != nil {
 		return out, err
 	}
-	if err := c.withBackupStorage(ctx, a, &out, s); err != nil {
+	if err := c.withBackupStorage(ctx, a, &out, s, move); err != nil {
 		return out, err
 	}
 	if reveal {
@@ -237,9 +245,26 @@ func (c *Core) toBackupSettings(s store.BackupSetting) apitypes.BackupSettings {
 	return out
 }
 
+// backupMove returns a copy of the latest backup move, nil if none. A
+// move switches the settings before it is marked finished, so a caller
+// that reads it before the settings never shows a finished move with the
+// settings from before it.
+func (c *Core) backupMove() *apitypes.BackupMove {
+	c.backups.mu.Lock()
+	defer c.backups.mu.Unlock()
+	m := c.backups.move
+	if m == nil {
+		return nil
+	}
+	cp := *m
+	cp.Sources = slices.Clone(m.Sources)
+	return &cp
+}
+
 // withBackupStorage adds the storage connection backups go to, and for
-// operators the repositories holding backups and the latest move.
-func (c *Core) withBackupStorage(ctx context.Context, a Actor, out *apitypes.BackupSettings, s store.BackupSetting) error {
+// operators the repositories holding backups and the latest move
+// (backupMove, read before s).
+func (c *Core) withBackupStorage(ctx context.Context, a Actor, out *apitypes.BackupSettings, s store.BackupSetting, move *apitypes.BackupMove) error {
 	if s.StorageID != nil {
 		conn, err := c.storageByID(ctx, *s.StorageID)
 		if err != nil {
@@ -254,14 +279,7 @@ func (c *Core) withBackupStorage(ctx context.Context, a Actor, out *apitypes.Bac
 	if err != nil {
 		return err
 	}
-	out.Repositories = repos
-	c.backups.mu.Lock()
-	if m := c.backups.move; m != nil {
-		cp := *m
-		cp.Sources = slices.Clone(m.Sources)
-		out.Move = &cp
-	}
-	c.backups.mu.Unlock()
+	out.Repositories, out.Move = repos, move
 	return nil
 }
 
@@ -317,6 +335,7 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 	}
 	// Read back resolved: the stored row has no repository URL when a
 	// storage connection is set.
+	move := c.backupMove()
 	if s, err = c.backupSettings(ctx); err != nil {
 		return apitypes.BackupSettings{}, err
 	}
@@ -331,7 +350,7 @@ func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.Confi
 	if out.ControlPlane, err = c.controlPlaneBackups(ctx); err != nil {
 		return out, err
 	}
-	return out, c.withBackupStorage(ctx, a, &out, s)
+	return out, c.withBackupStorage(ctx, a, &out, s, move)
 }
 
 // backupKindOf says how a service is backed up: with its template's tool,

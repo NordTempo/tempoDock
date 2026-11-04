@@ -61,6 +61,24 @@ func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (Bac
 	return i, err
 }
 
+const createBackupPassword = `-- name: CreateBackupPassword :exec
+INSERT INTO backup_settings (id, password, updated_at) VALUES (1, ?, ?)
+ON CONFLICT (id) DO NOTHING
+`
+
+type CreateBackupPasswordParams struct {
+	Password  []byte
+	UpdatedAt time.Time
+}
+
+// Creates the settings row with only a password (the rest default) unless
+// it exists: a caller holding the defaults never overwrites settings
+// written meanwhile.
+func (q *Queries) CreateBackupPassword(ctx context.Context, arg CreateBackupPasswordParams) error {
+	_, err := q.exec(ctx, q.createBackupPasswordStmt, createBackupPassword, arg.Password, arg.UpdatedAt)
+	return err
+}
+
 const failRunningBackups = `-- name: FailRunningBackups :execrows
 UPDATE backups SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running'
 `

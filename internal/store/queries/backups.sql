@@ -14,6 +14,13 @@ ON CONFLICT (id) DO UPDATE SET
     storage_id = excluded.storage_id, storage_path = excluded.storage_path
 RETURNING *;
 
+-- name: CreateBackupPassword :exec
+-- Creates the settings row with only a password (the rest default) unless
+-- it exists: a caller holding the defaults never overwrites settings
+-- written meanwhile.
+INSERT INTO backup_settings (id, password, updated_at) VALUES (1, ?, ?)
+ON CONFLICT (id) DO NOTHING;
+
 -- name: GetBackupSchedule :one
 SELECT * FROM backup_schedules WHERE service_id = +?;
 
