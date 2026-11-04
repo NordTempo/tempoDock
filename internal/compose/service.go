@@ -163,8 +163,27 @@ func (c *converter) source(s *svc) apitypes.Template {
 		c.warn(s, "image", "The redis template requires a password (REDIS_PASSWORD, generated). ${{%[1]s.REDIS_URL}} includes it; services that connect by host and port need ${{%[1]s.REDIS_PASSWORD}} as their password.", s.name)
 	default:
 		s.out.Image = image
+		c.databaseImage(s, ref)
 	}
 	return s.out.Template
+}
+
+// pgCompatible are PostgreSQL images with extensions, by repository name:
+// they stay image services, since the template runs plain PostgreSQL.
+var pgCompatible = []string{"pgvecto-rs", "pgvector", "postgis", "timescaledb", "timescaledb-ha", "vchord-postgres", "postgresql", "postgres"}
+
+// otherDatabases are database images Dock has no template for.
+var otherDatabases = []string{"mysql", "mariadb", "mongo", "mongodb", "clickhouse-server"}
+
+// databaseImage warns that a database image that isn't a template runs as
+// a plain image service, without Dock's backups.
+func (c *converter) databaseImage(s *svc, ref imageRef) {
+	switch name := ref.name(); {
+	case slices.Contains(pgCompatible, name):
+		c.warn(s, "image", "%s is PostgreSQL with extensions, not Dock's postgres template, so it stays an image service with its own volume: Dock doesn't back it up and the data panel doesn't open it. Back it up yourself with pg_dump, or switch to the postgres template if the app doesn't need the extensions.", s.out.Image)
+	case slices.Contains(otherDatabases, name):
+		c.warn(s, "image", "Dock has no template for %s, so it runs as an image service with its own volume, and Dock doesn't back it up. Back it up yourself.", s.out.Image)
+	}
 }
 
 // build makes a source service: no image, a Dockerfile path inside the
@@ -308,12 +327,12 @@ func (c *converter) ports(s *svc, template apitypes.Template) {
 	}
 	switch {
 	case isLoopback(chosen.hostIP):
-		c.warn(s, "ports", "Port %s is bound to %s in Compose, so the service gets no domain and stays private. Other services reach it at %s:%d; add a domain with `dock domain add` to make it public.", chosen.text, chosen.hostIP, s.name, chosen.target)
+		c.warn(s, "ports", "Port %s is published only on the host's loopback (%s) in Compose, so it isn't public there either, and the service gets no domain. Other services reach it at %s:%d; to make it public, add a domain with `dock domain add <hostname> -s %s`.", chosen.text, chosen.hostIP, s.name, chosen.target, s.name)
 	case slices.Contains(nonHTTPPorts, chosen.target) || slices.Contains(nonHTTPImages, parseImage(s.out.Image).name()):
 		c.warn(s, "ports", "Port %s is published in Compose, but Dock routes only HTTP publicly, so it isn't reachable from outside. Other services in the environment reach it at %s:%d.", chosen.text, s.name, chosen.target)
 	default:
 		s.out.Domains = []apitypes.DomainExport{{Generated: true}}
-		c.warn(s, "ports", "Dock doesn't publish host ports, so %s isn't opened on the server. HTTP reaches port %d through a generated domain when the server has a base domain; add your own with `dock domain add`.", chosen.text, chosen.target)
+		c.warn(s, "ports", "Dock doesn't publish host ports, so %s isn't opened on the server. HTTP reaches port %d through a generated domain when the server has a base domain; add your own with `dock domain add <hostname> -s %s`.", chosen.text, chosen.target, s.name)
 	}
 }
 
@@ -399,7 +418,7 @@ func (c *converter) mounts(s *svc) {
 		switch typ {
 		case "volume":
 		case "bind":
-			c.warn(s, "volumes", "The bind mount %s:%s isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.", source, target)
+			c.bindMount(s, source, target, readOnly)
 			continue
 		case "tmpfs":
 			c.warn(s, "volumes", "The tmpfs mount at %s isn't supported, so files written there go to the container's own filesystem and are lost on the next deploy.", target)
@@ -448,6 +467,23 @@ func (c *converter) mounts(s *svc) {
 		s.out.Volumes = append(s.out.Volumes, apitypes.VolumeExport{Name: name, MountPath: v.target})
 	}
 	slices.SortFunc(s.out.Volumes, func(a, b apitypes.VolumeExport) int { return strings.Compare(a.Name, b.Name) })
+}
+
+// bindMount warns that a bind mount isn't mounted, with what to do for
+// the kind of files it holds: the host's time zone or Docker socket, a
+// config file, or a data directory whose files would be lost.
+func (c *converter) bindMount(s *svc, source, target string, readOnly bool) {
+	mount := source + ":" + target
+	switch base := path.Base(target); {
+	case target == "/etc/localtime" || target == "/etc/timezone":
+		c.warn(s, "volumes", "The bind mount %s isn't mounted, so the container keeps the image's time zone (usually UTC). Set a TZ variable with `dock env set -s %s TZ=Europe/Oslo` if the image reads it.", mount, s.name)
+	case strings.HasSuffix(source, "docker.sock"):
+		c.warn(s, "volumes", "The bind mount %s isn't mounted: Dock doesn't give services the server's Docker socket. Tools that manage containers through it don't work on Dock.", mount)
+	case readOnly || strings.Contains(strings.TrimPrefix(base, "."), "."):
+		c.warn(s, "volumes", "The bind mount %s isn't mounted: Dock mounts only named volumes, not files from the server. Build the files into the image with COPY in a Dockerfile instead.", mount)
+	default:
+		c.warn(s, "volumes", "The bind mount %s isn't mounted: Dock mounts only named volumes, so files written to %s are lost on the next deploy. Add a volume there with `dock volume add <name> %s -s %s`, and copy existing files into it.", mount, target, target, s.name)
+	}
 }
 
 // volumePath is where the service mounts a volume, or "".

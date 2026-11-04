@@ -46,8 +46,10 @@ func (c *converter) environment(s *svc) {
 			if !slices.Contains(c.missing, path.Clean(p)) {
 				c.missing = append(c.missing, path.Clean(p))
 			}
-			if !f.optional {
-				c.warn(s, "env_file", "The env file %s wasn't sent with the Compose file, so its variables aren't set. Import again with the file next to the Compose file, or set them with `dock env set`.", p)
+			if f.optional {
+				c.warn(s, "env_file", "The env file %s is optional in Compose (required: false) and wasn't sent, so its variables aren't set. If it exists, import again with the file next to the Compose file, or set them with `dock env set -s %s`.", p, s.name)
+			} else {
+				c.warn(s, "env_file", "The env file %s wasn't sent with the Compose file, so its variables aren't set. Import again with the file next to the Compose file, or set them with `dock env set -s %s`.", p, s.name)
 			}
 			continue
 		}
@@ -87,11 +89,30 @@ func (c *converter) environment(s *svc) {
 			delete(s.vars, key)
 			continue
 		}
+		if strings.HasPrefix(v.value, "/run/secrets/") {
+			c.warn(s, key, "%s points at %s, a Compose secret file, which Dock doesn't create. If the image also reads the value itself from a variable, set that with `dock env set -s %s` instead.", key, v.value, s.name)
+		}
 		if strings.Contains(v.value, "${{") {
 			c.warn(s, key, "%s contains ${{, which Dock reads as a reference to another service's variable (${{service.KEY}}).", key)
 		}
 	}
 	c.templateVariables(s)
+}
+
+// requiredRe matches ${VAR:?message} and ${VAR?message}.
+var requiredRe = regexp.MustCompile(`\$\{[A-Za-z_][A-Za-z0-9_]*:?\?([^}]+)\}`)
+
+// requiredNote quotes the error messages a value's ${VAR:?message} forms
+// give, as a sentence with a leading space, or "".
+func requiredNote(raw string) string {
+	var msgs []string
+	for _, m := range requiredRe.FindAllStringSubmatch(raw, -1) {
+		msgs = append(msgs, strings.TrimSpace(m[1]))
+	}
+	if len(msgs) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" The Compose file says: %q.", strings.Join(msgs, "; "))
 }
 
 // fromShell resolves a variable Compose takes from the shell: from .env,
@@ -209,7 +230,7 @@ func (c *converter) references() {
 				if len(names) > 1 {
 					verb = "aren't"
 				}
-				c.warn(s, key, "%s uses %s, which %s set in .env, so it is a secret without a value. %s", key, strings.Join(names, ", "), verb, set)
+				c.warn(s, key, "%s uses %s, which %s set in .env, so it is a secret without a value.%s %s", key, strings.Join(names, ", "), verb, requiredNote(v.raw), set)
 			}
 		}
 	}

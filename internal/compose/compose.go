@@ -170,7 +170,7 @@ func (c *converter) warn(s *svc, key, format string, args ...any) {
 func (c *converter) str(s *svc, key string, v scalar) string {
 	out, missing := interpolate(v.text, c.lookup)
 	for _, name := range missing {
-		c.warn(s, key, "%s uses ${%s}, which isn't set in .env, so it is empty here. Add it to the .env file next to the Compose file and import again.", key, name)
+		c.warn(s, key, "%s uses ${%s}, which isn't set in .env, so it is empty here.%s Add it to the .env file next to the Compose file and import again.", key, name, requiredNote(v.text))
 	}
 	return out
 }
