@@ -285,6 +285,9 @@ func jobOptions(spec node.JobSpec, pause []string, owner string) client.Containe
 		Env:        envList(spec.Env),
 		Entrypoint: []string{"/bin/sh", "-c"},
 		Cmd:        []string{spec.Script},
+		// A job runs to completion: the image's own HEALTHCHECK would only
+		// add execs (ADR 0043).
+		Healthcheck: noHealthcheck(),
 		// Input arrives through an attach; its end closes stdin.
 		OpenStdin: spec.Stdin != nil,
 		StdinOnce: spec.Stdin != nil,

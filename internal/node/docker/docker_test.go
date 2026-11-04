@@ -81,7 +81,7 @@ func TestCreateOptionsMinimal(t *testing.T) {
 
 // A spec with Health gets Docker's healthcheck running the bind-mounted
 // probe, which times out a second before Docker would kill it. Without an
-// installed probe there is no check.
+// installed probe, or without Health, the image's own check is turned off.
 func TestCreateOptionsHealth(t *testing.T) {
 	spec := node.ContainerSpec{Name: "x", Image: "alpine", Health: &node.LivenessCheck{
 		Port: 8080, Path: "/up", Interval: 30 * time.Second, Timeout: 5 * time.Second, Retries: 3,
@@ -103,8 +103,16 @@ func TestCreateOptionsHealth(t *testing.T) {
 	if hc := createOptions(spec, "/p", nil).Config.Healthcheck; !slices.Equal(hc.Test, []string{"CMD", "/.dock-probe", "tcp", "8080", "5000"}) {
 		t.Errorf("tcp Test = %v", hc.Test)
 	}
-	if o := createOptions(spec, "", nil); o.Config.Healthcheck != nil || o.HostConfig.Mounts != nil {
+	// Without a probe, or without a check of Dock's (a worker, the check
+	// turned off), the image's own HEALTHCHECK is turned off: core acts
+	// on what Docker reports, so it must only ever report Dock's check.
+	none := []string{"NONE"}
+	if o := createOptions(spec, "", nil); o.Config.Healthcheck == nil || !slices.Equal(o.Config.Healthcheck.Test, none) || o.HostConfig.Mounts != nil {
 		t.Errorf("without a probe: Healthcheck %+v, Mounts %+v", o.Config.Healthcheck, o.HostConfig.Mounts)
+	}
+	spec.Health = nil
+	if o := createOptions(spec, "/p", nil); o.Config.Healthcheck == nil || !slices.Equal(o.Config.Healthcheck.Test, none) || o.HostConfig.Mounts != nil {
+		t.Errorf("without a check: Healthcheck %+v, Mounts %+v", o.Config.Healthcheck, o.HostConfig.Mounts)
 	}
 }
 

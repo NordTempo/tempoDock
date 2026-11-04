@@ -533,6 +533,11 @@ func createOptions(spec node.ContainerSpec, probe string, anon []string) client.
 	if spec.Health != nil && probe != "" {
 		cfg.Healthcheck = healthcheck(*spec.Health)
 		host.Mounts = append(host.Mounts, mount.Mount{Type: mount.TypeBind, Source: probe, Target: probePath, ReadOnly: true})
+	} else {
+		// The image's own HEALTHCHECK would run otherwise, and core acts
+		// on what it reports: a service whose check is off, or that has
+		// nothing to probe, gets none (ADR 0043).
+		cfg.Healthcheck = noHealthcheck()
 	}
 
 	opts := client.ContainerCreateOptions{Name: spec.Name, Config: cfg, HostConfig: host}
@@ -540,6 +545,12 @@ func createOptions(spec node.ContainerSpec, probe string, anon []string) client.
 		opts.NetworkingConfig = networking(spec.Network, spec.Aliases)
 	}
 	return opts
+}
+
+// noHealthcheck turns off the image's own HEALTHCHECK, for containers
+// without an ongoing check of Dock's and for jobs.
+func noHealthcheck() *container.HealthConfig {
+	return &container.HealthConfig{Test: []string{"NONE"}}
 }
 
 // probePath is where dock-probe is bind-mounted in a container.
