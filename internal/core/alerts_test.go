@@ -147,6 +147,26 @@ func TestDeployFailureAlertDedupesAndResolves(t *testing.T) {
 	}
 }
 
+// A release's active event can arrive after a newer release failed (its
+// cutover publishes it last): it doesn't resolve the newer failure's
+// alert; a release that goes live after it does.
+func TestLateActiveEventKeepsDeployAlert(t *testing.T) {
+	h := newHarness(t)
+	ev := func(number int64, status apitypes.ReleaseStatus) LiveEvent {
+		return newLiveEvent(apitypes.Event{
+			Type: apitypes.EventRelease, Project: "shop", Environment: "production", Service: "web",
+			Release: &apitypes.Release{Number: number, Status: status, Error: "pull failed"},
+		})
+	}
+	key := "deploy:shop/production/web"
+	now := time.Now()
+	h.c.onAlertEvent(h.ctx, ev(2, apitypes.ReleaseFailed), now)
+	h.c.onAlertEvent(h.ctx, ev(1, apitypes.ReleaseActive), now)
+	h.openAlert(key, true)
+	h.c.onAlertEvent(h.ctx, ev(3, apitypes.ReleaseActive), now)
+	h.openAlert(key, false)
+}
+
 // Alerts survive a restart; one whose condition cleared meanwhile (the
 // deploy alert's service now has a good release) is resolved on start.
 func TestAlertsReconcileOnStart(t *testing.T) {

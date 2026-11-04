@@ -60,6 +60,13 @@ type alertEngine struct {
 	// nothing deployed) or a new release goes live. A quiet entry is kept
 	// with no times, so its next restart counts.
 	restarts map[string]*restartLog
+	// failed is the number of each service's newest failed release while
+	// its deploy alert may be open: an older release's active event, which
+	// its cutover publishes after the release reads active, can arrive
+	// after a newer release already failed, and must not resolve that
+	// failure's alert. An entry goes when a release at least as new goes
+	// live; bounded by services.
+	failed map[string]int64
 	// offline is when each unreachable server was first seen so.
 	offline map[int64]time.Time
 	// started bounds how long a server counts as offline: nothing is
@@ -82,7 +89,7 @@ type restartLog struct {
 
 func newAlertEngine() *alertEngine {
 	e := &alertEngine{
-		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, offline: map[int64]time.Time{},
+		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, failed: map[string]int64{}, offline: map[int64]time.Time{},
 		outbox: outbox{queues: map[int64][]apitypes.AlertNotification{}},
 	}
 	e.client = newChannelClient(e)
@@ -175,12 +182,25 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 		}
 		switch r.Status {
 		case apitypes.ReleaseFailed:
+			c.alerts.mu.Lock()
+			c.alerts.failed[svc] = max(c.alerts.failed[svc], r.Number)
+			c.alerts.mu.Unlock()
 			s := deployFailed(ev.Project, ev.Environment, ev.Service, r.Number, r.Error, ev.serviceID)
 			s.projectID = ev.projectID
 			c.raiseAlert(ctx, s, now)
 		case apitypes.ReleaseActive:
-			// A new container serves: its restarts start from zero.
-			c.resolveAlert(ctx, "deploy:"+svc, now)
+			// A new container serves: its restarts start from zero. The
+			// deploy alert resolves unless a newer release failed (the
+			// event came late, see alertEngine.failed).
+			c.alerts.mu.Lock()
+			stale := r.Number < c.alerts.failed[svc]
+			if !stale {
+				delete(c.alerts.failed, svc)
+			}
+			c.alerts.mu.Unlock()
+			if !stale {
+				c.resolveAlert(ctx, "deploy:"+svc, now)
+			}
 			c.resolveAlert(ctx, "crash:"+svc, now)
 			// The health alert is resolved at the cutover (adoptHealth):
 			// by the time this event is read, the new container may be
