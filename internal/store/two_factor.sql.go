@@ -208,7 +208,7 @@ const listUserFactors = `-- name: ListUserFactors :many
 SELECT id, user_id, kind, name, credential_id, secret, last_step, created_at, last_used_at FROM user_factors WHERE user_id = +? ORDER BY id
 `
 
-// Second factors, recovery codes and the sessions they prove (ADR 0041).
+// Second factors, recovery codes and the sessions they prove (ADR 0048).
 func (q *Queries) ListUserFactors(ctx context.Context, userID int64) ([]UserFactor, error) {
 	rows, err := q.db.QueryContext(ctx, listUserFactors, userID)
 	if err != nil {

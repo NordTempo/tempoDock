@@ -96,8 +96,8 @@ var codeHints = map[string]string{
 	// sign-in that approved it used a second factor (ADR 0048).
 	"two_factor_required": "Add an authenticator app on your account page in the browser, then run `dock login` again: its new token counts as two-factor.",
 	// Step-ups only ask browser sessions; tokens skip them.
-	"reauth_required":    "Confirm it's you in the browser, where the action asks, then try again.",
-	"server_offline":     "The control plane is fine; the server the environment runs on isn't connected, and its apps keep running. Check `dock server list`, and the node there (`journalctl -u dock-node`).",
+	"reauth_required": "Confirm it's you in the browser, where the action asks, then try again.",
+	"server_offline":  "The control plane is fine; the server the environment runs on isn't connected, and its apps keep running. Check `dock server list`, and the node there (`journalctl -u dock-node`).",
 }
 
 // problemError turns a non-2xx response into an *output.Error wrapping a
