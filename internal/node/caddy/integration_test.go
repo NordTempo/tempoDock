@@ -127,7 +127,7 @@ func (tc *testCaddy) applyRoutes(t *testing.T, routes []node.Route) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for listening(t, tc.opts.HTTPPort) > 1 || listening(t, tc.opts.HTTPSPort) > 1 {
+	for listening(t, tc.opts.HTTPPort) > 1 || listening(t, tc.opts.HTTPSPort) > 1 || tc.opts.TunnelPort != 0 && listening(t, tc.opts.TunnelPort) > 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("the previous config's listeners never closed")
 		}
@@ -334,9 +334,7 @@ func TestIntegrationSwapUnderTraffic(t *testing.T) {
 			routes := func(up string) []node.Route {
 				return []node.Route{{Hostnames: []string{"app.test"}, Upstream: up}}
 			}
-			if err := tc.proxy.ApplyRoutes(ctx, routes(backends[0])); err != nil {
-				t.Fatal(err)
-			}
+			tc.applyRoutes(t, routes(backends[0]))
 			tc.trustInternalCA(t)
 			tc.get(t, tc.url("https", "app.test", "/")) // issue the certificate up front
 
@@ -473,9 +471,7 @@ func TestIntegrationInFlightRequestSurvivesReload(t *testing.T) {
 func TestIntegrationInvalidConfigKeepsOldRoutes(t *testing.T) {
 	tc := startCaddy(t, "", true)
 	ctx := context.Background()
-	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{{Hostnames: []string{"a.test"}, Upstream: backend(t, "A")}}); err != nil {
-		t.Fatal(err)
-	}
+	tc.applyRoutes(t, []node.Route{{Hostnames: []string{"a.test"}, Upstream: backend(t, "A")}})
 
 	bad := []byte(`{"apps":{"http":{"servers":{"x":{"listen":[":1"],"routes":[{"handle":[{"handler":"no_such_handler"}]}]}}}}}`)
 	err := tc.proxy.load(ctx, bad)
@@ -494,13 +490,10 @@ func TestIntegrationOnDemandAsk(t *testing.T) {
 	tc := startCaddy(t, ask.url, false)
 	ctx := context.Background()
 	// refused.test has a route, but the ask endpoint says no.
-	err := tc.proxy.ApplyRoutes(ctx, []node.Route{
+	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"ok.test"}, Upstream: backend(t, "OK")},
 		{Hostnames: []string{"refused.test"}, Upstream: backend(t, "NO")},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	tc.trustInternalCA(t)
 	tc.proxy.lookupIP = func(context.Context, string) ([]net.IPAddr, error) {
 		return []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, nil
@@ -640,15 +633,13 @@ func TestIntegrationClientIPHeader(t *testing.T) {
 		_, _ = io.WriteString(w, r.Header.Get("X-Dock-Client-Ip"))
 	}))
 	t.Cleanup(s.Close)
-	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
+	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"dock.test"}, Upstream: strings.TrimPrefix(s.URL, "http://"), ClientIPHeader: "X-Dock-Client-Ip"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	req, _ := http.NewRequest(http.MethodGet, tc.url("http", "dock.test", "/"), nil)
 	req.Header.Set("X-Dock-Client-Ip", "203.0.113.66")
 	var resp *http.Response
+	var err error
 	for deadline := time.Now().Add(5 * time.Second); ; {
 		if resp, err = tc.client.Do(req); err == nil || time.Now().After(deadline) {
 			break
@@ -680,13 +671,11 @@ func TestIntegrationAccess(t *testing.T) {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("correct horse battery"), 4)
 	key := access.NewKey()
 	upstream := strings.TrimPrefix(app.URL, "http://")
-	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
+	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"pw.test"}, Upstream: upstream, Access: &node.Access{Username: "team", PasswordHash: string(hash)}},
 		{Hostnames: []string{"login.test"}, Upstream: upstream, Access: &node.Access{Key: key, LoginURL: "https://dock.test/access"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	var err error
 	do := func(method, url, body string, edit func(*http.Request)) (int, http.Header, string) {
 		t.Helper()
 		req, _ := http.NewRequest(method, url, strings.NewReader(body))
@@ -761,13 +750,10 @@ func TestIntegrationTraffic(t *testing.T) {
 		o.DisableTLS, o.TrafficAddr = true, conn.LocalAddr().String()
 	})
 	up := backend(t, "app")
-	err = tc.proxy.ApplyRoutes(ctx, []node.Route{
+	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"counted.test"}, Upstream: up, Traffic: true},
 		{Hostnames: []string{"quiet.test"}, Upstream: up},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	for range 3 {
 		tc.get(t, tc.url("http", "counted.test", "/items/7?x=1"))
 	}
@@ -818,13 +804,10 @@ func TestIntegrationTunnelListener(t *testing.T) {
 	tc := startCaddyWith(t, func(o *Options) {
 		o.AskURL, o.TunnelPort, o.ServerMarker = ask.url, tunnelPort, "srv-1"
 	})
-	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
+	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"a.test"}, Upstream: backend(t, "A")},
 		{Hostnames: []string{"t.test"}, Upstream: backend(t, "T"), TunnelOnly: true},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	viaTunnel := func(host string) string { return fmt.Sprintf("http://%s:%d/", host, tunnelPort) }
 	for host, want := range map[string]string{"a.test": "A", "t.test": "T"} {
 		if code, h, body := tc.get(t, viaTunnel(host)); code != 200 || body != want || h.Get(MarkerHeader) != "srv-1" {
@@ -860,13 +843,10 @@ func TestIntegrationAnalytics(t *testing.T) {
 		o.TrafficAddr = net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 		o.AnalyticsAddr = strings.TrimPrefix(ingest.URL, "http://")
 	})
-	err = tc.proxy.ApplyRoutes(ctx, []node.Route{{
+	tc.applyRoutes(t, []node.Route{{
 		Hostnames: []string{"shop.test", "admin.test"}, Upstream: backend(t, "app"), Traffic: true,
 		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"shop.test"}, Tag: "3.40.981"}},
 	}})
-	if err != nil {
-		t.Fatal(err)
-	}
 	req, _ := http.NewRequest(http.MethodPost, tc.url("http", "shop.test", "/_dock/a/e"), strings.NewReader(`{}`))
 	req.Header.Set(analyticsTagHeader, "1.1.1")
 	req.Header.Set(analyticsIPHeader, "203.0.113.66")
