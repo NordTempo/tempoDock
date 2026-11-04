@@ -402,6 +402,7 @@ func (c *Core) GetRequest(ctx context.Context, a Actor, id int64) (apitypes.Acce
 		}
 		changes := int(n)
 		out.ChangesSince = &changes
+		out.Changes = c.requestPreview(ctx, r, out.Args)
 	}
 	return out, nil
 }
