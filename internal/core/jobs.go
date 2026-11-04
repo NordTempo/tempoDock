@@ -140,10 +140,10 @@ func (c *Core) trimJobRuns(ctx context.Context, jobID int64) {
 	}
 }
 
-// jobEnded is a job run's end: alert on a failure, resolve on a success,
-// and wake the scheduler, which may have skipped it meanwhile.
+// jobEnded is a job run's end: alert on a failure, resolve on a success.
+// It doesn't wake the scheduler: the pass that started the run already
+// recorded its due time and timed the next one.
 func (c *Core) jobEnded(ss svcScope, job store.ServiceJob, row store.ServiceRun) {
-	defer c.kickJobs()
 	ctx := context.WithoutCancel(c.ctx)
 	if _, err := c.store.GetServiceJobByID(ctx, job.ID); store.IsNotFound(err) {
 		// Removed while it ran (a dock.toml without it): an alert now

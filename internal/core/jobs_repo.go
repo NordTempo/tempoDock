@@ -18,16 +18,21 @@ func (c *Core) syncRepoJobs(ctx context.Context, ss svcScope, cfg releaseConfig)
 	if cfg.Repo == nil || !cfg.Repo.JobsFromFile {
 		return
 	}
-	if err := c.applyRepoJobs(ctx, ss, cfg.Repo.Jobs); err != nil {
+	changed, err := c.applyRepoJobs(ctx, ss, cfg.Repo.Jobs)
+	if err != nil {
 		c.log.Error("apply dock.toml jobs", "service", ss.String(), "err", err)
 	}
-	c.kickJobs()
+	if changed {
+		c.kickJobs() // a deploy that left the jobs as they were wakes nothing
+	}
 }
 
-func (c *Core) applyRepoJobs(ctx context.Context, ss svcScope, want []repoJob) error {
+// applyRepoJobs makes the service's file jobs want and reports whether
+// any changed.
+func (c *Core) applyRepoJobs(ctx context.Context, ss svcScope, want []repoJob) (bool, error) {
 	have, err := c.store.ListServiceJobs(ctx, ss.svc.ID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	byName := make(map[string]store.ServiceJob, len(have))
 	for _, j := range have {
@@ -57,7 +62,7 @@ func (c *Core) applyRepoJobs(ctx context.Context, ss svcScope, want []repoJob) e
 			CreatedBy: "dock.toml", CreatedAt: at, UpdatedAt: at,
 		})
 		if err != nil {
-			return err
+			return false, err
 		}
 		changed = append(changed, j.Name)
 		_, _ = c.publishJob(ctx, ss, row)
@@ -68,7 +73,7 @@ func (c *Core) applyRepoJobs(ctx context.Context, ss svcScope, want []repoJob) e
 			continue
 		}
 		if err := c.deleteJob(ctx, j.ID); err != nil {
-			return err
+			return false, err
 		}
 		c.resolveAlert(ctx, jobAlertKey(ss, j), now())
 		c.publish(ss, apitypes.Event{Type: apitypes.EventJob, Job: &apitypes.Job{Name: j.Name}, Message: "removed"})
@@ -84,5 +89,5 @@ func (c *Core) applyRepoJobs(ctx context.Context, ss svcScope, want []repoJob) e
 		}
 		c.audit(ctx, System.InOrg(ss.project.OrgID), "job.sync", &ss.project, &ss.env, ss.String(), fmt.Sprintf("dock.toml jobs: %s", strings.Join(parts, "; ")))
 	}
-	return nil
+	return len(changed)+len(removed) > 0, nil
 }
