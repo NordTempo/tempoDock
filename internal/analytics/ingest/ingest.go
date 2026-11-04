@@ -5,7 +5,8 @@
 // checks and enriches each event (bots dropped, the visitor hashed with
 // the day's salt, the address cut to its /24 or /48, the user agent
 // parsed, the channel worked out) and appends it to the server's spool. It
-// keeps no state of its own.
+// keeps no state of its own but its rate limits' counts of the current
+// second (limits.go).
 package ingest
 
 import (
@@ -87,7 +88,10 @@ type Ingest struct {
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
 
-	stats Stats
+	stats  Stats
+	limits limiter
+	// replaying counts replay chunks in flight, up to maxReplays.
+	replaying atomic.Int32
 
 	// scripts are the script's variants as served, built on first use:
 	// one per combination of settings, so a handful.
@@ -116,13 +120,22 @@ type builtScript struct {
 }
 
 // Stats counts what the ingest saw since it started; Replays are replay
-// chunks kept.
+// chunks kept, Limited events and chunks dropped by the rate limits or
+// the cap on replays in flight.
 type Stats struct {
-	Accepted, Bots, Invalid, NoSalt, Excluded, Replays atomic.Int64
+	Accepted, Bots, Invalid, NoSalt, Excluded, Replays, Limited atomic.Int64
 }
 
 // Stats returns the counts.
 func (in *Ingest) Stats() *Stats { return &in.stats }
+
+// now is the ingest's clock.
+func (in *Ingest) now() time.Time {
+	if in.Now != nil {
+		return in.Now()
+	}
+	return time.Now()
+}
 
 // ServeHTTP serves the script and takes events.
 func (in *Ingest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -263,12 +276,13 @@ type beaconVitals struct {
 	TTFB float64 `json:"ttfb"`
 }
 
-// bufs are reused for request bodies and spooled lines.
+// bufs are reused for events' request bodies and spooled lines, all
+// under maxBody; replay chunks have replayBufs.
 var bufs = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
 // serveEvent takes one event. It answers 202 whether or not the event is
-// kept (bots, events without a salt), so a page learns nothing from it;
-// 400 is for requests the script never sends.
+// kept (bots, events without a salt, over the rate limits), so a page
+// learns nothing from it; 400 is for requests the script never sends.
 func (in *Ingest) serveEvent(w http.ResponseWriter, r *http.Request) {
 	body := bufs.Get().(*bytes.Buffer)
 	defer bufs.Put(body)
@@ -326,7 +340,7 @@ const (
 
 // event fills e with the event a request carries. ok is false for a
 // malformed request; keep is false for one that isn't kept (a bot, no
-// salt).
+// salt, over the rate limits).
 func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep, ok bool) {
 	site, service, release, ok := parseTag(r.Header.Get(TagHeader))
 	if !ok {
@@ -371,11 +385,7 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 		in.stats.Bots.Add(1)
 		return false, true
 	}
-	now := time.Now
-	if in.Now != nil {
-		now = in.Now
-	}
-	t := now()
+	t := in.now()
 	salt, ok := in.Salts.get(Day(t))
 	if !ok {
 		// The control plane hasn't handed out today's salt yet: there is
@@ -392,6 +402,10 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 	path := cut(cmpStr(u.EscapedPath(), "/"), maxPath)
 	if in.Rules.skip(site, path, ip) {
 		in.stats.Excluded.Add(1)
+		return false, true
+	}
+	if !in.limits.allow(t, false, site, ip, int64(len(body))) {
+		in.stats.Limited.Add(1)
 		return false, true
 	}
 	e.Time = t.UnixMilli()
