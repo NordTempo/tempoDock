@@ -332,10 +332,13 @@ func readSavedLogs(path string) ([]apitypes.LogLine, error) {
 	return out, nil
 }
 
-// ServiceLogs streams a release container's output from the runtime. Logs
-// are read from Docker; the platform only keeps the last lines of failed
-// releases' containers (saveContainerLogs), which are served instead.
-// Secret values are masked unless the actor may reveal them.
+// ServiceLogs streams a release container's output. A live release (active
+// or deploying) is read from Docker. A release whose container is gone is
+// read from its log archive on the server that ran it (ADR 0046; follow
+// ends after the backlog), or, for a failed release on a server too old
+// to keep logs, from the last lines saved on the control plane
+// (saveContainerLogs). Every line goes out through sendLogs, which masks
+// the release's secret values unless the actor may reveal them.
 func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQuery) (Stream[apitypes.LogLine], error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "reading logs")
 	if err != nil {
@@ -347,7 +350,7 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 	} else {
 		rel, err = c.store.GetActiveRelease(ctx, ss.svc.ID)
 		if store.IsNotFound(err) {
-			return nil, notFound("%s has no active release; pass a release number to see a failed one", ss)
+			return nil, notFound("%s has no active release; pass a release number to see an earlier one", ss)
 		}
 	}
 	if err != nil {
@@ -357,65 +360,112 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 	if err != nil {
 		return nil, err
 	}
+	live := rel.Status == string(apitypes.ReleaseActive) || !apitypes.ReleaseStatus(rel.Status).Done()
+	if live && rel.ContainerID == "" {
+		return nil, notFound("release %d of %s never started a container; see its build log", rel.Number, ss)
+	}
+	return func(ctx context.Context, ready func(), send func(...apitypes.LogLine) error) error {
+		lines, err := c.openLogs(ctx, ss, rel, live, q)
+		if err != nil {
+			return err
+		}
+		ready()
+		return sendLogs(lines, red, send)
+	}, nil
+}
+
+// openLogs opens the first source that has a release's output: Docker
+// for a live release's container, else its archive, a container that is
+// still there, and the saved lines of a failed one, in that order.
+func (c *Core) openLogs(ctx context.Context, ss svcScope, rel store.Release, live bool, q LogQuery) (<-chan node.LogLine, error) {
+	docker := func() (<-chan node.LogLine, error) {
+		if rel.ContainerID == "" {
+			return nil, node.ErrNotFound
+		}
+		lines, err := c.runtime(ss.env.ServerID).Logs(ctx, rel.ContainerID, node.LogOptions{Follow: q.Follow, Tail: q.Tail, Since: q.Since})
+		return lines, c.nodeErr(ss.env.ServerID, err)
+	}
+	if live {
+		lines, err := docker()
+		switch {
+		case !errors.Is(err, node.ErrNotFound):
+			return lines, err
+		case rel.LogsServerID == nil:
+			return nil, notFound("the container of release %d of %s is gone", rel.Number, ss)
+		}
+		// A stateful container being recreated: what it wrote is archived.
+	}
+	if rel.LogsServerID != nil {
+		serverID := *rel.LogsServerID
+		lines, err := c.runtime(serverID).ArchivedLogs(ctx, node.LogArchiveQuery{
+			Service: strconv.FormatInt(ss.svc.ID, 10), Release: strconv.FormatInt(rel.ID, 10), Tail: q.Tail, Since: q.Since,
+		})
+		if !errors.Is(err, node.ErrNotFound) {
+			return lines, c.nodeErr(serverID, err)
+		}
+	}
+	if !live {
+		if lines, err := docker(); !errors.Is(err, node.ErrNotFound) {
+			return lines, err
+		}
+	}
+	saved, err := readSavedLogs(c.containerLogPath(rel.ID))
+	if err != nil {
+		return nil, err
+	}
+	if saved != nil && rel.Status == string(apitypes.ReleaseFailed) {
+		saved = slices.DeleteFunc(saved, func(l apitypes.LogLine) bool { return l.Time.Before(q.Since) })
+		if q.Tail > 0 && len(saved) > q.Tail {
+			saved = saved[len(saved)-q.Tail:]
+		}
+		ch := make(chan node.LogLine, len(saved))
+		for _, l := range saved {
+			ch <- node.LogLine{Time: l.Time, Stream: l.Stream, Text: l.Text}
+		}
+		close(ch)
+		return ch, nil
+	}
+	switch {
+	case rel.ContainerID == "":
+		return nil, notFound("release %d of %s never started a container; see its build log", rel.Number, ss)
+	case rel.LogsServerID != nil:
+		return nil, notFound("the logs of release %d of %s are no longer kept; [logs] keep_days and keep_mb_per_service bound them", rel.Number, ss)
+	}
+	return nil, notFound("the container of release %d of %s is gone and its logs weren't kept", rel.Number, ss)
+}
+
+// sendLogs sends a stream's lines as they come, masked by red; lines
+// queued behind the first go out in the same write. Every line a client
+// gets from ServiceLogs, from Docker, an archive or the saved lines,
+// passes here.
+func sendLogs(lines <-chan node.LogLine, red *redactor, send func(...apitypes.LogLine) error) error {
 	logLine := func(l node.LogLine) apitypes.LogLine {
 		text, _ := red.line(l.Text)
 		return apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: text}
 	}
-	if saved, err := readSavedLogs(c.containerLogPath(rel.ID)); err != nil {
-		return nil, err
-	} else if saved != nil && rel.Status == string(apitypes.ReleaseFailed) {
-		if q.Tail > 0 && len(saved) > q.Tail {
-			saved = saved[len(saved)-q.Tail:]
-		}
-		for i := range saved {
-			saved[i].Text, _ = red.line(saved[i].Text)
-		}
-		return func(_ context.Context, ready func(), send func(...apitypes.LogLine) error) error {
-			ready()
-			lines := slices.DeleteFunc(saved, func(l apitypes.LogLine) bool { return l.Time.Before(q.Since) })
-			if len(lines) == 0 {
-				return nil
-			}
-			return send(lines...)
-		}, nil
-	}
-	if rel.ContainerID == "" {
-		return nil, notFound("release %d of %s never started a container; see its build log", rel.Number, ss)
-	}
-	return func(ctx context.Context, ready func(), send func(...apitypes.LogLine) error) error {
-		lines, err := c.runtime(ss.env.ServerID).Logs(ctx, rel.ContainerID, node.LogOptions{Follow: q.Follow, Tail: q.Tail, Since: q.Since})
-		if errors.Is(err, node.ErrNotFound) {
-			return notFound("the container of release %d of %s is gone", rel.Number, ss)
-		}
-		if err != nil {
-			return c.nodeErr(ss.env.ServerID, err)
-		}
-		ready()
-		// Lines queued behind the first go out in the same write.
-		batch := make([]apitypes.LogLine, 0, logSendBatch)
-		for l := range lines {
-			batch = append(batch[:0], logLine(l))
-			open := true
-		drain:
-			for open && len(batch) < logSendBatch {
-				select {
-				case l, ok := <-lines:
-					if open = ok; ok {
-						batch = append(batch, logLine(l))
-					}
-				default:
-					break drain
+	batch := make([]apitypes.LogLine, 0, logSendBatch)
+	for l := range lines {
+		batch = append(batch[:0], logLine(l))
+		open := true
+	drain:
+		for open && len(batch) < logSendBatch {
+			select {
+			case l, ok := <-lines:
+				if open = ok; ok {
+					batch = append(batch, logLine(l))
 				}
-			}
-			if err := send(batch...); err != nil {
-				return err
-			}
-			if !open {
-				return nil
+			default:
+				break drain
 			}
 		}
-		return nil
-	}, nil
+		if err := send(batch...); err != nil {
+			return err
+		}
+		if !open {
+			return nil
+		}
+	}
+	return nil
 }
 
 // logSendBatch is the most service log lines sent in one write.

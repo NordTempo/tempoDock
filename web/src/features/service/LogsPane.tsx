@@ -8,7 +8,7 @@ import {
 import { useReleases, useService } from "../../data/queries";
 import type { LogLine, ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
-import { clockSec } from "../../ui/format";
+import { clockSec, since } from "../../ui/format";
 
 export type LogFilter = {
   /** A release's output; null follows the active release. */
@@ -61,7 +61,8 @@ function matcher(query: string): (text: string) => boolean {
 
 /**
  * Live log tail with release tabs (the deploy in flight, the serving
- * release, the build), a text or /regex/ filter, errors only and follow.
+ * release, the build), a picker for earlier releases whose output was
+ * kept, a text or /regex/ filter, errors only and follow.
  */
 export function LogsPane({
   serviceRef: ref,
@@ -86,10 +87,20 @@ export function LogsPane({
     (filter.build
       ? (deploying?.number ?? releases[0]?.number ?? null)
       : (deploying?.number ?? active));
+  // Earlier releases' containers are gone; their kept output is read once.
+  const liveNumber = deploying?.number ?? active;
+  const live = release === active || release === deploying?.number;
   const app = useServiceLogs(ref, filter.build ? null : release, {
     tail: filter.tail,
     since: filter.since || undefined,
+    follow: live,
   });
+  const earlier = releases.filter(
+    (r) =>
+      r.number !== active &&
+      r.number !== deploying?.number &&
+      (r.logs_kept || r.number === filter.release),
+  );
   const build = useBuildLog(ref, filter.build ? release : null);
   const stream: LogStream = filter.build ? build : app;
 
@@ -128,17 +139,13 @@ export function LogsPane({
     }
   }, [filter.follow, newest]);
 
-  // The deploy in flight, the serving release, a picked older one, the build.
+  // The deploy in flight, the serving release, the build; earlier
+  // releases with kept output are picked from a list.
   const tabs = [
     ...(deploying
       ? [{ n: deploying.number, label: `r${deploying.number}` }]
       : []),
     ...(active ? [{ n: active, label: `r${active} serving` }] : []),
-    ...(filter.release &&
-    filter.release !== active &&
-    filter.release !== deploying?.number
-      ? [{ n: filter.release, label: `r${filter.release}` }]
-      : []),
   ];
 
   return (
@@ -169,6 +176,29 @@ export function LogsPane({
             build
           </button>
         </fieldset>
+        {earlier.length > 0 && (
+          <select
+            aria-label="Release"
+            title="dock logs -r N: an earlier release's output, kept after its container was removed"
+            value={live ? "" : (release ?? "")}
+            onChange={(e) =>
+              onFilter({
+                ...filter,
+                release: e.target.value ? Number(e.target.value) : null,
+              })
+            }
+            className="field py-0.5 font-mono text-2xs"
+          >
+            <option value="">
+              {liveNumber ? `Live (release ${liveNumber})` : "Live"}
+            </option>
+            {earlier.map((r) => (
+              <option key={r.number} value={r.number}>
+                r{r.number} {r.status} {since(r.finished_at ?? r.created_at)}
+              </option>
+            ))}
+          </select>
+        )}
         <label className="flex flex-[1_1_200px] items-center gap-1.5">
           <span className="sr-only">Filter</span>
           <input
@@ -223,15 +253,19 @@ export function LogsPane({
           />
           Errors only
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-sec">
-          <input
-            type="checkbox"
-            className="accent-fg"
-            checked={filter.follow}
-            onChange={(e) => onFilter({ ...filter, follow: e.target.checked })}
-          />
-          Follow <kbd>F</kbd>
-        </label>
+        {(live || filter.build) && (
+          <label className="flex items-center gap-1.5 text-xs text-sec">
+            <input
+              type="checkbox"
+              className="accent-fg"
+              checked={filter.follow}
+              onChange={(e) =>
+                onFilter({ ...filter, follow: e.target.checked })
+              }
+            />
+            Follow <kbd>F</kbd>
+          </label>
+        )}
       </div>
       <div
         ref={box}
@@ -239,6 +273,11 @@ export function LogsPane({
         aria-label={`${filter.build ? "build" : `r${release}`} logs`}
         className={`overflow-auto rounded-panel border border-line bg-side py-2.5 font-mono text-xs leading-[1.7] ${height}`}
       >
+        {!live && !filter.build && (
+          <div className="px-3.5 text-faint">
+            Release {release}, kept history
+          </div>
+        )}
         {stream.error &&
           (deploying && release === deploying.number && !filter.build ? (
             <div className="px-3.5 text-mut">

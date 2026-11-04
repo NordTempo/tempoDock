@@ -440,6 +440,7 @@ type Release struct {
 	CommitMessage         string
 	CommitAuthor          string
 	HistoryTrimmed        bool
+	LogsServerID          *int64
 }
 
 type ReleaseEvent struct {

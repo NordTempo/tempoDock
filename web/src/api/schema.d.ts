@@ -2033,7 +2033,7 @@ export interface paths {
         };
         /**
          * Service logs
-         * @description Output of the active release's container (or `release`), read from the runtime. For a failed release, the last 200 lines its container wrote before it was removed.
+         * @description Output of the active release's container (or `release`), read from the runtime. An earlier release's container is gone; its output was kept on its server when the container was removed (ADR 0046), and is read from there: `follow` ends after it. `logs_kept` on a release says it can be read.
          *
          *     Server-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.
          */
@@ -4842,6 +4842,8 @@ export interface components {
             image_digest?: string;
             image_id: string;
             image_ref: string;
+            /** @description The output of the release's removed container was kept, so its logs can be read until [logs] limits drop it */
+            logs_kept: boolean;
             /** Format: int64 */
             number: number;
             project: string;

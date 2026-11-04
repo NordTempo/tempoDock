@@ -209,6 +209,9 @@ running).
 | `[retention] alert_days` | `90` | Resolved alerts older than this are deleted |
 | `[retention] prune_disk_percent` | `80` | When Docker's disk on a server is this full, dangling images dock made (built, or pulled from its registry; not ones a rollback needs) and dock's own BuildKit cache are pruned, at most hourly. Other images and build caches on the server are never touched. `0` never |
 | `[retention] build_cache_keep_mb` | `2048` | BuildKit cache left after such a prune |
+| `[logs] keep_mb_per_service` | `64` | When dock removes a container, its output is kept on its server (`<data dir>/logs/`) so `dock logs --release N` can read it. Each service keeps at most this much, compressed; the oldest releases' logs go first. Applies to every server. At least `1` |
+| `[logs] keep_mb_per_server` | `2048` | All services' kept output on one server together, compressed; the oldest go first, whatever their service. Nothing is kept while the disk has less than 1 GB or 5% free. At least `1` |
+| `[logs] keep_days` | `30` | A release's kept output is deleted this many days after its container was removed. At least `1` |
 | `[alerts] disk_warning_percent`, `disk_critical_percent` | `85`, `95` | Disk use that raises a warning or critical alert |
 | `[alerts] server_offline_minutes` | `5` | How long a server may be unreachable before an alert |
 | `[alerts] crash_loop_restarts`, `crash_loop_minutes` | `3`, `10` | This many restarts within this many minutes is a crash loop |

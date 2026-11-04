@@ -68,6 +68,10 @@ type Runtime struct {
 	statsCalls atomic.Int64
 
 	analytics fakeAnalytics
+
+	// archives are the log archives by service and release (logarchive.go).
+	archives   map[string]map[string]*fakeArchive
+	archiveErr error
 }
 
 var _ node.Runtime = (*Runtime)(nil)
@@ -82,6 +86,7 @@ func New() *Runtime {
 		volumes:    map[string]node.Labels{},
 		logs:       map[string][]node.LogLine{},
 		ctrStats:   map[string]node.ContainerStats{},
+		archives:   map[string]map[string]*fakeArchive{},
 		nextPort:   40000,
 	}
 }

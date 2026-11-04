@@ -235,8 +235,19 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
   and append the new point to their charts without polling. Watching a
   server or service live samples every 3 seconds, and only while someone
   watches.
-- App logs are read from Docker (`local` log driver with rotation). We don't
-  copy or store them.
+- App logs are read from Docker (`local` log driver with rotation) while
+  the container exists. When dock removes a container (a release
+  replaced or failed, drift, an archive), it stops it, has its server
+  stream the whole Docker log through gzip into
+  `<data dir>/logs/<service>/<release>.jsonl.gz`, then removes it
+  ([ADR 0046](decisions/0046-log-history-and-drains.md)). The release
+  records that server (`logs_server_id`), and an earlier release's logs
+  are read from there, through the node link for a remote server. Each
+  service keeps `[logs] keep_mb_per_service`, each server
+  `keep_mb_per_server`, for `keep_days`, and nothing is written on a disk
+  with less than 1 GB or 5% free; the hourly
+  retention pass applies them and drops archives of services that no
+  longer exist. Nothing runs while no container is removed.
 
 ## Process layout per server
 

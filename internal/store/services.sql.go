@@ -529,6 +529,35 @@ func (q *Queries) ListServerServices(ctx context.Context, serverID int64) ([]Lis
 	return items, nil
 }
 
+const listServiceIDs = `-- name: ListServiceIDs :many
+SELECT id FROM services ORDER BY id
+`
+
+// Every service's ID, archived ones included: the log archives the
+// retention pass keeps (ADR 0046).
+func (q *Queries) ListServiceIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.query(ctx, q.listServiceIDsStmt, listServiceIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServices = `-- name: ListServices :many
 SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds FROM services WHERE environment_id = +? ORDER BY name
 `

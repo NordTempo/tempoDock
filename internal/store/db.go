@@ -837,6 +837,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listServiceCloudflareRecordsStmt, err = db.PrepareContext(ctx, listServiceCloudflareRecords); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServiceCloudflareRecords: %w", err)
 	}
+	if q.listServiceIDsStmt, err = db.PrepareContext(ctx, listServiceIDs); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServiceIDs: %w", err)
+	}
 	if q.listServiceStatsStmt, err = db.PrepareContext(ctx, listServiceStats); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServiceStats: %w", err)
 	}
@@ -1121,6 +1124,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setReleaseImageStmt, err = db.PrepareContext(ctx, setReleaseImage); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseImage: %w", err)
+	}
+	if q.setReleaseLogsServerStmt, err = db.PrepareContext(ctx, setReleaseLogsServer); err != nil {
+		return nil, fmt.Errorf("error preparing query SetReleaseLogsServer: %w", err)
 	}
 	if q.setReleaseStatusStmt, err = db.PrepareContext(ctx, setReleaseStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query SetReleaseStatus: %w", err)
@@ -2617,6 +2623,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listServiceCloudflareRecordsStmt: %w", cerr)
 		}
 	}
+	if q.listServiceIDsStmt != nil {
+		if cerr := q.listServiceIDsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServiceIDsStmt: %w", cerr)
+		}
+	}
 	if q.listServiceStatsStmt != nil {
 		if cerr := q.listServiceStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServiceStatsStmt: %w", cerr)
@@ -3090,6 +3101,11 @@ func (q *Queries) Close() error {
 	if q.setReleaseImageStmt != nil {
 		if cerr := q.setReleaseImageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setReleaseImageStmt: %w", cerr)
+		}
+	}
+	if q.setReleaseLogsServerStmt != nil {
+		if cerr := q.setReleaseLogsServerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setReleaseLogsServerStmt: %w", cerr)
 		}
 	}
 	if q.setReleaseStatusStmt != nil {
@@ -3627,6 +3643,7 @@ type Queries struct {
 	listServersStmt                     *sql.Stmt
 	listServiceBackupsStmt              *sql.Stmt
 	listServiceCloudflareRecordsStmt    *sql.Stmt
+	listServiceIDsStmt                  *sql.Stmt
 	listServiceStatsStmt                *sql.Stmt
 	listServicesStmt                    *sql.Stmt
 	listSiteDeploysStmt                 *sql.Stmt
@@ -3722,6 +3739,7 @@ type Queries struct {
 	setReleaseContainerStmt             *sql.Stmt
 	setReleaseDigestStmt                *sql.Stmt
 	setReleaseImageStmt                 *sql.Stmt
+	setReleaseLogsServerStmt            *sql.Stmt
 	setReleaseStatusStmt                *sql.Stmt
 	setSecretsFormatStmt                *sql.Stmt
 	setServerDisconnectedStmt           *sql.Stmt
@@ -4044,6 +4062,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listServersStmt:                     q.listServersStmt,
 		listServiceBackupsStmt:              q.listServiceBackupsStmt,
 		listServiceCloudflareRecordsStmt:    q.listServiceCloudflareRecordsStmt,
+		listServiceIDsStmt:                  q.listServiceIDsStmt,
 		listServiceStatsStmt:                q.listServiceStatsStmt,
 		listServicesStmt:                    q.listServicesStmt,
 		listSiteDeploysStmt:                 q.listSiteDeploysStmt,
@@ -4139,6 +4158,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setReleaseContainerStmt:             q.setReleaseContainerStmt,
 		setReleaseDigestStmt:                q.setReleaseDigestStmt,
 		setReleaseImageStmt:                 q.setReleaseImageStmt,
+		setReleaseLogsServerStmt:            q.setReleaseLogsServerStmt,
 		setReleaseStatusStmt:                q.setReleaseStatusStmt,
 		setSecretsFormatStmt:                q.setSecretsFormatStmt,
 		setServerDisconnectedStmt:           q.setServerDisconnectedStmt,

@@ -251,6 +251,45 @@ func TestLogsStreamAndCancel(t *testing.T) {
 	}
 }
 
+// A removed container's logs are archived, read back and pruned over the
+// link with their limits (protocol 14, ADR 0046).
+func TestLogArchive(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	ct, err := h.client.Start(ctx, node.ContainerSpec{Name: "web-1", Image: "app:1", Labels: node.Labels{Service: "3", Release: "7"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.rt.AddLogs("web-1", "one", "two", "three")
+	limits := node.LogLimits{MaxBytes: 64 << 20, MaxAge: 30 * 24 * time.Hour}
+	got, err := h.client.ArchiveLogs(ctx, ct.ID, limits)
+	if err != nil || got.Service != "3" || got.Release != "7" || got.Bytes <= 0 {
+		t.Fatalf("archive = %+v, %v", got, err)
+	}
+	if ops := h.rt.Ops(); ops[len(ops)-1] != "archive logs web-1 max=67108864 age=720h0m0s" {
+		t.Fatalf("the limits didn't reach the node: %v", ops[len(ops)-1])
+	}
+	lines, err := h.client.ArchivedLogs(ctx, node.LogArchiveQuery{Service: "3", Release: "7", Tail: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := recv(t, lines); l.Text != "two" || l.Stream != "stdout" || l.Time.IsZero() {
+		t.Fatalf("first line = %+v", l)
+	}
+	if l := recv(t, lines); l.Text != "three" {
+		t.Fatalf("second line = %+v", l)
+	}
+	waitClosed(t, lines)
+	if _, err := h.client.ArchivedLogs(ctx, node.LogArchiveQuery{Service: "3", Release: "8"}); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("logs of a release without an archive = %v", err)
+	}
+	h.rt.AgeLogArchive("3", "7", 2*time.Hour)
+	r, err := h.client.PruneLogs(ctx, node.LogPrune{KeepServices: []string{"4"}, Limits: limits})
+	if err != nil || r.Removed != 1 || len(h.rt.LogArchives()) != 0 {
+		t.Fatalf("prune = %+v, %v, left %v", r, err, h.rt.LogArchives())
+	}
+}
+
 func TestBuildStreamsBothWays(t *testing.T) {
 	h := newHarness(t)
 	src, upload := io.Pipe()

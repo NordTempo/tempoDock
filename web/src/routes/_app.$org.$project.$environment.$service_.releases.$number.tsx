@@ -368,7 +368,11 @@ function LastLines({ release }: { release: Release }) {
   const org = useOrg();
   const params = Route.useParams();
   const ref = servicePath(params);
-  const logs = useServiceLogs(ref, release.number);
+  // A replaced or failed release's kept output is read once, not followed.
+  const logs = useServiceLogs(ref, release.number, {
+    tail: 500,
+    follow: release.status === "active" || inFlight(release.status),
+  });
   const failed = release.status === "failed";
   // Oldest first, repeats folded, then the last screenful.
   const rows = collapseRepeats(logs.lines.slice(0, 200).reverse()).slice(-14);

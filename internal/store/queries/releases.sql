@@ -96,3 +96,7 @@ WHERE releases.number = (SELECT max(latest.number) FROM releases latest WHERE la
 SELECT releases.service_id, releases.number FROM services
 JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
 WHERE services.environment_id = +?;
+
+-- name: SetReleaseLogsServer :exec
+-- Records the server holding a release's log archive (ADR 0046).
+UPDATE releases SET logs_server_id = ? WHERE id = +?;

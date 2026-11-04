@@ -240,6 +240,11 @@
       "bytes_op": 520278,
       "allocs_op": 2386
     },
+    "node/logarchive.BenchmarkArchivedLogsTail": {
+      "ns_op": 6000000,
+      "bytes_op": 217649,
+      "allocs_op": 712
+    },
     "node/stats.BenchmarkContainerStats50": {
       "ns_op": 764486,
       "bytes_op": 4096,

@@ -797,20 +797,21 @@ const serviceUrl = (ref: ServiceRef) =>
 /**
  * How much backlog a log view starts with, like `dock logs`: the last
  * `tail` lines (0 for all), only those newer than `since` (10m, 1h, an
- * RFC 3339 time) when set.
+ * RFC 3339 time) when set. `follow: false` reads the backlog only, for an
+ * earlier release whose output was kept after its container went.
  */
-export type Backlog = { tail: number; since?: string };
+export type Backlog = { tail: number; since?: string; follow?: boolean };
 
 /** Follows a release's container output: its backlog, then live. */
 export const useServiceLogs = (
   ref: ServiceRef,
   release: number | null,
-  { tail, since }: Backlog = { tail: 500 },
+  { tail, since, follow = true }: Backlog = { tail: 500 },
 ) =>
   useLineStream<components["schemas"]["LogLine"]>(
     release === null
       ? null
-      : `${serviceUrl(ref)}/logs?follow=true&tail=${tail}&release=${release}${since ? `&since=${encodeURIComponent(since)}` : ""}`,
+      : `${serviceUrl(ref)}/logs?follow=${follow}&tail=${tail}&release=${release}${since ? `&since=${encodeURIComponent(since)}` : ""}`,
     (line, n) => ({
       key: `${release}:${n}`,
       time: line.time,

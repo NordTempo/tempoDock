@@ -65,8 +65,9 @@ const (
 	// the replay spool: tail-spool's and ack-spool's spool, and the site
 	// rules' replay settings (ADR 0037, A3). 13 added restart and the
 	// ongoing health check: the container spec's health, a container's
-	// health state and health_status events (ADR 0043).
-	Protocol = 13
+	// health state and health_status events (ADR 0043); 14 added
+	// archive-logs, archived-logs and prune-logs (ADR 0046).
+	Protocol = 14
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -160,9 +161,13 @@ const (
 	opRunAnalytics       = "run-analytics-store"
 	opPutAnalyticsBinary = "put-analytics-binary"
 	opRemoveAnalytics    = "remove-analytics-store"
-	opRunJob             = "run-job" // protocol 2
-	opRotate             = "rotate"
-	opUpdate             = "update" // protocol 4
+	// Log history (ADR 0046), protocol 14.
+	opArchiveLogs  = "archive-logs"
+	opArchivedLogs = "archived-logs"
+	opPruneLogs    = "prune-logs"
+	opRunJob       = "run-job" // protocol 2
+	opRotate       = "rotate"
+	opUpdate       = "update" // protocol 4
 	// Joining mode (join.go) only.
 	opJoin   = "join"
 	opJoined = "joined"

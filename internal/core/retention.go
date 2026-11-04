@@ -26,7 +26,9 @@ import (
 //     rollback window and older than build_log_days. Releases a rollback
 //     can use keep all of it;
 //   - audit events older than audit_days, or past audit_max_events;
-//   - resolved alerts older than alert_days.
+//   - resolved alerts older than alert_days;
+//   - on every online server, log archives past [logs] limits and those
+//     of services that no longer exist (pruneLogs, ADR 0046).
 //
 // Statistics prune themselves on the tick (stats.go), and release images
 // out of the rollback window go after each deploy (images.go).
@@ -82,6 +84,8 @@ func (c *Core) retentionTick(ctx context.Context, now time.Time, servers []store
 	r.mu.Unlock()
 	if due {
 		c.retain(ctx, now)
+		// Servers answer in the background, so the tick never waits on one.
+		c.wg.Go(func() { c.pruneLogs(c.ctx, servers) })
 	}
 }
 

@@ -452,7 +452,10 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
-	c.saveContainerLogs(ctx, d.ss, d.rel.ID)
+	if !c.keepsLogs(serverID) {
+		// Removing the container archives its output on servers that can.
+		c.saveContainerLogs(ctx, d.ss, d.rel.ID)
+	}
 	removeErr := c.removeReleaseContainers(ctx, d.ss, d.rel.ID)
 	if removeErr != nil {
 		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, c.nodeErr(serverID, removeErr)))
@@ -637,7 +640,8 @@ func liveness(cfg releaseConfig) *node.LivenessCheck {
 // removeContainer stops (gracefully) and removes a container. Missing
 // containers are fine. Until its destroy event arrives, the container's
 // events are ignored (see onContainerEvent): stopping an active release's
-// container (stateful recreate, archive) is not a crash or drift.
+// container (stateful recreate, archive) is not a crash or drift. Once
+// stopped, its output is archived on its server (archiveLogs, ADR 0046).
 func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) error {
 	c.setRemoving(id, true)
 	rt := c.runtime(serverID)
@@ -648,6 +652,7 @@ func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) e
 		c.setRemoving(id, false)
 		return fmt.Errorf("stop container %s: %w", id, err)
 	}
+	c.archiveLogs(ctx, serverID, rt, id)
 	if err := rt.Remove(ctx, id); err != nil && !errors.Is(err, node.ErrNotFound) {
 		c.setRemoving(id, false)
 		return fmt.Errorf("remove container %s: %w", id, err)

@@ -371,3 +371,12 @@ func (o offlineRuntime) EnsureAnalyticsStore(context.Context, node.AnalyticsStor
 }
 func (o offlineRuntime) RemoveAnalyticsStore(context.Context) error           { return o.err }
 func (o offlineRuntime) DialAnalyticsStore(context.Context) (net.Conn, error) { return nil, o.err }
+func (o offlineRuntime) ArchiveLogs(context.Context, string, node.LogLimits) (node.LogArchive, error) {
+	return node.LogArchive{}, o.err
+}
+func (o offlineRuntime) ArchivedLogs(context.Context, node.LogArchiveQuery) (<-chan node.LogLine, error) {
+	return nil, o.err
+}
+func (o offlineRuntime) PruneLogs(context.Context, node.LogPrune) (node.PruneResult, error) {
+	return node.PruneResult{}, o.err
+}

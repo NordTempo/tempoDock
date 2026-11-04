@@ -244,11 +244,11 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	h.addReleaseTools(s)
 
 	mcpkit.AddTool(s, "logs", "Service logs",
-		"The last lines a service's container wrote (stdout and stderr), from the active release or a given one. A failed release's container is gone; its last lines were kept and are returned instead. "+
+		"The last lines a service's container wrote (stdout and stderr), from the active release or a given one. Earlier releases work too: a replaced or failed release's output was kept on its server when its container was removed (for 30 days by default), and is read from there. "+
 			"Lines start with their time; stderr lines are marked [stderr].",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Release int64  `json:"release,omitempty" doc:"Release number. Default: the active release."`
+			Release int64  `json:"release,omitempty" doc:"Release number, also of an earlier (replaced or failed) release. Default: the active release."`
 			Tail    int    `json:"tail,omitempty" doc:"How many of the last lines. Default 100, at most 1000."`
 			Since   string `json:"since,omitempty" doc:"Only lines since then: a duration like 10m or an RFC 3339 time."`
 		}) (mcpkit.Reply, error) {

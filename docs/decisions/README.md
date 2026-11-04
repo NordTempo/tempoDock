@@ -53,6 +53,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0043](0043-ongoing-health-checks.md) | Ongoing health checks | accepted |
 | [0044](0044-environment-lock.md) | Locked environments, and agents asking for access | accepted |
 | [0045](0045-pre-deploy-command.md) | Pre-deploy command | accepted |
+| [0046](0046-log-history-and-drains.md) | Log history past the container, and log drains | accepted |
 
 ## Template
 

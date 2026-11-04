@@ -124,6 +124,23 @@ type Containers interface {
 	// Logs streams a container's logs. The channel closes when the stream ends
 	// (immediately after the backlog when opts.Follow is false) or ctx ends.
 	Logs(ctx context.Context, id string, opts LogOptions) (<-chan LogLine, error)
+	// ArchiveLogs copies a managed container's whole log into its
+	// release's archive in this server's data dir (ADR 0046), as a new
+	// gzip member of logs/<service>/<release>.jsonl.gz, then applies
+	// limits to that service's archives (oldest files first). Core calls
+	// it between Stop and Remove, so the archive holds everything the
+	// container wrote. The service and release come from the container's
+	// labels and are returned with the bytes written, and with an error
+	// once they are known.
+	ArchiveLogs(ctx context.Context, id string, limits LogLimits) (LogArchive, error)
+	// ArchivedLogs streams a release's archived lines, oldest first; the
+	// channel closes after the last one or when ctx ends. A release
+	// without an archive is ErrNotFound (wrapped).
+	ArchivedLogs(ctx context.Context, q LogArchiveQuery) (<-chan LogLine, error)
+	// PruneLogs applies limits to every service's archives on this
+	// server and removes the archives of services not in KeepServices
+	// (the retention pass, hourly).
+	PruneLogs(ctx context.Context, p LogPrune) (PruneResult, error)
 	// Events streams lifecycle events for platform-managed containers until
 	// ctx ends. Implementations reconnect on their own; the channel only
 	// closes when ctx is done.
@@ -623,6 +640,44 @@ type LogLine struct {
 	Time   time.Time
 	Stream string // "stdout" or "stderr"
 	Text   string
+}
+
+// LogLimits bound a service's log archives on a server (ADR 0046,
+// [logs] in the control plane's config). Zero means no limit.
+type LogLimits struct {
+	// MaxBytes caps the service's archives, compressed; the oldest files
+	// go first.
+	MaxBytes int64
+	// MaxAge removes archives last written longer ago than this.
+	MaxAge time.Duration
+	// MaxTotalBytes caps every service's archives on the server together,
+	// compressed; the oldest files go first, whatever their service.
+	MaxTotalBytes int64
+}
+
+// LogArchive is what Containers.ArchiveLogs wrote: the container's
+// service and release IDs (from its labels) and the compressed bytes
+// added to the release's archive.
+type LogArchive struct {
+	Service, Release string
+	Bytes            int64
+}
+
+// LogArchiveQuery selects a release's archived lines. Service and
+// Release are IDs (decimal). Tail keeps the last N lines (0 for all);
+// Since drops lines before it.
+type LogArchiveQuery struct {
+	Service, Release string
+	Tail             int
+	Since            time.Time
+}
+
+// LogPrune is one retention pass over a server's log archives: Limits
+// for every service in KeepServices (IDs), and every other service's
+// archives removed.
+type LogPrune struct {
+	KeepServices []string
+	Limits       LogLimits
 }
 
 // ContainerEvent is a lifecycle change of a platform-managed container.
