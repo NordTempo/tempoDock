@@ -312,6 +312,34 @@ type Environment struct {
 	ArchivedAt *time.Time
 }
 
+type EnvironmentMove struct {
+	ID            int64
+	EnvironmentID int64
+	FromServerID  int64
+	ToServerID    int64
+	Status        string
+	Step          string
+	DowntimeFrom  *time.Time
+	DowntimeTo    *time.Time
+	Error         string
+	Notes         string
+	CreatedBy     string
+	StartedAt     time.Time
+	FinishedAt    *time.Time
+}
+
+type EnvironmentMoveService struct {
+	MoveID      int64
+	ServiceID   int64
+	ReleaseID   *int64
+	Stateful    bool
+	HostPort    int64
+	ContainerID string
+	Status      string
+	CopiedBytes int64
+	Error       string
+}
+
 type GitConnection struct {
 	ID              int64
 	ServiceID       int64

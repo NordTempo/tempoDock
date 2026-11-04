@@ -172,6 +172,8 @@ type Core struct {
 	// jobs is the job scheduler's kick and the job runs in flight
 	// (jobs.go, jobs_schedule.go).
 	jobs jobState
+	// moves holds the environment moves being driven (ADR 0052).
+	moves moveState
 
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
@@ -239,6 +241,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		uptime:     newUptimeState(),
 		runs:       runState{running: map[int64]int{}, writing: map[int64]bool{}, ended: map[int64]chan struct{}{}},
 		jobs:       newJobState(),
+		moves:      newMoveState(),
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
@@ -394,6 +397,8 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.resumePreviews(ctx); err != nil {
 		return fmt.Errorf("archive closed previews: %w", err)
 	}
+	// A move a restart cut short rolls back, or finishes its clean-up.
+	c.resumeMoves(ctx, true)
 	// Remote servers are reconciled as they connect (NodeStatus); ones a
 	// hub that already serves has connected are reconciled now.
 	if c.nodes != nil {

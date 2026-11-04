@@ -117,6 +117,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerGitHub(s, a, mux)
 	registerBackups(s, a)
 	registerSnapshots(s, a)
+	registerMoves(s, a)
 	registerRegistry(s, a)
 	registerStorage(s, a)
 	registerCloudflare(s, a)

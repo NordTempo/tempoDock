@@ -280,6 +280,9 @@ func (c *Core) startSnapshot(ctx context.Context, a Actor, ss svcScope, trigger 
 	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
 		return store.VolumeSnapshot{}, nil, err
 	}
+	if err := c.notMoving(ctx, ss.envScope, "take a snapshot"); err != nil {
+		return store.VolumeSnapshot{}, nil, err
+	}
 	if !c.claimService(ss.svc.ID) {
 		return store.VolumeSnapshot{}, nil, conflict("a backup, snapshot or restore of %s is running; wait for it to finish", ss)
 	}
@@ -414,11 +417,19 @@ func (c *Core) runSnapshotJob(ctx context.Context, serverID int64, rt node.Runti
 	if err := rt.EnsureVolume(ctx, vol, node.Labels{ControlPlane: c.install}); err != nil {
 		return "", fmt.Errorf("create the snapshot volume: %w", c.nodeErr(serverID, err))
 	}
+	spec.Mounts = append(spec.Mounts, node.Mount{Volume: vol, Path: snapshotsPath})
+	return c.runToolJob(ctx, serverID, rt, spec)
+}
+
+// runToolJob runs spec in the restic image, a small Alpine with busybox's
+// cp, du and tar, with the job memory limit: snapshots (ADR 0047) and
+// moving volumes (ADR 0052). A job that exits non-zero is an error with
+// the end of its output.
+func (c *Core) runToolJob(ctx context.Context, serverID int64, rt node.Runtime, spec node.JobSpec) (string, error) {
 	spec.Image = c.cfg.Backup.ResticImage
 	if err := c.ensureImage(ctx, serverID, rt, spec.Image); err != nil {
 		return "", err
 	}
-	spec.Mounts = append(spec.Mounts, node.Mount{Volume: vol, Path: snapshotsPath})
 	spec.Resources = node.Resources{MemoryBytes: jobMemoryMB << 20, NanoCPUs: 1e9}
 	res, err := rt.RunJob(ctx, spec)
 	if err != nil {
@@ -636,6 +647,9 @@ func (c *Core) restoreIntoNew(ctx context.Context, a Actor, ss svcScope, t dbTem
 	if err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
+	if err := c.notMoving(ctx, ss.envScope, "restore a snapshot"); err != nil {
+		return apitypes.SnapshotRestoreResult{}, err
+	}
 	if !c.claimService(ss.svc.ID) {
 		return apitypes.SnapshotRestoreResult{}, conflict("a backup, snapshot or restore of %s is running; wait for it to finish", ss)
 	}
@@ -755,6 +769,9 @@ func (c *Core) DeleteSnapshot(ctx context.Context, a Actor, ref ServiceRef, id i
 	}
 	snap, err := c.serviceSnapshot(ctx, ss, id)
 	if err != nil {
+		return err
+	}
+	if err := c.notMoving(ctx, ss.envScope, "delete a snapshot"); err != nil {
 		return err
 	}
 	if !c.claimService(ss.svc.ID) {

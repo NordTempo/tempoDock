@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { memo, useState } from "react";
+import { lazy, memo, Suspense, useState } from "react";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
@@ -8,6 +8,7 @@ import {
   serviceRef,
   useCanDeploy,
   useIsAdmin,
+  useIsOperator,
   useSession,
 } from "../../data/queries";
 import type { EnvironmentView, ServiceView } from "../../data/types";
@@ -17,6 +18,7 @@ import { Button, Panel, SectionHead, StateText } from "../../ui/kit";
 import { kindLabel, serviceState } from "../../ui/status";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
+import { MoveStrip } from "../move/MoveStrip";
 import { previewsCli } from "../previews/data";
 import {
   ClosePreview,
@@ -28,6 +30,8 @@ import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
+
+const MovePanel = lazy(() => import("../move/MovePanel"));
 
 /**
  * One environment on the project overview: a row per service. A preview
@@ -47,6 +51,10 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const pr = environment.preview;
   const [closing, setClosing] = useState(false);
   const newService = () => openCreate({ kind: "service", env: ref });
+  // Moving to another server (ADR 0052): operators open it from here;
+  // anyone opens a running move's progress from its strip.
+  const operator = useIsOperator();
+  const [moveOpen, setMoveOpen] = useState(false);
   const links = "text-xs text-mut hover:text-fg";
   return (
     <section aria-labelledby={`env-${environment.id}`}>
@@ -136,6 +144,17 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 Close preview
               </button>
             )}
+            {operator && (
+              <button
+                type="button"
+                className={moveOpen ? "text-xs text-fg" : links}
+                title={`dock env move ${ref.environment} --to <server>`}
+                aria-expanded={moveOpen}
+                onClick={() => setMoveOpen(!moveOpen)}
+              >
+                Move
+              </button>
+            )}
           </>
         }
       >
@@ -148,6 +167,23 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
       )}
       {pr && <PreviewLine env={ref} />}
       {closing && <ClosePreview env={ref} onDone={() => setClosing(false)} />}
+      {!moveOpen && (
+        <MoveStrip
+          env={ref}
+          movingTo={environment.moving_to}
+          onDetails={() => setMoveOpen(true)}
+        />
+      )}
+      {moveOpen && (
+        <Suspense fallback={null}>
+          <MovePanel
+            env={ref}
+            server={environment.server}
+            kind={environment.kind}
+            operator={operator}
+          />
+        </Suspense>
+      )}
       {services.length === 0 ? (
         <p className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-panel border border-dashed border-dash px-3.5 py-3 text-mut">
           No services yet.

@@ -225,6 +225,9 @@ type Environment struct {
 	// Preview is set on a preview environment (ADR 0056): the pull
 	// request it previews.
 	Preview *PullRequestRef `json:"preview,omitempty" doc:"The pull request this preview environment belongs to"`
+	// MovingTo is the server a running move is taking it to (ADR 0052),
+	// on the project overview.
+	MovingTo string `json:"moving_to,omitempty"`
 }
 
 // CreateEnvironmentRequest creates an environment. It goes where the
@@ -1528,11 +1531,14 @@ const (
 	// EventJob carries a service's scheduled job as it was set (ADR
 	// 0048); with Message "removed", only its name.
 	EventJob EventType = "job"
+	// EventEnvironmentMove: an environment move went a step further, or
+	// ended (ADR 0052). Move is the move.
+	EventEnvironmentMove EventType = "environment_move"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job"`
+	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move"`
 	Time           time.Time        `json:"time"`
 	ProjectRenamed *ProjectRenamed  `json:"project_renamed,omitempty"`
 	Project        string           `json:"project,omitempty"`
@@ -1555,6 +1561,7 @@ type Event struct {
 	Run            *CommandRun      `json:"run,omitempty"`
 	Uptime         *UptimeUpdate    `json:"uptime,omitempty"`
 	Job            *Job             `json:"job,omitempty"`
+	Move           *EnvironmentMove `json:"move,omitempty"`
 	Message        string           `json:"message,omitempty"`
 }
 

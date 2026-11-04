@@ -8,6 +8,7 @@ import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { cloudflareKey } from "../features/cloudflare/data";
 import { applyJobEvent, applyJobRunEvent } from "../features/jobs/data";
+import { applyMoveEvent } from "../features/move/data";
 import { registryKey } from "../features/registry/data";
 import { applyAccessRequestEvent } from "../features/requests/data";
 import { applyRunEvent } from "../features/runs/data";
@@ -64,6 +65,7 @@ const busEvents = [
   "run",
   "uptime",
   "job",
+  "environment_move",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -310,6 +312,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       );
       return;
     }
+    case "environment_move":
+      // A move went a step further or ended; the event has all of it.
+      if (event.move) applyMoveEvent(queryClient, event.move);
+      return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":

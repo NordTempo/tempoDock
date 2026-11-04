@@ -187,7 +187,7 @@ eligible server with the most free memory.`,
 	}
 	createFlags.add(create, needProject)
 	create.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
-	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g))
+	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g), newEnvironmentMoveCmd(g))
 	return cmd
 }
 

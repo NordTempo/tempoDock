@@ -447,6 +447,36 @@ Nothing runs until you deploy. `--deploy` deploys the images serving in
 the source like `dock promote` (by digest, one service at a time) and
 follows them. It needs read on the source and deploy on the project.
 
+## Move an environment to another server
+
+```sh
+dock env move staging --to homelab     # asks first, then follows each step
+dock env move staging --status         # the running or latest move
+```
+
+Operators move an environment when a server joins or is retired
+([ADR 0052](../decisions/0052-moving-environments.md)); the UI has the same
+in the environment's settings. Everything is checked first: the server
+accepts the environment's kind, both servers are online, and the target
+has the memory, disk, images and Cloudflare tunnels. Then:
+
+| Step | What happens |
+|---|---|
+| prepare | Images, network and volumes are made on the target |
+| stop | Stateful services stop on the source: the downtime starts |
+| copy | Their volumes stream to the target |
+| start | Every service starts on the target and passes its health check: the downtime ends |
+| switch | The environment, routes, domains and placement point at the target, in one go |
+| cleanup | The source's containers go |
+
+Stateless services keep serving until the switch. A failure before the
+switch rolls back: the environment stays where it was, its data untouched.
+Domains routed through Cloudflare follow by themselves; for other domains
+the move lists the DNS records to change. The source's volumes stay as a
+last copy until you remove them (the move names them). While a move runs,
+deploys, backups, snapshots and restores of the environment are refused
+until it ends. The environment's lock applies to the move itself.
+
 ## Export a project's config
 
 ```sh

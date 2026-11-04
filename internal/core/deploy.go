@@ -179,29 +179,40 @@ func (d *deployment) run(ctx context.Context) error {
 
 	// health_checking
 	d.setStatus(ctx, apitypes.ReleaseHealthChecking)
-	hc := node.HealthCheck{
-		Path:     d.cfg.HealthCheckPath,
-		Timeout:  time.Duration(d.cfg.HealthCheckTimeout) * time.Second,
-		Interval: time.Second,
-		Grace:    min(healthGrace, time.Duration(d.cfg.HealthCheckTimeout)*time.Second),
-	}
-	if !d.cfg.Published {
-		hc.Port = d.cfg.HealthPort
-	}
+	hc := healthCheckOf(d.cfg)
 	if err := d.rt.HealthCheck(ctx, ctr, hc); err != nil {
-		what := "TCP check on port " + strconv.Itoa(d.cfg.Port)
-		switch {
-		case hc.Path != "":
-			what = "HTTP check on " + hc.Path
-		case hc.Port != 0:
-			what = "TCP check on port " + strconv.Itoa(hc.Port) + " in the environment network"
-		case !d.cfg.Published:
-			what = "container must stay running"
-		}
-		return step(apitypes.CodeHealthCheckFailed, "health check failed (%s, timeout %s): %w", what, hc.Timeout, err)
+		return step(apitypes.CodeHealthCheckFailed, "health check failed (%s, timeout %s): %w", healthWhat(d.cfg, hc), hc.Timeout, err)
 	}
 	d.event(ctx, "Health check passed")
 	return d.cutover(ctx)
+}
+
+// healthCheckOf is the check a release's new container must pass before
+// it gets traffic: a deploy's, and a moved environment's (ADR 0052).
+func healthCheckOf(cfg releaseConfig) node.HealthCheck {
+	hc := node.HealthCheck{
+		Path:     cfg.HealthCheckPath,
+		Timeout:  time.Duration(cfg.HealthCheckTimeout) * time.Second,
+		Interval: time.Second,
+		Grace:    min(healthGrace, time.Duration(cfg.HealthCheckTimeout)*time.Second),
+	}
+	if !cfg.Published {
+		hc.Port = cfg.HealthPort
+	}
+	return hc
+}
+
+// healthWhat says what a health check probes, for its failure.
+func healthWhat(cfg releaseConfig, hc node.HealthCheck) string {
+	switch {
+	case hc.Path != "":
+		return "HTTP check on " + hc.Path
+	case hc.Port != 0:
+		return "TCP check on port " + strconv.Itoa(hc.Port) + " in the environment network"
+	case !cfg.Published:
+		return "container must stay running"
+	}
+	return "TCP check on port " + strconv.Itoa(cfg.Port)
 }
 
 // image builds or fetches the release's image and returns its ID.

@@ -39,6 +39,73 @@ func TestRunJobStdin(t *testing.T) {
 	}
 }
 
+// A volume streams out of one job with busybox tar and into another, as
+// an environment move copies it (ADR 0052): owner, a 0700 root (Postgres
+// refuses anything else), a symlink and hidden files come back as they
+// were, and the target's old files are gone. Busybox tar doesn't lchown,
+// so a symlink itself comes back owned by root (what it points to keeps
+// its owner): nothing Dock runs checks a symlink's own owner.
+func TestRunJobCopiesAVolume(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, 2*time.Minute)
+	src, dst := e.name("src"), e.name("dst")
+	for _, v := range []string{src, dst} {
+		if err := e.EnsureVolume(ctx, v, node.Labels{Project: "p1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(name, script, vol string, in io.Reader, out io.Writer) string {
+		t.Helper()
+		spec := node.JobSpec{Name: e.name(name), Image: shellImage, Script: script, Mounts: []node.Mount{{Volume: vol, Path: "/v"}}}
+		var tail strings.Builder
+		if in != nil || out != nil {
+			spec.Stream = &node.JobStream{Stdin: in, Stdout: cmpWriter(out, &tail), Stderr: &tail}
+		}
+		res, err := e.RunJob(ctx, spec)
+		if spec.Stream != nil {
+			res.Output = tail.String()
+		}
+		if err != nil || res.ExitCode != 0 {
+			t.Fatalf("%s: %+v, %v", name, res, err)
+		}
+		return res.Output
+	}
+	run("fill", "mkdir -p /v/base && head -c 3000000 /dev/urandom > /v/base/big && echo x > /v/.hidden && "+
+		"ln -s base/big /v/link && chown -R 999:999 /v && chmod 700 /v", src, nil, nil)
+	run("old", "touch /v/stale", dst, nil, nil)
+	const list = "cd /v && find . | sort | while read f; do if [ -L \"$f\" ]; then stat -c '%n %a %F %N' \"$f\"; else stat -c '%n %u:%g %a %F %s' \"$f\"; fi; done"
+	want := run("list-src", list, src, nil, nil)
+
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		_, err := e.RunJob(ctx, node.JobSpec{
+			Name: e.name("export"), Image: shellImage, Script: "tar -cf - -C /v .",
+			Mounts: []node.Mount{{Volume: src, Path: "/v", ReadOnly: true}}, Stream: &node.JobStream{Stdout: pw, Stderr: io.Discard},
+		})
+		pw.CloseWithError(err)
+		done <- err
+	}()
+	run("import", "rm -rf /v/* /v/.[!.]* /v/..?*; tar -xf - -C /v", dst, pr, nil)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := run("list-dst", list, dst, nil, nil); got != want {
+		t.Fatalf("copy differs:\n%s\nwant:\n%s", got, want)
+	}
+	if !strings.Contains(want, ". 999:999 700 directory") || !strings.Contains(want, "symbolic link") {
+		t.Fatalf("source isn't what the test meant to copy:\n%s", want)
+	}
+}
+
+// cmpWriter is w, or def when w is nil.
+func cmpWriter(w, def io.Writer) io.Writer {
+	if w == nil {
+		return def
+	}
+	return w
+}
+
 // A job's Pause freezes the running service containers for exactly its
 // run, also when ctx ends mid-job. Another control plane's container is
 // not found and nothing is paused.

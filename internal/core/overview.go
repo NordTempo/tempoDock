@@ -70,6 +70,16 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 		domainsBySvc[d.ServiceID] = append(domainsBySvc[d.ServiceID], d)
 	}
 
+	// Running moves, for every environment at once (ADR 0052).
+	moves, err := c.store.ListOpenEnvironmentMoves(ctx)
+	if err != nil {
+		return out, err
+	}
+	movingTo := map[int64]int64{}
+	for _, m := range moves {
+		movingTo[m.EnvironmentID] = m.ToServerID
+	}
+
 	for _, e := range envs {
 		if !a.canSee(p.OrgID, p.ID, e.ID) {
 			continue
@@ -84,6 +94,9 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 		}
 		env := toEnvironment(p, e, srv.Name)
 		env.Preview = prs[e.ID]
+		if to, ok := movingTo[e.ID]; ok {
+			env.MovingTo = servers[to].Name
+		}
 		eo := apitypes.EnvironmentOverview{
 			Environment: env, PendingChanges: pending.Count,
 			Services: make([]apitypes.ServiceOverview, 0, len(svcsByEnv[e.ID])),
