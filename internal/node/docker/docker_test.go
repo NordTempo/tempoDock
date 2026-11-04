@@ -33,7 +33,7 @@ func TestCreateOptions(t *testing.T) {
 		Mounts:    []node.Mount{{Volume: "data", Path: "/data"}},
 		Resources: node.Resources{MemoryBytes: 256 << 20, NanoCPUs: 5e8},
 	}
-	o := createOptions(spec, "")
+	o := createOptions(spec, "", nil)
 
 	if got := o.Config.Env; !slices.Equal(got, []string{"A=1", "B=2"}) {
 		t.Errorf("Env = %v", got)
@@ -73,7 +73,7 @@ func TestCreateOptions(t *testing.T) {
 }
 
 func TestCreateOptionsMinimal(t *testing.T) {
-	o := createOptions(node.ContainerSpec{Name: "x", Image: "alpine"}, "")
+	o := createOptions(node.ContainerSpec{Name: "x", Image: "alpine"}, "", nil)
 	if o.Config.Cmd != nil || o.Config.ExposedPorts != nil || o.HostConfig.PortBindings != nil || o.NetworkingConfig != nil {
 		t.Errorf("unexpected defaults: %+v %+v %+v", o.Config, o.HostConfig, o.NetworkingConfig)
 	}
@@ -87,7 +87,7 @@ func TestCreateOptionsHealth(t *testing.T) {
 		Port: 8080, Path: "/up", Interval: 30 * time.Second, Timeout: 5 * time.Second, Retries: 3,
 		StartPeriod: time.Minute, StartInterval: 2 * time.Second,
 	}}
-	o := createOptions(spec, "/var/lib/dock/probe/dock-probe")
+	o := createOptions(spec, "/var/lib/dock/probe/dock-probe", nil)
 	want := container.HealthConfig{
 		Test:     []string{"CMD", "/.dock-probe", "http", "8080", "/up", "5000"},
 		Interval: 30 * time.Second, Timeout: 6 * time.Second, Retries: 3, StartPeriod: time.Minute, StartInterval: 2 * time.Second,
@@ -100,10 +100,10 @@ func TestCreateOptionsHealth(t *testing.T) {
 	}
 
 	spec.Health.Path = ""
-	if hc := createOptions(spec, "/p").Config.Healthcheck; !slices.Equal(hc.Test, []string{"CMD", "/.dock-probe", "tcp", "8080", "5000"}) {
+	if hc := createOptions(spec, "/p", nil).Config.Healthcheck; !slices.Equal(hc.Test, []string{"CMD", "/.dock-probe", "tcp", "8080", "5000"}) {
 		t.Errorf("tcp Test = %v", hc.Test)
 	}
-	if o := createOptions(spec, ""); o.Config.Healthcheck != nil || o.HostConfig.Mounts != nil {
+	if o := createOptions(spec, "", nil); o.Config.Healthcheck != nil || o.HostConfig.Mounts != nil {
 		t.Errorf("without a probe: Healthcheck %+v, Mounts %+v", o.Config.Healthcheck, o.HostConfig.Mounts)
 	}
 }
@@ -134,7 +134,7 @@ func TestToContainer(t *testing.T) {
 		t.Errorf("StartedAt = %v", c.StartedAt)
 	}
 	c.StartedAt = want.StartedAt
-	if c != want {
+	if !reflect.DeepEqual(c, want) {
 		t.Errorf("got %+v\nwant %+v", c, want)
 	}
 }

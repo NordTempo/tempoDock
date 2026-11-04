@@ -77,7 +77,7 @@ func (c *Core) StopService(ctx context.Context, a Actor, ref ServiceRef) (apityp
 	if stopped {
 		c.releaseEvent(ctx, ss, active, fmt.Sprintf("Stopping release %d: %s stopped %s", active.Number, a.Name, ss.svc.Name))
 	}
-	if err := c.removeReleaseContainers(ctx, ss, active.ID); err != nil {
+	if err := c.removeReleaseContainers(ctx, ss, active.ID, keepData); err != nil {
 		err = c.nodeErr(ss.env.ServerID, err)
 		c.releaseEvent(ctx, ss, active, fmt.Sprintf("Could not remove the container of release %d: %v", active.Number, err))
 		code := CodeOf(err)

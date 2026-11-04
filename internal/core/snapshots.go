@@ -545,7 +545,7 @@ func (c *Core) runRestoreInPlace(ctx context.Context, ss svcScope, snap, safety 
 	// stays stopped afterwards: its restored data waits for its start.
 	running := err == nil && ss.svc.StoppedAt == nil
 	if running {
-		if err := c.removeReleaseContainers(ctx, ss, active.ID); err != nil {
+		if err := c.removeReleaseContainers(ctx, ss, active.ID, keepData); err != nil {
 			c.failSafety(ctx, safety, "the service couldn't be stopped")
 			return fmt.Errorf("stop %s: %w", ss.svc.Name, c.nodeErr(ss.env.ServerID, err))
 		}

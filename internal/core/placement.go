@@ -325,9 +325,9 @@ func (o offlineRuntime) EnsureVolume(context.Context, string, node.Labels) error
 func (o offlineRuntime) Start(context.Context, node.ContainerSpec) (node.Container, error) {
 	return node.Container{}, o.err
 }
-func (o offlineRuntime) Stop(context.Context, string, time.Duration) error    { return o.err }
-func (o offlineRuntime) Restart(context.Context, string, time.Duration) error { return o.err }
-func (o offlineRuntime) Remove(context.Context, string) error                 { return o.err }
+func (o offlineRuntime) Stop(context.Context, string, time.Duration) error        { return o.err }
+func (o offlineRuntime) Restart(context.Context, string, time.Duration) error     { return o.err }
+func (o offlineRuntime) Remove(context.Context, string, node.RemoveOptions) error { return o.err }
 func (o offlineRuntime) Inspect(context.Context, string) (node.Container, error) {
 	return node.Container{}, o.err
 }

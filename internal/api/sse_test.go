@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // A stream announces `ready` once it is subscribed, so an action taken
@@ -85,7 +86,7 @@ func TestStreamErrorBeforeReadyIsProblem(t *testing.T) {
 	// Removed outside the platform.
 	ctrs, _ := f.rt.List(context.Background())
 	_ = f.rt.Stop(context.Background(), ctrs[0].ID, 0)
-	if err := f.rt.Remove(context.Background(), ctrs[0].ID); err != nil {
+	if err := f.rt.Remove(context.Background(), ctrs[0].ID, node.RemoveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	resp, body := f.do("read", "GET", shopProd+"/services/web/logs", nil)

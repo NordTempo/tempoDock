@@ -46,8 +46,12 @@ durations travel as milliseconds.
   analytics store's own volume, which core calls only once the store's
   data was copied to its new server and checked, or the operator chose
   to start empty (ADR 0037). Anonymous volumes (an image's `VOLUME` that
-  no Dock volume covers) go with their container: remove containers with
-  `RemoveVolumes: true`, also in tests, or they pile up on the disk.
+  no Dock volume covers) may hold a service's only copy of its data
+  (ADR 0052): `Remove` keeps them for a container that served
+  (`RemoveOptions.KeepAnonymousVolumes`, one kept copy per service) and
+  removes them otherwise. Containers that never serve (jobs, a failed
+  start, infrastructure, tests) are removed with `RemoveVolumes: true`,
+  or their volumes pile up on the disk.
 - No polling: follow Docker's event stream. Stats are the one periodic
   job and read files, not the Docker API (except once per new container,
   to name it in the memory breakdown).

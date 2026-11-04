@@ -137,6 +137,15 @@ type (
 	containerRequest struct {
 		ID string `json:"id"`
 	}
+	// removeRequest is remove's: a containerRequest plus whether the
+	// container's anonymous volumes go too (ADR 0052). Keeping is the
+	// default, so a request without the field (an older control plane)
+	// never deletes data. A node from before ignores it: it removes them
+	// (v0.19.0 on) or keeps them all (before).
+	removeRequest struct {
+		ID                   string `json:"id"`
+		DropAnonymousVolumes bool   `json:"drop_anonymous_volumes,omitempty"`
+	}
 	stopRequest struct {
 		ID        string `json:"id"`
 		TimeoutMS int64  `json:"timeout_ms"`
@@ -460,13 +469,15 @@ type wireContainer struct {
 	// Health and HealthOutput are new in protocol 13.
 	Health       string `json:"health,omitempty"`
 	HealthOutput string `json:"health_output,omitempty"`
+	// AnonymousVolumes is new with ADR 0052; older nodes leave it out.
+	AnonymousVolumes capped[string] `json:"anonymous_volumes,omitempty"`
 }
 
 func toWireContainer(c node.Container) wireContainer {
 	return wireContainer{
 		ID: c.ID, Name: c.Name, Image: c.Image, Labels: toWireLabels(c.Labels), State: string(c.State),
 		HostPort: c.HostPort, StartedAt: c.StartedAt, ExitCode: c.ExitCode, RestartCount: c.RestartCount,
-		OOMKilled: c.OOMKilled, Health: c.Health, HealthOutput: c.HealthOutput,
+		OOMKilled: c.OOMKilled, Health: c.Health, HealthOutput: c.HealthOutput, AnonymousVolumes: c.AnonymousVolumes,
 	}
 }
 
@@ -474,7 +485,7 @@ func (w wireContainer) node() node.Container {
 	return node.Container{
 		ID: w.ID, Name: w.Name, Image: w.Image, Labels: w.Labels.node(), State: node.ContainerState(w.State),
 		HostPort: w.HostPort, StartedAt: w.StartedAt, ExitCode: w.ExitCode, RestartCount: w.RestartCount,
-		OOMKilled: w.OOMKilled, Health: w.Health, HealthOutput: w.HealthOutput,
+		OOMKilled: w.OOMKilled, Health: w.Health, HealthOutput: w.HealthOutput, AnonymousVolumes: w.AnonymousVolumes,
 	}
 }
 

@@ -235,7 +235,7 @@ func TestLifecycle(t *testing.T) {
 	for range events { // channel must close once ctx is done
 	}
 
-	if err := e.Remove(ctx, c.ID); err != nil {
+	if err := e.Remove(ctx, c.ID, node.RemoveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Inspect(ctx, c.ID); !cerrdefs.IsNotFound(err) {
@@ -341,7 +341,7 @@ func TestUpgradeSwapLimits(t *testing.T) {
 		Name: e.name("oldswap"), Image: shellImage, Cmd: "sleep 600",
 		Labels:    node.Labels{Project: "p", Environment: "e", Service: "s", Release: "1"},
 		Resources: node.Resources{MemoryBytes: mem},
-	}, "")
+	}, "", nil)
 	opts.HostConfig.MemorySwap = mem
 	created, err := e.cli.ContainerCreate(ctx, opts)
 	if err != nil {
@@ -637,7 +637,7 @@ func assertInvisibleContainer(t *testing.T, e *testEnv, ctx context.Context, nam
 	if err := e.Stop(ctx, created.ID, 0); !cerrdefs.IsNotFound(err) {
 		t.Errorf("Stop err = %v", err)
 	}
-	if err := e.Remove(ctx, created.ID); !cerrdefs.IsNotFound(err) {
+	if err := e.Remove(ctx, created.ID, node.RemoveOptions{}); !cerrdefs.IsNotFound(err) {
 		t.Errorf("Remove err = %v", err)
 	}
 	if _, err := e.Logs(ctx, created.ID, node.LogOptions{}); !cerrdefs.IsNotFound(err) {

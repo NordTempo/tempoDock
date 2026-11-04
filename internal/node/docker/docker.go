@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"maps"
 	"math"
 	"net/netip"
 	"slices"
@@ -380,7 +382,16 @@ func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Cont
 	if err := r.checkDeps(ctx, spec); err != nil {
 		return node.Container{}, err
 	}
-	opts := createOptions(spec, r.Probe)
+	img, err := r.cli.ImageInspect(ctx, spec.Image)
+	if err != nil {
+		return node.Container{}, fmt.Errorf("inspect image %s: %w", spec.Image, err)
+	}
+	var declared []string
+	if img.Config != nil {
+		declared = slices.Collect(maps.Keys(img.Config.Volumes))
+	}
+	anon := node.AnonymousPaths(declared, spec.Mounts)
+	opts := createOptions(spec, r.Probe, anon)
 	created, err := r.cli.ContainerCreate(ctx, opts)
 	if cerrdefs.IsConflict(err) {
 		return node.Container{}, fmt.Errorf("container name %q is already in use", spec.Name)
@@ -405,6 +416,7 @@ func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Cont
 		cleanup()
 		return node.Container{}, err
 	}
+	c.AnonymousVolumes = anon
 	return c, nil
 }
 
@@ -460,8 +472,10 @@ func NoSwap(memory int64) int64 {
 
 // createOptions translates spec into Docker's create request. probe is the
 // host path of dock-probe (Runtime.Probe); without one, spec.Health is
-// ignored.
-func createOptions(spec node.ContainerSpec, probe string) client.ContainerCreateOptions {
+// ignored. anon are the image's VOLUME paths no spec mount covers: each
+// gets the anonymous volume Docker would make anyway, but labelled
+// (anonymousMount), so Remove can find what it kept for the service.
+func createOptions(spec node.ContainerSpec, probe string, anon []string) client.ContainerCreateOptions {
 	cfg := &container.Config{
 		Image:  spec.Image,
 		Labels: spec.Labels.Map(),
@@ -489,6 +503,9 @@ func createOptions(spec node.ContainerSpec, probe string) client.ContainerCreate
 	}
 	for _, m := range spec.Mounts {
 		host.Mounts = append(host.Mounts, volumeMount(m))
+	}
+	for _, p := range anon {
+		host.Mounts = append(host.Mounts, anonymousMount(p, spec.Labels))
 	}
 	if spec.Port > 0 {
 		port, _ := network.PortFrom(uint16(spec.Port), network.TCP)
@@ -547,6 +564,20 @@ func volumeMount(m node.Mount) mount.Mount {
 	return mount.Mount{Type: mount.TypeVolume, Source: m.Volume, Target: m.Path, ReadOnly: m.ReadOnly}
 }
 
+// labelAnonymous ("true") marks the anonymous volumes Start makes for an
+// image's VOLUMEs, next to the container's own labels (ADR 0052).
+const labelAnonymous = "dock.anonymous"
+
+// anonymousMount is an anonymous volume at path, labelled for the
+// container's service and release. With no Source it is still anonymous
+// to Docker: removing the container with RemoveVolumes removes it, and
+// the image's files at path are copied in like for a VOLUME.
+func anonymousMount(path string, labels node.Labels) mount.Mount {
+	l := labels.Map()
+	l[labelAnonymous] = "true"
+	return mount.Mount{Type: mount.TypeVolume, Target: path, VolumeOptions: &mount.VolumeOptions{Labels: l}}
+}
+
 // networking joins one network with aliases.
 func networking(name string, aliases []string) *network.NetworkingConfig {
 	return &network.NetworkingConfig{
@@ -594,19 +625,61 @@ func (r *Runtime) Restart(ctx context.Context, id string, timeout time.Duration)
 	return nil
 }
 
-// Remove removes a stopped managed container with its anonymous volumes:
-// the ones Docker creates for an image's VOLUME that no Dock volume covers
-// (a Postgres image without one, say). No later container ever mounts
-// them again, so kept they would only fill the disk. Named volumes, which
-// are all of Dock's own, are never removed.
-func (r *Runtime) Remove(ctx context.Context, id string) error {
-	if _, err := r.inspect(ctx, id); err != nil {
+// Remove removes a stopped managed container. Its anonymous volumes (the
+// ones for an image's VOLUME that no Dock volume covers, a Postgres image
+// without one, say) go with it, unless opts.KeepAnonymousVolumes: then
+// they are the service's kept copy, and the copy kept before goes
+// (removeKept). Named volumes, which are all of Dock's own, are never
+// removed.
+func (r *Runtime) Remove(ctx context.Context, id string, opts node.RemoveOptions) error {
+	c, err := r.inspect(ctx, id)
+	if err != nil {
 		return err
 	}
-	if _, err := r.cli.ContainerRemove(ctx, id, client.ContainerRemoveOptions{RemoveVolumes: true}); err != nil {
+	if _, err := r.cli.ContainerRemove(ctx, id, client.ContainerRemoveOptions{RemoveVolumes: !opts.KeepAnonymousVolumes}); err != nil {
 		return fmt.Errorf("remove container %s: %w", id, err)
 	}
+	if opts.KeepAnonymousVolumes {
+		var kept []string
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume {
+				kept = append(kept, m.Name)
+			}
+		}
+		r.removeKept(ctx, node.LabelsFrom(c.Config.Labels), kept)
+	}
 	return nil
+}
+
+// removeKept removes the anonymous volumes Start made for the service of
+// labels that no container uses, except keep: what Remove kept of earlier
+// containers. Docker refuses to remove a volume in use, so a running
+// container's never goes. Failures are logged: the container is gone
+// either way, and the next removal tries again.
+func (r *Runtime) removeKept(ctx context.Context, labels node.Labels, keep []string) {
+	if labels.ControlPlane == "" || labels.Service == "" {
+		return // from before control plane labels: Start labelled nothing
+	}
+	f := client.Filters{}.Add("dangling", "true").Add("label",
+		labelAnonymous+"=true",
+		node.LabelControlPlane+"="+labels.ControlPlane,
+		node.LabelProject+"="+labels.Project,
+		node.LabelEnvironment+"="+labels.Environment,
+		node.LabelService+"="+labels.Service,
+	)
+	res, err := r.cli.VolumeList(ctx, client.VolumeListOptions{Filters: f})
+	if err != nil {
+		slog.Warn("list kept anonymous volumes", "service", labels.Service, "err", err)
+		return
+	}
+	for _, v := range res.Items {
+		if slices.Contains(keep, v.Name) {
+			continue
+		}
+		if _, err := r.cli.VolumeRemove(ctx, v.Name, client.VolumeRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) && !cerrdefs.IsConflict(err) {
+			slog.Warn("remove kept anonymous volume", "volume", v.Name, "service", labels.Service, "err", err)
+		}
+	}
 }
 
 // Inspect returns the current state of a managed container.
