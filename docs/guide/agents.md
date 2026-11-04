@@ -138,6 +138,7 @@ instead; that is your login, so don't hand it to an agent.
 | Configure | `list_variables`, `set_variables`, `set_pre_deploy_command`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain` |
 | Analytics | `analytics_sites`, `analytics_stats`, `analytics_breakdown`, `analytics_errors`, `analytics_vitals`, `analytics_replays` (listed only; watched in the UI), `analytics_goals`, `analytics_funnel` |
 | Data | `data_status`, `data_schema`, `data_rows`, `data_query`, `propose_data_changes` |
+| Ask | `request_access`, `wait_for_request`, `list_requests` |
 
 - **Project and environment default to the token's limits**, so a token
   for `shop/staging` only names the service. `whoami` shows them.
@@ -155,8 +156,40 @@ instead; that is your login, so don't hand it to an agent.
 - **Docs**: every guide page is a resource, `dock://docs/<page>`
   (`dock://docs/agents` is this page), so an agent can read how Dock works
   and explain it to you.
+- **Locked environments** refuse every change with `environment_locked`
+  and file an access request (below); `wait_for_request` waits for the
+  decision. `request_access` asks first, with a reason, anywhere.
 - **Not over MCP**: source deploys (use `dock deploy`), archiving, tokens,
   users, servers, data setup and approvals.
+
+## Locked environments and access requests
+
+An admin can lock an environment, typically production once people use it
+(`dock environment lock production`, or Lock on the project page). Tokens
+can still read everything there, but every change they try (deploys,
+rollbacks, restarts, variables, settings, domains, volumes) fails with
+`environment_locked` (HTTP 423, exit code 5) and becomes an **access
+request**:
+
+```text
+$ dock env set PRICE=42 --reason "launch prices"
+error: environment shop/production is locked: setting variables waits for an admin's approval as access request #12. ...
+$ dock request wait 12
+```
+
+- The request holds the exact call and its arguments. An admin sees it in
+  the web UI under Requests (and gets an alert), and approves or rejects
+  it with a comment. Approved, it runs as your token, through every check
+  it would pass then, and the audit log names both of you.
+- `--reason` on any command (MCP: `request_access`'s `reason`) tells the
+  admin why. Retrying the same call joins the same request; don't retry.
+- `dock request list|show|wait`, MCP `list_requests` and
+  `wait_for_request` follow it: `wait` exits 0 when it ran, 1 when it
+  failed, 3 when rejected, 4 when it expired (after 24 hours by default).
+- Tokens never approve, not even admin tokens and not their own requests.
+  An admin can also open the environment for a while instead.
+- Data panel changes in a locked environment are changesets for an admin
+  to approve, as on production.
 
 ## What a `deploy` token can and can't do
 
