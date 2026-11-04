@@ -63,6 +63,8 @@ docker exec -e DOCK_BINARY=/root/dock/dock -e DISABLE_TLS=true -e BASE_DOMAIN="$
 token=$(sed -n 's/.*admin token: //p' "$STATE/install-cp.log" | tail -1)
 if [[ -n $token ]]; then
 	echo "$token" >"$STATE/token"
+	# admin@localhost's password, for UI-session-only actions (approvals).
+	sed -n 's/.*with password \([^ ]*\) .*/\1/p' "$STATE/install-cp.log" >"$STATE/admin-password"
 fi
 token=$(cat "$STATE/token")
 docker exec e2e2-cp bash -c "grep -q allow_private /etc/dock/config.toml && sed -i 's|^allow_private.*|allow_private = [\"$SUBNET\"]|' /etc/dock/config.toml || printf '\n[network]\nallow_private = [\"$SUBNET\"]\n' >>/etc/dock/config.toml; systemctl restart dock-firewall dock"
@@ -71,8 +73,10 @@ export DOCK_URL=http://$CP_IP:7070 DOCK_TOKEN=$token
 for _ in $(seq 60); do curl -fsS "$DOCK_URL/api/v1/health" >/dev/null 2>&1 && break; sleep 1; done
 cat >"$STATE/env" <<EOF
 export DOCK_URL=$DOCK_URL DOCK_TOKEN=$token E2E_PROXY=$CP_IP:80 E2E_BASE_DOMAIN=$BASE_DOMAIN
+export E2E_ADMIN_EMAIL=admin@localhost E2E_ADMIN_PASSWORD=$(cat "$STATE/admin-password")
 EOF
 
+servers="e2e2-cp=$CP_IP"
 for i in $(seq "$NODES"); do
 	name=e2e2-node$i ip=$PREFIX.$((10 + i))
 	say "node $name ($ip)"
@@ -88,7 +92,8 @@ for i in $(seq "$NODES"); do
 		"$name" /root/dock/deploy/install.sh --node >"$STATE/install-$name.log" 2>&1 ||
 		{ tail -30 "$STATE/install-$name.log"; exit 1; }
 	docker exec "$name" bash -c "grep -q allow_private /etc/dock/config.toml && sed -i 's|^allow_private.*|allow_private = [\"$SUBNET\"]|' /etc/dock/config.toml || printf '\n[network]\nallow_private = [\"$SUBNET\"]\n' >>/etc/dock/config.toml; systemctl restart dock-firewall"
-	echo "export E2E_NODE${i}_PROXY=$ip:80" >>"$STATE/env"
+	servers+=" $name=$ip"
 done
+echo "export E2E_SERVER_IPS=\"$servers\"" >>"$STATE/env"
 "$BIN" server list
 say "ready: source $STATE/env"
