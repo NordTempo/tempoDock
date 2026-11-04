@@ -152,7 +152,7 @@ func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 		_, _ = fmt.Fprintln(g.io.Out, "No services yet. Deploy one with `dock deploy -s <name>`.")
 		return nil
 	}
-	t := g.io.Table("service", "state", "release", "deploying", "domain", "pending")
+	t := g.io.Table("service", "state", "release", "deploying", "domain", "uptime", "pending")
 	for _, so := range env.Services {
 		if so.Service.ArchivedAt != nil {
 			continue
@@ -170,7 +170,7 @@ func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 				domain += fmt.Sprintf(" +%d", len(so.Domains)-1)
 			}
 		}
-		t.Row(so.Service.Name, serviceState(so.Service), release, deploying, domain, strconv.Itoa(so.Service.PendingChanges))
+		t.Row(so.Service.Name, serviceState(so.Service), release, deploying, domain, dash(uptimeSummary(so.Uptime)), strconv.Itoa(so.Service.PendingChanges))
 	}
 	return t.Flush()
 }
@@ -208,6 +208,20 @@ func printServiceStatus(g *globals, so apitypes.ServiceOverview) error {
 		"release", active,
 		"deploying", summary(so.Deploying),
 		"domains", strings.Join(domains, ", "),
+		"uptime", uptimeSummary(so.Uptime),
 		"pending", pending,
 	)
+}
+
+// uptimeSummary is a service's uptime checks as "up, 99.98% over 24h"
+// (ADR 0052), or empty without checks.
+func uptimeSummary(u *apitypes.ServiceUptime) string {
+	if u == nil {
+		return ""
+	}
+	s := string(u.State)
+	if u.Uptime24h != nil {
+		s += ", " + uptimePercent(*u.Uptime24h) + " over 24h"
+	}
+	return s
 }

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -176,6 +177,28 @@ func TestDeployFlow(t *testing.T) {
 	code, stdout, stderr = exec(t, "domain", "add", "shop.example.com")
 	if code != 0 || !strings.Contains(stdout, "Point DNS:  A  shop.example.com  →  203.0.113.10") || !strings.Contains(stdout, "https://shop.example.com is live.") {
 		t.Fatalf("domain add = %d\n%s\n%s", code, stdout, stderr)
+	}
+
+	// An uptime check on that domain shows in `dock uptime list` and in
+	// `dock status`; one elsewhere is refused.
+	chk := ok[apitypes.UptimeCheck](t, "uptime", "add", "https://shop.example.com/health", "--status", "2xx", "--interval", "2m")
+	if chk.URL != "https://shop.example.com/health" || chk.ExpectStatus != "2xx" || chk.IntervalSeconds != 120 || chk.TimeoutSeconds != 10 {
+		t.Fatalf("uptime add = %+v", chk)
+	}
+	if code, _, stderr := exec(t, "uptime", "add", "https://elsewhere.example.com/"); code != int(output.ExitUsage) || !strings.Contains(stderr, "not a domain of service") {
+		t.Fatalf("uptime add elsewhere: exit %d\n%s", code, stderr)
+	}
+	if checks := ok[[]apitypes.UptimeCheck](t, "uptime", "list"); len(checks) != 1 || checks[0].ID != chk.ID || len(checks[0].Series) != 48 {
+		t.Fatalf("uptime list = %+v", checks)
+	}
+	if st := ok[apitypes.ServiceOverview](t, "status"); st.Uptime == nil || st.Uptime.Checks != 1 {
+		t.Fatalf("status uptime = %+v", st.Uptime)
+	}
+	if code, stdout, _ := exec(t, "status", "--all"); code != 0 || !strings.Contains(stdout, "UPTIME") || !strings.Contains(stdout, "unknown") {
+		t.Fatalf("status --all = %d\n%s", code, stdout)
+	}
+	if code, stdout, _ := exec(t, "uptime", "remove", strconv.FormatInt(chk.ID, 10)); code != 0 || !strings.Contains(stdout, "Removed uptime check") {
+		t.Fatalf("uptime remove = %d\n%s", code, stdout)
 	}
 
 	// Traffic before anyone visited, and a range the API doesn't know.
