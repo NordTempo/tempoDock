@@ -43,6 +43,7 @@ Addressed by name. Names are unique within their parent and never change.
   /environments/{environment}
     /changes, /changes/apply, /changes/discard
     /variables
+    /log-drains, /log-drains/{id}[/test]
     /services/{service}
       /releases, /releases/source, /releases/{number}[/rollback|/build-log]
       /restart, /archive, /logs, /volumes

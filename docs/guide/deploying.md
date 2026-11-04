@@ -89,6 +89,45 @@ dock older than the control plane keeps only a failed release's last 200
 lines, on the control plane. Output a running container wrote before
 Docker rotated it (30 MB per container) is gone.
 
+### Log drains
+
+A log drain sends the output of every service in an environment somewhere
+else as the services write it ([ADR 0046](../decisions/0046-log-history-and-drains.md)).
+Admins add them with `dock logs drain add` or under **Log drains** on the
+environment's page (its variables page):
+
+```sh
+dock logs drain add http https://logs.example.com/ingest --header X-Api-Key=...
+dock logs drain add syslog tls://logs.example.com:6514
+dock logs drain add loki https://loki.example.com --token - < token
+dock logs drain list            # sent, dropped, last error, last sent
+dock logs drain test http       # one test line, now
+dock logs drain remove http
+```
+
+| Kind | What it sends |
+|---|---|
+| `http` | `POST` of `application/x-ndjson`, one JSON object per line: `time`, `stream`, `text`, `project`, `environment`, `service`, `release`, `server` |
+| `syslog` | RFC 5424 over `tcp://`, `tls://` (octet counting) or `udp://` (a datagram per line); `APP-NAME` is the service, `MSGID` the stream, `HOSTNAME` the server, severity 6 for stdout and 3 for stderr. Ports default to 514, and 6514 for `tls` |
+| `loki` | Loki's push API (`/loki/api/v1/push` is added to the URL), a stream per service and output stream, labelled `project`, `environment`, `service` and `stream` |
+
+- **Secrets stay hidden.** URLs, headers and tokens are stored encrypted and
+  never shown again; a user and password in an http(s) URL go as basic
+  auth, `--token` as a bearer token. Lines are masked of the release's
+  secret values, as `dock logs` shows them to someone who can't reveal
+  variables.
+- **Never this server.** A drain can't send to the server's own addresses,
+  link-local or cloud metadata addresses, checked again on every
+  connection. Use the receiver's LAN, tailnet or public address.
+- **From now on.** A drain gets what services write after it is added, and
+  after a restart of the daemon; a container that restarts resumes after
+  the last line sent.
+- **Never in the way.** Each drain queues at most 10,000 lines (4 MB) and
+  sends them in batches of up to 1,000 lines, or what came within a
+  second. When it can't keep up or its endpoint fails, new lines are
+  dropped and counted, and it retries with backoff up to a minute. The
+  counters start at zero when the daemon starts.
+
 ## Settings: where they come from
 
 For each setting, first match wins:
