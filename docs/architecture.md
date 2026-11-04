@@ -243,7 +243,9 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
   ([ADR 0046](decisions/0046-log-history-and-drains.md)). The release
   records that server (`logs_server_id`), and an earlier release's logs
   are read from there, through the node link for a remote server. Each
-  service keeps `[logs] keep_mb_per_service` and `keep_days`; the hourly
+  service keeps `[logs] keep_mb_per_service`, each server
+  `keep_mb_per_server`, for `keep_days`, and nothing is written on a disk
+  with less than 1 GB or 5% free; the hourly
   retention pass applies them and drops archives of services that no
   longer exist. Nothing runs while no container is removed.
 

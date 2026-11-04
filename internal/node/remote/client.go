@@ -260,7 +260,7 @@ func (c *Client) ArchiveLogs(ctx context.Context, id string, limits node.LogLimi
 	if err := c.needProtocol(ctx, LogsProtocol, "keep the logs of removed containers"); err != nil {
 		return node.LogArchive{}, err
 	}
-	req := archiveLogsRequest{ID: id, MaxBytes: limits.MaxBytes, MaxAgeMS: limits.MaxAge.Milliseconds()}
+	req := archiveLogsRequest{ID: id, MaxBytes: limits.MaxBytes, MaxAgeMS: limits.MaxAge.Milliseconds(), MaxTotalBytes: limits.MaxTotalBytes}
 	r, err := callWithLogs[archiveLogsResult](ctx, c, opArchiveLogs, archiveLogsTimeout, req, nil, nil)
 	return node.LogArchive(r), err
 }
@@ -283,7 +283,7 @@ func (c *Client) PruneLogs(ctx context.Context, p node.LogPrune) (node.PruneResu
 	if err := c.needProtocol(ctx, LogsProtocol, "keep the logs of removed containers"); err != nil {
 		return node.PruneResult{}, err
 	}
-	req := pruneLogsRequest{KeepServices: p.KeepServices, MaxBytes: p.Limits.MaxBytes, MaxAgeMS: p.Limits.MaxAge.Milliseconds()}
+	req := pruneLogsRequest{KeepServices: p.KeepServices, MaxBytes: p.Limits.MaxBytes, MaxAgeMS: p.Limits.MaxAge.Milliseconds(), MaxTotalBytes: p.Limits.MaxTotalBytes}
 	r, err := unaryCall[pruneResult](ctx, c, opPruneLogs, req)
 	return node.PruneResult(r), err
 }

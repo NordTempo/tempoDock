@@ -76,10 +76,13 @@ type Config struct {
 
 // Logs bounds log history (ADR 0046): when dock removes a container, its
 // output is kept on its server, per service at most KeepMBPerService
-// (compressed; the oldest releases go first) and KeepDays. The control
-// plane's settings apply to every server.
+// and per server at most KeepMBPerServer (compressed; the oldest
+// releases go first), for KeepDays. Nothing is kept on a disk with less
+// than 1 GB or 5% free. The control plane's settings apply to every
+// server.
 type Logs struct {
 	KeepMBPerService int `toml:"keep_mb_per_service"`
+	KeepMBPerServer  int `toml:"keep_mb_per_server"`
 	KeepDays         int `toml:"keep_days"`
 }
 
@@ -376,7 +379,7 @@ func Default() Config {
 		Backup: Backup{
 			ResticImage: "restic/restic:0.18.1@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76",
 		},
-		Logs: Logs{KeepMBPerService: 64, KeepDays: 30},
+		Logs: Logs{KeepMBPerService: 64, KeepMBPerServer: 2048, KeepDays: 30},
 		Retention: Retention{
 			BuildLogDays:     30,
 			AuditDays:        365,
@@ -472,8 +475,8 @@ func (c *Config) validate() error {
 	if err := c.Retention.validate(); err != nil {
 		return err
 	}
-	if c.Logs.KeepMBPerService < 1 || c.Logs.KeepDays < 1 {
-		return errors.New("[logs] keep_mb_per_service and keep_days must be at least 1")
+	if c.Logs.KeepMBPerService < 1 || c.Logs.KeepMBPerServer < 1 || c.Logs.KeepDays < 1 {
+		return errors.New("[logs] keep_mb_per_service, keep_mb_per_server and keep_days must be at least 1")
 	}
 	if err := c.Alerts.validate(); err != nil {
 		return err

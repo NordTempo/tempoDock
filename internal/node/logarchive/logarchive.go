@@ -50,7 +50,34 @@ const (
 	// maxLine is the longest archive line a reader accepts: maxText of
 	// text, JSON escaped. A longer one ends the read.
 	maxLine = 1 << 20
+	// minFreeBytes and minFreePercent are the free space below which no
+	// archive is written (ErrLowDisk): log history must never be what
+	// fills a server's disk, and on a nearly full one the apps need what
+	// is left. A container's archive is a few MB, well inside either.
+	minFreeBytes   = 1 << 30
+	minFreePercent = 5
 )
+
+// ErrLowDisk is Write refusing to archive on a nearly full disk.
+var ErrLowDisk = errors.New("the disk is nearly full")
+
+// freeSpace reads a filesystem's free and total bytes (diskFree; tests
+// replace it).
+var freeSpace = diskFree
+
+// checkFree returns ErrLowDisk (wrapped, with the numbers) when dir's
+// filesystem has less than minFreeBytes or minFreePercent free. Unknown
+// free space doesn't stop a write.
+func checkFree(dir string) error {
+	free, total, ok := freeSpace(dir)
+	if !ok || total == 0 {
+		return nil
+	}
+	if free < minFreeBytes || free*100 < total*minFreePercent {
+		return fmt.Errorf("%w (%d MB of %d MB free): logs aren't kept below 1 GB or 5%% free; free some space or prune", ErrLowDisk, free>>20, total>>20)
+	}
+	return nil
+}
 
 // mu serialises committing members and applying limits, so an archive
 // being appended to is never removed halfway and two members of one
@@ -84,10 +111,17 @@ func path(root, service, release string) (string, error) {
 // member is written to a temporary file first and renamed into place (or
 // appended to the release's file), so a reader never sees half of one
 // unless the process dies while appending. It returns the compressed
-// bytes added.
+// bytes added. On a nearly full disk nothing is written (ErrLowDisk);
+// a write that fails partway (a disk filling meanwhile) leaves nothing.
 func Write(root, service, release string, limits node.LogLimits, fill func(add func(node.LogLine) error) error) (int64, error) {
 	target, err := path(root, service, release)
 	if err != nil {
+		return 0, err
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return 0, err
+	}
+	if err := checkFree(root); err != nil {
 		return 0, err
 	}
 	dir := filepath.Dir(target)
@@ -131,7 +165,11 @@ func Write(root, service, release string, limits node.LogLimits, fill func(add f
 	if err := commit(tmp, target); err != nil {
 		return 0, err
 	}
-	if _, err := enforce(dir, limits, time.Now()); err != nil {
+	now := time.Now()
+	if _, err := enforce(dir, limits, now); err != nil {
+		return size, err
+	}
+	if _, err := enforceTotal(root, limits.MaxTotalBytes); err != nil {
 		return size, err
 	}
 	return size, nil
@@ -159,7 +197,8 @@ func commit(tmp *os.File, target string) error {
 	return f.Close()
 }
 
-// archiveFile is one release's archive in a service's directory.
+// archiveFile is one release's archive: its name in a service's
+// directory, or <service>/<name> under the root for enforceTotal.
 type archiveFile struct {
 	name  string
 	size  int64
@@ -264,6 +303,61 @@ func Prune(root string, p node.LogPrune) (node.PruneResult, error) {
 		}
 		out.Removed += files
 		out.ReclaimedBytes += bytes
+	}
+	r, err := enforceTotal(root, p.Limits.MaxTotalBytes)
+	out.Removed += r.Removed
+	out.ReclaimedBytes += r.ReclaimedBytes
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return out, errors.Join(errs...)
+}
+
+// enforceTotal removes the oldest archives under root, of any service,
+// while all of them together are over max (0: no cap; mu held). It reads
+// every service directory: a few hundred entries on a busy server, once
+// per archive.
+func enforceTotal(root string, max int64) (node.PruneResult, error) {
+	var out node.PruneResult
+	if max <= 0 {
+		return out, nil
+	}
+	dirs, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return out, nil
+		}
+		return out, err
+	}
+	var files []archiveFile
+	for _, d := range dirs {
+		if !d.IsDir() || !validID(d.Name()) {
+			continue
+		}
+		entries, _ := os.ReadDir(filepath.Join(root, d.Name()))
+		for _, e := range entries {
+			info, err := e.Info()
+			if err != nil || !info.Mode().IsRegular() || !strings.HasSuffix(e.Name(), ext) || !validID(strings.TrimSuffix(e.Name(), ext)) {
+				continue
+			}
+			files = append(files, archiveFile{name: filepath.Join(d.Name(), e.Name()), size: info.Size(), mtime: info.ModTime()})
+		}
+	}
+	slices.SortFunc(files, func(a, b archiveFile) int { return b.mtime.Compare(a.mtime) })
+	var total int64
+	var errs []error
+	for _, f := range files {
+		total += f.size
+		if total <= max {
+			continue
+		}
+		total -= f.size
+		if err := os.Remove(filepath.Join(root, f.name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			errs = append(errs, err)
+			continue
+		}
+		out.Removed++
+		out.ReclaimedBytes += f.size
 	}
 	return out, errors.Join(errs...)
 }

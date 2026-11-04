@@ -189,6 +189,8 @@ type (
 		ID       string `json:"id"`
 		MaxBytes int64  `json:"max_bytes,omitempty"`
 		MaxAgeMS int64  `json:"max_age_ms,omitempty"`
+		// MaxTotalBytes is LogLimits.MaxTotalBytes.
+		MaxTotalBytes int64 `json:"max_total_bytes,omitempty"`
 	}
 	// archiveLogsResult is node.LogArchive.
 	archiveLogsResult struct {
@@ -208,6 +210,8 @@ type (
 		KeepServices []string `json:"keep_services"`
 		MaxBytes     int64    `json:"max_bytes,omitempty"`
 		MaxAgeMS     int64    `json:"max_age_ms,omitempty"`
+		// MaxTotalBytes is LogLimits.MaxTotalBytes.
+		MaxTotalBytes int64 `json:"max_total_bytes,omitempty"`
 	}
 	pruneCacheRequest struct {
 		KeepBytes int64 `json:"keep_bytes"`

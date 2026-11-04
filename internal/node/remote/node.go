@@ -395,14 +395,14 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return rt.Logs(ctx, a.ID, node.LogOptions{Follow: a.Follow, Tail: a.Tail, Since: a.Since})
 	}, toWireLogLine))
 	h(opArchiveLogs, unary(func(ctx context.Context, a archiveLogsRequest) (archiveLogsResult, error) {
-		r, err := rt.ArchiveLogs(ctx, a.ID, node.LogLimits{MaxBytes: a.MaxBytes, MaxAge: ms(a.MaxAgeMS)})
+		r, err := rt.ArchiveLogs(ctx, a.ID, node.LogLimits{MaxBytes: a.MaxBytes, MaxAge: ms(a.MaxAgeMS), MaxTotalBytes: a.MaxTotalBytes})
 		return archiveLogsResult(r), err
 	}))
 	h(opArchivedLogs, stream(func(ctx context.Context, a archivedLogsRequest) (<-chan node.LogLine, error) {
 		return rt.ArchivedLogs(ctx, node.LogArchiveQuery{Service: a.Service, Release: a.Release, Tail: a.Tail, Since: a.Since})
 	}, toWireLogLine))
 	h(opPruneLogs, unary(func(ctx context.Context, a pruneLogsRequest) (pruneResult, error) {
-		r, err := rt.PruneLogs(ctx, node.LogPrune{KeepServices: a.KeepServices, Limits: node.LogLimits{MaxBytes: a.MaxBytes, MaxAge: ms(a.MaxAgeMS)}})
+		r, err := rt.PruneLogs(ctx, node.LogPrune{KeepServices: a.KeepServices, Limits: node.LogLimits{MaxBytes: a.MaxBytes, MaxAge: ms(a.MaxAgeMS), MaxTotalBytes: a.MaxTotalBytes}})
 		return pruneResult(r), err
 	}))
 	h(opEvents, stream(func(ctx context.Context, _ empty) (<-chan node.ContainerEvent, error) {

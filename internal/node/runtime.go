@@ -650,6 +650,9 @@ type LogLimits struct {
 	MaxBytes int64
 	// MaxAge removes archives last written longer ago than this.
 	MaxAge time.Duration
+	// MaxTotalBytes caps every service's archives on the server together,
+	// compressed; the oldest files go first, whatever their service.
+	MaxTotalBytes int64
 }
 
 // LogArchive is what Containers.ArchiveLogs wrote: the container's

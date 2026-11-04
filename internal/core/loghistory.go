@@ -37,9 +37,13 @@ func (c *Core) keepsLogs(serverID int64) bool {
 	return serverID == c.local.ID || (c.nodes != nil && c.nodes.State(serverID).Hello.Protocol >= remote.LogsProtocol)
 }
 
-// logLimits are [logs]'s limits for one service's archives.
+// logLimits are [logs]'s limits for a server's archives.
 func (c *Core) logLimits() node.LogLimits {
-	return node.LogLimits{MaxBytes: int64(c.cfg.Logs.KeepMBPerService) << 20, MaxAge: days(c.cfg.Logs.KeepDays)}
+	return node.LogLimits{
+		MaxBytes:      int64(c.cfg.Logs.KeepMBPerService) << 20,
+		MaxAge:        days(c.cfg.Logs.KeepDays),
+		MaxTotalBytes: int64(c.cfg.Logs.KeepMBPerServer) << 20,
+	}
 }
 
 // archiveLogs archives a stopped container's output on its server and

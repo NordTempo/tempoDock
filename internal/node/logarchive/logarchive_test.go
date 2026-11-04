@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"syscall"
 	"testing"
 	"time"
 
@@ -223,5 +224,77 @@ func TestWriteFailureLeavesNothing(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(root, "1"))
 	if len(entries) != 0 {
 		t.Fatalf("left behind: %v", entries)
+	}
+}
+
+// A nearly full disk keeps no new history (by bytes or by percent free),
+// and what was kept before stays readable.
+func TestLowDiskKeepsNothing(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "1", "1", node.LogLimits{}, lines(0, 3))
+	for _, free := range [][2]uint64{
+		{512 << 20, 100 << 30}, // 512 MB of 100 GB
+		{4 << 30, 200 << 30},   // 4 GB, but 2% of 200 GB
+	} {
+		freeSpace = func(string) (uint64, uint64, bool) { return free[0], free[1], true }
+		_, err := Write(root, "1", "2", node.LogLimits{}, func(add func(node.LogLine) error) error {
+			t.Fatal("read a container's log on a full disk")
+			return nil
+		})
+		if !errors.Is(err, ErrLowDisk) {
+			t.Fatalf("free %d of %d: %v", free[0], free[1], err)
+		}
+	}
+	freeSpace = diskFree
+	if got := archives(t, root, "1"); !slices.Equal(got, []string{"1"}) {
+		t.Fatalf("archives = %v", got)
+	}
+	if got := read(t, root, node.LogArchiveQuery{Service: "1", Release: "1"}); len(got) != 3 {
+		t.Fatalf("kept history = %v", got)
+	}
+}
+
+// A disk that fills while a member is written (ENOSPC) leaves the
+// release's earlier archive as it was, and no temporary file.
+func TestDiskFullMidWrite(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "1", "2", node.LogLimits{}, lines(0, 2))
+	_, err := Write(root, "1", "2", node.LogLimits{}, func(add func(node.LogLine) error) error {
+		_ = add(node.LogLine{Text: "half"})
+		return syscall.ENOSPC
+	})
+	if !errors.Is(err, syscall.ENOSPC) {
+		t.Fatal(err)
+	}
+	if got := read(t, root, node.LogArchiveQuery{Service: "1", Release: "2"}); !slices.Equal(got, []string{"line 0", "line 1"}) {
+		t.Fatalf("after a failed append = %v", got)
+	}
+	entries, _ := os.ReadDir(filepath.Join(root, "1"))
+	if len(entries) != 1 {
+		t.Fatalf("left behind: %v", entries)
+	}
+}
+
+// The server-wide cap removes the oldest archives whatever their service,
+// on Write and on Prune.
+func TestTotalLimit(t *testing.T) {
+	root := t.TempDir()
+	size := write(t, root, "1", "1", node.LogLimits{}, lines(0, 50))
+	write(t, root, "2", "2", node.LogLimits{}, lines(0, 50))
+	old := time.Now().Add(-time.Hour)
+	for _, p := range []string{filepath.Join(root, "1", "1"+ext), filepath.Join(root, "2", "2"+ext)} {
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+		old = old.Add(time.Minute) // service 1's is the oldest
+	}
+	// Room for two archives of this size: writing a third drops service 1's.
+	write(t, root, "3", "3", node.LogLimits{MaxTotalBytes: 2*size + size/2}, lines(0, 50))
+	if a, b, c := archives(t, root, "1"), archives(t, root, "2"), archives(t, root, "3"); len(a) != 0 || len(b) != 1 || len(c) != 1 {
+		t.Fatalf("after write: %v %v %v", a, b, c)
+	}
+	r, err := Prune(root, node.LogPrune{KeepServices: []string{"1", "2", "3"}, Limits: node.LogLimits{MaxTotalBytes: size + size/2}})
+	if err != nil || r.Removed != 1 || len(archives(t, root, "2")) != 0 || len(archives(t, root, "3")) != 1 {
+		t.Fatalf("prune: %+v %v, left %v %v", r, err, archives(t, root, "2"), archives(t, root, "3"))
 	}
 }
