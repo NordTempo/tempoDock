@@ -119,7 +119,7 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request) {
 		// the background, as POST .../runs would.
 		ctx := r.Context()
 		if reason := strings.TrimSpace(r.Header.Get(reasonHeader)); reason != "" {
-			ctx = context.WithValue(ctx, reasonKey{}, reason[:min(len(reason), maxReason)])
+			ctx = core.WithReason(ctx, reason[:min(len(reason), maxReason)])
 		}
 		s.writeProblem(w, s.problem(s.fileRequest(ctx, actor, runCommandOp, &in, err)))
 		return
