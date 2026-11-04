@@ -52,6 +52,16 @@ func (q *Queries) ClearEnvironmentPendingSettings(ctx context.Context, environme
 	return err
 }
 
+const clearServiceStopped = `-- name: ClearServiceStopped :exec
+UPDATE services SET stopped_at = NULL, stopped_by = '' WHERE id = +?
+`
+
+// A release of a stopped service went live: it runs again (ADR 0050).
+func (q *Queries) ClearServiceStopped(ctx context.Context, id int64) error {
+	_, err := q.exec(ctx, q.clearServiceStoppedStmt, clearServiceStopped, id)
+	return err
+}
+
 const createService = `-- name: CreateService :one
 INSERT INTO services (environment_id, name, image, port, health_check_path, health_check_timeout_seconds,
                       start_command, dockerfile_path, build_command, memory_mb, cpus,
@@ -59,7 +69,7 @@ INSERT INTO services (environment_id, name, image, port, health_check_path, heal
                       health_check_retries, health_check_start_period_seconds,
                       pre_deploy_command, pre_deploy_timeout_seconds)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged
+RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by
 `
 
 type CreateServiceParams struct {
@@ -129,6 +139,8 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) (S
 		&i.PreDeployCommand,
 		&i.PreDeployTimeoutSeconds,
 		&i.Staged,
+		&i.StoppedAt,
+		&i.StoppedBy,
 	)
 	return i, err
 }
@@ -186,7 +198,7 @@ func (q *Queries) DeleteVolume(ctx context.Context, id int64) error {
 }
 
 const getService = `-- name: GetService :one
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged FROM services WHERE id = +?
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by FROM services WHERE id = +?
 `
 
 func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
@@ -218,12 +230,14 @@ func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
 		&i.PreDeployCommand,
 		&i.PreDeployTimeoutSeconds,
 		&i.Staged,
+		&i.StoppedAt,
+		&i.StoppedBy,
 	)
 	return i, err
 }
 
 const getServiceByName = `-- name: GetServiceByName :one
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged FROM services WHERE environment_id = +? AND name = +?
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by FROM services WHERE environment_id = +? AND name = +?
 `
 
 type GetServiceByNameParams struct {
@@ -260,6 +274,8 @@ func (q *Queries) GetServiceByName(ctx context.Context, arg GetServiceByNamePara
 		&i.PreDeployCommand,
 		&i.PreDeployTimeoutSeconds,
 		&i.Staged,
+		&i.StoppedAt,
+		&i.StoppedBy,
 	)
 	return i, err
 }
@@ -382,7 +398,7 @@ func (q *Queries) ListEnvironmentVolumes(ctx context.Context, environmentID int6
 }
 
 const listProjectServices = `-- name: ListProjectServices :many
-SELECT services.id, services.environment_id, services.name, services.image, services.port, services.health_check_path, services.health_check_timeout_seconds, services.start_command, services.dockerfile_path, services.build_command, services.memory_mb, services.cpus, services.pending_settings, services.created_at, services.archived_at, services."database", services.database_url_variable, services.template, services.health_check_interval_seconds, services.health_check_probe_timeout_seconds, services.health_check_retries, services.health_check_start_period_seconds, services.pre_deploy_command, services.pre_deploy_timeout_seconds, services.staged FROM services
+SELECT services.id, services.environment_id, services.name, services.image, services.port, services.health_check_path, services.health_check_timeout_seconds, services.start_command, services.dockerfile_path, services.build_command, services.memory_mb, services.cpus, services.pending_settings, services.created_at, services.archived_at, services."database", services.database_url_variable, services.template, services.health_check_interval_seconds, services.health_check_probe_timeout_seconds, services.health_check_retries, services.health_check_start_period_seconds, services.pre_deploy_command, services.pre_deploy_timeout_seconds, services.staged, services.stopped_at, services.stopped_by FROM services
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.project_id = +?
 ORDER BY services.environment_id, services.name
@@ -424,6 +440,8 @@ func (q *Queries) ListProjectServices(ctx context.Context, projectID int64) ([]S
 			&i.PreDeployCommand,
 			&i.PreDeployTimeoutSeconds,
 			&i.Staged,
+			&i.StoppedAt,
+			&i.StoppedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -563,7 +581,7 @@ func (q *Queries) ListServiceIDs(ctx context.Context) ([]int64, error) {
 }
 
 const listServices = `-- name: ListServices :many
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged FROM services WHERE environment_id = +? ORDER BY name
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by FROM services WHERE environment_id = +? ORDER BY name
 `
 
 func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Service, error) {
@@ -601,6 +619,8 @@ func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Serv
 			&i.PreDeployCommand,
 			&i.PreDeployTimeoutSeconds,
 			&i.Staged,
+			&i.StoppedAt,
+			&i.StoppedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -762,6 +782,25 @@ func (q *Queries) SetVariablePending(ctx context.Context, arg SetVariablePending
 	return err
 }
 
+const stopService = `-- name: StopService :execrows
+UPDATE services SET stopped_at = ?, stopped_by = ? WHERE id = +? AND stopped_at IS NULL
+`
+
+type StopServiceParams struct {
+	StoppedAt *time.Time
+	StoppedBy string
+	ID        int64
+}
+
+// Marks a service stopped (ADR 0050). 0 rows: it already was.
+func (q *Queries) StopService(ctx context.Context, arg StopServiceParams) (int64, error) {
+	result, err := q.exec(ctx, q.stopServiceStmt, stopService, arg.StoppedAt, arg.StoppedBy, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const unapplyVolume = `-- name: UnapplyVolume :exec
 UPDATE volumes SET pending = 1 WHERE id = +? AND pending = 0
 `
@@ -780,7 +819,7 @@ UPDATE services SET
     health_check_retries = ?, health_check_start_period_seconds = ?,
     pre_deploy_command = ?, pre_deploy_timeout_seconds = ?
 WHERE id = +?
-RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged
+RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by
 `
 
 type UpdateServiceParams struct {
@@ -848,6 +887,8 @@ func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) (S
 		&i.PreDeployCommand,
 		&i.PreDeployTimeoutSeconds,
 		&i.Staged,
+		&i.StoppedAt,
+		&i.StoppedBy,
 	)
 	return i, err
 }

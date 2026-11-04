@@ -229,7 +229,7 @@ FROM services
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
 LEFT JOIN backup_schedules ON backup_schedules.service_id = services.id
-WHERE services.archived_at IS NULL AND projects.archived_at IS NULL
+WHERE services.archived_at IS NULL AND services.stopped_at IS NULL AND projects.archived_at IS NULL
   AND EXISTS (SELECT 1 FROM volumes WHERE volumes.service_id = services.id AND volumes.pending = 0)
 ORDER BY services.id
 `
@@ -242,8 +242,9 @@ type ListBackupCandidatesRow struct {
 	Hour      *int64
 }
 
-// Every live stateful service (an applied volume, not archived, in a live
-// project) with its server and schedule override, for the scheduler.
+// Every live stateful service (an applied volume, not archived or stopped,
+// in a live project) with its server and schedule override, for the
+// scheduler. A stopped service changes nothing to back up (ADR 0050).
 func (q *Queries) ListBackupCandidates(ctx context.Context) ([]ListBackupCandidatesRow, error) {
 	rows, err := q.query(ctx, q.listBackupCandidatesStmt, listBackupCandidates)
 	if err != nil {

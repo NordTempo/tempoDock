@@ -112,6 +112,15 @@ func serverNote(svc apitypes.Service) string {
 	return fmt.Sprintf("server %s is %s: last known %s", s.Server, s.ServerStatus, runState(s))
 }
 
+// stoppedNote says who stopped a service and when (ADR 0050): "stopped
+// 3m ago by alice". Empty for a service that isn't stopped.
+func stoppedNote(svc apitypes.Service) string {
+	if svc.StoppedAt == nil || svc.ArchivedAt != nil {
+		return ""
+	}
+	return "stopped " + ago(*svc.StoppedAt) + " by " + cmp.Or(svc.StoppedBy, "unknown") + " (start it with `dock service start`)"
+}
+
 // oomNote says a service's container was killed for running out of
 // memory, or is empty.
 func oomNote(s apitypes.ServiceStatus) string {
@@ -168,7 +177,7 @@ func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 
 func printServiceStatus(g *globals, so apitypes.ServiceOverview) error {
 	svc := so.Service
-	state := cmp.Or(serverNote(svc), serviceState(svc))
+	state := cmp.Or(stoppedNote(svc), serverNote(svc), serviceState(svc))
 	state += restartsNote(svc.Status)
 	state += oomNote(svc.Status)
 	summary := func(r *apitypes.ReleaseSummary) string {

@@ -15,9 +15,9 @@ import (
 )
 
 // Live progress. Commands that start releases (deploy, rollback, restart,
-// apply) open the /events stream *before* the request that starts them, so
-// no step is missed, then print build output and deploy steps until every
-// release is active or failed. The stream is the only source of progress;
+// service start, apply) open the /events stream *before* the request that
+// starts them, so no step is missed, then print build output and deploy
+// steps until every release is active or failed. The stream is the only source of progress;
 // a slow refetch is the safety net for a dropped stream or missed events.
 
 // refetchEvery is how often unfinished releases are fetched again while
@@ -183,8 +183,13 @@ func releaseFailure(ctx context.Context, s *session, r apitypes.Release) error {
 	}
 	serving := "Nothing else is serving this service."
 	t := target{r.Project, r.Environment, r.Service}
-	if svc, err := get[apitypes.Service](ctx, s, t.servicePath()); err == nil && svc.ActiveRelease != nil {
-		serving = fmt.Sprintf("Release %d is still serving; traffic was not switched.", *svc.ActiveRelease)
+	if svc, err := get[apitypes.Service](ctx, s, t.servicePath()); err == nil {
+		switch {
+		case svc.StoppedAt != nil:
+			serving = "The service is still stopped; its domains answer 503."
+		case svc.ActiveRelease != nil:
+			serving = fmt.Sprintf("Release %d is still serving; traffic was not switched.", *svc.ActiveRelease)
+		}
 	}
 	see := fmt.Sprintf("See what happened: `dock release show %d`.", r.Number)
 	if r.ErrorCode == apitypes.CodeBuildFailed {

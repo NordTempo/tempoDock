@@ -207,9 +207,19 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "service_status": {
       const status = event.service_status;
       if (!ref || !status) return;
+      // A service stopped on purpose (ADR 0050) reports "stopped" until a
+      // release of it goes live, so any other state means it runs again.
+      // Who stopped it comes with the overview the audit event refetches.
       patchService(queryClient, ref, (s) => ({
         ...s,
-        service: { ...s.service, status },
+        service: {
+          ...s.service,
+          status,
+          ...(status.state !== "stopped" && {
+            stopped_at: undefined,
+            stopped_by: undefined,
+          }),
+        },
       }));
       return;
     }

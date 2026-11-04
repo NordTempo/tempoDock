@@ -538,10 +538,12 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 // the service as it was.
 func (c *Core) runRestoreInPlace(ctx context.Context, ss svcScope, snap, safety store.VolumeSnapshot, safetyVols []store.Volume, mounts []node.Mount) error {
 	active, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
-	running := err == nil
 	if err != nil && !store.IsNotFound(err) {
 		return err
 	}
+	// A service stopped on purpose (ADR 0050) has no container to stop and
+	// stays stopped afterwards: its restored data waits for its start.
+	running := err == nil && ss.svc.StoppedAt == nil
 	if running {
 		if err := c.removeReleaseContainers(ctx, ss, active.ID); err != nil {
 			c.failSafety(ctx, safety, "the service couldn't be stopped")

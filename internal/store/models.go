@@ -559,6 +559,8 @@ type Service struct {
 	PreDeployCommand               string
 	PreDeployTimeoutSeconds        int64
 	Staged                         string
+	StoppedAt                      *time.Time
+	StoppedBy                      string
 }
 
 type ServiceAccess struct {

@@ -35,6 +35,7 @@ import {
   stepPhrase,
 } from "../../ui/status";
 import { EnvServer } from "../servers/parts";
+import { useStartService, useStopService } from "./data";
 import { copiedConfig, errorSummary, rollbackTarget } from "./releases";
 import { CpuUsage, MemoryUsage } from "./Usage";
 
@@ -111,7 +112,8 @@ const tabs = [
 
 /**
  * A service's header bar: project / service, the environment switch, its
- * state and, on the Overview tab, Deploy, Restart and Roll back.
+ * state and, on the Overview tab, Stop or Start, Restart, Roll back and
+ * Deploy.
  */
 export function ServiceBar({
   serviceRef: ref,
@@ -308,13 +310,30 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           <Glyph char="◐" />
         </span>{" "}
         Deploying {mono(r)}, {stepPhrase[deploying.status]}.{" "}
-        {serving
-          ? mut(
-              service.stateful
-                ? `r${serving} was stopped first: a volume allows one writer.`
-                : `r${serving} keeps serving until cutover. If the check fails, ${r} is stopped.`,
-            )
-          : mut("Nothing served yet.")}
+        {service.stopped_at
+          ? mut(`Stopped: it runs again once ${r} is live.`)
+          : serving
+            ? mut(
+                service.stateful
+                  ? `r${serving} was stopped first: a volume allows one writer.`
+                  : `r${serving} keeps serving until cutover. If the check fails, ${r} is stopped.`,
+              )
+            : mut("Nothing served yet.")}
+      </>
+    );
+  } else if (service.stopped_at) {
+    sentence = (
+      <>
+        <span className="text-mut">○</span> Stopped by{" "}
+        {mono(service.stopped_by || "unknown")} {ago(service.stopped_at)}.{" "}
+        {mut(
+          `Its domains answer 503. ${serving ? `r${serving}, ` : ""}volumes and variables are kept.`,
+        )}{" "}
+        {latest?.status === "failed" && latest.number > (serving ?? 0) && (
+          <span className="text-fail">
+            r{latest.number} {failurePhrase(latest)} {ago(latest.created_at)}.
+          </span>
+        )}
       </>
     );
   } else if (isCrashLooping(status)) {
@@ -392,7 +411,10 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   return <p className="text-md leading-normal">{sentence}</p>;
 }
 
-/** Deploy, restart, roll back: buttons with keys and CLI equivalents. */
+/**
+ * Stop or start, restart, roll back, deploy: buttons with keys and CLI
+ * equivalents. Stop and roll back ask first.
+ */
 function Actions({
   serviceRef: ref,
   onDeploy,
@@ -405,8 +427,13 @@ function Actions({
   const mayDeploy = useCanDeploy(ref);
   const restart = useRestart();
   const rollback = useRollback();
+  const stop = useStopService();
+  const start = useStartService();
   const target = rollbackTarget(releases);
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<"rollback" | "stop" | null>(
+    null,
+  );
+  const stopped = !!service.stopped_at;
   // An unreachable server blocks every action that starts a release.
   const blocked = useDeployBlock(ref);
   const busy =
@@ -415,8 +442,12 @@ function Actions({
 
   // A GitHub deploy queues behind a running one; the window says what applies.
   const canDeploy = mayDeploy && !blocked;
-  const canRestart = !!service.active_release && !busy && !restart.isPending;
+  const canRestart =
+    !!service.active_release && !stopped && !busy && !restart.isPending;
   const canRollback = !!target && !busy && !rollback.isPending;
+  // Stop and start need the server as well: busy covers an unreachable one.
+  const canStop = !!service.active_release && !busy && !stop.isPending;
+  const canStart = !busy && !start.isPending;
 
   const shortcuts: Shortcut[] = [
     {
@@ -435,12 +466,47 @@ function Actions({
       key: "b",
       label: "roll back",
       disabled: !canRollback,
-      run: () => setConfirming(true),
+      run: () => setConfirming("rollback"),
     },
+    stopped
+      ? {
+          key: "s",
+          label: "start",
+          disabled: !canStart,
+          run: () => start.mutate(ref),
+        }
+      : {
+          key: "s",
+          label: "stop",
+          disabled: !canStop,
+          run: () => setConfirming("stop"),
+        },
   ];
   useShortcuts(shortcuts);
 
-  if (confirming && target) {
+  if (confirming === "stop") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs">
+          Stop <b className="font-mono font-medium">{ref.service}</b>? Its
+          domains answer 503 until it starts again.
+        </span>
+        <Button
+          danger
+          disabled={!canStop}
+          onClick={() =>
+            stop.mutate(ref, { onSuccess: () => setConfirming(null) })
+          }
+        >
+          Stop
+        </Button>
+        <Button onClick={() => setConfirming(null)}>Cancel</Button>
+        <ErrorText error={stop.error} />
+      </div>
+    );
+  }
+
+  if (confirming === "rollback" && target) {
     return (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs">
@@ -453,13 +519,13 @@ function Actions({
           onClick={() =>
             rollback.mutate(
               { ref, to: target.number },
-              { onSuccess: () => setConfirming(false) },
+              { onSuccess: () => setConfirming(null) },
             )
           }
         >
           Roll back
         </Button>
-        <Button onClick={() => setConfirming(false)}>Cancel</Button>
+        <Button onClick={() => setConfirming(null)}>Cancel</Button>
         <ErrorText error={rollback.error} />
       </div>
     );
@@ -467,10 +533,37 @@ function Actions({
 
   return (
     <div className="flex flex-wrap items-start gap-2">
+      {stopped ? (
+        <Act
+          cli={`dock service start ${ref.service} -e ${ref.environment}`}
+          disabled={!canStart}
+          title={busy ?? "Start a copy of the active release"}
+          onClick={() => start.mutate(ref)}
+        >
+          Start <kbd>S</kbd>
+        </Act>
+      ) : (
+        <Act
+          cli={`dock service stop ${ref.service} -e ${ref.environment}`}
+          disabled={!canStop}
+          title={
+            busy ??
+            (service.active_release
+              ? "Remove its container; domains answer 503"
+              : "Nothing runs to stop")
+          }
+          onClick={() => setConfirming("stop")}
+        >
+          Stop <kbd>S</kbd>
+        </Act>
+      )}
       <Act
         cli={`dock restart ${flags}`}
         disabled={!canRestart}
-        title={busy ?? "Start a copy of the active release"}
+        title={
+          busy ??
+          (stopped ? "Stopped: start it" : "Start a copy of the active release")
+        }
         onClick={() => restart.mutate(ref)}
       >
         Restart <kbd>R</kbd>
@@ -484,7 +577,7 @@ function Actions({
         title={
           busy ?? (target ? undefined : "No earlier release to roll back to")
         }
-        onClick={() => setConfirming(true)}
+        onClick={() => setConfirming("rollback")}
       >
         {target ? `Roll back to r${target.number}` : "Roll back"} <kbd>B</kbd>
       </Act>
@@ -504,7 +597,7 @@ function Actions({
       </Act>
       <span className="self-center text-xs">
         {blocked && <span className="text-fail">Disabled: {blocked}.</span>}{" "}
-        <ErrorText error={restart.error ?? rollback.error} />
+        <ErrorText error={restart.error ?? rollback.error ?? start.error} />
       </span>
     </div>
   );

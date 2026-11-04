@@ -21,6 +21,8 @@ func newServiceCmd(g *globals) *cobra.Command {
 		newServiceCreateCmd(g),
 		newServiceShowCmd(g),
 		newServiceUpdateCmd(g),
+		newServiceStopCmd(g),
+		newServiceStartCmd(g),
 		newServiceArchiveCmd(g),
 	)
 	return cmd
@@ -273,7 +275,7 @@ func preDeployNote(s apitypes.ServiceSettings) string {
 }
 
 func printService(g *globals, svc apitypes.Service) error {
-	state := cmp.Or(serverNote(svc), runState(svc.Status))
+	state := cmp.Or(stoppedNote(svc), serverNote(svc), runState(svc.Status))
 	if svc.ArchivedAt != nil {
 		state = "archived " + ago(*svc.ArchivedAt)
 	}
@@ -368,6 +370,77 @@ next deploy, ` + "`dock apply`" + `, or right away with --deploy.`,
 	f.add(cmd, needService)
 	settings.add(cmd.Flags())
 	addDeployFlags(cmd, &deploy, &detach)
+	return cmd
+}
+
+// newServiceStopCmd is `dock service stop`: the service's container is
+// removed and its domains answer 503, keeping everything else (ADR 0050).
+func newServiceStopCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "stop [name]",
+		Short: "Stop a service, keeping its release, volumes, domains and variables",
+		Long: `Stop a service: its domains answer 503 and its container is removed, freeing
+its memory. Its active release, port, volumes, domains and variables are kept.
+Start it again with ` + "`dock service start`" + ` or any deploy.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serviceArg(&f, args)
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			if !yes {
+				if err := g.io.Confirm(fmt.Sprintf("Stop %s? Its container is removed and its domains answer 503 until it starts again.", t), "yes"); err != nil {
+					return err
+				}
+			}
+			svc, err := send[apitypes.Service](cmd.Context(), s, http.MethodPost, t.servicePath()+"/stop", nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(svc, func() error {
+				g.io.Successf("Stopped %s. Its domains answer 503; start it with `dock service start`.", t)
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
+}
+
+// newServiceStartCmd is `dock service start`: a restart-source release of
+// a stopped service, followed like `dock restart`.
+func newServiceStartCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var detach bool
+	cmd := &cobra.Command{
+		Use:   "start [name]",
+		Short: "Start a stopped service with a copy of its active release",
+		Long: `Start a stopped service: a new release copying its active one, through the
+same health-checked path as a deploy. If that release fails, the service
+stays stopped.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serviceArg(&f, args)
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			return g.startAndFollow(ctx, s, t, detach, func() (apitypes.Release, error) {
+				r, err := send[apitypes.Release](ctx, s, http.MethodPost, t.servicePath()+"/start", nil)
+				if err == nil {
+					g.io.Progressf("Starting %s: release %d copies release %d, %s", t, r.Number, r.FromRelease, describeCopy(r))
+				}
+				return r, err
+			})
+		},
+	}
+	f.add(cmd, needService)
+	addDetachFlag(cmd, &detach)
 	return cmd
 }
 

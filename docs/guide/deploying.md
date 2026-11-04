@@ -286,6 +286,27 @@ The service's Run tab in the UI runs commands too (without a terminal),
 and agents have the MCP tool `run_command`. Design: [ADR
 0048](../decisions/0048-one-off-commands.md).
 
+## Stop and start
+
+```sh
+dock service stop web     # asks first; --yes in scripts
+dock service start web
+```
+
+Stopping removes the service's container, freeing its memory, and its
+domains answer `503` with a page saying it is stopped. Its active release,
+port, volumes, domains and variables are kept, and `dock status` says who
+stopped it and when. While it is stopped nothing restarts it: not daemon
+recovery, drift checks or failing health checks, and it raises no alerts.
+Scheduled backups skip it.
+
+`dock service start` creates a release identical to the active one, like
+`dock restart`, and follows it. The service runs again once that release
+passes its health check; if it fails, the service stays stopped. Any
+deploy to a stopped service also starts it when its release goes live. A server whose node is older than the control
+plane answers `502` instead of the `503` page until it updates
+([ADR 0050](../decisions/0050-stop-start-service.md)).
+
 ## Promote
 
 ```sh
@@ -485,7 +506,7 @@ The `source` field of a release says what created it.
 | `image` | Image deploy (which also sets the service's `image` setting), or applying a change to that setting |
 | `config` | Applying staged changes, or adding a domain to a service whose port wasn't published yet |
 | `rollback` | `dock rollback` (`from_release` is the copied release) |
-| `restart` | `dock restart` |
+| `restart` | `dock restart`, or `dock service start` |
 | `promote` | `dock promote`: the image of the source environment's active release, by digest |
 
 Releases that reuse an image (`config`, `rollback`, `restart`, `promote`)

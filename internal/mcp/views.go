@@ -123,6 +123,11 @@ type serviceView struct {
 	Archived       bool                `json:"archived,omitempty"`
 	// PreDeployCommand runs before each new release gets traffic.
 	PreDeployCommand string `json:"pre_deploy_command,omitempty"`
+	// StoppedAt is set while the service is stopped on purpose (ADR
+	// 0050): no container runs and its domains answer 503 until
+	// start_service or a deploy runs it again.
+	StoppedAt *time.Time `json:"stopped_at,omitempty"`
+	StoppedBy string     `json:"stopped_by,omitempty"`
 }
 
 func viewService(s apitypes.Service) serviceView {
@@ -131,6 +136,7 @@ func viewService(s apitypes.Service) serviceView {
 		Health: s.Status.Health, HealthRestarts: s.Status.HealthRestarts,
 		ExitCode: s.Status.ExitCode, MemoryMB: s.EffectiveMemoryMB, Stateful: s.Stateful, Database: s.DataEngine,
 		PendingChanges: s.PendingChanges, Archived: s.ArchivedAt != nil, PreDeployCommand: s.PreDeployCommand,
+		StoppedAt: s.StoppedAt, StoppedBy: s.StoppedBy,
 	}
 }
 

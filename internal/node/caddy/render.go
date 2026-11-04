@@ -283,6 +283,25 @@ body{display:flex;align-items:center;justify-content:center}
 </html>
 `
 
+// stoppedPage is served for the hostnames of a stopped service (ADR 0050);
+// %s is the service's name.
+const stoppedPage = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>503</title>
+<style>
+html,body{margin:0;height:100%%;background:#000;color:#fff;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+body{display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<p>503. %s is stopped.</p>
+</body>
+</html>
+`
+
 // BootstrapConfig is the config the install script writes before the daemon
 // has ever run: admin on the Unix socket and the 404 page for every host.
 func BootstrapConfig(opts Options) ([]byte, error) {
@@ -346,9 +365,13 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		// Through the tunnel, visitors are on https://, port 443, at
 		// Cloudflare's edge, whatever this server's own scheme and port.
 		ht := h
-		if r.RedirectTo != "" {
+		switch {
+		case r.RedirectTo != "":
 			h = redirect(scheme + "://" + r.RedirectTo + portSuffix(scheme, port) + "{http.request.uri}")
 			ht = redirect("https://" + r.RedirectTo + "{http.request.uri}")
+		case r.Stopped != "":
+			h = stoppedResponse(r.Stopped)
+			ht = h
 		}
 		m := match{Host: r.Hostnames}
 		if r.PathPrefix != "" {
@@ -620,6 +643,17 @@ func markerRoute(marker string) route {
 	}}}
 }
 
+// stoppedResponse is the 503 page of a stopped service's hostnames, never
+// cached: the service may start again any moment.
+func stoppedResponse(service string) handler {
+	return handler{
+		Handler:    "static_response",
+		StatusCode: 503,
+		Headers:    map[string][]string{"Content-Type": {"text/html; charset=utf-8"}, "Cache-Control": {"no-store"}},
+		Body:       fmt.Sprintf(stoppedPage, service),
+	}
+}
+
 func notFoundRoute() route {
 	return route{Handle: []handler{{
 		Handler:    "static_response",
@@ -658,8 +692,13 @@ func validateRoutes(opts Options, routes []node.Route) error {
 				}
 			}
 		}
-		if r.Upstream == "" && r.RedirectTo == "" {
+		if r.Upstream == "" && r.RedirectTo == "" && r.Stopped == "" {
 			return fmt.Errorf("route for %s needs an upstream or a redirect target", r.Hostnames[0])
+		}
+		if r.Stopped != "" && !validHostname(r.Stopped) {
+			// A service name; it goes into the page, where Caddy would
+			// expand a placeholder.
+			return fmt.Errorf("route for %s: stopped service name %q is not valid", r.Hostnames[0], r.Stopped)
 		}
 		if r.RedirectTo != "" && !validHostname(r.RedirectTo) {
 			return fmt.Errorf("redirect target %q is not a valid hostname", r.RedirectTo)

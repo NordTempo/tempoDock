@@ -86,6 +86,9 @@ func (c *Core) connectAccess(ctx context.Context, a Actor, ref ServiceRef, confi
 // active release's port. withURL also derives the connection URL.
 func (c *Core) tunnelTarget(ctx context.Context, ss svcScope, withURL bool) (tunnelTarget, error) {
 	notRunning := errf(apitypes.CodeConflict, "%s is not running; deploy or restart it to connect", ss)
+	if ss.svc.StoppedAt != nil {
+		notRunning = errf(apitypes.CodeConflict, "%s is stopped; start it (`dock service start`) to connect", ss)
+	}
 	if engine, _ := detectDatabase(ss.svc); engine == apitypes.EnginePostgres {
 		conn, err := c.dbConnection(ctx, ss)
 		if errors.Is(err, errNotRunning) {

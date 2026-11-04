@@ -29,6 +29,14 @@ RETURNING *;
 -- name: ArchiveService :exec
 UPDATE services SET archived_at = ? WHERE id = +?;
 
+-- name: StopService :execrows
+-- Marks a service stopped (ADR 0050). 0 rows: it already was.
+UPDATE services SET stopped_at = ?, stopped_by = ? WHERE id = +? AND stopped_at IS NULL;
+
+-- name: ClearServiceStopped :exec
+-- A release of a stopped service went live: it runs again (ADR 0050).
+UPDATE services SET stopped_at = NULL, stopped_by = '' WHERE id = +?;
+
 -- name: SetPendingSettings :exec
 UPDATE services SET pending_settings = ? WHERE id = +?;
 

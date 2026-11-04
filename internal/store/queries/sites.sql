@@ -183,3 +183,13 @@ RETURNING *;
 
 -- name: RemoveSiteFunnel :execrows
 DELETE FROM site_funnels WHERE site_id = +sqlc.arg(site_id) AND name = +sqlc.arg(name);
+
+-- name: SiteServing :one
+-- Whether any of a site's hostnames is a domain of a live service that
+-- isn't stopped: a site with none has no traffic to expect (ADR 0050).
+SELECT CAST(EXISTS (
+    SELECT 1 FROM site_hostnames
+    JOIN domains ON domains.hostname = site_hostnames.hostname
+    JOIN services ON services.id = domains.service_id
+    WHERE site_hostnames.site_id = +? AND services.archived_at IS NULL AND services.stopped_at IS NULL
+) AS BOOLEAN) AS serving;

@@ -87,7 +87,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			}
 			can := map[apitypes.Scope]string{
 				apitypes.ScopeRead:   "read status, releases, logs, variable names and the audit log",
-				apitypes.ScopeDeploy: "read, and deploy, redeploy, roll back, promote, stage and apply variables, add domains",
+				apitypes.ScopeDeploy: "read, and deploy, redeploy, roll back, promote, stop and start services, stage and apply variables, add domains",
 				apitypes.ScopeAdmin:  "everything, including secret values",
 			}[me.Scope]
 			return mcpkit.Reply{Summary: fmt.Sprintf("%s %q, scope %s, limited to %s: may %s.", me.Kind, me.Name, me.Scope, where, can), Data: me}, nil
@@ -207,7 +207,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "service_status", "Service status",
-		"One service's live state: running, crashed (with exit code and restarts, OOM kills), its active release and its latest release if that one failed or is still deploying.",
+		"One service's live state: running, crashed (with exit code and restarts, OOM kills), stopped (by whom, when), its active release and its latest release if that one failed or is still deploying.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in)
 			if err != nil {
@@ -229,8 +229,15 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			short := func(r apitypes.Release) *releaseSummary {
 				return &releaseSummary{Number: r.Number, Status: r.Status, Image: r.ImageRef, Error: r.Error, ErrorCode: r.ErrorCode, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt}
 			}
+			if v.StoppedAt != nil {
+				summary += fmt.Sprintf(" (by %s; start_service runs it again)", v.StoppedBy)
+			}
 			if n := svc.ActiveRelease; n != nil {
-				summary += fmt.Sprintf(", serving release %d", *n)
+				if v.StoppedAt != nil {
+					summary += fmt.Sprintf(", keeping release %d", *n)
+				} else {
+					summary += fmt.Sprintf(", serving release %d", *n)
+				}
 				if len(rels) > 0 && rels[0].Number == *n {
 					v.Active = short(rels[0])
 				} else if active, err := h.core.GetRelease(ctx, c.Actor, ref, *n); err == nil {
@@ -434,6 +441,52 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 				return mcpkit.Reply{}, err
 			}
 			return h.waitOne(ctx, c, "Redeploy", rel, wait)
+		})
+
+	mcpkit.AddTool(s, "stop_service", "Stop a service",
+		"Stop a service: its domains answer 503 and its container is removed, freeing its memory. Its active release, port, volumes, domains and variables are kept. "+
+			"It stays stopped (no restarts, no alerts, no backups) until start_service or a deploy runs it again. Takes the service offline: only when asked.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
+			ref, err := serviceOf(c, in)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			svc, err := h.core.StopService(ctx, c.Actor, ref)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			return mcpkit.Reply{Summary: fmt.Sprintf("Stopped %s; its domains answer 503 until start_service or a deploy.", ref), Data: viewService(svc)}, nil
+		})
+
+	mcpkit.AddTool(s, "start_service", "Start a stopped service",
+		"Start a stopped service: a new release identical to the active one, through the same health-checked path, and wait for the result. "+
+			"If it fails, the service stays stopped; read the error and logs in the result.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
+			ServiceInput
+			WaitInput
+		}) (mcpkit.Reply, error) {
+			ref, err := serviceOf(c, in.ServiceInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			wait, err := in.duration()
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			rel, err := h.core.StartService(ctx, c.Actor, ref)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			vs, err := h.waitReleases(ctx, c, []apitypes.Release{rel}, wait)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			summary := waitSummary("Start", vs)
+			if v := vs[0]; v.Status == apitypes.ReleaseFailed {
+				// Not waitSummary's "the previous one still serves": nothing does.
+				summary = fmt.Sprintf("Start: %s #%d failed (%s). The service stays stopped. Read error and logs, fix, then start_service again or deploy.", v.Service, v.Number, v.ErrorCode)
+			}
+			return mcpkit.Reply{Summary: summary, Data: vs[0]}, nil
 		})
 
 	mcpkit.AddTool(s, "rollback", "Roll back",
