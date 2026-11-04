@@ -63,7 +63,9 @@ func (c *Client) streamJob(ctx context.Context, spec node.JobSpec) (node.JobResu
 	}
 	// Canceling (or returning, through the deferred cancel) closes both
 	// bodies: the transport doesn't watch ctx while it waits for input.
-	context.AfterFunc(callCtx, func() { _, _ = upW.Close(), body.Close() })
+	// The input ends with the cancel's error, not a clean EOF: the node
+	// must see the call reset, not a job whose input simply ended.
+	context.AfterFunc(callCtx, func() { _, _ = upW.CloseWithError(context.Canceled), body.Close() })
 	ended := make(chan struct{})
 	defer close(ended)
 	go sendJobInput(runframe.NewWriter(upW), upW, st, ended)
@@ -94,6 +96,11 @@ func (c *Client) streamJob(ctx context.Context, spec node.JobSpec) (node.JobResu
 			res := node.JobResult{ExitCode: end.ExitCode, Output: tail.String()}
 			if end.Error != nil {
 				return res, end.Error
+			}
+			if err := ctx.Err(); err != nil {
+				// Canceled while the end was on its way: the job was
+				// stopped, however it ended on the node.
+				return res, err
 			}
 			return res, nil
 		}
