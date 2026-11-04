@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  type AnalyticsSearch,
-  analyticsSearch,
-} from "../features/analytics/data";
+import type { AnalyticsSearch } from "../features/analytics/data";
+import { analyticsSearch } from "../features/analytics/loaders";
 import { ReplayPlayer } from "../features/analytics/ReplayPlayer";
 
 // A session replay (ADR 0037, phase A3), inside the service's tabs:

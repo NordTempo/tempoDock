@@ -1,14 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { servicePath, useCanDeploy } from "../data/queries";
 import { AnalyticsTab } from "../features/analytics/AnalyticsTab";
+import { applyChange, parseFilter } from "../features/analytics/data";
+import { FunnelsView } from "../features/analytics/FunnelsView";
 import {
   type AnalyticsSearch,
   analyticsSearch,
-  applyChange,
-  parseFilter,
   sitesQuery,
-} from "../features/analytics/data";
-import { FunnelsView } from "../features/analytics/FunnelsView";
+} from "../features/analytics/loaders";
 
 // A site's funnels (ADR 0037): …/web/analytics/funnels?site=…&funnel=Checkout,
 // funnel the one shown (the first if none).

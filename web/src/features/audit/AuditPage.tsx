@@ -3,43 +3,10 @@ import { queries, useAuditLog, useProjects } from "../../data/queries";
 import type { AuditEvent } from "../../data/types";
 import { Act, Button, Page, TitleRow } from "../../ui/kit";
 import { AuditTable } from "./AuditTable";
+import { type AuditSearch, MAX } from "./search";
 
-/** The API's default page of events, and the most it returns at once. */
+/** The API's default page of events. */
 const PAGE = 100;
-const MAX = 500;
-
-/** The audit log's filters, kept in the URL by the route that shows it. */
-export type AuditSearch = {
-  /** The platform's log instead of the organization's (operators). */
-  platform?: true;
-  project?: string;
-  /** Needs project. */
-  environment?: string;
-  /** Action prefix, filtered by the API. */
-  action?: string;
-  /** Up to MAX events instead of PAGE (`dock audit -n 500`). */
-  limit?: typeof MAX;
-  /** The rest filter the loaded page of events. */
-  kind?: "token" | "user";
-  actor?: string;
-  q?: string;
-};
-
-const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
-
-/** Reads AuditSearch from a route's search params. */
-export const validateAuditSearch = (
-  s: Record<string, unknown>,
-): AuditSearch => ({
-  platform: s.platform === true || s.platform === "true" ? true : undefined,
-  project: str(s.project),
-  environment: str(s.project) && str(s.environment),
-  action: str(s.action),
-  limit: Number(s.limit) === MAX ? MAX : undefined,
-  kind: s.kind === "token" || s.kind === "user" ? s.kind : undefined,
-  actor: str(s.actor),
-  q: str(s.q),
-});
 
 const actions = [
   ["release.", "deploys, restarts, rollbacks"],

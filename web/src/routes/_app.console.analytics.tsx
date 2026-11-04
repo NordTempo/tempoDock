@@ -3,7 +3,7 @@ import { AnalyticsConsole } from "../features/analytics/AnalyticsConsole";
 import {
   analyticsDefaultsQuery,
   analyticsStatusQuery,
-} from "../features/analytics/data";
+} from "../features/analytics/loaders";
 
 // Dock Analytics for operators: the store, its server and the site
 // defaults (ADR 0037).

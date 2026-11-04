@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { queries } from "../data/queries";
-import { AuditPage, validateAuditSearch } from "../features/audit/AuditPage";
+import { AuditPage } from "../features/audit/AuditPage";
+import { validateAuditSearch } from "../features/audit/search";
 
 // The workspace's Activity: the audit log as the caller may see it. Admins
 // also get it in the platform console (/console/audit).
