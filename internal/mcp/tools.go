@@ -340,12 +340,14 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 
 	mcpkit.AddTool(s, "logs", "Service logs",
 		"The last lines a service's container wrote (stdout and stderr), from the active release or a given one. Earlier releases work too: a replaced or failed release's output was kept on its server when its container was removed (for 30 days by default), and is read from there. "+
-			"Lines start with their time; stderr lines are marked [stderr].",
+			"Lines start with their time; stderr lines are marked [stderr]. Use grep and stderr to get only the lines that matter.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			Release int64  `json:"release,omitempty" doc:"Release number, also of an earlier (replaced or failed) release. Default: the active release."`
 			Tail    int    `json:"tail,omitempty" doc:"How many of the last lines. Default 100, at most 1000."`
 			Since   string `json:"since,omitempty" doc:"Only lines since then: a duration like 10m or an RFC 3339 time."`
+			Grep    string `json:"grep,omitempty" doc:"Only lines containing this text: a plain, case-sensitive substring, not a regex. Applied after tail, so it finds the matches among the last tail lines; raise tail to search further back."`
+			Stderr  bool   `json:"stderr,omitempty" doc:"Only lines written to stderr. Applied after tail, like grep."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -355,7 +357,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			q := core.LogQuery{Release: in.Release, Tail: n}
+			q := core.LogQuery{Release: in.Release, Tail: n, Grep: in.Grep, Stderr: in.Stderr}
 			if in.Since != "" {
 				if d, err := time.ParseDuration(in.Since); err == nil {
 					q.Since = time.Now().Add(-d)

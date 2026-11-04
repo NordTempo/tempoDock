@@ -258,14 +258,20 @@ func (r *Runtime) Spec(name string) (node.ContainerSpec, bool) {
 	return node.ContainerSpec{}, false
 }
 
-// AddLogs appends log lines to a container, by name.
-func (r *Runtime) AddLogs(name string, lines ...string) {
+// AddLogs appends stdout lines to a container, by name.
+func (r *Runtime) AddLogs(name string, lines ...string) { r.addLogs(name, "stdout", lines) }
+
+// AddStderr appends stderr lines to a container, by name.
+func (r *Runtime) AddStderr(name string, lines ...string) { r.addLogs(name, "stderr", lines) }
+
+// addLogs appends lines written to stream to the container named name.
+func (r *Runtime) addLogs(name, stream string, lines []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id, c := range r.containers {
 		if c.Name == name {
 			for _, l := range lines {
-				r.logs[id] = append(r.logs[id], node.LogLine{Time: time.Now(), Stream: "stdout", Text: l})
+				r.logs[id] = append(r.logs[id], node.LogLine{Time: time.Now(), Stream: stream, Text: l})
 			}
 		}
 	}

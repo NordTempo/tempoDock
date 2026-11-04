@@ -294,8 +294,10 @@ func registerStreams(s *Server, a huma.API) {
 		Follow  bool   `query:"follow" doc:"Keep streaming new lines"`
 		Tail    int    `query:"tail" default:"100" minimum:"0" doc:"Last N lines of backlog; 0 for all"`
 		Since   string `query:"since" doc:"RFC 3339 time or a duration like 10m"`
+		Grep    string `query:"grep" doc:"Only lines containing this text (plain, case-sensitive). Applied after tail: matches among the last N lines"`
+		Stderr  bool   `query:"stderr" doc:"Only lines written to stderr. Applied after tail, like grep"`
 	}) (core.Stream[apitypes.LogLine], error) {
-		q := core.LogQuery{Release: in.Release, Follow: in.Follow, Tail: in.Tail}
+		q := core.LogQuery{Release: in.Release, Follow: in.Follow, Tail: in.Tail, Grep: in.Grep, Stderr: in.Stderr}
 		if in.Since != "" {
 			if d, err := time.ParseDuration(in.Since); err == nil {
 				q.Since = time.Now().Add(-d)
