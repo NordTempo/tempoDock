@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	code := func() int {
-		defer func() { _ = exec.Command("docker", "rm", "-f", name).Run() }()
+		defer func() { _ = exec.Command("docker", "rm", "-fv", name).Run() }()
 		out, err := exec.Command("docker", "port", name, "5432/tcp").Output()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "docker port: %v\n", err)

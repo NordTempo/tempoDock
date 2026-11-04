@@ -32,7 +32,7 @@ func startPostgres(t *testing.T) (string, func(sql string)) {
 	if err != nil {
 		t.Fatalf("start postgres: %v: %s", err, out)
 	}
-	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-fv", name).Run() })
 	out, err = exec.Command("docker", "port", name, "5432/tcp").Output()
 	if err != nil {
 		t.Fatalf("docker port: %v", err)

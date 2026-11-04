@@ -34,7 +34,7 @@ fail() { printf 'FAIL: %s\n' "$*"; exit 1; }
 x() { local c=$1; shift; docker exec "$c" sh -c "$*"; }
 ip() { docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$1"; }
 
-cleanup() { docker rm -f "$CP" "$LAB" >/dev/null 2>&1; docker network rm "$NET" >/dev/null 2>&1; rm -rf "$W"; }
+cleanup() { docker rm -fv "$CP" "$LAB" >/dev/null 2>&1; docker network rm "$NET" >/dev/null 2>&1; rm -rf "$W"; }
 [[ ${KEEP:-} == 1 ]] || trap cleanup EXIT
 
 # wait_for WHAT SECONDS CMD...: until CMD succeeds.
@@ -46,7 +46,7 @@ wait_for() {
 
 # server C: a fresh Docker-in-Docker container with dock and caddy.
 server() {
-	docker rm -f "$1" >/dev/null 2>&1 || true
+	docker rm -fv "$1" >/dev/null 2>&1 || true
 	docker run -d --privileged --name "$1" --hostname "$1" --network "$NET" \
 		-v "$REPO/bin/dock:/usr/local/bin/dock:ro" -v "$(command -v caddy):/usr/local/bin/caddy:ro" \
 		-v "$STORE:/usr/local/lib/dock-analytics:ro" \
@@ -106,7 +106,7 @@ pageviews() { dock analytics stats "$HOST" -p shop --range 24h --filter "page:co
 has_all() { for p in "$@"; do [[ $(pageviews "$p") == "$N" ]] || return 1; done; }
 
 say "servers"
-docker rm -f "$CP" "$LAB" >/dev/null 2>&1 || true # a KEEP=1 run's
+docker rm -fv "$CP" "$LAB" >/dev/null 2>&1 || true # a KEEP=1 run's
 docker network rm "$NET" >/dev/null 2>&1 || true
 docker network create "$NET" >/dev/null
 server "$CP" & server "$LAB" & wait

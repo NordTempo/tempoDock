@@ -19,7 +19,7 @@ id="spike-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 work="$(mktemp -d)"
 containers=()
 cleanup() {
-  docker rm -f "${containers[@]}" >/dev/null 2>&1 || true
+  docker rm -fv "${containers[@]}" >/dev/null 2>&1 || true
   docker image ls --format '{{.Repository}}:{{.Tag}}' | grep "$id" | xargs -r docker rmi -f >/dev/null 2>&1 || true
   rm -rf "$work"
 }
