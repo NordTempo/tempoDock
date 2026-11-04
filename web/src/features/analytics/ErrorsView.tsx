@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { Fragment, useMemo, useState } from "react";
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { ago, clock, day } from "../../ui/format";
 import { Panel } from "../../ui/kit";
 import { LineChart } from "../stats/LineChart";
@@ -67,12 +68,12 @@ export function ErrorsView({
     (errorDimensions as readonly string[]).includes(f.dimension),
   );
   const skipped = filters.filter((f) => !usable.includes(f));
-  const { data, error } = useQuery(
+  const { data, error, refetch } = useQuery(
     siteErrorsQuery(project, site, range, usable),
   );
   const [text, setText] = useState("");
   const [onlyNew, setOnlyNew] = useState(false);
-  if (error) return <p className="text-fail">{error.message}</p>;
+  if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!data) return <p className="text-mut">Loading…</p>;
   const step = data.bucket === "hour" ? 3_600_000 : 86_400_000;
   const needle = text.trim().toLowerCase();
@@ -354,12 +355,12 @@ function Detail({
   filters: Filter[];
   markers: NonNullable<SiteErrors["markers"]>;
 }) {
-  const { data, error } = useQuery(
+  const { data, error, refetch } = useQuery(
     siteErrorQuery(project, site, group, range, filters),
   );
   const params = useParams({ strict: false });
   const markerPoints = useMemo(() => chartMarkers(markers), [markers]);
-  if (error) return <p className="text-fail">{error.message}</p>;
+  if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!data) return <p className="text-mut">Loading…</p>;
   const step = data.bucket === "hour" ? 3_600_000 : 86_400_000;
   const top = (rows: typeof data.pages, dim: string) => {

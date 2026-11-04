@@ -65,7 +65,12 @@ const isProblem = (body: unknown): body is Problem =>
 
 function toError(response: Response, body: unknown) {
   if (!isProblem(body)) {
-    return new ApiError(response.status, "", response.statusText);
+    // A proxy's page or an empty body: say what it means, not "Bad Gateway".
+    const message =
+      response.status >= 500
+        ? `Dock's server didn't answer properly (${response.status}).`
+        : response.statusText || `The request failed (${response.status}).`;
+    return new ApiError(response.status, "", message);
   }
   // Validation errors say what is wrong in `errors`, not in `detail`.
   const details = body.errors?.map((e) => e.message).join("; ");
@@ -78,9 +83,30 @@ function toError(response: Response, body: unknown) {
 
 type Result<T> = { data?: T; error?: unknown; response: Response };
 
+/** Status 0: the request never got an answer (offline, Dock down). */
+const unreachable = () =>
+  new ApiError(
+    0,
+    "unreachable",
+    "Can't reach Dock. The request never arrived.",
+  );
+
+/**
+ * Awaits a call, turning fetch's "Failed to fetch" TypeError into an
+ * ApiError with status 0 and a message people understand.
+ */
+async function settle<T>(request: Promise<Result<T>>) {
+  try {
+    return await request;
+  } catch (error) {
+    if (error instanceof TypeError) throw unreachable();
+    throw error;
+  }
+}
+
 /** Resolves an openapi-fetch call to its body, or throws an ApiError. */
 export async function body<T>(request: Promise<Result<T>>): Promise<T> {
-  const { data, error, response } = await request;
+  const { data, error, response } = await settle(request);
   if (!response.ok || data === undefined) throw toError(response, error);
   return data;
 }
@@ -91,7 +117,7 @@ export const list = async <T>(request: Promise<Result<T[] | null>>) =>
 
 /** Like `body` for calls without a response body (204). */
 export async function done(request: Promise<Result<unknown>>) {
-  const { error, response } = await request;
+  const { error, response } = await settle(request);
   if (!response.ok) throw toError(response, error);
 }
 

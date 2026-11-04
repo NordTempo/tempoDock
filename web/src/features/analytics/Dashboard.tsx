@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { clock } from "../../ui/format";
 import { Panel } from "../../ui/kit";
 import { LineChart } from "../stats/LineChart";
@@ -49,12 +50,14 @@ export function Dashboard({
   /** May add and remove goals (deploy). */
   canEdit: boolean;
 }) {
-  const { data: stats, error } = useQuery(
-    siteStatsQuery(project, site.name, range, filters),
-  );
+  const {
+    data: stats,
+    error,
+    refetch,
+  } = useQuery(siteStatsQuery(project, site.name, range, filters));
   return (
     <div className="flex flex-col gap-4">
-      {error && <p className="text-fail">{error.message}</p>}
+      {error && <ErrorBlock error={error} onRetry={() => refetch()} />}
       {stats && !stats.store_online && (
         <p className="text-warn-text">{stats.store_error}</p>
       )}

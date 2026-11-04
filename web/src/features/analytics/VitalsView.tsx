@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { Panel } from "../../ui/kit";
 import { LineChart } from "../stats/LineChart";
 import {
@@ -104,10 +105,10 @@ export function VitalsView({
   const query = device
     ? [...usable, { dimension: "device", op: "is" as const, value: device }]
     : usable;
-  const { data, error } = useQuery(
+  const { data, error, refetch } = useQuery(
     siteVitalsQuery(project, site, range, query, metric),
   );
-  if (error) return <p className="text-fail">{error.message}</p>;
+  if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!data) return <p className="text-mut">Loading…</p>;
   const t = data.thresholds[metric];
   const step = data.bucket === "hour" ? 3_600_000 : 86_400_000;

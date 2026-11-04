@@ -193,6 +193,7 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Data connection idle close | `internal/data/pg` | once, 60 s after last use | a database connection is open (Dock and tempoBase) | one timer per connection |
 | tempoBase audit prune | `internal/tempobase` | at most hourly, inline when an event is written; no timer | something is being audited | one indexed delete of events past `audit_retention_days`, at most 1000 |
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
+| Log stream reconnect (browser) | `web/src/api/events.ts` | once per lost connection, backing off 1 s to 30 s, at most 6 tries in a row | a followed log or build log lost its connection | one timer, then one EventSource that replays the backlog |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
 | Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events or replay chunks wait to go to the control plane (ADR 0037); each spool has its own tail | one timer; then one spool read of up to 1,000 events |

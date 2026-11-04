@@ -2,6 +2,7 @@ import {
   type ComponentProps,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -98,21 +99,43 @@ type ButtonProps = ComponentProps<"button"> & {
   primary?: boolean;
   small?: boolean;
   danger?: boolean;
+  /**
+   * Why the button is disabled, shown as text beside it while it is (a
+   * title alone is invisible to touch and keyboard users).
+   */
+  reason?: string;
 };
 
+/**
+ * The kit's button. With `disabled` and a `reason`, the reason follows it
+ * as faint text and describes it for screen readers.
+ */
 export function Button({
   primary,
   small,
   danger,
+  reason,
   className = "",
   ...props
 }: ButtonProps) {
-  return (
+  const id = useId();
+  const why = props.disabled ? reason : undefined;
+  const button = (
     <button
       type="button"
+      aria-describedby={why ? id : undefined}
       className={`btn ${primary ? "pri" : ""} ${small ? "sm" : ""} ${danger ? "danger" : ""} ${className}`}
       {...props}
     />
+  );
+  if (!why) return button;
+  return (
+    <>
+      {button}
+      <span id={id} className="self-center px-2 text-xs text-faint">
+        {why}
+      </span>
+    </>
   );
 }
 
@@ -237,9 +260,14 @@ export function Confirm({
   );
 }
 
+/** An error message in place, announced to screen readers when it appears. */
 export function ErrorText({ error }: { error: Error | null | undefined }) {
   if (!error) return null;
-  return <span className="text-fail">{error.message}</span>;
+  return (
+    <span role="alert" className="text-fail">
+      {error.message}
+    </span>
+  );
 }
 
 /**
@@ -281,7 +309,7 @@ export function PageBar({
   actions?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-10 flex min-h-[52px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-5 py-2.5">
+    <header className="sticky top-0 z-10 flex min-h-[52px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-4 py-2.5 sm:px-5">
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5">
         {parent && (
           <>
