@@ -518,15 +518,21 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 	if err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
-	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
-		return apitypes.SnapshotRestoreResult{}, deployInProgress(ss, r)
-	}
 	// The safety snapshot is recorded now, so the claim covers both.
 	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, fmt.Sprintf("before restoring snapshot %d", snap.ID))
 	if err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
+	// Marked before the deploy check, which startRelease makes in its
+	// transaction too: a deploy and an in-place restore never both go
+	// ahead on one volume.
 	c.setRestoringInPlace(ss.svc.ID, true)
+	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+		c.setRestoringInPlace(ss.svc.ID, false)
+		c.failSafety(ctx, safety, "a deploy started first, so nothing was restored")
+		c.releaseService(ss.svc.ID)
+		return apitypes.SnapshotRestoreResult{}, deployInProgress(ss, r)
+	}
 	// Read the service again now that StopService refuses to run: a stop
 	// that went ahead after ss was loaded is seen here, so the restore
 	// leaves the service stopped instead of starting it again.

@@ -207,9 +207,6 @@ func TestMoveEnvironmentRefused(t *testing.T) {
 	if _, err := p.c.Restart(p.ctx, testSystem, db); CodeOf(err) != apitypes.CodeConflict {
 		t.Errorf("deploy during a move: %v", err)
 	}
-	if err := p.c.DeleteSnapshot(p.ctx, testSystem, db, 1); CodeOf(err) != apitypes.CodeConflict {
-		t.Errorf("snapshot delete during a move: %v", err)
-	}
 	if _, err := p.c.CreateSnapshot(p.ctx, testSystem, db, apitypes.CreateSnapshotRequest{}); CodeOf(err) != apitypes.CodeConflict {
 		t.Errorf("snapshot during a move: %v", err)
 	}

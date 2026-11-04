@@ -370,8 +370,20 @@ func (c *Core) startMove(id int64) {
 			delete(c.moves.driving, id)
 			c.moves.mu.Unlock()
 		}()
-		if err := c.driveMove(c.ctx, id); err != nil && !errors.Is(err, errMoveWaits) && c.ctx.Err() == nil {
-			c.log.Error("environment move", "move", id, "err", err)
+		// A rollback or clean-up that fails is tried again, backing off
+		// from 5 s to 5 min, until it succeeds or waits for a server: a
+		// timer that exists only while a move is failing to finish.
+		for wait := 5 * time.Second; ; wait = min(wait*2, 5*time.Minute) {
+			err := c.driveMove(c.ctx, id)
+			if err == nil || errors.Is(err, errMoveWaits) || c.ctx.Err() != nil {
+				return
+			}
+			c.log.Error("environment move; trying again", "move", id, "in", wait, "err", err)
+			select {
+			case <-time.After(wait):
+			case <-c.ctx.Done():
+				return
+			}
 		}
 	})
 }
@@ -661,7 +673,7 @@ func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMov
 				return err
 			}
 		}
-		if err := c.removeReleaseContainers(ctx, s.ss, s.rel.ID); err != nil {
+		if err := c.removeReleaseContainers(ctx, s.ss, s.rel.ID, keepData); err != nil {
 			return fmt.Errorf("stop %s: %w", s.ss.svc.Name, c.nodeErr(m.FromServerID, err))
 		}
 		c.setStatus(s.ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
@@ -826,7 +838,7 @@ func (c *Core) startOnTarget(ctx context.Context, es envScope, m store.Environme
 	if err != nil {
 		return err
 	}
-	if err := c.removeOn(ctx, m.ToServerID, dst, c.labels(s.ss, s.rel.ID)); err != nil {
+	if err := c.removeOn(ctx, m.ToServerID, dst, c.labels(s.ss, s.rel.ID), node.RemoveOptions{}); err != nil {
 		return fmt.Errorf("remove an earlier container of %s on the target: %w", s.ss.svc.Name, err)
 	}
 	rel := *s.rel
@@ -848,8 +860,9 @@ func (c *Core) startOnTarget(ctx context.Context, es envScope, m store.Environme
 }
 
 // removeOn stops and removes a server's containers that match want
-// (node.Labels.Matches): one release's, or a whole environment's.
-func (c *Core) removeOn(ctx context.Context, serverID int64, rt node.Runtime, want node.Labels) error {
+// (node.Labels.Matches): one release's, or a whole environment's, with
+// opts (removeContainer).
+func (c *Core) removeOn(ctx context.Context, serverID int64, rt node.Runtime, want node.Labels, opts node.RemoveOptions) error {
 	ctrs, err := rt.List(ctx)
 	if err != nil {
 		return c.nodeErr(serverID, err)
@@ -860,7 +873,7 @@ func (c *Core) removeOn(ctx context.Context, serverID int64, rt node.Runtime, wa
 			continue // older than the label: never someone else's to remove here
 		}
 		if ct.Labels.Matches(want) {
-			errs = append(errs, c.removeContainer(ctx, serverID, ct.ID))
+			errs = append(errs, c.removeContainer(ctx, serverID, ct.ID, opts))
 		}
 	}
 	return errors.Join(errs...)
@@ -947,7 +960,7 @@ func (c *Core) cleanupMove(ctx context.Context, es envScope, m store.Environment
 	}
 	var notes []string
 	envLabels := node.Labels{ControlPlane: c.install, Project: strconv.FormatInt(es.project.ID, 10), Environment: strconv.FormatInt(es.env.ID, 10)}
-	if err := c.removeOn(ctx, from.ID, src, envLabels); err != nil {
+	if err := c.removeOn(ctx, from.ID, src, envLabels, keepData); err != nil {
 		notes = append(notes, fmt.Sprintf("some of the environment's old containers on %s couldn't be removed (%v); remove them by hand", from.Name, err))
 	}
 	if err := src.RemoveNetwork(ctx, networkName(es), envLabels); err != nil && !errors.Is(err, node.ErrNotFound) {
@@ -1070,23 +1083,17 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 // source, whose data was never written. It waits for a server that is
 // offline.
 func (c *Core) rollbackMove(ctx context.Context, es envScope, m store.EnvironmentMove) error {
-	_, dst, err := c.moveRuntimes(m) // the source too: its services start again
-	if err != nil {
-		return err
-	}
-	envLabels := node.Labels{ControlPlane: c.install, Project: strconv.FormatInt(es.project.ID, 10), Environment: strconv.FormatInt(es.env.ID, 10)}
-	// The target's containers go first: the source's data then has one
-	// copy running, the source's.
-	if err := c.removeOn(ctx, m.ToServerID, dst, envLabels); err != nil {
-		return fmt.Errorf("remove the move's containers on the target: %w", err)
-	}
-	if err := dst.RemoveNetwork(ctx, networkName(es), envLabels); err != nil && !errors.Is(err, node.ErrNotFound) {
-		c.log.Warn("remove a move's network on the target", "move", m.ID, "err", err)
+	if c.connected(m.FromServerID) == nil {
+		return errMoveWaits // its services start again there
 	}
 	svcs, err := c.loadMoving(ctx, es, m.ID)
 	if err != nil {
 		return err
 	}
+	// The source's services start again at once, even with the target
+	// offline: their data never left the source's volumes, and the
+	// target's copy is another volume on another server, so no volume is
+	// ever mounted twice. The target is cleaned up once it is back.
 	var errs []error
 	for _, s := range svcs {
 		if !s.runs() {
@@ -1098,6 +1105,17 @@ func (c *Core) rollbackMove(ctx context.Context, es envScope, m store.Environmen
 	}
 	if err := errors.Join(errs...); err != nil {
 		return err
+	}
+	dst := c.connected(m.ToServerID)
+	if dst == nil {
+		return errMoveWaits // the target's containers go when it reconnects
+	}
+	envLabels := node.Labels{ControlPlane: c.install, Project: strconv.FormatInt(es.project.ID, 10), Environment: strconv.FormatInt(es.env.ID, 10)}
+	if err := c.removeOn(ctx, m.ToServerID, dst, envLabels, keepData); err != nil {
+		return fmt.Errorf("remove the move's containers on the target: %w", err)
+	}
+	if err := dst.RemoveNetwork(ctx, networkName(es), envLabels); err != nil && !errors.Is(err, node.ErrNotFound) {
+		c.log.Warn("remove a move's network on the target", "move", m.ID, "err", err)
 	}
 	msg := m.Error
 	var notes string
