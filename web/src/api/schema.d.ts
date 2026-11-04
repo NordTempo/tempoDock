@@ -3883,6 +3883,9 @@ export interface components {
             name: string;
             /** Format: int64 */
             port?: number;
+            pre_deploy_command?: string;
+            /** Format: int64 */
+            pre_deploy_timeout_seconds?: number;
             start_command?: string;
             /**
              * @description Create a database from a template; other settings are ignored
@@ -4858,6 +4861,7 @@ export interface components {
             mounts: components["schemas"]["VolumeMount"][] | null;
             /** Format: int64 */
             port: number;
+            pre_deploy_command?: string;
             /** @description Port is published for routing */
             published: boolean;
             start_command: string;
@@ -5253,6 +5257,13 @@ export interface components {
              * @description Container port. 0 means 8080 (published only once the service has a domain)
              */
             port: number;
+            /** @description Runs with the new image before it gets traffic, e.g. migrations; empty runs nothing */
+            pre_deploy_command: string;
+            /**
+             * Format: int64
+             * @description How long the pre-deploy command may run. 0 means 600 (10 minutes)
+             */
+            pre_deploy_timeout_seconds: number;
             project: string;
             start_command: string;
             stateful: boolean;
@@ -5297,6 +5308,9 @@ export interface components {
             name: string;
             /** Format: int64 */
             port?: number;
+            pre_deploy_command?: string;
+            /** Format: int64 */
+            pre_deploy_timeout_seconds?: number;
             start_command?: string;
             template?: string;
             variables?: string[] | null;
@@ -5930,6 +5944,10 @@ export interface components {
             memory_mb?: number;
             /** Format: int64 */
             port?: number;
+            /** @description Empty string removes it */
+            pre_deploy_command?: string;
+            /** Format: int64 */
+            pre_deploy_timeout_seconds?: number;
             start_command?: string;
         };
         UpdateSiteRequest: {

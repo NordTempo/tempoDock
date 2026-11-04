@@ -64,6 +64,10 @@ type releaseConfig struct {
 	CPUs       float64       `json:"cpus"`
 	Mounts     []configMount `json:"mounts"`
 	Aliases    []string      `json:"aliases"`
+	// PreDeploy is the pre-deploy command (ADR 0045), run before the
+	// release starts; PreDeployTimeout bounds it in seconds.
+	PreDeploy        string `json:"pre_deploy,omitempty"`
+	PreDeployTimeout int    `json:"pre_deploy_timeout_seconds,omitempty"`
 	// Repo holds the deploy settings that came from dock.toml, so config
 	// releases built on this one keep them.
 	Repo *repoDeploy `json:"repo,omitempty"`
@@ -77,10 +81,12 @@ type repoDeploy struct {
 	HealthCheckPath           string `json:"health_check_path,omitempty"`
 	HealthCheckTimeoutSeconds int    `json:"health_check_timeout_seconds,omitempty"`
 	// The ongoing health check; an interval of -1 is "off".
-	HealthCheckIntervalSeconds     int `json:"health_check_interval_seconds,omitempty"`
-	HealthCheckProbeTimeoutSeconds int `json:"health_check_probe_timeout_seconds,omitempty"`
-	HealthCheckRetries             int `json:"health_check_retries,omitempty"`
-	HealthCheckStartPeriodSeconds  int `json:"health_check_start_period_seconds,omitempty"`
+	HealthCheckIntervalSeconds     int    `json:"health_check_interval_seconds,omitempty"`
+	HealthCheckProbeTimeoutSeconds int    `json:"health_check_probe_timeout_seconds,omitempty"`
+	HealthCheckRetries             int    `json:"health_check_retries,omitempty"`
+	HealthCheckStartPeriodSeconds  int    `json:"health_check_start_period_seconds,omitempty"`
+	PreDeployCommand               string `json:"pre_deploy_command,omitempty"`
+	PreDeployTimeoutSeconds        int    `json:"pre_deploy_timeout_seconds,omitempty"`
 }
 
 func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
@@ -94,6 +100,8 @@ func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
 		HealthCheckProbeTimeoutSeconds: int(rc.Deploy.HealthCheckProbeTimeout / time.Second),
 		HealthCheckRetries:             rc.Deploy.HealthCheckRetries,
 		HealthCheckStartPeriodSeconds:  int(rc.Deploy.HealthCheckStartPeriod / time.Second),
+		PreDeployCommand:               rc.Deploy.PreDeployCommand,
+		PreDeployTimeoutSeconds:        int(rc.Deploy.PreDeployTimeout / time.Second),
 	}
 }
 
@@ -135,6 +143,12 @@ func (r *repoDeploy) apply(s *store.Service) {
 	if r.HealthCheckStartPeriodSeconds != 0 {
 		s.HealthCheckStartPeriodSeconds = int64(r.HealthCheckStartPeriodSeconds)
 	}
+	if r.PreDeployCommand != "" {
+		s.PreDeployCommand = r.PreDeployCommand
+	}
+	if r.PreDeployTimeoutSeconds != 0 {
+		s.PreDeployTimeoutSeconds = int64(r.PreDeployTimeoutSeconds)
+	}
 }
 
 // fields lists the settings the file set, by API field name.
@@ -150,6 +164,7 @@ func (r *repoDeploy) fields() []string {
 		"health_check_probe_timeout_seconds": r.HealthCheckProbeTimeoutSeconds != 0,
 		"health_check_retries":               r.HealthCheckRetries != 0,
 		"health_check_start_period_seconds":  r.HealthCheckStartPeriodSeconds != 0,
+		"pre_deploy_command":                 r.PreDeployCommand != "", "pre_deploy_timeout_seconds": r.PreDeployTimeoutSeconds != 0,
 	} {
 		if set {
 			out = append(out, name)
@@ -257,6 +272,8 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 		HealthCheckProbeTimeout: cmp.Or(int(target.HealthCheckProbeTimeoutSeconds), defaultProbeTimeout),
 		HealthCheckRetries:      cmp.Or(int(target.HealthCheckRetries), defaultLivenessRetries),
 		HealthCheckStartPeriod:  int(target.HealthCheckStartPeriodSeconds),
+		PreDeploy:               target.PreDeployCommand,
+		PreDeployTimeout:        int(target.PreDeployTimeoutSeconds),
 	}
 	if cfg.HealthCheckTimeout == 0 {
 		cfg.HealthCheckTimeout = c.cfg.Defaults.HealthCheckTimeout
@@ -707,7 +724,7 @@ func setServiceImage(ctx context.Context, q *store.Queries, s store.Service, ima
 		MemoryMb: s.MemoryMb, Cpus: s.Cpus,
 		HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
 		HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
-		ID: s.ID,
+		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds, ID: s.ID,
 	})
 }
 
@@ -992,7 +1009,8 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 	}
 	out.Config = apitypes.ReleaseConfig{
 		Port: cfg.Port, Published: cfg.Published, StartCommand: cfg.Cmd, HealthCheckPath: cfg.HealthCheckPath,
-		MemoryMB: cfg.MemoryMB, CPUs: cfg.CPUs, VariableKeys: slices.Sorted(maps.Keys(cfg.Env)),
+		PreDeployCommand: cfg.PreDeploy,
+		MemoryMB:         cfg.MemoryMB, CPUs: cfg.CPUs, VariableKeys: slices.Sorted(maps.Keys(cfg.Env)),
 		Mounts: make([]apitypes.VolumeMount, 0, len(cfg.Mounts)), FromRepoFile: cfg.Repo.fields(),
 	}
 	for _, m := range cfg.Mounts {

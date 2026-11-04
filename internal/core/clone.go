@@ -172,6 +172,7 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			MemoryMb: s.MemoryMb, Cpus: s.Cpus,
 			HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
 			HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
+			PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds,
 		})
 		if err != nil {
 			return left, err

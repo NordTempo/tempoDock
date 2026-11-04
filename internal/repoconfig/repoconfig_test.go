@@ -23,6 +23,8 @@ health_check_interval = "1m"
 health_check_probe_timeout = "3s"
 health_check_retries = 5
 health_check_start_period = "90s"
+pre_deploy_command = "npx prisma migrate deploy"
+pre_deploy_timeout = "15m"
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -38,6 +40,8 @@ health_check_start_period = "90s"
 			HealthCheckProbeTimeout: 3 * time.Second,
 			HealthCheckRetries:      5,
 			HealthCheckStartPeriod:  90 * time.Second,
+			PreDeployCommand:        "npx prisma migrate deploy",
+			PreDeployTimeout:        15 * time.Minute,
 		},
 	}
 	if cfg != want {
@@ -99,6 +103,8 @@ port = 70000
 health_check_path = "healthz"
 health_check_timeout = "30"
 start_command = " "
+pre_deploy_command = ""
+pre_deploy_timeout = "2h"
 `,
 			want: []string{
 				`build.dockerfile: "../Dockerfile" must be a relative path`,
@@ -107,6 +113,8 @@ start_command = " "
 				`deploy.health_check_path: "healthz" must start with /`,
 				`deploy.health_check_timeout: "30" is not a duration`,
 				"deploy.start_command: must not be empty",
+				"deploy.pre_deploy_command: must not be empty",
+				"deploy.pre_deploy_timeout: must be between 1s and 1h0m0s, got 2h0m0s",
 			},
 		},
 		{

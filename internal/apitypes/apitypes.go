@@ -306,6 +306,12 @@ type ServiceSettings struct {
 	HealthCheckProbeTimeoutSeconds int `json:"health_check_probe_timeout_seconds" doc:"Seconds one ongoing probe may take. 0 means 5"`
 	HealthCheckRetries             int `json:"health_check_retries" doc:"Failed probes in a row before the service counts as unhealthy and is restarted. 0 means 3"`
 	HealthCheckStartPeriodSeconds  int `json:"health_check_start_period_seconds" doc:"Seconds after a (re)start in which failed probes don't count. 0 means the deploy's health check timeout"`
+	// PreDeployCommand runs as a one-off job with each new release's image,
+	// variables and environment network before the release gets traffic
+	// (ADR 0045), e.g. database migrations. A non-zero exit fails the
+	// release and the previous one keeps serving.
+	PreDeployCommand        string `json:"pre_deploy_command" doc:"Runs with the new image before it gets traffic, e.g. migrations; empty runs nothing"`
+	PreDeployTimeoutSeconds int    `json:"pre_deploy_timeout_seconds" doc:"How long the pre-deploy command may run. 0 means 600 (10 minutes)"`
 }
 
 // Service is a container built from source or an image.
@@ -364,10 +370,12 @@ type CreateServiceRequest struct {
 	MemoryMB                  int      `json:"memory_mb,omitempty" minimum:"0"`
 	CPUs                      float64  `json:"cpus,omitempty" minimum:"0"`
 
-	HealthCheckIntervalSeconds     int `json:"health_check_interval_seconds,omitempty" minimum:"-1" maximum:"3600"`
-	HealthCheckProbeTimeoutSeconds int `json:"health_check_probe_timeout_seconds,omitempty" minimum:"0" maximum:"300"`
-	HealthCheckRetries             int `json:"health_check_retries,omitempty" minimum:"0" maximum:"100"`
-	HealthCheckStartPeriodSeconds  int `json:"health_check_start_period_seconds,omitempty" minimum:"0" maximum:"3600"`
+	HealthCheckIntervalSeconds     int    `json:"health_check_interval_seconds,omitempty" minimum:"-1" maximum:"3600"`
+	HealthCheckProbeTimeoutSeconds int    `json:"health_check_probe_timeout_seconds,omitempty" minimum:"0" maximum:"300"`
+	HealthCheckRetries             int    `json:"health_check_retries,omitempty" minimum:"0" maximum:"100"`
+	HealthCheckStartPeriodSeconds  int    `json:"health_check_start_period_seconds,omitempty" minimum:"0" maximum:"3600"`
+	PreDeployCommand               string `json:"pre_deploy_command,omitempty"`
+	PreDeployTimeoutSeconds        int    `json:"pre_deploy_timeout_seconds,omitempty" minimum:"0" maximum:"3600"`
 }
 
 // UpdateServiceRequest stages settings changes. Only fields that are set
@@ -383,6 +391,8 @@ type UpdateServiceRequest struct {
 	BuildCommand              *string  `json:"build_command,omitempty"`
 	MemoryMB                  *int     `json:"memory_mb,omitempty" minimum:"0"`
 	CPUs                      *float64 `json:"cpus,omitempty" minimum:"0"`
+	PreDeployCommand          *string  `json:"pre_deploy_command,omitempty" doc:"Empty string removes it"`
+	PreDeployTimeoutSeconds   *int     `json:"pre_deploy_timeout_seconds,omitempty" minimum:"0" maximum:"3600"`
 	Apply                     bool     `json:"apply,omitempty" doc:"Also apply all staged changes in the environment"`
 
 	HealthCheckIntervalSeconds     *int `json:"health_check_interval_seconds,omitempty" minimum:"-1" maximum:"3600"`
@@ -456,14 +466,17 @@ type Release struct {
 
 // ReleaseConfig summarises a release's resolved config without secret values.
 type ReleaseConfig struct {
-	Port            int           `json:"port"`
-	Published       bool          `json:"published" doc:"Port is published for routing"`
-	StartCommand    string        `json:"start_command"`
-	HealthCheckPath string        `json:"health_check_path"`
-	MemoryMB        int           `json:"memory_mb"`
-	CPUs            float64       `json:"cpus"`
-	VariableKeys    []string      `json:"variable_keys"`
-	Mounts          []VolumeMount `json:"mounts"`
+	Port            int    `json:"port"`
+	Published       bool   `json:"published" doc:"Port is published for routing"`
+	StartCommand    string `json:"start_command"`
+	HealthCheckPath string `json:"health_check_path"`
+	// PreDeployCommand is what ran (or would run) before the release got
+	// traffic; empty if none.
+	PreDeployCommand string        `json:"pre_deploy_command,omitempty"`
+	MemoryMB         int           `json:"memory_mb"`
+	CPUs             float64       `json:"cpus"`
+	VariableKeys     []string      `json:"variable_keys"`
+	Mounts           []VolumeMount `json:"mounts"`
 	// FromRepoFile lists the settings dock.toml set (they win over the
 	// service's settings and show as locked).
 	FromRepoFile []string `json:"from_repo_file"`

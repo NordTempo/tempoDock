@@ -134,6 +134,7 @@ func newReleaseShowCmd(g *globals) *cobra.Command {
 					"port", strconv.Itoa(r.Config.Port),
 					"health check", r.Config.HealthCheckPath,
 					"start command", r.Config.StartCommand,
+					"pre-deploy", r.Config.PreDeployCommand,
 					"variables", strings.Join(r.Config.VariableKeys, " "),
 					"volumes", strings.Join(mounts, ", "),
 					"from dock.toml", strings.Join(r.Config.FromRepoFile, ", "),

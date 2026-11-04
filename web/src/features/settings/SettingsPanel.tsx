@@ -77,6 +77,15 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           </span>
         </Item>
         <Item label="Start command">{field("start_command")}</Item>
+        <Item label="Pre-deploy">
+          {field("pre_deploy_command")}{" "}
+          <span className="text-mut">timeout</span>{" "}
+          {field("pre_deploy_timeout_seconds")}
+          <span className="block text-xs text-mut">
+            Runs with the new image before it gets traffic, e.g. migrations. A
+            non-zero exit fails the release.
+          </span>
+        </Item>
         <Item label="Health check">
           {field("health_check_path")} <span className="text-mut">timeout</span>{" "}
           {field("health_check_timeout_seconds")}

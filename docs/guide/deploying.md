@@ -94,6 +94,8 @@ For each setting, first match wins:
 | Memory | 512 MB |
 | CPUs | 1 |
 | Start command | the image's own; a set command runs with `sh -c` |
+| Pre-deploy command | none; see [below](#pre-deploy-command) |
+| Pre-deploy timeout | 10 minutes (at most 1 hour) |
 
 Image deploys have no `dock.toml`; config releases and rollbacks keep the
 `dock.toml` settings of the release they're based on.
@@ -149,6 +151,9 @@ queued → building → starting → health_checking → active
                          └──────────┴───────────→ failed
 ```
 
+**Pre-deploy command** first, if the service has one (in `starting`; see
+[below](#pre-deploy-command)).
+
 **Stateless services** (no volume) run side by side:
 
 1. The new container starts next to the old one, on the environment's
@@ -174,6 +179,42 @@ serving.
 
 One deploy per service at a time: a second one gets `deploy_in_progress`
 (exit code 5). Wait and retry.
+
+## Pre-deploy command
+
+A command each new release runs before it gets traffic, typically database
+migrations:
+
+```sh
+dock service update --pre-deploy-command "npx prisma migrate deploy" --pre-deploy-timeout 15m
+dock apply
+```
+
+or in `dock.toml` (`deploy.pre_deploy_command`, `deploy.pre_deploy_timeout`),
+or in the UI under the service's settings.
+
+Once the image is built or pulled, Dock runs the command with `sh -c` in a
+one-off container of the **new** image, on the release's server: same
+variables as the release (`DATABASE_URL` and the rest), same memory and CPU
+limits, on the environment's private network, so `db:5432` resolves. It
+mounts no volumes. Nothing has been started or stopped yet, stateful
+services included, so the old release keeps serving while it runs. The
+output goes to the release's build log (`dock logs --build`, the release
+page in the UI).
+
+- Exit 0: the deploy continues (start, health check, cutover).
+- Any other exit code, or the timeout (default 10 minutes, at most 1
+  hour): the release is `failed` with `deploy_failed`, the last lines of
+  output are in its events, and the old release keeps serving. Nothing is
+  rolled back in the database: write migrations that the release still
+  serving can live with (expand first, contract in a later release).
+
+Releases that build or pull a new image or change config run it: source
+and image deploys, `dock apply`, git pushes and promotions. Rollbacks and
+restarts don't, since they run an image that already served traffic (an
+older migration tool may refuse a schema a newer one migrated); run the
+command by hand if a rollback needs it. To skip it once, remove it, deploy,
+and set it again.
 
 ## Rollback
 

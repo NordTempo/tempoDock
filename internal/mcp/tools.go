@@ -566,6 +566,31 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 				nil
 		})
 
+	mcpkit.AddTool(s, "set_pre_deploy_command", "Stage the pre-deploy command",
+		"Stage a service's pre-deploy command: it runs with each new release's image, variables and private network before the release gets traffic, typically database migrations "+
+			"(e.g. \"npx prisma migrate deploy\"). A non-zero exit fails the release and the previous one keeps serving. An empty command removes it. "+
+			"Nothing goes live until apply_changes or the service's next deploy; dock.toml's deploy.pre_deploy_command wins over it.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
+			ServiceInput
+			Command        string `json:"command" doc:"Run with sh -c. Empty removes the pre-deploy command."`
+			TimeoutSeconds *int   `json:"timeout_seconds,omitempty" doc:"How long it may run, up to 3600. 0 means the default, 600."`
+		}) (mcpkit.Reply, error) {
+			ref, err := serviceOf(c, in.ServiceInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			res, err := h.core.UpdateService(ctx, c.Actor, ref, apitypes.UpdateServiceRequest{PreDeployCommand: &in.Command, PreDeployTimeoutSeconds: in.TimeoutSeconds})
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			did := fmt.Sprintf("pre-deploy command of %s set to %q", ref.Service, in.Command)
+			if in.Command == "" {
+				did = "pre-deploy command of " + ref.Service + " removed"
+			}
+			return mcpkit.Reply{Summary: fmt.Sprintf("Staged: %s. %d changes staged in %s/%s; apply_changes takes them live.",
+				did, res.Pending.Count, ref.Project, ref.Environment), Data: res.Pending}, nil
+		})
+
 	mcpkit.AddTool(s, "show_changes", "Show staged changes",
 		"An environment's staged changes (variables, settings, volumes) as a diff, and the services applying them would redeploy. Secret values are masked.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in EnvInput) (mcpkit.Reply, error) {

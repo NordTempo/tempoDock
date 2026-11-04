@@ -121,6 +121,8 @@ type serviceView struct {
 	Latest         *releaseSummary     `json:"latest_release,omitempty"`
 	Domains        []string            `json:"domains,omitempty"`
 	Archived       bool                `json:"archived,omitempty"`
+	// PreDeployCommand runs before each new release gets traffic.
+	PreDeployCommand string `json:"pre_deploy_command,omitempty"`
 }
 
 func viewService(s apitypes.Service) serviceView {
@@ -128,7 +130,7 @@ func viewService(s apitypes.Service) serviceView {
 		Name: s.Name, Image: s.Image, State: s.Status.State, Restarts: s.Status.RestartCount, OOMKilled: s.Status.OOMKilled,
 		Health: s.Status.Health, HealthRestarts: s.Status.HealthRestarts,
 		ExitCode: s.Status.ExitCode, MemoryMB: s.EffectiveMemoryMB, Stateful: s.Stateful, Database: s.DataEngine,
-		PendingChanges: s.PendingChanges, Archived: s.ArchivedAt != nil,
+		PendingChanges: s.PendingChanges, Archived: s.ArchivedAt != nil, PreDeployCommand: s.PreDeployCommand,
 	}
 }
 

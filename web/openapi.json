@@ -1928,6 +1928,15 @@
             "minimum": 0,
             "type": "integer"
           },
+          "pre_deploy_command": {
+            "type": "string"
+          },
+          "pre_deploy_timeout_seconds": {
+            "format": "int64",
+            "maximum": 3600,
+            "minimum": 0,
+            "type": "integer"
+          },
           "start_command": {
             "type": "string"
           },
@@ -5583,6 +5592,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "pre_deploy_command": {
+            "type": "string"
+          },
           "published": {
             "description": "Port is published for routing",
             "type": "boolean"
@@ -6775,6 +6787,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "pre_deploy_command": {
+            "description": "Runs with the new image before it gets traffic, e.g. migrations; empty runs nothing",
+            "type": "string"
+          },
+          "pre_deploy_timeout_seconds": {
+            "description": "How long the pre-deploy command may run. 0 means 600 (10 minutes)",
+            "format": "int64",
+            "type": "integer"
+          },
           "project": {
             "type": "string"
           },
@@ -6822,6 +6843,8 @@
           "health_check_probe_timeout_seconds",
           "health_check_retries",
           "health_check_start_period_seconds",
+          "pre_deploy_command",
+          "pre_deploy_timeout_seconds",
           "effective_memory_mb",
           "effective_cpus",
           "memory_from_default",
@@ -6940,6 +6963,13 @@
             "type": "string"
           },
           "port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pre_deploy_command": {
+            "type": "string"
+          },
+          "pre_deploy_timeout_seconds": {
             "format": "int64",
             "type": "integer"
           },
@@ -9014,6 +9044,16 @@
           "port": {
             "format": "int64",
             "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pre_deploy_command": {
+            "description": "Empty string removes it",
+            "type": "string"
+          },
+          "pre_deploy_timeout_seconds": {
+            "format": "int64",
+            "maximum": 3600,
             "minimum": 0,
             "type": "integer"
           },

@@ -244,11 +244,21 @@ func TestScopedToken(t *testing.T) {
 		{"deploy_image", map[string]any{"project": "blog", "environment": "production", "service": "api"}},
 		{"service_status", map[string]any{"project": "blog", "environment": "production", "service": "api"}},
 		{"set_variables", map[string]any{"environment": "production", "set": map[string]any{"A": "1"}}},
+		{"set_pre_deploy_command", map[string]any{"project": "blog", "environment": "production", "service": "api", "command": "x"}},
 		{"list_variables", map[string]any{"reveal": true}},
 	} {
 		if code := call(t, s, tc.tool, tc.args).errorCode(t); code != apitypes.CodeForbidden {
 			t.Errorf("%s %v: code %s, want forbidden", tc.tool, tc.args, code)
 		}
+	}
+
+	// The pre-deploy command is staged like a variable.
+	pre := call(t, s, "set_pre_deploy_command", map[string]any{"service": "web", "command": "migrate up", "timeout_seconds": 900})
+	if pre.isError || !strings.Contains(pre.summary, `"migrate up"`) {
+		t.Fatalf("set_pre_deploy_command = %q", pre.summary)
+	}
+	if bad := call(t, s, "set_pre_deploy_command", map[string]any{"service": "web", "command": "x", "timeout_seconds": 99999}); !bad.isError {
+		t.Fatalf("a timeout over an hour was accepted: %q", bad.summary)
 	}
 
 	// Variables: names only, never values.

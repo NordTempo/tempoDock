@@ -70,6 +70,11 @@ type Deploy struct {
 	HealthCheckProbeTimeout time.Duration
 	HealthCheckRetries      int
 	HealthCheckStartPeriod  time.Duration
+	// PreDeployCommand runs (via `sh -c`) as a one-off job with the new
+	// image before the release starts, e.g. database migrations (ADR 0045).
+	PreDeployCommand string
+	// PreDeployTimeout is how long PreDeployCommand may run.
+	PreDeployTimeout time.Duration
 }
 
 // IntervalOff is Deploy.HealthCheckInterval for
@@ -93,6 +98,9 @@ type file struct {
 		HealthCheckProbeTimeout *string `toml:"health_check_probe_timeout"`
 		HealthCheckRetries      *int    `toml:"health_check_retries"`
 		HealthCheckStartPeriod  *string `toml:"health_check_start_period"`
+
+		PreDeployCommand *string `toml:"pre_deploy_command"`
+		PreDeployTimeout *string `toml:"pre_deploy_timeout"`
 	} `toml:"deploy"`
 }
 
@@ -104,6 +112,7 @@ const (
 	maxProbeTimeout       = 5 * time.Minute
 	maxRetries            = 100
 	maxStartPeriod        = time.Hour
+	maxPreDeployTimeout   = time.Hour
 )
 
 // Parse decodes and validates a dock.toml. Unknown keys, wrong types and
@@ -184,6 +193,8 @@ func Parse(b []byte) (Config, error) {
 		cfg.Deploy.HealthCheckRetries = *n
 	}
 	cfg.Deploy.HealthCheckStartPeriod = duration("deploy.health_check_start_period", f.Deploy.HealthCheckStartPeriod, maxStartPeriod)
+	cfg.Deploy.PreDeployCommand = nonEmpty("deploy.pre_deploy_command", f.Deploy.PreDeployCommand)
+	cfg.Deploy.PreDeployTimeout = duration("deploy.pre_deploy_timeout", f.Deploy.PreDeployTimeout, maxPreDeployTimeout)
 
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)

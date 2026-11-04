@@ -37,6 +37,11 @@ health_check_probe_timeout = "5s"
 health_check_retries = 3
 # Failures this soon after a (re)start don't count. Default: health_check_timeout.
 health_check_start_period = "60s"
+# Runs (with `sh -c`) in a one-off container of the new image before it gets
+# traffic, e.g. database migrations. A non-zero exit fails the release.
+pre_deploy_command = "npx prisma migrate deploy"
+# How long the pre-deploy command may run (default 10m).
+pre_deploy_timeout = "15m"
 ```
 
 | Key | Type | Rules |
@@ -51,6 +56,8 @@ health_check_start_period = "60s"
 | `deploy.health_check_probe_timeout` | duration string | 1s to 5m |
 | `deploy.health_check_retries` | integer | 1-100 |
 | `deploy.health_check_start_period` | duration string | 1s to 1h |
+| `deploy.pre_deploy_command` | string | See [pre-deploy command](guide/deploying.md#pre-deploy-command) |
+| `deploy.pre_deploy_timeout` | duration string | 1s to 1h |
 
 Parsing is strict: unknown keys, wrong types and empty strings are errors
 (reported with line numbers where possible), so a typo never silently does

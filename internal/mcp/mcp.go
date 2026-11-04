@@ -82,7 +82,7 @@ const instructions = `Tempo Dock deploys Docker apps to your own servers. You ac
 - Call whoami first: it shows the token's scope (read or deploy) and the project and environment it is limited to. Tools default project and environment to those limits.
 - The server enforces every permission. A forbidden error means the token can't do it: stop and report it; don't look for another credential or a workaround.
 - Deploys are safe: a release only gets traffic after its health check passes. A failed deploy changed nothing and needs no rollback; read release_details for the reason and the container's last log lines, fix, deploy again. Roll back only a release that went live and misbehaves.
-- Variables are staged: set_variables, review with show_changes, then apply_changes (or the next deploy takes them live). Secret values are write-only.
+- Variables and settings are staged: set_variables (or set_pre_deploy_command for migrations), review with show_changes, then apply_changes (or the next deploy takes them live). Secret values are write-only.
 - A locked environment (locked in project_overview) refuses every change with environment_locked. Tell the user what you wanted to do; don't retry or work around it.
 - Data tools follow the data access policy; data_status says what you may do and why. Data changes are proposals a human approves; tokens never write production data.
 - Every change is audited with the token's name. Read dock://docs/agents for the full guide.`
