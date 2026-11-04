@@ -90,7 +90,7 @@ func (c *converter) environment(s *svc) {
 			continue
 		}
 		if strings.HasPrefix(v.value, "/run/secrets/") {
-			c.warn(s, key, "%s points at %s, a Compose secret file, which Dock doesn't create. If the image also reads the value itself from a variable, set that with `dock env set -s %s` instead.", key, v.value, s.name)
+			c.warn(s, key, "%s points at a Compose secret file under /run/secrets, which Dock doesn't create. If the image also reads the value itself from a variable, set that with `dock env set -s %s` instead.", key, s.name)
 		}
 		if strings.Contains(v.value, "${{") {
 			c.warn(s, key, "%s contains ${{, which Dock reads as a reference to another service's variable (${{service.KEY}}).", key)

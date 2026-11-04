@@ -55,13 +55,14 @@ project = 'immich'
 # warnings
 database | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at database.
 database | healthcheck | The health check (pg_isready --dbname="${POSTGRES_DB}" --username="${POSTGRES_USER}" || exit 1) isn't used: Dock checks an HTTP path on the service's port. Set one with `dock service update --health-check-path` if the service has one.
-database | volumes | The bind mount ./postgres:/var/lib/postgresql/data isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+database | image | docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:739cdd626151ff1f796dc95a6591b55a714f341c737e27f045019ceabf8e8c52 is PostgreSQL with extensions, not Dock's postgres template, so it stays an image service with its own volume: Dock doesn't back it up and the data panel doesn't open it. Back it up yourself with pg_dump, or switch to the postgres template if the app doesn't need the extensions.
+database | volumes | The bind mount ./postgres:/var/lib/postgresql/data isn't mounted: Dock mounts only named volumes, so files written to /var/lib/postgresql/data are lost on the next deploy. Add a volume there with `dock volume add <name> /var/lib/postgresql/data -s database`, and copy existing files into it.
 immich-machine-learning | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at immich-machine-learning.
 immich-server | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at immich-server.
 immich-server | extends | extends isn't supported, so the settings this service inherits from service cpu in hwaccel.transcoding.yml aren't converted. Copy them into the service and import again.
-immich-server | ports | Dock doesn't publish host ports, so 2283:2283 isn't opened on the server. HTTP reaches port 2283 through a generated domain when the server has a base domain; add your own with `dock domain add`.
-immich-server | volumes | The bind mount ./library:/usr/src/app/upload isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
-immich-server | volumes | The bind mount /etc/localtime:/etc/localtime isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+immich-server | ports | Dock doesn't publish host ports, so 2283:2283 isn't opened on the server. HTTP reaches port 2283 through a generated domain when the server has a base domain; add your own with `dock domain add <hostname> -s immich-server`.
+immich-server | volumes | The bind mount ./library:/usr/src/app/upload isn't mounted: Dock mounts only named volumes, so files written to /usr/src/app/upload are lost on the next deploy. Add a volume there with `dock volume add <name> /usr/src/app/upload -s immich-server`, and copy existing files into it.
+immich-server | volumes | The bind mount /etc/localtime:/etc/localtime isn't mounted, so the container keeps the image's time zone (usually UTC). Set a TZ variable with `dock env set -s immich-server TZ=Europe/Oslo` if the image reads it.
 redis | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at redis.
 redis | healthcheck | The health check (redis-cli ping || exit 1) isn't used: Dock checks an HTTP path on the service's port. Set one with `dock service update --health-check-path` if the service has one.
 

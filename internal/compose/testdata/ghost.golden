@@ -32,8 +32,9 @@ project = 'app'
 
 # warnings
 db | healthcheck | The health check (mysqladmin ping -h localhost) isn't used: Dock checks an HTTP path on the service's port. Set one with `dock service update --health-check-path` if the service has one.
+db | image | Dock has no template for mysql:8.0, so it runs as an image service with its own volume, and Dock doesn't back it up. Back it up yourself.
 db | restart | Dock restarts a service every time it stops, so the limit in restart: on-failure:5 isn't applied.
-ghost | ports | Port 127.0.0.1:2368:2368 is bound to 127.0.0.1 in Compose, so the service gets no domain and stays private. Other services reach it at ghost:2368; add a domain with `dock domain add` to make it public.
+ghost | ports | Port 127.0.0.1:2368:2368 is published only on the host's loopback (127.0.0.1) in Compose, so it isn't public there either, and the service gets no domain. Other services reach it at ghost:2368; to make it public, add a domain with `dock domain add <hostname> -s ghost`.
 
 # secrets
 db MYSQL_ROOT_PASSWORD (value set)
