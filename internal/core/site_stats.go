@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -56,8 +54,10 @@ var dashboardDimensions = []analytics.Dimension{
 // dashboardRows is how many values each dashboard breakdown shows.
 const dashboardRows = 10
 
-// dashboardParallel is how many of a dashboard's store queries are in
-// flight at once.
+// dashboardParallel is how many requests a dashboard may have in flight
+// to the store, so many connections the store's client keeps: one, or
+// four for a store older than analytics.DashboardPath
+// (analytics.Client.Dashboard).
 const dashboardParallel = 4
 
 // span works out q's range, defaulting to the last 30 days.
@@ -179,41 +179,15 @@ func (c *Core) SiteStats(ctx context.Context, a Actor, project, name string, q S
 		out.StoreError = "analytics is off; it starts when a hostname collects"
 		return out, nil
 	}
-	query := analytics.Query{Site: s.site.ID, From: from, To: to, Filters: q.Filters}
-	prev := query
-	prev.From, prev.To = from-(to-from), from
-	// The store runs queries one at a time; asking for a few at once saves
-	// the round trips to an analytics server elsewhere.
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(dashboardParallel)
-	g.Go(func() error {
-		o, err := cl.Overview(gctx, query)
-		out.Overview = toOverview(o)
-		return err
-	})
-	g.Go(func() error {
-		o, err := cl.Overview(gctx, prev)
-		out.Previous = toOverview(o)
-		return err
-	})
-	g.Go(func() error {
-		pts, err := cl.Series(gctx, analytics.SeriesQuery{Query: query, Bucket: analytics.Bucket(out.Bucket)})
-		for _, p := range pts {
+	d, err := cl.Dashboard(ctx, analytics.DashboardQuery{Query: analytics.Query{Site: s.site.ID, From: from, To: to, Filters: q.Filters},
+		Bucket: analytics.Bucket(out.Bucket), Dimensions: dashboardDimensions, Limit: dashboardRows})
+	if err == nil {
+		out.Overview, out.Previous = toOverview(d.Overview), toOverview(d.Previous)
+		for _, p := range d.Series {
 			out.Series = append(out.Series, apitypes.AnalyticsPoint(p))
 		}
-		return err
-	})
-	rows := make([][]analytics.Row, len(dashboardDimensions))
-	for i, d := range dashboardDimensions {
-		g.Go(func() (err error) {
-			rows[i], err = cl.Breakdown(gctx, analytics.BreakdownQuery{Query: query, Dimension: d, Limit: dashboardRows})
-			return err
-		})
-	}
-	err = g.Wait()
-	if err == nil {
-		for i, d := range dashboardDimensions {
-			out.Breakdowns[string(d)] = c.toRows(ctx, d, rows[i])
+		for _, dim := range dashboardDimensions {
+			out.Breakdowns[string(dim)] = c.toRows(ctx, dim, d.Breakdowns[dim])
 		}
 	}
 	return c.storeAnswer(out, err)

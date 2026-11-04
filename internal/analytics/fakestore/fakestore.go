@@ -15,6 +15,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -37,11 +38,15 @@ type Store struct {
 	cursors map[string]uint64
 	// down makes every call fail with 503, as a store that is starting.
 	down bool
+	// old makes DashboardPath answer 404, as a store from before it.
+	old bool
+	// calls counts the requests to each path.
+	calls map[string]int
 }
 
 // New returns an empty store that wants token.
 func New(token string) *Store {
-	return &Store{token: token, cursors: map[string]uint64{}, groups: map[[2]uint64]bool{}}
+	return &Store{token: token, cursors: map[string]uint64{}, groups: map[[2]uint64]bool{}, calls: map[string]int{}}
 }
 
 // Events returns a copy of the events written.
@@ -56,6 +61,21 @@ func (s *Store) SetDown(down bool) {
 	s.mu.Lock()
 	s.down = down
 	s.mu.Unlock()
+}
+
+// SetOld makes the store answer DashboardPath 404, as one from before
+// the path (true), or answer it again.
+func (s *Store) SetOld(old bool) {
+	s.mu.Lock()
+	s.old = old
+	s.mu.Unlock()
+}
+
+// Calls returns how many requests each path has had.
+func (s *Store) Calls() map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return maps.Clone(s.calls)
 }
 
 // Handler serves the store's API.
@@ -97,6 +117,26 @@ func (s *Store) Handler() http.Handler {
 			return
 		}
 		reply(w, s.breakdown(q))
+	}))
+	mux.HandleFunc("POST "+analytics.DashboardPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		old := s.old
+		s.mu.Unlock()
+		var q analytics.DashboardQuery
+		switch {
+		case old:
+			http.NotFound(w, r)
+			return
+		case json.UnmarshalRead(r.Body, &q) != nil:
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		d := analytics.Dashboard{Overview: s.overview(q.Query), Previous: s.overview(q.Previous()),
+			Series: s.series(analytics.SeriesQuery{Query: q.Query, Bucket: q.Bucket}), Breakdowns: map[analytics.Dimension][]analytics.Row{}}
+		for _, dim := range q.Dimensions {
+			d.Breakdowns[dim] = s.breakdown(analytics.BreakdownQuery{Query: q.Query, Dimension: dim, Limit: q.Limit})
+		}
+		reply(w, d)
 	}))
 	mux.HandleFunc("POST "+analytics.LivePath, s.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.LiveQuery
@@ -335,11 +375,12 @@ func (s *Store) restore(w http.ResponseWriter, r *http.Request) {
 	reply(w, analytics.Restored{Bytes: int64(len(raw)), SHA256: hex.EncodeToString(sum[:])})
 }
 
-// auth checks the token and that the store is up.
+// auth checks the token and that the store is up, and counts the call.
 func (s *Store) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		down := s.down
+		s.calls[r.URL.Path]++
 		s.mu.Unlock()
 		switch {
 		case down:

@@ -89,11 +89,18 @@ func check(q analytics.Query) error {
 		default:
 			return badQuery("unknown filter operator %q; use is, is_not or contains", f.Op)
 		}
-		if _, ok := columns[f.Dimension]; !ok && f.Dimension != analytics.DimEntryPage && f.Dimension != analytics.DimExitPage {
+		if !known(f.Dimension) {
 			return badQuery("unknown dimension %q", f.Dimension)
 		}
 	}
 	return nil
+}
+
+// known reports whether the store knows d: a column, or the entry or
+// exit page.
+func known(d analytics.Dimension) bool {
+	_, ok := columns[d]
+	return ok || d == analytics.DimEntryPage || d == analytics.DimExitPage
 }
 
 // params collects a statement's parameters.
@@ -319,7 +326,7 @@ func breakdownSQL(q analytics.BreakdownQuery, w string) string {
 func (s *Store) Breakdown(ctx context.Context, q analytics.BreakdownQuery) ([]analytics.Row, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
-	if _, ok := columns[q.Dimension]; !ok && q.Dimension != analytics.DimEntryPage && q.Dimension != analytics.DimExitPage {
+	if !known(q.Dimension) {
 		return nil, badQuery("unknown dimension %q", q.Dimension)
 	}
 	if err := check(q.Query); err != nil {
@@ -360,6 +367,38 @@ GROUP BY v ORDER BY visitors DESC, n DESC, v LIMIT `+strconv.Itoa(limit), p...)
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// Dashboard answers a whole dashboard, one query after another: Overview
+// for q's range and the one before it, Series and a Breakdown of each
+// dimension. It is checked first, so a bad dimension runs nothing.
+func (s *Store) Dashboard(ctx context.Context, q analytics.DashboardQuery) (analytics.Dashboard, error) {
+	if len(q.Dimensions) > len(analytics.Dimensions) {
+		return analytics.Dashboard{}, badQuery("a dashboard takes at most %d dimensions", len(analytics.Dimensions))
+	}
+	for _, d := range q.Dimensions {
+		if !known(d) {
+			return analytics.Dashboard{}, badQuery("unknown dimension %q", d)
+		}
+	}
+	var d analytics.Dashboard
+	var err error
+	if d.Overview, err = s.Overview(ctx, q.Query); err != nil {
+		return d, err
+	}
+	if d.Previous, err = s.Overview(ctx, q.Previous()); err != nil {
+		return d, err
+	}
+	if d.Series, err = s.Series(ctx, analytics.SeriesQuery{Query: q.Query, Bucket: q.Bucket}); err != nil {
+		return d, err
+	}
+	d.Breakdowns = make(map[analytics.Dimension][]analytics.Row, len(q.Dimensions))
+	for _, dim := range q.Dimensions {
+		if d.Breakdowns[dim], err = s.Breakdown(ctx, analytics.BreakdownQuery{Query: q.Query, Dimension: dim, Limit: q.Limit}); err != nil {
+			return d, err
+		}
+	}
+	return d, nil
 }
 
 // Live returns a site's visitors since q.Since with when each was last

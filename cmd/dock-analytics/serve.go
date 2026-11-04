@@ -170,6 +170,7 @@ func (a *api) handler() http.Handler {
 	mux.Handle("POST "+analytics.OverviewPath, a.auth(query(a, a.s.Overview)))
 	mux.Handle("POST "+analytics.SeriesPath, a.auth(query(a, a.s.Series)))
 	mux.Handle("POST "+analytics.BreakdownPath, a.auth(query(a, a.s.Breakdown)))
+	mux.Handle("POST "+analytics.DashboardPath, a.auth(query(a, a.s.Dashboard)))
 	mux.Handle("POST "+analytics.LivePath, a.auth(query(a, a.s.Live)))
 	mux.Handle("POST "+analytics.ErrorsPath, a.auth(query(a, a.s.Errors)))
 	mux.Handle("POST "+analytics.ErrorPath, a.auth(query(a, a.s.Error)))

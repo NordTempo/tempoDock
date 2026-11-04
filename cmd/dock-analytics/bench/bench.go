@@ -19,6 +19,12 @@ type Querier interface {
 	Breakdown(ctx context.Context, q analytics.BreakdownQuery) ([]analytics.Row, error)
 }
 
+// DashboardQuerier is a store that answers a whole dashboard in one call,
+// as Dock asks for it (the SQLite comparison has none).
+type DashboardQuerier interface {
+	Dashboard(ctx context.Context, q analytics.DashboardQuery) (analytics.Dashboard, error)
+}
+
 // ErrorsQuerier is a store with errors, Web Vitals, goals and funnels,
 // which Run times too (the SQLite comparison has none of them).
 type ErrorsQuerier interface {
@@ -98,8 +104,8 @@ type Options struct {
 	// Runs is how often each dashboard is loaded; percentiles are over
 	// them.
 	Runs int
-	// Parallel is how many of a dashboard's queries run at once, as the
-	// API runs them.
+	// Parallel is how many of a view's queries run at once, as the API
+	// runs them (a store with Dashboard answers a dashboard in one).
 	Parallel int
 	Ranges   []Range
 	Filters  []analytics.Filter
@@ -208,8 +214,15 @@ func ptrs(fs []analytics.Filter) []*analytics.Filter {
 
 // timeDashboard loads one dashboard opts.Runs times (after one warm-up):
 // the overview for the range and the one before it, the series and the
-// breakdowns, opts.Parallel queries at a time.
+// breakdowns, in one Dashboard call when q has it, else opts.Parallel
+// queries at a time.
 func timeDashboard(ctx context.Context, q Querier, qq analytics.Query, rg Range, opts Options) (Result, error) {
+	if dq, ok := q.(DashboardQuerier); ok {
+		return timeJobs(ctx, []job{{"dashboard", func() error {
+			_, err := dq.Dashboard(ctx, analytics.DashboardQuery{Query: qq, Bucket: rg.Bucket, Dimensions: DashboardDimensions, Limit: 10})
+			return err
+		}}}, opts)
+	}
 	prev := qq
 	prev.From, prev.To = qq.From-(qq.To-qq.From), qq.From
 	jobs := []job{

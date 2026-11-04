@@ -125,6 +125,33 @@ type Row struct {
 	Count    int64  `json:"count"`
 }
 
+// DashboardQuery asks for a whole dashboard at once: Query's overview, the
+// overview of the range of the same length just before it, its series in
+// Bucket and the top Limit values of each of Dimensions.
+type DashboardQuery struct {
+	Query
+	Bucket     Bucket      `json:"bucket"`
+	Dimensions []Dimension `json:"dimensions"`
+	Limit      int         `json:"limit"`
+}
+
+// Previous is q's range moved back by its length: what a dashboard
+// compares its overview with.
+func (q DashboardQuery) Previous() Query {
+	prev := q.Query
+	prev.From, prev.To = q.From-(q.To-q.From), q.From
+	return prev
+}
+
+// Dashboard answers a DashboardQuery.
+type Dashboard struct {
+	Overview Overview `json:"overview"`
+	Previous Overview `json:"previous"`
+	Series   []Point  `json:"series"`
+	// Breakdowns has the rows of each of the query's dimensions.
+	Breakdowns map[Dimension][]Row `json:"breakdowns"`
+}
+
 // LiveQuery asks for a site's visitors since Since (Unix ms) and its
 // latest events: what a live view starts from.
 type LiveQuery struct {

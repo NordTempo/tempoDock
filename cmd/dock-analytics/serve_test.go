@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,66 @@ func TestAPIWritesAndAnswers(t *testing.T) {
 	var se *analytics.StoreError
 	if !errors.As(err, &se) || se.Status != http.StatusBadRequest {
 		t.Errorf("unknown dimension: %v, want a 400 StoreError", err)
+	}
+}
+
+// A dashboard in one request has the numbers of its separate requests,
+// which is how the client asks a store from before DashboardPath: over
+// rolled-up days with raw events at both ends, and filtered.
+func TestAPIDashboardMatchesItsQueries(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(ctx, filepath.Join(t.TempDir(), "a.duckdb"), store.Options{MemoryLimit: 128 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	h := newAPI(s, testToken, slog.New(slog.DiscardHandler), 1, 0).handler()
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == analytics.DashboardPath {
+			http.NotFound(w, r)
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
+	defer old.Close()
+	c, parts := &analytics.Client{BaseURL: srv.URL, Token: testToken}, &analytics.Client{BaseURL: old.URL, Token: testToken}
+
+	day := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)
+	var events []analytics.Event
+	for i := range 60 {
+		events = append(events, analytics.Event{Time: day.Add(time.Duration(i) * 2 * time.Hour).UnixMilli(), Site: 1, Hostname: "a.example",
+			Kind: analytics.KindPageview, Path: []string{"/", "/a", "/b"}[i%3], Visitor: uint64(i%7 + 1),
+			Browser: []string{"Firefox", "Chrome"}[i%2], Channel: "direct"})
+	}
+	if _, err := c.Write(ctx, "server-1", 1, events); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildRollups(ctx); err != nil {
+		t.Fatal(err)
+	}
+	q := analytics.DashboardQuery{Query: analytics.Query{Site: 1, From: day.Add(6 * time.Hour).UnixMilli(), To: day.Add(4*24*time.Hour + 6*time.Hour).UnixMilli()},
+		Bucket: analytics.BucketDay, Dimensions: []analytics.Dimension{analytics.DimPage, analytics.DimEntryPage, analytics.DimBrowser}, Limit: 2}
+	for _, fs := range [][]analytics.Filter{nil, {{Dimension: analytics.DimBrowser, Op: analytics.OpIs, Value: "Firefox"}}} {
+		q.Filters = fs
+		got, err := c.Dashboard(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := parts.Dashboard(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) || got.Overview.Pageviews == 0 || got.Previous.Pageviews == 0 || len(got.Breakdowns[analytics.DimPage]) != 2 {
+			t.Errorf("filters %v: dashboard = %+v, want %+v from the separate requests", fs, got, want)
+		}
+	}
+
+	q.Dimensions = append(q.Dimensions, "nope")
+	_, err = c.Dashboard(ctx, q)
+	if se, ok := errors.AsType[*analytics.StoreError](err); !ok || se.Status != http.StatusBadRequest {
+		t.Errorf("an unknown dimension: %v, want a 400 StoreError", err)
 	}
 }
 

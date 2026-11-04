@@ -5,6 +5,16 @@
   "tempobase_binary_bytes": 20873376,
   "calibration_ns": 263311.04615384614,
   "benchmarks": {
+    "analytics.BenchmarkClientDashboard/store=current": {
+      "ns_op": 150000.0,
+      "bytes_op": 35643,
+      "allocs_op": 239
+    },
+    "analytics.BenchmarkClientDashboard/store=old": {
+      "ns_op": 484000.0,
+      "bytes_op": 182196,
+      "allocs_op": 1655
+    },
     "analytics/ingest.BenchmarkIngestError": {
       "ns_op": 4630.7,
       "bytes_op": 1218,
