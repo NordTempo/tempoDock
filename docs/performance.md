@@ -264,6 +264,10 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
   and read back line by line; a tail keeps only its N lines in memory
   (`BenchmarkArchivedLogsTail`). No timer of its own: archiving happens
   when a container is removed, pruning on the hourly retention pass.
+- A container log line is cut at 64 KB on a rune boundary and the rest up
+  to the next newline dropped, as the node link does for remote lines, so a
+  container writing without newlines can't grow the daemon's buffer
+  (`BenchmarkLineWriter`).
 - The analytics ingest takes requests from anyone on the internet, so it
   is capped (`internal/analytics/ingest`): a replay chunk is checked
   (site records, not a bot, the day's salt, rules, rate limits) before
