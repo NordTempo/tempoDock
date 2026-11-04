@@ -384,6 +384,17 @@ type JoinToken struct {
 	CloudflareID         *int64
 }
 
+type LogDrain struct {
+	ID            int64
+	EnvironmentID int64
+	Kind          string
+	Name          string
+	Target        string
+	Config        []byte
+	CreatedBy     string
+	CreatedAt     time.Time
+}
+
 type Org struct {
 	ID              int64
 	Slug            string

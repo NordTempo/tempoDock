@@ -42,6 +42,12 @@ func (c *Core) logRedactor(a Actor, rel store.Release) (*redactor, error) {
 	if a.revealsSecrets() {
 		return nil, nil
 	}
+	return c.releaseRedactor(rel)
+}
+
+// releaseRedactor masks rel's secret values whoever reads: what an actor
+// who can't reveal them gets, and what log drains always apply.
+func (c *Core) releaseRedactor(rel store.Release) (*redactor, error) {
 	cfg, err := c.openConfig(rel)
 	if err != nil {
 		return nil, err

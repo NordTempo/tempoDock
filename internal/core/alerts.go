@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -74,10 +73,10 @@ type alertEngine struct {
 	started time.Time
 	// outbox holds notifications being sent (alerts_notify.go).
 	outbox outbox
-	// client posts to webhook and Slack channels (newChannelClient);
-	// loopback lets it reach this server, for tests only.
-	client   *http.Client
-	loopback atomic.Bool
+	// client posts to webhook and Slack channels (newChannelClient),
+	// never to addresses guard refuses.
+	client *http.Client
+	guard  egressGuard
 }
 
 // restartLog is a service's restart count as last seen and the times of
@@ -92,6 +91,7 @@ func newAlertEngine() *alertEngine {
 		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, failed: map[string]int64{}, offline: map[int64]time.Time{},
 		outbox: outbox{queues: map[int64][]apitypes.AlertNotification{}},
 	}
+	e.guard.what = "alerts"
 	e.client = newChannelClient(e)
 	return e
 }

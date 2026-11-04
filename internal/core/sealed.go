@@ -26,6 +26,7 @@ var (
 	sealedOrgVariable                  = secrets.Column{Table: "org_variables", Name: "value", Key: []string{"org_id", "key"}}
 	sealedReleaseConfig                = secrets.Column{Table: "releases", Name: "config", Key: []string{"service_id", "number"}}
 	sealedAlertChannel                 = secrets.Column{Table: "alert_channels", Name: "config", Key: []string{"name"}}
+	sealedLogDrain                     = secrets.Column{Table: "log_drains", Name: "config", Key: []string{"environment_id", "name"}}
 	sealedGitSecret                    = secrets.Column{Table: "git_connections", Name: "secret", Key: []string{"service_id"}}
 	sealedGitToken                     = secrets.Column{Table: "git_connections", Name: "token", Key: []string{"service_id"}}
 	sealedAccessKey                    = secrets.Column{Table: "service_access", Name: "key", Key: []string{"service_id"}}
@@ -45,7 +46,7 @@ var (
 		sealedAlertChannel, sealedGitSecret, sealedGitToken, sealedAccessKey, sealedStorageKeys,
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret,
-		sealedDataReader, sealedDataWriter, sealedRequestArgs,
+		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain,
 	}
 )
 
