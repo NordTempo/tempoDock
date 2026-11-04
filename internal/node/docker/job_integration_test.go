@@ -107,6 +107,16 @@ func TestUnpauseStranded(t *testing.T) {
 	}
 	myJob := strand("job-mine", e.owner(), mine.ID)
 	theirJob := strand("job-theirs", t.TempDir(), theirs.ID)
+	// A cut-short job that pauses nothing (a pre-deploy command, a
+	// `dock run`), still running.
+	runSpec := node.JobSpec{Name: e.name("run-mine"), Image: shellImage, Script: "sleep 600"}
+	myRun, err := e.cli.ContainerCreate(ctx, jobOptions(runSpec, nil, e.owner()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.ContainerStart(ctx, myRun.ID, client.ContainerStartOptions{}); err != nil {
+		t.Fatal(err)
+	}
 
 	if n, err := e.UnpauseStranded(ctx); err != nil || n != 1 {
 		t.Fatalf("UnpauseStranded = %d, %v", n, err)
@@ -117,6 +127,9 @@ func TestUnpauseStranded(t *testing.T) {
 	}
 	if _, err := e.cli.ContainerInspect(ctx, myJob, client.ContainerInspectOptions{}); err == nil {
 		t.Error("the cut-short job's container is still there")
+	}
+	if _, err := e.cli.ContainerInspect(ctx, myRun.ID, client.ContainerInspectOptions{}); err == nil {
+		t.Error("the cut-short running job's container is still there")
 	}
 	if _, err := e.cli.ContainerInspect(ctx, theirJob, client.ContainerInspectOptions{}); err != nil {
 		t.Errorf("other runtime's job container: %v", err)

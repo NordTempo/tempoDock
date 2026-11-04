@@ -268,12 +268,15 @@ const labelPauses = "dock.pauses"
 
 // jobOptions translates a job into Docker's create request. pause are the
 // containers the job will pause and owner the runtime's (Runtime.owner),
-// recorded in labels when there are any.
+// recorded in labels (always with pauses, else when the runtime has one)
+// so UnpauseStranded can tell its own cut-short jobs.
 func jobOptions(spec node.JobSpec, pause []string, owner string) client.ContainerCreateOptions {
 	labels := spec.Labels.Map()
 	labels[node.LabelRole] = node.RoleJob
 	if len(pause) > 0 {
 		labels[labelPauses] = strings.Join(pause, ",")
+	}
+	if len(pause) > 0 || owner != "" {
 		labels[node.LabelOwner] = owner
 	}
 	cfg := &container.Config{
@@ -409,22 +412,33 @@ func (r *Runtime) owner() string {
 
 // UnpauseStranded unpauses what jobs of this runtime left paused when it
 // stopped without ending them (a crash, a kill, the server losing power),
-// and removes those jobs' containers. Dock only pauses a service for the
-// length of one job (JobSpec.Pause, ADR 0047), so on start-up no job of
-// this runtime runs and anything its old jobs paused would otherwise stay
-// frozen for good. Its jobs are told by their node.LabelOwner, so another
-// runtime's running job on a shared Docker host keeps its pause. Call it
-// once on start-up, before any job runs; it costs one list call when no
-// job was cut short, and returns how many containers it unpaused.
+// and removes those jobs' containers, running or not. A job container has
+// no restart policy and RunJob's removal died with the runtime, so a
+// cut-short pre-deploy migration or `dock run` command would otherwise
+// run on past its timeout (next to the next deploy's migration) and stay
+// for good. Dock only pauses a service for the length of one job
+// (JobSpec.Pause, ADR 0047), so on start-up no job of this runtime runs
+// and anything its old jobs paused would otherwise stay frozen for good.
+// Its jobs are told by their node.LabelOwner, so another runtime's
+// running job on a shared Docker host is left alone. Call it once on
+// start-up, before any job runs; it costs one list call when no job was
+// cut short, and returns how many containers it unpaused.
 func (r *Runtime) UnpauseStranded(ctx context.Context) (int, error) {
-	f := managedFilter().Add("label", node.LabelRole+"="+node.RoleJob, labelPauses)
+	f := managedFilter().Add("label", node.LabelRole+"="+node.RoleJob)
 	res, err := r.cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 	if err != nil {
 		return 0, fmt.Errorf("list job containers: %w", err)
 	}
 	owner, n := r.owner(), 0
 	for _, job := range res.Items {
-		if job.Labels[node.LabelOwner] != owner {
+		if o, ok := job.Labels[node.LabelOwner]; !ok || o != owner {
+			continue
+		}
+		if job.Labels[labelPauses] == "" {
+			if _, err := r.cli.ContainerRemove(ctx, job.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
+				return n, fmt.Errorf("remove job container %s: %w", job.ID, err)
+			}
+			slog.Warn("removed the container of a job a stopped runtime cut short", "job", job.ID)
 			continue
 		}
 		var failed bool

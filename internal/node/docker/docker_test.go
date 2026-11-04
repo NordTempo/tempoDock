@@ -368,3 +368,16 @@ func TestOwnedImage(t *testing.T) {
 		t.Error("an empty repository prefix owns everything")
 	}
 }
+
+// Every job of a runtime with a data dir carries its owner, not only one
+// that pauses services: UnpauseStranded removes the job containers a
+// crash left running by it.
+func TestJobOptionsOwner(t *testing.T) {
+	spec := node.JobSpec{Name: "dock_p1_e1_s1_run7", Image: "alpine", Script: "sleep 600"}
+	if got := jobOptions(spec, nil, "/var/lib/dock").Config.Labels[node.LabelOwner]; got != "/var/lib/dock" {
+		t.Errorf("owner label = %q, want the runtime's data dir", got)
+	}
+	if _, ok := jobOptions(spec, nil, "").Config.Labels[node.LabelOwner]; ok {
+		t.Error("a runtime without a data dir labels its jobs with an empty owner")
+	}
+}
