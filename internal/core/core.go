@@ -192,7 +192,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
-	for _, dir := range []string{"builds", "uploads"} {
+	for _, dir := range []string{"builds", "uploads", "requests"} {
 		if err := os.MkdirAll(filepath.Join(o.Config.DataDir, dir), 0o700); err != nil {
 			return nil, err
 		}
@@ -256,6 +256,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if err := c.loadCloudflare(ctx); err != nil {
 		return nil, fmt.Errorf("load Cloudflare state: %w", err)
 	}
+	// Held deploys run again through core itself (held.go).
+	c.SetReplayer("source", c.replaySource)
+	c.SetReplayer("git", c.replayGit)
 	return c, nil
 }
 

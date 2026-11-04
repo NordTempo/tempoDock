@@ -38,6 +38,13 @@ type Call struct {
 	Args json.RawMessage
 	// Reason is why the caller wants it, if it said.
 	Reason string
+	// Key, when set, makes one pending request per Key, and a newer call
+	// replaces the call waiting in it (a newer push or upload of a
+	// service); otherwise identical calls are one request.
+	Key string
+	// Upload is a held source archive in the requests directory (holdSource),
+	// removed when the request ends.
+	Upload string
 }
 
 // replayers holds the layers' Replayers, set once as they start.
@@ -80,6 +87,9 @@ func (c *Core) FileRequest(ctx context.Context, a Actor, err error, call Call) e
 	if !ok || le.Request != 0 || a.Kind != "token" || a.TokenID == 0 {
 		return err
 	}
+	if call.Reason == "" {
+		call.Reason = reasonOf(ctx)
+	}
 	r, ferr := c.fileRequest(ctx, a, le, call)
 	if ferr != nil {
 		c.log.Error("file access request", "err", ferr)
@@ -88,15 +98,38 @@ func (c *Core) FileRequest(ctx context.Context, a Actor, err error, call Call) e
 	return le.withRequest(r.ID)
 }
 
-// fileRequest stores a request for call, or finds the identical pending one.
+// fileRequest stores a request for call as asked by a (a token, or for a
+// held push the system acting for its pusher), or finds the pending one
+// it joins or replaces.
 func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call Call) (store.AccessRequest, error) {
 	args, err := canonicalJSON(call.Args)
 	if err != nil {
 		return store.AccessRequest{}, err
 	}
-	sum := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s\x00%s\x00%d\x00%s", a.TokenID, call.Via, call.Op, le.EnvID, args))
+	basis := call.Key
+	if basis == "" {
+		basis = string(args)
+	}
+	sum := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s\x00%s\x00%d\x00%s", a.TokenID, call.Via, call.Op, le.EnvID, basis))
 	fingerprint := hex.EncodeToString(sum[:])
-	if r, err := c.store.GetPendingAccessRequest(ctx, fingerprint); err == nil && r.ExpiresAt.After(now()) {
+	org, err := c.store.GetOrg(ctx, le.OrgID)
+	if err != nil {
+		return store.AccessRequest{}, err
+	}
+	var tokenID *int64
+	if a.TokenID != 0 {
+		tokenID = &a.TokenID
+	}
+	nonce := randomHex(16)
+	sealed, err := c.box.Seal(args, sealedRequestArgs.AAD(nonce))
+	if err != nil {
+		return store.AccessRequest{}, err
+	}
+	t := now()
+	if r, err := c.store.GetPendingAccessRequest(ctx, fingerprint); err == nil && r.ExpiresAt.After(t) {
+		if call.Key != "" {
+			return c.replaceRequest(ctx, a, r, le, call, nonce, sealed, org)
+		}
 		if call.Reason != "" && r.Reason == "" {
 			if err := c.store.SetAccessRequestReason(ctx, store.SetAccessRequestReasonParams{Reason: call.Reason, ID: r.ID}); err != nil {
 				return r, err
@@ -106,52 +139,71 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 		}
 		return r, nil
 	}
-	org, err := c.store.GetOrg(ctx, le.OrgID)
-	if err != nil {
-		return store.AccessRequest{}, err
-	}
 	mark, err := c.store.LatestEnvironmentAudit(ctx, &le.EnvID)
 	if err != nil {
 		return store.AccessRequest{}, err
 	}
-	nonce := randomHex(16)
-	sealed, err := c.box.Seal(args, sealedRequestArgs.AAD(nonce))
-	if err != nil {
-		return store.AccessRequest{}, err
-	}
-	t := now()
 	var r store.AccessRequest
+	var expired []store.AccessRequest
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		// An expired twin still holds the pending index until a retention
 		// pass marks it; mark them now.
-		if _, err := q.ExpireAccessRequests(ctx, t); err != nil {
+		if expired, err = q.ExpireAccessRequests(ctx, t); err != nil {
 			return err
 		}
 		r, err = q.CreateAccessRequest(ctx, store.CreateAccessRequestParams{
 			Nonce: nonce, OrgID: le.OrgID, ProjectID: le.ProjectID, EnvironmentID: le.EnvID,
 			Via: call.Via, Operation: call.Op, Title: call.Title, Action: le.Action, Args: sealed,
-			Fingerprint: fingerprint, Reason: call.Reason, TokenID: &a.TokenID, RequestedBy: a.Name,
-			AuditMark: mark, CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)),
+			Fingerprint: fingerprint, Reason: call.Reason, TokenID: tokenID, RequestedBy: a.Name,
+			AuditMark: mark, CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)), Upload: call.Upload,
 		})
 		return err
 	})
 	if store.IsUnique(err) { // an identical call won the race
+		c.dropUpload(call.Upload)
 		return c.store.GetPendingAccessRequest(ctx, fingerprint)
 	}
 	if err != nil {
 		return r, err
 	}
+	c.endedRequests(ctx, expired)
 	p := store.Project{ID: le.ProjectID, OrgID: le.OrgID, Name: le.Project}
 	e := store.Environment{ID: le.EnvID, Name: le.Environment}
 	c.audit(ctx, a, "request.create", &p, &e, fmt.Sprintf("request #%d", r.ID), requestSummary(r, le.Project, le.Environment)+reasonSuffix(r.Reason))
 	c.publishRequest(r, le.Project, le.Environment)
+	c.alertRequest(ctx, r, le)
+	return r, nil
+}
+
+// replaceRequest puts a newer call in a pending request of the same Key,
+// dropping the older one's held archive.
+func (c *Core) replaceRequest(ctx context.Context, a Actor, old store.AccessRequest, le *LockedError, call Call, nonce string, sealed []byte, org store.Org) (store.AccessRequest, error) {
+	t := now()
+	r, err := c.store.ReplaceAccessRequest(ctx, store.ReplaceAccessRequestParams{
+		Nonce: nonce, Args: sealed, Upload: call.Upload, Reason: call.Reason, RequestedBy: a.Name,
+		CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)), ID: old.ID,
+	})
+	if err != nil {
+		c.dropUpload(call.Upload)
+		return r, err
+	}
+	c.dropUpload(old.Upload)
+	p := store.Project{ID: le.ProjectID, OrgID: le.OrgID, Name: le.Project}
+	e := store.Environment{ID: le.EnvID, Name: le.Environment}
+	c.audit(ctx, a, "request.replace", &p, &e, fmt.Sprintf("request #%d", r.ID), "a newer call replaced the one waiting: "+requestSummary(r, le.Project, le.Environment))
+	c.publishRequest(r, le.Project, le.Environment)
+	c.alertRequest(ctx, r, le)
+	return r, nil
+}
+
+// alertRequest raises (or updates) a pending request's alert.
+func (c *Core) alertRequest(ctx context.Context, r store.AccessRequest, le *LockedError) {
 	c.signalAlert(ctx, alertSignal{
 		Key: requestAlertKey(r.ID), Kind: apitypes.AlertAccessRequest, Severity: apitypes.SeverityWarning,
 		Title:   fmt.Sprintf("Access request #%d: %s", r.ID, requestSummary(r, le.Project, le.Environment)),
 		Message: "Approve or reject it in Dock, under Requests." + reasonSuffix(r.Reason),
 		Project: le.Project, Environment: le.Environment, projectID: le.ProjectID,
 	})
-	return r, nil
 }
 
 // requestTTL is how long the org's requests wait for a decision.
@@ -165,9 +217,14 @@ func requestTTL(o store.Org) time.Duration {
 func requestAlertKey(id int64) string { return "request:" + strconv.FormatInt(id, 10) }
 
 // requestSummary is a request in one line: "token claude: setting
-// variables in shop/production".
+// variables in shop/production", or for a held push "github:alice:
+// deploying a push in shop/production".
 func requestSummary(r store.AccessRequest, project, env string) string {
-	return fmt.Sprintf("token %s: %s in %s/%s", r.RequestedBy, r.Action, project, env)
+	who := r.RequestedBy
+	if r.TokenID != nil {
+		who = "token " + who
+	}
+	return fmt.Sprintf("%s: %s in %s/%s", who, r.Action, project, env)
 }
 
 // canonicalJSON re-encodes JSON so equal values have equal bytes (object
@@ -429,6 +486,7 @@ func (c *Core) DecideRequest(ctx context.Context, a Actor, id int64, approve boo
 	c.signalAlert(ctx, alertSignal{Key: requestAlertKey(r.ID), Resolve: true})
 	c.publishRequest(decided, es.project.Name, es.env.Name)
 	if !approve {
+		c.dropUpload(decided.Upload)
 		return c.GetRequest(ctx, a, id)
 	}
 	done := make(chan struct{})
@@ -469,6 +527,7 @@ func (c *Core) runRequest(r store.AccessRequest, es envScope, by Actor) {
 	finished, ferr := c.store.FinishAccessRequest(context.WithoutCancel(ctx), store.FinishAccessRequestParams{
 		Status: string(status), Result: string(result), Error: msg, FinishedAt: ptr(now()), ID: r.ID,
 	})
+	c.dropUpload(r.Upload)
 	if ferr != nil {
 		c.log.Error("finish access request", "request", r.ID, "err", ferr)
 		return
@@ -490,16 +549,17 @@ func (c *Core) replayRequest(ctx context.Context, r store.AccessRequest, es envS
 	if err != nil {
 		return nil, err
 	}
-	if r.TokenID == nil {
-		return nil, fmt.Errorf("access request #%d has no token to run as", r.ID)
-	}
-	row, err := c.store.GetTokenByIDWithOwner(ctx, *r.TokenID)
-	if err != nil {
-		return nil, err
-	}
-	a, err := c.tokenActor(ctx, row, org.Slug)
-	if err != nil {
-		return nil, err
+	// A held push runs as the daemon, for its pusher.
+	a := System.InOrg(r.OrgID)
+	a.Name = r.RequestedBy
+	if r.TokenID != nil {
+		row, err := c.store.GetTokenByIDWithOwner(ctx, *r.TokenID)
+		if err != nil {
+			return nil, err
+		}
+		if a, err = c.tokenActor(ctx, row, org.Slug); err != nil {
+			return nil, err
+		}
 	}
 	a.granted, a.approval = es.env.ID, &approval{id: r.ID, by: by.Name}
 	return run(ctx, a, r.Operation, args)
@@ -517,6 +577,10 @@ func (c *Core) recoverRequests(ctx context.Context) error {
 	for _, r := range rows {
 		c.log.Warn("access request interrupted by a restart", "request", r.ID)
 	}
+	c.endedRequests(ctx, rows)
+	if err := c.sweepUploads(ctx); err != nil {
+		c.log.Warn("sweep held uploads", "err", err)
+	}
 	return c.expireRequests(ctx, now())
 }
 
@@ -527,16 +591,28 @@ func (c *Core) expireRequests(ctx context.Context, t time.Time) error {
 	if err != nil {
 		return err
 	}
+	c.endedRequests(ctx, rows)
+	return nil
+}
+
+// endedRequests finishes requests that ended without running (expired,
+// cut off by a restart): their alerts resolve, their held archives go and
+// open pages hear of it.
+func (c *Core) endedRequests(ctx context.Context, rows []store.AccessRequest) {
+	if len(rows) == 0 {
+		return
+	}
 	scopes, err := c.requestScopes(ctx, rows)
 	if err != nil {
-		return err
+		c.log.Error("ended access requests", "err", err)
+		return
 	}
 	for _, r := range rows {
 		c.signalAlert(ctx, alertSignal{Key: requestAlertKey(r.ID), Resolve: true})
+		c.dropUpload(r.Upload)
 		es := scopes[r.EnvironmentID]
 		c.publishRequest(r, es.project.Name, es.env.Name)
 	}
-	return nil
 }
 
 // derefOr is *p, or 0 for nil.

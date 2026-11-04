@@ -312,26 +312,27 @@ type Environment struct {
 }
 
 type GitConnection struct {
-	ID             int64
-	ServiceID      int64
-	HookID         string
-	Repo           string
-	Branch         string
-	Dir            string
-	Secret         []byte
-	Token          []byte
-	PostStatus     bool
-	PendingSha     string
-	PendingMessage string
-	PendingAuthor  string
-	PendingBy      string
-	PendingForce   bool
-	LastEvent      string
-	LastEventAt    *time.Time
-	CreatedBy      string
-	CreatedAt      time.Time
-	InstallationID int64
-	RepoID         int64
+	ID              int64
+	ServiceID       int64
+	HookID          string
+	Repo            string
+	Branch          string
+	Dir             string
+	Secret          []byte
+	Token           []byte
+	PostStatus      bool
+	PendingSha      string
+	PendingMessage  string
+	PendingAuthor   string
+	PendingBy       string
+	PendingForce    bool
+	LastEvent       string
+	LastEventAt     *time.Time
+	CreatedBy       string
+	CreatedAt       time.Time
+	InstallationID  int64
+	RepoID          int64
+	PendingApproved int64
 }
 
 type GitDelivery struct {

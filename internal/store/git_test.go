@@ -21,7 +21,7 @@ func TestGitQueryPlans(t *testing.T) {
 		{"UpdateGitConnection", updateGitConnection, []any{"r", "b", "", nil, false, "h", []byte{1}, 0, 0, 1}},
 		{"GetAppGitConnections", getAppGitConnections, []any{42, 7}},
 		{"DeleteGitConnection", deleteGitConnection, []any{1}},
-		{"SetGitPending", setGitPending, []any{"s", "m", "a", "b", false, 1}},
+		{"SetGitPending", setGitPending, []any{"s", "m", "a", "b", false, 0, 1}},
 		{"ClearGitPending", clearGitPending, []any{1, "s"}},
 		{"SetGitLastEvent", setGitLastEvent, []any{"e", now, 1}},
 		{"ListGitPendingServices", listGitPendingServices, nil},
