@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-integration lint generate dev perf perf-baseline
+.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-race test-integration lint generate dev perf perf-baseline
 
 ## build: the single static binary (UI embedded if web/dist is built, and
 ## dock-probe)
@@ -81,6 +81,12 @@ web:
 ## test: unit tests (no Docker needed)
 test:
 	go test ./...
+
+## test-race: the race detector on the most concurrent packages (CI's race job);
+## core alone takes 5 to 15 minutes under -race, past go test's 10 minute default
+RACE_PKGS := ./internal/core/... ./internal/api/... ./internal/mcp/...
+test-race:
+	go test -race -timeout 30m $(RACE_PKGS)
 
 ## test-integration: tests against a real Docker Engine (and Caddy, BuildKit)
 test-integration: probe
