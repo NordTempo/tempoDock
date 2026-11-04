@@ -92,7 +92,7 @@ func newRoot(g *globals) *cobra.Command {
 		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newTrafficCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g),
 		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g), newConnectCmd(g), newRunCmd(g), newRunsCmd(g), newGitCmd(g), newBackupCmd(g), newRequestCmd(g))
 	addGroup(root, "config", "Configure (changes are staged until applied):",
-		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newImportCmd(g), newDiscardCmd(g), newDomainCmd(g), newAccessCmd(g), newVolumeCmd(g),
+		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newImportCmd(g), newProjectExportCmd(g), newDiscardCmd(g), newDomainCmd(g), newAccessCmd(g), newVolumeCmd(g),
 		newServiceCmd(g), newEnvironmentCmd(g), newProjectCmd(g))
 	addGroup(root, "admin", "Administer:",
 		newTokenCmd(g), newUserCmd(g), newAuditCmd(g), newServerCmd(g), newRegistryCmd(g), newStorageCmd(g), newAlertsCmd(g), newUpdateCmd(g), newAddressCmd(g), newGitHubCmd(g), newCloudflareCmd(g), newAnalyticsCmd(g))

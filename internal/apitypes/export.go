@@ -17,9 +17,13 @@ const ExportVersion = 1
 // are never exported. Everything is sorted by name, and nothing in it
 // changes unless the configuration does, so it diffs well in git.
 type ProjectExport struct {
-	Version      int                 `json:"version" toml:"version" doc:"Manifest format version"`
-	Project      string              `json:"project" toml:"project"`
-	Environments []EnvironmentExport `json:"environments" toml:"environments"`
+	Version int    `json:"version" toml:"version" doc:"Manifest format version"`
+	Project string `json:"project" toml:"project"`
+	// RegistryCredentials are the private registry hosts this project's
+	// images pull from with an org credential (`dock registry login`), by
+	// host only: the credential itself is never in a file (ADR 0049).
+	RegistryCredentials []string            `json:"registry_credentials,omitempty" toml:"registry_credentials,omitempty"`
+	Environments        []EnvironmentExport `json:"environments" toml:"environments"`
 }
 
 // EnvironmentExport is one environment of an export.
@@ -34,7 +38,18 @@ type EnvironmentExport struct {
 	// literals written there on purpose, and references. The export writes
 	// reference-only values here (ADR 0049), never a literal.
 	SharedValues map[string]string `json:"shared_values,omitempty" toml:"shared_values,omitempty"`
-	Services     []ServiceExport   `json:"services,omitempty" toml:"services,omitempty"`
+	// LogDrains are where the environment's logs go, without the URL's
+	// credentials, headers or token (`dock logs drain add`).
+	LogDrains []LogDrainExport `json:"log_drains,omitempty" toml:"log_drains,omitempty,inline"`
+	Services  []ServiceExport  `json:"services,omitempty" toml:"services,omitempty"`
+}
+
+// LogDrainExport is a log drain in an export: its name, kind and target
+// (scheme and host), never its credentials.
+type LogDrainExport struct {
+	Name   string       `json:"name" toml:"name"`
+	Kind   LogDrainKind `json:"kind" toml:"kind"`
+	Target string       `json:"target" toml:"target"`
 }
 
 // ServiceExport is one service of an export: its settings (zero values
@@ -42,8 +57,10 @@ type EnvironmentExport struct {
 // file (`dock apply FILE`), a left-out setting means zero, or the
 // template's value for a template service.
 type ServiceExport struct {
-	Name                      string          `json:"name" toml:"name"`
-	Template                  Template        `json:"template,omitempty" toml:"template,omitempty"`
+	Name     string   `json:"name" toml:"name"`
+	Template Template `json:"template,omitempty" toml:"template,omitempty"`
+	// Stopped is set for a service stopped on purpose (`dock service stop`).
+	Stopped                   bool            `json:"stopped,omitempty" toml:"stopped,omitempty"`
 	Image                     string          `json:"image,omitempty" toml:"image,omitempty"`
 	Port                      int             `json:"port,omitempty" toml:"port,omitempty"`
 	HealthCheckPath           string          `json:"health_check_path,omitempty" toml:"health_check_path,omitempty"`

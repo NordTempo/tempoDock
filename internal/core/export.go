@@ -112,6 +112,13 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 			continue
 		}
 		ee := apitypes.EnvironmentExport{Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), SharedVariables: shared[e.ID], SharedValues: sharedValues[e.ID]}
+		drains, err := c.store.ListLogDrains(ctx, e.ID) // by name
+		if err != nil {
+			return out, err
+		}
+		for _, d := range drains {
+			ee.LogDrains = append(ee.LogDrains, apitypes.LogDrainExport{Name: d.Name, Kind: apitypes.LogDrainKind(d.Kind), Target: d.Target})
+		}
 		for _, se := range byEnv[e.ID] {
 			// The queries sort by name or key already, except domains
 			// (by ID); sort everything here so the order never depends
@@ -126,13 +133,26 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 		out.Environments = append(out.Environments, ee)
 	}
 	slices.SortFunc(out.Environments, func(x, y apitypes.EnvironmentExport) int { return cmp.Compare(x.Name, y.Name) })
+	// The registry hosts its images pull from with an org credential, by
+	// host: a file names what it needs, never the credential.
+	creds, err := c.store.ListRegistryCredentials(ctx, p.OrgID) // by host
+	if err != nil {
+		return out, err
+	}
+	for _, cr := range creds {
+		if slices.ContainsFunc(out.Environments, func(e apitypes.EnvironmentExport) bool {
+			return slices.ContainsFunc(e.Services, func(s apitypes.ServiceExport) bool { return s.Image != "" && imageRegistry(s.Image) == cr.Host })
+		}) {
+			out.RegistryCredentials = append(out.RegistryCredentials, cr.Host)
+		}
+	}
 	return out, nil
 }
 
 // serviceExport is a service's live settings in an export.
 func serviceExport(s store.Service) *apitypes.ServiceExport {
 	return &apitypes.ServiceExport{
-		Name: s.Name, Template: apitypes.Template(s.Template), Image: s.Image, Port: int(s.Port),
+		Name: s.Name, Template: apitypes.Template(s.Template), Stopped: s.StoppedAt != nil, Image: s.Image, Port: int(s.Port),
 		HealthCheckPath: s.HealthCheckPath, HealthCheckTimeoutSeconds: int(s.HealthCheckTimeoutSeconds),
 		StartCommand: s.StartCommand, DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
 		MemoryMB: int(s.MemoryMb), CPUs: s.Cpus,

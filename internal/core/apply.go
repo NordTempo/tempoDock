@@ -50,7 +50,9 @@ func (c *Core) PlanProject(ctx context.Context, a Actor, project string, req api
 		}
 		addPlan(&plan, ep)
 	}
-	return plan, nil
+	reg, err := c.planRegistry(ctx, a, f.registry)
+	plan.Manual = append(plan.Manual, reg...)
+	return plan, err
 }
 
 // ApplyProject stages a project file: it creates the project and any new
@@ -119,6 +121,11 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 		}
 		touched = append(touched, es)
 	}
+	reg, err := c.planRegistry(ctx, a, f.registry)
+	if err != nil {
+		return out, err
+	}
+	out.Plan.Manual = append(out.Plan.Manual, reg...)
 	for _, es := range touched {
 		pc, err := c.pendingChanges(ctx, c.store.Queries, es, false)
 		if err != nil {
@@ -149,6 +156,8 @@ type parsedFile struct {
 	values map[varKey]string
 	// order is each environment's depends_on, by service, for first deploys.
 	order map[string]map[string][]string
+	// registry are the registry hosts the file needs credentials for.
+	registry []string
 }
 
 // varKey names a variable of a file: service "" is a shared one.
@@ -171,6 +180,7 @@ func (c *Core) loadFile(ctx context.Context, a Actor, project string, req apityp
 		return out, nil, invalid("%v", err)
 	}
 	out.envs = f.Environments
+	out.registry = f.RegistryCredentials
 	if req.Environment != "" {
 		fe, ok := projectfile.Environment(f, req.Environment)
 		if !ok {
@@ -318,6 +328,8 @@ type liveEnv struct {
 	archived map[string]bool
 	// baseDomain is whether the server can generate hostnames.
 	baseDomain bool
+	// drains are the environment's log drains by name.
+	drains map[string]store.LogDrain
 }
 
 type liveSvc struct {
@@ -415,6 +427,14 @@ func loadLiveEnv(ctx context.Context, q *store.Queries, c *Core, e store.Environ
 		if ls := byID[d.ServiceID]; ls != nil {
 			ls.stagedDomains[d.Hostname] = d
 		}
+	}
+	drains, err := q.ListLogDrains(ctx, e.ID)
+	if err != nil {
+		return nil, err
+	}
+	le.drains = map[string]store.LogDrain{}
+	for _, d := range drains {
+		le.drains[d.Name] = d
 	}
 	gits, err := q.ListEnvironmentGitConnections(ctx, e.ID)
 	if err != nil {
@@ -519,6 +539,7 @@ func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, valu
 	if err := ep.planVars(line, "", fe.SharedValues, fe.SharedVariables, given(""), le.shared, le.sharedStaged, nil, prune); err != nil {
 		return ep, err
 	}
+	ep.planDrains(line, env, fe.LogDrains, le.drains)
 
 	inFile := map[string]bool{}
 	for _, fs := range slices.SortedFunc(slices.Values(fe.Services), func(x, y apitypes.ServiceExport) int { return cmp.Compare(x.Name, y.Name) }) {
@@ -640,6 +661,15 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 			line(&ep.manual, svc(apitypes.PlanChange{Kind: apitypes.PlanGit, Action: apitypes.ChangeUpdate, Name: "git", Old: old, New: gitText(fs.Git.Repository, fs.Git.Branch, fs.Git.Directory),
 				Note: fmt.Sprintf("connect it with `dock git connect %s --branch %s -s %s`", fs.Git.Repository, fs.Git.Branch, name)}))
 		}
+	}
+	if stopped := ls.row.StoppedAt != nil; fs.Stopped != stopped && (ls.row.ID != 0 || fs.Stopped) {
+		ch := svc(apitypes.PlanChange{Kind: apitypes.PlanService, Action: apitypes.ChangeUpdate, Name: "stopped", Old: stoppedText(stopped), New: stoppedText(fs.Stopped)})
+		verb := map[bool]string{true: "stop", false: "start"}[fs.Stopped]
+		ch.Note = fmt.Sprintf("stopping and starting act at once and aren't staged; %s it with `dock service %s %s -e %s`", verb, verb, name, le.row.Name)
+		if ls.row.ID == 0 {
+			ch.Note = fmt.Sprintf("after applying, stop it with `dock service stop %s -e <environment>`", name)
+		}
+		line(&ep.manual, ch)
 	}
 	if ls.row.ID == 0 && fs.Git != nil {
 		line(&ep.manual, svc(apitypes.PlanChange{Kind: apitypes.PlanGit, Action: apitypes.ChangeAdd, Name: "git", New: gitText(fs.Git.Repository, fs.Git.Branch, fs.Git.Directory),
@@ -1112,4 +1142,63 @@ func firstDeployOrder(svcs []store.Service, deps map[string][]string) []store.Se
 // stagedSummary describes a staged new service for the changes view.
 func stagedSummary(s store.Service) string {
 	return serviceSummary(apitypes.ServiceExport{Template: apitypes.Template(s.Template)}, settingsOf(s))
+}
+
+// stoppedText names a service's stopped setting in a plan.
+func stoppedText(stopped bool) string {
+	if stopped {
+		return "stopped"
+	}
+	return "running"
+}
+
+// planDrains compares an environment's log drains by name. A drain's URL
+// holds its credentials, so a file names its kind and target only and
+// differences are for a person to make (`dock logs drain`).
+func (ep *envPlan) planDrains(line func(*[]apitypes.PlanChange, apitypes.PlanChange), env string, want []apitypes.LogDrainExport, live map[string]store.LogDrain) {
+	inFile := map[string]bool{}
+	for _, d := range want {
+		inFile[d.Name] = true
+		ch := apitypes.PlanChange{Kind: apitypes.PlanLogDrain, Name: d.Name, New: string(d.Kind) + " " + d.Target}
+		cur, ok := live[d.Name]
+		switch {
+		case !ok:
+			ch.Action = apitypes.ChangeAdd
+			ch.Note = fmt.Sprintf("its URL holds credentials, so add it yourself: `dock logs drain add %s <url> --name %s -e %s`", d.Kind, d.Name, env)
+			line(&ep.manual, ch)
+		case string(d.Kind) != cur.Kind || d.Target != cur.Target:
+			ch.Action, ch.Old = apitypes.ChangeUpdate, cur.Kind+" "+cur.Target
+			ch.Note = fmt.Sprintf("remove it and add it again with the new URL: `dock logs drain remove %s -e %s`, then `dock logs drain add`", d.Name, env)
+			line(&ep.manual, ch)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(live)) {
+		if !inFile[name] {
+			d := live[name]
+			line(&ep.kept, apitypes.PlanChange{Kind: apitypes.PlanLogDrain, Action: apitypes.ChangeRemove, Name: name, Old: d.Kind + " " + d.Target,
+				Note: "not in the file; kept (a file never removes log drains: `dock logs drain remove`)"})
+		}
+	}
+}
+
+// planRegistry checks the org has a credential for each registry host the
+// file names; a missing one is for an admin to add (`dock registry login`).
+func (c *Core) planRegistry(ctx context.Context, a Actor, hosts []string) ([]apitypes.PlanChange, error) {
+	if len(hosts) == 0 {
+		return nil, nil
+	}
+	creds, err := c.store.ListRegistryCredentials(ctx, a.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	var out []apitypes.PlanChange
+	for _, h := range slices.Sorted(slices.Values(hosts)) {
+		host := normalizeRegistryHost(strings.TrimSpace(h))
+		if slices.ContainsFunc(creds, func(cr store.RegistryCredential) bool { return cr.Host == host }) {
+			continue
+		}
+		out = append(out, apitypes.PlanChange{Kind: apitypes.PlanRegistry, Action: apitypes.ChangeAdd, Name: host,
+			Note: fmt.Sprintf("images pull from %s with a credential this organization doesn't have; an admin adds it with `dock registry login %s --username <name> --password-stdin`", host, host)})
+	}
+	return out, nil
 }

@@ -41,13 +41,17 @@ const (
 	PlanDomain      PlanKind = "domain"
 	PlanGit         PlanKind = "git"
 	PlanDatabase    PlanKind = "database"
+	// PlanLogDrain and PlanRegistry are compared, never applied: they hold
+	// secrets (a drain's URL, a registry password).
+	PlanLogDrain PlanKind = "log_drain"
+	PlanRegistry PlanKind = "registry_credential"
 )
 
 // PlanChange is one line of a plan. Variable values are never in it.
 type PlanChange struct {
 	Environment string       `json:"environment,omitempty"`
 	Service     string       `json:"service,omitempty"`
-	Kind        PlanKind     `json:"kind" enum:"project,environment,service,setting,variable,volume,domain,git,database"`
+	Kind        PlanKind     `json:"kind" enum:"project,environment,service,setting,variable,volume,domain,git,database,log_drain,registry_credential"`
 	Action      ChangeAction `json:"action" enum:"add,update,remove"`
 	// Name is the setting's field, the variable's key, the volume's name or
 	// the domain's hostname.

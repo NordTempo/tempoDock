@@ -634,3 +634,43 @@ func TestApplyLockedEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A stopped service, a log drain and a registry credential are exported
+// without secrets and round-trip; a file that differs lists each for a
+// person to change, since they act at once or hold credentials.
+func TestApplyStoppedDrainsAndRegistry(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "ghcr.io/acme/web:1"})
+	h.deploy(web, "ghcr.io/acme/web:1")
+	if _, err := h.c.StopService(h.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.AddLogDrain(h.ctx, testSystem, web.Env(), apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, URL: "https://user:pw@logs.example.com/in", Name: "logs"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetRegistryCredential(h.ctx, testSystem, "ghcr.io", apitypes.SetRegistryCredentialRequest{Username: "bot", Password: "ghp_secret"}); err != nil {
+		t.Fatal(err)
+	}
+	ex, file := h.exportTOML("shop")
+	svc := ex.Environments[0].Services[0]
+	if !svc.Stopped || len(ex.Environments[0].LogDrains) != 1 || !slices.Equal(ex.RegistryCredentials, []string{"ghcr.io"}) {
+		t.Fatalf("export = %+v", ex)
+	}
+	if strings.Contains(file, "pw@") || strings.Contains(file, "ghp_secret") {
+		t.Fatalf("export holds a secret:\n%s", file)
+	}
+	if plan, err := h.c.PlanProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file}); err != nil || len(plan.Changes)+len(plan.Kept)+len(plan.Manual) != 0 {
+		t.Fatalf("round trip: %v %v %v, %v", lines(plan.Changes), lines(plan.Kept), lines(plan.Manual), err)
+	}
+
+	edited := strings.NewReplacer("stopped = true\n", "", "registry_credentials = ['ghcr.io']", "registry_credentials = ['ghcr.io', 'registry.example.com']",
+		"name = 'logs'", "name = 'audit'").Replace(file)
+	plan, err := h.c.PlanProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: edited})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"production log_drain add audit", "production web service update stopped", "registry_credential add registry.example.com"}
+	if !slices.Equal(lines(plan.Manual), want) || !slices.Equal(lines(plan.Kept), []string{"production log_drain remove logs"}) || len(plan.Changes) != 0 {
+		t.Fatalf("plan:\nmanual %q\nkept %q\nchanges %q\n%s", lines(plan.Manual), lines(plan.Kept), lines(plan.Changes), edited)
+	}
+}

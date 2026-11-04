@@ -152,8 +152,9 @@ func variableNames(names []apitypes.VariableRef) string {
 	return strings.Join(s, ", ")
 }
 
-// newProjectExportCmd is `dock project export` (ADR 0022): the project's
-// config as TOML (or JSON), for review, backup and diffs in git.
+// newProjectExportCmd is `dock project export` (ADR 0022), also `dock
+// export` next to `dock apply`: the project's config as TOML (or JSON),
+// for review, backup, diffs in git and `dock apply FILE`.
 func newProjectExportCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var format string
@@ -167,7 +168,7 @@ releases or archived services. The output is sorted by name, so it diffs
 well in git.
 
 TOML by default; --format json (or --json) prints the API's JSON.`,
-		Example: `  dock project export shop > shop.dock.toml
+		Example: `  dock export shop > dock.project.toml   # same as dock project export
   dock project export --format json`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeProjectArg,
