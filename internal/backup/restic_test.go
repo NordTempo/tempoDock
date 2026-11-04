@@ -249,8 +249,8 @@ func TestPreludeReach(t *testing.T) {
 		wantOut  string
 	}{
 		"unreachable": {stub: "sleep 30", wantExit: UnreachableExit, wantOut: "can't reach the backup storage at http://127.0.0.1:9000/bucket from a backup job"},
-		"new":         {stub: `[ "$1" = cat ] && exit 10; echo "ran $1"`, wantOut: "ran init"},
-		"exists":      {stub: `[ "$1" = cat ] && exit 0; echo "ran $1"`},
+		"new":         {stub: `[ "$1" = cat ] && exit 10; echo "ran $1" >&2`, wantOut: "ran init"},
+		"exists":      {stub: `[ "$1" = cat ] && exit 0; echo "ran $1" >&2`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
