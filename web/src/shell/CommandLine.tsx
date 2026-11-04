@@ -11,8 +11,9 @@ import {
 import { isTyping, modKey, useKeydown, useLegend } from "./keys";
 
 /**
- * The bottom command line: type a `dock` command (or any part of a palette
- * label), Tab completes the best match, Enter runs it. `?` shows the keys.
+ * The bottom command line: type a `dock` command or any part of a palette
+ * label ("logs api", "members"), Tab completes the best match, Enter runs
+ * it. `?` shows the keys.
  * When idle it lists the current page's shortcuts.
  */
 export function CommandLine() {
@@ -27,12 +28,7 @@ export function CommandLine() {
   const [busy, setBusy] = useState(false);
 
   const matches = useMemo(
-    () =>
-      text.trim()
-        ? matchCommands(commands, text)
-            .filter((m) => m.command.cli.startsWith("dock"))
-            .slice(0, 6)
-        : [],
+    () => (text.trim() ? matchCommands(commands, text).slice(0, 6) : []),
     [commands, text],
   );
   const best = matches[0]?.command;
@@ -79,8 +75,17 @@ export function CommandLine() {
                 key={command.id}
                 className={`flex gap-4 px-3.5 py-1 ${command === best ? "bg-sel" : ""}`}
               >
-                <span className="font-mono text-xs">{command.cli}</span>
-                <span className="text-mut">{command.label}</span>
+                {isCli(command) ? (
+                  <>
+                    <span className="font-mono text-xs">{command.cli}</span>
+                    <span className="text-mut">{command.label}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{command.label}</span>
+                    <span className="text-faint">{command.group}</span>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -93,12 +98,13 @@ export function CommandLine() {
             run(best);
           }}
         >
-          <label htmlFor="cmd" className="font-mono text-faint">
+          <span aria-hidden className="font-mono text-faint">
             ›
-          </label>
+          </span>
           <input
             ref={input}
             id="cmd"
+            aria-label="Command: a dock command or a page to go to"
             autoComplete="off"
             spellCheck={false}
             value={text}
@@ -115,13 +121,13 @@ export function CommandLine() {
             onKeyDown={(e) => {
               if (e.key === "Tab" && best && text) {
                 e.preventDefault();
-                setText(best.cli);
+                setText(isCli(best) ? best.cli : best.label);
               } else if (e.key === "Escape") {
                 setText("");
                 e.currentTarget.blur();
               }
             }}
-            placeholder="Run a dock command, or ? for keys"
+            placeholder="Run a dock command or go to a page, ? for keys"
             className="min-w-0 flex-[1_1_240px] py-1 font-mono text-sm outline-none"
           />
           {error ? (
@@ -173,6 +179,9 @@ function NotLive() {
     </p>
   );
 }
+
+/** Commands the CLI has too complete to their `dock` line, others to their label. */
+const isCli = (command: Command) => command.cli.startsWith("dock");
 
 function Help({ onClose }: { onClose: () => void }) {
   const legend = useLegend();
