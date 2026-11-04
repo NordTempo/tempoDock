@@ -38,12 +38,8 @@ func New(allowLoopback bool) *Prober {
 		if err != nil {
 			return err
 		}
-		ip := ap.Addr().Unmap()
-		switch {
-		case httpkit.IsSelfAddr(ip) && !allowLoopback:
-			return &refusedError{ip: ip, why: "this server itself"}
-		case httpkit.IsInternalAddr(ip):
-			return &refusedError{ip: ip, why: "a link-local, multicast or cloud metadata address"}
+		if why := refused(ap.Addr().Unmap(), ap.Port(), allowLoopback); why != "" {
+			return &refusedError{why: why}
 		}
 		return nil
 	}
@@ -62,15 +58,38 @@ func New(allowLoopback bool) *Prober {
 	}}
 }
 
-// refusedError is a dial the address checks stopped.
-type refusedError struct {
-	ip  netip.Addr
-	why string
+// cgnat is 100.64.0.0/10: carrier-grade NAT and tailnets.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// refused says why a probe may not connect to ip:port, or "". Probes
+// reach public sites as a visitor would, so only public unicast
+// addresses on 80 and 443 are dialed: never this server's loopback,
+// link-local or metadata addresses, private (RFC 1918, ULA), CGNAT or
+// tailnet addresses, which hold Docker's bridges, other apps' containers
+// and LANs that a domain's DNS could point at. This server's own public
+// address stays allowed: on 80 and 443 it is Caddy, what a visitor
+// reaches, and the control plane probes its own sites when it is the
+// only server (ADR 0052). allowLoopback (tests) admits loopback on any
+// port.
+func refused(ip netip.Addr, port uint16, allowLoopback bool) string {
+	switch {
+	case allowLoopback && ip.IsLoopback():
+		return ""
+	case httpkit.IsSelfAddr(ip), httpkit.IsInternalAddr(ip),
+		ip.IsPrivate(), cgnat.Contains(ip), !ip.IsGlobalUnicast():
+		return "the domain resolves to an address that isn't public"
+	case port != 80 && port != 443:
+		return "only ports 80 and 443 are probed"
+	}
+	return ""
 }
 
-func (e *refusedError) Error() string {
-	return fmt.Sprintf("%s is %s; uptime checks don't probe it", e.ip, e.why)
-}
+// refusedError is a dial the address checks stopped. Its text never
+// names the address: what a probe reports goes back to the check's
+// owner, who must not learn what lives on private networks.
+type refusedError struct{ why string }
+
+func (e *refusedError) Error() string { return e.why }
 
 // Probe implements node.Prober.
 func (p *Prober) Probe(ctx context.Context, req node.ProbeRequest) (node.ProbeResult, error) {
@@ -117,16 +136,19 @@ func expected(expect int) string {
 	return strconv.Itoa(expect)
 }
 
-// describe says in plain words why a request got no answer.
+// describe says in plain, fixed words why a request got no answer. It
+// never passes on raw dial or TLS errors: those can name addresses and
+// certificate names of whatever answered (the probe's result goes back to
+// the check's owner).
 func describe(err error, timeout time.Duration) string {
 	if r, ok := errors.AsType[*refusedError](err); ok {
 		return r.Error()
 	}
 	if d, ok := errors.AsType[*net.DNSError](err); ok {
 		if d.IsNotFound {
-			return "DNS: " + d.Name + " not found"
+			return "DNS: the domain has no address"
 		}
-		return "DNS: " + d.Err
+		return "DNS lookup failed"
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "no answer within " + timeout.String()
@@ -140,11 +162,14 @@ func describe(err error, timeout time.Duration) string {
 	if errors.Is(err, syscall.ECONNRESET) {
 		return "connection reset"
 	}
-	if v, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
-		return "TLS: " + v.Err.Error()
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+		return "TLS certificate invalid"
 	}
-	if ue, ok := errors.AsType[*url.Error](err); ok {
-		return ue.Err.Error()
+	if _, ok := errors.AsType[tls.AlertError](err); ok {
+		return "TLS handshake failed"
 	}
-	return err.Error()
+	if _, ok := errors.AsType[tls.RecordHeaderError](err); ok {
+		return "TLS handshake failed"
+	}
+	return "request failed"
 }

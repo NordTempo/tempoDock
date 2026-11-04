@@ -96,3 +96,11 @@ SELECT alerts.id, alerts.key, alerts.title, alerts.message, alerts.server, alert
 FROM alerts
 WHERE alerts.key IN (SELECT 'uptime:' || uptime_checks.id FROM uptime_checks WHERE uptime_checks.service_id = +sqlc.arg(service_id))
   AND (SELECT count(*) FROM alerts AS newer WHERE newer.key = alerts.key AND newer.id > alerts.id) < CAST(sqlc.arg(per_check) AS INTEGER);
+
+-- name: CountOrgUptimeChecks :one
+-- An organization's uptime checks, for its cap.
+SELECT count(*) FROM uptime_checks
+JOIN services ON services.id = uptime_checks.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE projects.org_id = +?;

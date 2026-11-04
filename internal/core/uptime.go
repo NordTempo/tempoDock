@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -23,7 +25,13 @@ import (
 // memory only: after a restart they are unknown until it is probed again.
 
 const (
-	uptimeMaxChecks       = 10
+	uptimeMaxChecks = 10
+	// uptimeOrgMaxChecks caps an organization's checks, and
+	// uptimeOrgProbes and uptimeMaxProbes the probes running at once per
+	// organization and in all (uptimeState.inFlight).
+	uptimeOrgMaxChecks    = 50
+	uptimeOrgProbes       = 2
+	uptimeMaxProbes       = 8
 	uptimeMinInterval     = 30 * time.Second
 	uptimeMaxInterval     = time.Hour
 	uptimeDefaultInterval = time.Minute
@@ -46,8 +54,13 @@ const (
 type uptimeState struct {
 	// kick asks the scheduler to reload its checks.
 	kick chan struct{}
-	// sem bounds the probes running at once.
-	sem chan struct{}
+	// inFlight and orgInFlight count the probes running, in all and per
+	// organization (entries go at zero). A probe that would pass
+	// uptimeMaxProbes or uptimeOrgProbes is skipped that round, never
+	// queued: one organization's checks against a site that hangs can't
+	// hold up anyone else's.
+	inFlight    int
+	orgInFlight map[int64]int
 	// second is how long a second of a check's interval lasts: a second
 	// but in tests (Options.UptimeSecond).
 	second time.Duration
@@ -74,7 +87,7 @@ type checkState struct {
 
 // newUptimeState is the state of a Core without checks loaded yet.
 func newUptimeState() uptimeState {
-	return uptimeState{kick: make(chan struct{}, 1), sem: make(chan struct{}, 8), second: time.Second, checks: map[int64]*checkState{}}
+	return uptimeState{kick: make(chan struct{}, 1), orgInFlight: map[int64]int{}, second: time.Second, checks: map[int64]*checkState{}}
 }
 
 // kickUptime has the scheduler reload its checks: one was added or
@@ -131,6 +144,11 @@ func (c *Core) AddUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, req 
 		if err != nil {
 			return err
 		}
+		if n, err := q.CountOrgUptimeChecks(ctx, a.OrgID); err != nil {
+			return err
+		} else if n >= uptimeOrgMaxChecks {
+			return conflict("this organization has %d uptime checks already, the most it may have; remove one with `dock uptime remove`", uptimeOrgMaxChecks)
+		}
 		if len(existing) >= uptimeMaxChecks {
 			return conflict("service %s has %d uptime checks already, the most it may have; remove one with `dock uptime remove`", ss, uptimeMaxChecks)
 		}
@@ -146,7 +164,7 @@ func (c *Core) AddUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, req 
 	if err != nil {
 		return apitypes.UptimeCheck{}, err
 	}
-	out := c.toUptimeCheck(row, ss.env.ServerID, servers)
+	out := c.toUptimeCheck(row, ss.env.ServerID, servers, a.Operator)
 	out.Series = uptimeSeries(nil, time.Now())
 	return out, nil
 }
@@ -196,6 +214,10 @@ func checkURL(raw string, ss svcScope, domains []store.Domain) (string, error) {
 		return "", invalid("uptime checks probe a domain as visitors reach it; drop the port %s", p)
 	}
 	host := strings.ToLower(u.Hostname())
+	if i := slices.IndexFunc(domains, func(d store.Domain) bool { return d.Hostname == host }); i >= 0 && domains[i].VerifiedAt == nil {
+		// Its DNS may point anywhere until it is proven the service's.
+		return "", invalid("%s isn't verified yet; add its TXT record (`dock domain show %s`), then add the check", host, host)
+	}
 	if !slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Hostname == host }) {
 		if len(domains) == 0 {
 			return "", invalid("service %s has no domains; add one with `dock domain add` first", ss)
@@ -271,7 +293,7 @@ func (c *Core) ListUptimeChecks(ctx context.Context, a Actor, ref ServiceRef) ([
 	slices.SortFunc(incidents, func(x, y store.ListUptimeIncidentsRow) int { return int(y.ID - x.ID) })
 	out := make([]apitypes.UptimeCheck, 0, len(rows))
 	for _, r := range rows {
-		uc := c.toUptimeCheck(r, ss.env.ServerID, servers)
+		uc := c.toUptimeCheck(r, ss.env.ServerID, servers, a.Operator)
 		if i := slices.IndexFunc(totals, func(t store.UptimeTotalsRow) bool { return t.CheckID == r.ID }); i >= 0 {
 			t := totals[i]
 			uc.Uptime24h, uc.Uptime7d, uc.Uptime30d = percent(t.UpDay, t.TotalDay), percent(t.UpWeek, t.TotalWeek), percent(t.UpMonth, t.TotalMonth)
@@ -296,15 +318,21 @@ func (c *Core) ListUptimeChecks(ctx context.Context, a Actor, ref ServiceRef) ([
 
 // toUptimeCheck is a check without its history: settings, state, last
 // probe and the server that probes it.
-func (c *Core) toUptimeCheck(r store.UptimeCheck, envServer int64, servers []store.Server) apitypes.UptimeCheck {
+// Servers are named for operators only (serverLabel).
+func (c *Core) toUptimeCheck(r store.UptimeCheck, envServer int64, servers []store.Server, operator bool) apitypes.UptimeCheck {
 	out := apitypes.UptimeCheck{
 		ID: r.ID, URL: r.Url, ExpectStatus: expectStatusString(r.ExpectStatus),
 		IntervalSeconds: int(r.IntervalS), TimeoutSeconds: int(r.TimeoutMs / 1000),
 		CreatedAt: r.CreatedAt, CreatedBy: r.CreatedBy, State: apitypes.UptimeUnknown,
 		Incidents: []apitypes.UptimeIncident{},
 	}
-	out.Server = c.uptimeProber(servers, r.ID, envServer).Name
+	out.Server = c.serverLabel(c.uptimeProber(servers, r.ID, envServer).Name, operator)
 	out.State, out.LastProbe = c.checkStatus(r.ID)
+	if out.LastProbe != nil {
+		p := *out.LastProbe
+		p.Server = c.serverLabel(p.Server, operator)
+		out.LastProbe = &p
+	}
 	return out
 }
 
@@ -421,6 +449,7 @@ func (c *Core) recordProbe(ctx context.Context, chk store.ListUptimeScheduleRow,
 	if err := c.store.AddUptimeProbe(ctx, store.AddUptimeProbeParams{CheckID: chk.ID, At: minute, Up: up, LatencyMsSum: res.Latency.Milliseconds()}); err != nil {
 		c.log.Warn("uptime: record probe", "check", chk.ID, "err", err)
 	}
+	res.Error = sanitizeProbeError(res.Error)
 	probe := &apitypes.UptimeProbe{At: at.UTC(), Up: res.Up, Status: res.Status, LatencyMS: res.Latency.Milliseconds(), Error: res.Error, Server: server}
 	u := &c.uptime
 	u.mu.Lock()
@@ -450,14 +479,17 @@ func (c *Core) recordProbe(ctx context.Context, chk store.ListUptimeScheduleRow,
 	if res.Up {
 		c.signalAlert(ctx, alertSignal{Key: uptimeKey(chk.ID), Resolve: true})
 	} else if failures >= uptimeFailures {
-		c.signalAlert(ctx, uptimeDown(chk, server, res.Error, since))
+		c.signalAlert(ctx, uptimeDown(chk, c.serverLabel(server, false), res.Error, since))
 	}
 	if state != before {
 		ss := svcScope{envScope{
 			store.Project{ID: chk.ProjectID, OrgID: chk.OrgID, Name: chk.Project},
 			store.Environment{ID: chk.EnvironmentID, Name: chk.Environment},
 		}, store.Service{ID: chk.ServiceID, Name: chk.Service}}
-		c.publish(ss, apitypes.Event{Type: apitypes.EventUptime, Uptime: &apitypes.UptimeUpdate{ID: chk.ID, State: state, LastProbe: probe}})
+		// Everyone watching gets it, so the server goes unnamed.
+		shown := *probe
+		shown.Server = c.serverLabel(shown.Server, false)
+		c.publish(ss, apitypes.Event{Type: apitypes.EventUptime, Uptime: &apitypes.UptimeUpdate{ID: chk.ID, State: state, LastProbe: &shown}})
 	}
 }
 
@@ -484,5 +516,67 @@ func uptimeDown(chk store.ListUptimeScheduleRow, server, reason string, since ti
 		Title: where + " is down", Message: msg,
 		Project: chk.Project, Environment: chk.Environment, Service: chk.Service,
 		projectID: chk.ProjectID, serviceID: chk.ServiceID,
+	}
+}
+
+// sanitizeProbeError makes a node's probe error safe to store, show and
+// send in alerts: at most maxProbeError bytes, without control
+// characters. Nodes run code the control plane doesn't, so what they
+// report is never trusted as is.
+func sanitizeProbeError(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
+	if len(s) > maxProbeError {
+		s = s[:maxProbeError]
+		for len(s) > 0 && !utf8.ValidString(s) {
+			s = s[:len(s)-1]
+		}
+	}
+	return s
+}
+
+// maxProbeError caps a probe's error text.
+const maxProbeError = 200
+
+// serverLabel is how a probing server is named to actor: by name for
+// operators, else "the control plane" or "another server", as an
+// organization doesn't see the platform's servers (ADR 0027).
+func (c *Core) serverLabel(name string, operator bool) string {
+	switch {
+	case operator:
+		return name
+	case name == c.local.Name:
+		return "the control plane"
+	}
+	return "another server"
+}
+
+// dropUptimeChecks removes a service's checks on host, a domain it no
+// longer has (RemoveDomain): the hostname could become anyone's, and its
+// DNS point anywhere. Their open alerts resolve. Best effort.
+func (c *Core) dropUptimeChecks(ctx context.Context, ss svcScope, host string) {
+	rows, err := c.store.ListServiceUptimeChecks(ctx, ss.svc.ID)
+	if err != nil {
+		c.log.Warn("uptime: drop checks of a removed domain", "domain", host, "err", err)
+		return
+	}
+	dropped := false
+	for _, r := range rows {
+		if u, err := url.Parse(r.Url); err != nil || u.Hostname() != host {
+			continue
+		}
+		if err := c.store.DeleteUptimeCheck(ctx, r.ID); err != nil {
+			c.log.Warn("uptime: drop checks of a removed domain", "check", r.ID, "err", err)
+			continue
+		}
+		c.signalAlert(ctx, alertSignal{Key: uptimeKey(r.ID), Resolve: true})
+		dropped = true
+	}
+	if dropped {
+		c.kickUptime()
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -20,8 +21,28 @@ func TestProbeRefusesThisServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Up || !strings.Contains(res.Error, "this server itself") {
-		t.Fatalf("probe of 127.0.0.1 = %+v, want refused", res)
+	if res.Up || !strings.Contains(res.Error, "isn't public") || strings.Contains(res.Error, "127.0.0.1") {
+		t.Fatalf("probe of 127.0.0.1 = %+v, want refused without naming the address", res)
+	}
+}
+
+// Probes reach public addresses on 80 and 443 only: never private, CGNAT
+// (tailnets), ULA, Docker bridge or metadata addresses a domain's DNS
+// could point at.
+func TestProbeOnlyDialsPublicAddresses(t *testing.T) {
+	for _, tc := range []struct {
+		addr string
+		ok   bool
+	}{
+		{"203.0.113.7:443", true}, {"[2001:db8::1]:80", true},
+		{"203.0.113.7:8080", false}, {"10.1.2.3:443", false}, {"192.168.10.50:80", false},
+		{"172.17.0.2:80", false}, {"100.101.102.103:443", false}, {"[fd12::1]:443", false},
+		{"169.254.169.254:80", false}, {"127.0.0.1:443", false}, {"0.0.0.0:80", false},
+	} {
+		ap := netip.MustParseAddrPort(tc.addr)
+		if got := refused(ap.Addr(), ap.Port(), false) == ""; got != tc.ok {
+			t.Errorf("%s allowed = %v, want %v", tc.addr, got, tc.ok)
+		}
 	}
 }
 

@@ -42,7 +42,8 @@ func (h *uptimeHeap) Pop() any {
 // subscription, so an install without checks has no wake-ups. A kick (a check added or removed, a service archived) or a
 // server event (one joined, connected, left) reloads the checks and
 // servers. A due check is probed in its own goroutine (at most 8 at
-// once, uptimeState.sem) and is next due an interval after it was due,
+// once and 2 per organization, uptimeState.inFlight; past that it is
+// skipped that round) and is next due an interval after it was due,
 // so a slow probe doesn't drift its schedule; a check whose probe still
 // runs when it is due again is skipped that once.
 func (c *Core) scheduleUptime() {
@@ -187,11 +188,14 @@ func (c *Core) startProbe(chk store.ListUptimeScheduleRow, servers []store.Serve
 	u := &c.uptime
 	u.mu.Lock()
 	st := u.checks[chk.ID]
-	if st == nil || st.running {
+	if st == nil || st.running || u.inFlight >= uptimeMaxProbes || u.orgInFlight[chk.OrgID] >= uptimeOrgProbes {
+		// Still running, or no slot: skipped this round, never queued.
 		u.mu.Unlock()
 		return
 	}
 	st.running = true
+	u.inFlight++
+	u.orgInFlight[chk.OrgID]++
 	u.mu.Unlock()
 	srv := c.uptimeProber(servers, chk.ID, chk.ServerID)
 	c.wg.Add(1)
@@ -203,18 +207,17 @@ func (c *Core) startProbe(chk store.ListUptimeScheduleRow, servers []store.Serve
 func (c *Core) runProbe(chk store.ListUptimeScheduleRow, srv store.Server) {
 	defer c.wg.Done()
 	defer func() {
-		c.uptime.mu.Lock()
-		if st := c.uptime.checks[chk.ID]; st != nil {
+		u := &c.uptime
+		u.mu.Lock()
+		if st := u.checks[chk.ID]; st != nil {
 			st.running = false
 		}
-		c.uptime.mu.Unlock()
+		u.inFlight--
+		if u.orgInFlight[chk.OrgID]--; u.orgInFlight[chk.OrgID] <= 0 {
+			delete(u.orgInFlight, chk.OrgID)
+		}
+		u.mu.Unlock()
 	}()
-	select {
-	case c.uptime.sem <- struct{}{}:
-	case <-c.ctx.Done():
-		return
-	}
-	defer func() { <-c.uptime.sem }()
 	timeout := time.Duration(chk.TimeoutMs) * time.Millisecond
 	req := node.ProbeRequest{URL: chk.Url, ExpectStatus: int(chk.ExpectStatus), Timeout: timeout}
 	ctx, cancel := context.WithTimeout(c.ctx, timeout+30*time.Second)

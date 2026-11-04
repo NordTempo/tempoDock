@@ -35,6 +35,22 @@ func (q *Queries) AddUptimeProbe(ctx context.Context, arg AddUptimeProbeParams) 
 	return err
 }
 
+const countOrgUptimeChecks = `-- name: CountOrgUptimeChecks :one
+SELECT count(*) FROM uptime_checks
+JOIN services ON services.id = uptime_checks.service_id
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE projects.org_id = +?
+`
+
+// An organization's uptime checks, for its cap.
+func (q *Queries) CountOrgUptimeChecks(ctx context.Context, orgID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOrgUptimeChecks, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUptimeCheck = `-- name: CreateUptimeCheck :one
 
 INSERT INTO uptime_checks (service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by)

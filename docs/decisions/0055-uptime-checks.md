@@ -24,10 +24,10 @@ the server that serves it.
 |---|---|
 | What is checked | An HTTP(S) URL on one of the service's domains (any path), `GET`, redirects not followed. Up means the expected status (default 200; `2xx` and `3xx` classes allowed) within the timeout |
 | Settings | Interval 30 s to 1 h (default 60 s), timeout 1 to 30 s and below the interval (default 10 s), expected status. At most 10 checks per service |
-| Who | Project admins add and remove checks; readers see results |
+| Who | Project admins add and remove checks; readers see results. An organization has at most 50 checks; non-operators see "another server" or "the control plane", not server names (ADR 0027) |
 | Where it runs | On an online server other than the environment's, chosen by the check's ID among the online candidates so checks spread out; the control plane when there is no other server. The control plane's own probes run in process |
 | Runtime interface | `Probe(ProbeRequest) ProbeResult` over the node link as `probe` (protocol 19, `remote.ProbeProtocol`). Nodes below it aren't chosen to probe. The prober is `internal/node/uptime` |
-| Address check | The probe's dialer refuses loopback, link-local, multicast and metadata addresses, after DNS, with the same checks (`httpkit`) as alert channels and log drains. The host must be one of the service's domains |
+| Address check | Probes go to public sites only. The dialer, after DNS, refuses loopback, link-local, multicast, metadata, private (RFC 1918, ULA), CGNAT and tailnet addresses, which cover Docker's bridges, other apps' containers and LANs, and dials only ports 80 and 443. The server's own public address stays allowed: there it is Caddy, what a visitor reaches. The domain must be verified (its TXT record, ADR 0042), so its DNS is the owner's; removing it removes its checks. Errors are fixed phrases ("TLS certificate invalid", "connection refused"), never raw dial or TLS errors, and a node's error is capped at 200 bytes without control characters |
 | Down | Two failed probes in a row open an `uptime_down` alert (critical) keyed `uptime:<check id>`; the next success resolves it (the channel's `resolved` notification is the recovery) |
 | History | `uptime_stats`: per check, minute rows for 24 hours and hour rows for 30 days (probes up and total, latency sum). Percentages for 24 h, 7 d and 30 d come from them, the strip is the last day in 48 half-hour buckets; incidents are the check's alerts (by key, `alerts_key`) |
 | Where shown | The service's Uptime tab in the UI (checks, 24 h strip, percentages, last incidents), `dock status` (24 h percentage and current state per service), `dock uptime list` |
@@ -41,7 +41,9 @@ the goroutine waits on its kick channel, the timer is stopped and it
 holds no bus subscription (it follows server events only while checks
 exist to place): an
 install without checks has no new wake-ups. A due check is probed in its
-own goroutine (bounded by a semaphore of 8), and its next due time is
+own goroutine (at most 8 at once and 2 per organization; a check
+without a free slot is skipped that round, never queued, so one
+organization probing a site that hangs can't hold up the others), and its next due time is
 its last due time plus the interval, so a slow probe doesn't drift the
 schedule. A check whose probe is still running when it is due again is
 skipped once.

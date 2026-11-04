@@ -157,8 +157,13 @@ dock uptime remove 3
   alert channels; the next successful probe resolves it.
 - Interval 30 seconds to 1 hour (default 1 minute); timeout 1 to 30 seconds
   and below the interval (default 10 s); at most 10 checks per service.
-- Probes never go to the server's own, link-local or cloud metadata
-  addresses, whatever the domain resolves to.
+- Checks go on verified domains only (the TXT record above), and removing
+  a domain removes its checks. Probes reach public addresses on ports 80
+  and 443 only: a domain that resolves to a private, tailnet, Docker or
+  cloud metadata address reads as down ("the domain resolves to an
+  address that isn't public"). A site only on your LAN can't be checked.
+- An organization has at most 50 checks; a server runs at most 8 probes
+  at once and 2 per organization, and skips a probe rather than queue it.
 - Project admins add and remove checks; everyone who can read the service
   sees them: the service's Uptime tab (checks, a 24-hour strip, uptime
   over 24 hours, 7 and 30 days, the last incidents) and `dock status`.

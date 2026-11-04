@@ -158,7 +158,7 @@ func TestUptimeDownOpensAnAlertAndRecoveryResolvesIt(t *testing.T) {
 	}
 	a := h.openAlert(uptimeKey(chk.ID), true)
 	if a.Kind != string(apitypes.AlertUptimeDown) || a.Severity != string(apitypes.SeverityCritical) || a.Title != "shop.example.com/health is down" ||
-		!strings.HasPrefix(a.Message, "Probes from "+h.c.local.Name+" keep failing (answered 502, expected 200) since ") || a.Service != "web" {
+		!strings.HasPrefix(a.Message, "Probes from the control plane keep failing (answered 502, expected 200) since ") || a.Service != "web" {
 		t.Fatalf("alert = %+v", a)
 	}
 	down := h.waitState(web, chk.ID, apitypes.UptimeDown)
@@ -334,5 +334,35 @@ func TestUptimeRollsUpHoursAndTrims(t *testing.T) {
 	}
 	if hours := rows(uptimeHour); len(hours) != 2 || hours[day-3600] != [2]int64{1, 1} {
 		t.Fatalf("hour rows at 00:01:30 = %v", hours)
+	}
+}
+
+// A domain whose DNS isn't proven the service's can't be probed: an org
+// admin could point it at private addresses. Removing a domain drops its
+// checks.
+func TestUptimeNeedsAVerifiedDomain(t *testing.T) {
+	h := newHarness(t)
+	web := h.uptimeService()
+	token, err := h.c.CreateToken(h.ctx, testSystem, apitypes.CreateTokenRequest{Name: "admin", Scope: apitypes.ScopeAdmin, Project: "shop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, _ := h.c.AuthenticateToken(h.ctx, token.Secret, "")
+	if _, err := h.c.AddDomain(h.ctx, admin, web, apitypes.AddDomainRequest{Hostname: "unproven.example.org"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.c.AddUptimeCheck(h.ctx, admin, web, apitypes.AddUptimeCheckRequest{URL: "https://unproven.example.org/"})
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "isn't verified yet") {
+		t.Fatalf("check on an unverified domain = %v", err)
+	}
+
+	if _, err := h.c.AddUptimeCheck(h.ctx, admin, web, apitypes.AddUptimeCheckRequest{URL: "https://shop.example.com/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.RemoveDomain(h.ctx, testSystem, web, "shop.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if checks, err := h.c.ListUptimeChecks(h.ctx, admin, web); err != nil || len(checks) != 0 {
+		t.Fatalf("checks after the domain went = %+v, %v", checks, err)
 	}
 }
