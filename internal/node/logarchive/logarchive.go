@@ -176,7 +176,7 @@ func Write(root, service, release string, limits node.LogLimits, fill func(add f
 }
 
 // commit makes the member in tmp part of target: a rename when target is
-// new, else an append (mu held).
+// new, else an append (mu held). A failed append leaves target as it was.
 func commit(tmp *os.File, target string) error {
 	if _, err := os.Stat(target); errors.Is(err, fs.ErrNotExist) {
 		return os.Rename(tmp.Name(), target)
@@ -190,12 +190,23 @@ func commit(tmp *os.File, target string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, tmp); err != nil {
+	before, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := copyMember(f, tmp); err != nil {
+		// Half a member (a disk filling meanwhile) would end every read
+		// there, hiding the members appended after it: cut it off.
+		_ = f.Truncate(before)
 		_ = f.Close()
 		return err
 	}
 	return f.Close()
 }
+
+// copyMember appends a member to an archive (io.Copy; tests replace it).
+var copyMember = io.Copy
 
 // archiveFile is one release's archive: its name in a service's
 // directory, or <service>/<name> under the root for enforceTotal.
