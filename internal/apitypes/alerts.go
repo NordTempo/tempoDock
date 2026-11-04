@@ -51,6 +51,9 @@ const (
 	// AlertAccessRequest: a token asks to change a locked environment
 	// (ADR 0044); deciding or expiring the request resolves it.
 	AlertAccessRequest AlertKind = "access_request"
+	// AlertUptimeDown: an uptime check failed twice in a row (ADR 0052).
+	// Its next successful probe resolves it.
+	AlertUptimeDown AlertKind = "uptime_down"
 )
 
 // Alert is one occurrence of a problem, open until its condition clears or
@@ -58,7 +61,7 @@ const (
 // fuller, the same deploy failing again), never raised twice.
 type Alert struct {
 	ID       int64         `json:"id"`
-	Kind     AlertKind     `json:"kind" doc:"disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy; more may be added"`
+	Kind     AlertKind     `json:"kind" doc:"disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down; more may be added"`
 	Severity AlertSeverity `json:"severity" enum:"warning,critical"`
 	Title    string        `json:"title" example:"Disk 91% full on vps-1"`
 	Message  string        `json:"message,omitempty"`
