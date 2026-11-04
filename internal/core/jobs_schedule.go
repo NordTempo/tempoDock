@@ -58,8 +58,13 @@ func (c *Core) scheduleJobs() {
 			c.log.Error("job scheduler", "err", err)
 			next = now().Add(jobRetry)
 		}
-		if next.IsZero() && c.stopScheduling() {
-			return
+		if next.IsZero() {
+			if c.stopScheduling() {
+				return
+			}
+			// A kick came in during the pass (a job set or enabled) and
+			// stopScheduling took it: pass again now, don't wait for it.
+			continue
 		}
 		var wake <-chan time.Time
 		if !next.IsZero() {
@@ -78,8 +83,8 @@ func (c *Core) scheduleJobs() {
 }
 
 // stopScheduling marks the scheduler stopped unless a kick came in since
-// its pass, which then needs another one: kicks and this check are under
-// one lock, so none is lost.
+// its pass; then it takes the kick and the caller passes again. Kicks and
+// this check are under one lock, so none is lost.
 func (c *Core) stopScheduling() bool {
 	c.jobs.mu.Lock()
 	defer c.jobs.mu.Unlock()

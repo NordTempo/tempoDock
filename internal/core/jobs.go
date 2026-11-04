@@ -81,6 +81,10 @@ func (c *Core) startJob(ctx context.Context, jobID, serviceID int64, trigger api
 	if err != nil {
 		return apitypes.CommandRun{}, err
 	}
+	if trigger == apitypes.TriggerSchedule && !job.Enabled {
+		// Disabled after the pass listed it: nothing to run or record.
+		return apitypes.CommandRun{}, errors.New("the job was disabled")
+	}
 	if trigger == apitypes.TriggerSchedule {
 		// It came due: open pages move on to its next time.
 		_, _ = c.publishJob(ctx, ss, job)
