@@ -26,18 +26,20 @@ the server that serves it.
 | Settings | Interval 30 s to 1 h (default 60 s), timeout 1 to 30 s and below the interval (default 10 s), expected status. At most 10 checks per service |
 | Who | Project admins add and remove checks; readers see results |
 | Where it runs | On an online server other than the environment's, chosen by the check's ID among the online candidates so checks spread out; the control plane when there is no other server. The control plane's own probes run in process |
-| Runtime interface | `Probe(ProbeRequest) ProbeResult` over the node link as `probe` (protocol 15). Nodes below it aren't chosen to probe |
+| Runtime interface | `Probe(ProbeRequest) ProbeResult` over the node link as `probe` (protocol 19, `remote.ProbeProtocol`). Nodes below it aren't chosen to probe. The prober is `internal/node/uptime` |
 | Address check | The probe's dialer refuses loopback, link-local, multicast and metadata addresses, after DNS, with the same checks (`httpkit`) as alert channels and log drains. The host must be one of the service's domains |
 | Down | Two failed probes in a row open an `uptime_down` alert (critical) keyed `uptime:<check id>`; the next success resolves it (the channel's `resolved` notification is the recovery) |
-| History | `uptime_stats`: per check, minute rows for 24 hours and hour rows for 30 days (probes up and total, latency sum). Percentages for 24 h, 7 d and 30 d come from them; incidents are the check's alerts |
-| Where shown | The service's uptime section in the UI (checks, 24 h strip, percentages, last incidents), `dock status` (24 h percentage and current state per service), `dock uptime list` |
+| History | `uptime_stats`: per check, minute rows for 24 hours and hour rows for 30 days (probes up and total, latency sum). Percentages for 24 h, 7 d and 30 d come from them, the strip is the last day in 48 half-hour buckets; incidents are the check's alerts (by key, `alerts_key`) |
+| Where shown | The service's Uptime tab in the UI (checks, 24 h strip, percentages, last incidents), `dock status` (24 h percentage and current state per service), `dock uptime list` |
 
 ## Scheduling
 
 The scheduler is one goroutine with a min-heap of checks by next due
 time and one `time.Timer` to the earliest. Adding, changing or removing
 a check kicks it to rebuild its heap from the database. With no checks
-the goroutine waits on its kick channel and the timer is stopped: an
+the goroutine waits on its kick channel, the timer is stopped and it
+holds no bus subscription (it follows server events only while checks
+exist to place): an
 install without checks has no new wake-ups. A due check is probed in its
 own goroutine (bounded by a semaphore of 8), and its next due time is
 its last due time plus the interval, so a slow probe doesn't drift the
@@ -47,14 +49,33 @@ skipped once.
 The first probe of a check is spread over its first interval by its ID,
 so many checks added at once don't fire together after a restart.
 
+## In the API
+
+A check's expected status is a code such as `"200"`, or `"2xx"`/`"3xx"`, in the
+API and CLI; the database and the node link store it as the code, or 2 or
+3 for a class. Checks live under their service:
+`/projects/{p}/environments/{e}/services/{s}/uptime-checks` (GET, POST)
+and `.../uptime-checks/{id}` (DELETE). A check whose state changes (up or
+down) is an `uptime` event, which open pages patch in. The project
+overview carries a per-service summary (checks, state, 24 h uptime) from
+one query, which `dock status` shows.
+
 ## Results
 
 Each probe updates the check's in-memory state (consecutive failures,
 last result) and adds to the current minute's row in one upsert. The
-statistics tick (ADR 0015) rolls finished hours into hour rows and
-trims minute rows older than 24 hours and hour rows older than 30 days,
-as it does for statistics. A check at the floor interval writes two
-small upserts a minute.
+statistics tick (ADR 0015) rolls every hour that ended at least a minute
+ago into hour rows and trims minute rows older than 24 hours and hour
+rows older than 30 days, once an hour. A check at the floor interval
+writes two small upserts a minute. `uptime_stats` is keyed by check
+first, like `traffic_stats`, since every read is per check; rollups and
+trims use an index on time.
+
+A check's state, consecutive failures and last probe are in memory only:
+after a restart a check is unknown (down while its alert is open) until
+it is probed again. Alerts go through the alert engine (`signalAlert`,
+key `uptime:<check id>`) like every other, so their channels, reminders
+and resolutions are the same.
 
 ## Consequences
 

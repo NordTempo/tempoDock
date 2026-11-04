@@ -235,6 +235,11 @@ Caddy ──"is this hostname ours?"──▶ daemon ask endpoint ──▶ yes:
   and append the new point to their charts without polling. Watching a
   server or service live samples every 3 seconds, and only while someone
   watches.
+- Uptime checks ([ADR 0052](decisions/0052-uptime-checks.md)) have their
+  own scheduler: one goroutine with a heap of checks and one timer to the
+  next due one, armed only while checks exist. Another server probes over
+  the node link (`probe`); each result is one upsert into the minute's row
+  of `uptime_stats`, which the statistics tick rolls into hour rows.
 - App logs are read from Docker (`local` log driver with rotation) while
   the container exists. When dock removes a container (a release
   replaced or failed, drift, an archive), it stops it, has its server
