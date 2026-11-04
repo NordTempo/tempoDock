@@ -63,6 +63,7 @@ With --json, every line is one JSON object on its own line.`,
 	cmd.Flags().StringVar(&f.since, "since", "", "only lines newer than this: a duration like 10m or an RFC 3339 time")
 	cmd.Flags().Int64VarP(&f.release, "release", "r", 0, "release number (default: the active release; with --build, the newest)")
 	cmd.Flags().BoolVar(&f.build, "build", false, "show the build log instead of service output")
+	cmd.AddCommand(newLogDrainCmd(g))
 	return cmd
 }
 

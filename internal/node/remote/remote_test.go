@@ -893,7 +893,9 @@ func (h *harness) start(name string) node.Container {
 }
 
 // emitUntilReceived emits a die event for id on the node until it arrives
-// on events: events emitted before a subscription is open are lost.
+// on events: events emitted before a subscription is open are lost. The
+// start event of the container's Start may or may not have made it, so
+// it is skipped.
 func (h *harness) emitUntilReceived(events <-chan node.ContainerEvent, id string) {
 	h.t.Helper()
 	deadline := time.After(5 * time.Second)
@@ -901,6 +903,9 @@ func (h *harness) emitUntilReceived(events <-chan node.ContainerEvent, id string
 		h.rt.Emit(node.ContainerEvent{ContainerID: id, Action: "die", ExitCode: 3})
 		select {
 		case ev := <-events:
+			if ev.Action == "start" {
+				continue
+			}
 			if ev.Action != "die" || ev.ExitCode != 3 || ev.Labels.Release != "7" {
 				h.t.Fatalf("event = %+v", ev)
 			}

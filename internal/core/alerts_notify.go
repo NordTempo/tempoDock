@@ -16,14 +16,12 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
-	"net/netip"
 	"net/smtp"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -294,22 +292,15 @@ func signWebhook(secret string, at time.Time, body []byte) string {
 // newChannelClient is the HTTP client webhook and Slack channels post
 // with. It never follows redirects: a channel's URL is where alerts go,
 // nowhere else. It never connects to the server itself or to link-local
-// addresses either (e.addrErr, checked after DNS), and keeps no idle
+// addresses either (e.guard, checked after DNS), and keeps no idle
 // connections: alerts are rare.
 func newChannelClient(e *alertEngine) *http.Client {
-	dial := func(_, address string, _ syscall.RawConn) error {
-		ap, err := netip.ParseAddrPort(address)
-		if err != nil {
-			return err
-		}
-		return e.addrErr(ap.Addr())
-	}
 	return &http.Client{
 		Timeout:       deliveryTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Transport: &http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
-			DialContext:         (&net.Dialer{Timeout: deliveryTimeout, Control: dial}).DialContext,
+			DialContext:         (&net.Dialer{Timeout: deliveryTimeout, Control: e.guard.control}).DialContext,
 			TLSHandshakeTimeout: deliveryTimeout,
 			DisableKeepAlives:   true,
 		},
@@ -317,35 +308,9 @@ func newChannelClient(e *alertEngine) *http.Client {
 }
 
 // AllowLoopbackAlertChannels lets alert channels deliver to this server's
-// own addresses, which they never may in production (alertEngine.addrErr).
+// own addresses, which they never may in production (egressGuard.addrErr).
 // For tests whose receivers listen on 127.0.0.1.
-func (c *Core) AllowLoopbackAlertChannels(allow bool) { c.alerts.loopback.Store(allow) }
-
-// Cloud metadata services outside 169.254.0.0/16: AWS over IPv6 and
-// Alibaba Cloud.
-var (
-	awsMetadataV6   = netip.MustParseAddr("fd00:ec2::254")
-	alibabaMetadata = netip.MustParseAddr("100.100.100.200")
-)
-
-// addrErr says why alerts can't be sent to ip, or nil. Loopback would
-// reach the daemon's own loopback-only services (the internal listener,
-// the registry) past the app firewall; link-local holds cloud metadata
-// (169.254.169.254). Private, CGNAT and tailnet addresses are fine: a
-// homelab's ntfy or chat bridge lives there (ADR 0020).
-func (e *alertEngine) addrErr(ip netip.Addr) error {
-	ip = ip.Unmap()
-	switch {
-	case ip.IsLoopback() || ip.IsUnspecified():
-		if e.loopback.Load() {
-			return nil
-		}
-		return fmt.Errorf("%s is this server itself; alerts go to other hosts (use the receiver's LAN, tailnet or public address)", ip)
-	case ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip == awsMetadataV6 || ip == alibabaMetadata:
-		return fmt.Errorf("%s is a link-local, multicast or cloud metadata address; alerts can't go there", ip)
-	}
-	return nil
-}
+func (c *Core) AllowLoopbackAlertChannels(allow bool) { c.alerts.guard.loopback.Store(allow) }
 
 // post sends a JSON body; anything but a 2xx answer is an error.
 func (e *alertEngine) post(ctx context.Context, target string, body []byte, headers map[string]string) error {
@@ -612,14 +577,8 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest) (c
 			return cfg, "", "", invalid("SMTP settings are for email channels")
 		}
 		// Named hosts are checked when delivering (newChannelClient), after DNS.
-		host := strings.ToLower(u.Hostname())
-		if host == "localhost" || strings.HasSuffix(host, ".localhost") {
-			host = "127.0.0.1"
-		}
-		if ip, perr := netip.ParseAddr(host); perr == nil {
-			if err := e.addrErr(ip); err != nil {
-				return cfg, "", "", invalid("%v", err)
-			}
+		if err := e.guard.hostErr(u.Hostname()); err != nil {
+			return cfg, "", "", invalid("%v", err)
 		}
 		cfg.URL, target = req.URL, u.Scheme+"://"+u.Host
 		if req.Kind == apitypes.ChannelWebhook {

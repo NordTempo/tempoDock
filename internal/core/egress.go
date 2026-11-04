@@ -1,0 +1,72 @@
+package core
+
+import (
+	"fmt"
+	"net/netip"
+	"strings"
+	"sync/atomic"
+	"syscall"
+)
+
+// egressGuard keeps the connections the daemon makes to user-given
+// addresses (alert channels, log drains) away from the server itself and
+// from link-local and cloud metadata addresses. Literal addresses are
+// refused when a destination is added (hostErr); every connection is
+// checked again after DNS (control, a net.Dialer's Control), so a name
+// that resolves to one of them is refused too.
+type egressGuard struct {
+	// what names what is sent, in errors: "alerts", "logs".
+	what string
+	// loopback lets connections reach this server, for tests only.
+	loopback atomic.Bool
+}
+
+// Cloud metadata services outside 169.254.0.0/16: AWS over IPv6 and
+// Alibaba Cloud.
+var (
+	awsMetadataV6   = netip.MustParseAddr("fd00:ec2::254")
+	alibabaMetadata = netip.MustParseAddr("100.100.100.200")
+)
+
+// addrErr says why nothing can be sent to ip, or nil. Loopback would
+// reach the daemon's own loopback-only services (the internal listener,
+// the registry) past the app firewall; link-local holds cloud metadata
+// (169.254.169.254). Private, CGNAT and tailnet addresses are fine: a
+// homelab's ntfy, chat bridge or log server lives there (ADR 0020).
+func (g *egressGuard) addrErr(ip netip.Addr) error {
+	ip = ip.Unmap()
+	switch {
+	case ip.IsLoopback() || ip.IsUnspecified():
+		if g.loopback.Load() {
+			return nil
+		}
+		return fmt.Errorf("%s is this server itself; %s go to other hosts (use the receiver's LAN, tailnet or public address)", ip, g.what)
+	case ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip == awsMetadataV6 || ip == alibabaMetadata:
+		return fmt.Errorf("%s is a link-local, multicast or cloud metadata address; %s can't go there", ip, g.what)
+	}
+	return nil
+}
+
+// hostErr checks a destination's host when it is added: a literal
+// address (or localhost) that addrErr refuses. Names are checked when
+// connecting.
+func (g *egressGuard) hostErr(host string) error {
+	host = strings.ToLower(host)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		host = "127.0.0.1"
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return g.addrErr(ip)
+	}
+	return nil
+}
+
+// control is a net.Dialer's Control: it runs for every address a dial
+// tries, after DNS, and refuses those addrErr refuses.
+func (g *egressGuard) control(_, address string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return err
+	}
+	return g.addrErr(ap.Addr())
+}

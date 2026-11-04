@@ -180,6 +180,26 @@
       "bytes_op": 254111,
       "allocs_op": 3721
     },
+    "core.BenchmarkDrainEncodeHTTP": {
+      "ns_op": 130000,
+      "bytes_op": 0,
+      "allocs_op": 0
+    },
+    "core.BenchmarkDrainEncodeLoki": {
+      "ns_op": 115000,
+      "bytes_op": 0,
+      "allocs_op": 0
+    },
+    "core.BenchmarkDrainEncodeSyslog": {
+      "ns_op": 130000,
+      "bytes_op": 68,
+      "allocs_op": 0
+    },
+    "core.BenchmarkDrainEnqueue": {
+      "ns_op": 7.0,
+      "bytes_op": 0,
+      "allocs_op": 0
+    },
     "core.BenchmarkRedactBuildLog": {
       "ns_op": 1380000,
       "bytes_op": 82273,

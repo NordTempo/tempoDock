@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -84,8 +85,16 @@ func (c *Core) retentionTick(ctx context.Context, now time.Time, servers []store
 	r.mu.Unlock()
 	if due {
 		c.retain(ctx, now)
-		// Servers answer in the background, so the tick never waits on one.
-		c.wg.Go(func() { c.pruneLogs(c.ctx, servers) })
+		// This server's log archives are pruned in process (a few
+		// directory reads); remote servers answer in the background, so
+		// the tick never waits on one.
+		remote := slices.DeleteFunc(slices.Clone(servers), func(s store.Server) bool { return s.ID == c.local.ID })
+		if len(remote) < len(servers) {
+			c.pruneLogs(ctx, []store.Server{c.local})
+		}
+		if len(remote) > 0 {
+			c.wg.Go(func() { c.pruneLogs(c.ctx, remote) })
+		}
 	}
 }
 

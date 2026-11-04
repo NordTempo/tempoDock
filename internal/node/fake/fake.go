@@ -36,9 +36,12 @@ type Runtime struct {
 	routes     []node.Route
 	ops        []string
 	logs       map[string][]node.LogLine
-	subs       []chan node.ContainerEvent
-	nextID     atomic.Int64
-	nextPort   int
+	// changed is closed (and cleared) when logs or a container's state
+	// change, waking Logs followers.
+	changed  chan struct{}
+	subs     []chan node.ContainerEvent
+	nextID   atomic.Int64
+	nextPort int
 
 	buildErr    error
 	pullErr     error
@@ -266,6 +269,23 @@ func (r *Runtime) AddLogs(name string, lines ...string) {
 			}
 		}
 	}
+	r.notifyLocked()
+}
+
+// notifyLocked wakes Logs followers (r.mu held).
+func (r *Runtime) notifyLocked() {
+	if r.changed != nil {
+		close(r.changed)
+		r.changed = nil
+	}
+}
+
+// changedLocked returns a channel closed at the next change (r.mu held).
+func (r *Runtime) changedLocked() <-chan struct{} {
+	if r.changed == nil {
+		r.changed = make(chan struct{})
+	}
+	return r.changed
 }
 
 // AddContainer injects a container the platform didn't start (e.g. left over
@@ -297,6 +317,7 @@ func (r *Runtime) Emit(ev node.ContainerEvent) {
 			c.Health = ev.Health
 		}
 	}
+	r.notifyLocked()
 	r.sendLocked(ev)
 	r.mu.Unlock()
 }
@@ -513,6 +534,9 @@ func (r *Runtime) Start(_ context.Context, spec node.ContainerSpec) (node.Contai
 	r.containers[id] = c
 	r.specs[id] = spec
 	out := *c
+	if !exit {
+		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "start"})
+	}
 	r.mu.Unlock()
 	if exit {
 		r.Emit(node.ContainerEvent{ContainerID: id, Action: "die", ExitCode: 1})
@@ -545,6 +569,7 @@ func (r *Runtime) Stop(ctx context.Context, id string, _ time.Duration) error {
 	}
 	if c.State == node.StateRunning {
 		c.State, c.ExitCode = node.StateExited, 0
+		r.notifyLocked()
 		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "die"})
 	}
 	return nil
@@ -596,6 +621,7 @@ func (r *Runtime) Remove(_ context.Context, id string) error {
 	r.op("remove %s", c.Name)
 	delete(r.containers, id)
 	delete(r.specs, id)
+	r.notifyLocked()
 	r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "destroy"})
 	return nil
 }
@@ -662,15 +688,25 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, _ node.Heal
 	return nil
 }
 
-// Logs implements node.Containers. Following is not simulated: the channel
-// closes after the backlog.
-func (r *Runtime) Logs(_ context.Context, id string, opts node.LogOptions) (<-chan node.LogLine, error) {
+// Logs implements node.Containers. With opts.Follow it sends lines as
+// AddLogs adds them, until the container stops or is removed or ctx ends,
+// like Docker; without, the channel closes after the backlog.
+func (r *Runtime) Logs(ctx context.Context, id string, opts node.LogOptions) (<-chan node.LogLine, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.containers[id]; !ok {
 		return nil, fmt.Errorf("container %s: %w", id, node.ErrNotFound)
 	}
 	lines := r.logs[id]
+	if opts.Follow {
+		start := 0
+		if opts.Tail > 0 && len(lines) > opts.Tail {
+			start = len(lines) - opts.Tail
+		}
+		ch := make(chan node.LogLine)
+		go r.follow(ctx, id, start, opts.Since, ch)
+		return ch, nil
+	}
 	if opts.Tail > 0 && len(lines) > opts.Tail {
 		lines = lines[len(lines)-opts.Tail:]
 	}
@@ -683,6 +719,40 @@ func (r *Runtime) Logs(_ context.Context, id string, opts node.LogOptions) (<-ch
 	}
 	close(ch)
 	return ch, nil
+}
+
+// follow sends a container's lines from index pos on (skipping those
+// before since), then new ones as they are added, until the container
+// isn't running or ctx ends.
+func (r *Runtime) follow(ctx context.Context, id string, pos int, since time.Time, ch chan<- node.LogLine) {
+	defer close(ch)
+	for {
+		r.mu.Lock()
+		lines := r.logs[id][pos:]
+		pos += len(lines)
+		c, ok := r.containers[id]
+		running := ok && c.State == node.StateRunning
+		changed := r.changedLocked()
+		r.mu.Unlock()
+		for _, l := range lines {
+			if l.Time.Before(since) {
+				continue
+			}
+			select {
+			case ch <- l:
+			case <-ctx.Done():
+				return
+			}
+		}
+		if !running {
+			return
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // Events implements node.Containers.

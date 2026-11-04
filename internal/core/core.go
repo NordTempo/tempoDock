@@ -144,6 +144,8 @@ type Core struct {
 	// retention passes and disk prunes (retention.go).
 	alerts    *alertEngine
 	retention *retention
+	// logDrains are the log drains and their followers (drains_deliver.go).
+	logDrains *drainManager
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
 
@@ -206,6 +208,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		reg:        o.Registry,
 		stats:      newStatsState(),
 		alerts:     newAlertEngine(),
+		logDrains:  newDrainManager(),
 		retention:  newRetention(),
 		log:        o.Logger,
 		bus:        newBus(),
@@ -344,6 +347,9 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.startAlerts(ctx); err != nil {
 		return err
 	}
+	if err := c.startLogDrains(ctx); err != nil {
+		return err
+	}
 	c.loadLastUpdate()
 	c.UpdateFinished(ctx)
 	if err := c.startAnalytics(ctx); err != nil {
@@ -410,12 +416,15 @@ func (c *Core) clearTempFiles() {
 func (c *Core) Close() {
 	c.tunnels.closeAll()
 	c.closeStats()
-	// Under serversMu, git.mu and the live lock, so kickServer, kickGit
-	// and reloadSite can't start a goroutine after this.
+	// Under serversMu, git.mu, the live lock and the log drains' lock, so
+	// kickServer, kickGit, reloadSite and followContainer can't start a
+	// goroutine after this.
 	c.serversMu.Lock()
 	c.git.mu.Lock()
 	c.analytics.live.mu.Lock()
+	c.logDrains.mu.Lock()
 	c.cancel()
+	c.logDrains.mu.Unlock()
 	c.analytics.live.mu.Unlock()
 	c.git.mu.Unlock()
 	c.serversMu.Unlock()

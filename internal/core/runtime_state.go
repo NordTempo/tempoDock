@@ -163,6 +163,7 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	if c.foreign(ev.Labels) {
 		return
 	}
+	c.drainContainerEvent(serverID, ev)
 	own := c.ownRemoval(ev)
 	id, err := strconv.ParseInt(ev.Labels.Release, 10, 64)
 	if err != nil {

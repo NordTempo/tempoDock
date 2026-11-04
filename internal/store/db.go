@@ -54,6 +54,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addGitDeliveryStmt, err = db.PrepareContext(ctx, addGitDelivery); err != nil {
 		return nil, fmt.Errorf("error preparing query AddGitDelivery: %w", err)
 	}
+	if q.addLogDrainStmt, err = db.PrepareContext(ctx, addLogDrain); err != nil {
+		return nil, fmt.Errorf("error preparing query AddLogDrain: %w", err)
+	}
 	if q.addOrgMemberStmt, err = db.PrepareContext(ctx, addOrgMember); err != nil {
 		return nil, fmt.Errorf("error preparing query AddOrgMember: %w", err)
 	}
@@ -312,6 +315,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteJoinTokenStmt, err = db.PrepareContext(ctx, deleteJoinToken); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteJoinToken: %w", err)
 	}
+	if q.deleteLogDrainStmt, err = db.PrepareContext(ctx, deleteLogDrain); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteLogDrain: %w", err)
+	}
 	if q.deleteOrgStmt, err = db.PrepareContext(ctx, deleteOrg); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteOrg: %w", err)
 	}
@@ -537,6 +543,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getLocalServerStmt, err = db.PrepareContext(ctx, getLocalServer); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLocalServer: %w", err)
 	}
+	if q.getLogDrainStmt, err = db.PrepareContext(ctx, getLogDrain); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLogDrain: %w", err)
+	}
+	if q.getLogSourceStmt, err = db.PrepareContext(ctx, getLogSource); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLogSource: %w", err)
+	}
 	if q.getMemberRoleStmt, err = db.PrepareContext(ctx, getMemberRole); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMemberRole: %w", err)
 	}
@@ -681,6 +693,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listAlertsStmt, err = db.PrepareContext(ctx, listAlerts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAlerts: %w", err)
 	}
+	if q.listAllLogDrainsStmt, err = db.PrepareContext(ctx, listAllLogDrains); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAllLogDrains: %w", err)
+	}
 	if q.listAllSitesStmt, err = db.PrepareContext(ctx, listAllSites); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAllSites: %w", err)
 	}
@@ -731,6 +746,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listDomainsByServiceStmt, err = db.PrepareContext(ctx, listDomainsByService); err != nil {
 		return nil, fmt.Errorf("error preparing query ListDomainsByService: %w", err)
+	}
+	if q.listDrainContainersStmt, err = db.PrepareContext(ctx, listDrainContainers); err != nil {
+		return nil, fmt.Errorf("error preparing query ListDrainContainers: %w", err)
 	}
 	if q.listDueCloudflareRecordsStmt, err = db.PrepareContext(ctx, listDueCloudflareRecords); err != nil {
 		return nil, fmt.Errorf("error preparing query ListDueCloudflareRecords: %w", err)
@@ -803,6 +821,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listLocalBackupServersStmt, err = db.PrepareContext(ctx, listLocalBackupServers); err != nil {
 		return nil, fmt.Errorf("error preparing query ListLocalBackupServers: %w", err)
+	}
+	if q.listLogDrainsStmt, err = db.PrepareContext(ctx, listLogDrains); err != nil {
+		return nil, fmt.Errorf("error preparing query ListLogDrains: %w", err)
 	}
 	if q.listOldestAuditEventsStmt, err = db.PrepareContext(ctx, listOldestAuditEvents); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOldestAuditEvents: %w", err)
@@ -1462,6 +1483,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing addGitDeliveryStmt: %w", cerr)
 		}
 	}
+	if q.addLogDrainStmt != nil {
+		if cerr := q.addLogDrainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addLogDrainStmt: %w", cerr)
+		}
+	}
 	if q.addOrgMemberStmt != nil {
 		if cerr := q.addOrgMemberStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addOrgMemberStmt: %w", cerr)
@@ -1892,6 +1918,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteJoinTokenStmt: %w", cerr)
 		}
 	}
+	if q.deleteLogDrainStmt != nil {
+		if cerr := q.deleteLogDrainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteLogDrainStmt: %w", cerr)
+		}
+	}
 	if q.deleteOrgStmt != nil {
 		if cerr := q.deleteOrgStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteOrgStmt: %w", cerr)
@@ -2267,6 +2298,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getLocalServerStmt: %w", cerr)
 		}
 	}
+	if q.getLogDrainStmt != nil {
+		if cerr := q.getLogDrainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLogDrainStmt: %w", cerr)
+		}
+	}
+	if q.getLogSourceStmt != nil {
+		if cerr := q.getLogSourceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLogSourceStmt: %w", cerr)
+		}
+	}
 	if q.getMemberRoleStmt != nil {
 		if cerr := q.getMemberRoleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getMemberRoleStmt: %w", cerr)
@@ -2507,6 +2548,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listAlertsStmt: %w", cerr)
 		}
 	}
+	if q.listAllLogDrainsStmt != nil {
+		if cerr := q.listAllLogDrainsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAllLogDrainsStmt: %w", cerr)
+		}
+	}
 	if q.listAllSitesStmt != nil {
 		if cerr := q.listAllSitesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listAllSitesStmt: %w", cerr)
@@ -2590,6 +2636,11 @@ func (q *Queries) Close() error {
 	if q.listDomainsByServiceStmt != nil {
 		if cerr := q.listDomainsByServiceStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listDomainsByServiceStmt: %w", cerr)
+		}
+	}
+	if q.listDrainContainersStmt != nil {
+		if cerr := q.listDrainContainersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listDrainContainersStmt: %w", cerr)
 		}
 	}
 	if q.listDueCloudflareRecordsStmt != nil {
@@ -2710,6 +2761,11 @@ func (q *Queries) Close() error {
 	if q.listLocalBackupServersStmt != nil {
 		if cerr := q.listLocalBackupServersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listLocalBackupServersStmt: %w", cerr)
+		}
+	}
+	if q.listLogDrainsStmt != nil {
+		if cerr := q.listLogDrainsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listLogDrainsStmt: %w", cerr)
 		}
 	}
 	if q.listOldestAuditEventsStmt != nil {
@@ -3766,6 +3822,7 @@ type Queries struct {
 	addDataPolicyRuleStmt               *sql.Stmt
 	addEnsureRunningStmt                *sql.Stmt
 	addGitDeliveryStmt                  *sql.Stmt
+	addLogDrainStmt                     *sql.Stmt
 	addOrgMemberStmt                    *sql.Stmt
 	addReleaseEventStmt                 *sql.Stmt
 	addSensitiveColumnStmt              *sql.Stmt
@@ -3852,6 +3909,7 @@ type Queries struct {
 	deleteGitHubInstallationStmt        *sql.Stmt
 	deleteGitHubInstallationsStmt       *sql.Stmt
 	deleteJoinTokenStmt                 *sql.Stmt
+	deleteLogDrainStmt                  *sql.Stmt
 	deleteOrgStmt                       *sql.Stmt
 	deleteOrgDataPolicyStmt             *sql.Stmt
 	deleteOrgInvitesStmt                *sql.Stmt
@@ -3927,6 +3985,8 @@ type Queries struct {
 	getInstallIDStmt                    *sql.Stmt
 	getInviteByHashStmt                 *sql.Stmt
 	getLocalServerStmt                  *sql.Stmt
+	getLogDrainStmt                     *sql.Stmt
+	getLogSourceStmt                    *sql.Stmt
 	getMemberRoleStmt                   *sql.Stmt
 	getMemberRoleByEmailStmt            *sql.Stmt
 	getMembershipStmt                   *sql.Stmt
@@ -3975,6 +4035,7 @@ type Queries struct {
 	listAlertChannelsStmt               *sql.Stmt
 	listAlertNoticesStmt                *sql.Stmt
 	listAlertsStmt                      *sql.Stmt
+	listAllLogDrainsStmt                *sql.Stmt
 	listAllSitesStmt                    *sql.Stmt
 	listAnalyticsHostsStmt              *sql.Stmt
 	listAnalyticsSaltsStmt              *sql.Stmt
@@ -3992,6 +4053,7 @@ type Queries struct {
 	listDataPolicyRulesStmt             *sql.Stmt
 	listDataQueryHistoryStmt            *sql.Stmt
 	listDomainsByServiceStmt            *sql.Stmt
+	listDrainContainersStmt             *sql.Stmt
 	listDueCloudflareRecordsStmt        *sql.Stmt
 	listDueCloudflareTunnelsStmt        *sql.Stmt
 	listDueRemindersStmt                *sql.Stmt
@@ -4016,6 +4078,7 @@ type Queries struct {
 	listLatestScheduledBackupsStmt      *sql.Stmt
 	listLiveSitesStmt                   *sql.Stmt
 	listLocalBackupServersStmt          *sql.Stmt
+	listLogDrainsStmt                   *sql.Stmt
 	listOldestAuditEventsStmt           *sql.Stmt
 	listOpenAlertsStmt                  *sql.Stmt
 	listOrgAccessRequestsStmt           *sql.Stmt
@@ -4233,6 +4296,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addDataPolicyRuleStmt:               q.addDataPolicyRuleStmt,
 		addEnsureRunningStmt:                q.addEnsureRunningStmt,
 		addGitDeliveryStmt:                  q.addGitDeliveryStmt,
+		addLogDrainStmt:                     q.addLogDrainStmt,
 		addOrgMemberStmt:                    q.addOrgMemberStmt,
 		addReleaseEventStmt:                 q.addReleaseEventStmt,
 		addSensitiveColumnStmt:              q.addSensitiveColumnStmt,
@@ -4319,6 +4383,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteGitHubInstallationStmt:        q.deleteGitHubInstallationStmt,
 		deleteGitHubInstallationsStmt:       q.deleteGitHubInstallationsStmt,
 		deleteJoinTokenStmt:                 q.deleteJoinTokenStmt,
+		deleteLogDrainStmt:                  q.deleteLogDrainStmt,
 		deleteOrgStmt:                       q.deleteOrgStmt,
 		deleteOrgDataPolicyStmt:             q.deleteOrgDataPolicyStmt,
 		deleteOrgInvitesStmt:                q.deleteOrgInvitesStmt,
@@ -4394,6 +4459,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getInstallIDStmt:                    q.getInstallIDStmt,
 		getInviteByHashStmt:                 q.getInviteByHashStmt,
 		getLocalServerStmt:                  q.getLocalServerStmt,
+		getLogDrainStmt:                     q.getLogDrainStmt,
+		getLogSourceStmt:                    q.getLogSourceStmt,
 		getMemberRoleStmt:                   q.getMemberRoleStmt,
 		getMemberRoleByEmailStmt:            q.getMemberRoleByEmailStmt,
 		getMembershipStmt:                   q.getMembershipStmt,
@@ -4442,6 +4509,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listAlertChannelsStmt:               q.listAlertChannelsStmt,
 		listAlertNoticesStmt:                q.listAlertNoticesStmt,
 		listAlertsStmt:                      q.listAlertsStmt,
+		listAllLogDrainsStmt:                q.listAllLogDrainsStmt,
 		listAllSitesStmt:                    q.listAllSitesStmt,
 		listAnalyticsHostsStmt:              q.listAnalyticsHostsStmt,
 		listAnalyticsSaltsStmt:              q.listAnalyticsSaltsStmt,
@@ -4459,6 +4527,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listDataPolicyRulesStmt:             q.listDataPolicyRulesStmt,
 		listDataQueryHistoryStmt:            q.listDataQueryHistoryStmt,
 		listDomainsByServiceStmt:            q.listDomainsByServiceStmt,
+		listDrainContainersStmt:             q.listDrainContainersStmt,
 		listDueCloudflareRecordsStmt:        q.listDueCloudflareRecordsStmt,
 		listDueCloudflareTunnelsStmt:        q.listDueCloudflareTunnelsStmt,
 		listDueRemindersStmt:                q.listDueRemindersStmt,
@@ -4483,6 +4552,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listLatestScheduledBackupsStmt:      q.listLatestScheduledBackupsStmt,
 		listLiveSitesStmt:                   q.listLiveSitesStmt,
 		listLocalBackupServersStmt:          q.listLocalBackupServersStmt,
+		listLogDrainsStmt:                   q.listLogDrainsStmt,
 		listOldestAuditEventsStmt:           q.listOldestAuditEventsStmt,
 		listOpenAlertsStmt:                  q.listOpenAlertsStmt,
 		listOrgAccessRequestsStmt:           q.listOrgAccessRequestsStmt,
