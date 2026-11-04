@@ -25,8 +25,12 @@ const (
 	// CodeDenied means a user denied a browser login (`dock login`).
 	CodeDenied ErrorCode = "denied"
 	// CodeExpired means a browser login expired or was already used.
-	CodeExpired  ErrorCode = "expired"
-	CodeInternal ErrorCode = "internal"
+	CodeExpired ErrorCode = "expired"
+	// CodeEnvironmentLocked means the environment is locked and the
+	// caller is a token (ADR 0044); Error.Request names the access request
+	// that waits for an admin's approval.
+	CodeEnvironmentLocked ErrorCode = "environment_locked"
+	CodeInternal          ErrorCode = "internal"
 )
 
 // Release failure codes (Release.ErrorCode). Release.Error has the details.
@@ -48,6 +52,8 @@ type Error struct {
 	Detail string        `json:"detail" example:"this token has scope deploy; archiving a service requires admin"`
 	Code   ErrorCode     `json:"code" example:"forbidden"`
 	Errors []ErrorDetail `json:"errors,omitempty"`
+	// Request is the access request an environment_locked error filed.
+	Request int64 `json:"request,omitempty"`
 }
 
 // ErrorDetail points at one invalid input.

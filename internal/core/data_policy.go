@@ -146,7 +146,23 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 		}
 		in.rules = rules
 	}
-	return decidePermission(in), nil
+	perm := decidePermission(in)
+	if a.lockedOut(es.env) {
+		perm = lockedData(perm, es)
+	}
+	return perm, nil
+}
+
+// lockedData caps a token's data permission in a locked environment (ADR
+// 0044) at proposing: its changesets wait for an admin's approval in the
+// Data panel, which is the access request for data.
+func lockedData(perm apitypes.DataPermission, es envScope) apitypes.DataPermission {
+	perm.Level, perm.Approve, perm.Manage = perm.Level.Min(apitypes.LevelPropose), false, false
+	perm.Why = append(perm.Why, apitypes.DataPermissionStep{
+		Source: apitypes.PermissionLocked, Level: perm.Level, Sensitive: perm.Sensitive,
+		Detail: fmt.Sprintf("environment %s is locked: tokens propose changesets an admin approves", es),
+	})
+	return perm
 }
 
 // isAgent reports whether the actor is a token in its own right. A `dock

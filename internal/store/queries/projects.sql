@@ -91,6 +91,12 @@ SELECT * FROM environments WHERE id = +?;
 -- name: ListEnvironments :many
 SELECT * FROM environments WHERE project_id = +? ORDER BY name;
 
+-- SetEnvironmentLock locks (locked_at set) or unlocks (NULL) an
+-- environment, or opens a locked one until open_until (ADR 0044).
+-- name: SetEnvironmentLock :one
+UPDATE environments SET locked_at = ?, locked_by = ?, lock_reason = ?, open_until = ?
+WHERE id = +? RETURNING *;
+
 -- name: ArchiveProject :exec
 UPDATE projects SET archived_at = ? WHERE id = +? AND archived_at IS NULL;
 

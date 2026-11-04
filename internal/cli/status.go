@@ -46,7 +46,12 @@ service in the environment.`,
 			}
 			for _, so := range env.Services {
 				if so.Service.Name == t.Service {
-					return g.io.Print(so, func() error { return printServiceStatus(g, so) })
+					return g.io.Print(so, func() error {
+						if l := lockWords(env.Environment.Lock); l != "" {
+							_, _ = fmt.Fprintf(g.io.Out, "%s/%s is %s\n", t.Project, t.Environment, l)
+						}
+						return printServiceStatus(g, so)
+					})
 				}
 			}
 			return &output.Error{Exit: output.ExitNotFound, Message: fmt.Sprintf("service %q not found in %s/%s", t.Service, t.Project, t.Environment), Hint: "See `dock service list`."}
@@ -123,6 +128,9 @@ func oomNote(s apitypes.ServiceStatus) string {
 func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 	e := env.Environment
 	header := fmt.Sprintf("%s/%s on %s", e.Project, e.Name, e.Server)
+	if l := lockWords(e.Lock); l != "" {
+		header += ", " + l
+	}
 	if env.PendingChanges > 0 {
 		header += fmt.Sprintf(", %s (see `dock changes`)", plural(env.PendingChanges, "staged change"))
 	}

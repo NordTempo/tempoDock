@@ -89,7 +89,10 @@ type envView struct {
 	Kind           apitypes.EnvironmentKind `json:"kind"`
 	Server         string                   `json:"server"`
 	PendingChanges int                      `json:"pending_changes"`
-	Services       []serviceView            `json:"services"`
+	// Locked: tokens can't change anything here; what you try becomes an
+	// access request a human approves (ADR 0044).
+	Locked   bool          `json:"locked,omitempty"`
+	Services []serviceView `json:"services"`
 }
 
 // serviceView is a service's live state.
@@ -132,7 +135,7 @@ func viewService(s apitypes.Service) serviceView {
 func viewOverview(o apitypes.ProjectOverview) overviewView {
 	out := overviewView{Project: o.Project.Name, Environments: make([]envView, 0, len(o.Environments))}
 	for _, e := range o.Environments {
-		ev := envView{Name: e.Environment.Name, Kind: e.Environment.Kind, Server: e.Environment.Server, PendingChanges: e.PendingChanges, Services: []serviceView{}}
+		ev := envView{Name: e.Environment.Name, Kind: e.Environment.Kind, Server: e.Environment.Server, PendingChanges: e.PendingChanges, Locked: e.Environment.Lock.Holds(time.Now()), Services: []serviceView{}}
 		for _, s := range e.Services {
 			sv := viewService(s.Service)
 			sv.Active, sv.Deploying = summarize(s.ActiveRelease), summarize(s.Deploying)

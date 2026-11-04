@@ -930,7 +930,8 @@
               "policy",
               "token",
               "cap",
-              "production"
+              "production",
+              "locked"
             ],
             "type": "string"
           },
@@ -1450,6 +1451,10 @@
               "array",
               "null"
             ]
+          },
+          "request": {
+            "format": "int64",
+            "type": "integer"
           },
           "status": {
             "examples": [

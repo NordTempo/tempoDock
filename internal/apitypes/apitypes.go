@@ -219,6 +219,9 @@ type Environment struct {
 	Kind      EnvironmentKind `json:"kind" enum:"production,non_production"`
 	Server    string          `json:"server" doc:"Server the environment runs on"`
 	CreatedAt time.Time       `json:"created_at"`
+	// Lock is set while the environment is locked (ADR 0044), also while
+	// it is opened for a while.
+	Lock *EnvironmentLock `json:"lock,omitempty"`
 }
 
 // CreateEnvironmentRequest creates an environment. It goes where the
@@ -1425,29 +1428,33 @@ const (
 	// start: read the status again (ADR 0037). No payload; operators
 	// only.
 	EventAnalytics EventType = "analytics"
+	// EventEnvironmentLock: an environment was locked, unlocked or opened
+	// for a while (ADR 0044). Lock is the new lock, nil when unlocked.
+	EventEnvironmentLock EventType = "environment_lock"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType       `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics"`
-	Time           time.Time       `json:"time"`
-	ProjectRenamed *ProjectRenamed `json:"project_renamed,omitempty"`
-	Project        string          `json:"project,omitempty"`
-	Environment    string          `json:"environment,omitempty"`
-	Service        string          `json:"service,omitempty"`
-	Release        *Release        `json:"release,omitempty"`
-	ReleaseEvent   *ReleaseEvent   `json:"release_event,omitempty"`
-	BuildLog       *BuildLogLine   `json:"build_log,omitempty"`
-	ServiceStatus  *ServiceStatus  `json:"service_status,omitempty"`
-	Domain         *Domain         `json:"domain,omitempty"`
-	Audit          *AuditEvent     `json:"audit,omitempty"`
-	Usage          *UsageUpdate    `json:"usage,omitempty"`
-	Traffic        *TrafficUpdate  `json:"traffic,omitempty"`
-	Server         *Server         `json:"server,omitempty"`
-	Alert          *Alert          `json:"alert,omitempty"`
-	Update         *UpdateStatus   `json:"update,omitempty"`
-	Disk           *ServerDisk     `json:"disk,omitempty"`
-	Message        string          `json:"message,omitempty"`
+	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock"`
+	Time           time.Time        `json:"time"`
+	ProjectRenamed *ProjectRenamed  `json:"project_renamed,omitempty"`
+	Project        string           `json:"project,omitempty"`
+	Environment    string           `json:"environment,omitempty"`
+	Service        string           `json:"service,omitempty"`
+	Release        *Release         `json:"release,omitempty"`
+	ReleaseEvent   *ReleaseEvent    `json:"release_event,omitempty"`
+	BuildLog       *BuildLogLine    `json:"build_log,omitempty"`
+	ServiceStatus  *ServiceStatus   `json:"service_status,omitempty"`
+	Domain         *Domain          `json:"domain,omitempty"`
+	Audit          *AuditEvent      `json:"audit,omitempty"`
+	Usage          *UsageUpdate     `json:"usage,omitempty"`
+	Traffic        *TrafficUpdate   `json:"traffic,omitempty"`
+	Server         *Server          `json:"server,omitempty"`
+	Alert          *Alert           `json:"alert,omitempty"`
+	Update         *UpdateStatus    `json:"update,omitempty"`
+	Disk           *ServerDisk      `json:"disk,omitempty"`
+	Lock           *EnvironmentLock `json:"lock,omitempty"`
+	Message        string           `json:"message,omitempty"`
 }
 
 // UsageUpdate is one minute tick's samples: a server's own (Host; only

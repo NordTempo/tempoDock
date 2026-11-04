@@ -1074,6 +1074,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setEnvironmentApplyErrorStmt, err = db.PrepareContext(ctx, setEnvironmentApplyError); err != nil {
 		return nil, fmt.Errorf("error preparing query SetEnvironmentApplyError: %w", err)
 	}
+	if q.setEnvironmentLockStmt, err = db.PrepareContext(ctx, setEnvironmentLock); err != nil {
+		return nil, fmt.Errorf("error preparing query SetEnvironmentLock: %w", err)
+	}
 	if q.setGitHubAppStmt, err = db.PrepareContext(ctx, setGitHubApp); err != nil {
 		return nil, fmt.Errorf("error preparing query SetGitHubApp: %w", err)
 	}
@@ -1091,6 +1094,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setMemberRoleStmt, err = db.PrepareContext(ctx, setMemberRole); err != nil {
 		return nil, fmt.Errorf("error preparing query SetMemberRole: %w", err)
+	}
+	if q.setOrgLockProductionStmt, err = db.PrepareContext(ctx, setOrgLockProduction); err != nil {
+		return nil, fmt.Errorf("error preparing query SetOrgLockProduction: %w", err)
 	}
 	if q.setPendingSettingsStmt, err = db.PrepareContext(ctx, setPendingSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPendingSettings: %w", err)
@@ -3006,6 +3012,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setEnvironmentApplyErrorStmt: %w", cerr)
 		}
 	}
+	if q.setEnvironmentLockStmt != nil {
+		if cerr := q.setEnvironmentLockStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setEnvironmentLockStmt: %w", cerr)
+		}
+	}
 	if q.setGitHubAppStmt != nil {
 		if cerr := q.setGitHubAppStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setGitHubAppStmt: %w", cerr)
@@ -3034,6 +3045,11 @@ func (q *Queries) Close() error {
 	if q.setMemberRoleStmt != nil {
 		if cerr := q.setMemberRoleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setMemberRoleStmt: %w", cerr)
+		}
+	}
+	if q.setOrgLockProductionStmt != nil {
+		if cerr := q.setOrgLockProductionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setOrgLockProductionStmt: %w", cerr)
 		}
 	}
 	if q.setPendingSettingsStmt != nil {
@@ -3690,12 +3706,14 @@ type Queries struct {
 	setDataGrantsSyncedHashStmt         *sql.Stmt
 	setDomainRecordAbsentStmt           *sql.Stmt
 	setEnvironmentApplyErrorStmt        *sql.Stmt
+	setEnvironmentLockStmt              *sql.Stmt
 	setGitHubAppStmt                    *sql.Stmt
 	setGitHubInstallationStmt           *sql.Stmt
 	setGitLastEventStmt                 *sql.Stmt
 	setGitPendingStmt                   *sql.Stmt
 	setJoinTokenServerStmt              *sql.Stmt
 	setMemberRoleStmt                   *sql.Stmt
+	setOrgLockProductionStmt            *sql.Stmt
 	setPendingSettingsStmt              *sql.Stmt
 	setPublicHostStmt                   *sql.Stmt
 	setRegistryStorageStmt              *sql.Stmt
@@ -4105,12 +4123,14 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setDataGrantsSyncedHashStmt:         q.setDataGrantsSyncedHashStmt,
 		setDomainRecordAbsentStmt:           q.setDomainRecordAbsentStmt,
 		setEnvironmentApplyErrorStmt:        q.setEnvironmentApplyErrorStmt,
+		setEnvironmentLockStmt:              q.setEnvironmentLockStmt,
 		setGitHubAppStmt:                    q.setGitHubAppStmt,
 		setGitHubInstallationStmt:           q.setGitHubInstallationStmt,
 		setGitLastEventStmt:                 q.setGitLastEventStmt,
 		setGitPendingStmt:                   q.setGitPendingStmt,
 		setJoinTokenServerStmt:              q.setJoinTokenServerStmt,
 		setMemberRoleStmt:                   q.setMemberRoleStmt,
+		setOrgLockProductionStmt:            q.setOrgLockProductionStmt,
 		setPendingSettingsStmt:              q.setPendingSettingsStmt,
 		setPublicHostStmt:                   q.setPublicHostStmt,
 		setRegistryStorageStmt:              q.setRegistryStorageStmt,

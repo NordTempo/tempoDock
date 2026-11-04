@@ -83,15 +83,17 @@ const instructions = `Tempo Dock deploys Docker apps to your own servers. You ac
 - The server enforces every permission. A forbidden error means the token can't do it: stop and report it; don't look for another credential or a workaround.
 - Deploys are safe: a release only gets traffic after its health check passes. A failed deploy changed nothing and needs no rollback; read release_details for the reason and the container's last log lines, fix, deploy again. Roll back only a release that went live and misbehaves.
 - Variables are staged: set_variables, review with show_changes, then apply_changes (or the next deploy takes them live). Secret values are write-only.
+- A locked environment (locked in project_overview) refuses every change with environment_locked. Tell the user what you wanted to do; don't retry or work around it.
 - Data tools follow the data access policy; data_status says what you may do and why. Data changes are proposals a human approves; tokens never write production data.
 - Every change is audited with the token's name. Read dock://docs/agents for the full guide.`
 
 // hints tell the model what to do next where the message doesn't.
 var hints = map[apitypes.ErrorCode]string{
-	apitypes.CodeForbidden:        "The token can't do this. Stop and report it; don't look for another credential.",
-	apitypes.CodeDeployInProgress: "Another release of this service is deploying. Wait for it (release_details), then retry.",
-	apitypes.CodeNotFound:         "Check names with list_projects and project_overview. Don't create things to make it pass unless asked.",
-	apitypes.CodeServerOffline:    "The server the environment runs on is offline. Retry later, then report it.",
+	apitypes.CodeForbidden:         "The token can't do this. Stop and report it; don't look for another credential.",
+	apitypes.CodeDeployInProgress:  "Another release of this service is deploying. Wait for it (release_details), then retry.",
+	apitypes.CodeNotFound:          "Check names with list_projects and project_overview. Don't create things to make it pass unless asked.",
+	apitypes.CodeServerOffline:     "The server the environment runs on is offline. Retry later, then report it.",
+	apitypes.CodeEnvironmentLocked: "A human locked this environment. Don't retry or work around it: tell the user what you wanted to do and why; they can unlock it.",
 }
 
 // errf is a core error raised by the endpoint itself, mostly invalid

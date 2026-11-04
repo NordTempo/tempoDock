@@ -41,7 +41,7 @@ func (q *Queries) CountKindEnvironments(ctx context.Context, arg CountKindEnviro
 }
 
 const createEnvironment = `-- name: CreateEnvironment :one
-INSERT INTO environments (project_id, name, kind, server_id) VALUES (?, ?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind
+INSERT INTO environments (project_id, name, kind, server_id) VALUES (?, ?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until
 `
 
 type CreateEnvironmentParams struct {
@@ -68,6 +68,10 @@ func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentPa
 		&i.Network,
 		&i.ApplyError,
 		&i.Kind,
+		&i.LockedAt,
+		&i.LockedBy,
+		&i.LockReason,
+		&i.OpenUntil,
 	)
 	return i, err
 }
@@ -150,7 +154,7 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 }
 
 const getEnvironment = `-- name: GetEnvironment :one
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE id = +?
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until FROM environments WHERE id = +?
 `
 
 func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, error) {
@@ -165,12 +169,16 @@ func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, er
 		&i.Network,
 		&i.ApplyError,
 		&i.Kind,
+		&i.LockedAt,
+		&i.LockedBy,
+		&i.LockReason,
+		&i.OpenUntil,
 	)
 	return i, err
 }
 
 const getEnvironmentByName = `-- name: GetEnvironmentByName :one
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE project_id = +? AND name = +?
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until FROM environments WHERE project_id = +? AND name = +?
 `
 
 type GetEnvironmentByNameParams struct {
@@ -190,6 +198,10 @@ func (q *Queries) GetEnvironmentByName(ctx context.Context, arg GetEnvironmentBy
 		&i.Network,
 		&i.ApplyError,
 		&i.Kind,
+		&i.LockedAt,
+		&i.LockedBy,
+		&i.LockReason,
+		&i.OpenUntil,
 	)
 	return i, err
 }
@@ -361,7 +373,7 @@ func (q *Queries) GetServerByName(ctx context.Context, name string) (Server, err
 }
 
 const listEnvironments = `-- name: ListEnvironments :many
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind FROM environments WHERE project_id = +? ORDER BY name
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until FROM environments WHERE project_id = +? ORDER BY name
 `
 
 func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Environment, error) {
@@ -382,6 +394,10 @@ func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Envi
 			&i.Network,
 			&i.ApplyError,
 			&i.Kind,
+			&i.LockedAt,
+			&i.LockedBy,
+			&i.LockReason,
+			&i.OpenUntil,
 		); err != nil {
 			return nil, err
 		}
@@ -682,6 +698,47 @@ func (q *Queries) RenameProject(ctx context.Context, arg RenameProjectParams) (P
 		&i.Name,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const setEnvironmentLock = `-- name: SetEnvironmentLock :one
+UPDATE environments SET locked_at = ?, locked_by = ?, lock_reason = ?, open_until = ?
+WHERE id = +? RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until
+`
+
+type SetEnvironmentLockParams struct {
+	LockedAt   *time.Time
+	LockedBy   string
+	LockReason string
+	OpenUntil  *time.Time
+	ID         int64
+}
+
+// SetEnvironmentLock locks (locked_at set) or unlocks (NULL) an
+// environment, or opens a locked one until open_until (ADR 0044).
+func (q *Queries) SetEnvironmentLock(ctx context.Context, arg SetEnvironmentLockParams) (Environment, error) {
+	row := q.queryRow(ctx, q.setEnvironmentLockStmt, setEnvironmentLock,
+		arg.LockedAt,
+		arg.LockedBy,
+		arg.LockReason,
+		arg.OpenUntil,
+		arg.ID,
+	)
+	var i Environment
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Name,
+		&i.ServerID,
+		&i.CreatedAt,
+		&i.Network,
+		&i.ApplyError,
+		&i.Kind,
+		&i.LockedAt,
+		&i.LockedBy,
+		&i.LockReason,
+		&i.OpenUntil,
 	)
 	return i, err
 }

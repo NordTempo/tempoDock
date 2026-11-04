@@ -135,3 +135,6 @@ SELECT * FROM orgs WHERE slug = +?;
 -- name: ListOrgSlugs :many
 -- Every org's slug, for operators choosing one (the GitHub App console).
 SELECT slug FROM orgs ORDER BY slug;
+
+-- name: SetOrgLockProduction :exec
+UPDATE orgs SET lock_production = ? WHERE id = +?;

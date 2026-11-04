@@ -159,6 +159,9 @@ func (c *Core) ArchiveProject(ctx context.Context, a Actor, name string) (apityp
 	if err != nil {
 		return apitypes.Project{}, err
 	}
+	if err := c.checkProjectLocks(ctx, a, p, "archiving a project"); err != nil {
+		return apitypes.Project{}, err
+	}
 	var done []archivedService
 	var envs []store.Environment
 	already := false
@@ -306,13 +309,22 @@ func (c *Core) CreateProject(ctx context.Context, a Actor, req apitypes.CreatePr
 }
 
 // createEnv places and creates an environment; call it in a transaction
-// so the placement and the environment are recorded together.
+// so the placement and the environment are recorded together. A
+// production environment starts locked when its org says so (ADR 0044).
 func (c *Core) createEnv(ctx context.Context, q *store.Queries, p store.Project, name string, kind apitypes.EnvironmentKind) (store.Environment, error) {
 	serverID, err := c.placeEnvironment(ctx, q, p, kind)
 	if err != nil {
 		return store.Environment{}, err
 	}
-	return q.CreateEnvironment(ctx, store.CreateEnvironmentParams{ProjectID: p.ID, Name: name, Kind: string(kind), ServerID: serverID})
+	e, err := q.CreateEnvironment(ctx, store.CreateEnvironmentParams{ProjectID: p.ID, Name: name, Kind: string(kind), ServerID: serverID})
+	if err != nil || kind != apitypes.KindProduction {
+		return e, err
+	}
+	o, err := q.GetOrg(ctx, p.OrgID)
+	if err != nil || o.LockProduction == 0 {
+		return e, err
+	}
+	return q.SetEnvironmentLock(ctx, store.SetEnvironmentLockParams{LockedAt: ptr(now()), LockedBy: "organization setting", LockReason: "new production environments start locked", ID: e.ID})
 }
 
 // ListEnvironments returns a project's environments the actor can see.
@@ -419,7 +431,7 @@ func toProject(p store.Project) apitypes.Project {
 }
 
 func toEnvironment(p store.Project, e store.Environment, server string) apitypes.Environment {
-	return apitypes.Environment{ID: e.ID, Project: p.Name, Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), Server: server, CreatedAt: e.CreatedAt}
+	return apitypes.Environment{ID: e.ID, Project: p.Name, Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), Server: server, CreatedAt: e.CreatedAt, Lock: envLock(e)}
 }
 
 // validProjectName applies the same address rules to creation and renaming.

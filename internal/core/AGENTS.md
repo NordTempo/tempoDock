@@ -22,6 +22,17 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
 
 - Every exported operation takes the `Actor` and checks it itself. Never
   rely on the API to have checked.
+- Locked environments (ADR 0044): `checkEnv` refuses tokens any change
+  (scope above read) in a locked environment. That one check is the lock;
+  don't add per-operation lock code. So an operation that changes
+  anything in an environment must load it through `envFor` /
+  `serviceFor` (or call `checkEnv`) with the scope it really needs,
+  never read scope plus a separate check. If it can't (an operator action
+  that loads the service with read), call `a.checkLock`. A project-wide
+  change that touches every environment calls `checkProjectLocks`.
+  `internal/api`'s `TestLockedEnvironmentRefusesTokens` walks every
+  mutating API operation under an environment and fails for one that
+  skips the lock.
 - Org scoping (ADR 0027): look projects up within `a.OrgID`. A user or
   token must never see or name another org's projects, tokens, policy or
   audit events, including through live events (`canSee`).

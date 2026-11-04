@@ -255,6 +255,25 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Only operators get these: the analytics store started or failed.
       queryClient.invalidateQueries({ queryKey: ["analytics", "status"] });
       return;
+    case "environment_lock": {
+      // An environment was locked, unlocked or opened for a while.
+      const { project, environment } = event;
+      if (!project || !environment) return;
+      const lock = event.lock ?? undefined;
+      queryClient.setQueryData<ProjectOverview>(keys.overview(project), (o) =>
+        o
+          ? {
+              ...o,
+              environments: o.environments.map((env) =>
+                env.environment.name === environment
+                  ? { ...env, environment: { ...env.environment, lock } }
+                  : env,
+              ),
+            }
+          : o,
+      );
+      return;
+    }
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":

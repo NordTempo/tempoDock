@@ -24,6 +24,8 @@ type Problem struct {
 	Code string `json:"code,omitempty"`
 	// Errors lists individual validation failures.
 	Errors []ProblemDetail `json:"errors,omitempty"`
+	// Request is the access request an environment_locked error filed.
+	Request int64 `json:"request,omitempty"`
 }
 
 // ProblemDetail is one validation failure.
@@ -89,7 +91,8 @@ var exitHints = map[output.ExitCode]string{
 // codeHints replace the exit code's hint for codes where it would mislead:
 // a server_offline 503 comes from a control plane that is answering.
 var codeHints = map[string]string{
-	"server_offline": "The control plane is fine; the server the environment runs on isn't connected, and its apps keep running. Check `dock server list`, and the node there (`journalctl -u dock-node`).",
+	"environment_locked": "Tokens can't change a locked environment. Ask an admin to unlock it in the UI, or to open it for a while.",
+	"server_offline":     "The control plane is fine; the server the environment runs on isn't connected, and its apps keep running. Check `dock server list`, and the node there (`journalctl -u dock-node`).",
 }
 
 // problemError turns a non-2xx response into an *output.Error wrapping a

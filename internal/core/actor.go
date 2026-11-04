@@ -33,6 +33,9 @@ type Actor struct {
 	ExpectedProjectID int64
 	ProjectName       string
 	EnvironmentName   string
+	// granted is the environment an approved access request lets this one
+	// call change despite its lock (ADR 0044); only core sets it.
+	granted int64
 }
 
 // System is the actor for the daemon's own actions and for trusted local
@@ -185,8 +188,24 @@ func (a Actor) checkProject(need apitypes.Scope, action string, p store.Project)
 	return nil
 }
 
-// checkEnv checks scope and limits for an operation inside an environment.
+// checkEnv checks scope, limits and the environment's lock (ADR 0044) for
+// an operation inside an environment. Every operation that changes
+// something in an environment passes here (envFor and serviceFor call
+// it): a token that needs more than read in a locked environment gets a
+// LockedError, which its caller turns into an access request.
 func (a Actor) checkEnv(need apitypes.Scope, action string, p store.Project, e store.Environment) error {
+	if err := a.checkEnvAccess(need, action, p, e); err != nil {
+		return err
+	}
+	if rank(need) > rank(apitypes.ScopeRead) && a.lockedOut(e) {
+		return lockedErr(p, e, action)
+	}
+	return nil
+}
+
+// checkEnvAccess is checkEnv without the lock: scope and limits only.
+// Only operations that can't loosen a lock use it (locking itself).
+func (a Actor) checkEnvAccess(need apitypes.Scope, action string, p store.Project, e store.Environment) error {
 	if err := a.require(need, action); err != nil {
 		return err
 	}
