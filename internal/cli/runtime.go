@@ -27,6 +27,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/probe"
 	"github.com/NordTempo/tempoDock/internal/node/stats"
 	"github.com/NordTempo/tempoDock/internal/node/traffic"
+	"github.com/NordTempo/tempoDock/internal/node/uptime"
 )
 
 // newRuntime builds this server's node runtime from Docker, BuildKit and
@@ -108,7 +109,7 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	}
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
 	tunnel := docker.NewCloudflared(containers, cfg.Ingress.CloudflaredImage, owner, proxy.SetTunnelHostname)
-	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll}, proxy, in, nil
+	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll, Prober: uptime.New(false)}, proxy, in, nil
 }
 
 // ingestServer serves the analytics ingest on [analytics] ingest_listen,

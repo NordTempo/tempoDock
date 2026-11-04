@@ -80,6 +80,9 @@ type Runtime struct {
 	// archives are the log archives by service and release (logarchive.go).
 	archives   map[string]map[string]*fakeArchive
 	archiveErr error
+
+	// probes are scripted uptime probe results (probe.go).
+	probes fakeProbes
 }
 
 var _ node.Runtime = (*Runtime)(nil)

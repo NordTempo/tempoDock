@@ -26,6 +26,61 @@ type Runtime interface {
 	Traffic
 	Tunnel
 	Analytics
+	Prober
+}
+
+// Prober runs uptime checks (ADR 0052): the control plane asks a server
+// other than the one serving a site to fetch it.
+type Prober interface {
+	// Probe sends one GET to req.URL and says whether the answer was the
+	// expected one in time. Redirects aren't followed, nothing is kept
+	// alive, and addresses of the server itself, link-local, multicast and
+	// cloud metadata addresses are refused after DNS. A site that is down
+	// is a result (Up false, Error set), not an error; the error is for
+	// a request that can't be made (a malformed URL, an older node).
+	Probe(ctx context.Context, req ProbeRequest) (ProbeResult, error)
+}
+
+// ProbeRequest is one uptime probe.
+type ProbeRequest struct {
+	// URL is http:// or https://.
+	URL string
+	// ExpectStatus is the status that means up: an exact code (100-599),
+	// or a class: ExpectClass2xx or ExpectClass3xx. 0 means 200.
+	ExpectStatus int
+	// Timeout bounds the whole request, connecting included.
+	Timeout time.Duration
+}
+
+// Status classes for ProbeRequest.ExpectStatus: any 2xx or any 3xx code.
+const (
+	ExpectClass2xx = 2
+	ExpectClass3xx = 3
+)
+
+// StatusMatches reports whether status is what expect asks for (see
+// ProbeRequest.ExpectStatus).
+func StatusMatches(expect, status int) bool {
+	switch expect {
+	case 0:
+		return status == 200
+	case ExpectClass2xx, ExpectClass3xx:
+		return status/100 == expect
+	}
+	return status == expect
+}
+
+// ProbeResult is what one probe saw.
+type ProbeResult struct {
+	// Up: the expected status arrived within the timeout.
+	Up bool
+	// Status is the answer's status code; 0 when none came.
+	Status int
+	// Latency is until the answer's headers, or until the probe gave up.
+	Latency time.Duration
+	// Error says in plain words why the probe isn't up: a refused
+	// address, DNS, a timeout, a TLS failure or an unexpected status.
+	Error string
 }
 
 // Tunnel runs a server's Cloudflare Tunnel connector, cloudflared, when

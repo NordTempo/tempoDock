@@ -261,6 +261,19 @@ type (
 		ContainerID string `json:"container_id"`
 		Port        int    `json:"port"`
 	}
+	// probeRequest is node.ProbeRequest (protocol 19).
+	probeRequest struct {
+		URL          string `json:"url"`
+		ExpectStatus int    `json:"expect_status,omitempty"`
+		TimeoutMS    int64  `json:"timeout_ms"`
+	}
+	// probeResult is node.ProbeResult.
+	probeResult struct {
+		Up        bool   `json:"up"`
+		Status    int    `json:"status,omitempty"`
+		LatencyMS int64  `json:"latency_ms"`
+		Error     string `json:"error,omitempty"`
+	}
 )
 
 // capped is a list in a node's answer: decoding fails with errTooMany past

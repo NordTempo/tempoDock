@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node/firewall"
 )
 
@@ -28,28 +29,22 @@ type egressGuard struct {
 	loopback atomic.Bool
 }
 
-// Cloud metadata services outside 169.254.0.0/16: AWS over IPv6 and
-// Alibaba Cloud.
-var (
-	awsMetadataV6   = netip.MustParseAddr("fd00:ec2::254")
-	alibabaMetadata = netip.MustParseAddr("100.100.100.200")
-)
-
 // addrErr says why nothing can be sent to ip, or nil. Loopback would
 // reach the daemon's own loopback-only services (the internal listener,
 // the registry) past the app firewall; link-local holds cloud metadata
 // (169.254.169.254). Private, CGNAT and tailnet addresses are fine for
 // alerts, where a homelab's ntfy or chat bridge lives (ADR 0020), and
-// refused for log drains (g.private, ADR 0046).
+// refused for log drains (g.private, ADR 0046). Uptime probes refuse the
+// same addresses (httpkit.IsSelfAddr, IsInternalAddr).
 func (g *egressGuard) addrErr(ip netip.Addr) error {
 	ip = ip.Unmap()
 	switch {
-	case ip.IsLoopback() || ip.IsUnspecified():
+	case httpkit.IsSelfAddr(ip):
 		if g.loopback.Load() {
 			return nil
 		}
 		return fmt.Errorf("%s is this server itself; %s go to other hosts (use the receiver's LAN, tailnet or public address)", ip, g.what)
-	case ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip == awsMetadataV6 || ip == alibabaMetadata:
+	case httpkit.IsInternalAddr(ip):
 		return fmt.Errorf("%s is a link-local, multicast or cloud metadata address; %s can't go there", ip, g.what)
 	case g.private && firewall.Blocked(ip):
 		return fmt.Errorf("%s is a private address (LAN, tailnet or container network); %s go only to public addresses, so use the receiver's public address", ip, g.what)
