@@ -816,6 +816,11 @@ type Route struct {
 	// server's analytics ingest (ADR 0037), each group tagged with the
 	// IDs it stands for. Redirect routes ignore it.
 	Analytics []AnalyticsHosts
+	// Stopped, when set, is the name of the stopped service the route
+	// belongs to (ADR 0050): its hostnames answer 503 with a page saying
+	// so instead of proxying, after its access check. Upstream stays set
+	// for nodes that predate it. Redirect routes ignore it.
+	Stopped string
 }
 
 // AnalyticsHosts are hostnames of a route that collect analytics, and the

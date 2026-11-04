@@ -117,6 +117,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.clearReleaseHostPortStmt, err = db.PrepareContext(ctx, clearReleaseHostPort); err != nil {
 		return nil, fmt.Errorf("error preparing query ClearReleaseHostPort: %w", err)
 	}
+	if q.clearServiceStoppedStmt, err = db.PrepareContext(ctx, clearServiceStopped); err != nil {
+		return nil, fmt.Errorf("error preparing query ClearServiceStopped: %w", err)
+	}
 	if q.consumeJoinTokenStmt, err = db.PrepareContext(ctx, consumeJoinToken); err != nil {
 		return nil, fmt.Errorf("error preparing query ConsumeJoinToken: %w", err)
 	}
@@ -1320,8 +1323,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.siteOfServiceStmt, err = db.PrepareContext(ctx, siteOfService); err != nil {
 		return nil, fmt.Errorf("error preparing query SiteOfService: %w", err)
 	}
+	if q.siteServingStmt, err = db.PrepareContext(ctx, siteServing); err != nil {
+		return nil, fmt.Errorf("error preparing query SiteServing: %w", err)
+	}
 	if q.startControlPlaneBackupStmt, err = db.PrepareContext(ctx, startControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query StartControlPlaneBackup: %w", err)
+	}
+	if q.stopServiceStmt, err = db.PrepareContext(ctx, stopService); err != nil {
+		return nil, fmt.Errorf("error preparing query StopService: %w", err)
 	}
 	if q.supersedeReleaseStmt, err = db.PrepareContext(ctx, supersedeRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query SupersedeRelease: %w", err)
@@ -1556,6 +1565,11 @@ func (q *Queries) Close() error {
 	if q.clearReleaseHostPortStmt != nil {
 		if cerr := q.clearReleaseHostPortStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing clearReleaseHostPortStmt: %w", cerr)
+		}
+	}
+	if q.clearServiceStoppedStmt != nil {
+		if cerr := q.clearServiceStoppedStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing clearServiceStoppedStmt: %w", cerr)
 		}
 	}
 	if q.consumeJoinTokenStmt != nil {
@@ -3563,9 +3577,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing siteOfServiceStmt: %w", cerr)
 		}
 	}
+	if q.siteServingStmt != nil {
+		if cerr := q.siteServingStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing siteServingStmt: %w", cerr)
+		}
+	}
 	if q.startControlPlaneBackupStmt != nil {
 		if cerr := q.startControlPlaneBackupStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing startControlPlaneBackupStmt: %w", cerr)
+		}
+	}
+	if q.stopServiceStmt != nil {
+		if cerr := q.stopServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing stopServiceStmt: %w", cerr)
 		}
 	}
 	if q.supersedeReleaseStmt != nil {
@@ -3763,6 +3787,7 @@ type Queries struct {
 	clearEnvironmentPendingSettingsStmt *sql.Stmt
 	clearGitPendingStmt                 *sql.Stmt
 	clearReleaseHostPortStmt            *sql.Stmt
+	clearServiceStoppedStmt             *sql.Stmt
 	consumeJoinTokenStmt                *sql.Stmt
 	countConnectionUseStmt              *sql.Stmt
 	countEnvironmentAuditSinceStmt      *sql.Stmt
@@ -4164,7 +4189,9 @@ type Queries struct {
 	setUserPasswordStmt                 *sql.Stmt
 	setVariablePendingStmt              *sql.Stmt
 	siteOfServiceStmt                   *sql.Stmt
+	siteServingStmt                     *sql.Stmt
 	startControlPlaneBackupStmt         *sql.Stmt
+	stopServiceStmt                     *sql.Stmt
 	supersedeReleaseStmt                *sql.Stmt
 	topTrafficPathsStmt                 *sql.Stmt
 	touchLocalServerStmt                *sql.Stmt
@@ -4227,6 +4254,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		clearEnvironmentPendingSettingsStmt: q.clearEnvironmentPendingSettingsStmt,
 		clearGitPendingStmt:                 q.clearGitPendingStmt,
 		clearReleaseHostPortStmt:            q.clearReleaseHostPortStmt,
+		clearServiceStoppedStmt:             q.clearServiceStoppedStmt,
 		consumeJoinTokenStmt:                q.consumeJoinTokenStmt,
 		countConnectionUseStmt:              q.countConnectionUseStmt,
 		countEnvironmentAuditSinceStmt:      q.countEnvironmentAuditSinceStmt,
@@ -4628,7 +4656,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setUserPasswordStmt:                 q.setUserPasswordStmt,
 		setVariablePendingStmt:              q.setVariablePendingStmt,
 		siteOfServiceStmt:                   q.siteOfServiceStmt,
+		siteServingStmt:                     q.siteServingStmt,
 		startControlPlaneBackupStmt:         q.startControlPlaneBackupStmt,
+		stopServiceStmt:                     q.stopServiceStmt,
 		supersedeReleaseStmt:                q.supersedeReleaseStmt,
 		topTrafficPathsStmt:                 q.topTrafficPathsStmt,
 		touchLocalServerStmt:                q.touchLocalServerStmt,

@@ -105,6 +105,7 @@ func newFixture(t testing.TB) *fixture {
 	for name, req := range map[string]apitypes.CreateTokenRequest{
 		"shop-agent": {Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"},
 		"admin":      {Scope: apitypes.ScopeAdmin},
+		"reader":     {Scope: apitypes.ScopeRead},
 	} {
 		req.Name = name
 		tok, err := c.CreateToken(ctx, sys, req)
@@ -428,6 +429,44 @@ func TestDeployTimeoutAndFailure(t *testing.T) {
 	det.decode(t, &got)
 	if got.Number != rel.Number || got.Status != "failed" {
 		t.Errorf("release_details = %q %+v", det.summary, got)
+	}
+}
+
+// stop_service takes a service offline until start_service, which waits
+// for its release; a read token can do neither.
+func TestStopAndStartService(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect("shop-agent", nil)
+	call(t, s, "deploy_image", map[string]any{"service": "web"})
+
+	reader := f.connect("reader", nil)
+	for _, tool := range []string{"stop_service", "start_service"} {
+		if code := call(t, reader, tool, map[string]any{"project": "shop", "environment": "staging", "service": "web"}).errorCode(t); code != apitypes.CodeForbidden {
+			t.Errorf("%s with a read token: code %s, want forbidden", tool, code)
+		}
+	}
+
+	var stopped struct {
+		State     apitypes.ServiceState
+		StoppedBy string `json:"stopped_by"`
+	}
+	stop := call(t, s, "stop_service", map[string]any{"service": "web"})
+	stop.decode(t, &stopped)
+	if stop.isError || stopped.State != apitypes.ServiceStopped || stopped.StoppedBy != "shop-agent" {
+		t.Fatalf("stop_service = %q %s", stop.summary, stop.json)
+	}
+	if st := call(t, s, "service_status", map[string]any{"service": "web"}); !strings.Contains(st.summary, "is stopped (by shop-agent") || !strings.Contains(st.summary, "keeping release 1") {
+		t.Errorf("service_status of a stopped service = %q", st.summary)
+	}
+
+	var rel release
+	start := call(t, s, "start_service", map[string]any{"service": "web"})
+	start.decode(t, &rel)
+	if start.isError || rel.Status != "active" || rel.Number != 2 {
+		t.Fatalf("start_service = %q %+v", start.summary, rel)
+	}
+	if code := call(t, s, "start_service", map[string]any{"service": "web"}).errorCode(t); code != apitypes.CodeConflict {
+		t.Errorf("start_service on a running service: code %s, want conflict", code)
 	}
 }
 

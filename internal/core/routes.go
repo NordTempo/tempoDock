@@ -13,7 +13,8 @@ import (
 // to its active release's host port, with the service's access protection
 // (ADR 0030), its requests counted (ADR 0033) and, for hostnames of an
 // analytics site, /_dock/a/* sent to the server's ingest tagged with the
-// site, service and release (ADR 0037); redirect domains redirect. On a
+// site, service and release (ADR 0037); redirect domains redirect, and
+// those of a stopped service answer 503 saying so (ADR 0050). On a
 // direct server, domains Dock routes through its Cloudflare tunnel are
 // served to the tunnel only (ADR 0036).
 func (c *Core) applyRoutes(ctx context.Context, serverID int64) error {
@@ -59,9 +60,11 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	bySvc := map[svcRoute]int{} // → index in routes
 	for _, d := range rows {
 		tunnelOnly := viaTunnel[d.Hostname]
-		port, release := d.HostPort, d.ReleaseID
+		port, release, stopped := d.HostPort, d.ReleaseID, d.Stopped
 		if o, ok := override[d.ServiceID]; ok {
-			port, release = o.port, o.release
+			// The release going live runs, whether the service was
+			// stopped or not.
+			port, release, stopped = o.port, o.release, false
 		}
 		switch {
 		case d.RedirectTo != "":
@@ -81,10 +84,14 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 				i = len(routes)
 				bySvc[key] = i
 				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly})
+				if stopped {
+					routes[i].Stopped = d.ServiceName
+				}
 			}
 			r := &routes[i]
 			r.Hostnames = append(r.Hostnames, d.Hostname)
-			if site, ok := siteOf[d.Hostname]; ok {
+			// A stopped service's 503 page has no analytics script.
+			if site, ok := siteOf[d.Hostname]; ok && !stopped {
 				addAnalyticsHost(r, d.Hostname, fmt.Sprintf("%d.%d.%d", site, d.ServiceID, release))
 			}
 		}

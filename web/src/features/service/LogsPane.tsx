@@ -145,7 +145,14 @@ export function LogsPane({
     ...(deploying
       ? [{ n: deploying.number, label: `r${deploying.number}` }]
       : []),
-    ...(active ? [{ n: active, label: `r${active} serving` }] : []),
+    ...(active
+      ? [
+          {
+            n: active,
+            label: `r${active} ${service.stopped_at ? "stopped" : "serving"}`,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -279,7 +286,11 @@ export function LogsPane({
           </div>
         )}
         {stream.error &&
-          (deploying && release === deploying.number && !filter.build ? (
+          (service.stopped_at && release === active && !filter.build ? (
+            <div className="px-3.5 text-mut">
+              Stopped: no container runs. Start it to see its output.
+            </div>
+          ) : deploying && release === deploying.number && !filter.build ? (
             <div className="px-3.5 text-mut">
               Waiting for the container to start.
             </div>

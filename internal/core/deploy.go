@@ -375,6 +375,12 @@ func (d *deployment) cutover(ctx context.Context) error {
 				return err
 			}
 		}
+		if d.ss.svc.StoppedAt != nil {
+			// Any release that goes live runs the service again (ADR 0050).
+			if err := q.ClearServiceStopped(ctx, d.ss.svc.ID); err != nil {
+				return err
+			}
+		}
 		return q.ActivateRelease(ctx, store.ActivateReleaseParams{FinishedAt: ptr(now()), ID: d.rel.ID})
 	})
 	if err != nil {
@@ -387,6 +393,7 @@ func (d *deployment) cutover(ctx context.Context) error {
 		return err
 	}
 	c.routesMu.Unlock()
+	d.ss.svc.StoppedAt, d.ss.svc.StoppedBy = nil, ""
 
 	if routeErr != nil {
 		// Nothing to fall back to (first release, or stateful): keep it.
@@ -427,7 +434,7 @@ func (d *deployment) cutover(ctx context.Context) error {
 // fail cleans up and marks the release failed. The old release keeps
 // serving; for stateful services (already stopped) it is started again
 // before the failure is recorded, so "failed" means "back to the previous
-// state".
+// state". A stopped service (ADR 0050) stays stopped.
 //
 // On shutdown it does nothing: the release stays in flight and recovery
 // finishes it on the next start, so stopping the daemon never waits on
@@ -460,7 +467,9 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	if removeErr != nil {
 		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, c.nodeErr(serverID, removeErr)))
 	}
-	if d.oldRemoved && d.old != nil {
+	// A stopped service's old release had no container to bring back: it
+	// stays stopped (ADR 0050).
+	if d.oldRemoved && d.old != nil && d.ss.svc.StoppedAt == nil {
 		later := isOffline(removeErr)
 		switch {
 		case removeErr == nil:

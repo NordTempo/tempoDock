@@ -106,7 +106,9 @@ func statusOf(ct node.Container) apitypes.ServiceStatus {
 	case node.StateExited, node.StateDead:
 		s.State = apitypes.ServiceCrashed
 	default:
-		s.State = apitypes.ServiceStopped
+		// Created or paused: it serves nothing, and Dock didn't stop it
+		// (ServiceStopped is a service stopped on purpose, ADR 0050).
+		s.State = apitypes.ServiceNone
 	}
 	return s
 }
@@ -180,8 +182,10 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 		// superseded already when the daemon replaces or archives it.
 		c.panel.Forget(ss.svc.ID)
 	}
-	if own || rel.Status != string(apitypes.ReleaseActive) {
-		return // the daemon is stopping it, or it isn't the active container
+	if own || rel.Status != string(apitypes.ReleaseActive) || ss.svc.StoppedAt != nil {
+		// The daemon is stopping it, it isn't the active container, or the
+		// service is stopped on purpose (ADR 0050) and stays so.
+		return
 	}
 	// The status is changed in place under its lock (changeStatus): a
 	// read here and a write after the work below would undo what the
@@ -232,7 +236,9 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 		case "oom":
 			s.OOMKilled, s.MemoryLimitMB = true, limitMB
 		case "destroy":
-			s.State = apitypes.ServiceStopped
+			// Not ServiceStopped: that is a service stopped on purpose
+			// (ADR 0050).
+			s.State = apitypes.ServiceNone
 		}
 	})
 	if ev.Action == "destroy" {
@@ -335,10 +341,10 @@ func (c *Core) startInterrupted(ctx context.Context, serverID int64, rt node.Run
 }
 
 // sweepRetired removes a server's containers of failed and superseded
-// releases, then frees the host ports of retired releases whose containers
-// are gone. A container counts as ours only if all its labels match the
-// release's project, environment and service, and it carries this control
-// plane's label or none (node.Labels.Matches). This is also how an archive
+// releases, and of stopped services' active releases, then frees the host
+// ports of retired releases whose containers are gone. A container counts
+// as ours only if all its labels match the release's project, environment
+// and service, and it carries this control plane's label or none (node.Labels.Matches). This is also how an archive
 // on an unreachable server finishes: its release is superseded, so its
 // container goes when the server reconnects. It returns the IDs of the
 // services whose leftover containers it couldn't remove (reported as
@@ -367,7 +373,21 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 		if err != nil {
 			return nil, err
 		}
-		if rel.Status != string(apitypes.ReleaseFailed) && rel.Status != string(apitypes.ReleaseSuperseded) {
+		why := rel.Status
+		switch rel.Status {
+		case string(apitypes.ReleaseFailed), string(apitypes.ReleaseSuperseded):
+		case string(apitypes.ReleaseActive):
+			// A stopped service's (ADR 0050), when its stop couldn't remove
+			// the container, e.g. on a server that went offline.
+			svc, err := c.store.GetService(ctx, rel.ServiceID)
+			if err != nil {
+				return nil, err
+			}
+			if svc.StoppedAt == nil {
+				continue
+			}
+			why = "service stopped"
+		default:
 			continue
 		}
 		remaining[id] = true
@@ -379,13 +399,16 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 		if ss.env.ServerID != serverID || slices.ContainsFunc(cs, func(ct node.Container) bool { return !ct.Labels.Matches(want) }) {
 			continue
 		}
-		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Removing leftover container of release %d (%s)", rel.Number, rel.Status))
+		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Removing leftover container of release %d (%s)", rel.Number, why))
 		if err := c.removeContainers(ctx, ss.env.ServerID, cs); err != nil {
 			c.drift(ctx, &ss, fmt.Sprintf("could not remove leftover container of release %d of %s: %v", rel.Number, ss, err))
 			blocked[ss.svc.ID] = true
 			continue
 		}
 		remaining[id] = false
+		if rel.Status == string(apitypes.ReleaseActive) {
+			c.forgetContainer(ctx, rel.ID)
+		}
 	}
 	holders, err := c.store.ListRetiredPortHolders(ctx, serverID)
 	if err != nil {
@@ -403,8 +426,11 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 // one started just before a crash is adopted, a stopped or missing one is
 // replaced (after an interrupted stateful recreate). A failure to start it
 // is reported as drift; isOffline(err) says the server couldn't be
-// reached.
+// reached. A service stopped on purpose (ADR 0050) is left alone.
 func (c *Core) ensureRunning(ctx context.Context, ss svcScope, active store.Release) error {
+	if ss.svc.StoppedAt != nil {
+		return nil
+	}
 	rt := c.runtime(ss.env.ServerID)
 	ctrs, err := rt.List(ctx)
 	if err != nil {
@@ -462,9 +488,14 @@ func (c *Core) reconcileServer(ctx context.Context, serverID int64, rt node.Runt
 		if ss.env.ServerID != serverID {
 			continue
 		}
+		if ss.svc.StoppedAt != nil {
+			// Stopped on purpose (ADR 0050): no container is expected.
+			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
+			continue
+		}
 		ct, ok := byID[r.ContainerID]
 		if !ok {
-			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
+			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceNone})
 			if report {
 				c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s is missing; redeploy or roll back to start it", r.Number, ss))
 			}

@@ -911,7 +911,11 @@ func (r *Runtime) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 	}
 	parts := make([]string, 0, len(routes))
 	for _, rt := range routes {
-		parts = append(parts, strings.Join(rt.Hostnames, ",")+"->"+rt.Upstream+rt.RedirectTo)
+		to := rt.Upstream + rt.RedirectTo
+		if rt.Stopped != "" && rt.RedirectTo == "" {
+			to = "stopped"
+		}
+		parts = append(parts, strings.Join(rt.Hostnames, ",")+"->"+to)
 	}
 	r.op("routes %s", strings.Join(parts, " "))
 	r.routes = slices.Clone(routes)

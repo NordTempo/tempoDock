@@ -14,7 +14,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/mcpkit"
 )
 
-// Waiting for releases. Tools that start releases (deploy, redeploy,
+// Waiting for releases. Tools that start releases (deploy, redeploy, start,
 // rollback, promote, apply) wait until each is active or failed, up to the
 // caller's wait_seconds, and return the final state. They follow the
 // event bus like `dock deploy` follows /events: nothing polls.

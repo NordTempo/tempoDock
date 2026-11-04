@@ -200,7 +200,8 @@ func backoffAfter(streak int) time.Duration {
 // the running, unhealthy, active one, raises or updates the alert, and
 // restarts it if the backoff allows.
 // A service with a deploy in flight is left to the deploy: a stateful
-// deploy may be stopping this container to replace it.
+// deploy may be stopping this container to replace it. A stopped service
+// is left alone.
 func (c *Core) handleUnhealthy(ss svcScope, containerID string, now time.Time) {
 	defer c.wg.Done()
 	ctx := c.ctx
@@ -210,6 +211,9 @@ func (c *Core) handleUnhealthy(ss svcScope, containerID string, now time.Time) {
 	rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
 	if err != nil || rel.ContainerID != containerID {
 		return
+	}
+	if svc, err := c.store.GetService(ctx, ss.svc.ID); err != nil || svc.StoppedAt != nil {
+		return // stopped on purpose (ADR 0050): its container is going away
 	}
 	rt := c.runtime(ss.env.ServerID)
 	ct, err := rt.Inspect(ctx, containerID)

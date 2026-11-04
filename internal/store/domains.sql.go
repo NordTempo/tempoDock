@@ -334,6 +334,8 @@ func (q *Queries) ListProjectDomains(ctx context.Context, projectID int64) ([]Do
 
 const listRoutableDomains = `-- name: ListRoutableDomains :many
 SELECT domains.hostname, domains.redirect_to, domains.service_id,
+       services.name AS service_name,
+       CAST(services.stopped_at IS NOT NULL AS BOOLEAN) AS stopped,
        CAST(coalesce((SELECT releases.host_port FROM releases
                       WHERE releases.service_id = services.id AND releases.status = 'active'), 0) AS INTEGER) AS host_port,
        CAST(coalesce((SELECT releases.id FROM releases
@@ -354,6 +356,8 @@ type ListRoutableDomainsRow struct {
 	Hostname           string
 	RedirectTo         string
 	ServiceID          int64
+	ServiceName        string
+	Stopped            bool
 	HostPort           int64
 	ReleaseID          int64
 	AccessMode         string
@@ -363,8 +367,9 @@ type ListRoutableDomainsRow struct {
 }
 
 // Every verified domain of a non-archived service in an environment on
-// one server, with the host port and ID of the service's active release (0 if none)
-// and the service's access protection (mode ” when public).
+// one server, with the host port and ID of the service's active release
+// (0 if none), the service's access protection (mode ” when public), and
+// its name and whether it is stopped (ADR 0050).
 func (q *Queries) ListRoutableDomains(ctx context.Context, serverID int64) ([]ListRoutableDomainsRow, error) {
 	rows, err := q.query(ctx, q.listRoutableDomainsStmt, listRoutableDomains, serverID)
 	if err != nil {
@@ -378,6 +383,8 @@ func (q *Queries) ListRoutableDomains(ctx context.Context, serverID int64) ([]Li
 			&i.Hostname,
 			&i.RedirectTo,
 			&i.ServiceID,
+			&i.ServiceName,
+			&i.Stopped,
 			&i.HostPort,
 			&i.ReleaseID,
 			&i.AccessMode,

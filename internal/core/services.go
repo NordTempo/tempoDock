@@ -473,6 +473,12 @@ func (c *Core) serviceOf(ss svcScope, link serverLink, pending apitypes.PendingC
 	}
 	s.DataEngine, _ = detectDatabase(ss.svc)
 	s.Template = apitypes.Template(ss.svc.Template)
+	if ss.svc.StoppedAt != nil {
+		// The database's word, also before a server's first reconcile.
+		s.StoppedAt, s.StoppedBy = ss.svc.StoppedAt, ss.svc.StoppedBy
+		s.Status.State = apitypes.ServiceStopped
+		return s
+	}
 	if active != nil {
 		if u, ok := c.stats.serviceUsage(ss.svc.ID); ok {
 			s.Usage = &u

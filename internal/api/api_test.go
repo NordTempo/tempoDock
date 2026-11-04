@@ -151,6 +151,8 @@ func TestPermissionMatrix(t *testing.T) {
 		{"read can't stage variables", "read", "PATCH", shopProd + "/variables", apitypes.SetVariablesRequest{Set: map[string]string{"A": "b"}}, 403, apitypes.CodeForbidden, "requires deploy"},
 		{"deploy can deploy", "deploy", "POST", web + "/releases", apitypes.DeployImageRequest{}, 202, "", ""},
 		{"one deploy at a time", "deploy", "POST", web + "/releases", apitypes.DeployImageRequest{}, 409, apitypes.CodeDeployInProgress, "already deploying"},
+		{"read can't stop", "read", "POST", web + "/stop", nil, 403, apitypes.CodeForbidden, "stopping a service requires deploy"},
+		{"read can't start", "read", "POST", web + "/start", nil, 403, apitypes.CodeForbidden, "starting a service requires deploy"},
 		{"deploy can't archive", "deploy", "POST", worker + "/archive", nil, 403, apitypes.CodeForbidden, "archiving a service requires admin"},
 		{"deploy can list variable names", "deploy", "GET", shopProd + "/variables", nil, 200, "", ""},
 		{"deploy can't reveal secrets", "deploy", "GET", shopProd + "/variables?reveal=true", nil, 403, apitypes.CodeForbidden, "revealing secret values requires admin"},

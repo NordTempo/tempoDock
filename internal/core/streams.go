@@ -361,7 +361,12 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 		return nil, err
 	}
 	live := rel.Status == string(apitypes.ReleaseActive) || !apitypes.ReleaseStatus(rel.Status).Done()
-	if live && rel.ContainerID == "" {
+	// A stopped service's active release has no container (ADR 0050): its
+	// output is read from the archive its stop made, if it was kept.
+	if live && rel.ContainerID == "" && rel.LogsServerID == nil {
+		if ss.svc.StoppedAt != nil && rel.Status == string(apitypes.ReleaseActive) {
+			return nil, notFound("%s is stopped and the logs of release %d weren't kept; start it (`dock service start`) to see new output", ss, rel.Number)
+		}
 		return nil, notFound("release %d of %s never started a container; see its build log", rel.Number, ss)
 	}
 	return func(ctx context.Context, ready func(), send func(...apitypes.LogLine) error) error {

@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useRollback } from "../../data/mutations";
+import { useService } from "../../data/queries";
 import type { Release, ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
@@ -28,6 +29,8 @@ export function ReleasesTable({
   deploying: boolean;
 }) {
   const org = useOrg();
+  // A stopped service's active release serves nothing (ADR 0050).
+  const stopped = !!useService(ref).service.stopped_at;
   const rollback = useRollback();
   // A rollback first shows the image and config it brings back.
   const [confirming, setConfirming] = useState<number | null>(null);
@@ -75,11 +78,16 @@ export function ReleasesTable({
                 </td>
                 <td className="text-faint">{since(r.created_at)}</td>
                 <td className="py-1">
-                  {r.status === "active" && (
-                    <span className="pill border border-ok-edge bg-ok-bg text-ok">
-                      serving
-                    </span>
-                  )}
+                  {r.status === "active" &&
+                    (stopped ? (
+                      <span className="pill border border-line text-mut">
+                        stopped
+                      </span>
+                    ) : (
+                      <span className="pill border border-ok-edge bg-ok-bg text-ok">
+                        serving
+                      </span>
+                    ))}
                   {r.status === "failed" && (
                     <Link
                       to="/$org/$project/$environment/$service/releases/$number"

@@ -57,6 +57,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0047](0047-volume-snapshots.md) | Volume snapshots | accepted |
 | [0048](0048-one-off-commands.md) | One-off commands (`dock run`) | accepted |
 | [0049](0049-apply-and-compose-import.md) | Config as code with `dock apply FILE`, and importing Compose files | accepted |
+| [0050](0050-stop-start-service.md) | Stop and start a service | accepted |
 
 ## Template
 

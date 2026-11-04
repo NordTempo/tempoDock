@@ -302,6 +302,47 @@ func TestDeployFailureExitCodes(t *testing.T) {
 	}
 }
 
+// Stop asks first, shows who stopped the service, and start follows its
+// release: a failed one exits deploy_failed and leaves the service stopped.
+func TestServiceStopStart(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	appDir(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
+	exec(t, "project", "create", "shop")
+	ok[apitypes.Release](t, "deploy", "-p", "shop", "-e", "production", "-s", "web")
+	web := []string{"web", "-p", "shop", "-e", "production"}
+
+	if code, _, stderr := exec(t, append([]string{"service", "start"}, web...)...); code != int(output.ExitConflict) || !strings.Contains(stderr, "isn't stopped") {
+		t.Fatalf("start a running service: %d %q", code, stderr)
+	}
+	if code, _, stderr := exec(t, append([]string{"service", "stop"}, web...)...); code != int(output.ExitUsage) || !strings.Contains(stderr, "--yes") {
+		t.Fatalf("stop without --yes: %d %q", code, stderr)
+	}
+	svc := ok[apitypes.Service](t, append([]string{"service", "stop", "--yes"}, web...)...)
+	if svc.StoppedAt == nil || svc.StoppedBy != "deploy" || svc.Status.State != apitypes.ServiceStopped {
+		t.Fatalf("stop = %+v", svc)
+	}
+	if code, stdout, _ := exec(t, append([]string{"status", "-s"}, web...)...); code != 0 || !strings.Contains(stdout, "by deploy (start it with `dock service start`)") {
+		t.Fatalf("status of a stopped service = %d\n%s", code, stdout)
+	}
+
+	srv.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("connection refused") })
+	code, _, stderr := exec(t, append([]string{"service", "start"}, web...)...)
+	if code != int(output.ExitDeployFailed) || !strings.Contains(stderr, "still stopped") {
+		t.Fatalf("failed start: exit %d\n%s", code, stderr)
+	}
+	srv.rt.FailHealthCheck(nil)
+	rel := ok[apitypes.Release](t, append([]string{"service", "start"}, web...)...)
+	if rel.Status != apitypes.ReleaseActive || rel.Source != apitypes.SourceRestart || rel.FromRelease != 1 {
+		t.Fatalf("start = %+v", rel)
+	}
+	if svc := ok[apitypes.Service](t, append([]string{"service", "show"}, web...)...); svc.StoppedAt != nil || svc.Status.State != apitypes.ServiceRunning {
+		t.Fatalf("started service = %+v", svc)
+	}
+}
+
 func TestCommandErrors(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)

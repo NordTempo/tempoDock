@@ -149,13 +149,10 @@ export function containerState({
           ? oomPhrase(status)
           : `crashed, exit ${status.exit_code}`,
       };
-    // With an active release, no running container is a failure.
+    // Stopped on purpose (ADR 0050): quiet, not a failure.
     case "stopped":
-      return {
-        tone: active_release ? "fail" : "mut",
-        glyph: "○",
-        label: "stopped",
-      };
+      return { tone: "mut", glyph: "○", label: "stopped" };
+    // With an active release, no container is a failure.
     case "none":
       return active_release
         ? { tone: "fail", glyph: "✕", label: "no container" }

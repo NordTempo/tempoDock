@@ -1041,3 +1041,21 @@ func (q *Queries) SiteOfService(ctx context.Context, serviceID *int64) (Site, er
 	)
 	return i, err
 }
+
+const siteServing = `-- name: SiteServing :one
+SELECT CAST(EXISTS (
+    SELECT 1 FROM site_hostnames
+    JOIN domains ON domains.hostname = site_hostnames.hostname
+    JOIN services ON services.id = domains.service_id
+    WHERE site_hostnames.site_id = +? AND services.archived_at IS NULL AND services.stopped_at IS NULL
+) AS BOOLEAN) AS serving
+`
+
+// Whether any of a site's hostnames is a domain of a live service that
+// isn't stopped: a site with none has no traffic to expect (ADR 0050).
+func (q *Queries) SiteServing(ctx context.Context, siteID int64) (bool, error) {
+	row := q.queryRow(ctx, q.siteServingStmt, siteServing, siteID)
+	var serving bool
+	err := row.Scan(&serving)
+	return serving, err
+}

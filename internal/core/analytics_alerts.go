@@ -364,8 +364,13 @@ func (c *Core) judgeTraffic(ctx context.Context, rows []analytics.TrafficRow, ho
 		median := usual[len(usual)/2]
 		key := trafficDropKey + strconv.FormatInt(site, 10)
 		now := days[0]
+		dropped := median >= trafficMinUsual && float64(now) < trafficDropShare*float64(median)
 		switch {
-		case median >= trafficMinUsual && float64(now) < trafficDropShare*float64(median):
+		case dropped && !c.siteServing(ctx, site):
+			// Every service of the site is stopped (ADR 0050): no traffic
+			// is what was asked for.
+			c.resolveAlert(ctx, key, t)
+		case dropped:
 			c.siteAlert(ctx, site, alertSignal{Key: key, Kind: apitypes.AlertTrafficDrop, Severity: apitypes.SeverityWarning,
 				Title: "Traffic dropped on %s",
 				Message: fmt.Sprintf("%d page views %s to %s UTC, against usually %d that hour; check that the site and its script load",
@@ -374,4 +379,16 @@ func (c *Core) judgeTraffic(ctx context.Context, rows []analytics.TrafficRow, ho
 			c.resolveAlert(ctx, key, t)
 		}
 	}
+}
+
+// siteServing reports whether a site has a hostname on a service that
+// isn't stopped. Read only for a drop, so on errors it says yes and the
+// drop is raised as before.
+func (c *Core) siteServing(ctx context.Context, siteID int64) bool {
+	serving, err := c.store.SiteServing(ctx, siteID)
+	if err != nil {
+		c.log.Error("analytics alert: read whether the site's services run", "site", siteID, "err", err)
+		return true
+	}
+	return serving
 }

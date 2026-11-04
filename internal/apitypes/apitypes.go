@@ -240,8 +240,13 @@ const (
 	ServiceRunning    ServiceState = "running"
 	ServiceRestarting ServiceState = "restarting"
 	ServiceCrashed    ServiceState = "crashed"
-	ServiceStopped    ServiceState = "stopped"
-	// ServiceNone means there is no active release (never deployed or archived).
+	// ServiceStopped means the service was stopped on purpose (`dock
+	// service stop`, ADR 0050): its active release has no container until
+	// it is started or deployed again.
+	ServiceStopped ServiceState = "stopped"
+	// ServiceNone means no container serves the service: there is no
+	// active release (never deployed, or archived), or its container is
+	// gone or not running without having been stopped through Dock.
 	ServiceNone ServiceState = "none"
 )
 
@@ -337,6 +342,11 @@ type Service struct {
 	// ActiveRelease is the number of the release serving traffic, if any.
 	ActiveRelease *int64        `json:"active_release,omitempty"`
 	Status        ServiceStatus `json:"status"`
+	// StoppedAt is set while the service is stopped on purpose (ADR 0050):
+	// its active release has no container and its domains answer 503
+	// until it is started or deployed again. StoppedBy says who stopped it.
+	StoppedAt *time.Time `json:"stopped_at,omitempty" doc:"Set while the service is stopped (dock service stop): no container runs and its domains answer 503 until it is started or deployed"`
+	StoppedBy string     `json:"stopped_by,omitempty"`
 	EffectiveLimits
 	// Usage is the latest resource sample of the active container (at most
 	// a minute old), when there is one.

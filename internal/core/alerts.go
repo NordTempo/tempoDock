@@ -278,7 +278,8 @@ func domainError(project, env, service, hostname, reason string) alertSignal {
 
 // onServiceStatus counts a service's restarts and raises a crash loop
 // alert when [alerts] crash_loop_restarts fall within crash_loop_minutes.
-// A stopped service (archived, or nothing deployed) resolves it.
+// A service without a container (nothing deployed, archived, or stopped
+// on purpose, ADR 0050) resolves it.
 func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st apitypes.ServiceStatus, now time.Time) {
 	if st.State == apitypes.ServiceNone || st.State == apitypes.ServiceStopped {
 		c.alerts.mu.Lock()

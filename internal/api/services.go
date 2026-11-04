@@ -56,6 +56,20 @@ func registerServices(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.Service], error) {
 		return reply(s.core.ArchiveService(ctx, actor, in.ref()))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "stop-service", Method: http.MethodPost, Path: servicePathT + "/stop",
+		Summary: "Stop a service", Description: "Its domains answer 503, then its container is removed. The active release, volumes, domains and variables are kept. Stopping a stopped service changes nothing. Refused while a deploy is in progress. Start it again with `/start` or any deploy (ADR 0050). Scope: deploy.",
+		Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.Service], error) {
+		return reply(s.core.StopService(ctx, actor, in.ref()))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "start-service", Method: http.MethodPost, Path: servicePathT + "/start",
+		Summary: "Start a stopped service", Description: "Creates a new release identical to the active one (source restart), through the same health-checked path. The service runs again once it is live; if it fails, the service stays stopped. 409 if the service isn't stopped. Scope: deploy.",
+		Tags: tags, DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.Release], error) {
+		return reply(s.core.StartService(ctx, actor, in.ref()))
+	})
 
 	tags = []string{"volumes"}
 	authed(s, a, huma.Operation{

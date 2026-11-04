@@ -10,7 +10,8 @@ export const domainNeedsAttention = (d: { status: string }) =>
 /**
  * A service is failing when it should be running but isn't: its container
  * crashed, keeps restarting or fails its health check, or its active
- * release has no running container (stopped, or lost).
+ * release lost its container. A service stopped on purpose (ADR 0050)
+ * isn't failing.
  */
 export function isFailing(s: ServiceView) {
   const { status } = s.service;
@@ -19,7 +20,7 @@ export function isFailing(s: ServiceView) {
     return true;
   }
   const expected = !!s.service.active_release && !s.deploying;
-  return expected && (state === "stopped" || state === "none");
+  return expected && state === "none";
 }
 
 /** Worst first: broken things, then things waiting on a human. */
