@@ -32,12 +32,17 @@ func (c *Core) StopService(ctx context.Context, a Actor, ref ServiceRef) (apityp
 	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
 		return apitypes.Service{}, err
 	}
-	// An in-place restore stops the service and starts it again itself.
-	if c.restoringInPlace(ss.svc.ID) {
-		return apitypes.Service{}, conflict("a snapshot is being restored into %s in place; stop it once that finishes", ss)
-	}
 	var active store.Release
 	var stopped bool
+	// An in-place restore stops the service and starts it again itself.
+	// The check and the stop hold the lock that restoreInPlace sets its
+	// flag under, so a restore either sees this stop when it reads the
+	// service again or makes this stop wait for it.
+	c.snapshots.mu.Lock()
+	if c.snapshots.inPlace[ss.svc.ID] {
+		c.snapshots.mu.Unlock()
+		return apitypes.Service{}, conflict("a snapshot is being restored into %s in place; stop it once that finishes", ss)
+	}
 	// One transaction with the in-flight check, which startRelease makes
 	// in its own: a deploy and a stop never both go ahead.
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
@@ -66,6 +71,7 @@ func (c *Core) StopService(ctx context.Context, a Actor, ref ServiceRef) (apityp
 		ss.svc, err = q.GetService(ctx, svc.ID)
 		return err
 	})
+	c.snapshots.mu.Unlock()
 	if err != nil {
 		return apitypes.Service{}, err
 	}
