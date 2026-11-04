@@ -59,6 +59,11 @@ type Runtime struct {
 	onJob       func(context.Context, node.JobSpec) (node.JobResult, error)
 	jobs        []node.JobSpec
 
+	// imageVolumes are the VOLUMEs images declare (SetImageVolumes);
+	// keptAnon names the containers Remove kept the anonymous volumes of.
+	imageVolumes map[string][]string
+	keptAnon     []string
+
 	// tunnel is what EnsureTunnel last ran; nil when cloudflared isn't.
 	tunnel *node.TunnelSpec
 
@@ -534,6 +539,7 @@ func (r *Runtime) Start(_ context.Context, spec node.ContainerSpec) (node.Contai
 	if spec.Health != nil {
 		c.Health = node.HealthStarting
 	}
+	c.AnonymousVolumes = node.AnonymousPaths(r.imageVolumes[spec.Image], spec.Mounts)
 	if spec.Port != 0 {
 		c.HostPort = spec.HostPort
 		if c.HostPort == 0 {
@@ -621,8 +627,29 @@ func (r *Runtime) Restart(_ context.Context, id string, _ time.Duration) error {
 	return nil
 }
 
+// SetImageVolumes makes the image ref declare VOLUMEs at paths: Start, of
+// ref or of the ID Pull gives it, reports the ones no mount covers as the
+// container's AnonymousVolumes.
+func (r *Runtime) SetImageVolumes(ref string, paths ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.imageVolumes == nil {
+		r.imageVolumes = map[string][]string{}
+	}
+	r.imageVolumes[ref] = paths
+	r.imageVolumes[imageID(ref)] = paths
+}
+
+// KeptAnonymousVolumes returns the names of the containers Remove kept the
+// anonymous volumes of (RemoveOptions.KeepAnonymousVolumes), in order.
+func (r *Runtime) KeptAnonymousVolumes() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.keptAnon)
+}
+
 // Remove implements node.Containers.
-func (r *Runtime) Remove(_ context.Context, id string) error {
+func (r *Runtime) Remove(_ context.Context, id string, opts node.RemoveOptions) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c, ok := r.containers[id]
@@ -633,6 +660,9 @@ func (r *Runtime) Remove(_ context.Context, id string) error {
 		return fmt.Errorf("container %s is running; stop it first", c.Name)
 	}
 	r.op("remove %s", c.Name)
+	if opts.KeepAnonymousVolumes {
+		r.keptAnon = append(r.keptAnon, c.Name)
+	}
 	delete(r.containers, id)
 	delete(r.specs, id)
 	r.notifyLocked()

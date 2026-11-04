@@ -33,6 +33,7 @@ func TestWireRoundTrip(t *testing.T) {
 	check(t, node.Container{
 		ID: "abc", Name: "web-1", Image: "app:1", Labels: labels, State: node.StateRunning, HostPort: 41000,
 		StartedAt: at, ExitCode: 137, RestartCount: 2, OOMKilled: true, Health: node.HealthUnhealthy, HealthOutput: "GET /up: timed out",
+		AnonymousVolumes: []string{"/var/lib/postgresql/data"},
 	}, toWireContainer, wireContainer.node)
 	check(t, node.HealthCheck{Path: "/up", Port: 5432, Timeout: time.Minute, Interval: 2 * time.Second, Grace: 3 * time.Second},
 		toWireHealthCheck, wireHealthCheck.node)

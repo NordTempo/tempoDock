@@ -59,6 +59,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0049](0049-apply-and-compose-import.md) | Config as code with `dock apply FILE`, and importing Compose files | accepted |
 | [0050](0050-stop-start-service.md) | Stop and start a service | accepted |
 | [0051](0051-registry-credentials.md) | Pull credentials for private registries | accepted |
+| [0052](0052-anonymous-volumes-of-served-containers.md) | Keeping the anonymous volumes of containers that served | accepted |
 
 ## Template
 

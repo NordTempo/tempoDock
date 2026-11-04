@@ -189,8 +189,8 @@ func (c *Client) Restart(ctx context.Context, id string, timeout time.Duration) 
 }
 
 // Remove implements node.Containers.
-func (c *Client) Remove(ctx context.Context, id string) error {
-	_, err := unaryCall[empty](ctx, c, opRemove, containerRequest{ID: id})
+func (c *Client) Remove(ctx context.Context, id string, opts node.RemoveOptions) error {
+	_, err := unaryCall[empty](ctx, c, opRemove, removeRequest{ID: id, DropAnonymousVolumes: !opts.KeepAnonymousVolumes})
 	return err
 }
 

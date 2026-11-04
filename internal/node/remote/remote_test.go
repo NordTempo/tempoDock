@@ -89,9 +89,13 @@ func TestCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	h.rt.SetImageVolumes("app:1", "/data", "/cache")
 	ct, err := h.client.Start(ctx, spec)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Equal(ct.AnonymousVolumes, []string{"/cache"}) {
+		t.Fatalf("anonymous volumes = %q, want /cache (a Dock volume covers /data)", ct.AnonymousVolumes)
 	}
 	if got, ok := h.rt.Spec("web-1"); !ok || !equalJSON(got, spec) {
 		t.Fatalf("spec on the node = %+v", got)
@@ -150,8 +154,11 @@ func TestCalls(t *testing.T) {
 	if got, err := h.client.Inspect(ctx, ct.ID); err != nil || got.State != node.StateExited || got.Name != "web-1" {
 		t.Fatalf("inspect after stop = %+v, %v", got, err)
 	}
-	if err := h.client.Remove(ctx, ct.ID); err != nil {
+	if err := h.client.Remove(ctx, ct.ID, node.RemoveOptions{KeepAnonymousVolumes: true}); err != nil {
 		t.Fatal(err)
+	}
+	if kept := h.rt.KeptAnonymousVolumes(); !slices.Equal(kept, []string{"web-1"}) {
+		t.Fatalf("kept anonymous volumes of %q, want web-1's", kept)
 	}
 	if err := h.client.RemoveNetwork(ctx, "env-1", node.Labels{Project: "1", Environment: "2"}); err != nil {
 		t.Fatal(err)

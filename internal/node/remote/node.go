@@ -371,7 +371,9 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h(opRestart, unary(func(ctx context.Context, a stopRequest) (empty, error) {
 		return empty{}, rt.Restart(ctx, a.ID, ms(a.TimeoutMS))
 	}))
-	h(opRemove, unary(func(ctx context.Context, a containerRequest) (empty, error) { return empty{}, rt.Remove(ctx, a.ID) }))
+	h(opRemove, unary(func(ctx context.Context, a removeRequest) (empty, error) {
+		return empty{}, rt.Remove(ctx, a.ID, node.RemoveOptions{KeepAnonymousVolumes: !a.DropAnonymousVolumes})
+	}))
 	h(opInspect, unary(func(ctx context.Context, a containerRequest) (containerResult, error) {
 		c, err := rt.Inspect(ctx, a.ID)
 		return containerResult{Container: toWireContainer(c)}, err

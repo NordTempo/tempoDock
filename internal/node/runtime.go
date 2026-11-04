@@ -12,6 +12,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	"path"
+	"slices"
 	"time"
 )
 
@@ -104,10 +106,10 @@ type Containers interface {
 	// by it. Core calls it for a container whose health check keeps
 	// failing (ADR 0043).
 	Restart(ctx context.Context, id string, timeout time.Duration) error
-	// Remove removes a stopped container with its anonymous volumes (an
-	// image's VOLUME no Dock volume covers: no later container mounts
-	// them). Never removes a named volume.
-	Remove(ctx context.Context, id string) error
+	// Remove removes a stopped container. Its anonymous volumes (an
+	// image's VOLUME no Dock volume covers) go with it, unless
+	// opts.KeepAnonymousVolumes. Never removes a named volume.
+	Remove(ctx context.Context, id string, opts RemoveOptions) error
 	// Inspect returns the current state of one container.
 	Inspect(ctx context.Context, id string) (Container, error)
 	// List returns all platform-managed containers, running or not.
@@ -258,6 +260,34 @@ type JobResult struct {
 	ExitCode int
 	// Output is the tail (at most MaxJobOutput bytes) of stdout and stderr.
 	Output string
+}
+
+// RemoveOptions are the settings of Containers.Remove.
+type RemoveOptions struct {
+	// KeepAnonymousVolumes keeps the container's anonymous volumes, for a
+	// container that served (ADR 0052): a Postgres image without a Dock
+	// volume keeps its data in one, so removing it would delete the data
+	// for good. They stay as the service's one kept copy: the same call
+	// removes the anonymous volumes an earlier one kept for the service,
+	// once no container uses them. Anonymous volumes of containers created
+	// before ADR 0052 carry no labels and are always left alone. Without
+	// it (a release that never went live) they are removed.
+	KeepAnonymousVolumes bool
+}
+
+// AnonymousPaths returns the paths of declared (an image's VOLUMEs) that
+// no mount covers, sorted: Docker gives each container an anonymous
+// volume at each. A mount covers only its own path, not paths below it.
+func AnonymousPaths(declared []string, mounts []Mount) []string {
+	var out []string
+	for _, p := range declared {
+		p = path.Clean(p)
+		if !slices.ContainsFunc(mounts, func(m Mount) bool { return path.Clean(m.Path) == p }) && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // PullOptions are the optional settings of Containers.Pull.
@@ -660,6 +690,10 @@ type Container struct {
 	// failed probe said, at most 256 bytes.
 	Health       string
 	HealthOutput string
+	// AnonymousVolumes are the paths of the image's VOLUMEs no Mount
+	// covers (AnonymousPaths), each an anonymous volume: data written
+	// there is not in the next container. Only Start sets it.
+	AnonymousVolumes []string
 }
 
 // HealthCheck describes when a new container counts as healthy.

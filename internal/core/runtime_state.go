@@ -401,7 +401,11 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 			continue
 		}
 		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Removing leftover container of release %d (%s)", rel.Number, why))
-		if err := c.removeContainers(ctx, ss.env.ServerID, cs); err != nil {
+		opts := keepData // it went live, so it may hold the service's data
+		if rel.Status == string(apitypes.ReleaseFailed) {
+			opts = node.RemoveOptions{}
+		}
+		if err := c.removeContainers(ctx, ss.env.ServerID, cs, opts); err != nil {
 			c.drift(ctx, &ss, fmt.Sprintf("could not remove leftover container of release %d of %s: %v", rel.Number, ss, err))
 			blocked[ss.svc.ID] = true
 			continue
@@ -451,7 +455,7 @@ func (c *Core) ensureRunning(ctx context.Context, ss svcScope, active store.Rele
 		}
 		return nil
 	}
-	err = c.removeContainers(ctx, ss.env.ServerID, stopped)
+	err = c.removeContainers(ctx, ss.env.ServerID, stopped, keepData)
 	if err == nil {
 		c.releaseEvent(ctx, ss, active, fmt.Sprintf("Starting release %d again", active.Number))
 		err = c.restartRelease(ctx, ss, active)

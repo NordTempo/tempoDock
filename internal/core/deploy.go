@@ -143,7 +143,7 @@ func (d *deployment) run(ctx context.Context) error {
 	if d.stateful && d.old != nil {
 		d.event(ctx, fmt.Sprintf("Stopping release %d first: services with volumes are replaced, never run side by side", d.old.Number))
 		d.oldRemoved = true // from here on, failing brings it back
-		if err := c.removeReleaseContainers(ctx, d.ss, d.old.ID); err != nil {
+		if err := c.removeReleaseContainers(ctx, d.ss, d.old.ID, keepData); err != nil {
 			return step(apitypes.CodeDeployFailed, "stop release %d: %w", d.old.Number, err)
 		}
 	}
@@ -156,6 +156,11 @@ func (d *deployment) run(ctx context.Context) error {
 	}
 	d.rel.ContainerID = ctr.ID
 	d.event(ctx, "Started container "+ctr.Name)
+	if paths := ctr.AnonymousVolumes; len(paths) > 0 {
+		// Each is a fresh anonymous volume, so whatever the service wrote
+		// there is not in this container (ADR 0052).
+		d.event(ctx, fmt.Sprintf("Warning: no volume covers %s, where the image keeps data: every new release starts with it empty, and only the last replaced container's copy is kept on the server. Add a volume at that path to keep the data", strings.Join(paths, ", ")))
+	}
 
 	// health_checking
 	d.setStatus(ctx, apitypes.ReleaseHealthChecking)
@@ -479,7 +484,8 @@ func (d *deployment) fail(ctx context.Context, err error) {
 		// Removing the container archives its output on servers that can.
 		c.saveContainerLogs(ctx, d.ss, d.rel.ID)
 	}
-	removeErr := c.removeReleaseContainers(ctx, d.ss, d.rel.ID)
+	// It never went live, so nothing it wrote is anyone's data.
+	removeErr := c.removeReleaseContainers(ctx, d.ss, d.rel.ID, node.RemoveOptions{})
 	if removeErr != nil {
 		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, c.nodeErr(serverID, removeErr)))
 	}
@@ -662,12 +668,19 @@ func liveness(cfg releaseConfig) *node.LivenessCheck {
 	return &lc
 }
 
-// removeContainer stops (gracefully) and removes a container. Missing
-// containers are fine. Until its destroy event arrives, the container's
-// events are ignored (see onContainerEvent): stopping an active release's
-// container (stateful recreate, archive) is not a crash or drift. Once
-// stopped, its output is archived on its server (archiveLogs, ADR 0046).
-func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) error {
+// keepData removes the container of a release that went live: its
+// anonymous volumes may hold the service's data (a Postgres image without
+// a volume), so they are kept as the service's one kept copy (ADR 0052).
+// Only a release that never went live is removed without it.
+var keepData = node.RemoveOptions{KeepAnonymousVolumes: true}
+
+// removeContainer stops (gracefully) and removes a container, with opts
+// (keepData for a release that went live). Missing containers are fine.
+// Until its destroy event arrives, the container's events are ignored
+// (see onContainerEvent): stopping an active release's container
+// (stateful recreate, archive) is not a crash or drift. Once stopped, its
+// output is archived on its server (archiveLogs, ADR 0046).
+func (c *Core) removeContainer(ctx context.Context, serverID int64, id string, opts node.RemoveOptions) error {
 	c.setRemoving(id, true)
 	rt := c.runtime(serverID)
 	if err := rt.Stop(ctx, id, stopTimeout); errors.Is(err, node.ErrNotFound) {
@@ -678,7 +691,7 @@ func (c *Core) removeContainer(ctx context.Context, serverID int64, id string) e
 		return fmt.Errorf("stop container %s: %w", id, err)
 	}
 	c.archiveLogs(ctx, serverID, rt, id)
-	if err := rt.Remove(ctx, id); err != nil && !errors.Is(err, node.ErrNotFound) {
+	if err := rt.Remove(ctx, id, opts); err != nil && !errors.Is(err, node.ErrNotFound) {
 		c.setRemoving(id, false)
 		return fmt.Errorf("remove container %s: %w", id, err)
 	}
@@ -717,10 +730,10 @@ func (c *Core) ownRemoval(ev node.ContainerEvent) bool {
 	return true
 }
 
-func (c *Core) removeContainers(ctx context.Context, serverID int64, ctrs []node.Container) error {
+func (c *Core) removeContainers(ctx context.Context, serverID int64, ctrs []node.Container, opts node.RemoveOptions) error {
 	var errs []error
 	for _, ct := range ctrs {
-		errs = append(errs, c.removeContainer(ctx, serverID, ct.ID))
+		errs = append(errs, c.removeContainer(ctx, serverID, ct.ID, opts))
 	}
 	return errors.Join(errs...)
 }
@@ -740,10 +753,10 @@ func (c *Core) ofRelease(ctrs []node.Container, ss svcScope, releaseID int64) []
 }
 
 // removeReleaseContainers stops and removes every container of a release
-// of ss. They are found by label, not by the saved container ID, so a
-// container started just before a crash (ID never saved) is found too;
-// another control plane's containers never are.
-func (c *Core) removeReleaseContainers(ctx context.Context, ss svcScope, releaseID int64) error {
+// of ss, with opts (removeContainer). They are found by label, not by the
+// saved container ID, so a container started just before a crash (ID
+// never saved) is found too; another control plane's containers never are.
+func (c *Core) removeReleaseContainers(ctx context.Context, ss svcScope, releaseID int64, opts node.RemoveOptions) error {
 	serverID := ss.env.ServerID
 	ids, err := c.runtime(serverID).ReleaseContainers(ctx, c.labels(ss, releaseID))
 	if err != nil {
@@ -751,16 +764,17 @@ func (c *Core) removeReleaseContainers(ctx context.Context, ss svcScope, release
 	}
 	var errs []error
 	for _, id := range ids {
-		errs = append(errs, c.removeContainer(ctx, serverID, id))
+		errs = append(errs, c.removeContainer(ctx, serverID, id, opts))
 	}
 	return errors.Join(errs...)
 }
 
-// retire removes a superseded or failed release's containers and then frees
-// its host port. If removal fails the port stays taken, so no new release
-// is handed a port the old container still holds.
+// retire removes the containers of a release that went live (superseded
+// by a newer one, or archived) and then frees its host port. If removal
+// fails the port stays taken, so no new release is handed a port the old
+// container still holds.
 func (c *Core) retire(ctx context.Context, ss svcScope, releaseID int64) error {
-	if err := c.removeReleaseContainers(ctx, ss, releaseID); err != nil {
+	if err := c.removeReleaseContainers(ctx, ss, releaseID, keepData); err != nil {
 		return err
 	}
 	c.freePort(ctx, releaseID)

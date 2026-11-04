@@ -50,7 +50,7 @@ func TestArchiveLogs(t *testing.T) {
 	if err != nil || a.Service != "41" || a.Release != "7" || a.Bytes <= 0 {
 		t.Fatalf("archive = %+v, %v", a, err)
 	}
-	if err := e.Remove(ctx, c.ID); err != nil {
+	if err := e.Remove(ctx, c.ID, node.RemoveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 
