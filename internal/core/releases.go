@@ -68,6 +68,9 @@ type releaseConfig struct {
 	// release starts; PreDeployTimeout bounds it in seconds.
 	PreDeploy        string `json:"pre_deploy,omitempty"`
 	PreDeployTimeout int    `json:"pre_deploy_timeout_seconds,omitempty"`
+	// PreDeploySnapshot snapshots the environment's stateful services
+	// before the pre-deploy command (ADR 0047).
+	PreDeploySnapshot bool `json:"pre_deploy_snapshot,omitempty"`
 	// Repo holds the deploy settings that came from dock.toml, so config
 	// releases built on this one keep them.
 	Repo *repoDeploy `json:"repo,omitempty"`
@@ -87,6 +90,8 @@ type repoDeploy struct {
 	HealthCheckStartPeriodSeconds  int    `json:"health_check_start_period_seconds,omitempty"`
 	PreDeployCommand               string `json:"pre_deploy_command,omitempty"`
 	PreDeployTimeoutSeconds        int    `json:"pre_deploy_timeout_seconds,omitempty"`
+	// PreDeploySnapshot is set (true or false) only when the file sets it.
+	PreDeploySnapshot *bool `json:"pre_deploy_snapshot,omitempty"`
 	// JobsFromFile says the source had a dock.toml, so Jobs are the
 	// service's file jobs (ADR 0054), none removing them.
 	JobsFromFile bool      `json:"jobs_from_file,omitempty"`
@@ -124,6 +129,7 @@ func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
 		HealthCheckStartPeriodSeconds:  int(rc.Deploy.HealthCheckStartPeriod / time.Second),
 		PreDeployCommand:               rc.Deploy.PreDeployCommand,
 		PreDeployTimeoutSeconds:        int(rc.Deploy.PreDeployTimeout / time.Second),
+		PreDeploySnapshot:              rc.Deploy.PreDeploySnapshot,
 	}
 }
 
@@ -171,6 +177,9 @@ func (r *repoDeploy) apply(s *store.Service) {
 	if r.PreDeployTimeoutSeconds != 0 {
 		s.PreDeployTimeoutSeconds = int64(r.PreDeployTimeoutSeconds)
 	}
+	if r.PreDeploySnapshot != nil {
+		s.PreDeploySnapshot = *r.PreDeploySnapshot
+	}
 }
 
 // fields lists the settings the file set, by API field name.
@@ -187,6 +196,7 @@ func (r *repoDeploy) fields() []string {
 		"health_check_retries":               r.HealthCheckRetries != 0,
 		"health_check_start_period_seconds":  r.HealthCheckStartPeriodSeconds != 0,
 		"pre_deploy_command":                 r.PreDeployCommand != "", "pre_deploy_timeout_seconds": r.PreDeployTimeoutSeconds != 0,
+		"pre_deploy_snapshot": r.PreDeploySnapshot != nil,
 	} {
 		if set {
 			out = append(out, name)
@@ -296,6 +306,7 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 		HealthCheckStartPeriod:  int(target.HealthCheckStartPeriodSeconds),
 		PreDeploy:               target.PreDeployCommand,
 		PreDeployTimeout:        int(target.PreDeployTimeoutSeconds),
+		PreDeploySnapshot:       target.PreDeploySnapshot,
 	}
 	if cfg.HealthCheckTimeout == 0 {
 		cfg.HealthCheckTimeout = c.cfg.Defaults.HealthCheckTimeout
@@ -763,7 +774,7 @@ func setServiceImage(ctx context.Context, q *store.Queries, s store.Service, ima
 		MemoryMb: s.MemoryMb, Cpus: s.Cpus,
 		HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
 		HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
-		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds, ID: s.ID,
+		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds, PreDeploySnapshot: s.PreDeploySnapshot, ID: s.ID,
 	})
 }
 
@@ -1064,8 +1075,8 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 	}
 	out.Config = apitypes.ReleaseConfig{
 		Port: cfg.Port, Published: cfg.Published, StartCommand: cfg.Cmd, HealthCheckPath: cfg.HealthCheckPath,
-		PreDeployCommand: cfg.PreDeploy,
-		MemoryMB:         cfg.MemoryMB, CPUs: cfg.CPUs, VariableKeys: slices.Sorted(maps.Keys(cfg.Env)),
+		PreDeployCommand: cfg.PreDeploy, PreDeploySnapshot: cfg.PreDeploySnapshot,
+		MemoryMB: cfg.MemoryMB, CPUs: cfg.CPUs, VariableKeys: slices.Sorted(maps.Keys(cfg.Env)),
 		Mounts: make([]apitypes.VolumeMount, 0, len(cfg.Mounts)), FromRepoFile: cfg.Repo.fields(),
 	}
 	for _, m := range cfg.Mounts {

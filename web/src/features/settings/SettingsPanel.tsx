@@ -24,6 +24,7 @@ import {
 } from "../../data/queries";
 import type { Service, ServiceRef, SettingChange } from "../../data/types";
 import { useOrg } from "../../shell/location";
+import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
@@ -36,6 +37,7 @@ import {
   parseSetting,
   type SettingKey,
   settingLabel,
+  type TextSettingKey,
 } from "./settings";
 
 type KeyedChange = SettingChange & { key: SettingKey };
@@ -56,12 +58,13 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       : [],
   );
 
-  const field = (key: SettingKey) => (
+  const change = (key: SettingKey) => changes.find((c) => c.key === key);
+  const field = (key: TextSettingKey) => (
     <Editable
       serviceRef={ref}
       settingKey={key}
       value={service[key]}
-      change={changes.find((c) => c.key === key)}
+      change={change(key)}
     />
   );
 
@@ -80,10 +83,16 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Item label="Pre-deploy">
           {field("pre_deploy_command")}{" "}
           <span className="text-mut">timeout</span>{" "}
-          {field("pre_deploy_timeout_seconds")}
+          {field("pre_deploy_timeout_seconds")}{" "}
+          <PreDeploySnapshot
+            serviceRef={ref}
+            live={service.pre_deploy_snapshot}
+            change={change("pre_deploy_snapshot")}
+          />
           <span className="block text-xs text-mut">
             Runs with the new image before it gets traffic, e.g. migrations. A
-            non-zero exit fails the release.
+            non-zero exit fails the release. With snapshots on, the
+            environment's stateful services are snapshotted first.
           </span>
         </Item>
         <Item label="Health check">
@@ -278,6 +287,64 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/**
+ * pre_deploy_snapshot as a checkbox, staged like the other settings: on,
+ * the environment's stateful services are snapshotted before the
+ * pre-deploy command runs.
+ */
+function PreDeploySnapshot({
+  serviceRef: ref,
+  live,
+  change,
+}: {
+  serviceRef: ServiceRef;
+  live: boolean;
+  change: KeyedChange | undefined;
+}) {
+  const stage = useStageSettings();
+  const discard = useDiscardChanges();
+  const on = change ? change.new === "true" : live;
+  return (
+    <span className="inline-flex items-baseline gap-2">
+      <CliHint
+        cli={`dock service update ${ref.service} --pre-deploy-snapshot=${!on} -e ${ref.environment}`}
+        className="act"
+      >
+        <Check
+          label="snapshot first"
+          title="Snapshot the environment's stateful services before the command runs"
+          checked={on}
+          disabled={stage.isPending}
+          onChange={(checked) =>
+            stage.mutate({ ref, patch: { pre_deploy_snapshot: checked } })
+          }
+        />
+      </CliHint>
+      {change && (
+        <>
+          <span className="text-warn">staged</span>
+          <button
+            type="button"
+            className="lnk"
+            disabled={discard.isPending}
+            onClick={() =>
+              discard.mutate({
+                env: envPath(ref),
+                selection: {
+                  settings: [{ service: ref.service, field: change.key }],
+                },
+              })
+            }
+          >
+            Discard
+          </button>
+        </>
+      )}
+      <ErrorText error={stage.error ?? discard.error} />
+    </span>
+  );
+}
+
 /** A setting value; click to edit. Staged values show old → new. */
 function Editable({
   serviceRef: ref,
@@ -286,7 +353,7 @@ function Editable({
   change,
 }: {
   serviceRef: ServiceRef;
-  settingKey: SettingKey;
+  settingKey: TextSettingKey;
   value: string | number;
   change: KeyedChange | undefined;
 }) {

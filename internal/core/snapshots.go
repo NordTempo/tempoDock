@@ -45,6 +45,10 @@ const (
 	snapshotListLimit = 200
 	// snapshotRestoresShown is how many restores a service lists.
 	snapshotRestoresShown = 20
+	// snapshotBeforeWait is how long SnapshotBefore waits for a backup,
+	// snapshot or restore of the service to end, e.g. the backup a
+	// stateful service's first release starts.
+	snapshotBeforeWait = 5 * time.Minute
 )
 
 // snapshotScript copies every volume in $VOLUMES into the snapshot
@@ -209,7 +213,7 @@ func (c *Core) CreateSnapshot(ctx context.Context, a Actor, ref ServiceRef, req 
 		return apitypes.Snapshot{}, err
 	}
 	note := cleanLine(req.Note, 200)
-	row, vols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotManual, note)
+	row, vols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotManual, note, 0)
 	if err != nil {
 		return apitypes.Snapshot{}, err
 	}
@@ -223,10 +227,13 @@ func (c *Core) CreateSnapshot(ctx context.Context, a Actor, ref ServiceRef, req 
 }
 
 // SnapshotBefore takes a snapshot of a stateful service before a risky
-// action and waits for it: the seam for the pre-deploy command
-// (trigger before_deploy) and `dock run` (before_run). A service without
-// an applied volume has nothing to keep: no snapshot and no error. Any
-// failure is an error, and the caller should not go on with the action.
+// action and waits for it: before the pre-deploy command with
+// pre_deploy_snapshot on (trigger before_deploy) and before `dock run`
+// with the volumes mounted for writing (before_run). A backup, snapshot
+// or restore of the service running is waited for, up to
+// snapshotBeforeWait. A service without an applied volume has nothing to
+// keep: no snapshot and no error. Any failure is an error, and the
+// caller should not go on with the action.
 func (c *Core) SnapshotBefore(ctx context.Context, a Actor, ss svcScope, trigger apitypes.SnapshotTrigger, note string) (*apitypes.Snapshot, error) {
 	// The snapshot ends on its own terms: a caller that goes away (an
 	// HTTP request ending) must not leave it running for ever.
@@ -236,7 +243,7 @@ func (c *Core) SnapshotBefore(ctx context.Context, a Actor, ss svcScope, trigger
 	if err != nil || len(vols) == 0 {
 		return nil, err
 	}
-	row, vols, err := c.startSnapshot(ctx, a, ss, trigger, note)
+	row, vols, err := c.startSnapshot(ctx, a, ss, trigger, note, snapshotBeforeWait)
 	if err != nil {
 		return nil, err
 	}
@@ -264,10 +271,11 @@ func volumeNames(vols []store.Volume) []string {
 	return out
 }
 
-// startSnapshot checks a snapshot can be taken, claims the service and
-// records it running. The caller must release the claim
-// (releaseService) once runSnapshot or takeClaimed returns.
-func (c *Core) startSnapshot(ctx context.Context, a Actor, ss svcScope, trigger apitypes.SnapshotTrigger, note string) (store.VolumeSnapshot, []store.Volume, error) {
+// startSnapshot checks a snapshot can be taken, claims the service
+// (waiting up to wait for another claim on it to end) and records it
+// running. The caller must release the claim (releaseService) once
+// runSnapshot or takeClaimed returns.
+func (c *Core) startSnapshot(ctx context.Context, a Actor, ss svcScope, trigger apitypes.SnapshotTrigger, note string, wait time.Duration) (store.VolumeSnapshot, []store.Volume, error) {
 	if err := notArchived(ss.project); err != nil {
 		return store.VolumeSnapshot{}, nil, err
 	}
@@ -287,7 +295,7 @@ func (c *Core) startSnapshot(ctx context.Context, a Actor, ss svcScope, trigger 
 	if err := c.notMoving(ctx, ss.envScope, "take a snapshot"); err != nil {
 		return store.VolumeSnapshot{}, nil, err
 	}
-	if !c.claimService(ss.svc.ID) {
+	if !c.claimWithin(ctx, ss.svc.ID, wait) {
 		return store.VolumeSnapshot{}, nil, conflict("a backup, snapshot or restore of %s is running; wait for it to finish", ss)
 	}
 	row, err := c.store.CreateSnapshot(ctx, store.CreateSnapshotParams{
@@ -299,6 +307,17 @@ func (c *Core) startSnapshot(ctx context.Context, a Actor, ss svcScope, trigger 
 		return store.VolumeSnapshot{}, nil, err
 	}
 	return row, vols, nil
+}
+
+// claimWithin claims a service, waiting up to wait (0: not at all) for
+// another claim on it to end.
+func (c *Core) claimWithin(ctx context.Context, serviceID int64, wait time.Duration) bool {
+	if wait == 0 {
+		return c.claimService(serviceID)
+	}
+	wctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	return c.claimServiceWait(wctx, serviceID)
 }
 
 // runSnapshot takes a recorded snapshot to the end, audits the outcome and
@@ -526,7 +545,7 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 		return apitypes.SnapshotRestoreResult{}, err
 	}
 	// The safety snapshot is recorded now, so the claim covers both.
-	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, fmt.Sprintf("before restoring snapshot %d", snap.ID))
+	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, fmt.Sprintf("before restoring snapshot %d", snap.ID), 0)
 	if err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}

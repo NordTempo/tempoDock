@@ -12,6 +12,7 @@ import {
   Act,
   Actor,
   actorKind,
+  Check,
   ErrorText,
   Panel,
   StateText,
@@ -82,7 +83,8 @@ export const quote = (command: string) =>
 
 /**
  * The command box: Enter runs it. Stateful services that aren't database
- * templates pick how their volumes mount; read-only unless asked.
+ * templates pick how their volumes mount; read-only unless asked. Write
+ * takes a snapshot of them first unless that is turned off.
  */
 function RunForm({
   serviceRef: ref,
@@ -101,12 +103,15 @@ function RunForm({
   const [command, setCommand] = useState("");
   const [timeout, setTimeoutSeconds] = useState(0);
   const [volumes, setVolumes] = useState<RunVolumes>("read");
+  const [snapshot, setSnapshot] = useState(true);
+  const writes = mounts && volumes === "write";
 
   const reason = !canDeploy ? "Needs deploy access" : blocked;
   const trimmed = command.trim();
   const cli = [
     `dock run -s ${ref.service} -e ${ref.environment} --detach`,
     mounts && volumes !== "read" && `--volumes ${volumes}`,
+    writes && !snapshot && "--no-snapshot",
     timeout > 0 && `--timeout ${timeouts.find(([s]) => s === timeout)?.[1]}`,
     `-- ${trimmed ? quote(trimmed) : "<command>"}`,
   ]
@@ -127,6 +132,7 @@ function RunForm({
               command: trimmed,
               ...(timeout > 0 && { timeout_seconds: timeout }),
               ...(mounts && { volumes }),
+              ...(writes && !snapshot && { no_snapshot: true }),
             },
           },
           { onSuccess: (r) => onStarted(r.id) },
@@ -189,11 +195,20 @@ function RunForm({
             ))}
           </select>
         </label>
-        {mounts && volumes === "write" && (
-          <span className="text-warn">
-            Mounts read-write next to the running {ref.service}: only for
-            storage that takes a second writer.
-          </span>
+        {writes && (
+          <>
+            <Check
+              label="snapshot first"
+              title="Snapshot the volumes before the run; a failed snapshot refuses it"
+              checked={snapshot}
+              disabled={!!reason}
+              onChange={setSnapshot}
+            />
+            <span className="text-warn">
+              Mounts read-write next to the running {ref.service}: only for
+              storage that takes a second writer.
+            </span>
+          </>
         )}
         {reason && <span className="text-mut">{reason}.</span>}
         <ErrorText error={run.error} />
@@ -319,6 +334,7 @@ function RunDetail({
         <span className="font-mono">r{r.release}</span> · volumes {r.volumes} ·
         timeout {elapsed(r.timeout_seconds * 1000)}
         {r.tty && " · terminal"}
+        {r.snapshot ? ` · snapshot ${r.snapshot} taken before` : ""}
       </p>
       {r.command.includes("\n") && (
         <pre className="max-h-40 overflow-auto font-mono text-xs whitespace-pre-wrap text-sec">

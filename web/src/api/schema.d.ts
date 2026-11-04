@@ -4457,6 +4457,8 @@ export interface components {
             /** Format: int64 */
             release: number;
             service: string;
+            /** Format: int64 */
+            snapshot?: number;
             /** Format: date-time */
             started_at: string;
             /** @enum {string} */
@@ -4655,6 +4657,7 @@ export interface components {
             /** Format: int64 */
             port?: number;
             pre_deploy_command?: string;
+            pre_deploy_snapshot?: boolean;
             /** Format: int64 */
             pre_deploy_timeout_seconds?: number;
             start_command?: string;
@@ -5870,6 +5873,7 @@ export interface components {
             /** Format: int64 */
             port: number;
             pre_deploy_command?: string;
+            pre_deploy_snapshot?: boolean;
             /** @description Port is published for routing */
             published: boolean;
             start_command: string;
@@ -6027,6 +6031,8 @@ export interface components {
         RunCommandRequest: {
             /** @description Run with /bin/sh -c in the service's active image, its variables and its environment's private network */
             command: string;
+            /** @description With volumes write on a stateful service, skip the snapshot taken before the run */
+            no_snapshot?: boolean;
             /**
              * Format: int64
              * @description Stopped after this long. Default 3600
@@ -6285,6 +6291,8 @@ export interface components {
             port: number;
             /** @description Runs with the new image before it gets traffic, e.g. migrations; empty runs nothing */
             pre_deploy_command: string;
+            /** @description Snapshot the environment's stateful services before the pre-deploy command runs; a failed snapshot fails the release */
+            pre_deploy_snapshot: boolean;
             /**
              * Format: int64
              * @description How long the pre-deploy command may run. 0 means 600 (10 minutes)
@@ -6344,6 +6352,7 @@ export interface components {
             /** Format: int64 */
             port?: number;
             pre_deploy_command?: string;
+            pre_deploy_snapshot?: boolean;
             /** Format: int64 */
             pre_deploy_timeout_seconds?: number;
             start_command?: string;
@@ -7095,6 +7104,7 @@ export interface components {
             port?: number;
             /** @description Empty string removes it */
             pre_deploy_command?: string;
+            pre_deploy_snapshot?: boolean;
             /** Format: int64 */
             pre_deploy_timeout_seconds?: number;
             start_command?: string;

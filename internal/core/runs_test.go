@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,7 @@ func TestRunChecks(t *testing.T) {
 // for write, one writer at a time; a database's never mount.
 func TestRunVolumes(t *testing.T) {
 	h := newHarness(t)
+	h.snapshotJobs(nil) // a writer takes one first
 	app := h.service("app", apitypes.CreateServiceRequest{Image: "app:1"})
 	if _, err := h.c.AddVolume(h.ctx, testSystem, app, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
 		t.Fatal(err)
@@ -170,6 +172,78 @@ func TestRunVolumes(t *testing.T) {
 	}
 	if run, err := h.runCmd(testSystem, db, apitypes.RunCommandRequest{Command: "psql"}); err != nil || run.Volumes != apitypes.VolumesNone || len(h.lastJob().Mounts) != 0 {
 		t.Fatalf("database run = %+v, %v", run, err)
+	}
+}
+
+// TestRunSnapshotsBeforeWriting: a run mounting the volumes for writing
+// waits for a snapshot of them first and records it; --no-snapshot and
+// read-only runs take none, and a failed snapshot refuses the run.
+func TestRunSnapshotsBeforeWriting(t *testing.T) {
+	h := newHarness(t)
+	h.snapshotJobs(nil)
+	app := h.volumeService("app")
+	snapshots := func() []apitypes.Snapshot {
+		list, err := h.c.ServiceSnapshots(h.ctx, testSystem, app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list.Snapshots
+	}
+	// The snapshot and seed jobs since the fake runtime's from'th; the
+	// backup scheduler's may run in between.
+	ran := func(from int) []string {
+		var out []string
+		for _, j := range h.rt.Jobs()[from:] {
+			if j.Script == snapshotScript || j.Script == "bin/seed" {
+				out = append(out, j.Script)
+			}
+		}
+		return out
+	}
+	jobs := len(h.rt.Jobs())
+	run, err := h.runCmd(testSystem, app, apitypes.RunCommandRequest{Command: "bin/seed", Volumes: apitypes.VolumesWrite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snaps := snapshots()
+	if len(snaps) != 1 || run.Snapshot != snaps[0].ID || snaps[0].Trigger != apitypes.SnapshotBeforeRun || snaps[0].Note != "before `dock run`: bin/seed" {
+		t.Fatalf("run = %+v, snapshots = %+v", run, snaps)
+	}
+	if got := ran(jobs); !slices.Equal(got, []string{snapshotScript, "bin/seed"}) {
+		t.Fatalf("jobs = %q", got)
+	}
+	if list, err := h.c.ListRuns(h.ctx, testSystem, app); err != nil || len(list) != 1 || list[0].Snapshot != run.Snapshot {
+		t.Fatalf("list = %+v, %v", list, err)
+	}
+
+	for _, req := range []apitypes.RunCommandRequest{
+		{Command: "bin/seed", Volumes: apitypes.VolumesWrite, NoSnapshot: true},
+		{Command: "ls", Volumes: apitypes.VolumesRead},
+	} {
+		if run, err := h.runCmd(testSystem, app, req); err != nil || run.Snapshot != 0 {
+			t.Fatalf("%+v: %+v, %v", req, run, err)
+		}
+	}
+	if n := len(snapshots()); n != 1 {
+		t.Fatalf("%d snapshots; only the first run takes one", n)
+	}
+
+	h.snapshotJobs(func(spec node.JobSpec) *node.JobResult {
+		if spec.Script == snapshotScript {
+			return &node.JobResult{ExitCode: 1}
+		}
+		return nil
+	})
+	jobs = len(h.rt.Jobs())
+	if _, err := h.runCmd(testSystem, app, apitypes.RunCommandRequest{Command: "bin/seed", Volumes: apitypes.VolumesWrite}); err == nil ||
+		!strings.Contains(err.Error(), "--no-snapshot") {
+		t.Fatalf("failed snapshot: %v", err)
+	}
+	if got := ran(jobs); !slices.Equal(got, []string{snapshotScript}) {
+		t.Fatalf("the command must not run: %q", got)
+	}
+	if list, _ := h.c.ListRuns(h.ctx, testSystem, app); len(list) != 3 {
+		t.Fatalf("a refused run is not recorded: %d runs", len(list))
 	}
 }
 

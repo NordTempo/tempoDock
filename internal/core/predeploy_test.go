@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -117,7 +118,7 @@ func TestPreDeployFromRepoFile(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{PreDeployCommand: "from settings"})
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	body := "[deploy]\npre_deploy_command = \"npm run migrate\"\npre_deploy_timeout = \"20m\"\n"
+	body := "[deploy]\npre_deploy_command = \"npm run migrate\"\npre_deploy_timeout = \"20m\"\npre_deploy_snapshot = true\n"
 	_ = tw.WriteHeader(&tar.Header{Name: "dock.toml", Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg})
 	_, _ = tw.Write([]byte(body))
 	_ = tw.Close()
@@ -126,8 +127,8 @@ func TestPreDeployFromRepoFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := h.wait(web, rel.Number)
-	if r.Status != apitypes.ReleaseActive || r.Config.PreDeployCommand != "npm run migrate" ||
-		!slices.Equal(r.Config.FromRepoFile, []string{"pre_deploy_command", "pre_deploy_timeout_seconds"}) {
+	if r.Status != apitypes.ReleaseActive || r.Config.PreDeployCommand != "npm run migrate" || !r.Config.PreDeploySnapshot ||
+		!slices.Equal(r.Config.FromRepoFile, []string{"pre_deploy_command", "pre_deploy_snapshot", "pre_deploy_timeout_seconds"}) {
 		t.Fatalf("release = %+v", r)
 	}
 	if jobs := h.rt.Jobs(); len(jobs) != 1 || jobs[0].Script != "npm run migrate" {
@@ -167,5 +168,89 @@ func TestLastLines(t *testing.T) {
 		if got := lastLines(tt.in, tt.n); got != tt.want {
 			t.Errorf("lastLines(%q, %d) = %q, want %q", tt.in, tt.n, got, tt.want)
 		}
+	}
+}
+
+// snapshotJobIndexes returns the positions of the snapshot jobs and of
+// the job running script among the fake runtime's jobs.
+func (h *harness) snapshotJobIndexes(script string) (snaps, cmds []int) {
+	for i, j := range h.rt.Jobs() {
+		switch j.Script {
+		case snapshotScript:
+			snaps = append(snaps, i)
+		case script:
+			cmds = append(cmds, i)
+		}
+	}
+	return snaps, cmds
+}
+
+// With pre_deploy_snapshot on, every deployed stateful service in the
+// environment is snapshotted before the command runs, the release noting
+// each; off, nothing is.
+func TestPreDeploySnapshotsStatefulServicesFirst(t *testing.T) {
+	h := newHarness(t)
+	h.snapshotJobs(nil)
+	db := h.volumeService("db")
+	web := h.service("web", apitypes.CreateServiceRequest{PreDeployCommand: "migrate up", PreDeploySnapshot: true})
+	rel := h.deploy(web, "app:1")
+	if rel.Status != apitypes.ReleaseActive || !rel.Config.PreDeploySnapshot {
+		t.Fatalf("release = %+v", rel)
+	}
+	snaps, cmds := h.snapshotJobIndexes("migrate up")
+	if len(snaps) != 1 || len(cmds) != 1 || snaps[0] > cmds[0] {
+		t.Fatalf("one snapshot must run before the command: snapshots at %v, command at %v", snaps, cmds)
+	}
+	list, err := h.c.ServiceSnapshots(h.ctx, testSystem, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Snapshots) != 1 || list.Snapshots[0].Trigger != apitypes.SnapshotBeforeDeploy || list.Snapshots[0].Status != apitypes.SnapshotReady ||
+		list.Snapshots[0].Note != "before web release 1's pre-deploy command" {
+		t.Fatalf("snapshots = %+v", list.Snapshots)
+	}
+	msg := "Snapshot " + strconv.FormatInt(list.Snapshots[0].ID, 10) + " of db taken before the pre-deploy command"
+	full, err := h.c.GetRelease(h.ctx, testSystem, web, rel.Number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(full.Events, func(e apitypes.ReleaseEvent) bool { return e.Message == msg }) {
+		t.Fatalf("events: %+v", full.Events)
+	}
+	if log := h.buildLog(web, rel.Number); !strings.Contains(log, msg+"\n") {
+		t.Fatalf("build log: %s", log)
+	}
+
+	api := h.service("api", apitypes.CreateServiceRequest{PreDeployCommand: "migrate api"})
+	h.deploy(api, "app:1")
+	if snaps, cmds := h.snapshotJobIndexes("migrate api"); len(snaps) != 1 || len(cmds) != 1 {
+		t.Fatalf("off: snapshots at %v, command at %v", snaps, cmds)
+	}
+}
+
+// A failed snapshot fails the release before the command runs, naming
+// the setting that skips it; the previous release keeps serving.
+func TestPreDeploySnapshotFailureStopsTheRelease(t *testing.T) {
+	h := newHarness(t)
+	h.snapshotJobs(nil)
+	h.volumeService("db")
+	web := h.service("web", apitypes.CreateServiceRequest{PreDeployCommand: "migrate up", PreDeploySnapshot: true})
+	h.deploy(web, "app:1")
+	h.snapshotJobs(func(spec node.JobSpec) *node.JobResult {
+		if spec.Script == snapshotScript {
+			return &node.JobResult{ExitCode: 1, Output: "cp: read error"}
+		}
+		return nil
+	})
+	rel := h.deploy(web, "app:2")
+	if rel.Status != apitypes.ReleaseFailed || !strings.Contains(rel.Error, "snapshot of db before the pre-deploy command failed") ||
+		!strings.Contains(rel.Error, "--pre-deploy-snapshot=false") {
+		t.Fatalf("release = %+v", rel)
+	}
+	if _, cmds := h.snapshotJobIndexes("migrate up"); len(cmds) != 1 {
+		t.Fatalf("the command ran %d times; only release 1 may run it", len(cmds))
+	}
+	if svc, err := h.c.GetService(h.ctx, testSystem, web); err != nil || svc.ActiveRelease == nil || *svc.ActiveRelease != 1 {
+		t.Fatalf("active release = %v, %v", svc.ActiveRelease, err)
 	}
 }

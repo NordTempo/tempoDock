@@ -23,12 +23,13 @@ func (h *handler) addRunTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "run_command", "Run a command",
 		"Run a one-off command in a service's active image, with its variables, CPU and memory limits and its environment's private network (`/bin/sh -c`), and wait for it to end. "+
 			"For seeding data, migrations by hand, inspecting a queue: what you would SSH in for. Not interactive. Returns the status, exit code and the last 16 KB of output. "+
-			"A stateful service's volumes are mounted read-only unless volumes is write; a database's never. Audited with the command and exit code. Needs deploy.",
+			"A stateful service's volumes are mounted read-only unless volumes is write (then they are snapshotted first; a failed snapshot refuses the run unless no_snapshot); a database's never. Audited with the command and exit code. Needs deploy.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			Command        string `json:"command" doc:"The command, e.g. bin/rails db:seed. Run with /bin/sh -c."`
 			TimeoutSeconds *int   `json:"timeout_seconds,omitempty" doc:"Stopped after this long, in seconds. Default 300, at most 900."`
-			Volumes        string `json:"volumes,omitempty" enum:"none,read,write" doc:"The service's volumes: read (default on a stateful service), none, or write (a second writer next to the running service: only for storage that takes one)."`
+			Volumes        string `json:"volumes,omitempty" enum:"none,read,write" doc:"The service's volumes: read (default on a stateful service), none, or write (a second writer next to the running service: only for storage that takes one; snapshotted first)."`
+			NoSnapshot     bool   `json:"no_snapshot,omitempty" doc:"With volumes write, skip the snapshot of the volumes taken before the run."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -42,7 +43,7 @@ func (h *handler) addRunTools(s *mcpkit.Server[core.Actor]) {
 				return mcpkit.Reply{}, mcpkit.Invalid("timeout_seconds must be between 1 and %d", maxRunWait)
 			}
 			run, err := h.core.RunCommand(ctx, c.Actor, ref, apitypes.RunCommandRequest{
-				Command: in.Command, TimeoutSeconds: timeout, Volumes: apitypes.RunVolumes(in.Volumes),
+				Command: in.Command, TimeoutSeconds: timeout, Volumes: apitypes.RunVolumes(in.Volumes), NoSnapshot: in.NoSnapshot,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err

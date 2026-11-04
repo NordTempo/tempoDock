@@ -169,5 +169,6 @@ func serviceExport(s store.Service) *apitypes.ServiceExport {
 		HealthCheckStartPeriodSeconds:  int(s.HealthCheckStartPeriodSeconds),
 		Database:                       apitypes.DatabaseSetting(s.Database), DatabaseURLVariable: s.DatabaseUrlVariable,
 		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: int(s.PreDeployTimeoutSeconds),
+		PreDeploySnapshot: s.PreDeploySnapshot,
 	}
 }

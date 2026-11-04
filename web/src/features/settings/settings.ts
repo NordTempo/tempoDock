@@ -4,6 +4,11 @@ import { mb, parseMb } from "../../ui/format";
 /** A service setting, named as in the API (`memory_mb`, `cpus`, ...). */
 export type SettingKey = Exclude<keyof SettingsPatch, "apply">;
 
+/** The settings edited as text: all but the on/off ones. */
+export type TextSettingKey = {
+  [K in SettingKey]: NonNullable<SettingsPatch[K]> extends boolean ? never : K;
+}[SettingKey];
+
 export const settingLabel: Record<SettingKey, string> = {
   image: "image",
   port: "port",
@@ -20,12 +25,13 @@ export const settingLabel: Record<SettingKey, string> = {
   build_command: "build command",
   pre_deploy_command: "pre-deploy command",
   pre_deploy_timeout_seconds: "pre-deploy timeout",
+  pre_deploy_snapshot: "pre-deploy snapshot",
 };
 
 export const isSettingKey = (field: string): field is SettingKey =>
   field in settingLabel;
 
-const numeric = new Set<SettingKey>([
+const numeric = new Set<TextSettingKey>([
   "port",
   "health_check_timeout_seconds",
   "health_check_interval_seconds",
@@ -37,8 +43,14 @@ const numeric = new Set<SettingKey>([
   "pre_deploy_timeout_seconds",
 ]);
 
-/** Shows a setting. Zero values mean the platform default, so say which. */
-export function formatSetting(key: SettingKey, value: string | number) {
+/**
+ * Shows a setting. Zero values mean the platform default, so say which.
+ * Staged changes carry on/off settings as "true" and "false".
+ */
+export function formatSetting(
+  key: SettingKey,
+  value: string | number | boolean,
+) {
   const n = Number(value);
   switch (key) {
     case "image":
@@ -71,11 +83,13 @@ export function formatSetting(key: SettingKey, value: string | number) {
       return String(value) || "none";
     case "pre_deploy_timeout_seconds":
       return n ? `${n}s` : "600s (default)";
+    case "pre_deploy_snapshot":
+      return String(value) === "true" ? "on" : "off";
   }
 }
 
 /** The text an editor starts from: empty for defaults, "off" for -1. */
-export function editText(key: SettingKey, value: string | number) {
+export function editText(key: TextSettingKey, value: string | number) {
   if (!numeric.has(key)) return String(value);
   const n = Number(value);
   if (!n) return "";
@@ -84,7 +98,7 @@ export function editText(key: SettingKey, value: string | number) {
 }
 
 /** What an empty editor shows: the default, and for the interval how to turn the check off. */
-export const editPlaceholder = (key: SettingKey) =>
+export const editPlaceholder = (key: TextSettingKey) =>
   key === "health_check_interval_seconds"
     ? "30s, or off"
     : formatSetting(key, "");
@@ -95,7 +109,7 @@ export const editPlaceholder = (key: SettingKey) =>
  * off (interval -1).
  */
 export function parseSetting(
-  key: SettingKey,
+  key: TextSettingKey,
   raw: string,
 ): SettingsPatch | Error {
   const input = raw.trim();

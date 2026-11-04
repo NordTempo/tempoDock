@@ -96,6 +96,10 @@ type Deploy struct {
 	PreDeployCommand string
 	// PreDeployTimeout is how long PreDeployCommand may run.
 	PreDeployTimeout time.Duration
+	// PreDeploySnapshot, when set, snapshots the environment's stateful
+	// services before PreDeployCommand runs (ADR 0047); nil leaves the
+	// service's setting.
+	PreDeploySnapshot *bool
 }
 
 // IntervalOff is Deploy.HealthCheckInterval for
@@ -120,8 +124,9 @@ type file struct {
 		HealthCheckRetries      *int    `toml:"health_check_retries"`
 		HealthCheckStartPeriod  *string `toml:"health_check_start_period"`
 
-		PreDeployCommand *string `toml:"pre_deploy_command"`
-		PreDeployTimeout *string `toml:"pre_deploy_timeout"`
+		PreDeployCommand  *string `toml:"pre_deploy_command"`
+		PreDeployTimeout  *string `toml:"pre_deploy_timeout"`
+		PreDeploySnapshot *bool   `toml:"pre_deploy_snapshot"`
 	} `toml:"deploy"`
 	Jobs []struct {
 		Name     *string `toml:"name"`
@@ -233,6 +238,7 @@ func Parse(b []byte) (Config, error) {
 	cfg.Deploy.HealthCheckStartPeriod = duration("deploy.health_check_start_period", f.Deploy.HealthCheckStartPeriod, maxStartPeriod)
 	cfg.Deploy.PreDeployCommand = nonEmpty("deploy.pre_deploy_command", f.Deploy.PreDeployCommand)
 	cfg.Deploy.PreDeployTimeout = duration("deploy.pre_deploy_timeout", f.Deploy.PreDeployTimeout, maxPreDeployTimeout)
+	cfg.Deploy.PreDeploySnapshot = f.Deploy.PreDeploySnapshot
 
 	if len(f.Jobs) > maxJobs {
 		bad("jobs", "at most %d jobs, got %d", maxJobs, len(f.Jobs))

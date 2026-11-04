@@ -78,6 +78,7 @@ type settingsFlags struct {
 	interval                                                       intervalFlag
 	preDeployCommand                                               string
 	preDeployTimeout                                               time.Duration
+	preDeploySnapshot                                              bool
 	cpus                                                           float64
 }
 
@@ -126,6 +127,7 @@ func (f *settingsFlags) add(fs *pflag.FlagSet) {
 	fs.Float64Var(&f.cpus, "cpus", 0, "CPU limit, e.g. 0.5")
 	fs.StringVar(&f.preDeployCommand, "pre-deploy-command", "", "runs with each new image before it gets traffic, e.g. migrations (empty: none)")
 	fs.DurationVar(&f.preDeployTimeout, "pre-deploy-timeout", 0, "how long the pre-deploy command may run, e.g. 15m (0: 10m)")
+	fs.BoolVar(&f.preDeploySnapshot, "pre-deploy-snapshot", false, "snapshot the environment's stateful services before the pre-deploy command runs (=false: don't)")
 }
 
 func (f *settingsFlags) create(name string) apitypes.CreateServiceRequest {
@@ -138,6 +140,7 @@ func (f *settingsFlags) create(name string) apitypes.CreateServiceRequest {
 		HealthCheckRetries:             f.healthCheckRetries,
 		HealthCheckStartPeriodSeconds:  int(f.startPeriod.Seconds()),
 		PreDeployCommand:               f.preDeployCommand, PreDeployTimeoutSeconds: int(f.preDeployTimeout.Seconds()),
+		PreDeploySnapshot: f.preDeploySnapshot,
 	}
 }
 
@@ -170,6 +173,7 @@ func (f *settingsFlags) update(fs *pflag.FlagSet) (apitypes.UpdateServiceRequest
 	set("health-check-start-period", func() { req.HealthCheckStartPeriodSeconds = &startPeriod })
 	set("pre-deploy-command", func() { req.PreDeployCommand = &f.preDeployCommand })
 	set("pre-deploy-timeout", func() { req.PreDeployTimeoutSeconds = &preTimeout })
+	set("pre-deploy-snapshot", func() { req.PreDeploySnapshot = &f.preDeploySnapshot })
 	return req, changed
 }
 
@@ -264,16 +268,23 @@ func newServiceShowCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
-// preDeployNote is a service's pre-deploy command with its timeout, if
-// it has one.
+// preDeployNote is a service's pre-deploy command with its timeout and
+// whether stateful services are snapshotted first, if it has one.
 func preDeployNote(s apitypes.ServiceSettings) string {
 	if s.PreDeployCommand == "" {
 		return ""
 	}
-	if s.PreDeployTimeoutSeconds == 0 {
+	var notes []string
+	if s.PreDeployTimeoutSeconds != 0 {
+		notes = append(notes, fmt.Sprintf("%s timeout", time.Duration(s.PreDeployTimeoutSeconds)*time.Second))
+	}
+	if s.PreDeploySnapshot {
+		notes = append(notes, "snapshots first")
+	}
+	if len(notes) == 0 {
 		return s.PreDeployCommand
 	}
-	return fmt.Sprintf("%s (%s timeout)", s.PreDeployCommand, time.Duration(s.PreDeployTimeoutSeconds)*time.Second)
+	return fmt.Sprintf("%s (%s)", s.PreDeployCommand, strings.Join(notes, ", "))
 }
 
 func printService(g *globals, svc apitypes.Service) error {

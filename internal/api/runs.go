@@ -89,7 +89,7 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, s.problem(err))
 		return
 	}
-	req := apitypes.RunCommandRequest{Command: q.Get("command"), Volumes: apitypes.RunVolumes(q.Get("volumes"))}
+	req := apitypes.RunCommandRequest{Command: q.Get("command"), Volumes: apitypes.RunVolumes(q.Get("volumes")), NoSnapshot: q.Get("no_snapshot") == "true"}
 	tty, stdin := q.Get("tty") == "true", q.Get("stdin") == "true"
 	var size node.TermSize
 	var bad []string
