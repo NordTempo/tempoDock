@@ -23,6 +23,7 @@ func TestRenameProjectPreservesIdentityAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	actor, _ := h.c.AuthenticateToken(h.ctx, token.Secret, "")
+	<-h.c.stats.firstTick // its retention pass prunes log history on the runtime
 	ops := h.rt.Ops()
 	oldAudit, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Project: "shop", Environment: "production", Service: "web"})
 	got, err := h.c.RenameProject(h.ctx, actor, "shop", apitypes.RenameProjectRequest{ID: before.ID, Name: "storefront"})
