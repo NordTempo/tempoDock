@@ -2,7 +2,7 @@
 # Upgrade scenario: installs release FROM on a throwaway server (a privileged
 # systemd container with its own Docker, see Dockerfile), seeds it with
 # realistic data, updates it to TO the way an operator does
-# (`dock update apply TO --wait`, ADR 0028) and checks that nothing was lost.
+# (`dock update apply TO`, ADR 0028) and checks that nothing was lost.
 #
 #   e2e/upgrade/run.sh v0.14.2 v0.24.0          # everything, then clean up
 #   KEEP=1 e2e/upgrade/run.sh v0.14.2 v0.24.0   # leave the server running
@@ -25,7 +25,7 @@ TO=${2:?usage: run.sh FROM TO [step]}
 STEP=${3:-all}
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAME=${UPG_NAME:-upg-cp}
-WORK=${UPG_WORK:-/tmp/upg}
+WORK=${UPG_WORK:-${TMPDIR:-/tmp}/upg}
 IMAGE=upg-server:latest
 REPO=NordTempo/tempoDock
 
