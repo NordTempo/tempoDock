@@ -31,7 +31,7 @@ func (h *harness) exportTOML(project string) (apitypes.ProjectExport, string) {
 func lines(chs []apitypes.PlanChange) []string {
 	out := make([]string, len(chs))
 	for i, c := range chs {
-		out[i] = strings.TrimSpace(strings.Join([]string{c.Environment, c.Service, string(c.Kind), string(c.Action), c.Name}, " "))
+		out[i] = strings.Join(slices.DeleteFunc([]string{c.Environment, c.Service, string(c.Kind), string(c.Action), c.Name}, func(f string) bool { return f == "" }), " ")
 	}
 	return out
 }

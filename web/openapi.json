@@ -4231,6 +4231,15 @@
           "kind": {
             "type": "string"
           },
+          "log_drains": {
+            "items": {
+              "$ref": "#/components/schemas/LogDrainExport"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "name": {
             "type": "string"
           },
@@ -5391,6 +5400,26 @@
         ],
         "type": "object"
       },
+      "LogDrainExport": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "target"
+        ],
+        "type": "object"
+      },
       "LogDrainStatus": {
         "additionalProperties": false,
         "properties": {
@@ -5855,7 +5884,9 @@
               "volume",
               "domain",
               "git",
-              "database"
+              "database",
+              "log_drain",
+              "registry_credential"
             ],
             "type": "string"
           },
@@ -5931,6 +5962,15 @@
           },
           "project": {
             "type": "string"
+          },
+          "registry_credentials": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "version": {
             "description": "Manifest format version",
@@ -7902,6 +7942,9 @@
           },
           "start_command": {
             "type": "string"
+          },
+          "stopped": {
+            "type": "boolean"
           },
           "template": {
             "type": "string"
