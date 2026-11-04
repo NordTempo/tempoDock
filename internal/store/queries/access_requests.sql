@@ -74,10 +74,11 @@ UPDATE orgs SET request_ttl_hours = ? WHERE id = +?;
 -- name: PruneAccessRequests :execrows
 DELETE FROM access_requests WHERE created_at < +? AND status NOT IN ('pending', 'approved');
 
--- ReplaceAccessRequest gives a pending request a newer call of the same
--- kind (a newer push or upload replaces the one waiting).
--- name: ReplaceAccessRequest :one
-UPDATE access_requests SET nonce = ?, args = ?, upload = ?, reason = ?, requested_by = ?, created_at = ?, expires_at = ?
+-- SupersedeAccessRequest ends a pending request a newer call of the same
+-- kind replaces (a newer push or upload). The newer call is filed as a new
+-- request, so an approval of this one can never run it.
+-- name: SupersedeAccessRequest :one
+UPDATE access_requests SET status = 'expired', finished_at = ?
 WHERE id = +? AND status = 'pending'
 RETURNING *;
 

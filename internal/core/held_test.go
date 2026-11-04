@@ -51,16 +51,23 @@ func TestHeldSourceDeploy(t *testing.T) {
 	}
 	_, err = h.c.DeploySource(WithReason(h.ctx, "v2 fixes it"), h.agent, web, sourceTar("v2"), 1<<20)
 	second, _ := errors.AsType[*LockedError](err)
-	if second == nil || second.Request != first.Request || len(h.heldFiles()) != 1 {
+	if second == nil || second.Request == first.Request || len(h.heldFiles()) != 1 {
 		t.Fatalf("replaced: %v, files %v", err, h.heldFiles())
 	}
-	r, _ := h.c.GetRequest(h.ctx, h.admin, first.Request)
+	// An admin who reviewed the first upload can't approve the second.
+	if _, err := h.c.DecideRequest(h.ctx, h.admin, first.Request, true, apitypes.DecideAccessRequest{}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("approve replaced request: %v", err)
+	}
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 0 {
+		t.Fatalf("replaced request released: %+v", rels)
+	}
+	r, _ := h.c.GetRequest(h.ctx, h.admin, second.Request)
 	var args heldDeploy
 	_ = json.Unmarshal(r.Args, &args)
 	if r.Reason != "v2 fixes it" || r.Via != "source" || args.Bytes == 0 || args.Upload != h.heldFiles()[0] {
 		t.Fatalf("request: %+v %+v", r, args)
 	}
-	out, err := h.c.DecideRequest(h.ctx, h.admin, first.Request, true, apitypes.DecideAccessRequest{})
+	out, err := h.c.DecideRequest(h.ctx, h.admin, second.Request, true, apitypes.DecideAccessRequest{})
 	if err != nil || out.Status != apitypes.RequestDone {
 		t.Fatalf("approve: %+v %v", out, err)
 	}
@@ -121,24 +128,31 @@ func TestHeldPush(t *testing.T) {
 	if _, err := h.push(k, pushBody("refs/heads/main", shaB, "server.js")); err != nil {
 		t.Fatal(err)
 	}
+	// The newer push is filed as a new request, so approving the one an
+	// admin reviewed can't run the newer commit.
+	var newer apitypes.AccessRequest
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		r, _ := h.c.GetRequest(h.ctx, admin, first[0].ID)
-		if strings.Contains(string(r.Args), shaB) {
+		rs := pending()
+		if len(rs) == 1 && rs[0].ID != first[0].ID {
+			newer = rs[0]
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("newer push didn't replace it: %s", r.Args)
+			t.Fatalf("newer push didn't replace it: %+v", rs)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if rs := pending(); len(rs) != 1 || rs[0].ID != first[0].ID || rs[0].RequestedBy != "github:octocat" {
-		t.Fatalf("pending: %+v", rs)
+	if newer, _ = h.c.GetRequest(h.ctx, admin, newer.ID); !strings.Contains(string(newer.Args), shaB) || newer.RequestedBy != "github:octocat" {
+		t.Fatalf("pending: %+v", newer)
+	}
+	if _, err := h.c.DecideRequest(h.ctx, admin, first[0].ID, true, apitypes.DecideAccessRequest{}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("approve replaced request: %v", err)
 	}
 	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 0 {
 		t.Fatalf("deployed before approval: %+v", rels)
 	}
-	if _, err := h.c.DecideRequest(h.ctx, admin, first[0].ID, true, apitypes.DecideAccessRequest{}); err != nil {
+	if _, err := h.c.DecideRequest(h.ctx, admin, newer.ID, true, apitypes.DecideAccessRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	r := h.wait(web, h.waitReleases(web, 1)[0].Number)

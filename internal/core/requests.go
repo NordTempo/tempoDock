@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -100,7 +101,8 @@ func (c *Core) FileRequest(ctx context.Context, a Actor, err error, call Call) e
 
 // fileRequest stores a request for call as asked by a (a token, or for a
 // held push the system acting for its pusher), or finds the pending one
-// it joins or replaces.
+// it joins. A newer call of the same Key ends the pending one and is filed
+// as a new request.
 func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call Call) (store.AccessRequest, error) {
 	args, err := canonicalJSON(call.Args)
 	if err != nil {
@@ -126,10 +128,13 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 		return store.AccessRequest{}, err
 	}
 	t := now()
-	if r, err := c.store.GetPendingAccessRequest(ctx, fingerprint); err == nil && r.ExpiresAt.After(t) {
-		if call.Key != "" {
-			return c.replaceRequest(ctx, a, r, le, call, nonce, sealed, org)
-		}
+	// replaced is the pending request a newer call of the same Key ends.
+	// The newer call gets a new ID, so an approval of the one an admin
+	// reviewed never runs content they did not see.
+	var replaced *store.AccessRequest
+	if r, err := c.store.GetPendingAccessRequest(ctx, fingerprint); err == nil && r.ExpiresAt.After(t) && call.Key != "" {
+		replaced = &r
+	} else if err == nil && r.ExpiresAt.After(t) {
 		if call.Reason != "" && r.Reason == "" {
 			if err := c.store.SetAccessRequestReason(ctx, store.SetAccessRequestReasonParams{Reason: call.Reason, ID: r.ID}); err != nil {
 				return r, err
@@ -151,6 +156,15 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 		if expired, err = q.ExpireAccessRequests(ctx, t); err != nil {
 			return err
 		}
+		if replaced != nil {
+			old, err := q.SupersedeAccessRequest(ctx, store.SupersedeAccessRequestParams{FinishedAt: &t, ID: replaced.ID})
+			switch {
+			case err == nil:
+				expired = append(expired, old)
+			case !errors.Is(err, sql.ErrNoRows): // decided meanwhile: just file the new one
+				return err
+			}
+		}
 		r, err = q.CreateAccessRequest(ctx, store.CreateAccessRequestParams{
 			Nonce: nonce, OrgID: le.OrgID, ProjectID: le.ProjectID, EnvironmentID: le.EnvID,
 			Via: call.Via, Operation: call.Op, Title: call.Title, Action: le.Action, Args: sealed,
@@ -169,28 +183,11 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 	c.endedRequests(ctx, expired)
 	p := store.Project{ID: le.ProjectID, OrgID: le.OrgID, Name: le.Project}
 	e := store.Environment{ID: le.EnvID, Name: le.Environment}
-	c.audit(ctx, a, "request.create", &p, &e, fmt.Sprintf("request #%d", r.ID), requestSummary(r, le.Project, le.Environment)+reasonSuffix(r.Reason))
-	c.publishRequest(r, le.Project, le.Environment)
-	c.alertRequest(ctx, r, le)
-	return r, nil
-}
-
-// replaceRequest puts a newer call in a pending request of the same Key,
-// dropping the older one's held archive.
-func (c *Core) replaceRequest(ctx context.Context, a Actor, old store.AccessRequest, le *LockedError, call Call, nonce string, sealed []byte, org store.Org) (store.AccessRequest, error) {
-	t := now()
-	r, err := c.store.ReplaceAccessRequest(ctx, store.ReplaceAccessRequestParams{
-		Nonce: nonce, Args: sealed, Upload: call.Upload, Reason: call.Reason, RequestedBy: a.Name,
-		CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)), ID: old.ID,
-	})
-	if err != nil {
-		c.dropUpload(call.Upload)
-		return r, err
+	if replaced != nil {
+		c.audit(ctx, a, "request.replace", &p, &e, fmt.Sprintf("request #%d", r.ID), fmt.Sprintf("a newer call replaced request #%d: ", replaced.ID)+requestSummary(r, le.Project, le.Environment))
+	} else {
+		c.audit(ctx, a, "request.create", &p, &e, fmt.Sprintf("request #%d", r.ID), requestSummary(r, le.Project, le.Environment)+reasonSuffix(r.Reason))
 	}
-	c.dropUpload(old.Upload)
-	p := store.Project{ID: le.ProjectID, OrgID: le.OrgID, Name: le.Project}
-	e := store.Environment{ID: le.EnvID, Name: le.Environment}
-	c.audit(ctx, a, "request.replace", &p, &e, fmt.Sprintf("request #%d", r.ID), "a newer call replaced the one waiting: "+requestSummary(r, le.Project, le.Environment))
 	c.publishRequest(r, le.Project, le.Environment)
 	c.alertRequest(ctx, r, le)
 	return r, nil
