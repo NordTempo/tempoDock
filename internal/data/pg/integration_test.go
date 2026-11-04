@@ -283,6 +283,10 @@ func TestSchema(t *testing.T) {
 // smallest first, at most maxExactCounts per catalog read and only when
 // it finishes within the count timeout. It uses its own database so the
 // shared one stays analysed.
+//
+// Nothing here depends on how fast the database is: counts that must
+// finish get a generous timeout, and the one that must time out waits on
+// a policy that sleeps for longer than its timeout.
 func TestSchemaCountsUnanalysed(t *testing.T) {
 	ctx := ctxT(t)
 	ownerConn, err := connect(ctx, target(0), owner)
@@ -290,6 +294,10 @@ func TestSchemaCountsUnanalysed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ownerConn.Close(ctx) }()
+	// Left by an earlier run of this test binary (-count).
+	if err := simpleExec(ctx, ownerConn, "DROP DATABASE IF EXISTS counts WITH (FORCE)"); err != nil {
+		t.Fatal(err)
+	}
 	if err := simpleExec(ctx, ownerConn, "CREATE DATABASE counts"); err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +342,10 @@ func TestSchemaCountsUnanalysed(t *testing.T) {
 		return *tb.ExactRows
 	}
 
+	// Counting big's 300,000 rows within the production timeout depends on
+	// the machine; that it is counted at all is what's tested here.
 	e := newEngine(t)
+	e.countTimeout = 10 * time.Second
 	got := schema(e)
 	if exact(got["a1"]) != 1 || exact(got["a2"]) != 2 || exact(got["big"]) != 300_000 {
 		t.Fatalf("counts: a1 %d, a2 %d, big %d", exact(got["a1"]), exact(got["a2"]), exact(got["big"]))
@@ -344,11 +355,18 @@ func TestSchemaCountsUnanalysed(t *testing.T) {
 		t.Fatalf("page after counting: %+v %v", page, err)
 	}
 
-	// A count over the timeout stays unknown, and the read goes on.
+	// A count over the timeout stays unknown, and the read goes on. Every
+	// read of big now sleeps first (the policy's subquery runs once per
+	// query), so its count outlasts the production timeout on any
+	// machine. That timeout also bounds the ROLLBACK TO SAVEPOINT that
+	// ends the count: a 1 ms one failed that statement, and the read,
+	// whenever the backend stalled for a millisecond.
+	if err := simpleExec(ctx, cn, "ALTER TABLE big ENABLE ROW LEVEL SECURITY; CREATE POLICY slow ON big USING ((SELECT true FROM pg_sleep(0.5)))"); err != nil {
+		t.Fatal(err)
+	}
 	slow := newEngine(t)
-	slow.countTimeout = time.Millisecond
 	if got := schema(slow); exact(got["big"]) != -1 || len(got) != 3 {
-		t.Fatalf("with a 1 ms timeout: big %d", exact(got["big"]))
+		t.Fatalf("with a count over the timeout: big %d, %d tables", exact(got["big"]), len(got))
 	}
 	// A page whose read loads the catalog: the timed-out count's
 	// savepoint is gone and the page runs under its own timeout again.
