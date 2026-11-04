@@ -211,6 +211,10 @@ func (c *Client) ReleaseContainers(ctx context.Context, want node.Labels) ([]str
 // jobProtocol is the first node protocol that serves run-job.
 const jobProtocol = 2
 
+// SnapshotProtocol is the first protocol whose nodes pause containers
+// while a job runs (JobSpec.Pause), as snapshots need (ADR 0047).
+const SnapshotProtocol = 15
+
 // RunJob implements node.Containers. It blocks on the node until the job
 // ends, with no deadline of its own: a backup takes as long as its data
 // does, and ending the call force-removes the job's container. A node too
@@ -221,6 +225,12 @@ func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult,
 	}
 	if err := c.needProtocol(ctx, jobProtocol, "run backup jobs"); err != nil {
 		return node.JobResult{}, err
+	}
+	// An older node would ignore pause and copy volumes in use.
+	if len(spec.Pause) > 0 {
+		if err := c.needProtocol(ctx, SnapshotProtocol, "pause services for a snapshot"); err != nil {
+			return node.JobResult{}, err
+		}
 	}
 	r, err := callWithLogs[jobResult](ctx, c, opRunJob, 0, toJobRequest(spec), nil, nil)
 	return node.JobResult{ExitCode: r.ExitCode, Output: r.Output}, err

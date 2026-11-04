@@ -57,6 +57,13 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	} else if n > 0 {
 		log.Info("upgraded container swap limits", "containers", n)
 	}
+	// A daemon that died during a snapshot (ADR 0047) left the service it
+	// copied paused; Dock never pauses anything beyond a job.
+	if n, err := containers.UnpauseStranded(ctx); err != nil {
+		log.Error("unpause containers a cut-short job left paused", "err", err)
+	} else if n > 0 {
+		log.Warn("unpaused containers a cut-short job left paused", "containers", n)
+	}
 	opts := caddyOptions(cfg, marker)
 	var counter node.Traffic = noTraffic{}
 	if opts.TrafficAddr != "" {

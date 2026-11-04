@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -116,6 +117,12 @@ type templateOptions struct {
 	noDeploy bool
 	// done is called when the first release finished (ok: it is active).
 	done func(ok bool)
+	// image replaces the template's image (a snapshot restore runs the
+	// image its data files were written by).
+	image string
+	// keep are values for variables the template generates, used instead
+	// (a snapshot restore keeps the credentials in its data files).
+	keep map[string]string
 }
 
 // createFromTemplate creates a service from a template: the service with
@@ -127,7 +134,7 @@ func (c *Core) createFromTemplate(ctx context.Context, a Actor, es envScope, nam
 	var ss svcScope
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		s, err := q.CreateService(ctx, store.CreateServiceParams{
-			EnvironmentID: es.env.ID, Name: name, Image: t.image, StartCommand: t.cmd, MemoryMb: int64(t.memoryMB),
+			EnvironmentID: es.env.ID, Name: name, Image: cmp.Or(opts.image, t.image), StartCommand: t.cmd, MemoryMb: int64(t.memoryMB),
 		})
 		if store.IsUnique(err) {
 			return conflict("service %q already exists in %s", name, es)
@@ -151,6 +158,7 @@ func (c *Core) createFromTemplate(ctx context.Context, a Actor, es envScope, nam
 			return err
 		}
 		vars := t.vars(name, newPassword())
+		maps.Copy(vars, opts.keep)
 		for _, k := range slices.Sorted(maps.Keys(vars)) {
 			if err := c.stageSet(ctx, q, es.env.ID, &s.ID, k, vars[k]); err != nil {
 				return err

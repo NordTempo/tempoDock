@@ -211,3 +211,17 @@ func describeRelease(r apitypes.Release) string {
 	}
 	return s
 }
+
+// snapshotLine is a snapshot in a summary line, e.g. "12 (manual):
+// ready, 48.0 MB, paused 180ms" or "13 (before_deploy): failed (not
+// enough disk ...)".
+func snapshotLine(s apitypes.Snapshot) string {
+	line := fmt.Sprintf("%d (%s): %s", s.ID, s.Trigger, s.Status)
+	switch s.Status {
+	case apitypes.SnapshotReady:
+		line += fmt.Sprintf(", %.1f MB, paused %s", float64(s.SizeBytes)/(1<<20), time.Duration(s.PausedMS)*time.Millisecond)
+	case apitypes.SnapshotFailed:
+		line += " (" + s.Error + ")"
+	}
+	return line
+}

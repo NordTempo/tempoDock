@@ -97,7 +97,9 @@ func (c *Core) changeStatus(ss svcScope, fn func(*apitypes.ServiceStatus)) {
 func statusOf(ct node.Container) apitypes.ServiceStatus {
 	s := apitypes.ServiceStatus{RestartCount: ct.RestartCount, OOMKilled: ct.OOMKilled, ExitCode: ct.ExitCode, Health: apitypes.HealthState(ct.Health)}
 	switch ct.State {
-	case node.StateRunning:
+	case node.StateRunning, node.StatePaused:
+		// Dock pauses a service only while a snapshot copies its volumes
+		// (ADR 0047): seconds, with its connections kept.
 		s.State = apitypes.ServiceRunning
 	case node.StateRestarting:
 		s.State = apitypes.ServiceRestarting

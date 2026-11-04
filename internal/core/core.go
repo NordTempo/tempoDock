@@ -157,6 +157,8 @@ type Core struct {
 	// backups is the backup scheduler's kick and the runs in flight
 	// (backups.go).
 	backups backupState
+	// snapshots holds the in-place snapshot restores in flight (ADR 0047).
+	snapshots snapshotState
 
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
@@ -217,6 +219,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),
 		backups:    newBackupState(),
+		snapshots:  newSnapshotState(),
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
@@ -309,6 +312,9 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	if err := c.failInterruptedBackups(ctx); err != nil {
 		return fmt.Errorf("recover backups: %w", err)
+	}
+	if err := c.failInterruptedSnapshots(ctx); err != nil {
+		return fmt.Errorf("recover snapshots: %w", err)
 	}
 	c.applyRegistryStorage(ctx)
 	if err := c.convertBackupRepository(ctx); err != nil {

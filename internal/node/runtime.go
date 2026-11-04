@@ -162,6 +162,8 @@ type Containers interface {
 	// 0019: backups and restores). It carries LabelRole RoleJob, so it is
 	// never listed or reported as an app. A non-zero exit is not an error:
 	// the result says how it ended. Cancelling ctx kills and removes it.
+	// spec.Pause freezes service containers for exactly the job's run
+	// (ADR 0047: snapshots).
 	RunJob(ctx context.Context, spec JobSpec) (JobResult, error)
 }
 
@@ -204,6 +206,22 @@ type JobSpec struct {
 	// backup streams its archive into restic this way, ADR 0021). Local
 	// runtimes only: the node link doesn't carry it.
 	Stdin io.Reader
+	// Pause holds full IDs of service containers to freeze (docker pause,
+	// the cgroup freezer) while the job runs, so it can copy their volumes
+	// as of one point in time without restarting them (ADR 0047:
+	// snapshots). They are paused just before the job starts and always
+	// unpaused when it ends: on success, a non-zero exit, an error or ctx
+	// ending. Every ID must be an app container of this control plane
+	// (LabelManaged, no LabelRole, a LabelControlPlane that matches
+	// Labels.ControlPlane or none); one that isn't, or doesn't exist, is an
+	// ErrNotFound (wrapped) before anything is paused. A container that
+	// isn't running (exited) is skipped, as nothing writes to it, and one
+	// already paused is left paused: only what RunJob paused is unpaused.
+	// If pausing one fails, those already paused are unpaused and the job
+	// doesn't run. A runtime that crashed while holding containers paused
+	// unpauses them when it starts again (the Docker runtime's
+	// UnpauseStranded).
+	Pause []string
 }
 
 // JobResult is how a job ended.
@@ -442,6 +460,8 @@ const (
 	// LabelOwner is on the BuildKit container: the data dir of the dock
 	// runtime that created it. Another runtime on the same Docker host
 	// refuses to use or recreate it (one dock runtime per Docker host).
+	// A job container that pauses services (JobSpec.Pause) carries it
+	// too, so only its own runtime unpauses them after a crash.
 	LabelOwner = "dock.owner"
 )
 

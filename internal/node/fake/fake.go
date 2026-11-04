@@ -741,13 +741,22 @@ func (r *Runtime) Jobs() []node.JobSpec {
 // RunJob implements node.Containers, recorded as "job <name>". The answer
 // comes from OnJob's function, called without the lock held. Without one,
 // a job's Stdin is read to the end, and a read error fails the job as
-// Docker's runtime does.
+// Docker's runtime does. spec.Pause's running containers are paused around
+// the answer ("pause <id>", "unpause <id>", with pause and unpause
+// events), so OnJob's function sees them as node.StatePaused through
+// Inspect; an unknown ID, or one of another control plane, is
+// node.ErrNotFound before anything is paused.
 func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
 	r.mu.Lock()
 	r.op("job %s", spec.Name)
 	r.jobs = append(r.jobs, spec)
 	fn := r.onJob
+	paused, err := r.pauseLocked(spec)
 	r.mu.Unlock()
+	if err != nil {
+		return node.JobResult{}, err
+	}
+	defer r.unpause(paused)
 	if err := ctx.Err(); err != nil {
 		return node.JobResult{}, err
 	}
@@ -760,6 +769,40 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 		}
 	}
 	return node.JobResult{}, nil
+}
+
+// pauseLocked checks spec.Pause like Docker's runtime and pauses the
+// running ones, returning their IDs (r.mu held).
+func (r *Runtime) pauseLocked(spec node.JobSpec) ([]string, error) {
+	want := node.Labels{ControlPlane: spec.Labels.ControlPlane}
+	for _, id := range spec.Pause {
+		if c, ok := r.containers[id]; !ok || !c.Labels.Matches(want) {
+			return nil, fmt.Errorf("container %s: %w", id, node.ErrNotFound)
+		}
+	}
+	var paused []string
+	for _, id := range spec.Pause {
+		if c := r.containers[id]; c.State == node.StateRunning {
+			c.State = node.StatePaused
+			r.op("pause %s", id)
+			r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "pause"})
+			paused = append(paused, id)
+		}
+	}
+	return paused, nil
+}
+
+// unpause ends RunJob's pause of ids, those still there and paused.
+func (r *Runtime) unpause(ids []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, id := range ids {
+		if c, ok := r.containers[id]; ok && c.State == node.StatePaused {
+			c.State = node.StateRunning
+			r.op("unpause %s", id)
+			r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "unpause"})
+		}
+	}
 }
 
 // EnsureTunnel implements node.Tunnel: it records the spec. Only a

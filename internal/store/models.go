@@ -717,3 +717,33 @@ type Volume struct {
 	Pending    bool
 	CreatedAt  time.Time
 }
+
+type VolumeSnapshot struct {
+	ID         int64
+	ServiceID  int64
+	ServerID   int64
+	Trigger    string
+	Status     string
+	Volumes    string
+	SizeBytes  int64
+	PausedMs   int64
+	Note       string
+	Error      string
+	CreatedBy  string
+	StartedAt  time.Time
+	FinishedAt *time.Time
+}
+
+type VolumeSnapshotRestore struct {
+	ID          int64
+	SnapshotID  *int64
+	ServiceID   int64
+	ToServiceID int64
+	InPlace     bool
+	SafetyID    *int64
+	Status      string
+	Error       string
+	CreatedBy   string
+	StartedAt   time.Time
+	FinishedAt  *time.Time
+}

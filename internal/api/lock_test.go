@@ -49,7 +49,7 @@ func envOps(t *testing.T) []envOp {
 					return "production"
 				case "{service}":
 					return "web"
-				case "{number}", "{id}":
+				case "{number}", "{id}", "{snapshot}":
 					return "1"
 				}
 				return "x"

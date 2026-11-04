@@ -175,7 +175,13 @@ type Alerts struct {
 // retention and schedule are runtime settings (`dock backup configure`).
 type Backup struct {
 	// ResticImage provides the restic binary jobs use. Pin it by digest.
+	// Volume snapshot jobs (ADR 0047) run in it too, for its cp and du.
 	ResticImage string `toml:"restic_image"`
+	// SnapshotKeep is how many volume snapshots each service keeps (ADR
+	// 0047), 5 when unset; SnapshotDays how many days any is kept, 7
+	// when unset.
+	SnapshotKeep int `toml:"snapshot_keep"`
+	SnapshotDays int `toml:"snapshot_days"`
 }
 
 // PortRange is an inclusive range of TCP ports.

@@ -72,6 +72,6 @@ never deleted as a side effect of anything else.`,
 	addFlags.add(add, needService)
 	addDeployFlags(add, &deploy, &detach)
 
-	cmd.AddCommand(list, add)
+	cmd.AddCommand(list, add, newVolumeSnapshotCmd(g))
 	return cmd
 }

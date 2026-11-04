@@ -2047,6 +2047,16 @@
         ],
         "type": "object"
       },
+      "CreateSnapshotRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreateStorageRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6155,6 +6165,18 @@
         ],
         "type": "object"
       },
+      "RestoreSnapshotRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "as": {
+            "type": "string"
+          },
+          "in_place": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "RolloutService": {
         "additionalProperties": false,
         "properties": {
@@ -7154,6 +7176,52 @@
         "required": [
           "service",
           "domains"
+        ],
+        "type": "object"
+      },
+      "ServiceSnapshots": {
+        "additionalProperties": false,
+        "properties": {
+          "into_new": {
+            "type": "boolean"
+          },
+          "keep": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "keep_days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "restores": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotRestore"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "service": {
+            "type": "string"
+          },
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/Snapshot"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "service",
+          "into_new",
+          "keep",
+          "keep_days",
+          "snapshots",
+          "restores"
         ],
         "type": "object"
       },
@@ -8438,6 +8506,160 @@
           "service",
           "reason",
           "message"
+        ],
+        "type": "object"
+      },
+      "Snapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "created_by": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "paused_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "server": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "ready",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "manual",
+              "before_restore",
+              "before_deploy",
+              "before_run",
+              "before_move"
+            ],
+            "type": "string"
+          },
+          "volumes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "service",
+          "trigger",
+          "status",
+          "server",
+          "volumes",
+          "size_bytes",
+          "paused_ms",
+          "created_by",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "SnapshotRestore": {
+        "additionalProperties": false,
+        "properties": {
+          "created_by": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "in_place": {
+            "type": "boolean"
+          },
+          "safety": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "snapshot": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "snapshot",
+          "service",
+          "to",
+          "in_place",
+          "status",
+          "created_by",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "SnapshotRestoreResult": {
+        "additionalProperties": false,
+        "properties": {
+          "restore": {
+            "$ref": "#/components/schemas/SnapshotRestore"
+          },
+          "service": {
+            "$ref": "#/components/schemas/Service"
+          }
+        },
+        "required": [
+          "restore"
         ],
         "type": "object"
       },
@@ -28873,6 +29095,675 @@
         "summary": "Restart a service",
         "tags": [
           "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots": {
+      "get": {
+        "description": "A stateful service's volume snapshots, newest first, its latest restores, whether snapshots restore into a new service (template databases) and retention: the newest `keep` per service, none older than `keep_days`.",
+        "operationId": "list-snapshots",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceSnapshots"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List a service's snapshots",
+        "tags": [
+          "snapshots"
+        ]
+      },
+      "post": {
+        "description": "Pauses the service's running containers and copies its volumes on its server, so the copy is of one moment; the containers resume when the copy is done. Snapshots stay on the server, count against its disk and are pruned by count and age. Runs in the background: the answer is the snapshot, running; snapshot.created or snapshot.failed is audited at the end. Scope: deploy.",
+        "operationId": "create-snapshot",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Snapshot a service's volumes now",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots/{snapshot}": {
+      "delete": {
+        "description": "Deletes the snapshot's files on its server and its record. Refused while a backup, snapshot or restore of the service runs, or while the server is offline. Scope: deploy.",
+        "operationId": "delete-snapshot",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Snapshot ID",
+            "in": "path",
+            "name": "snapshot",
+            "required": true,
+            "schema": {
+              "description": "Snapshot ID",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Delete a snapshot",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots/{snapshot}/restore": {
+      "post": {
+        "description": "A template database restores into a new service by default (`as`, default \u003cservice\u003e-snapshot-\u003cid\u003e), and the service is not touched. `in_place` replaces the service's own volumes instead: it stops, a safety snapshot keeps the data it holds now (restore that one to undo), the snapshot is copied in and it starts again. Other services restore in place only. Runs in the background: the answer is the restore, running, and the new service; snapshot.restored or snapshot.restore_failed is audited at the end. Scope: deploy.",
+        "operationId": "restore-snapshot",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Snapshot ID",
+            "in": "path",
+            "name": "snapshot",
+            "required": true,
+            "schema": {
+              "description": "Snapshot ID",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotRestoreResult"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Restore a snapshot",
+        "tags": [
+          "snapshots"
         ]
       }
     },

@@ -414,13 +414,15 @@ type jobRequest struct {
 	Mounts      []wireMount       `json:"mounts,omitempty"`
 	MemoryBytes int64             `json:"memory_bytes,omitempty"`
 	NanoCPUs    int64             `json:"nano_cpus,omitempty"`
+	// Pause is node.JobSpec.Pause (protocol 15, SnapshotProtocol).
+	Pause []string `json:"pause,omitempty"`
 }
 
 func toJobRequest(s node.JobSpec) jobRequest {
 	return jobRequest{
 		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Script: s.Script,
 		Network: s.Network, Mounts: toWireMounts(s.Mounts),
-		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs,
+		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Pause: s.Pause,
 	}
 }
 
@@ -428,7 +430,7 @@ func (w jobRequest) node() node.JobSpec {
 	return node.JobSpec{
 		Name: w.Name, Image: w.Image, Labels: w.Labels.node(), Env: w.Env, Script: w.Script,
 		Network: w.Network, Mounts: fromWireMounts(w.Mounts),
-		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs},
+		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Pause: w.Pause,
 	}
 }
 
