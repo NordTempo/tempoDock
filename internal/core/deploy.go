@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,6 +42,9 @@ type deployment struct {
 	old        *store.Release // active release when the deploy started
 	stateful   bool
 	oldRemoved bool // stateful recreate stopped (or tried to stop) the old container
+	// orphans are containers already labelled for this release when it
+	// started (orphanCheck): never its own, so fail leaves them alone.
+	orphans []string
 }
 
 type stepError struct {
@@ -107,6 +111,10 @@ func (d *deployment) run(ctx context.Context) error {
 		return err
 	}
 
+	if err := d.orphanCheck(ctx); err != nil {
+		return err
+	}
+
 	// building: build from source or make sure the image is on the server.
 	d.setStatus(ctx, apitypes.ReleaseBuilding)
 	imageID, err := d.image(ctx)
@@ -149,6 +157,11 @@ func (d *deployment) run(ctx context.Context) error {
 	}
 	ctr, err := d.rt.Start(ctx, c.containerSpec(d.ss, d.rel, d.cfg))
 	if err != nil {
+		if strings.Contains(err.Error(), "already in use") {
+			// A container of the same name that no release owns (see
+			// orphanCheck): it is left alone.
+			return step(apitypes.CodeDeployFailed, "start container: %w; Dock doesn't manage that container (it predates a database restored from an older backup): remove it with `docker rm -f` on server %s, then deploy again", err, d.server.Name)
+		}
 		return step(apitypes.CodeDeployFailed, "start container: %w", err)
 	}
 	if err := c.store.SetReleaseContainer(ctx, store.SetReleaseContainerParams{ContainerID: ctr.ID, ID: d.rel.ID}); err != nil {
@@ -485,7 +498,7 @@ func (d *deployment) fail(ctx context.Context, err error) {
 		c.saveContainerLogs(ctx, d.ss, d.rel.ID)
 	}
 	// It never went live, so nothing it wrote is anyone's data.
-	removeErr := c.removeReleaseContainers(ctx, d.ss, d.rel.ID, node.RemoveOptions{})
+	removeErr := c.removeReleaseContainers(ctx, d.ss, d.rel.ID, node.RemoveOptions{}, d.orphans...)
 	if removeErr != nil {
 		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, c.nodeErr(serverID, removeErr)))
 	}
@@ -554,6 +567,29 @@ func (c *Core) markFailed(rel store.Release, code apitypes.ErrorCode, msg string
 		}
 		delay *= 2
 	}
+}
+
+// orphanCheck fails a new release that already has containers: they can't
+// be its own, so they survived a database restored from an older backup,
+// which hands out the same release IDs and numbers again (a manual
+// rollback of an update). One of them may be what still serves the
+// service's domains, so they are never removed here: an operator removes
+// them, and the next deploy goes ahead.
+func (d *deployment) orphanCheck(ctx context.Context) error {
+	ids, err := d.rt.ReleaseContainers(ctx, d.c.labels(d.ss, d.rel.ID))
+	if err != nil {
+		return step(apitypes.CodeDeployFailed, "list the containers of release %d: %w", d.rel.Number, d.c.nodeErr(d.ss.env.ServerID, err))
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	d.orphans = ids
+	short := make([]string, len(ids))
+	for i, id := range ids {
+		short[i] = id[:min(len(id), 12)]
+	}
+	return step(apitypes.CodeDeployFailed, "server %s already runs containers labelled for release %d of %s that Dock doesn't manage, left from before the database was restored from an older backup. Nothing was changed; remove them with `docker rm -f %s` on that server, then deploy again",
+		d.server.Name, d.rel.Number, d.ss, strings.Join(short, " "))
 }
 
 func (d *deployment) setStatus(ctx context.Context, s apitypes.ReleaseStatus) {
@@ -755,10 +791,11 @@ func (c *Core) ofRelease(ctrs []node.Container, ss svcScope, releaseID int64) []
 }
 
 // removeReleaseContainers stops and removes every container of a release
-// of ss, with opts (removeContainer). They are found by label, not by the
-// saved container ID, so a container started just before a crash (ID
-// never saved) is found too; another control plane's containers never are.
-func (c *Core) removeReleaseContainers(ctx context.Context, ss svcScope, releaseID int64, opts node.RemoveOptions) error {
+// of ss with opts (removeContainer), except the IDs in keep. They are
+// found by label, not by the saved container ID, so a container started
+// just before a crash (ID never saved) is found too; another control
+// plane's containers never are.
+func (c *Core) removeReleaseContainers(ctx context.Context, ss svcScope, releaseID int64, opts node.RemoveOptions, keep ...string) error {
 	serverID := ss.env.ServerID
 	ids, err := c.runtime(serverID).ReleaseContainers(ctx, c.labels(ss, releaseID))
 	if err != nil {
@@ -766,6 +803,9 @@ func (c *Core) removeReleaseContainers(ctx context.Context, ss svcScope, release
 	}
 	var errs []error
 	for _, id := range ids {
+		if slices.Contains(keep, id) {
+			continue
+		}
 		errs = append(errs, c.removeContainer(ctx, serverID, id, opts))
 	}
 	return errors.Join(errs...)
