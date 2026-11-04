@@ -32,8 +32,8 @@ can't use it.
 | Which server | `releases.logs_server_id` records where a release's archive is, so an environment moved to another server still finds its old releases' logs |
 | Reading | `ServiceLogs` with a release whose container is gone reads its archive (tail and since as for Docker, follow ends after the backlog). `dock logs --release N`, MCP `logs` with `release`, and the logs tab's release picker use it |
 | Drains | Per environment: `http` (JSON lines POST), `syslog` (RFC 5424, `tcp`, `tls` or `udp`) or `loki` (push API). Admin of the project configures them; targets are sealed like alert channels |
-| Drain delivery | While an environment has a drain, the control plane follows each running service container's output (one `Logs` follow per container, started from container events) into a bounded queue per drain (10,000 lines). A sender per drain posts batches of up to 1,000 lines, or what is queued after 1 s. A full queue drops new lines and counts them; a failing sink backs off (1 s doubling to 1 min) and keeps dropping while it does |
-| SSRF | Drain targets go through the same address check as alert webhooks (no loopback, link-local, multicast or metadata), on every connection after DNS |
+| Drain delivery | While an environment has a drain, the control plane follows each running service container's output (one `Logs` follow per container, started from container events) into a bounded queue per drain (10,000 lines or 4 MB of text, whichever is first). A sender per drain posts batches of up to 1,000 lines (1 MB), or what is queued after 1 s. A full queue drops new lines and counts them; a failing sink backs off (1 s doubling to 1 min) and keeps dropping while it does |
+| SSRF | Drain targets go through the same address check as alert webhooks (no loopback, link-local, multicast or metadata), on every connection after DNS, syslog included; alerts and drains share it (`egressGuard`) |
 
 ## Log history
 
