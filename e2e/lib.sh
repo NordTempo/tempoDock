@@ -128,7 +128,7 @@ dk() { DOCK_TOKEN="${TOKEN_OVERRIDE:-$DOCK_TOKEN}" "${DOCK_BIN:-$E2E_DIR/../bin/
 check() {
 	local d=$1
 	shift
-	if "$@"; then pass "$d"; else fail "$d"; fi
+	if "$@" >/dev/null; then pass "$d"; else fail "$d"; fi
 }
 
 # wait_for TIMEOUT_S CMD...: until CMD succeeds.
@@ -147,3 +147,23 @@ body_has() { http_get "$1" "$2" 2>/dev/null | grep -q -- "$3"; }
 
 # code_is HOST PATH CODE: the status code via the proxy is CODE.
 code_is() { [[ $(http_code "$1" "$2") == "$3" ]]; }
+
+# ui_login signs in as E2E_ADMIN_EMAIL with E2E_ADMIN_PASSWORD into a
+# cookie jar, for what only a UI session may do (approving access requests).
+ui_login() {
+	UI_JAR=${UI_JAR:-$(mktemp)}
+	curl -sS -o /dev/null -c "$UI_JAR" -H 'Content-Type: application/json' -H "Origin: ${DOCK_URL%/}" \
+		--data "$(jq -nc --arg e "${E2E_ADMIN_EMAIL:?}" --arg p "${E2E_ADMIN_PASSWORD:?}" '{email: $e, password: $p}')" \
+		"$API/auth/login"
+}
+
+# ui_api METHOD PATH [JSON] is api with the UI session instead of a token.
+ui_api() {
+	local method=$1 path=$2 body=${3:-} out code
+	out=$(mktemp)
+	code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" -b "$UI_JAR" -H "Origin: ${DOCK_URL%/}" \
+		${body:+-H 'Content-Type: application/json' --data "$body"} "$API$path")
+	cat "$out"
+	rm -f "$out"
+	[[ $code -lt 400 ]]
+}

@@ -157,6 +157,124 @@ scenario_stopstart() {
 	check "a deploy brings a stopped service back" wait_for 30 code_is "$h" / 200
 }
 
+# busybox_web P S MSG: an image service answering "MSG" over HTTP on 8080,
+# deployed and active. Prints its hostname.
+busybox_web() {
+	local p=$1 s=$2 n
+	ensure_service "$p" "$s" '{"image":"busybox:1.37","port":8080,"start_command":"sh -c \"mkdir -p /tmp/w && echo $MSG > /tmp/w/index.html && exec httpd -f -p 8080 -h /tmp/w\""}'
+	set_vars "$p" "$s" "$(jq -nc --arg m "$3" '{MSG: $m}')"
+	n=$(api POST "$(svc_path "$p" "$s")/releases" '{}' | jq -r .number)
+	[[ $(wait_release "$p" "$s" "$n" 300) == active ]] || { fail "$p/$s release $n not active"; return 1; }
+	generate_domain "$p" "$s"
+}
+
+scenario_run() {
+	local p=e2e2-run-$RUN h before out code id t0
+	fresh $p || return
+	h=$(busybox_web $p web hello-run) || return
+	before=$(service_containers $p web)
+	out=$(dk run web $(pe $p) -- 'echo "msg=$MSG"; echo to-stderr >&2; exit 3' 2>&1)
+	code=$?
+	check "dock run streams output with the service's variables" grep -q 'msg=hello-run' <<<"$out"
+	check "dock run streams stderr" grep -q 'to-stderr' <<<"$out"
+	if [[ $code == 3 ]]; then pass "dock run exits with the command's code"; else fail "dock run exited $code, want 3: $out"; fi
+	check "piped stdin reaches the command (-i)" out_has '^piped-in$' bash -c "echo piped-in | '${DOCK_BIN:-$E2E_DIR/../bin/dock}' run -i web $(pe $p) -- cat"
+	t0=$SECONDS
+	dk run web $(pe $p) --timeout 3s -- 'sleep 60' >/dev/null 2>&1
+	code=$?
+	if [[ $code != 0 && $((SECONDS - t0)) -lt 30 ]]; then pass "--timeout stops the command ($((SECONDS - t0))s, exit $code)"; else fail "--timeout: exit $code after $((SECONDS - t0))s"; fi
+
+	id=$(dk run web $(pe $p) --detach --json -- 'sleep 2; echo detached-done' 2>/dev/null | jq -r .id)
+	if [[ $id =~ ^[0-9]+$ ]]; then pass "dock run --detach returns run $id"; else fail "dock run --detach printed no run id"; fi
+	run_done() { [[ $(api GET "$(svc_path $p web)/runs/$id" | jq -r .status) != running ]]; }
+	check "the detached run ends" wait_for 60 run_done
+	out=$(api GET "$(svc_path $p web)/runs/$id")
+	check "the detached run kept its output and exit code" jq -e '(.output | contains("detached-done")) and .exit_code == 0' <<<"$out"
+	check "dock runs lists the runs" out_has 'detached-done|sleep 2' dk runs -s web $(pe $p)
+	check "the running service was not touched" test "$before" == "$(service_containers $p web)"
+	check "$h still serves" body_has "$h" / hello-run
+	check "runs are audited (service.run)" out_has 'service.run' dk audit -p $p
+}
+
+# pending_request P prints the newest pending access request in project P.
+pending_request() { api GET /requests | jq -r --arg p "$1" '[.[] | select(.project == $p and .status == "pending")] | max_by(.id).id // empty'; }
+
+# request_is ID STATUS: access request ID has STATUS.
+request_is() { [[ $(api GET "/requests/$1" | jq -r .status) == "$2" ]]; }
+
+# request_of FILE prints the access request ID in a 423 body.
+request_of() { jq -r '.request // .details.request // empty' "$1" 2>/dev/null; }
+
+scenario_lock() {
+	local p=e2e2-lock-$RUN h tok out st req n
+	fresh $p || return
+	h=$(busybox_web $p web lock-v1) || return
+	tok=$(dk token create agent-$RUN --project $p --scope deploy --json 2>/dev/null | jq -r .secret)
+	[[ $tok == dock_* ]] || { fail "no project deploy token"; return; }
+	check "dock environment lock" dk environment lock $ENV_NAME -p $p --reason "e2e: live"
+	check "environment list shows the lock" out_has 'locked|e2e: live' dk environment list -p $p
+
+	# A token's variable change becomes an access request.
+	st=$(TOKEN_OVERRIDE=$tok api_status GET "$(svc_path $p web)")
+	if [[ $st == 200 ]]; then pass "reads still work in a locked environment"; else fail "read in a locked environment answered $st"; fi
+	out=$(TOKEN_OVERRIDE=$tok dk env set -s web MSG=lock-v2 $(pe $p) --reason "e2e: change the message" 2>&1)
+	st=$?
+	if [[ $st == 5 ]]; then pass "a token's change exits 5 in a locked environment"; else fail "token change in a locked env exited $st: $out"; fi
+	req=$(pending_request $p)
+	if [[ $req =~ ^[0-9]+$ ]]; then pass "the change filed access request $req"; else fail "no access request for the refused change: $out"; return; fi
+	check "the CLI error names the request" grep -q "$req" <<<"$out"
+	check "the request is pending with the token's reason" jq -e '.status == "pending" and (.reason | contains("change the message"))' <<<"$(api GET /requests/$req)"
+	check "nothing is staged before approval" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' changes $(pe $p) 2>&1 | grep -q MSG"
+	st=$(TOKEN_OVERRIDE=$tok api_status POST "/requests/$req/approve" '{}')
+	if [[ $st -ge 400 ]]; then pass "a token can't approve ($st)"; else fail "a token approved its own request ($st)"; fi
+	st=$(TOKEN_OVERRIDE=$tok api_status POST "/projects/$p/environments/$ENV_NAME/unlock" '{}')
+	if [[ $st == 423 || $st == 403 ]]; then pass "a token can't unlock ($st)"; else fail "token unlock answered $st"; fi
+
+	ui_login
+	check "admin approves in a UI session" ui_api POST "/requests/$req/approve" '{"comment":"e2e ok"}'
+	check "the approved request is done" wait_for 60 request_is $req done
+	check "the approved change is staged" out_has MSG dk changes $(pe $p)
+	# Applying is a change too: the token's apply waits for approval.
+	TOKEN_OVERRIDE=$tok dk apply $(pe $p) >/dev/null 2>&1
+	st=$?
+	if [[ $st == 5 ]]; then pass "the token's apply waits for approval"; else fail "token apply in a locked env exited $st"; fi
+	req=$(pending_request $p)
+	check "admin approves the apply" ui_api POST "/requests/$req/approve" '{}'
+	check "the approved apply is done" wait_for 120 request_is $req done
+	check "the approved change went live" wait_for 120 body_has "$h" / lock-v2
+
+	# A deploy into the locked environment waits for approval.
+	out=$(mktemp)
+	st=$(curl -sS -o "$out" -w '%{http_code}' -X POST -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' \
+		--data '{}' "$API$(svc_path $p web)/releases")
+	if [[ $st == 423 ]]; then pass "a token's deploy into a locked environment is 423"; else fail "token deploy answered $st: $(cat "$out")"; fi
+	req=$(request_of "$out")
+	jq -e '.code == "environment_locked" or .error_code == "environment_locked" or (tostring | contains("environment_locked"))' "$out" >/dev/null &&
+		pass "the error code is environment_locked" || fail "423 body: $(head -c 300 "$out")"
+	[[ $req =~ ^[0-9]+$ ]] || req=$(pending_request $p)
+	n=$(newest $p web)
+	TOKEN_OVERRIDE=$tok dk request wait "$req" >"$TMP/wait.out" 2>&1 &
+	local waiter=$!
+	sleep 2
+	check "admin approves the deploy" ui_api POST "/requests/$req/approve" '{}'
+	wait $waiter
+	st=$?
+	if [[ $st == 0 ]]; then pass "dock request wait ends 0 once the approved deploy ran"; else fail "dock request wait exited $st: $(cat "$TMP/wait.out")"; fi
+	check "the approved deploy made a release that went active" wait_for 120 newest_active $p web
+	check "a new release exists after approval" test "$(newest $p web)" -gt "$n"
+	check "the audit log names the approver" out_has 'approved by|request #' dk audit -p $p
+
+	# Rejected requests run nothing.
+	TOKEN_OVERRIDE=$tok dk env set -s web MSG=never $(pe $p) >/dev/null 2>&1
+	req=$(pending_request $p)
+	check "admin rejects" ui_api POST "/requests/$req/reject" '{"comment":"no"}'
+	check "a rejected change isn't staged" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' changes $(pe $p) 2>&1 | grep -q never"
+
+	check "an admin token can't unlock either: it files a request" out_has "access request" dk environment unlock $ENV_NAME -p $p
+	check "admin unlocks in a UI session" ui_api POST "/projects/$p/environments/$ENV_NAME/unlock" '{}'
+	check "after unlock the token deploys directly" bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: Bearer $tok' -H 'Content-Type: application/json' --data '{}' '$API$(svc_path $p web)/releases') == 20? ]]"
+}
+
 main() {
 	local all=(predeploy stopstart run lock logs snapshot move apply health)
 	for s in "${@:-${all[@]}}"; do
