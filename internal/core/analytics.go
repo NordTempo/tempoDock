@@ -63,8 +63,11 @@ type analyticsState struct {
 	starting  bool
 	startedAt time.Time
 	storeErr  string
-	// moving is the move running, nil otherwise.
-	moving *analyticsMove
+	// moving is the move running, nil otherwise. restoring is set while
+	// the store takes a restored control plane backup's data. Both hold
+	// the forwarders off.
+	moving    *analyticsMove
+	restoring bool
 	// binMu makes downloads of the store's binary one at a time.
 	binMu sync.Mutex
 	// live are the sites someone watches live (analytics_live.go).
@@ -527,18 +530,19 @@ func (c *Core) forwardOnce(sp spoolOf) error {
 			return err
 		}
 	}
-	// A move holds every forwarder off while it copies the store. The run
-	// is read first: a move marks itself before it replaces the run, so a
-	// forwarder holding the new one sees the move and stops.
+	// A move or a restore holds every forwarder off while it fills the
+	// store. The run is read first: both mark themselves before they
+	// replace the run, so a forwarder holding the new one sees the mark
+	// and stops.
 	cl, storeServer, run := c.analyticsRun()
 	if !c.analytics.writing.TryRLock() {
 		return errNotReady
 	}
 	defer c.analytics.writing.RUnlock()
 	c.analytics.mu.Lock()
-	moving := c.analytics.moving != nil
+	held := c.analytics.moving != nil || c.analytics.restoring
 	c.analytics.mu.Unlock()
-	if moving || cl == nil || !c.online(serverID) || !c.online(storeServer) {
+	if held || cl == nil || !c.online(serverID) || !c.online(storeServer) {
 		return errNotReady
 	}
 	if sp.spool == node.SpoolReplay && serverID != c.local.ID && c.nodes.State(serverID).Hello.Protocol < remote.ReplayProtocol {
