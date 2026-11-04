@@ -1,4 +1,6 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
+import { reconnectLive, useLiveStatus } from "../data/liveStatus";
 import { ErrorText } from "../ui/kit";
 import {
   type Command,
@@ -65,6 +67,7 @@ export function CommandLine() {
   return (
     <div className="sticky bottom-0 z-20 bg-page px-5 pt-1.5 pb-3">
       <div className="mx-auto max-w-[860px] overflow-hidden rounded-xl border border-edge bg-panel">
+        <NotLive />
         {help && <Help onClose={() => setHelp(false)} />}
         {focused && matches.length > 0 && (
           <ul
@@ -133,6 +136,41 @@ export function CommandLine() {
         </form>
       </div>
     </div>
+  );
+}
+
+/**
+ * Says so when the live stream is down, so a page that stopped updating
+ * doesn't pass for current: retrying, or closed with a Reconnect button.
+ */
+function NotLive() {
+  const status = useLiveStatus();
+  const queryClient = useQueryClient();
+  if (status === "live") return null;
+  return (
+    <p
+      role="status"
+      className="flex flex-wrap items-center gap-x-2.5 border-b border-line px-3.5 py-1.5 text-xs text-warn"
+    >
+      <span>
+        <span aria-hidden>○</span> Not live:{" "}
+        {status === "dropped"
+          ? "lost the connection to Dock, retrying. Pages may be out of date."
+          : "updates stopped. Pages may be out of date."}
+      </span>
+      {status === "closed" && (
+        <button
+          type="button"
+          className="lnk text-warn underline"
+          onClick={() => {
+            reconnectLive();
+            void queryClient.invalidateQueries();
+          }}
+        >
+          Reconnect
+        </button>
+      )}
+    </p>
   );
 }
 

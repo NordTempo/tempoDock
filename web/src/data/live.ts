@@ -15,6 +15,7 @@ import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
 import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
+import { setLiveStatus, useLiveAttempt } from "./liveStatus";
 import { signedOut } from "./mutations";
 import { followProjectRename, reconcileProjectNames } from "./projectRename";
 import { findService, keys, queries } from "./queries";
@@ -693,8 +694,10 @@ export function useLiveUpdates() {
       g.running = false;
     }
   };
+  // Reconnect (the shell's "not live" marker) bumps it for a new stream.
+  const attempt = useLiveAttempt();
   useEventStream<LiveEvent>(
-    org ? `/api/v1/events?org=${encodeURIComponent(org)}` : "/api/v1/events",
+    `/api/v1/events${streamQuery(org, attempt)}`,
     busEvents,
     (_, event) => {
       if (event.type === "project_renamed" && event.project_renamed) {
@@ -716,14 +719,17 @@ export function useLiveUpdates() {
     {
       // Reconcile after subscribing, including the initial read/subscribe gap.
       onReady: (reconnected) => {
+        setLiveStatus("live");
         void (
-          reconnected
+          reconnected || attempt > 0
             ? recover()
             : reconcileProjectNames(queryClient, router, org)
         ).catch(() => router.invalidate());
       },
+      onDrop: () => setLiveStatus("dropped"),
       // A refused stream usually means the session ended.
       onClose: async () => {
+        setLiveStatus("closed");
         const session = await queryClient.fetchQuery({
           ...queries.session(),
           staleTime: 0,
@@ -735,6 +741,14 @@ export function useLiveUpdates() {
     },
   );
 }
+
+/** The live stream's query: its org, and Reconnect's count once pressed. */
+const streamQuery = (org: string | undefined, attempt: number) => {
+  const q = new URLSearchParams();
+  if (org) q.set("org", org);
+  if (attempt) q.set("n", String(attempt));
+  return q.size ? `?${q}` : "";
+};
 
 /** Lines kept per log view; older ones fall off. */
 export const LOG_CAP = 2000;
@@ -802,6 +816,13 @@ function useLineStream<T>(
     },
     {
       finite: true,
+      // A lost connection opens the stream again, backlog and all.
+      onRestart: () => {
+        cancelAnimationFrame(frame.current);
+        frame.current = 0;
+        buffer.current = { url, lines: [], n: 0 };
+        setState(fresh(url));
+      },
       onClose: (error) => {
         // Show the backlog before saying the stream ended.
         cancelAnimationFrame(frame.current);

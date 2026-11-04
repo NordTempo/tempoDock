@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { Act, Button, ErrorText } from "../../ui/kit";
 import {
   type Filter,
@@ -34,10 +35,14 @@ export function FunnelsView({
   onSelect: (name: string | undefined) => void;
   canEdit: boolean;
 }) {
-  const { data: funnels, error } = useQuery(siteFunnelsQuery(project, site));
+  const {
+    data: funnels,
+    error,
+    refetch,
+  } = useQuery(siteFunnelsQuery(project, site));
   const [editing, setEditing] = useState<Funnel | "new">();
   const remove = useRemoveFunnel();
-  if (error) return <p className="text-fail">{error.message}</p>;
+  if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!funnels) return <p className="text-mut">Loading…</p>;
   const current = funnels.find((f) => f.name === selected) ?? funnels[0];
   return (
@@ -127,10 +132,10 @@ function Chart({
   range: StatsRange;
   filters: Filter[];
 }) {
-  const { data, error } = useQuery(
+  const { data, error, refetch } = useQuery(
     siteFunnelQuery(project, site, funnel.name, range, filters),
   );
-  if (error) return <p className="text-fail">{error.message}</p>;
+  if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!data) return <p className="text-mut">Loading…</p>;
   const steps = data.steps ?? [];
   const first = steps[0]?.sessions ?? 0;

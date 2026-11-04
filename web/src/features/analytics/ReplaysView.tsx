@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { clock, day } from "../../ui/format";
 import { Panel } from "../../ui/kit";
 import {
@@ -69,7 +70,7 @@ export function ReplaysView({
   const skipped = filters.filter(
     (f) => !(replayDimensions as readonly string[]).includes(f.dimension),
   );
-  const { data, error } = useQuery(
+  const { data, error, refetch } = useQuery(
     siteReplaysQuery(
       project,
       site.name,
@@ -79,7 +80,7 @@ export function ReplaysView({
     ),
   );
   const params = useParams({ strict: false });
-  if (error) return <p className="text-fail">{error.message}</p>;
+  if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!data) return <p className="text-mut">Loading…</p>;
   const replays = data.replays ?? [];
   const kept = site.settings.replay_retention_days;
