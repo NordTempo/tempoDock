@@ -102,3 +102,11 @@ UPDATE projects SET archived_at = ? WHERE id = +? AND archived_at IS NULL;
 
 -- name: RenameProject :one
 UPDATE projects SET name = ? WHERE id = +? RETURNING *;
+
+-- ListEnvironmentLocks lists every locked environment of a live project
+-- with its org, for refusing tokens account changes while one holds (ADR
+-- 0044). Rare admin calls on a small table: a scan, no index.
+-- name: ListEnvironmentLocks :many
+SELECT p.org_id, e.locked_at, e.open_until
+FROM environments e JOIN projects p ON p.id = e.project_id
+WHERE e.locked_at IS NOT NULL AND p.archived_at IS NULL;

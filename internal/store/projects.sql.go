@@ -372,6 +372,44 @@ func (q *Queries) GetServerByName(ctx context.Context, name string) (Server, err
 	return i, err
 }
 
+const listEnvironmentLocks = `-- name: ListEnvironmentLocks :many
+SELECT p.org_id, e.locked_at, e.open_until
+FROM environments e JOIN projects p ON p.id = e.project_id
+WHERE e.locked_at IS NOT NULL AND p.archived_at IS NULL
+`
+
+type ListEnvironmentLocksRow struct {
+	OrgID     int64
+	LockedAt  *time.Time
+	OpenUntil *time.Time
+}
+
+// ListEnvironmentLocks lists every locked environment of a live project
+// with its org, for refusing tokens account changes while one holds (ADR
+// 0044). Rare admin calls on a small table: a scan, no index.
+func (q *Queries) ListEnvironmentLocks(ctx context.Context) ([]ListEnvironmentLocksRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEnvironmentLocks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEnvironmentLocksRow
+	for rows.Next() {
+		var i ListEnvironmentLocksRow
+		if err := rows.Scan(&i.OrgID, &i.LockedAt, &i.OpenUntil); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEnvironments = `-- name: ListEnvironments :many
 SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until FROM environments WHERE project_id = +? ORDER BY name
 `
