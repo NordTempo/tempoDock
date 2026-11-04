@@ -114,8 +114,13 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...
 		}
 	}
 	var pull client.ImagePullOptions
-	if len(opts) > 0 && opts[0].Token != "" {
-		pull.RegistryAuth = RegistryAuth(opts[0].Token)
+	if len(opts) > 0 {
+		switch o := opts[0]; {
+		case o.Token != "":
+			pull.RegistryAuth = RegistryAuth(o.Token)
+		case o.Username != "":
+			pull.RegistryAuth = PasswordAuth(ref, o.Username, o.Password)
+		}
 	}
 	resp, err := r.cli.ImagePull(ctx, ref, pull)
 	if err != nil {

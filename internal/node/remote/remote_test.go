@@ -626,6 +626,36 @@ func TestVersions(t *testing.T) {
 	})
 }
 
+// A pull's registry credentials reach the node. A node older than
+// protocol 18 would drop them and pull anonymously, so it is refused with
+// a request to upgrade it; pulls without credentials still go to it.
+func TestPullWithCredentials(t *testing.T) {
+	ctx := context.Background()
+	login := node.PullOptions{Username: "bot", Password: "s3cret"}
+
+	h := newHarness(t)
+	if _, err := h.client.Pull(ctx, "ghcr.io/acme/app:1", io.Discard, login); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(h.rt.Ops(), "pull ghcr.io/acme/app:1 user=bot password=s3cret") {
+		t.Fatalf("the credentials didn't reach the node: %v", h.rt.Ops())
+	}
+
+	h.stopNode()
+	h.startNode(func(n *Node) { n.protocol = registryLoginProtocol - 1 })
+	waitFor(t, "the older node", func() bool { return h.hub.State(h.id).Hello.Protocol == registryLoginProtocol-1 && h.client.Online() })
+	_, err := h.client.Pull(ctx, "ghcr.io/acme/app:2", io.Discard, login)
+	if err == nil || !strings.Contains(err.Error(), "can't pull with registry credentials; upgrade dock on it") {
+		t.Fatalf("pull with credentials on an older node = %v", err)
+	}
+	if slices.ContainsFunc(h.rt.Ops(), func(op string) bool { return strings.HasPrefix(op, "pull ghcr.io/acme/app:2") }) {
+		t.Fatalf("the older node pulled: %v", h.rt.Ops())
+	}
+	if _, err := h.client.Pull(ctx, "nginx:1", io.Discard); err != nil {
+		t.Fatalf("anonymous pull on an older node: %v", err)
+	}
+}
+
 func TestLimits(t *testing.T) {
 	h := newHarness(t)
 

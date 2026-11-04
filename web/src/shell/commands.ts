@@ -362,6 +362,11 @@ export function useCommands(): Command[] {
       ? ([
           ["Tokens", "/$org/settings/tokens", "dock token list"],
           ["Requests", "/$org/requests", "dock request list"],
+          [
+            "Registry credentials",
+            "/$org/settings/registries",
+            "dock registry credentials",
+          ],
         ] as const)
       : []),
     ...(operator

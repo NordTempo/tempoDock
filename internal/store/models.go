@@ -456,6 +456,17 @@ type ProjectPlacement struct {
 	CreatedAt time.Time
 }
 
+type RegistryCredential struct {
+	OrgID     int64
+	Host      string
+	Username  string
+	Secret    []byte
+	CreatedAt time.Time
+	CreatedBy string
+	UpdatedAt time.Time
+	UpdatedBy string
+}
+
 type Release struct {
 	ID                    int64
 	ServiceID             int64

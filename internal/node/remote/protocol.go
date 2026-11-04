@@ -70,8 +70,9 @@ const (
 	// 15 adds run-job's pause: containers frozen while the job runs (ADR
 	// 0047); 16 adds run-job-stream, jobs connected to their caller
 	// (`dock run`, ADR 0048); 17 adds the routes' stopped service,
-	// answered with a 503 page (ADR 0050).
-	Protocol = 17
+	// answered with a 503 page (ADR 0050); 18 adds the pull's registry
+	// username and password (ADR 0051).
+	Protocol = 18
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

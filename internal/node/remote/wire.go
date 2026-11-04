@@ -116,6 +116,10 @@ type (
 		Ref string `json:"ref"`
 		// Token is the registry token for this pull; empty is anonymous.
 		Token string `json:"token,omitempty"`
+		// Username and Password sign in to another registry (protocol
+		// 15, ADR 0051). Password is a secret.
+		Username string `json:"username,omitempty"`
+		Password string `json:"password,omitempty"`
 	}
 	imageIDResult struct {
 		ImageID string `json:"image_id"`

@@ -229,17 +229,33 @@ func (d *deployment) image(ctx context.Context) (string, error) {
 
 // pull pulls ref onto the release's server, with a pull token when it is
 // in the platform registry: only for a repository of the release's own
-// project (see pullAllowed).
+// project (see pullAllowed). Any other registry gets the org's credential
+// for its host, if there is one (ADR 0051).
 func (d *deployment) pull(ctx context.Context, ref string) (string, error) {
-	var opts []node.PullOptions
 	if repo, ok := d.c.inRegistry(ref); ok {
 		if !pullAllowed(d.ss, repo) {
 			return "", fmt.Errorf("image %s belongs to another project; deploy it in that project, or push it to a registry of your own and deploy it with --image", ref)
 		}
 		defer d.c.useRegistry()()
-		opts = append(opts, node.PullOptions{Token: d.c.reg.Token("server "+d.server.Name, repo, false)})
+		return d.rt.Pull(ctx, ref, d.log, node.PullOptions{Token: d.c.reg.Token("server "+d.server.Name, repo, false)})
 	}
-	return d.rt.Pull(ctx, ref, d.log, opts...)
+	login, host, err := d.c.registryLogin(ctx, d.ss.project.OrgID, ref)
+	if err != nil {
+		return "", err
+	}
+	if login.Username == "" {
+		id, err := d.rt.Pull(ctx, ref, d.log)
+		if err != nil && host != "" && pullRefused(err) {
+			err = fmt.Errorf("%w; if the image is private, an admin adds credentials for its registry with `dock registry login %s`", err, host)
+		}
+		return id, err
+	}
+	_, _ = fmt.Fprintf(d.log, "Signing in to %s as %s\n", host, login.Username)
+	id, err := d.rt.Pull(ctx, ref, d.log, login)
+	if err != nil && pullRefused(err) {
+		err = fmt.Errorf("%w; check the credentials for %s, or replace them with `dock registry login %s`", err, host, host)
+	}
+	return id, err
 }
 
 // build builds the uploaded source on a builder (builderFor), one build at

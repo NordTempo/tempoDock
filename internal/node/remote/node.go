@@ -48,8 +48,10 @@ type Node struct {
 	MinBackoff, MaxBackoff time.Duration
 	Logger                 *slog.Logger
 
-	// alpn overrides ALPN in tests.
-	alpn string
+	// alpn overrides ALPN in tests; protocol overrides Protocol in hello,
+	// to play an older node.
+	alpn     string
+	protocol int
 
 	mu   sync.Mutex
 	link Link
@@ -264,6 +266,9 @@ func (n *Node) hello(ctx context.Context, req helloRequest, st *connState) (Hell
 	if err != nil {
 		return h, err
 	}
+	if n.protocol != 0 {
+		h.Protocol = n.protocol
+	}
 	if Protocol < req.MinProtocol {
 		n.logger().Error("the control plane needs a newer dock: upgrade dock on this server",
 			"control_plane_version", req.Version, "min_protocol", req.MinProtocol, "protocol", Protocol)
@@ -329,7 +334,7 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h := func(op string, fn http.HandlerFunc) { mux.Handle("POST /v1/"+op, fn) }
 
 	h(opPull, withLogs(func(ctx context.Context, a pullRequest, _ io.Reader, logs io.Writer) (imageIDResult, error) {
-		id, err := rt.Pull(ctx, a.Ref, logs, node.PullOptions{Token: a.Token})
+		id, err := rt.Pull(ctx, a.Ref, logs, node.PullOptions{Token: a.Token, Username: a.Username, Password: a.Password})
 		return imageIDResult{ImageID: id}, err
 	}))
 	h(opHasImage, unary(func(ctx context.Context, a imageRequest) (hasImageResult, error) {

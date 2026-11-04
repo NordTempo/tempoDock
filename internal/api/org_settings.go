@@ -10,8 +10,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// The org the caller acts in (ADR 0027): its name, members, invites and
-// variables, under /org.
+// The org the caller acts in (ADR 0027): its name, members, invites,
+// variables and registry credentials (ADR 0051), under /org.
 func registerOrgSettings(s *Server, a huma.API) {
 	tags := []string{"organizations"}
 	orgPath := Prefix + "/org"
@@ -30,7 +30,7 @@ func registerOrgSettings(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "delete-org", Method: http.MethodDelete, Path: orgPath,
 		Summary: "Delete the organization", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "Only without projects (archived ones count). Its members, invites, variables and data policy go and its tokens are revoked; its audit log stays. Scope: admin, unlimited.",
+		Description: "Only without projects (archived ones count). Its members, invites, variables, registry credentials and data policy go and its tokens are revoked; its audit log stays. Scope: admin, unlimited.",
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*struct{}, error) {
 		return nil, s.core.DeleteOrg(ctx, actor)
 	})
@@ -140,5 +140,33 @@ func registerOrgSettings(s *Server, a huma.API) {
 		Key string `path:"key"`
 	}) (*out[apitypes.OrgVariableRollout], error) {
 		return reply(s.core.RedeployOrgVariable(ctx, actor, in.Key))
+	})
+
+	tags = []string{"registry"}
+	authed(s, a, huma.Operation{
+		OperationID: "list-registry-credentials", Method: http.MethodGet, Path: orgPath + "/registry-credentials",
+		Summary: "List registry credentials", Tags: tags,
+		Description: "How the organization signs in to private image registries, by host. Passwords and tokens are never returned. Scope: admin, unlimited.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.RegistryCredential], error) {
+		return reply(s.core.ListRegistryCredentials(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-registry-credential", Method: http.MethodPut, Path: orgPath + "/registry-credentials/{host}",
+		Summary: "Set a registry credential", Tags: tags,
+		Description: "Adds or replaces the username and password (or token) deploys sign in with to pull images from the registry host, like `ghcr.io` or `registry.example.com:5000`; Docker Hub is `docker.io`. Takes effect on the next pull. Scope: admin, unlimited.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Host string `path:"host" example:"ghcr.io"`
+		Body apitypes.SetRegistryCredentialRequest
+	}) (*out[apitypes.RegistryCredential], error) {
+		return reply(s.core.SetRegistryCredential(ctx, actor, in.Host, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "delete-registry-credential", Method: http.MethodDelete, Path: orgPath + "/registry-credentials/{host}",
+		Summary: "Remove a registry credential", Description: "Pulls from the host are anonymous again. Scope: admin, unlimited.",
+		Tags: tags, DefaultStatus: http.StatusNoContent,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Host string `path:"host"`
+	}) (*struct{}, error) {
+		return nil, s.core.DeleteRegistryCredential(ctx, actor, in.Host)
 	})
 }

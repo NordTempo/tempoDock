@@ -73,3 +73,26 @@ type MigrateRegistryRequest struct {
 	// when there is only one.
 	Storage string `json:"storage,omitempty"`
 }
+
+// RegistryCredential is how the organization signs in to a private image
+// registry when a deploy pulls an image from it (ADR 0051). The password
+// or token is never returned.
+type RegistryCredential struct {
+	// Host is the registry's host (and port), lower case; Docker Hub is
+	// docker.io.
+	Host      string    `json:"host" example:"ghcr.io"`
+	Username  string    `json:"username" example:"acme-bot"`
+	CreatedAt time.Time `json:"created_at"`
+	CreatedBy string    `json:"created_by"`
+	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedBy string    `json:"updated_by"`
+}
+
+// SetRegistryCredentialRequest adds or replaces the credential for a
+// registry host.
+type SetRegistryCredentialRequest struct {
+	Username string `json:"username" minLength:"1" maxLength:"256"`
+	// Password is the password or access token. It is stored sealed and
+	// never shown again.
+	Password string `json:"password" minLength:"1" maxLength:"16384"`
+}

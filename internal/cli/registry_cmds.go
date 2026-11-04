@@ -2,8 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +15,7 @@ import (
 
 // The platform registry (ADR 0014 section 4): its size, pruning, where it
 // keeps its images (ADR 0034), and the services keeping images in it.
+// Also the org's credentials for private registries (ADR 0051).
 
 func newRegistryCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
@@ -20,7 +24,11 @@ func newRegistryCmd(g *globals) *cobra.Command {
 		Long: `Show the platform registry: where it keeps its images (this server's disk or
 a storage connection's bucket), their size, how the last prune and migration
 went, and every service with images in it, with how many its rollback
-window keeps. Prune and migration state are since the daemon started.`,
+window keeps. Prune and migration state are since the daemon started.
+
+Images deployed from private registries (ghcr.io, a registry of your own,
+Docker Hub) are pulled with the organization's credentials for their host:
+` + "`dock registry login`" + ` adds them.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.connect()
@@ -34,7 +42,8 @@ window keeps. Prune and migration state are since the daemon started.`,
 			return g.io.Print(r, func() error { return printRegistry(g, r) })
 		},
 	}
-	cmd.AddCommand(newRegistryPruneCmd(g), newRegistryMigrateCmd(g))
+	cmd.AddCommand(newRegistryPruneCmd(g), newRegistryMigrateCmd(g),
+		newRegistryLoginCmd(g), newRegistryLogoutCmd(g), newRegistryCredentialsCmd(g))
 	return cmd
 }
 
@@ -179,4 +188,135 @@ background; ` + "`dock registry`" + ` shows how it went.`,
 	fs.StringVar(&req.Storage, "storage", "", "the storage connection, with --to s3")
 	fs.BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	return cmd
+}
+
+// registryCredentialsPath is where the org's registry credentials are.
+const registryCredentialsPath = apiPrefix + "/org/registry-credentials"
+
+// newRegistryLoginCmd is `dock registry login`.
+func newRegistryLoginCmd(g *globals) *cobra.Command {
+	var req apitypes.SetRegistryCredentialRequest
+	var passwordStdin bool
+	cmd := &cobra.Command{
+		Use:   "login <host> --username <name> [--password-stdin]",
+		Short: "Save the credentials deploys pull a private registry's images with (admin)",
+		Long: `Save a username and password (or access token) for a private image registry.
+Deploys of the organization's images from that host pull with them, from
+the next pull on; images from other hosts are still pulled anonymously.
+The host is as in an image reference: ghcr.io, registry.example.com:5000,
+or docker.io for Docker Hub. Logging in again replaces the credentials.
+
+The password is read from stdin with --password-stdin, or asked for on a
+terminal; it never goes in an argument. It is stored encrypted and never
+shown again. Builds don't use it: a Dockerfile's FROM image must be public.`,
+		Example: `  printf %s "$GHCR_TOKEN" | dock registry login ghcr.io --username acme-bot --password-stdin
+  dock registry login registry.example.com:5000 --username deploy`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if req.Username == "" {
+				return usageError("--username is required", "Pass the registry account's name, e.g. `--username acme-bot`.")
+			}
+			var err error
+			if passwordStdin {
+				req.Password, err = readRegistryPassword(g)
+			} else {
+				req.Password, err = g.io.PromptSecret("Password or token", "password-stdin")
+			}
+			if err != nil {
+				return err
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			rc, err := send[apitypes.RegistryCredential](cmd.Context(), s, http.MethodPut, registryCredentialsPath+"/"+url.PathEscape(args[0]), req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(rc, func() error {
+				g.io.Successf("Saved the credentials for %s (user %s)", rc.Host, rc.Username)
+				g.io.Detail("Deploys pull images from " + rc.Host + " with them from the next pull on.")
+				return nil
+			})
+		},
+	}
+	fs := cmd.Flags()
+	fs.StringVarP(&req.Username, "username", "u", "", "the registry account's name")
+	fs.BoolVar(&passwordStdin, "password-stdin", false, "read the password or token from stdin")
+	return cmd
+}
+
+// maxRegistryPassword bounds what --password-stdin reads: a token, or a
+// JSON key some registries take as the password (as core allows).
+const maxRegistryPassword = 16 << 10
+
+// readRegistryPassword reads --password-stdin's password: all of stdin
+// but a final line break, as `docker login --password-stdin` does.
+func readRegistryPassword(g *globals) (string, error) {
+	b, err := io.ReadAll(io.LimitReader(g.io.In, maxRegistryPassword+1))
+	if err != nil {
+		return "", err
+	}
+	pw := strings.TrimRight(string(b), "\r\n")
+	switch {
+	case len(b) > maxRegistryPassword:
+		return "", usageError("the password on stdin is longer than 16 KB", "Pipe just the password or token.")
+	case pw == "":
+		return "", usageError("--password-stdin read nothing", "Pipe the password or token in: `printf %s \"$TOKEN\" | dock registry login HOST --username NAME --password-stdin`.")
+	}
+	return pw, nil
+}
+
+// newRegistryLogoutCmd is `dock registry logout`.
+func newRegistryLogoutCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "logout <host>",
+		Short: "Remove the credentials for a private registry (admin)",
+		Long:  `Remove the organization's credentials for a registry host. Pulls from it are anonymous again, so deploys of its private images fail. Running services are left alone.`,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			if err := del(cmd.Context(), s, registryCredentialsPath+"/"+url.PathEscape(args[0])); err != nil {
+				return err
+			}
+			return g.io.Print(map[string]string{"removed": args[0]}, func() error {
+				g.io.Successf("Removed the credentials for %s", args[0])
+				return nil
+			})
+		},
+	}
+}
+
+// newRegistryCredentialsCmd is `dock registry credentials`.
+func newRegistryCredentialsCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "credentials",
+		Short: "List the private registries the organization signs in to (admin)",
+		Long:  `List the organization's registry credentials: host, username and when they were last set. Passwords are never shown.`,
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			list, err := get[[]apitypes.RegistryCredential](cmd.Context(), s, registryCredentialsPath)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(list, func() error {
+				if len(list) == 0 {
+					g.io.Detail("No registry credentials; images are pulled anonymously. Add some with `dock registry login`.")
+					return nil
+				}
+				t := g.io.Table("host", "username", "updated", "by")
+				for _, rc := range list {
+					t.Row(rc.Host, rc.Username, ago(rc.UpdatedAt), rc.UpdatedBy)
+				}
+				return t.Flush()
+			})
+		},
+	}
 }

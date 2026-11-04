@@ -40,6 +40,9 @@ func TestResealSecrets(t *testing.T) {
 	h.deploy(web, "app:1")                                           // carries TOKEN and DSN
 	h.set(web.Env(), "web", map[string]string{"TOKEN": "t2"}, false) // staged
 	h.channel(apitypes.CreateAlertChannelRequest{Name: "ops", Kind: apitypes.ChannelSlack, URL: "https://hooks.example/x"})
+	if _, err := h.c.SetRegistryCredential(h.ctx, testSystem, "ghcr.io", apitypes.SetRegistryCredentialRequest{Username: "bot", Password: "ghp_x"}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Back to how an install before ADR 0041 stored them. Opening each
 	// value with its column's AAD checks sealedColumns against the AADs
@@ -49,7 +52,7 @@ func TestResealSecrets(t *testing.T) {
 	}
 	h.unbindCarried()
 	h.exec(`UPDATE install SET secrets_format = 1`)
-	for _, col := range []string{"variables.value", "variables.pending_value", "org_variables.value", "releases.config", "alert_channels.config"} {
+	for _, col := range []string{"variables.value", "variables.pending_value", "org_variables.value", "releases.config", "alert_channels.config", "registry_credentials.secret"} {
 		if h.unbound(col) == 0 {
 			t.Fatalf("no unbound values in %s to reseal", col)
 		}
@@ -79,6 +82,9 @@ func TestResealSecrets(t *testing.T) {
 	}
 	if _, err := h.c.GetRelease(h.ctx, testSystem, web, 1); err != nil {
 		t.Fatal(err)
+	}
+	if login, _, err := h.c.registryLogin(h.ctx, 1, "ghcr.io/acme/app:1"); err != nil || login.Password != "ghp_x" {
+		t.Fatalf("registry credential = %+v, %v", login, err)
 	}
 	// A release's record of the change it applied is still the live
 	// value's bytes, so restaging finds it.

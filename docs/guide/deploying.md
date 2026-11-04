@@ -34,6 +34,26 @@ back an image service, Deploy brings the newer image back.
 The CLI always names the image (`dock deploy --image <ref>`); the API's
 `POST .../releases` with an empty body deploys the `image` setting.
 
+### Private registries
+
+An image from a private registry is pulled with the organization's
+credentials for its registry host ([ADR 0051](../decisions/0051-registry-credentials.md)).
+An admin adds them once, in Settings › Registries or with the CLI:
+
+```sh
+printf %s "$GHCR_TOKEN" | dock registry login ghcr.io --username acme-bot --password-stdin
+dock registry credentials          # hosts and usernames; passwords are never shown
+dock registry logout ghcr.io
+```
+
+The host is as in the image reference: `ghcr.io`, `registry.example.com:5000`,
+or `docker.io` for Docker Hub (also for images named without a host, like
+`acme/web`). Images from other hosts are pulled anonymously. Use a
+read-only token (for GitHub, a token with `read:packages`). Credentials
+take effect on the next pull; a pull the registry refuses says which
+command fixes it. Builds don't use them: a Dockerfile's `FROM` image must
+be public.
+
 Both paths take the service's own [staged changes](variables.md#staged-changes)
 live with them.
 

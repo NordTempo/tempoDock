@@ -138,3 +138,28 @@ SELECT slug FROM orgs ORDER BY slug;
 
 -- name: SetOrgLockProduction :exec
 UPDATE orgs SET lock_production = ? WHERE id = +?;
+
+-- ListRegistryCredentials is an org's registry credentials by host,
+-- sealed secrets included: callers never return them.
+-- name: ListRegistryCredentials :many
+SELECT * FROM registry_credentials WHERE org_id = +? ORDER BY host;
+
+-- GetRegistryCredential is the org's credential for one registry host,
+-- for a pull from it.
+-- name: GetRegistryCredential :one
+SELECT * FROM registry_credentials WHERE org_id = +? AND host = +?;
+
+-- UpsertRegistryCredential adds or replaces an org's credential for a
+-- host; a replaced one keeps when and by whom it was first added.
+-- name: UpsertRegistryCredential :one
+INSERT INTO registry_credentials (org_id, host, username, secret, created_at, created_by, updated_at, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (org_id, host) DO UPDATE SET username = excluded.username, secret = excluded.secret,
+    updated_at = excluded.updated_at, updated_by = excluded.updated_by
+RETURNING *;
+
+-- name: DeleteRegistryCredential :execrows
+DELETE FROM registry_credentials WHERE org_id = +? AND host = +?;
+
+-- name: DeleteOrgRegistryCredentials :exec
+DELETE FROM registry_credentials WHERE org_id = +?;

@@ -52,8 +52,9 @@ func (c *Core) RenameOrg(ctx context.Context, a Actor, req apitypes.UpdateOrgReq
 }
 
 // DeleteOrg deletes an org that has no projects (archived ones count:
-// projects are never deleted), with its memberships, invites, variables
-// and data policy, and revokes its tokens. Its audit log stays.
+// projects are never deleted), with its memberships, invites, variables,
+// registry credentials and data policy, and revokes its tokens. Its audit
+// log stays.
 func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "deleting the organization"); err != nil {
 		return err
@@ -66,7 +67,7 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 		return conflict("organization %s has %d projects (archived ones count); only an organization without projects can be deleted", a.OrgSlug, n)
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgDataPolicy} {
+		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy} {
 			if err := del(ctx, a.OrgID); err != nil {
 				return err
 			}
