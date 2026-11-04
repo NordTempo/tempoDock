@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 
@@ -114,7 +115,7 @@ func newProjectArchiveCmd(g *globals) *cobra.Command {
 func newEnvironmentCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "environment",
-		Short: "List, create and clone environments",
+		Short: "List, create, clone, lock and unlock environments",
 		Long:  "Environments of a project. (`dock env` manages variables.)",
 	})
 	var listFlags, createFlags targetFlags
@@ -133,9 +134,9 @@ func newEnvironmentCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(envs, func() error {
-				tb := g.io.Table("name", "kind", "server", "created")
+				tb := g.io.Table("name", "kind", "server", "lock", "created")
 				for _, e := range envs {
-					tb.Row(e.Name, kindWords(e.Kind), e.Server, ago(e.CreatedAt))
+					tb.Row(e.Name, kindWords(e.Kind), e.Server, cmp.Or(lockWords(e.Lock), "-"), ago(e.CreatedAt))
 				}
 				return tb.Flush()
 			})
@@ -173,7 +174,7 @@ eligible server with the most free memory.`,
 	}
 	createFlags.add(create, needProject)
 	create.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
-	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g))
+	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g))
 	return cmd
 }
 

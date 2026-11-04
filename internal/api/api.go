@@ -13,6 +13,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -81,6 +82,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerAuth(s, a)
 	registerCLILogin(s, a)
 	registerProjects(s, a)
+	registerLocks(s, a)
 	registerServices(s, a)
 	registerReleases(s, a)
 	registerDomains(s, a)
@@ -145,6 +147,8 @@ func codeForStatus(status int) apitypes.ErrorCode {
 		return apitypes.CodeServerOffline
 	case http.StatusGone:
 		return apitypes.CodeExpired
+	case http.StatusLocked:
+		return apitypes.CodeEnvironmentLocked
 	}
 	return apitypes.CodeInternal
 }
@@ -171,6 +175,8 @@ func statusForCode(code apitypes.ErrorCode) int {
 		return http.StatusForbidden
 	case apitypes.CodeExpired:
 		return http.StatusGone
+	case apitypes.CodeEnvironmentLocked:
+		return http.StatusLocked
 	}
 	return http.StatusInternalServerError
 }
@@ -184,7 +190,11 @@ func (s *Server) problem(err error) error {
 	var ce *core.Error
 	if errors.As(err, &ce) {
 		status := statusForCode(ce.Code)
-		return &apitypes.Error{Status: status, Title: http.StatusText(status), Detail: ce.Msg, Code: ce.Code}
+		e := &apitypes.Error{Status: status, Title: http.StatusText(status), Detail: ce.Msg, Code: ce.Code}
+		if le, ok := errors.AsType[*core.LockedError](err); ok {
+			e.Request = le.Request
+		}
+		return e
 	}
 	s.opts.Logger.Error("api: internal error", "err", err)
 	return &apitypes.Error{
@@ -220,6 +230,12 @@ func authed[I, O any](s *Server, a huma.API, op huma.Operation, h func(context.C
 	op.Parameters = append(op.Parameters, orgParam)
 	if op.Errors == nil {
 		op.Errors = []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict}
+	}
+	if op.Method != http.MethodGet && !slices.Contains(op.Errors, http.StatusLocked) && !slices.Contains(op.Tags, "data") {
+		// Any change can meet a locked environment (ADR 0044). The Data
+		// panel's operations keep tempoBase's contract: their writes are
+		// capped at proposing instead.
+		op.Errors = append(slices.Clone(op.Errors), http.StatusLocked)
 	}
 	huma.Register(a, op, func(ctx context.Context, in *I) (*O, error) {
 		actor := actorFrom(ctx)

@@ -277,6 +277,10 @@ type Environment struct {
 	Network    string
 	ApplyError string
 	Kind       string
+	LockedAt   *time.Time
+	LockedBy   string
+	LockReason string
+	OpenUntil  *time.Time
 }
 
 type GitConnection struct {
@@ -352,10 +356,11 @@ type JoinToken struct {
 }
 
 type Org struct {
-	ID        int64
-	Slug      string
-	Name      string
-	CreatedAt time.Time
+	ID             int64
+	Slug           string
+	Name           string
+	CreatedAt      time.Time
+	LockProduction int64
 }
 
 type OrgInvite struct {

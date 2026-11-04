@@ -253,6 +253,9 @@ const (
 	PermissionCap DataPermissionSource = "cap"
 	// PermissionProduction: tokens only propose on production.
 	PermissionProduction DataPermissionSource = "production"
+	// PermissionLocked: the environment is locked (ADR 0044), so tokens
+	// only propose there.
+	PermissionLocked DataPermissionSource = "locked"
 )
 
 // DataPermission is what the caller may do with one database, and why.
@@ -273,7 +276,7 @@ type DataPermission struct {
 
 // DataPermissionStep is one step in deciding a DataPermission.
 type DataPermissionStep struct {
-	Source DataPermissionSource `json:"source" enum:"admin,policy,token,cap,production"`
+	Source DataPermissionSource `json:"source" enum:"admin,policy,token,cap,production,locked"`
 	// Policy and Subject name the rule, for policy steps.
 	Policy    DataPolicyScope `json:"policy,omitempty" enum:"built_in,default,project,environment,connection"`
 	Subject   DataSubject     `json:"subject,omitempty" enum:"role:read,role:deploy,tokens"`

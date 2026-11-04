@@ -59,6 +59,9 @@ func (c *Core) UpdateBackupSchedule(ctx context.Context, a Actor, ref ServiceRef
 	if err != nil {
 		return apitypes.ServiceBackups{}, err
 	}
+	if err := a.checkLock(ss.envScope, "changing a backup schedule"); err != nil {
+		return apitypes.ServiceBackups{}, err
+	}
 	if _, _, err := c.backupKindOf(ctx, ss); err != nil {
 		return apitypes.ServiceBackups{}, err
 	}

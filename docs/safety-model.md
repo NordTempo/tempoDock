@@ -56,7 +56,19 @@ access goes through the daemon's API, which enforces permissions.
 - **Diffs before risky changes:** changes that touch domains, volumes or limits
   show what will happen first, in both CLI and UI.
 - Client flags like `--yes` skip confirmation prompts, never permission checks.
-- Later: optional human approval for chosen actions instead of a hard deny.
+
+## Locked environments
+
+An admin can lock an environment ([0044](decisions/0044-environment-lock.md)),
+typically production once people use it. Tokens (API tokens, `dock login`
+tokens, MCP: every agent) can still read everything in it, but every change
+they try is refused with `environment_locked`: deploys, rollbacks,
+restarts, variables, settings, domains, volumes, backups, archive and
+unlocking it. Their data access there is capped at proposing changesets.
+People in the web UI are not affected, and an admin can open a locked
+environment for a while. The check is core's `checkEnv`, which every
+operation inside an environment passes, so new actions are covered without
+code of their own.
 
 ## Every change is reversible
 

@@ -990,7 +990,7 @@ export interface components {
             /** @enum {string} */
             sensitive: "masked" | "visible";
             /** @enum {string} */
-            source: "admin" | "policy" | "token" | "cap" | "production";
+            source: "admin" | "policy" | "token" | "cap" | "production" | "locked";
             /** @enum {string} */
             subject?: "role:read" | "role:deploy" | "tokens";
         };
@@ -1109,6 +1109,8 @@ export interface components {
             /** @example this token has scope deploy; archiving a service requires admin */
             detail: string;
             errors?: components["schemas"]["ErrorDetail"][] | null;
+            /** Format: int64 */
+            request?: number;
             /**
              * Format: int64
              * @example 403
