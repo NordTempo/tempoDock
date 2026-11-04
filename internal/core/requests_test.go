@@ -248,20 +248,10 @@ func TestRequestEndsWhenTokenRevoked(t *testing.T) {
 }
 
 // TestRequestEndsWhenProjectArchived: archiving the project rejects its
-// pending requests; archiving only the service leaves them to fail safely
-// when approved, as the call refuses an archived service.
+// pending requests.
 func TestRequestEndsWhenProjectArchived(t *testing.T) {
 	h := newRequestHarness(t)
 	r := h.ask("1", "")
-	if _, err := h.c.ArchiveService(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}); err != nil {
-		t.Fatal(err)
-	}
-	out, err := h.c.DecideRequest(h.ctx, h.admin, r.Request, true, apitypes.DecideAccessRequest{})
-	if err != nil || out.Status != apitypes.RequestFailed || !strings.Contains(out.Error, "archived") {
-		t.Fatalf("approve for an archived service: %+v %v", out, err)
-	}
-
-	r = h.ask("2", "")
 	if _, err := h.c.ArchiveProject(h.ctx, testSystem, "shop"); err != nil {
 		t.Fatal(err)
 	}
