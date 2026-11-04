@@ -65,6 +65,18 @@ type drainManager struct {
 	// after it. An entry goes with the container's destroy event or its
 	// environment's last drain; at most maxDrainResume are kept.
 	last map[string]drainResume
+	// restart holds the containers that started again while their old
+	// follower still ran, by container ID; that follower starts the next
+	// when it ends. An entry exists only beside one in follows.
+	restart map[string]drainRestart
+}
+
+// drainRestart is what followContainer needs to follow a container's
+// next run.
+type drainRestart struct {
+	serverID, releaseID int64
+	row                 *store.ListDrainContainersRow
+	labels              *node.Labels
 }
 
 // drainResume is where a container's follower stopped.
@@ -169,6 +181,7 @@ func newDrainManager() *drainManager {
 	m := &drainManager{
 		envs: map[int64]*drainEnv{}, byID: map[int64]*drain{},
 		follows: map[string]*drainEnv{}, last: map[string]drainResume{},
+		restart: map[string]drainRestart{},
 	}
 	m.guard.what = "logs"
 	m.client = newDrainClient(&m.guard)
@@ -267,6 +280,7 @@ func (c *Core) removeLogDrain(id int64) {
 	for id, e := range m.follows {
 		if e == env {
 			delete(m.follows, id)
+			delete(m.restart, id)
 		}
 	}
 	for id, r := range m.last {
@@ -341,7 +355,9 @@ func (c *Core) followServerDrains(ctx context.Context, serverID int64) {
 }
 
 // followContainer starts a follower for a container of an environment
-// with drains, unless one runs. Lines are read from since, or just after
+// with drains. If one still runs (a quick restart, whose old log stream
+// hasn't ended yet), it records the restart and that follower starts the
+// next when it ends. Lines are read from since, or just after
 // the last line delivered from the container if a follower ran before.
 // row (from followEnv) has the release and its labels; nil looks them up,
 // and then labels (from a container event) must match the release.
@@ -349,7 +365,14 @@ func (c *Core) followContainer(serverID, envID int64, id string, releaseID int64
 	m := c.logDrains
 	m.mu.Lock()
 	env := m.envs[envID]
-	if env == nil || m.follows[id] != nil || c.ctx.Err() != nil {
+	if env == nil || c.ctx.Err() != nil {
+		m.mu.Unlock()
+		return
+	}
+	if m.follows[id] != nil {
+		if m.follows[id] == env {
+			m.restart[id] = drainRestart{serverID: serverID, releaseID: releaseID, row: row, labels: labels}
+		}
 		m.mu.Unlock()
 		return
 	}
@@ -364,19 +387,25 @@ func (c *Core) followContainer(serverID, envID int64, id string, releaseID int64
 
 // follow copies a container's output, masked, into its environment's
 // drains until the container's log stream ends or the environment loses
-// its drains.
+// its drains. If the container started again meanwhile, it then starts
+// the next follower, after the last line it delivered.
 func (c *Core) follow(env *drainEnv, serverID int64, id string, releaseID int64, since time.Time, row *store.ListDrainContainersRow, labels *node.Labels) {
 	defer c.wg.Done()
 	var last time.Time
 	defer func() {
 		m := c.logDrains
 		m.mu.Lock()
-		defer m.mu.Unlock()
 		if m.follows[id] == env {
 			delete(m.follows, id)
 		}
 		if _, ok := m.last[id]; !last.IsZero() && m.envs[env.id] == env && (ok || len(m.last) < maxDrainResume) {
 			m.last[id] = drainResume{at: last, envID: env.id}
+		}
+		next, again := m.restart[id]
+		delete(m.restart, id)
+		m.mu.Unlock()
+		if again {
+			c.followContainer(next.serverID, env.id, id, next.releaseID, since, next.row, next.labels)
 		}
 	}()
 	var src *logSource
