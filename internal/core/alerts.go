@@ -568,6 +568,22 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	c.notify(ctx, row, "opened", now)
 }
 
+// resolveServiceAlerts closes every alert an archived service can hold:
+// its deploy, backup, crash and health alerts and those of its domains
+// (hostnames), and drops its health check state. finishArchive calls it,
+// so the alerts close at once instead of at the next reconcileAlerts.
+func (c *Core) resolveServiceAlerts(ctx context.Context, serviceID int64, hostnames []string) {
+	now := time.Now()
+	svc := alertServiceKey(serviceID, "", "", "")
+	for _, kind := range []string{"deploy:", "backup:", "crash:", "health:"} {
+		c.resolveAlert(ctx, kind+svc, now)
+	}
+	for _, h := range hostnames {
+		c.resolveAlert(ctx, "domain:"+h, now)
+	}
+	c.health.forget(serviceID)
+}
+
 // resolveAlert closes the open alert for key, if there is one, and tells
 // the channels that were told about it.
 func (c *Core) resolveAlert(ctx context.Context, key string, now time.Time) {

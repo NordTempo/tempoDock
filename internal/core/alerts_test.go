@@ -572,3 +572,17 @@ func TestFullDiskIsPruned(t *testing.T) {
 	}
 	h.openAlert("disk:"+itoa(h.c.local.ID), true)
 }
+
+// Archiving a service resolves its open alerts at once.
+func TestArchiveServiceResolvesAlerts(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.rt.FailPull(errors.New("manifest unknown"))
+	h.deploy(web, "app:1")
+	h.openAlert("deploy:service:1", true)
+
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	h.openAlert("deploy:service:1", false)
+}
