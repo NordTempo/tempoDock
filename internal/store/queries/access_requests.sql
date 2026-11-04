@@ -17,13 +17,23 @@ SELECT * FROM access_requests WHERE id = +?;
 -- name: SetAccessRequestReason :exec
 UPDATE access_requests SET reason = ? WHERE id = +? AND reason = '';
 
--- ListOrgAccessRequests is an org's requests, newest first (the inbox).
+-- ListOrgAccessRequests is an org's requests, newest first (the inbox),
+-- with their project's and environment's names: one query per page.
 -- name: ListOrgAccessRequests :many
-SELECT * FROM access_requests WHERE org_id = +? ORDER BY id DESC LIMIT +?;
+SELECT sqlc.embed(access_requests), projects.name AS project_name, environments.name AS environment_name
+FROM access_requests
+JOIN projects ON projects.id = access_requests.project_id
+JOIN environments ON environments.id = access_requests.environment_id
+WHERE access_requests.org_id = +? ORDER BY access_requests.id DESC LIMIT +?;
 
--- ListTokenAccessRequests is the requests a token filed, newest first.
+-- ListTokenAccessRequests is the requests a token filed, newest first,
+-- with their project's and environment's names.
 -- name: ListTokenAccessRequests :many
-SELECT * FROM access_requests WHERE token_id = +? ORDER BY id DESC LIMIT +?;
+SELECT sqlc.embed(access_requests), projects.name AS project_name, environments.name AS environment_name
+FROM access_requests
+JOIN projects ON projects.id = access_requests.project_id
+JOIN environments ON environments.id = access_requests.environment_id
+WHERE access_requests.token_id = +? ORDER BY access_requests.id DESC LIMIT +?;
 
 -- DecideAccessRequest moves a pending request to approved or rejected;
 -- it changes nothing (no row) if it was already decided or has expired.
@@ -39,9 +49,11 @@ WHERE id = +? AND status = 'approved'
 RETURNING *;
 
 -- ExpireAccessRequests marks pending requests past their time expired.
+-- The IN term lets it seek access_requests_open by expires_at instead of
+-- scanning every pending request.
 -- name: ExpireAccessRequests :many
 UPDATE access_requests SET status = 'expired', finished_at = expires_at
-WHERE status = 'pending' AND expires_at <= +?
+WHERE status IN ('pending', 'approved') AND status = 'pending' AND expires_at <= +?
 RETURNING *;
 
 -- FailRunningAccessRequests fails requests whose run a restart cut off.
