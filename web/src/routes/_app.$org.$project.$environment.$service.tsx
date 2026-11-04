@@ -46,7 +46,11 @@ export const Route = createFileRoute(
 function ServiceLayout() {
   const ref = servicePath(Route.useParams());
   const tab = useMatches({ select: (matches) => matches.at(-1)?.routeId });
-  const onOverview = tab === "/_app/$org/$project/$environment/$service/";
+  // These lay out their own columns: logs beside the Overview, the scope
+  // list beside Variables.
+  const ownLayout =
+    tab === "/_app/$org/$project/$environment/$service/" ||
+    tab === "/_app/$org/$project/$environment/$service/variables";
   useEffect(() => rememberProject(ref.project), [ref.project]);
   // Each drop opens a fresh Deploy window (hosted by the shell).
   const dragging = useDropTarget(useCanDeploy(ref), (dropped) =>
@@ -54,14 +58,9 @@ function ServiceLayout() {
   );
   return (
     <>
-      <ServiceBar
-        serviceRef={ref}
-        full={onOverview}
-        onDeploy={() => openDeploy(ref)}
-      />
+      <ServiceBar serviceRef={ref} />
       <ServiceTabs serviceRef={ref} />
-      {onOverview ? (
-        // The Overview lays out its own columns, logs on the right.
+      {ownLayout ? (
         <Outlet />
       ) : (
         <Page

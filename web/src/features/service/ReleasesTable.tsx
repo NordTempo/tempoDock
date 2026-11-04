@@ -1,16 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useRollback } from "../../data/mutations";
-import { useService } from "../../data/queries";
+import { useCanDeploy, useService } from "../../data/queries";
 import type { Release, ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
 import {
-  Act,
   Actor,
   actorKind,
   Button,
-  ErrorText,
+  Confirm,
   Panel,
   StateText,
 } from "../../ui/kit";
@@ -32,8 +31,10 @@ export function ReleasesTable({
   // A stopped service's active release serves nothing (ADR 0050).
   const stopped = !!useService(ref).service.stopped_at;
   const rollback = useRollback();
+  const mayDeploy = useCanDeploy(ref);
   // A rollback first shows the image and config it brings back.
   const [confirming, setConfirming] = useState<number | null>(null);
+  const target = releases.find((r) => r.number === confirming);
   if (releases.length === 0) {
     return <p className="text-mut">Not deployed yet.</p>;
   }
@@ -96,49 +97,48 @@ export function ReleasesTable({
                       Why
                     </Link>
                   )}
-                  {r.status === "superseded" &&
-                    (confirming === r.number ? (
-                      <span className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-mut">
-                          {copiedConfig(r)}
-                        </span>
-                        <Act
-                          small
-                          primary
-                          cli={`dock rollback ${r.number} -s ${ref.service} -e ${ref.environment}`}
-                          disabled={deploying || rollback.isPending}
-                          onClick={() =>
-                            rollback.mutate(
-                              { ref, to: r.number },
-                              { onSuccess: () => setConfirming(null) },
-                            )
-                          }
-                        >
-                          Roll back
-                        </Act>
-                        <Button small onClick={() => setConfirming(null)}>
-                          Cancel
-                        </Button>
-                      </span>
-                    ) : (
-                      <Button
-                        small
-                        disabled={deploying || rollback.isPending}
-                        title={
-                          deploying ? "Wait for the current deploy" : undefined
-                        }
-                        onClick={() => setConfirming(r.number)}
-                      >
-                        Roll back to r{r.number}
-                      </Button>
-                    ))}
+                  {r.status === "superseded" && mayDeploy && (
+                    <Button
+                      small
+                      disabled={deploying || rollback.isPending}
+                      title={
+                        deploying ? "Wait for the current deploy" : undefined
+                      }
+                      aria-pressed={confirming === r.number}
+                      onClick={() =>
+                        setConfirming(confirming === r.number ? null : r.number)
+                      }
+                    >
+                      Roll back to r{r.number}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </Panel>
-      <ErrorText error={rollback.error} />
+      {target && (
+        <Confirm
+          action={`Roll back to r${target.number}`}
+          cli={`dock rollback ${target.number} -s ${ref.service} -e ${ref.environment}`}
+          pending={deploying || rollback.isPending}
+          error={rollback.error}
+          onConfirm={() =>
+            rollback.mutate(
+              { ref, to: target.number },
+              { onSuccess: () => setConfirming(null) },
+            )
+          }
+          onCancel={() => {
+            rollback.reset();
+            setConfirming(null);
+          }}
+        >
+          A new release with r{target.number}'s image and config:{" "}
+          <span className="font-mono text-mut">{copiedConfig(target)}</span>
+        </Confirm>
+      )}
     </>
   );
 }
