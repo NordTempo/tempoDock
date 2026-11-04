@@ -1,6 +1,6 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { currentOrg } from "../api/client";
 import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
@@ -15,12 +15,13 @@ import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
 import { signedOut } from "./mutations";
 import { followProjectRename, reconcileProjectNames } from "./projectRename";
-import { keys, queries } from "./queries";
+import { findService, keys, queries } from "./queries";
 import type {
   LiveEvent,
   LogLine,
   ProjectOverview,
   Release,
+  ReleaseSummary,
   Server,
   ServerDetail,
   ServerStats,
@@ -92,10 +93,75 @@ function upsertRelease(list: Release[] | undefined, release: Release) {
   return [release, ...rest].sort((a, b) => b.number - a.number);
 }
 
+/** A release as the overview summarizes it (core.summarize). */
+const summarize = ({
+  number,
+  status,
+  source,
+  image_ref,
+  image_id,
+  commit,
+  created_by,
+  created_at,
+  error,
+  error_code,
+}: Release): ReleaseSummary => ({
+  number,
+  status,
+  source,
+  image_ref,
+  image_id,
+  commit,
+  created_by,
+  created_at,
+  error,
+  error_code,
+});
+
+const inFlight = (status: Release["status"]) =>
+  status !== "active" && status !== "failed" && status !== "superseded";
+
 /**
- * Applies one event to the query cache. Frequent, small events (progress
- * lines, status, domains) patch it in place; the rest invalidate what they
- * affect and let active queries refetch.
+ * Patches a release's new state into its service on the overview, as
+ * core.Overview derives it: the active release, the one in flight and the
+ * newest. A release that went active is published before the one it
+ * superseded, so that one only clears its own role. A service the cached
+ * overview doesn't have yet refetches the overview instead.
+ */
+function applyRelease(
+  queryClient: QueryClient,
+  ref: ServiceRef,
+  release: Release,
+) {
+  const overview = queryClient.getQueryData<ProjectOverview>(
+    keys.overview(ref.project),
+  );
+  if (!overview) return;
+  if (!findService(overview, ref)) {
+    queryClient.invalidateQueries({ queryKey: keys.overview(ref.project) });
+    return;
+  }
+  const summary = summarize(release);
+  const { number, status } = release;
+  const role = (r: ReleaseSummary | undefined, has: boolean) =>
+    has ? summary : r?.number === number ? undefined : r;
+  patchService(queryClient, ref, (s) => {
+    const active = role(s.active_release, status === "active");
+    return {
+      ...s,
+      service: { ...s.service, active_release: active?.number },
+      active_release: active,
+      deploying: role(s.deploying, inFlight(status)),
+      latest_release:
+        (s.latest_release?.number ?? 0) > number ? s.latest_release : summary,
+    };
+  });
+}
+
+/**
+ * Applies one event to the query cache. Frequent, small events (releases,
+ * progress lines, status, domains) patch it in place; the rest invalidate
+ * what they affect and let active queries refetch.
  */
 export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
   const ref = refOf(event);
@@ -112,10 +178,16 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
         keys.release(ref, release.number),
         (old) => old && { ...release, events: old.events },
       );
-      // Which release is active, deploying or latest lives in the overview.
-      queryClient.invalidateQueries({ queryKey: keys.overview(ref.project) });
-      // A push may have been dequeued; refetches only while it is shown.
-      queryClient.invalidateQueries({ queryKey: keys.git(ref) });
+      applyRelease(queryClient, ref, release);
+      // A queued push leaves the git view as its release starts building
+      // (after core.gitDeployStart), and the next one may start once a
+      // deploy ends. Refetches only while the view is shown.
+      if (
+        release.status === "building" ||
+        release.status === "active" ||
+        release.status === "failed"
+      )
+        queryClient.invalidateQueries({ queryKey: keys.git(ref) });
       return;
     }
     case "release_event": {
@@ -155,9 +227,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       });
       return;
     case "lagged":
-      // Events were dropped: everything on screen may be stale.
-      queryClient.invalidateQueries();
-      return;
+      return; // useLiveUpdates refetches, once however many arrive.
     case "usage":
       applyUsage(queryClient, event);
       return;
@@ -405,7 +475,7 @@ function invalidateForAudit(
   const invalidate = (queryKey: readonly unknown[]) =>
     queryClient.invalidateQueries({ queryKey });
   invalidate(["audit"]);
-  if (!audit) return;
+  if (!audit || auditedReads.has(audit.action)) return;
   if (audit.action === "project.rename") return; // Its typed event moves the cache.
   const [kind] = audit.action.split(".");
   if (kind === "project") invalidate(keys.projects);
@@ -425,22 +495,75 @@ function invalidateForAudit(
     (kind === "server" && audit.action.startsWith("server.tunnel"))
   )
     invalidate(cloudflareKey);
-  // Dock Analytics: sites, settings, the analytics server (ADR 0037). A
-  // domain added or removed may carry a site along or leave it.
-  if (kind === "analytics") invalidate(["analytics"]);
-  if (kind === "domain") invalidate(["analytics", "sites"]);
+  if (kind === "analytics") invalidateForAnalytics(queryClient, audit);
+  // A domain added or removed may carry a site along or leave it.
+  if (kind === "domain" && audit.project)
+    invalidate(["analytics", "sites", audit.project]);
   // Servers count what is placed on them.
   if (kind === "server" || kind === "environment") invalidate(keys.servers);
   if (!audit.project) return;
-  // Release progress has its own events; everything else in a project
-  // (variables, settings, changes, services, environments) refetches.
-  if (kind === "release") return;
+  // Release progress patches the overview (applyRelease), but starting a
+  // release takes the service's staged changes and may set its image, and
+  // a promotion may add services: the overview refetches, once per action.
+  if (kind === "release") {
+    invalidate(keys.overview(audit.project));
+    return;
+  }
+  // Everything else in a project (variables, settings, changes, services,
+  // environments) refetches.
   invalidate(
     audit.environment
       ? keys.env({ project: audit.project, environment: audit.environment })
       : keys.project(audit.project),
   );
   invalidate(keys.overview(audit.project));
+}
+
+// Audited reads: they add to the audit log and change nothing else. The
+// data panel's reads (browse, reveal, connect) are left out by dataParts.
+const auditedReads: ReadonlySet<string> = new Set([
+  "analytics.replay_view",
+  "org.variables_reveal",
+  "user.login",
+  "user.login_failed",
+]);
+
+// Analytics actions that name their site in the audit target.
+const siteActions: ReadonlySet<string> = new Set([
+  "analytics.goal_add",
+  "analytics.goal_remove",
+  "analytics.funnel_add",
+  "analytics.funnel_remove",
+]);
+
+/**
+ * Refreshes what a Dock Analytics action changed (ADR 0037). A site's
+ * views are keyed ["analytics", view, project, site, ...] and a project's
+ * sites ["analytics", "sites", project] (features/analytics/data.ts).
+ */
+function invalidateForAnalytics(
+  queryClient: QueryClient,
+  audit: components["schemas"]["AuditEvent"],
+) {
+  const { project, action, target } = audit;
+  if (!project) {
+    // The store moved or the install's defaults changed: every site's
+    // views, and the status.
+    queryClient.invalidateQueries({ queryKey: ["analytics"] });
+    return;
+  }
+  // Goals and funnels change one site's views. Hostnames turned on or off
+  // and site changes (a rename names only the new name) change the
+  // project's sites and their views.
+  const site = siteActions.has(action) ? target : undefined;
+  queryClient.invalidateQueries({
+    queryKey: ["analytics"],
+    predicate: ({ queryKey: [, , p, s] }) =>
+      p === project && (site === undefined || s === site),
+  });
+  // The first hostname turns analytics on.
+  if (action === "analytics.enable")
+    queryClient.invalidateQueries({ queryKey: ["analytics", "status"] });
 }
 
 // The parts of the database panel (keys.data(ref)[4]) each data.* action
@@ -488,10 +611,36 @@ export function useLiveUpdates() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const org = useOrg();
-  const recover = async (invalidate: boolean) => {
+  // After missed events: names first (a rename may be among them), then
+  // every active query refetches and the rest are only marked stale, for
+  // their next use. The project list was just fetched, so it is left out.
+  const recoverOnce = useEffectEvent(async () => {
     await reconcileProjectNames(queryClient, router, org);
-    if (invalidate && org === currentOrg())
-      await queryClient.invalidateQueries();
+    if (org !== currentOrg()) return;
+    const projects = queryClient
+      .getQueryCache()
+      .find({ queryKey: keys.projects, exact: true });
+    await queryClient.invalidateQueries({ predicate: (q) => q !== projects });
+  });
+  // One recovery at a time: gaps reported while one runs (a lagging
+  // client gets lagged per batch) share a single rerun, since the running
+  // one may have read before them.
+  const gap = useRef({ running: false, again: false });
+  const recover = async () => {
+    const g = gap.current;
+    if (g.running) {
+      g.again = true;
+      return;
+    }
+    g.running = true;
+    try {
+      do {
+        g.again = false;
+        await recoverOnce();
+      } while (g.again);
+    } finally {
+      g.running = false;
+    }
   };
   useEventStream<LiveEvent>(
     org ? `/api/v1/events?org=${encodeURIComponent(org)}` : "/api/v1/events",
@@ -504,10 +653,10 @@ export function useLiveUpdates() {
           org,
           event.project_renamed,
         )
-          .catch(() => recover(true))
+          .catch(recover)
           .catch(() => router.invalidate());
       } else if (event.type === "lagged") {
-        void recover(true).catch(() => router.invalidate());
+        void recover().catch(() => router.invalidate());
       } else {
         applyLiveEvent(queryClient, event);
       }
@@ -516,7 +665,11 @@ export function useLiveUpdates() {
     {
       // Reconcile after subscribing, including the initial read/subscribe gap.
       onReady: (reconnected) => {
-        void recover(reconnected).catch(() => router.invalidate());
+        void (
+          reconnected
+            ? recover()
+            : reconcileProjectNames(queryClient, router, org)
+        ).catch(() => router.invalidate());
       },
       // A refused stream usually means the session ended.
       onClose: async () => {

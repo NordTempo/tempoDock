@@ -14,8 +14,9 @@ import { usePageVisible } from "../stats/live";
 
 // Dock Analytics (ADR 0037): sites, their dashboards and settings, the
 // install's defaults and the analytics server. analytics.* audit events
-// refetch everything under analyticsKey (data/live.ts); dashboards don't
-// update by themselves, only the live view does, over its own stream.
+// refetch the site's or the project's keys (data/live.ts relies on the
+// ["analytics", view, project, site, ...] order); dashboards don't update
+// by themselves, only the live view does, over its own stream.
 
 type Schemas = components["schemas"];
 export type Site = Schemas["Site"];
