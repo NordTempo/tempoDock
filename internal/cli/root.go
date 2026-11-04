@@ -46,6 +46,31 @@ type globals struct {
 // run executes one command line against io and returns the exit code.
 func run(ctx context.Context, args []string, io *output.IO) int {
 	g := &globals{io: io, ctx: ctx}
+	root := newRoot(g)
+	root.SetArgs(args)
+	root.SetIn(io.In)
+	root.SetOut(io.Out)
+	root.SetErr(io.Err)
+	if isCompletion(args) {
+		registerCompletions(root)
+	}
+	cmd, err := root.ExecuteContextC(ctx)
+	if err == nil {
+		return 0
+	}
+	if code, ok := errors.AsType[exitStatus](err); ok {
+		return int(code) // `dock run`: the command's own status, nothing to print
+	}
+	io.JSON = g.json
+	if _, ok := errors.AsType[*output.Error](err); !ok && !g.started {
+		err = &output.Error{Exit: output.ExitUsage, Err: err, Hint: fmt.Sprintf("Run `%s --help` for usage.", cmd.CommandPath())}
+	}
+	io.PrintError(err)
+	return int(output.ExitCodeOf(err))
+}
+
+// newRoot is the `dock` command with every subcommand, sharing g.
+func newRoot(g *globals) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "dock",
 		Short:         "Deploy Docker apps to your own servers",
@@ -54,16 +79,12 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 		SilenceErrors: true,
 		PersistentPreRun: func(*cobra.Command, []string) {
 			g.started = true
-			io.JSON = g.json
+			g.io.JSON = g.json
 		},
 	}
 	root.PersistentFlags().BoolVar(&g.json, "json", false, "print stable, machine-readable JSON (see docs/cli.md)")
-	root.PersistentFlags().StringVar(&g.org, "org", "", "organization to act in (default: the linked one, then `dock org use`'s)")
+	root.PersistentFlags().StringVar(&g.org, "org", "", "organization to act in (default: the linked one, then the context's, set with dock org use)")
 	root.PersistentFlags().StringVar(&g.reason, "reason", "", "why you make this change; shown to the admin if a locked environment turns it into an access request")
-	root.SetArgs(args)
-	root.SetIn(io.In)
-	root.SetOut(io.Out)
-	root.SetErr(io.Err)
 	addGroup(root, "start", "Getting started:",
 		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newMeCmd(g), newContextCmd(g), newOrgCmd(g), newLogoutCmd(g), newVersionCmd(g),
 		newMCPCmd(g))
@@ -78,20 +99,7 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 	if cmds := serverCommands(); len(cmds) > 0 {
 		addGroup(root, "server", "Run a server:", cmds...)
 	}
-
-	cmd, err := root.ExecuteContextC(ctx)
-	if err == nil {
-		return 0
-	}
-	if code, ok := errors.AsType[exitStatus](err); ok {
-		return int(code) // `dock run`: the command's own status, nothing to print
-	}
-	io.JSON = g.json
-	if _, ok := errors.AsType[*output.Error](err); !ok && !g.started {
-		err = &output.Error{Exit: output.ExitUsage, Err: err, Hint: fmt.Sprintf("Run `%s --help` for usage.", cmd.CommandPath())}
-	}
-	io.PrintError(err)
-	return int(output.ExitCodeOf(err))
+	return root
 }
 
 // addGroup adds cmds to root under a help heading.

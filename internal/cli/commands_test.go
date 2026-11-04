@@ -324,7 +324,7 @@ func TestServiceStopStart(t *testing.T) {
 	if svc.StoppedAt == nil || svc.StoppedBy != "deploy" || svc.Status.State != apitypes.ServiceStopped {
 		t.Fatalf("stop = %+v", svc)
 	}
-	if code, stdout, _ := exec(t, append([]string{"status", "-s"}, web...)...); code != 0 || !strings.Contains(stdout, "by deploy (start it with `dock service start`)") {
+	if code, stdout, _ := exec(t, append([]string{"status", "-s"}, web...)...); code != 0 || !strings.Contains(stdout, "by deploy (start it with `dock service start -p shop -e production -s web`)") {
 		t.Fatalf("status of a stopped service = %d\n%s", code, stdout)
 	}
 

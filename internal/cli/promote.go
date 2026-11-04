@@ -32,7 +32,8 @@ exit 4 when nothing was promoted (every service skipped; the result, with
 --json too, still lists them). Needs deploy on <to>.`,
 		Example: `  dock promote staging production
   dock promote staging production -s web -s worker`,
-		Args: cobra.ExactArgs(2),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeEnvironmentArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, t, err := g.open(f, needProject)
 			if err != nil {
@@ -70,6 +71,7 @@ exit 4 when nothing was promoted (every service skipped; the result, with
 	}
 	f.add(cmd, needProject)
 	cmd.Flags().StringSliceVarP(&services, "service", "s", nil, "only these services (repeat, or comma-separated)")
+	_ = cmd.RegisterFlagCompletionFunc("service", completion(needProject, 0, listFromServices))
 	addDetachFlag(cmd, &detach)
 	return cmd
 }

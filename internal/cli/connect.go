@@ -59,7 +59,8 @@ password, pointed at the local port (audited as data.reveal).`,
 		Example: `  dock connect db                  # then: psql -h 127.0.0.1 -p 5432 -U postgres app
   dock connect db --show-url       # prints postgres://postgres:...@127.0.0.1:5432/app
   dock connect cache --port 6380 -e production --confirm production`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			s, t, err := g.open(f, needService)

@@ -206,7 +206,7 @@ soon as no other deploy of the service runs; follow it with ` + "`dock status`" 
 				return err
 			}
 			return g.io.Print(res, func() error {
-				g.io.Successf("Queued %s for %s; follow it with `dock status` or `dock releases`", commitText(res.Commit), t)
+				g.io.Successf("Queued %s for %s; follow it with `dock status %s` or `dock releases %s`", commitText(res.Commit), t, t.flags(), t.flags())
 				return nil
 			})
 		},

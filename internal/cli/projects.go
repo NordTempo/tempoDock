@@ -80,9 +80,10 @@ func newProjectCmd(g *globals) *cobra.Command {
 func newProjectArchiveCmd(g *globals) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "archive <name>",
-		Short: "Archive a project and all its services, keeping volumes and history",
-		Args:  cobra.ExactArgs(1),
+		Use:               "archive <name>",
+		Short:             "Archive a project and all its services, keeping volumes and history",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeProjectArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()
 			if err != nil {
@@ -182,7 +183,8 @@ eligible server with the most free memory.`,
 func newProjectRenameCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use: "rename <current> <new>", Short: "Rename a project and its address, keeping services and domains unchanged",
-		Args: cobra.ExactArgs(2),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeProjectArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()
 			if err != nil {

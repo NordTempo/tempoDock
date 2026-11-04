@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -70,13 +72,15 @@ func (w *watcher) close() {
 	}
 }
 
+// releaseKey identifies an open release among an apply's several services.
 type releaseKey struct {
 	service string
 	number  int64
 }
 
+// releasePath is r's API path.
 func releasePath(r apitypes.Release) string {
-	return target{r.Project, r.Environment, r.Service}.servicePath() + "/releases/" + itoa(r.Number)
+	return releaseTarget(r).servicePath() + "/releases/" + itoa(r.Number)
 }
 
 // follow prints the progress of rels until each is done, and returns them
@@ -168,10 +172,15 @@ func interrupted(err error, rels []apitypes.Release) error {
 	if !errors.Is(err, context.Canceled) || len(rels) == 0 {
 		return err
 	}
+	hint := fmt.Sprintf("Follow it again with `dock release wait %d %s`.", rels[0].Number, releaseTarget(rels[0]).flags())
+	if len(rels) > 1 {
+		t := releaseTarget(rels[0])
+		hint = fmt.Sprintf("Check on them with `dock status -a %s`.", target{Project: t.Project, Environment: t.Environment}.flags())
+	}
 	return &output.Error{
 		Exit:    output.ExitError,
 		Message: "stopped following; the deploy continues on the server",
-		Hint:    fmt.Sprintf("Check on it with `dock release show %d -s %s`.", rels[0].Number, rels[0].Service),
+		Hint:    hint,
 	}
 }
 
@@ -182,7 +191,7 @@ func releaseFailure(ctx context.Context, s *session, r apitypes.Release) error {
 		return nil
 	}
 	serving := "Nothing else is serving this service."
-	t := target{r.Project, r.Environment, r.Service}
+	t := releaseTarget(r)
 	if svc, err := get[apitypes.Service](ctx, s, t.servicePath()); err == nil {
 		switch {
 		case svc.StoppedAt != nil:
@@ -191,9 +200,9 @@ func releaseFailure(ctx context.Context, s *session, r apitypes.Release) error {
 			serving = fmt.Sprintf("Release %d is still serving; traffic was not switched.", *svc.ActiveRelease)
 		}
 	}
-	see := fmt.Sprintf("See what happened: `dock release show %d`.", r.Number)
+	see := fmt.Sprintf("See what happened: `dock release show %d %s`.", r.Number, t.flags())
 	if r.ErrorCode == apitypes.CodeBuildFailed {
-		see = fmt.Sprintf("See the build log: `dock logs --build --release %d`.", r.Number)
+		see = fmt.Sprintf("See the build log: `dock logs --build --release %d %s`.", r.Number, t.flags())
 	}
 	code := r.ErrorCode
 	if code == "" {
@@ -205,6 +214,28 @@ func releaseFailure(ctx context.Context, s *session, r apitypes.Release) error {
 		Message: fmt.Sprintf("release %d of %s failed: %s", r.Number, r.Service, r.Error),
 		Hint:    serving + " " + see,
 	}
+}
+
+// deployInProgress gives a deploy_in_progress error a hint that waits for
+// the deploy holding t: `dock release wait N -p -e -s`, with N when the
+// message names the release ("release 12 of shop/production/web is already
+// deploying"). Other errors are returned as they are.
+func deployInProgress(err error, t target) error {
+	e, ok := errors.AsType[*output.Error](err)
+	if !ok || e.Code != string(apitypes.CodeDeployInProgress) {
+		return err
+	}
+	wait := "dock release wait"
+	if _, rest, ok := strings.Cut(e.Error(), "release "); ok {
+		if num, _, ok := strings.Cut(rest, " of "); ok {
+			if n, err := strconv.ParseInt(num, 10, 64); err == nil {
+				wait += " " + itoa(n)
+			}
+		}
+	}
+	c := *e
+	c.Hint = fmt.Sprintf("Wait for it with `%s %s`, then try again.", wait, t.flags())
+	return &c
 }
 
 // startAndFollow runs start (which starts one release) and follows it
@@ -220,12 +251,12 @@ func (g *globals) startAndFollow(ctx context.Context, s *session, t target, deta
 	}
 	rel, err := start()
 	if err != nil {
-		return err
+		return deployInProgress(err, t)
 	}
 	if detach {
 		return g.io.Print(rel, func() error {
 			g.io.Successf("Release %d of %s queued (%s)", rel.Number, t, rel.Source)
-			g.io.Progressf("Follow it with `dock release show %d`.", rel.Number)
+			g.io.Progressf("Follow it with `dock release wait %d %s`.", rel.Number, releaseTarget(rel).flags())
 			return nil
 		})
 	}
@@ -238,19 +269,22 @@ func (g *globals) startAndFollow(ctx context.Context, s *session, t target, deta
 
 // finishRelease prints a finished release: its JSON, or where it is live.
 // A failed release is a deploy_failed error (after its JSON, with --json).
+// Its JSON carries the end of its logs; humans see the end of its output,
+// since its build log was either streamed already or is named by the hint.
 func (g *globals) finishRelease(ctx context.Context, s *session, r apitypes.Release) error {
-	err := g.io.Print(r, func() error {
-		if r.Status != apitypes.ReleaseActive {
-			return nil
-		}
-		g.io.Successf("Release %d of %s is live", r.Number, r.Service)
-		domains, err := get[[]apitypes.Domain](ctx, s, target{r.Project, r.Environment, r.Service}.servicePath()+"/domains")
-		if err != nil {
-			return nil // nice to have
-		}
-		for _, d := range domains {
-			if d.RedirectTo == "" {
-				_, _ = fmt.Fprintln(g.io.Out, "  "+d.URL)
+	v := g.viewRelease(ctx, s, r, defaultLogLines)
+	err := g.io.Print(v, func() error {
+		switch r.Status {
+		case apitypes.ReleaseActive:
+			g.printLive(ctx, s, r)
+		case apitypes.ReleaseSuperseded:
+			g.io.Successf("Release %d of %s went live and has since been superseded", r.Number, r.Service)
+		case apitypes.ReleaseFailed:
+			if v.Logs != nil && len(v.Logs.Container) > 0 {
+				g.io.Progressf("Last output of release %d:", r.Number)
+				for _, l := range v.Logs.Container {
+					g.io.Detail(l)
+				}
 			}
 		}
 		return nil
@@ -259,6 +293,20 @@ func (g *globals) finishRelease(ctx context.Context, s *session, r apitypes.Rele
 		return err
 	}
 	return releaseFailure(ctx, s, r)
+}
+
+// printLive says that r is live and lists the URLs it serves.
+func (g *globals) printLive(ctx context.Context, s *session, r apitypes.Release) {
+	g.io.Successf("Release %d of %s is live", r.Number, r.Service)
+	domains, err := get[[]apitypes.Domain](ctx, s, releaseTarget(r).servicePath()+"/domains")
+	if err != nil {
+		return // nice to have
+	}
+	for _, d := range domains {
+		if d.RedirectTo == "" {
+			_, _ = fmt.Fprintln(g.io.Out, "  "+d.URL)
+		}
+	}
 }
 
 func addDetachFlag(cmd *cobra.Command, detach *bool) {

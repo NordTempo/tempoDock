@@ -495,8 +495,9 @@ func newProjectPinCmd(g *globals) *cobra.Command {
 		Long: `Pin where a project's environments of one kind will live, before any of
 them exist. Without a pin, the first environment of a kind goes to the
 eligible server with the most free memory. The server must accept the kind.`,
-		Example: "  dock project pin shop --kind production --server vps-2",
-		Args:    cobra.ExactArgs(1),
+		Example:           "  dock project pin shop --kind production --server vps-2",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeProjectArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			k, err := parseKind(kind)
 			if err != nil {

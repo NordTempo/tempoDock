@@ -25,9 +25,7 @@ func TestLogsFilter(t *testing.T) {
 	srv.rt.AddStderr(ctr, "error: db timeout", "warn: slow query")
 
 	code, stdout, stderr := exec(t, append([]string{"logs", "--grep", "error", "--stderr"}, target...)...)
-	// TrimSpace: apiclient.Each prints the stream's `ready` event as an
-	// empty line.
-	if code != 0 || strings.TrimSpace(stdout) != "error: db timeout" {
+	if code != 0 || stdout != "error: db timeout\n" {
 		t.Fatalf("logs --grep error --stderr: exit %d\n%q\n%s", code, stdout, stderr)
 	}
 	if code, _, stderr := exec(t, append([]string{"logs", "--build", "--grep", "x"}, target...)...); code != int(output.ExitUsage) || !strings.Contains(stderr, "grep") {

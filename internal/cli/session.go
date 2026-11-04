@@ -99,6 +99,25 @@ func (t target) String() string {
 	return strings.Join(parts, "/")
 }
 
+// flags renders t as the -p, -e and -s flags that address it ("-p shop -e
+// production -s web"), for hints that name a command to run next: with them
+// the command works outside a linked directory too. Names are DNS-safe, so
+// they need no quoting.
+func (t target) flags() string {
+	parts := make([]string, 0, 6)
+	for _, f := range [...]struct{ flag, name string }{{"-p", t.Project}, {"-e", t.Environment}, {"-s", t.Service}} {
+		if f.name != "" {
+			parts = append(parts, f.flag, f.name)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// releaseTarget is the service r belongs to.
+func releaseTarget(r apitypes.Release) target {
+	return target{r.Project, r.Environment, r.Service}
+}
+
 // scope says how much of a target a command needs.
 type scope int
 

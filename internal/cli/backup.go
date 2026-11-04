@@ -37,10 +37,11 @@ touched.`,
 func newBackupListCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	cmd := &cobra.Command{
-		Use:     "list [service]",
-		Aliases: []string{"ls"},
-		Short:   "List a service's backups and restores",
-		Args:    cobra.MaximumNArgs(1),
+		Use:               "list [service]",
+		Aliases:           []string{"ls"},
+		Short:             "List a service's backups and restores",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			s, t, err := g.open(f, needService)
@@ -143,7 +144,8 @@ func newBackupRunCmd(g *globals) *cobra.Command {
 --control-plane backs up the control plane itself (its database, keys and
 config) into the repository instead, as it does daily (admin). For a file
 to move the control plane with, run ` + "`dock admin backup`" + ` on its server.`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if controlPlane {
 				if len(args) > 0 || f.service != "" {
@@ -169,7 +171,7 @@ to move the control plane with, run ` + "`dock admin backup`" + ` on its server.
 			return g.io.Print(run, func() error {
 				switch run.Status {
 				case apitypes.BackupRunning:
-					g.io.Successf("Started backup %d of %s; follow it with `dock backup list`", run.ID, t.Service)
+					g.io.Successf("Started backup %d of %s; follow it with `dock backup list %s`", run.ID, t.Service, t.flags())
 				case apitypes.BackupSucceeded:
 					g.io.Successf("Backed up %s: snapshot %s, %s, to %s", t.Service, snapshotID(run.Snapshot), bytesize(run.SizeBytes), run.Repository)
 				}
@@ -264,8 +266,9 @@ func newBackupRestoreCmd(g *globals) *cobra.Command {
 		Long: `Restore a template database's snapshot into a NEW service from the same
 template, with new credentials. The live service is never touched: when the
 new one checks out, point references at it (e.g. ${{postgres-restored.DATABASE_URL}}).`,
-		Example: "  dock backup restore postgres --snapshot 4cf53263 --as postgres-old",
-		Args:    cobra.MaximumNArgs(1),
+		Example:           "  dock backup restore postgres --snapshot 4cf53263 --as postgres-old",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			if snapshot == "" {
@@ -288,7 +291,7 @@ new one checks out, point references at it (e.g. ${{postgres-restored.DATABASE_U
 			}
 			return g.io.Print(res, func() error {
 				if res.Restore.Status == apitypes.BackupRunning {
-					g.io.Successf("Created %s; the restore continues in the background (`dock backup list`)", res.Service.Name)
+					g.io.Successf("Created %s; the restore continues in the background (`dock backup list %s`)", res.Service.Name, target{t.Project, t.Environment, res.Service.Name}.flags())
 				} else {
 					g.io.Successf("Restored snapshot %s into %s", snapshotID(res.Restore.Snapshot), res.Service.Name)
 				}
@@ -313,7 +316,8 @@ func newBackupScheduleCmd(g *globals) *cobra.Command {
 		Short: "Turn a service's daily backups on or off, or move them",
 		Example: `  dock backup schedule postgres --hour 4
   dock backup schedule worker --off`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			var req apitypes.UpdateBackupScheduleRequest

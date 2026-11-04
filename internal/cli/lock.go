@@ -30,8 +30,9 @@ the token that asked. People in the web UI are not affected.
 
 Locking an environment that is open for a while closes it again. Needs
 admin.`,
-		Example: `  dock environment lock production --reason "live, customers use it"`,
-		Args:    cobra.MaximumNArgs(1),
+		Example:           `  dock environment lock production --reason "live, customers use it"`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeEnvironmentArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			t, s, err := lockTarget(g, f, args)
 			if err != nil {
@@ -65,8 +66,9 @@ week), after which it locks again by itself.
 The lock applies to this command too: run with a token (as the CLI always
 is) in a locked environment, it files an access request that an admin
 approves in the UI. Unlocking from the UI takes effect at once.`,
-		Example: `  dock environment unlock production --for 30m`,
-		Args:    cobra.MaximumNArgs(1),
+		Example:           `  dock environment unlock production --for 30m`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeEnvironmentArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if open < 0 || open > 7*24*time.Hour || open%time.Minute != 0 {
 				return &output.Error{Exit: output.ExitUsage, Message: "--for must be whole minutes, at most a week (168h)"}

@@ -156,16 +156,17 @@ func (g *globals) findDrain(ctx context.Context, s *session, t target, idOrName 
 		}
 	}
 	return apitypes.LogDrain{}, &output.Error{Exit: output.ExitNotFound, Message: fmt.Sprintf("no log drain %q in %s", idOrName, t),
-		Hint: "Run `dock logs drain list` to see the environment's drains."}
+		Hint: fmt.Sprintf("Run `dock logs drain list %s` to see the environment's drains.", t.flags())}
 }
 
 func newLogDrainRemoveCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "remove <id|name>",
-		Short: "Stop sending the environment's output to a drain (admin)",
-		Args:  cobra.ExactArgs(1),
+		Use:               "remove <id|name>",
+		Short:             "Stop sending the environment's output to a drain (admin)",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeDrainArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, t, err := g.open(f, needEnvironment)
 			if err != nil {
@@ -197,9 +198,10 @@ func newLogDrainRemoveCmd(g *globals) *cobra.Command {
 func newLogDrainTestCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	cmd := &cobra.Command{
-		Use:   "test <id|name>",
-		Short: "Send a test line to a drain (admin)",
-		Args:  cobra.ExactArgs(1),
+		Use:               "test <id|name>",
+		Short:             "Send a test line to a drain (admin)",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeDrainArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, t, err := g.open(f, needEnvironment)
 			if err != nil {
