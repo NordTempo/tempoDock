@@ -474,8 +474,57 @@ scenario_nodedown() {
 	expect_release $p web "$n" active
 }
 
+# on_node P: put P's staging environment on the node (pinned before it
+# exists) and use it as ENV_NAME in the caller (declare `local ENV_NAME`).
+on_node() {
+	local node=${E2E_NODE_CONTAINER:-e2e2-node1}
+	ENV_NAME=staging
+	api PUT "/projects/$1/placements/non_production" "{\"server\":\"$node\"}" >/dev/null &&
+		dk environment create staging -p "$1" >/dev/null 2>&1 &&
+		[[ $(env_server "$1") == "$node" ]] || { fail "$1: staging is not on $node"; return 1; }
+	use_proxy_of "$1"
+}
+
+# Stop and start on the node: its Caddy must answer 503 too (node protocol 17).
+scenario_stopnode() {
+	local p=e2e2-stopn-$RUN h code ENV_NAME
+	fresh $p || return
+	on_node $p || return
+	h=$(busybox_web $p web on-node) || return
+	check "$h serves from the node" body_has "$h" / on-node
+	check "dock service stop on the node" dk service stop web $(pe $p) --yes
+	code=$(http_code "$h" /)
+	if [[ $code == 503 ]]; then pass "the node answers 503 while stopped"; else fail "the node answers $code while stopped, want 503"; fi
+	check "no container runs on the node while stopped" test -z "$(service_containers $p web)"
+	check "a stopped service's logs read without error on the node" dk logs -s web -n 0 $(pe $p)
+	check "dock service start on the node" dk service start web $(pe $p)
+	check "$h serves again" wait_for 60 body_has "$h" / on-node
+}
+
+# A backup on the node that runs well past the node link's 30 s call
+# timeout (ADR 0045 lifted it for jobs). E2E_BACKUP_ROWS sizes it.
+scenario_backup() {
+	local p=e2e2-bak-$RUN rows=${E2E_BACKUP_ROWS:-20000000} t0 took out ENV_NAME
+	fresh $p || return
+	on_node $p || return
+	dk service create db $(pe $p) --template postgres >/dev/null || { fail "$p: db not created"; return; }
+	check "db is active on the node" wait_for 180 newest_active $p db
+	sleep 3
+	log "filling db with $rows rows"
+	dk run db $(pe $p) --timeout 30m -- "psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"create table big as select g, md5(random()::text) || md5(random()::text) as v from generate_series(1, $rows) g\"" >/dev/null 2>&1 ||
+		{ fail "filling the database failed"; return; }
+	log "database size: $(psql_in $p db "select pg_size_pretty(pg_database_size(current_database()))")"
+	t0=$SECONDS
+	out=$(dk backup run db $(pe $p) 2>&1)
+	local rc=$?
+	took=$((SECONDS - t0))
+	if [[ $rc -eq 0 ]] && grep -qiE 'done|complete|✓' <<<"$out"; then pass "the backup on the node finished in ${took}s"; else fail "backup on the node after ${took}s: $(tail -5 <<<"$out")"; fi
+	((took > 30)) && pass "the backup ran past 30 s ($took s)" || log "note: the backup took only ${took}s; raise E2E_BACKUP_ROWS"
+	check "dock backup list shows it succeeded" out_has 'succeeded|done|ok' dk backup list -s db $(pe $p)
+}
+
 main() {
-	local all=(predeploy stopstart run lock logs snapshot apply health nodedown)
+	local all=(predeploy stopstart stopnode run lock logs snapshot apply health nodedown backup)
 	for s in "${@:-${all[@]}}"; do
 		log "scenario $s"
 		"scenario_$s"
