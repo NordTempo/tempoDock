@@ -4,6 +4,12 @@
 
 : "${DOCK_URL:?set DOCK_URL, e.g. http://192.168.10.50:7070}"
 : "${DOCK_TOKEN:?set DOCK_TOKEN to an admin API token}"
+# Scenarios create and archive projects: never against production by
+# accident. The CLI below always runs with DOCK_URL, so no context applies.
+case "$DOCK_URL" in
+*100.95.4.67*)
+	[[ ${E2E_ALLOW_PROD:-} == 1 ]] || { echo "refusing to run e2e against production ($DOCK_URL); set E2E_ALLOW_PROD=1 if you mean it" >&2; exit 1; } ;;
+esac
 API="${DOCK_URL%/}/api/v1"
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_NAME="${DOCK_ENV:-production}"

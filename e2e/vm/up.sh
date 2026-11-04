@@ -70,6 +70,9 @@ token=$(cat "$STATE/token")
 docker exec e2e2-cp bash -c "grep -q allow_private /etc/dock/config.toml && sed -i 's|^allow_private.*|allow_private = [\"$SUBNET\"]|' /etc/dock/config.toml || printf '\n[network]\nallow_private = [\"$SUBNET\"]\n' >>/etc/dock/config.toml; systemctl restart dock-firewall dock"
 
 export DOCK_URL=http://$CP_IP:7070 DOCK_TOKEN=$token
+# The CLI only ever talks to this control plane (DOCK_URL wins over any
+# context in the user's config); never to production.
+[[ $DOCK_URL != *100.95.4.67* || ${E2E_ALLOW_PROD:-} == 1 ]] || { echo "refusing: $DOCK_URL is production" >&2; exit 1; }
 for _ in $(seq 60); do curl -fsS "$DOCK_URL/api/v1/health" >/dev/null 2>&1 && break; sleep 1; done
 cat >"$STATE/env" <<EOF
 export DOCK_URL=$DOCK_URL DOCK_TOKEN=$token E2E_PROXY=$CP_IP:80 E2E_BASE_DOMAIN=$BASE_DOMAIN

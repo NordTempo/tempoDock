@@ -115,13 +115,19 @@ scenario_predeploy() {
 	check "the failed release's changes are staged again" out_has APP_VERSION dk changes $(pe $p)
 }
 
-# service_containers P S prints the running containers of service S on the
-# server container E2E_CP_CONTAINER (default e2e2-cp), via its Docker.
+# env_server P prints the server P's environment runs on.
+env_server() { api GET "/projects/$1/environments" | jq -r --arg e "$ENV_NAME" '.[] | select(.name == $e) | .server'; }
+
+# service_containers P S prints the running containers of service S, via
+# the Docker of its server's container (e2e/vm names them as the servers).
 service_containers() {
 	local id
 	id=$(api GET "$(svc_path "$1" "$2")" | jq -r .id)
-	docker exec "${E2E_CP_CONTAINER:-e2e2-cp}" docker ps -q --filter label=dock.managed=true --filter "label=dock.service=$id"
+	docker exec "$(env_server "$1")" docker ps -q --filter label=dock.managed=true --filter "label=dock.service=$id"
 }
+
+# logs_kept P S N: release N's removed container's output was archived.
+logs_kept() { [[ $(release "$1" "$2" "$3" | jq -r .logs_kept) == true ]]; }
 
 # status_line P S prints the service's row of dock status.
 status_line() { dk status $(pe "$1") 2>&1 | grep -E "^$2 "; }
@@ -273,6 +279,92 @@ scenario_lock() {
 	check "an admin token can't unlock either: it files a request" out_has "access request" dk environment unlock $ENV_NAME -p $p
 	check "admin unlocks in a UI session" ui_api POST "/projects/$p/environments/$ENV_NAME/unlock" '{}'
 	check "after unlock the token deploys directly" bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: Bearer $tok' -H 'Content-Type: application/json' --data '{}' '$API$(svc_path $p web)/releases') == 20? ]]"
+}
+
+# sink_start starts e2e2-sink on e2e2-net: an HTTP server that appends
+# every POST body to a file and returns them all on GET /got. Prints its URL.
+SINK_IP=${E2E_SINK_IP:-10.250.250.20}
+sink_start() {
+	docker rm -fv e2e2-sink >/dev/null 2>&1
+	docker run -d --name e2e2-sink --network e2e2-net --ip "$SINK_IP" python:3.13-alpine python -c '
+import http.server
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        open("/tmp/got", "ab").write(self.rfile.read(n) + b"\n")
+        self.send_response(204); self.end_headers()
+    def do_GET(self):
+        self.send_response(200); self.end_headers()
+        try: self.wfile.write(open("/tmp/got", "rb").read())
+        except FileNotFoundError: pass
+http.server.ThreadingHTTPServer(("", 8080), H).serve_forever()' >/dev/null
+	wait_for 30 curl -fsS -o /dev/null "http://$SINK_IP:8080/got"
+	echo "http://$SINK_IP:8080/ingest"
+}
+
+# sink_has PATTERN: the sink received a line matching PATTERN.
+sink_has() { curl -fsS "http://$SINK_IP:8080/got" | grep -qE -- "$1"; }
+
+scenario_logs() {
+	local p=e2e2-logs-$RUN n1 n2 url
+	fresh $p || return
+	ensure_service $p worker '{"image":"busybox:1.37","port":8080,"start_command":"sh -c \"echo boot-$MSG; (while true; do echo tick-$MSG; sleep 1; done) & mkdir -p /tmp/w && exec httpd -f -p 8080 -h /tmp/w\""}'
+	set_vars $p worker '{"MSG":"hist1"}'
+	n1=$(api POST "$(svc_path $p worker)/releases" '{}' | jq -r .number)
+	expect_release $p worker "$n1" active
+	sleep 3
+	set_vars $p worker '{"MSG":"hist2"}' true
+	n2=$(newest $p worker)
+	expect_release $p worker "$n2" active
+	check "release $n1's logs are archived" wait_for 90 logs_kept $p worker "$n1"
+	check "release $n1's container is gone" test "$(service_containers $p worker | wc -l)" -eq 1
+	check "dock logs -r $n1 reads the removed container's output" out_has 'boot-hist1' dk logs -s worker -r "$n1" -n 0 $(pe $p)
+	check "release $n1's history has its ticks" out_has 'tick-hist1' dk logs -s worker -r "$n1" $(pe $p)
+	check "the active release's logs are its own" bash -c "'${DOCK_BIN:-$E2E_DIR/../bin/dock}' logs -s worker $(pe $p) 2>&1 | grep -q boot-hist2 && ! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' logs -s worker $(pe $p) 2>&1 | grep -q boot-hist1"
+
+	# A drain to an HTTP sink.
+	url=$(sink_start) || { fail "log sink didn't start"; return; }
+	check "dock logs drain add http" dk logs drain add http "$url" --name sink --header X-E2E=yes $(pe $p)
+	check "dock logs drain list shows it" out_has sink dk logs drain list $(pe $p)
+	check "the sink receives the running service's lines" wait_for 60 sink_has 'tick-hist2'
+	check "drained lines carry project and service" sink_has "\"service\": ?\"worker\".*|\"project\": ?\"$p\""
+	set_vars $p worker '{"MSG":"hist3"}' true
+	check "a new release's lines are drained too" wait_for 120 sink_has 'boot-hist3'
+	local id
+	id=$(api GET "/projects/$p/environments/$ENV_NAME/log-drains" | jq -r '.[0].id')
+	check "drain test delivers" api POST "/projects/$p/environments/$ENV_NAME/log-drains/$id/test" '{}'
+	check "dock logs drain remove" dk logs drain remove sink --yes $(pe $p)
+	docker rm -fv e2e2-sink >/dev/null 2>&1
+}
+
+# psql_in P S SQL runs SQL in service S's own database through dock run,
+# printing unaligned tuples.
+psql_in() { dk run "$2" -p "$1" -e "$ENV_NAME" -- "psql \"\$DATABASE_URL\" -tAc \"$3\"" 2>/dev/null; }
+
+scenario_snapshot() {
+	local p=e2e2-snap-$RUN sid out
+	fresh $p || return
+	dk service create db $(pe $p) --template postgres >/dev/null || { fail "$p: db not created"; return; }
+	check "db is active" wait_for 180 newest_active $p db
+	sleep 3
+	psql_in $p db "create table t (n int); insert into t select generate_series(1, 3)" >/dev/null
+	check "three rows before the snapshot" out_has '^3$' psql_in $p db "select count(*) from t"
+	out=$(dk volume snapshot -s db $(pe $p) --note "e2e before" --json 2>/dev/null)
+	sid=$(jq -r '.id // .snapshot.id' <<<"$out")
+	if [[ $sid =~ ^[0-9]+$ ]]; then pass "snapshot $sid taken ($(jq -r '.size_bytes // empty' <<<"$out") bytes, paused $(jq -r '.paused_ms // empty' <<<"$out") ms)"; else fail "no snapshot: $out"; return; fi
+	check "the snapshot is listed" out_has "e2e before" dk volume snapshot list -s db $(pe $p)
+	psql_in $p db "delete from t; insert into t values (99)" >/dev/null
+	check "the data changed after the snapshot" out_has '^1$' psql_in $p db "select count(*) from t"
+
+	check "restore into a new service" dk volume snapshot restore "$sid" -s db --as db-old $(pe $p) --yes
+	check "db-old is active" wait_for 180 newest_active $p db-old
+	check "db-old has the snapshot's three rows" wait_for 60 out_has '^3$' psql_in $p db-old "select count(*) from t"
+	check "db itself was not touched" out_has '^99$' psql_in $p db "select n from t"
+
+	check "restore in place" dk volume snapshot restore "$sid" -s db --in-place $(pe $p) --yes
+	check "db is active after the in-place restore" wait_for 180 newest_active $p db
+	check "db has the snapshot's three rows again" wait_for 60 out_has '^3$' psql_in $p db "select count(*) from t"
+	check "the in-place restore left a safety snapshot" test "$(api GET "$(svc_path $p db)/snapshots" | jq 'if type == "array" then . else .snapshots end | length')" -ge 2
 }
 
 main() {
