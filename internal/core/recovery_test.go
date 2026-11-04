@@ -52,9 +52,11 @@ func TestStatefulRestartSurvivesDaemonRestart(t *testing.T) {
 	p.c.NodeStatus(remote.State{ServerID: p.ids["homelab"], Server: "homelab", Status: remote.StatusOnline})
 
 	eventually(t, "release 1 to run again, alone", func() bool { return slices.Equal(lab.Running(), []string{p.ctr(db, 1)}) })
-	if ids, err := p.store.ListEnsureRunning(p.ctx, p.ids["homelab"]); err != nil || len(ids) != 0 {
-		t.Fatalf("still to start: %v, %v", ids, err)
-	}
+	// The row is deleted just after the container starts.
+	eventually(t, "nothing left to start", func() bool {
+		ids, err := p.store.ListEnsureRunning(p.ctx, p.ids["homelab"])
+		return err == nil && len(ids) == 0
+	})
 }
 
 // Recovery never starts a stateful release next to a leftover container
