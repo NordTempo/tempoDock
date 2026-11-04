@@ -94,6 +94,8 @@ func GarbageCollect(ctx context.Context, docker *client.Client, registry string,
 		return fmt.Errorf("garbage collect: create %s: %w", name, err)
 	}
 	defer func() {
+		// Without RemoveVolumes: the collector's volumes are the registry's
+		// own (VolumesFrom), which must stay.
 		_, _ = docker.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
 	}()
 	if _, err := docker.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {

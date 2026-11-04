@@ -104,7 +104,9 @@ type Containers interface {
 	// by it. Core calls it for a container whose health check keeps
 	// failing (ADR 0043).
 	Restart(ctx context.Context, id string, timeout time.Duration) error
-	// Remove removes a stopped container. Never removes volumes.
+	// Remove removes a stopped container with its anonymous volumes (an
+	// image's VOLUME no Dock volume covers: no later container mounts
+	// them). Never removes a named volume.
 	Remove(ctx context.Context, id string) error
 	// Inspect returns the current state of one container.
 	Inspect(ctx context.Context, id string) (Container, error)

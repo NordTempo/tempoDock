@@ -38,7 +38,9 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 	defer func() {
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		_, _ = r.cli.ContainerRemove(cctx, created.ID, client.ContainerRemoveOptions{Force: true})
+		// With its anonymous volumes (see Remove): a job of a Postgres
+		// image would leave one per run.
+		_, _ = r.cli.ContainerRemove(cctx, created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 		if attached != nil {
 			attached.Close()
 		}

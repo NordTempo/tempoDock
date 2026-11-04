@@ -238,7 +238,7 @@ func runInVolume(t *testing.T, docker *client.Client, volume, cmd string) string
 		t.Fatal(err)
 	}
 	defer func() {
-		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}()
 	if _, err := docker.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		t.Fatal(err)

@@ -62,7 +62,7 @@ func newEnv(t *testing.T) *testEnv {
 		f := client.Filters{}.Add("name", e.prefix)
 		list, _ := r.cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 		for _, c := range list.Items {
-			_, _ = r.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+			_, _ = r.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 		}
 		vols, _ := r.cli.VolumeList(ctx, client.VolumeListOptions{Filters: f})
 		for _, v := range vols.Items {

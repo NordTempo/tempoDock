@@ -388,7 +388,7 @@ func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Cont
 	cleanup := func() {
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		_, _ = r.cli.ContainerRemove(cctx, created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = r.cli.ContainerRemove(cctx, created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}
 	if _, err := r.cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		cleanup()
@@ -588,12 +588,16 @@ func (r *Runtime) Restart(ctx context.Context, id string, timeout time.Duration)
 	return nil
 }
 
-// Remove removes a stopped managed container, keeping its volumes.
+// Remove removes a stopped managed container with its anonymous volumes:
+// the ones Docker creates for an image's VOLUME that no Dock volume covers
+// (a Postgres image without one, say). No later container ever mounts
+// them again, so kept they would only fill the disk. Named volumes, which
+// are all of Dock's own, are never removed.
 func (r *Runtime) Remove(ctx context.Context, id string) error {
 	if _, err := r.inspect(ctx, id); err != nil {
 		return err
 	}
-	if _, err := r.cli.ContainerRemove(ctx, id, client.ContainerRemoveOptions{}); err != nil {
+	if _, err := r.cli.ContainerRemove(ctx, id, client.ContainerRemoveOptions{RemoveVolumes: true}); err != nil {
 		return fmt.Errorf("remove container %s: %w", id, err)
 	}
 	return nil
