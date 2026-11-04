@@ -109,6 +109,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     Domains:
       view.domains.some(domainNeedsAttention) ||
       changes.domains.some((d) => d.service === ref.service),
+    Uptime: view.uptime?.state === "down",
     Variables: changes.variables.some(mine),
     Settings:
       changes.settings.some(mine) ||
