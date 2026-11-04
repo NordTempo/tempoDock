@@ -310,6 +310,13 @@ func (c *Core) takeClaimed(ctx context.Context, ss svcScope, row store.VolumeSna
 	fin := store.FinishSnapshotParams{Status: string(apitypes.SnapshotReady), SizeBytes: size, PausedMs: paused.Milliseconds(), FinishedAt: ptr(now()), ID: row.ID}
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.SnapshotFailed), err.Error()
+	}
+	// Recorded before the audit event announces it, so whoever the event
+	// wakes (MCP's create_snapshot) reads the outcome.
+	if ferr := c.store.FinishSnapshot(ctx, fin); ferr != nil {
+		c.log.Error("record snapshot", "snapshot", row.ID, "err", ferr)
+	}
+	if err != nil {
 		c.audit(ctx, System, "snapshot.failed", &ss.project, &ss.env, ss.String(), fmt.Sprintf("snapshot %d failed: %v", row.ID, err))
 	} else {
 		summary := fmt.Sprintf("snapshot %d (%s): %s", row.ID, row.Trigger, humanBytes(size))
@@ -317,9 +324,6 @@ func (c *Core) takeClaimed(ctx context.Context, ss svcScope, row store.VolumeSna
 			summary += fmt.Sprintf(", paused %s", paused.Round(time.Millisecond))
 		}
 		c.audit(ctx, System, "snapshot.created", &ss.project, &ss.env, ss.String(), summary)
-	}
-	if ferr := c.store.FinishSnapshot(ctx, fin); ferr != nil {
-		c.log.Error("record snapshot", "snapshot", row.ID, "err", ferr)
 	}
 	row.Status, row.Error, row.SizeBytes, row.PausedMs, row.FinishedAt = fin.Status, fin.Error, fin.SizeBytes, fin.PausedMs, fin.FinishedAt
 	if err == nil && prune {
@@ -522,8 +526,9 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 		fmt.Sprintf("restoring snapshot %d in place; %s stops, and snapshot %d keeps the data it holds now", snap.ID, ss.svc.Name, safety.ID))
 	c.wg.Go(func() {
 		defer c.releaseService(ss.svc.ID)
-		defer c.setRestoringInPlace(ss.svc.ID, false)
 		err := c.runRestoreInPlace(c.ctx, ss, snap, safety, safetyVols, mounts)
+		// Deploys and stops may go ahead once the restore reads as done.
+		c.setRestoringInPlace(ss.svc.ID, false)
 		c.finishSnapshotRestore(c.ctx, ss, row, ss.svc.Name, err)
 		if c.ctx.Err() == nil {
 			c.pruneSnapshots(c.ctx, ss)
@@ -701,9 +706,16 @@ func (c *Core) finishSnapshotRestore(ctx context.Context, ss svcScope, row store
 		return // shutting down: the next start marks it failed
 	}
 	fin := store.FinishSnapshotRestoreParams{Status: string(apitypes.BackupSucceeded), FinishedAt: ptr(now()), ID: row.ID}
-	snapID := deref(row.SnapshotID)
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
+	}
+	// Recorded before the audit event announces it, so whoever the event
+	// wakes (MCP's restore_snapshot) reads the outcome.
+	if ferr := c.store.FinishSnapshotRestore(ctx, fin); ferr != nil {
+		c.log.Error("record snapshot restore", "restore", row.ID, "err", ferr)
+	}
+	snapID := deref(row.SnapshotID)
+	if err != nil {
 		msg := fmt.Sprintf("restoring snapshot %d into %s failed: %v", snapID, to, err)
 		if !row.InPlace {
 			msg += fmt.Sprintf("; %s is kept for a look, archive it when done", to)
@@ -716,9 +728,6 @@ func (c *Core) finishSnapshotRestore(ctx context.Context, ss svcScope, row store
 		t, _ := templateOf(ss.svc)
 		c.audit(ctx, System, "snapshot.restored", &ss.project, &ss.env, ss.String(),
 			fmt.Sprintf("restored snapshot %d into %s; point references at ${{%s.%s}} when it checks out", snapID, to, to, t.exports[0]))
-	}
-	if ferr := c.store.FinishSnapshotRestore(ctx, fin); ferr != nil {
-		c.log.Error("record snapshot restore", "restore", row.ID, "err", ferr)
 	}
 }
 
