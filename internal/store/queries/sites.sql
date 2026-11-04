@@ -107,7 +107,7 @@ SELECT * FROM site_markers WHERE site_id = +sqlc.arg(site_id) AND at >= +sqlc.ar
 SELECT releases.number, releases.finished_at, services.name AS service_name
 FROM releases
 JOIN services ON services.id = releases.service_id
-WHERE releases.service_id IN (SELECT DISTINCT site_hostnames.service_id FROM site_hostnames WHERE site_hostnames.site_id = +sqlc.arg(site_id))
+WHERE releases.service_id IN (SELECT site_hostnames.service_id FROM site_hostnames WHERE site_hostnames.site_id = +sqlc.arg(site_id))
   AND releases.status IN ('active', 'superseded')
   AND releases.finished_at >= +sqlc.arg(from_at) AND releases.finished_at < +sqlc.arg(to_at)
 ORDER BY releases.finished_at

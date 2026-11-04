@@ -307,7 +307,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 const listOrgMembers = `-- name: ListOrgMembers :many
 SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, org_members.role,
     CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1) AS INTEGER) AS sessions,
-    CAST((SELECT count(*) FROM tokens WHERE tokens.created_by = users.email AND tokens.revoked_at IS NULL
+    CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
         AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens
 FROM org_members JOIN users ON users.id = org_members.user_id
 WHERE org_members.org_id = +?2
@@ -327,8 +327,8 @@ type ListOrgMembersRow struct {
 }
 
 // ListOrgMembers is an org's users with their role, live sessions and
-// usable tokens. Tokens record their creator by name, which for users is
-// their email.
+// usable tokens: the tokens they created (user_id), as their account page
+// lists them.
 func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) ([]ListOrgMembersRow, error) {
 	rows, err := q.query(ctx, q.listOrgMembersStmt, listOrgMembers, arg.Now, arg.OrgID)
 	if err != nil {

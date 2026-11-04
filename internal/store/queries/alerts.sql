@@ -21,7 +21,7 @@ SELECT * FROM alerts WHERE resolved_at IS NULL ORDER BY id DESC;
 SELECT * FROM alerts WHERE id < +sqlc.arg(before_id) ORDER BY id DESC LIMIT +sqlc.arg(max_rows);
 
 -- name: PruneResolvedAlerts :execrows
-DELETE FROM alerts WHERE resolved_at < ?;
+DELETE FROM alerts WHERE resolved_at < +?;
 
 -- name: CreateAlertChannel :one
 INSERT INTO alert_channels (name, kind, target, config, min_severity, renotify_minutes, created_at)

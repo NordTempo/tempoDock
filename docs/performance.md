@@ -101,7 +101,8 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   lists, audit log, variable resolution, event bus fan-out, SSE writes,
   Caddy config rendering, source packing, `dock.toml` parsing, prepared
   SQLite queries, the retention pass, the alert engine's event handling,
-  the access check for login-protected services, traffic counting, and
+  the access check for login-protected services, traffic counting, a
+  site dashboard's deploy markers (`BenchmarkListSiteDeploys`), and
 the analytics ingest and spool (`BenchmarkIngestEvent`,
 `BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs;
 `BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs;

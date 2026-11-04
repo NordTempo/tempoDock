@@ -92,7 +92,7 @@ UPDATE changesets SET
     status = ?1, decided_at = ?2, decided_by = ?3,
     reason = ?4, rows_affected = ?5, conflicts = ?6
 WHERE id = +?7 AND connection_id = +?8
-  AND status = 'pending' AND expires_at > ?2
+  AND status = 'pending' AND expires_at > +?2
 RETURNING id, connection_id, author, author_kind, user_id, token_id, status, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by
 `
 

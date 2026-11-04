@@ -80,7 +80,7 @@ UPDATE changesets SET
     status = sqlc.arg(status), decided_at = sqlc.arg(decided_at), decided_by = sqlc.arg(decided_by),
     reason = sqlc.arg(reason), rows_affected = sqlc.arg(rows_affected), conflicts = sqlc.arg(conflicts)
 WHERE id = +sqlc.arg(id) AND connection_id = +sqlc.arg(connection_id)
-  AND status = 'pending' AND expires_at > sqlc.arg(decided_at)
+  AND status = 'pending' AND expires_at > +sqlc.arg(decided_at)
 RETURNING *;
 
 -- name: ExpireChangesets :exec
