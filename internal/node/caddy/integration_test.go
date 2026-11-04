@@ -117,6 +117,46 @@ func startCaddyWith(t *testing.T, mod func(*Options)) *testCaddy {
 	return tc
 }
 
+// applyRoutes applies routes and waits until the previous config stopped
+// listening. On Linux each config binds its own SO_REUSEPORT sockets, and
+// Caddy closes the old ones a moment after /load returns: until then a
+// new connection can land on the old config and get its routes.
+func (tc *testCaddy) applyRoutes(t *testing.T, routes []node.Route) {
+	t.Helper()
+	if err := tc.proxy.ApplyRoutes(context.Background(), routes); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for listening(t, tc.opts.HTTPPort) > 1 || listening(t, tc.opts.HTTPSPort) > 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("the previous config's listeners never closed")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// listening counts the TCP sockets listening on port, from /proc/net/tcp
+// and tcp6.
+func listening(t *testing.T, port int) int {
+	t.Helper()
+	suffix := fmt.Sprintf(":%04X", port)
+	n := 0
+	for _, f := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue // no IPv6
+		}
+		for _, line := range strings.Split(string(b), "\n")[1:] {
+			// sl local_address rem_address st ...; st 0A is LISTEN.
+			fs := strings.Fields(line)
+			if len(fs) > 3 && strings.HasSuffix(fs[1], suffix) && fs[3] == "0A" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // trustInternalCA makes the test client and CheckDomain trust Caddy's
 // internal root. The root exists once a config with the tls app is loaded.
 func (tc *testCaddy) trustInternalCA(t *testing.T) {
@@ -218,16 +258,11 @@ func (a *askServer) questions() []string {
 func TestIntegrationRouting(t *testing.T) {
 	ask := newAskServer(t, "a.test", "b.test", "www.a.test")
 	tc := startCaddy(t, ask.url, false)
-	ctx := context.Background()
-
-	err := tc.proxy.ApplyRoutes(ctx, []node.Route{
+	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"a.test"}, Upstream: backend(t, "A")},
 		{Hostnames: []string{"b.test"}, Upstream: backend(t, "B")},
 		{Hostnames: []string{"www.a.test"}, RedirectTo: "a.test"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	tc.trustInternalCA(t)
 
 	for host, want := range map[string]string{"a.test": "A", "b.test": "B"} {
@@ -254,13 +289,10 @@ func TestIntegrationRouting(t *testing.T) {
 
 func TestIntegrationRoutingWithoutTLS(t *testing.T) {
 	tc := startCaddy(t, "", true)
-	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
+	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"a.test"}, Upstream: backend(t, "A")},
 		{Hostnames: []string{"www.a.test"}, RedirectTo: "a.test"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if code, _, body := tc.get(t, tc.url("http", "a.test", "/")); code != 200 || body != "A" {
 		t.Errorf("a.test: got %d %q", code, body)
 	}
