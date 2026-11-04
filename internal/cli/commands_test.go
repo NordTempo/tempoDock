@@ -39,6 +39,13 @@ var sys = core.System.InOrg(1)
 
 func newTestServer(t *testing.T) *testServer {
 	t.Helper()
+	return newTestServerWith(t, nil)
+}
+
+// newTestServerWith is newTestServer with its core options changed by
+// opts first (nil changes nothing).
+func newTestServerWith(t *testing.T, opts func(*core.Options)) *testServer {
+	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
@@ -60,7 +67,11 @@ func newTestServer(t *testing.T) *testServer {
 		t.Fatal(err)
 	}
 	rt := fake.New()
-	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond})
+	o := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond}
+	if opts != nil {
+		opts(&o)
+	}
+	c, err := core.New(ctx, o)
 	if err != nil {
 		t.Fatal(err)
 	}

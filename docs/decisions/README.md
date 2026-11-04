@@ -62,6 +62,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0052](0052-anonymous-volumes-of-served-containers.md) | Keeping the anonymous volumes of containers that served | accepted |
 | [0054](0054-scheduled-jobs.md) | Scheduled jobs (cron) | accepted |
 | [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted |
+| [0056](0056-preview-environments.md) | Preview environments per pull request | accepted |
 
 ## Template
 

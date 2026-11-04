@@ -72,7 +72,7 @@ func serviceOf(c *call, in ServiceInput) (core.ServiceRef, error) {
 }
 
 // addPlatformTools registers the tools for projects, services, releases,
-// logs, variables, domains, servers, the audit log and alerts.
+// logs, variables, domains, previews, servers, the audit log and alerts.
 func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "whoami", "Who am I",
 		"Who you are acting as: the token's name, scope (read, deploy or admin) and the project and environment it is limited to. Call it first; other tools default project and environment to these limits.",
@@ -379,6 +379,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	h.addAnalyticsTools(s)
 	h.addRunTools(s)
 	h.addJobTools(s)
+	h.addPreviewTools(s)
 
 	mcpkit.AddTool(s, "list_servers", "List servers",
 		"The servers apps run on: status (online, offline, ...), which environment kinds each accepts, its base domain for generated hostnames, and memory reserved by the services placed there.",

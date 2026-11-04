@@ -361,6 +361,9 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h(opEnsureVolume, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
 		return empty{}, rt.EnsureVolume(ctx, a.Name, a.Labels.node())
 	}))
+	h(opRemoveVolume, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
+		return empty{}, rt.RemoveVolume(ctx, a.Name, a.Labels.node())
+	}))
 	h(opStart, unary(func(ctx context.Context, a startRequest) (containerResult, error) {
 		c, err := rt.Start(ctx, a.Spec.node())
 		return containerResult{Container: toWireContainer(c)}, err

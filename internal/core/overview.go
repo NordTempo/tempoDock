@@ -27,6 +27,10 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 	if err != nil {
 		return out, err
 	}
+	prs, err := c.previewEnvironments(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
 	svcs, err := c.store.ListProjectServices(ctx, p.ID)
 	if err != nil {
 		return out, err
@@ -78,8 +82,10 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 		if err != nil {
 			return out, err
 		}
+		env := toEnvironment(p, e, srv.Name)
+		env.Preview = prs[e.ID]
 		eo := apitypes.EnvironmentOverview{
-			Environment: toEnvironment(p, e, srv.Name), PendingChanges: pending.Count,
+			Environment: env, PendingChanges: pending.Count,
 			Services: make([]apitypes.ServiceOverview, 0, len(svcsByEnv[e.ID])),
 		}
 		for _, s := range svcsByEnv[e.ID] {

@@ -53,10 +53,13 @@ type retention struct {
 	last    time.Time
 	pruned  map[int64]time.Time // by server ID
 	pruning map[int64]bool
+	// full are the servers whose last sample showed Docker's disk past
+	// [retention] prune_disk_percent: no new preview goes there (ADR 0052).
+	full map[int64]bool
 }
 
 func newRetention() *retention {
-	return &retention{pruned: map[int64]time.Time{}, pruning: map[int64]bool{}}
+	return &retention{pruned: map[int64]time.Time{}, pruning: map[int64]bool{}, full: map[int64]bool{}}
 }
 
 // retentionTick runs on the statistics tick with its fresh host samples:
@@ -71,7 +74,11 @@ func (c *Core) retentionTick(ctx context.Context, now time.Time, servers []store
 			}
 			// Disks[0] is the filesystem of Docker's data root: images and
 			// BuildKit's cache volume live there.
-			if 100*float64(u.Disks[0].UsedBytes)/float64(u.Disks[0].TotalBytes) >= float64(p) {
+			full := 100*float64(u.Disks[0].UsedBytes)/float64(u.Disks[0].TotalBytes) >= float64(p)
+			c.retention.mu.Lock()
+			c.retention.full[srv.ID] = full
+			c.retention.mu.Unlock()
+			if full {
 				c.maybePrune(srv, now)
 			}
 		}
@@ -96,6 +103,14 @@ func (c *Core) retentionTick(ctx context.Context, now time.Time, servers []store
 			c.wg.Go(func() { c.pruneLogs(c.ctx, remote) })
 		}
 	}
+}
+
+// diskFull reports whether a server's last sample showed its disk past
+// [retention] prune_disk_percent.
+func (c *Core) diskFull(serverID int64) bool {
+	c.retention.mu.Lock()
+	defer c.retention.mu.Unlock()
+	return c.retention.full[serverID]
 }
 
 // maybePrune starts pruning a server in the background unless it is being

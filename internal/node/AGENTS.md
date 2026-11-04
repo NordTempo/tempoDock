@@ -42,10 +42,12 @@ durations travel as milliseconds.
 - Only touch resources labelled `dock.managed` for this control plane
   (`dock.control_plane`). Another install's containers, networks and
   volumes are ignored, never removed. Named volumes are never removed by
-  the runtime, with one exception: `RemoveAnalyticsStore` removes the
+  the runtime, with two exceptions: `RemoveAnalyticsStore` removes the
   analytics store's own volume, which core calls only once the store's
   data was copied to its new server and checked, or the operator chose
-  to start empty (ADR 0037). Anonymous volumes (an image's `VOLUME` that
+  to start empty (ADR 0037); and `RemoveVolume`, which core calls only
+  for an archived preview environment's volumes, never forced
+  (ADR 0056). Anonymous volumes (an image's `VOLUME` that
   no Dock volume covers) may hold a service's only copy of its data
   (ADR 0052): `Remove` keeps them for a container that served
   (`RemoveOptions.KeepAnonymousVolumes`, one kept copy per service) and

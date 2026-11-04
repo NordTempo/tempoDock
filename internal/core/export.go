@@ -12,9 +12,10 @@ import (
 // ExportProject returns a project's configuration as a manifest (ADR
 // 0022): the environments the actor can see, their live services and
 // settings, variables, volumes, domains and git connections. Staged
-// changes (services staged for creation too), archived services, releases
-// and placement are left out. Values are exported only when they are made
-// of references and nothing else (ADR 0049): they wire services together
+// changes (services staged for creation too), archived services,
+// releases, placement and preview environments are left out. Values are
+// exported only when they are made of references and nothing else (ADR
+// 0049): they wire services together
 // and hold no secret. Every other variable is exported by name.
 // Everything is sorted by name so the export diffs well. A fixed number of
 // queries, however big the project. Needs read.
@@ -45,6 +46,12 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 		return out, err
 	}
 	gits, err := c.store.ListProjectGitConnections(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+	// Preview environments come and go with pull requests (ADR 0052): a
+	// project file that named them would make them ordinary ones.
+	previews, err := c.previewEnvironments(ctx, p.ID)
 	if err != nil {
 		return out, err
 	}
@@ -108,7 +115,7 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 	}
 
 	for _, e := range envs {
-		if !a.canSee(p.OrgID, p.ID, e.ID) {
+		if !a.canSee(p.OrgID, p.ID, e.ID) || previews[e.ID] != nil {
 			continue
 		}
 		ee := apitypes.EnvironmentExport{Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), SharedVariables: shared[e.ID], SharedValues: sharedValues[e.ID]}

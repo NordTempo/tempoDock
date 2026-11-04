@@ -59,12 +59,12 @@ INSERT INTO project_placements (project_id, kind, server_id, pinned) VALUES (?, 
 ON CONFLICT (project_id, kind) DO UPDATE SET server_id = excluded.server_id, pinned = excluded.pinned;
 
 -- name: CountKindEnvironments :one
-SELECT count(*) FROM environments WHERE project_id = +? AND kind = +?;
+SELECT count(*) FROM environments WHERE project_id = +? AND kind = +? AND archived_at IS NULL;
 
 -- name: ListServerEnvironments :many
 SELECT environments.project_id, environments.name, environments.kind
 FROM environments JOIN projects ON projects.id = environments.project_id
-WHERE environments.server_id = +? AND projects.archived_at IS NULL
+WHERE environments.server_id = +? AND projects.archived_at IS NULL AND environments.archived_at IS NULL
 ORDER BY environments.project_id, environments.name;
 
 -- name: CreateProject :one
@@ -89,7 +89,8 @@ SELECT * FROM environments WHERE project_id = +? AND name = +?;
 SELECT * FROM environments WHERE id = +?;
 
 -- name: ListEnvironments :many
-SELECT * FROM environments WHERE project_id = +? ORDER BY name;
+-- A project's environments, archived ones (closed previews) left out.
+SELECT * FROM environments WHERE project_id = +? AND archived_at IS NULL ORDER BY name;
 
 -- SetEnvironmentLock locks (locked_at set) or unlocks (NULL) an
 -- environment, or opens a locked one until open_until (ADR 0044).

@@ -179,6 +179,8 @@ type Core struct {
 
 	// git is GitHub push-to-deploy's state (git.go).
 	git gitState
+	// previews is the state of preview environments (previews.go).
+	previews previewState
 	// analytics is Dock Analytics' state (analytics.go).
 	analytics analyticsState
 	// updates is updating Dock (update.go).
@@ -240,6 +242,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
+		previews:   newPreviewState(),
 		updates:    newUpdates(o),
 		cf:         newCFState(o.CloudflareAPI),
 	}
@@ -387,6 +390,9 @@ func (c *Core) Start(ctx context.Context) error {
 	}()
 	if err := c.resumeGit(ctx); err != nil {
 		return fmt.Errorf("resume queued pushes: %w", err)
+	}
+	if err := c.resumePreviews(ctx); err != nil {
+		return fmt.Errorf("archive closed previews: %w", err)
 	}
 	// Remote servers are reconciled as they connect (NodeStatus); ones a
 	// hub that already serves has connected are reconciled now.

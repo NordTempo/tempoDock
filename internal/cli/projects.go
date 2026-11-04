@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -116,7 +117,7 @@ func newProjectArchiveCmd(g *globals) *cobra.Command {
 func newEnvironmentCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "environment",
-		Short: "List, create, clone, lock and unlock environments",
+		Short: "List, create, clone, lock and unlock environments, and preview pull requests",
 		Long:  "Environments of a project. (`dock env` manages variables.)",
 	})
 	var listFlags, createFlags targetFlags
@@ -135,9 +136,20 @@ func newEnvironmentCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(envs, func() error {
-				tb := g.io.Table("name", "kind", "server", "lock", "created")
+				// Preview environments name their pull request; the column
+				// shows only when there is one.
+				previews := slices.ContainsFunc(envs, func(e apitypes.Environment) bool { return e.Preview != nil })
+				headers := []string{"name", "kind", "server", "lock", "created"}
+				if previews {
+					headers = append(headers, "pull request")
+				}
+				tb := g.io.Table(headers...)
 				for _, e := range envs {
-					tb.Row(e.Name, kindWords(e.Kind), e.Server, cmp.Or(lockWords(e.Lock), "-"), ago(e.CreatedAt))
+					row := []string{e.Name, kindWords(e.Kind), e.Server, cmp.Or(lockWords(e.Lock), "-"), ago(e.CreatedAt)}
+					if previews {
+						row = append(row, pullRequestText(e.Preview))
+					}
+					tb.Row(row...)
 				}
 				return tb.Flush()
 			})
@@ -175,7 +187,7 @@ eligible server with the most free memory.`,
 	}
 	createFlags.add(create, needProject)
 	create.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
-	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g))
+	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g))
 	return cmd
 }
 

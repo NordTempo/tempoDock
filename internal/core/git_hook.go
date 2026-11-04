@@ -159,12 +159,15 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 	case "ping":
 		c.gitEvent(conn.ID, "ping from GitHub: webhook works")
 		return "pong", nil
-	case "push":
+	case "push", "pull_request":
 	default:
-		return fmt.Sprintf("ignored: %q events don't deploy; send only pushes", d.Event), nil
+		return fmt.Sprintf("ignored: %q events don't deploy; send pushes (and pull requests, for previews)", d.Event), nil
 	}
 	if seen, err := c.gitDelivery(ctx, d); seen != "" || err != nil {
 		return seen, err
+	}
+	if d.Event == "pull_request" {
+		return c.gitHookPullRequest(ctx, conn, d.Body)
 	}
 	var p pushPayload
 	if err := json.Unmarshal(d.Body, &p); err != nil {
@@ -199,7 +202,7 @@ func (c *Core) gitDelivery(ctx context.Context, d GitDelivery) (string, error) {
 }
 
 // gitAppWebhook handles a delivery to the GitHub App's webhook (ADR
-// 0031): pushes go to every App connection of the repository (by its
+// 0031); pull requests go to previews (ADR 0052). Pushes go to every App connection of the repository (by its
 // GitHub ID, so renames don't matter), each deciding by its branch and
 // directory; an uninstalled App's installation is unassigned. The App's
 // webhook secret is the authority, as a connection's is for its own hook.
@@ -217,15 +220,18 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 	switch d.Event {
 	case "ping":
 		return "pong", nil
-	case "installation", "push":
+	case "installation", "push", "pull_request":
 	default:
 		return fmt.Sprintf("ignored: %q events don't deploy", d.Event), nil
 	}
 	if seen, err := c.gitDelivery(ctx, d); seen != "" || err != nil {
 		return seen, err
 	}
-	if d.Event == "installation" {
+	switch d.Event {
+	case "installation":
 		return c.gitAppInstallation(ctx, d.Body)
+	case "pull_request":
+		return c.gitAppPullRequest(ctx, d.Body)
 	}
 	var p pushPayload
 	if err := json.Unmarshal(d.Body, &p); err != nil {

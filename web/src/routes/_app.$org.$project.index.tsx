@@ -18,6 +18,8 @@ import { EnvironmentTable } from "../features/overview/EnvironmentTable";
 import { Activity } from "../features/overview/Live";
 import { Placements } from "../features/overview/Placements";
 import { Problems } from "../features/overview/Problems";
+import { previewQueries } from "../features/previews/data";
+import { PreviewsSection } from "../features/previews/PreviewsSection";
 import { ServerDots } from "../shell/context";
 import { useShortcuts } from "../shell/keys";
 import { rememberProject, useOrg } from "../shell/location";
@@ -34,6 +36,8 @@ export const Route = createFileRoute("/_app/$org/$project/")({
       queryClient.ensureQueryData(queries.overview(params.project)),
       queryClient.ensureQueryData(queries.audit({ project: params.project })),
       queryClient.ensureQueryData(queries.placements(params.project)),
+      // Preview statuses and settings; the page shows without them.
+      queryClient.prefetchQuery(previewQueries.settings(params.project)),
     ]);
     // Staged problems say which releases applying creates. (The palette
     // loads release history for rollbacks itself, once opened.)
@@ -254,6 +258,8 @@ function LiveOverview() {
           <Activity project={project} />
           <Placements project={project} />
         </div>
+
+        <PreviewsSection project={project} />
 
         <p className="text-2xs text-faint">
           <span className="text-ok">

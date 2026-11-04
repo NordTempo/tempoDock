@@ -328,7 +328,9 @@ func (c *Core) createEnv(ctx context.Context, q *store.Queries, p store.Project,
 	return q.SetEnvironmentLock(ctx, store.SetEnvironmentLockParams{LockedAt: ptr(now()), LockedBy: "organization setting", LockReason: "new production environments start locked", ID: e.ID})
 }
 
-// ListEnvironments returns a project's environments the actor can see.
+// ListEnvironments returns a project's environments the actor can see,
+// preview environments with their pull request; archived ones (closed
+// previews) are left out.
 func (c *Core) ListEnvironments(ctx context.Context, a Actor, project string) ([]apitypes.Environment, error) {
 	p, err := c.projectFor(ctx, a, project, apitypes.ScopeRead, "listing environments")
 	if err != nil {
@@ -342,10 +344,16 @@ func (c *Core) ListEnvironments(ctx context.Context, a Actor, project string) ([
 	if err != nil {
 		return nil, err
 	}
+	prs, err := c.previewEnvironments(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
 	out := []apitypes.Environment{}
 	for _, e := range rows {
 		if a.canSee(p.OrgID, p.ID, e.ID) {
-			out = append(out, toEnvironment(p, e, servers[e.ServerID]))
+			env := toEnvironment(p, e, servers[e.ServerID])
+			env.Preview = prs[e.ID]
+			out = append(out, env)
 		}
 	}
 	return out, nil
@@ -361,7 +369,13 @@ func (c *Core) GetEnvironment(ctx context.Context, a Actor, ref EnvRef) (apitype
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
-	return toEnvironment(es.project, es.env, srv.Name), nil
+	out := toEnvironment(es.project, es.env, srv.Name)
+	if pv, err := c.store.GetPreviewByEnvironment(ctx, es.env.ID); err == nil {
+		out.Preview = &apitypes.PullRequestRef{Repo: pv.Repo, Number: pv.Number, Title: pv.Title, Author: pv.Author, URL: pv.HtmlUrl}
+	} else if !store.IsNotFound(err) {
+		return out, err
+	}
+	return out, nil
 }
 
 // CreateEnvironment creates an environment and places it on a server.
