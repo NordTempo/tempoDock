@@ -73,7 +73,8 @@ arguments, sealed, with who asked and why. An admin approves or rejects
 it in the web UI; approved, it runs as the token, through every check it
 would pass then (a revoked token or a call that no longer applies fails
 safely), and the audit log records the token and the approver. Tokens
-never approve. The check is core's `checkEnv`, which every
+never approve. GitHub pushes and `dock deploy` uploads into a locked
+environment wait as requests too: production's deploy approval. The check is core's `checkEnv`, which every
 operation inside an environment passes, so new actions are covered without
 code of their own.
 

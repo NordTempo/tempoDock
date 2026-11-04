@@ -186,6 +186,10 @@ $ dock request wait 12
 - `dock request list|show|wait`, MCP `list_requests` and
   `wait_for_request` follow it: `wait` exits 0 when it ran, 1 when it
   failed, 3 when rejected, 4 when it expired (after 24 hours by default).
+- `dock deploy` into a locked environment uploads anyway: the archive is
+  checked and kept, and deployed once approved. A newer upload of the
+  service replaces the one waiting. Pushes to a connected GitHub branch
+  wait the same way.
 - Tokens never approve, not even admin tokens and not their own requests.
   An admin can also open the environment for a while instead.
 - Data panel changes in a locked environment are changesets for an admin
