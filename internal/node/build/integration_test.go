@@ -409,6 +409,44 @@ RUN node -e 'const a = []; for (;;) a.push(Buffer.alloc(16 << 20, 1))'
 	}
 }
 
+// BuildKit itself dying mid-build (the OOM killer can pick buildkitd over
+// the step) drops the connection before Docker restarts the container; the
+// error still says what most likely happened. Killed here once the RUN
+// step runs.
+func TestBuildKitKilledMidBuild(t *testing.T) {
+	b := newBuilder(t, dockerClient(t), 512)
+	running := make(chan struct{})
+	var once sync.Once
+	logs := writerFunc(func(p []byte) (int, error) {
+		if strings.Contains(string(p), "RUN sleep 60") {
+			once.Do(func() { close(running) })
+		}
+		return len(p), nil
+	})
+	killed := make(chan error, 1)
+	go func() {
+		<-running
+		_, err := b.docker.ContainerKill(t.Context(), testContainer, client.ContainerKillOptions{})
+		killed <- err
+	}()
+	_, err := b.Build(t.Context(), node.BuildRequest{
+		Source: sourceTar(t, map[string]string{"Dockerfile": "FROM alpine:3.22\nRUN sleep 60\n"}),
+		Tag:    "dock-test/hello:killed",
+		Logs:   logs,
+	})
+	if kerr := <-killed; kerr != nil {
+		t.Fatal(kerr)
+	}
+	if err == nil || !strings.Contains(err.Error(), "BuildKit restarted during the build, most likely out of memory") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// writerFunc is an io.Writer from a function.
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
 // The memory cap holds even after something outside the platform loosens
 // it: `docker update`, or a write to the cgroup file that leaves Docker's
 // HostConfig as it was.

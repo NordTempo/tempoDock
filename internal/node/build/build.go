@@ -236,12 +236,46 @@ func (b *Builder) explain(ctx context.Context, err error, started time.Time) err
 	if grpcerrors.Code(err) == codes.ResourceExhausted {
 		return fmt.Errorf("build ran out of memory (%s): %w", hint, err)
 	}
-	if c, ierr := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{}); ierr == nil {
-		if t, perr := time.Parse(time.RFC3339Nano, c.Container.State.StartedAt); perr == nil && t.After(started) {
-			return fmt.Errorf("BuildKit restarted during the build, most likely out of memory (%s): %w", hint, err)
-		}
+	if b.restartedSince(ctx, started) || grpcerrors.Code(err) == codes.Unavailable && b.diedSince(ctx, started) {
+		return fmt.Errorf("BuildKit restarted during the build, most likely out of memory (%s): %w", hint, err)
 	}
 	return err
+}
+
+// restartedSince reports whether the BuildKit container started after t.
+func (b *Builder) restartedSince(ctx context.Context, t time.Time) bool {
+	c, err := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{})
+	if err != nil {
+		return false
+	}
+	at, err := time.Parse(time.RFC3339Nano, c.Container.State.StartedAt)
+	return err == nil && at.After(t)
+}
+
+// dieWait bounds how long diedSince waits for Docker to see BuildKit exit.
+const dieWait = 5 * time.Second
+
+// diedSince reports whether the BuildKit container exited after t, for a
+// build whose connection dropped. Docker may handle the exit a moment
+// after the connection drops, before the restart restartedSince would
+// see, so this reads the container's die events from t on (past ones are
+// replayed) and waits up to dieWait for one.
+func (b *Builder) diedSince(ctx context.Context, t time.Time) bool {
+	ctx, cancel := context.WithTimeout(ctx, dieWait)
+	defer cancel()
+	sub := b.docker.Events(ctx, client.EventsListOptions{
+		Since:   fmt.Sprintf("%d.%09d", t.Unix(), t.Nanosecond()),
+		Filters: client.Filters{}.Add("type", "container").Add("container", b.name).Add("event", "die"),
+	})
+	select {
+	case <-sub.Messages:
+		return true
+	case err := <-sub.Err:
+		_ = err // events unavailable: the build's own error stands
+		return false
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // solveOpt picks the frontend: a Dockerfile build when one is given or
