@@ -42,7 +42,7 @@ the new version doesn't come up, then updates the nodes.
 | Older nodes | Nodes before protocol 4 can't take the call. The console and `dock update` list them as behind, with the `install.sh` command to run on them |
 | Audit | `platform.update_started` (by the operator), `platform.updated` / `platform.update_failed` (by the system, with the versions, how long it took and the error), `server.updated` / `server.update_failed` per node. All are platform events, with no org |
 | Console | Updates, under System in the console sidebar (mock A, picked by the owner): the newer releases' notes beside what the update does to each server, in order; its steps while it runs; a failed or rolled-back update with the end of its log. The sidebar shows the newer version, the overview a line in Needs attention and a Version figure. The status is read when the console opens; update events keep it current |
-| CLI | `dock update` shows the versions, the newer releases' notes and each server's version. `dock update apply [VERSION]` starts an update and, with `--wait`, follows it until it has finished. `dock admin update` is the updater itself, run as root by the unit |
+| CLI | `dock update` shows the versions, the newer releases' notes and each server's version. `dock update apply [VERSION]` starts an update and follows it until it has finished (`--detach` returns once it started). `dock admin update` is the updater itself, run as root by the unit |
 
 ## Why this shape
 
