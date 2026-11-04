@@ -26,7 +26,7 @@ is shown once. Pick the narrowest fit:
 
 | Scope | Use for |
 |---|---|
-| `read` | Monitoring and triage bots: status, logs, releases, variable names |
+| `read` | Monitoring and triage bots: status, logs, releases, resource use, variable names |
 | `deploy` | Agents that ship: deploy, roll back, restart, variables, domains |
 | `admin` | Humans only. Never give an agent `admin` |
 
@@ -91,7 +91,7 @@ them when `DOCK_URL` is set; only its context (server) is ignored.
 | 2 | `usage` | Fix the command using `hint`. Nothing was done |
 | 3 | `auth` | Stop. Missing token or the token lacks the scope. Don't look for another credential |
 | 4 | `not_found` | Check names with `dock project list`, `dock service list`. Don't create things to make it pass unless asked |
-| 5 | `conflict` | `deploy_in_progress`: wait 30 s and retry, up to 3 times. `hostname_taken`: stop and report |
+| 5 | `conflict` | `deploy_in_progress`: run `dock release wait`, which follows the running release until it is done, then retry. `environment_locked`: tell the user, then `dock request wait <id>` ([below](#locked-environments-and-access-requests)). `hostname_taken`: stop and report |
 | 6 | `deploy_failed` | Build or health check failed. **Traffic was not switched; don't roll back.** Read logs, fix, deploy again |
 | 7 | `unreachable` | Retry with backoff (10 s, 30 s, 60 s), then stop and report |
 | 8 | `incompatible` | Stop. CLI and server versions differ |
@@ -133,9 +133,11 @@ instead; that is your login, so don't hand it to an agent.
 
 | Tools | |
 |---|---|
-| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `list_releases`, `release_details`, `logs`, `list_servers`, `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
-| Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment` |
-| Configure | `list_variables`, `set_variables`, `set_pre_deploy_command`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain` |
+| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `logs`, `list_servers`, `list_alerts` (operators), `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
+| Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment`, `wait_for_release`, `run_command`, `list_runs` |
+| Configure | `create_service`, `update_service`, `set_pre_deploy_command`, `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain`, `check_domain`, `remove_domain` |
+| Volumes | `list_volumes`, `add_volume`, `list_snapshots`, `create_snapshot`, `restore_snapshot` (into a new service only) |
+| Project files | `plan_project_file`, `apply_project_file`, `import_compose` |
 | Analytics | `analytics_sites`, `analytics_stats`, `analytics_breakdown`, `analytics_errors`, `analytics_vitals`, `analytics_replays` (listed only; watched in the UI), `analytics_goals`, `analytics_funnel` |
 | Data | `data_status`, `data_schema`, `data_rows`, `data_query`, `propose_data_changes` |
 | Ask | `request_access`, `wait_for_request`, `list_requests` |
@@ -143,12 +145,22 @@ instead; that is your login, so don't hand it to an agent.
 - **Project and environment default to the token's limits**, so a token
   for `shop/staging` only names the service. `whoami` shows them.
 - **Deploy tools wait** until the release is active or failed (default
-  5 minutes, `wait_seconds` up to 15) and stream each step as a progress
-  notification. A failed release comes back with its reason and the last
-  lines of its container's output and build, so the agent can fix it
-  without rolling back.
+  300 seconds, `wait_seconds` up to 900) and stream each step as a
+  progress notification. A failed release comes back with its reason and
+  the last lines of its container's output and build, so the agent can fix
+  it without rolling back. When a wait runs out, or someone else's release
+  is deploying, `wait_for_release` follows it the same way; there is no
+  need to poll `release_details`.
+- **Fixing a failed health check**: `update_service` stages a new `port`
+  or `health_check_path` (and the other settings), `show_changes` reviews
+  it and `apply_changes` deploys it, health checked like any release.
+- **Logs** can be filtered: the `logs` tool takes `grep` (a plain,
+  case-sensitive substring) and `stderr` (stderr lines only), applied
+  after `tail`, like `dock logs --grep` and `--stderr`.
 - **Errors are tool results** with the API's codes and a hint:
-  `forbidden` means stop and report, `deploy_in_progress` means wait.
+  `forbidden` means stop and report, `deploy_in_progress` means call
+  `wait_for_release`, then retry. Its `release` field (in the API's error
+  too) names the release that is deploying.
 - **Data** follows the [data access policy](data.md): tokens get nothing
   until an admin grants it. `propose_data_changes` stores a changeset for
   an admin to approve, and commits it only on non-production with `write`
@@ -159,8 +171,20 @@ instead; that is your login, so don't hand it to an agent.
 - **Locked environments** refuse every change with `environment_locked`
   and file an access request (below); `wait_for_request` waits for the
   decision. `request_access` asks first, with a reason, anywhere.
-- **Not over MCP**: source deploys (use `dock deploy`), archiving, tokens,
-  users, servers, data setup and approvals.
+- **Not over MCP**, each for a reason:
+  - Source deploys: use `dock deploy`; uploading a build context through
+    a tool call would buffer it.
+  - Archiving services and projects, removing volumes, deleting
+    snapshots, in-place restores: they throw data away, so a person does
+    them.
+  - Locking and unlocking environments, approving access requests: a
+    token must not loosen what a person set.
+  - Log drains: they send logs off the server.
+  - A service's access password, registry credentials, tokens, users:
+    credentials a person chooses.
+  - Creating projects and environments (`clone_environment` and
+    `apply_project_file` aside), git connections, backups, alert channels
+    and resolving alerts, servers, data setup: platform setup for admins.
 
 ## Locked environments and access requests
 
@@ -204,7 +228,7 @@ $ dock request wait 12
 | Create services in its environment | Create projects (needs an unlimited token); create environments when limited to one |
 | Set, unset and apply variables | Read secret values, even in the staged-changes diff |
 | Add, generate and remove domains | Manage tokens or users |
-| Add volumes | Delete volumes (nothing deletes volumes as a side effect) |
+| Change service settings and add volumes (both staged) | Delete volumes (nothing deletes volumes as a side effect) |
 | Clone an environment (when not limited to one): references and new template credentials come along | Copy secret values into the clone; they are listed for someone to set |
 | Read status, releases, logs, audit events of its environment | See or touch any other project or environment |
 | | Reach Docker, BuildKit, Caddy or the host. Deploy over the platform itself |
@@ -221,7 +245,10 @@ health check: remove a domain, or set a wrong variable. So:
 
 `dock deploy` waits until the release is `active` or `failed` and streams
 progress to stderr. With `--json` it then prints the final release
-(`number`, `status`, `error_code`, ...), also when it failed.
+(`number`, `status`, `error_code`, ...), also when it failed. To follow a
+release that is already running (another deploy, or one whose wait was
+cut off), `dock release wait [N]` waits until it is done and exits the
+same way.
 
 A failed deploy needs no rollback. Rollback is for a release that went live
 but misbehaves:
@@ -240,7 +267,8 @@ for attempt in 1 2 3; do
   code=$?
   case $code in
     0) break ;;
-    5|7) sleep $((attempt * 20)) ;;   # deploy in progress, or server unreachable
+    5) dock release wait >/dev/null 2>&1 ;;  # another deploy in progress: follow it to its end
+    7) sleep $((attempt * 20)) ;;           # server unreachable
     6) jq . error.json; exit 6 ;;     # build/health check failed; previous release still serving
     *) jq . error.json; exit "$code" ;;
   esac
@@ -280,7 +308,8 @@ The token can deploy `shop/staging` only.
   It waits until the release is live or failed.
 - Branch on the exit code:
   - 0: deployed. Verify it (below).
-  - 5 with code `deploy_in_progress`: wait 30 s, retry up to 3 times.
+  - 5 with code `deploy_in_progress`: run `dock release wait --json` (it
+    follows the running release until it is done), then deploy again.
   - 6: build or health check failed. Nothing changed; the previous release
     still serves. Do not roll back. Read `dock logs --build` and
     `dock logs --release <number>`, fix, deploy again.
