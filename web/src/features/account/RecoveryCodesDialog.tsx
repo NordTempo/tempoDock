@@ -2,7 +2,7 @@ import { Dialog } from "../../ui/Dialog";
 import { Button, CopyButton } from "../../ui/kit";
 
 /**
- * New recovery codes, shown this once (ADR 0048): copy them or save them
+ * New recovery codes, shown this once (ADR 0049): copy them or save them
  * as a text file. Each signs in once in place of the authenticator app.
  */
 export default function RecoveryCodesDialog({

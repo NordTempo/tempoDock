@@ -231,7 +231,7 @@ func describeMe(me apitypes.Me) string {
 }
 
 // describeTwoFactor says whether a user's session or `dock login` token
-// counts as two-factor (ADR 0048); "" for API tokens, which act for no
+// counts as two-factor (ADR 0049); "" for API tokens, which act for no
 // user and have no second factor.
 func describeTwoFactor(me apitypes.Me) string {
 	switch me.TwoFactor {

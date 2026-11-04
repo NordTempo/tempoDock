@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Two-factor sign-in (ADR 0048). A user with an authenticator app signs
+// Two-factor sign-in (ADR 0049). A user with an authenticator app signs
 // in with their password, then a code from the app (or a recovery code):
 // Login leaves a pending session that authenticates nothing, and
 // LoginSecondFactor replaces it with a real one that remembers the factor

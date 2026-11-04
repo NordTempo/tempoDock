@@ -73,7 +73,7 @@ type Org struct {
 	Role      Scope     `json:"role" enum:"read,deploy,admin"`
 	CreatedAt time.Time `json:"created_at"`
 	// RequireTwoFactor: members act in the org only after signing in
-	// with a second factor (ADR 0048).
+	// with a second factor (ADR 0049).
 	RequireTwoFactor bool `json:"require_two_factor"`
 }
 

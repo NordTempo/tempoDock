@@ -1,4 +1,4 @@
-// Step-ups (ADR 0048): a sensitive call answers 403 reauth_required when
+// Step-ups (ADR 0049): a sensitive call answers 403 reauth_required when
 // the session last proved who it is more than 15 minutes ago. The API
 // client (./client.ts) asks the person to confirm here, then retries.
 // The prompt itself is React (ui/ReauthHost.tsx), registered once at start-up;

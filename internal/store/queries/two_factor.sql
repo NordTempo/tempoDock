@@ -1,4 +1,4 @@
--- Second factors, recovery codes and the sessions they prove (ADR 0048).
+-- Second factors, recovery codes and the sessions they prove (ADR 0049).
 
 -- name: ListUserFactors :many
 SELECT * FROM user_factors WHERE user_id = +? ORDER BY id;

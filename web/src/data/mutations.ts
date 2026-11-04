@@ -518,7 +518,7 @@ export const usePinPlacement = () =>
 
 /**
  * Signs in with a password. Resolves with the second factors that finish
- * the sign-in (useLoginVerify) for a user who has one (ADR 0048), or
+ * the sign-in (useLoginVerify) for a user who has one (ADR 0049), or
  * null once signed in.
  */
 export function useLogin() {

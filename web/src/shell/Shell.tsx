@@ -12,7 +12,7 @@ import { Sidebar, useShellMode } from "./Sidebar";
  * PageBar), and the command line at the bottom. The platform console
  * (servers) gets an amber bar across the top. A person whose org needs a
  * second factor they didn't sign in with acts in none: they get their
- * account page alone, to add one (ADR 0048).
+ * account page alone, to add one (ADR 0049).
  */
 export function Shell() {
   const session = useSession();

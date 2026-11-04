@@ -4,7 +4,7 @@ A password alone shouldn't reach production. With two-factor sign-in, the
 web UI and `dock login` also ask for a code from an authenticator app on
 your phone. Organizations can require it of their members, and the
 platform of its operators. API tokens are credentials of their own and are
-not affected. The design is [ADR 0048](../decisions/0048-two-factor-sign-in.md).
+not affected. The design is [ADR 0049](../decisions/0049-two-factor-sign-in.md).
 
 ## Setting up an authenticator app
 

@@ -456,7 +456,7 @@ func (c *Core) DecideRequest(ctx context.Context, a Actor, id int64, approve boo
 		return apitypes.AccessRequest{}, err
 	}
 	// Approving lets a token change a locked environment: a step-up
-	// (ADR 0048). Rejecting only takes power away.
+	// (ADR 0049). Rejecting only takes power away.
 	if approve {
 		if err := a.requireRecent("approving an access request"); err != nil {
 			return apitypes.AccessRequest{}, err

@@ -50,7 +50,7 @@ api.use({
 
 type Problem = components["schemas"]["Error"];
 
-// Step-ups (ADR 0048), in one place for every call: a 403 with code
+// Step-ups (ADR 0049), in one place for every call: a 403 with code
 // reauth_required asks the person to confirm it's them (./reauth.ts) and
 // sends the call again. A request's body is spent once sent, so each one
 // is cloned on the way out; only JSON and bodiless ones, so an upload is

@@ -219,7 +219,7 @@ function MemberRow({
   email: string;
   name: string;
   role: Scope;
-  /** They have a second factor (ADR 0048). */
+  /** They have a second factor (ADR 0049). */
   twoFactor: boolean;
   /** The org requires one: those without can't act here. */
   required: boolean;

@@ -5,7 +5,7 @@ import { registerReauthPrompt } from "../api/reauth";
 const ReauthDialog = lazy(() => import("../features/account/ReauthDialog"));
 
 /**
- * Shows "Confirm it's you" when a sensitive call asks for it (ADR 0048,
+ * Shows "Confirm it's you" when a sensitive call asks for it (ADR 0049,
  * api/reauth.ts). Mounted once next to the router, so every page gets
  * it, the CLI login page included.
  */
