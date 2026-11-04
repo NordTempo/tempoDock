@@ -22,7 +22,7 @@ type CountEnvironmentAuditSinceParams struct {
 // CountEnvironmentAuditSince counts the environment's changes after an
 // audit event, leaving out access requests' own (asked, decided).
 func (q *Queries) CountEnvironmentAuditSince(ctx context.Context, arg CountEnvironmentAuditSinceParams) (int64, error) {
-	row := q.queryRow(ctx, q.countEnvironmentAuditSinceStmt, countEnvironmentAuditSince, arg.EnvironmentID, arg.ID)
+	row := q.db.QueryRowContext(ctx, countEnvironmentAuditSince, arg.EnvironmentID, arg.ID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -40,7 +40,7 @@ type CountPendingAccessRequestsParams struct {
 // CountPendingAccessRequests counts an org's pending requests, for the
 // nav's badge.
 func (q *Queries) CountPendingAccessRequests(ctx context.Context, arg CountPendingAccessRequestsParams) (int64, error) {
-	row := q.queryRow(ctx, q.countPendingAccessRequestsStmt, countPendingAccessRequests, arg.OrgID, arg.ExpiresAt)
+	row := q.db.QueryRowContext(ctx, countPendingAccessRequests, arg.OrgID, arg.ExpiresAt)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -74,7 +74,7 @@ type CreateAccessRequestParams struct {
 }
 
 func (q *Queries) CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error) {
-	row := q.queryRow(ctx, q.createAccessRequestStmt, createAccessRequest,
+	row := q.db.QueryRowContext(ctx, createAccessRequest,
 		arg.Nonce,
 		arg.OrgID,
 		arg.ProjectID,
@@ -142,7 +142,7 @@ type DecideAccessRequestParams struct {
 // DecideAccessRequest moves a pending request to approved or rejected;
 // it changes nothing (no row) if it was already decided or has expired.
 func (q *Queries) DecideAccessRequest(ctx context.Context, arg DecideAccessRequestParams) (AccessRequest, error) {
-	row := q.queryRow(ctx, q.decideAccessRequestStmt, decideAccessRequest,
+	row := q.db.QueryRowContext(ctx, decideAccessRequest,
 		arg.Status,
 		arg.DecidedBy,
 		arg.DecidedAt,
@@ -189,7 +189,7 @@ RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation,
 
 // ExpireAccessRequests marks pending requests past their time expired.
 func (q *Queries) ExpireAccessRequests(ctx context.Context, expiresAt time.Time) ([]AccessRequest, error) {
-	rows, err := q.query(ctx, q.expireAccessRequestsStmt, expireAccessRequests, expiresAt)
+	rows, err := q.db.QueryContext(ctx, expireAccessRequests, expiresAt)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +250,7 @@ type FailRunningAccessRequestsParams struct {
 
 // FailRunningAccessRequests fails requests whose run a restart cut off.
 func (q *Queries) FailRunningAccessRequests(ctx context.Context, arg FailRunningAccessRequestsParams) ([]AccessRequest, error) {
-	rows, err := q.query(ctx, q.failRunningAccessRequestsStmt, failRunningAccessRequests, arg.Error, arg.FinishedAt)
+	rows, err := q.db.QueryContext(ctx, failRunningAccessRequests, arg.Error, arg.FinishedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +314,7 @@ type FinishAccessRequestParams struct {
 
 // FinishAccessRequest records an approved request's run.
 func (q *Queries) FinishAccessRequest(ctx context.Context, arg FinishAccessRequestParams) (AccessRequest, error) {
-	row := q.queryRow(ctx, q.finishAccessRequestStmt, finishAccessRequest,
+	row := q.db.QueryRowContext(ctx, finishAccessRequest,
 		arg.Status,
 		arg.Result,
 		arg.Error,
@@ -357,7 +357,7 @@ SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, ti
 `
 
 func (q *Queries) GetAccessRequest(ctx context.Context, id int64) (AccessRequest, error) {
-	row := q.queryRow(ctx, q.getAccessRequestStmt, getAccessRequest, id)
+	row := q.db.QueryRowContext(ctx, getAccessRequest, id)
 	var i AccessRequest
 	err := row.Scan(
 		&i.ID,
@@ -396,7 +396,7 @@ SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, ti
 // GetPendingAccessRequest is the pending request with a fingerprint, so an
 // identical call joins it instead of filing another.
 func (q *Queries) GetPendingAccessRequest(ctx context.Context, fingerprint string) (AccessRequest, error) {
-	row := q.queryRow(ctx, q.getPendingAccessRequestStmt, getPendingAccessRequest, fingerprint)
+	row := q.db.QueryRowContext(ctx, getPendingAccessRequest, fingerprint)
 	var i AccessRequest
 	err := row.Scan(
 		&i.ID,
@@ -436,7 +436,7 @@ SELECT CAST(coalesce(max(id), 0) AS INTEGER) FROM audit_events WHERE environment
 // environment (0 for none): where an access request starts counting
 // changes.
 func (q *Queries) LatestEnvironmentAudit(ctx context.Context, environmentID *int64) (int64, error) {
-	row := q.queryRow(ctx, q.latestEnvironmentAuditStmt, latestEnvironmentAudit, environmentID)
+	row := q.db.QueryRowContext(ctx, latestEnvironmentAudit, environmentID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -448,7 +448,7 @@ SELECT upload FROM access_requests WHERE upload != '' AND status IN ('pending', 
 
 // ListHeldUploads is the archives of requests that may still run.
 func (q *Queries) ListHeldUploads(ctx context.Context) ([]string, error) {
-	rows, err := q.query(ctx, q.listHeldUploadsStmt, listHeldUploads)
+	rows, err := q.db.QueryContext(ctx, listHeldUploads)
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +481,7 @@ type ListOrgAccessRequestsParams struct {
 
 // ListOrgAccessRequests is an org's requests, newest first (the inbox).
 func (q *Queries) ListOrgAccessRequests(ctx context.Context, arg ListOrgAccessRequestsParams) ([]AccessRequest, error) {
-	rows, err := q.query(ctx, q.listOrgAccessRequestsStmt, listOrgAccessRequests, arg.OrgID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listOrgAccessRequests, arg.OrgID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +540,7 @@ type ListTokenAccessRequestsParams struct {
 
 // ListTokenAccessRequests is the requests a token filed, newest first.
 func (q *Queries) ListTokenAccessRequests(ctx context.Context, arg ListTokenAccessRequestsParams) ([]AccessRequest, error) {
-	rows, err := q.query(ctx, q.listTokenAccessRequestsStmt, listTokenAccessRequests, arg.TokenID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listTokenAccessRequests, arg.TokenID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -595,7 +595,7 @@ DELETE FROM access_requests WHERE created_at < +? AND status NOT IN ('pending', 
 // PruneAccessRequests deletes decided requests asked before a time, with
 // the audit log's retention.
 func (q *Queries) PruneAccessRequests(ctx context.Context, createdAt time.Time) (int64, error) {
-	result, err := q.exec(ctx, q.pruneAccessRequestsStmt, pruneAccessRequests, createdAt)
+	result, err := q.db.ExecContext(ctx, pruneAccessRequests, createdAt)
 	if err != nil {
 		return 0, err
 	}
@@ -622,7 +622,7 @@ type ReplaceAccessRequestParams struct {
 // ReplaceAccessRequest gives a pending request a newer call of the same
 // kind (a newer push or upload replaces the one waiting).
 func (q *Queries) ReplaceAccessRequest(ctx context.Context, arg ReplaceAccessRequestParams) (AccessRequest, error) {
-	row := q.queryRow(ctx, q.replaceAccessRequestStmt, replaceAccessRequest,
+	row := q.db.QueryRowContext(ctx, replaceAccessRequest,
 		arg.Nonce,
 		arg.Args,
 		arg.Upload,
@@ -675,7 +675,7 @@ type SetAccessRequestReasonParams struct {
 // SetAccessRequestReason gives a pending request the reason a later
 // identical call sent, when it had none.
 func (q *Queries) SetAccessRequestReason(ctx context.Context, arg SetAccessRequestReasonParams) error {
-	_, err := q.exec(ctx, q.setAccessRequestReasonStmt, setAccessRequestReason, arg.Reason, arg.ID)
+	_, err := q.db.ExecContext(ctx, setAccessRequestReason, arg.Reason, arg.ID)
 	return err
 }
 
@@ -689,6 +689,6 @@ type SetOrgRequestTTLParams struct {
 }
 
 func (q *Queries) SetOrgRequestTTL(ctx context.Context, arg SetOrgRequestTTLParams) error {
-	_, err := q.exec(ctx, q.setOrgRequestTTLStmt, setOrgRequestTTL, arg.RequestTtlHours, arg.ID)
+	_, err := q.db.ExecContext(ctx, setOrgRequestTTL, arg.RequestTtlHours, arg.ID)
 	return err
 }

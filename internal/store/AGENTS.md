@@ -1,8 +1,8 @@
 # internal/store
 
 Dock's SQLite state: `migrations/*.sql` (schema), `queries/*.sql` (sqlc
-input) and the generated `*.sql.go`. `store.go` opens the database,
-migrates it and prepares every query once per connection.
+input) and the generated `*.sql.go`. `store.go` opens the database and
+migrates it; `stmts.go` prepares each query on first use and reuses it.
 
 ## Migrations
 

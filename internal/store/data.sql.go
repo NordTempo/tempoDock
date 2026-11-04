@@ -25,7 +25,7 @@ type AddAuditDetailParams struct {
 // The detail row of a data audit event. The caller cuts sql at
 // apitypes.AuditSQLMaxBytes.
 func (q *Queries) AddAuditDetail(ctx context.Context, arg AddAuditDetailParams) (int64, error) {
-	row := q.queryRow(ctx, q.addAuditDetailStmt, addAuditDetail,
+	row := q.db.QueryRowContext(ctx, addAuditDetail,
 		arg.Sql,
 		arg.Rows,
 		arg.DurationMs,
@@ -60,7 +60,7 @@ type AddAuditEventWithDetailParams struct {
 // AddAuditEvent with a detail row (AddAuditDetail, in the same
 // transaction).
 func (q *Queries) AddAuditEventWithDetail(ctx context.Context, arg AddAuditEventWithDetailParams) (AuditEvent, error) {
-	row := q.queryRow(ctx, q.addAuditEventWithDetailStmt, addAuditEventWithDetail,
+	row := q.db.QueryRowContext(ctx, addAuditEventWithDetail,
 		arg.Actor,
 		arg.ActorKind,
 		arg.UserID,
@@ -111,7 +111,7 @@ type AddDataPolicyRuleParams struct {
 // NULL project_id and environment_id add to the default policy; a second
 // rule for the same scope, subject and kind is a unique violation.
 func (q *Queries) AddDataPolicyRule(ctx context.Context, arg AddDataPolicyRuleParams) error {
-	_, err := q.exec(ctx, q.addDataPolicyRuleStmt, addDataPolicyRule,
+	_, err := q.db.ExecContext(ctx, addDataPolicyRule,
 		arg.OrgID,
 		arg.ProjectID,
 		arg.EnvironmentID,
@@ -136,7 +136,7 @@ type AddSensitiveColumnParams struct {
 }
 
 func (q *Queries) AddSensitiveColumn(ctx context.Context, arg AddSensitiveColumnParams) error {
-	_, err := q.exec(ctx, q.addSensitiveColumnStmt, addSensitiveColumn,
+	_, err := q.db.ExecContext(ctx, addSensitiveColumn,
 		arg.ServiceID,
 		arg.SchemaName,
 		arg.TableName,
@@ -167,7 +167,7 @@ type CreateChangesetParams struct {
 // Stores a changeset as pending. Committing one's own goes through
 // DecideChangeset like an approval.
 func (q *Queries) CreateChangeset(ctx context.Context, arg CreateChangesetParams) (Changeset, error) {
-	row := q.queryRow(ctx, q.createChangesetStmt, createChangeset,
+	row := q.db.QueryRowContext(ctx, createChangeset,
 		arg.ServiceID,
 		arg.Author,
 		arg.AuthorKind,
@@ -225,7 +225,7 @@ type DecideChangesetParams struct {
 // not expired by decided_at changes, so concurrent decisions can't both
 // win: no row (IsNotFound) means someone else decided first or it expired.
 func (q *Queries) DecideChangeset(ctx context.Context, arg DecideChangesetParams) (Changeset, error) {
-	row := q.queryRow(ctx, q.decideChangesetStmt, decideChangeset,
+	row := q.db.QueryRowContext(ctx, decideChangeset,
 		arg.Status,
 		arg.DecidedAt,
 		arg.DecidedBy,
@@ -273,7 +273,7 @@ type DeleteDataPolicyRulesParams struct {
 // Removes the rules at one scope (see ListDataPolicyRules); replacing a
 // scope's policy is this plus AddDataPolicyRule per rule in one transaction.
 func (q *Queries) DeleteDataPolicyRules(ctx context.Context, arg DeleteDataPolicyRulesParams) error {
-	_, err := q.exec(ctx, q.deleteDataPolicyRulesStmt, deleteDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
+	_, err := q.db.ExecContext(ctx, deleteDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
 	return err
 }
 
@@ -289,7 +289,7 @@ type DeleteSavedQueryParams struct {
 }
 
 func (q *Queries) DeleteSavedQuery(ctx context.Context, arg DeleteSavedQueryParams) (int64, error) {
-	result, err := q.exec(ctx, q.deleteSavedQueryStmt, deleteSavedQuery, arg.ID, arg.ServiceID, arg.UserID)
+	result, err := q.db.ExecContext(ctx, deleteSavedQuery, arg.ID, arg.ServiceID, arg.UserID)
 	if err != nil {
 		return 0, err
 	}
@@ -303,7 +303,7 @@ DELETE FROM sensitive_columns WHERE service_id = +?1
 // Clears a database's marks; replacing them is this plus AddSensitiveColumn
 // per column in one transaction.
 func (q *Queries) DeleteSensitiveColumns(ctx context.Context, serviceID int64) error {
-	_, err := q.exec(ctx, q.deleteSensitiveColumnsStmt, deleteSensitiveColumns, serviceID)
+	_, err := q.db.ExecContext(ctx, deleteSensitiveColumns, serviceID)
 	return err
 }
 
@@ -316,7 +316,7 @@ WHERE status = 'pending' AND expires_at <= +?1
 // it expired. Run lazily before changesets are listed; nothing runs it on
 // a timer.
 func (q *Queries) ExpireChangesets(ctx context.Context, now time.Time) (int64, error) {
-	result, err := q.exec(ctx, q.expireChangesetsStmt, expireChangesets, now)
+	result, err := q.db.ExecContext(ctx, expireChangesets, now)
 	if err != nil {
 		return 0, err
 	}
@@ -328,7 +328,7 @@ SELECT id, sql, "rows", duration_ms, outcome FROM audit_details WHERE id = ?
 `
 
 func (q *Queries) GetAuditDetail(ctx context.Context, id int64) (AuditDetail, error) {
-	row := q.queryRow(ctx, q.getAuditDetailStmt, getAuditDetail, id)
+	row := q.db.QueryRowContext(ctx, getAuditDetail, id)
 	var i AuditDetail
 	err := row.Scan(
 		&i.ID,
@@ -346,7 +346,7 @@ SELECT id, actor, actor_kind, user_id, token_id, "action", project_id, environme
 
 // The event a detail belongs to, to check who may read the detail.
 func (q *Queries) GetAuditEventByDetail(ctx context.Context, detailID int64) (AuditEvent, error) {
-	row := q.queryRow(ctx, q.getAuditEventByDetailStmt, getAuditEventByDetail, detailID)
+	row := q.db.QueryRowContext(ctx, getAuditEventByDetail, detailID)
 	var i AuditEvent
 	err := row.Scan(
 		&i.ID,
@@ -376,7 +376,7 @@ type GetChangesetParams struct {
 }
 
 func (q *Queries) GetChangeset(ctx context.Context, arg GetChangesetParams) (Changeset, error) {
-	row := q.queryRow(ctx, q.getChangesetStmt, getChangeset, arg.ID, arg.ServiceID)
+	row := q.db.QueryRowContext(ctx, getChangeset, arg.ID, arg.ServiceID)
 	var i Changeset
 	err := row.Scan(
 		&i.ID,
@@ -405,7 +405,7 @@ SELECT service_id, engine, server_version, reader_secret, writer_secret, grants_
 `
 
 func (q *Queries) GetDataAccess(ctx context.Context, serviceID int64) (DataAccess, error) {
-	row := q.queryRow(ctx, q.getDataAccessStmt, getDataAccess, serviceID)
+	row := q.db.QueryRowContext(ctx, getDataAccess, serviceID)
 	var i DataAccess
 	err := row.Scan(
 		&i.ServiceID,
@@ -436,7 +436,7 @@ type ListChangesetsParams struct {
 // One database's changesets, newest first, with IDs below before_id (pass
 // math.MaxInt64 for the newest).
 func (q *Queries) ListChangesets(ctx context.Context, arg ListChangesetsParams) ([]Changeset, error) {
-	rows, err := q.query(ctx, q.listChangesetsStmt, listChangesets, arg.ServiceID, arg.BeforeID, arg.MaxRows)
+	rows, err := q.db.QueryContext(ctx, listChangesets, arg.ServiceID, arg.BeforeID, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +493,7 @@ type ListDataPolicyRulesParams struct {
 // The rules set at exactly one scope: project_id and environment_id 0 for
 // the default, environment_id 0 for a project.
 func (q *Queries) ListDataPolicyRules(ctx context.Context, arg ListDataPolicyRulesParams) ([]DataPolicyRule, error) {
-	rows, err := q.query(ctx, q.listDataPolicyRulesStmt, listDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
+	rows, err := q.db.QueryContext(ctx, listDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -559,7 +559,7 @@ type ListDataQueryHistoryRow struct {
 // math.MaxInt64 for the newest). The stable environment and target suffix keep
 // this history available after a project rename, isolated from other orgs.
 func (q *Queries) ListDataQueryHistory(ctx context.Context, arg ListDataQueryHistoryParams) ([]ListDataQueryHistoryRow, error) {
-	rows, err := q.query(ctx, q.listDataQueryHistoryStmt, listDataQueryHistory,
+	rows, err := q.db.QueryContext(ctx, listDataQueryHistory,
 		arg.EnvironmentID,
 		arg.Target,
 		arg.UserID,
@@ -615,7 +615,7 @@ type ListEffectiveDataPolicyRulesParams struct {
 // the row with environment_id set, then project_id set, then the default,
 // then the built-in defaults. Unordered: at most 18 rows.
 func (q *Queries) ListEffectiveDataPolicyRules(ctx context.Context, arg ListEffectiveDataPolicyRulesParams) ([]DataPolicyRule, error) {
-	rows, err := q.query(ctx, q.listEffectiveDataPolicyRulesStmt, listEffectiveDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
+	rows, err := q.db.QueryContext(ctx, listEffectiveDataPolicyRules, arg.OrgID, arg.ProjectID, arg.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -655,7 +655,7 @@ ORDER BY id
 // One database's pending changesets, oldest first. Run ExpireChangesets
 // first so none past expires_at show up.
 func (q *Queries) ListPendingChangesets(ctx context.Context, serviceID int64) ([]Changeset, error) {
-	rows, err := q.query(ctx, q.listPendingChangesetsStmt, listPendingChangesets, serviceID)
+	rows, err := q.db.QueryContext(ctx, listPendingChangesets, serviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -708,7 +708,7 @@ type ListSavedQueriesParams struct {
 
 // One user's saved queries on one database, by name.
 func (q *Queries) ListSavedQueries(ctx context.Context, arg ListSavedQueriesParams) ([]SavedQuery, error) {
-	rows, err := q.query(ctx, q.listSavedQueriesStmt, listSavedQueries, arg.ServiceID, arg.UserID)
+	rows, err := q.db.QueryContext(ctx, listSavedQueries, arg.ServiceID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -751,7 +751,7 @@ type ListSensitiveColumnsRow struct {
 }
 
 func (q *Queries) ListSensitiveColumns(ctx context.Context, serviceID int64) ([]ListSensitiveColumnsRow, error) {
-	rows, err := q.query(ctx, q.listSensitiveColumnsStmt, listSensitiveColumns, serviceID)
+	rows, err := q.db.QueryContext(ctx, listSensitiveColumns, serviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +791,7 @@ type SaveQueryParams struct {
 // Creates a saved query, or replaces the SQL of the user's one with that
 // name.
 func (q *Queries) SaveQuery(ctx context.Context, arg SaveQueryParams) (SavedQuery, error) {
-	row := q.queryRow(ctx, q.saveQueryStmt, saveQuery,
+	row := q.db.QueryRowContext(ctx, saveQuery,
 		arg.ServiceID,
 		arg.UserID,
 		arg.Name,
@@ -821,7 +821,7 @@ type SetDataGrantsSyncedHashParams struct {
 }
 
 func (q *Queries) SetDataGrantsSyncedHash(ctx context.Context, arg SetDataGrantsSyncedHashParams) error {
-	_, err := q.exec(ctx, q.setDataGrantsSyncedHashStmt, setDataGrantsSyncedHash, arg.GrantsSyncedHash, arg.ServiceID)
+	_, err := q.db.ExecContext(ctx, setDataGrantsSyncedHash, arg.GrantsSyncedHash, arg.ServiceID)
 	return err
 }
 
@@ -844,7 +844,7 @@ type SetServiceDatabaseSettingsParams struct {
 // Sets a service's database and database_url_variable settings. They apply
 // immediately: no release, nothing staged.
 func (q *Queries) SetServiceDatabaseSettings(ctx context.Context, arg SetServiceDatabaseSettingsParams) (Service, error) {
-	row := q.queryRow(ctx, q.setServiceDatabaseSettingsStmt, setServiceDatabaseSettings, arg.Database, arg.DatabaseUrlVariable, arg.ID)
+	row := q.db.QueryRowContext(ctx, setServiceDatabaseSettings, arg.Database, arg.DatabaseUrlVariable, arg.ID)
 	var i Service
 	err := row.Scan(
 		&i.ID,
@@ -896,7 +896,7 @@ type SetTokenDataAccessParams struct {
 // Sets a token's own data access; NULLs for all three make it follow the
 // policy's tokens rule again.
 func (q *Queries) SetTokenDataAccess(ctx context.Context, arg SetTokenDataAccessParams) (int64, error) {
-	result, err := q.exec(ctx, q.setTokenDataAccessStmt, setTokenDataAccess,
+	result, err := q.db.ExecContext(ctx, setTokenDataAccess,
 		arg.DataProduction,
 		arg.DataNonProduction,
 		arg.DataSensitive,
@@ -927,7 +927,7 @@ type UpdateSavedQueryParams struct {
 // it isn't theirs on this database. Taking another query's name is a unique
 // violation.
 func (q *Queries) UpdateSavedQuery(ctx context.Context, arg UpdateSavedQueryParams) (SavedQuery, error) {
-	row := q.queryRow(ctx, q.updateSavedQueryStmt, updateSavedQuery,
+	row := q.db.QueryRowContext(ctx, updateSavedQuery,
 		arg.Name,
 		arg.Sql,
 		arg.Now,
@@ -971,7 +971,7 @@ type UpsertDataAccessParams struct {
 // Records a setup or rotation: new sealed role passwords and who did it.
 // The roles' grants are resynced afterwards, so the hash resets.
 func (q *Queries) UpsertDataAccess(ctx context.Context, arg UpsertDataAccessParams) (DataAccess, error) {
-	row := q.queryRow(ctx, q.upsertDataAccessStmt, upsertDataAccess,
+	row := q.db.QueryRowContext(ctx, upsertDataAccess,
 		arg.ServiceID,
 		arg.Engine,
 		arg.ServerVersion,

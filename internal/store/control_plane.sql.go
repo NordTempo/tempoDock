@@ -21,7 +21,7 @@ RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_pr
 // becomes a node (ADR 0021). Without a key and revoked, `dock server add
 // <name>` re-joins it under its name with its environments.
 func (q *Queries) DetachLocalServer(ctx context.Context, revokedAt *time.Time) (Server, error) {
-	row := q.queryRow(ctx, q.detachLocalServerStmt, detachLocalServer, revokedAt)
+	row := q.db.QueryRowContext(ctx, detachLocalServer, revokedAt)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -62,7 +62,7 @@ type FailRunningControlPlaneBackupParams struct {
 
 // A run a restart cut short.
 func (q *Queries) FailRunningControlPlaneBackup(ctx context.Context, arg FailRunningControlPlaneBackupParams) (int64, error) {
-	result, err := q.exec(ctx, q.failRunningControlPlaneBackupStmt, failRunningControlPlaneBackup, arg.Error, arg.FinishedAt)
+	result, err := q.db.ExecContext(ctx, failRunningControlPlaneBackup, arg.Error, arg.FinishedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -82,7 +82,7 @@ type FinishControlPlaneBackupParams struct {
 }
 
 func (q *Queries) FinishControlPlaneBackup(ctx context.Context, arg FinishControlPlaneBackupParams) error {
-	_, err := q.exec(ctx, q.finishControlPlaneBackupStmt, finishControlPlaneBackup,
+	_, err := q.db.ExecContext(ctx, finishControlPlaneBackup,
 		arg.Status,
 		arg.SnapshotID,
 		arg.SizeBytes,
@@ -99,7 +99,7 @@ DELETE FROM control_plane_backup WHERE status = 'running'
 // A restored database holds the run that was taking the backup it came
 // from (ADR 0021); it never finished there, so it is dropped.
 func (q *Queries) ForgetRunningControlPlaneBackup(ctx context.Context) error {
-	_, err := q.exec(ctx, q.forgetRunningControlPlaneBackupStmt, forgetRunningControlPlaneBackup)
+	_, err := q.db.ExecContext(ctx, forgetRunningControlPlaneBackup)
 	return err
 }
 
@@ -108,7 +108,7 @@ SELECT id, "trigger", status, repository, snapshot_id, size_bytes, error, create
 `
 
 func (q *Queries) GetControlPlaneBackup(ctx context.Context) (ControlPlaneBackup, error) {
-	row := q.queryRow(ctx, q.getControlPlaneBackupStmt, getControlPlaneBackup)
+	row := q.db.QueryRowContext(ctx, getControlPlaneBackup)
 	var i ControlPlaneBackup
 	err := row.Scan(
 		&i.ID,
@@ -140,7 +140,7 @@ type MoveControlPlaneSnapshotParams struct {
 // Points the control plane's latest backup at its copy in another
 // repository (a backup move).
 func (q *Queries) MoveControlPlaneSnapshot(ctx context.Context, arg MoveControlPlaneSnapshotParams) error {
-	_, err := q.exec(ctx, q.moveControlPlaneSnapshotStmt, moveControlPlaneSnapshot,
+	_, err := q.db.ExecContext(ctx, moveControlPlaneSnapshot,
 		arg.Repository,
 		arg.SnapshotID,
 		arg.Repository_2,
@@ -159,7 +159,7 @@ type RelabelControlPlaneRepositoryParams struct {
 }
 
 func (q *Queries) RelabelControlPlaneRepository(ctx context.Context, arg RelabelControlPlaneRepositoryParams) error {
-	_, err := q.exec(ctx, q.relabelControlPlaneRepositoryStmt, relabelControlPlaneRepository, arg.Repository, arg.Repository_2)
+	_, err := q.db.ExecContext(ctx, relabelControlPlaneRepository, arg.Repository, arg.Repository_2)
 	return err
 }
 
@@ -185,7 +185,7 @@ type StartControlPlaneBackupParams struct {
 // Records a running control plane backup in the one row. A scheduled run
 // moves scheduled_at; a manual one keeps it.
 func (q *Queries) StartControlPlaneBackup(ctx context.Context, arg StartControlPlaneBackupParams) (ControlPlaneBackup, error) {
-	row := q.queryRow(ctx, q.startControlPlaneBackupStmt, startControlPlaneBackup,
+	row := q.db.QueryRowContext(ctx, startControlPlaneBackup,
 		arg.Trigger,
 		arg.Repository,
 		arg.CreatedBy,

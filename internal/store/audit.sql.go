@@ -31,7 +31,7 @@ type AddAuditEventParams struct {
 }
 
 func (q *Queries) AddAuditEvent(ctx context.Context, arg AddAuditEventParams) (AuditEvent, error) {
-	row := q.queryRow(ctx, q.addAuditEventStmt, addAuditEvent,
+	row := q.db.QueryRowContext(ctx, addAuditEvent,
 		arg.Actor,
 		arg.ActorKind,
 		arg.UserID,
@@ -102,7 +102,7 @@ type ListAuditEventsRow struct {
 // using the audit_events_project index; and ListAuditEventsByAction to
 // filter by action alone.
 func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]ListAuditEventsRow, error) {
-	rows, err := q.query(ctx, q.listAuditEventsStmt, listAuditEvents,
+	rows, err := q.db.QueryContext(ctx, listAuditEvents,
 		arg.OrgID,
 		arg.BeforeID,
 		arg.EnvironmentID,
@@ -182,7 +182,7 @@ type ListAuditEventsByActionRow struct {
 // index, so a rare action doesn't walk the whole log; the unary plus on
 // page.id keeps SQLite from walking it through audit_events_org instead.
 func (q *Queries) ListAuditEventsByAction(ctx context.Context, arg ListAuditEventsByActionParams) ([]ListAuditEventsByActionRow, error) {
-	rows, err := q.query(ctx, q.listAuditEventsByActionStmt, listAuditEventsByAction,
+	rows, err := q.db.QueryContext(ctx, listAuditEventsByAction,
 		arg.OrgID,
 		arg.ActionFrom,
 		arg.ActionTo,
@@ -257,7 +257,7 @@ type ListProjectAuditEventsRow struct {
 
 // ListAuditEvents for one project, read through audit_events_project.
 func (q *Queries) ListProjectAuditEvents(ctx context.Context, arg ListProjectAuditEventsParams) ([]ListProjectAuditEventsRow, error) {
-	rows, err := q.query(ctx, q.listProjectAuditEventsStmt, listProjectAuditEvents,
+	rows, err := q.db.QueryContext(ctx, listProjectAuditEvents,
 		arg.ProjectID,
 		arg.BeforeID,
 		arg.EnvironmentID,
@@ -339,7 +339,7 @@ type ListProjectAuditEventsByActionRow struct {
 // the unary plus on page.id keeps SQLite from walking the project's
 // history through audit_events_project instead.
 func (q *Queries) ListProjectAuditEventsByAction(ctx context.Context, arg ListProjectAuditEventsByActionParams) ([]ListProjectAuditEventsByActionRow, error) {
-	rows, err := q.query(ctx, q.listProjectAuditEventsByActionStmt, listProjectAuditEventsByAction,
+	rows, err := q.db.QueryContext(ctx, listProjectAuditEventsByAction,
 		arg.ProjectID,
 		arg.ActionFrom,
 		arg.ActionTo,

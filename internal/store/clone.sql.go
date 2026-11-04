@@ -26,7 +26,7 @@ type InsertLiveVariableParams struct {
 // A variable that is live from the start: a cloned environment's
 // variables, where nothing runs yet (ADR 0022).
 func (q *Queries) InsertLiveVariable(ctx context.Context, arg InsertLiveVariableParams) error {
-	_, err := q.exec(ctx, q.insertLiveVariableStmt, insertLiveVariable,
+	_, err := q.db.ExecContext(ctx, insertLiveVariable,
 		arg.EnvironmentID,
 		arg.ServiceID,
 		arg.Key,
@@ -50,7 +50,7 @@ type SetServiceCopiedSettingsParams struct {
 // The Dock-side settings a cloned service keeps from its source: its
 // template and its data panel settings.
 func (q *Queries) SetServiceCopiedSettings(ctx context.Context, arg SetServiceCopiedSettingsParams) error {
-	_, err := q.exec(ctx, q.setServiceCopiedSettingsStmt, setServiceCopiedSettings,
+	_, err := q.db.ExecContext(ctx, setServiceCopiedSettings,
 		arg.Template,
 		arg.Database,
 		arg.DatabaseUrlVariable,

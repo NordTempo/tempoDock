@@ -16,7 +16,7 @@ SELECT public_host FROM platform_settings WHERE id = 1
 
 // Dock's public address; no row until one was first set.
 func (q *Queries) GetPublicHost(ctx context.Context) (string, error) {
-	row := q.queryRow(ctx, q.getPublicHostStmt, getPublicHost)
+	row := q.db.QueryRowContext(ctx, getPublicHost)
 	var public_host string
 	err := row.Scan(&public_host)
 	return public_host, err
@@ -35,6 +35,6 @@ type SetPublicHostParams struct {
 }
 
 func (q *Queries) SetPublicHost(ctx context.Context, arg SetPublicHostParams) error {
-	_, err := q.exec(ctx, q.setPublicHostStmt, setPublicHost, arg.PublicHost, arg.UpdatedBy, arg.UpdatedAt)
+	_, err := q.db.ExecContext(ctx, setPublicHost, arg.PublicHost, arg.UpdatedBy, arg.UpdatedAt)
 	return err
 }

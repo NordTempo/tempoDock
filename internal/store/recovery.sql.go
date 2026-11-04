@@ -14,7 +14,7 @@ INSERT INTO ensure_running (service_id) VALUES (?) ON CONFLICT DO NOTHING
 `
 
 func (q *Queries) AddEnsureRunning(ctx context.Context, serviceID int64) error {
-	_, err := q.exec(ctx, q.addEnsureRunningStmt, addEnsureRunning, serviceID)
+	_, err := q.db.ExecContext(ctx, addEnsureRunning, serviceID)
 	return err
 }
 
@@ -23,7 +23,7 @@ DELETE FROM ensure_running WHERE service_id = +?
 `
 
 func (q *Queries) DeleteEnsureRunning(ctx context.Context, serviceID int64) error {
-	_, err := q.exec(ctx, q.deleteEnsureRunningStmt, deleteEnsureRunning, serviceID)
+	_, err := q.db.ExecContext(ctx, deleteEnsureRunning, serviceID)
 	return err
 }
 
@@ -36,7 +36,7 @@ WHERE e.server_id = +?1
 
 // The services on a server whose active release must be started again.
 func (q *Queries) ListEnsureRunning(ctx context.Context, serverID int64) ([]int64, error) {
-	rows, err := q.query(ctx, q.listEnsureRunningStmt, listEnsureRunning, serverID)
+	rows, err := q.db.QueryContext(ctx, listEnsureRunning, serverID)
 	if err != nil {
 		return nil, err
 	}

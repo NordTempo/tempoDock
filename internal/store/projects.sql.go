@@ -20,7 +20,7 @@ type ArchiveProjectParams struct {
 }
 
 func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) error {
-	_, err := q.exec(ctx, q.archiveProjectStmt, archiveProject, arg.ArchivedAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, archiveProject, arg.ArchivedAt, arg.ID)
 	return err
 }
 
@@ -34,7 +34,7 @@ type CountKindEnvironmentsParams struct {
 }
 
 func (q *Queries) CountKindEnvironments(ctx context.Context, arg CountKindEnvironmentsParams) (int64, error) {
-	row := q.queryRow(ctx, q.countKindEnvironmentsStmt, countKindEnvironments, arg.ProjectID, arg.Kind)
+	row := q.db.QueryRowContext(ctx, countKindEnvironments, arg.ProjectID, arg.Kind)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -52,7 +52,7 @@ type CreateEnvironmentParams struct {
 }
 
 func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentParams) (Environment, error) {
-	row := q.queryRow(ctx, q.createEnvironmentStmt, createEnvironment,
+	row := q.db.QueryRowContext(ctx, createEnvironment,
 		arg.ProjectID,
 		arg.Name,
 		arg.Kind,
@@ -86,7 +86,7 @@ type CreateProjectParams struct {
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
-	row := q.queryRow(ctx, q.createProjectStmt, createProject, arg.OrgID, arg.Name)
+	row := q.db.QueryRowContext(ctx, createProject, arg.OrgID, arg.Name)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -115,7 +115,7 @@ type CreateServerParams struct {
 }
 
 func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Server, error) {
-	row := q.queryRow(ctx, q.createServerStmt, createServer,
+	row := q.db.QueryRowContext(ctx, createServer,
 		arg.Name,
 		arg.AcceptsProduction,
 		arg.AcceptsNonProduction,
@@ -158,7 +158,7 @@ SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, 
 `
 
 func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, error) {
-	row := q.queryRow(ctx, q.getEnvironmentStmt, getEnvironment, id)
+	row := q.db.QueryRowContext(ctx, getEnvironment, id)
 	var i Environment
 	err := row.Scan(
 		&i.ID,
@@ -187,7 +187,7 @@ type GetEnvironmentByNameParams struct {
 }
 
 func (q *Queries) GetEnvironmentByName(ctx context.Context, arg GetEnvironmentByNameParams) (Environment, error) {
-	row := q.queryRow(ctx, q.getEnvironmentByNameStmt, getEnvironmentByName, arg.ProjectID, arg.Name)
+	row := q.db.QueryRowContext(ctx, getEnvironmentByName, arg.ProjectID, arg.Name)
 	var i Environment
 	err := row.Scan(
 		&i.ID,
@@ -211,7 +211,7 @@ SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_produ
 `
 
 func (q *Queries) GetLocalServer(ctx context.Context) (Server, error) {
-	row := q.queryRow(ctx, q.getLocalServerStmt, getLocalServer)
+	row := q.db.QueryRowContext(ctx, getLocalServer)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -251,7 +251,7 @@ type GetPlacementParams struct {
 }
 
 func (q *Queries) GetPlacement(ctx context.Context, arg GetPlacementParams) (ProjectPlacement, error) {
-	row := q.queryRow(ctx, q.getPlacementStmt, getPlacement, arg.ProjectID, arg.Kind)
+	row := q.db.QueryRowContext(ctx, getPlacement, arg.ProjectID, arg.Kind)
 	var i ProjectPlacement
 	err := row.Scan(
 		&i.ProjectID,
@@ -268,7 +268,7 @@ SELECT id, org_id, name, created_at, archived_at FROM projects WHERE id = +?
 `
 
 func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
-	row := q.queryRow(ctx, q.getProjectStmt, getProject, id)
+	row := q.db.QueryRowContext(ctx, getProject, id)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -290,7 +290,7 @@ type GetProjectByNameParams struct {
 }
 
 func (q *Queries) GetProjectByName(ctx context.Context, arg GetProjectByNameParams) (Project, error) {
-	row := q.queryRow(ctx, q.getProjectByNameStmt, getProjectByName, arg.OrgID, arg.Name)
+	row := q.db.QueryRowContext(ctx, getProjectByName, arg.OrgID, arg.Name)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -307,7 +307,7 @@ SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_produ
 `
 
 func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
-	row := q.queryRow(ctx, q.getServerStmt, getServer, id)
+	row := q.db.QueryRowContext(ctx, getServer, id)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -342,7 +342,7 @@ SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_produ
 `
 
 func (q *Queries) GetServerByName(ctx context.Context, name string) (Server, error) {
-	row := q.queryRow(ctx, q.getServerByNameStmt, getServerByName, name)
+	row := q.db.QueryRowContext(ctx, getServerByName, name)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -377,7 +377,7 @@ SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, 
 `
 
 func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Environment, error) {
-	rows, err := q.query(ctx, q.listEnvironmentsStmt, listEnvironments, projectID)
+	rows, err := q.db.QueryContext(ctx, listEnvironments, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +417,7 @@ SELECT project_id, kind, server_id, pinned, created_at FROM project_placements W
 `
 
 func (q *Queries) ListPlacements(ctx context.Context, projectID int64) ([]ProjectPlacement, error) {
-	rows, err := q.query(ctx, q.listPlacementsStmt, listPlacements, projectID)
+	rows, err := q.db.QueryContext(ctx, listPlacements, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +450,7 @@ SELECT id, org_id, name, created_at, archived_at FROM projects WHERE org_id = +?
 `
 
 func (q *Queries) ListProjects(ctx context.Context, orgID int64) ([]Project, error) {
-	rows, err := q.query(ctx, q.listProjectsStmt, listProjects, orgID)
+	rows, err := q.db.QueryContext(ctx, listProjects, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -492,7 +492,7 @@ type ListServerEnvironmentsRow struct {
 }
 
 func (q *Queries) ListServerEnvironments(ctx context.Context, serverID int64) ([]ListServerEnvironmentsRow, error) {
-	rows, err := q.query(ctx, q.listServerEnvironmentsStmt, listServerEnvironments, serverID)
+	rows, err := q.db.QueryContext(ctx, listServerEnvironments, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -538,7 +538,7 @@ type ListServerLoadsRow struct {
 // query: memory reserved by its live services (their limit, or
 // default_memory_mb without one) and how many live projects are placed on it.
 func (q *Queries) ListServerLoads(ctx context.Context, defaultMemoryMb interface{}) ([]ListServerLoadsRow, error) {
-	rows, err := q.query(ctx, q.listServerLoadsStmt, listServerLoads, defaultMemoryMb)
+	rows, err := q.db.QueryContext(ctx, listServerLoads, defaultMemoryMb)
 	if err != nil {
 		return nil, err
 	}
@@ -600,7 +600,7 @@ type ListServerPlacementsRow struct {
 }
 
 func (q *Queries) ListServerPlacements(ctx context.Context, serverID int64) ([]ListServerPlacementsRow, error) {
-	rows, err := q.query(ctx, q.listServerPlacementsStmt, listServerPlacements, serverID)
+	rows, err := q.db.QueryContext(ctx, listServerPlacements, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -634,7 +634,7 @@ SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_produ
 `
 
 func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
-	rows, err := q.query(ctx, q.listServersStmt, listServers)
+	rows, err := q.db.QueryContext(ctx, listServers)
 	if err != nil {
 		return nil, err
 	}
@@ -690,7 +690,7 @@ type RenameProjectParams struct {
 }
 
 func (q *Queries) RenameProject(ctx context.Context, arg RenameProjectParams) (Project, error) {
-	row := q.queryRow(ctx, q.renameProjectStmt, renameProject, arg.Name, arg.ID)
+	row := q.db.QueryRowContext(ctx, renameProject, arg.Name, arg.ID)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -718,7 +718,7 @@ type SetEnvironmentLockParams struct {
 // SetEnvironmentLock locks (locked_at set) or unlocks (NULL) an
 // environment, or opens a locked one until open_until (ADR 0044).
 func (q *Queries) SetEnvironmentLock(ctx context.Context, arg SetEnvironmentLockParams) (Environment, error) {
-	row := q.queryRow(ctx, q.setEnvironmentLockStmt, setEnvironmentLock,
+	row := q.db.QueryRowContext(ctx, setEnvironmentLock,
 		arg.LockedAt,
 		arg.LockedBy,
 		arg.LockReason,
@@ -754,7 +754,7 @@ type SetServerMemoryParams struct {
 }
 
 func (q *Queries) SetServerMemory(ctx context.Context, arg SetServerMemoryParams) error {
-	_, err := q.exec(ctx, q.setServerMemoryStmt, setServerMemory, arg.MemoryBytes, arg.ID, arg.MemoryBytes_2)
+	_, err := q.db.ExecContext(ctx, setServerMemory, arg.MemoryBytes, arg.ID, arg.MemoryBytes_2)
 	return err
 }
 
@@ -771,7 +771,7 @@ type TouchLocalServerParams struct {
 }
 
 func (q *Queries) TouchLocalServer(ctx context.Context, arg TouchLocalServerParams) (Server, error) {
-	row := q.queryRow(ctx, q.touchLocalServerStmt, touchLocalServer,
+	row := q.db.QueryRowContext(ctx, touchLocalServer,
 		arg.Builder,
 		arg.LastSeenAt,
 		arg.Version,
@@ -820,7 +820,7 @@ type UpdateServerPlacementParams struct {
 }
 
 func (q *Queries) UpdateServerPlacement(ctx context.Context, arg UpdateServerPlacementParams) (Server, error) {
-	row := q.queryRow(ctx, q.updateServerPlacementStmt, updateServerPlacement,
+	row := q.db.QueryRowContext(ctx, updateServerPlacement,
 		arg.AcceptsProduction,
 		arg.AcceptsNonProduction,
 		arg.DisabledForPlacement,
@@ -868,7 +868,7 @@ type UpsertPlacementParams struct {
 }
 
 func (q *Queries) UpsertPlacement(ctx context.Context, arg UpsertPlacementParams) error {
-	_, err := q.exec(ctx, q.upsertPlacementStmt, upsertPlacement,
+	_, err := q.db.ExecContext(ctx, upsertPlacement,
 		arg.ProjectID,
 		arg.Kind,
 		arg.ServerID,

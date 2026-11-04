@@ -30,7 +30,7 @@ type ListProjectGitConnectionsRow struct {
 // The non-secret settings of a project's git connections (no webhook
 // secret, no token), by service.
 func (q *Queries) ListProjectGitConnections(ctx context.Context, projectID int64) ([]ListProjectGitConnectionsRow, error) {
-	rows, err := q.query(ctx, q.listProjectGitConnectionsStmt, listProjectGitConnections, projectID)
+	rows, err := q.db.QueryContext(ctx, listProjectGitConnections, projectID)
 	if err != nil {
 		return nil, err
 	}

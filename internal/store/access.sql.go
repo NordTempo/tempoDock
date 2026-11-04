@@ -15,7 +15,7 @@ DELETE FROM service_access WHERE service_id = +?
 `
 
 func (q *Queries) DeleteServiceAccess(ctx context.Context, serviceID int64) error {
-	_, err := q.exec(ctx, q.deleteServiceAccessStmt, deleteServiceAccess, serviceID)
+	_, err := q.db.ExecContext(ctx, deleteServiceAccess, serviceID)
 	return err
 }
 
@@ -24,7 +24,7 @@ SELECT service_id, mode, username, password_hash, "key", updated_by, updated_at 
 `
 
 func (q *Queries) GetServiceAccess(ctx context.Context, serviceID int64) (ServiceAccess, error) {
-	row := q.queryRow(ctx, q.getServiceAccessStmt, getServiceAccess, serviceID)
+	row := q.db.QueryRowContext(ctx, getServiceAccess, serviceID)
 	var i ServiceAccess
 	err := row.Scan(
 		&i.ServiceID,
@@ -57,7 +57,7 @@ type SetServiceAccessParams struct {
 }
 
 func (q *Queries) SetServiceAccess(ctx context.Context, arg SetServiceAccessParams) error {
-	_, err := q.exec(ctx, q.setServiceAccessStmt, setServiceAccess,
+	_, err := q.db.ExecContext(ctx, setServiceAccess,
 		arg.ServiceID,
 		arg.Mode,
 		arg.Username,

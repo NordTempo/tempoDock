@@ -23,7 +23,7 @@ type AddGitDeliveryParams struct {
 // Records a delivery; a unique violation means its ID or its body hash
 // (sha256 of hook ID and body) was seen within the replay window.
 func (q *Queries) AddGitDelivery(ctx context.Context, arg AddGitDeliveryParams) error {
-	_, err := q.exec(ctx, q.addGitDeliveryStmt, addGitDelivery, arg.DeliveryID, arg.BodyHash, arg.CreatedAt)
+	_, err := q.db.ExecContext(ctx, addGitDelivery, arg.DeliveryID, arg.BodyHash, arg.CreatedAt)
 	return err
 }
 
@@ -41,7 +41,7 @@ type ClearGitPendingParams struct {
 // Clears the queued push if it is still sha (a newer one may have
 // replaced it meanwhile).
 func (q *Queries) ClearGitPending(ctx context.Context, arg ClearGitPendingParams) (int64, error) {
-	result, err := q.exec(ctx, q.clearGitPendingStmt, clearGitPending, arg.ID, arg.PendingSha)
+	result, err := q.db.ExecContext(ctx, clearGitPending, arg.ID, arg.PendingSha)
 	if err != nil {
 		return 0, err
 	}
@@ -69,7 +69,7 @@ type CreateGitConnectionParams struct {
 }
 
 func (q *Queries) CreateGitConnection(ctx context.Context, arg CreateGitConnectionParams) (GitConnection, error) {
-	row := q.queryRow(ctx, q.createGitConnectionStmt, createGitConnection,
+	row := q.db.QueryRowContext(ctx, createGitConnection,
 		arg.ServiceID,
 		arg.HookID,
 		arg.Repo,
@@ -114,7 +114,7 @@ DELETE FROM git_connections WHERE service_id = +?
 `
 
 func (q *Queries) DeleteGitConnection(ctx context.Context, serviceID int64) error {
-	_, err := q.exec(ctx, q.deleteGitConnectionStmt, deleteGitConnection, serviceID)
+	_, err := q.db.ExecContext(ctx, deleteGitConnection, serviceID)
 	return err
 }
 
@@ -130,7 +130,7 @@ type GetAppGitConnectionsParams struct {
 // The App connections of one repository, which an App push delivery is
 // routed to.
 func (q *Queries) GetAppGitConnections(ctx context.Context, arg GetAppGitConnectionsParams) ([]GitConnection, error) {
-	rows, err := q.query(ctx, q.getAppGitConnectionsStmt, getAppGitConnections, arg.RepoID, arg.InstallationID)
+	rows, err := q.db.QueryContext(ctx, getAppGitConnections, arg.RepoID, arg.InstallationID)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, p
 `
 
 func (q *Queries) GetGitConnectionByHook(ctx context.Context, hookID string) (GitConnection, error) {
-	row := q.queryRow(ctx, q.getGitConnectionByHookStmt, getGitConnectionByHook, hookID)
+	row := q.db.QueryRowContext(ctx, getGitConnectionByHook, hookID)
 	var i GitConnection
 	err := row.Scan(
 		&i.ID,
@@ -212,7 +212,7 @@ SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, p
 `
 
 func (q *Queries) GetGitConnectionByService(ctx context.Context, serviceID int64) (GitConnection, error) {
-	row := q.queryRow(ctx, q.getGitConnectionByServiceStmt, getGitConnectionByService, serviceID)
+	row := q.db.QueryRowContext(ctx, getGitConnectionByService, serviceID)
 	var i GitConnection
 	err := row.Scan(
 		&i.ID,
@@ -245,7 +245,7 @@ SELECT service_id FROM git_connections WHERE pending_sha > ''
 `
 
 func (q *Queries) ListGitPendingServices(ctx context.Context) ([]int64, error) {
-	rows, err := q.query(ctx, q.listGitPendingServicesStmt, listGitPendingServices)
+	rows, err := q.db.QueryContext(ctx, listGitPendingServices)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +272,7 @@ DELETE FROM git_deliveries WHERE created_at < +?
 `
 
 func (q *Queries) PruneGitDeliveries(ctx context.Context, createdAt time.Time) error {
-	_, err := q.exec(ctx, q.pruneGitDeliveriesStmt, pruneGitDeliveries, createdAt)
+	_, err := q.db.ExecContext(ctx, pruneGitDeliveries, createdAt)
 	return err
 }
 
@@ -287,7 +287,7 @@ type SetGitLastEventParams struct {
 }
 
 func (q *Queries) SetGitLastEvent(ctx context.Context, arg SetGitLastEventParams) error {
-	_, err := q.exec(ctx, q.setGitLastEventStmt, setGitLastEvent, arg.LastEvent, arg.LastEventAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, setGitLastEvent, arg.LastEvent, arg.LastEventAt, arg.ID)
 	return err
 }
 
@@ -309,7 +309,7 @@ type SetGitPendingParams struct {
 
 // Queues a push, replacing any older one that hasn't started.
 func (q *Queries) SetGitPending(ctx context.Context, arg SetGitPendingParams) error {
-	_, err := q.exec(ctx, q.setGitPendingStmt, setGitPending,
+	_, err := q.db.ExecContext(ctx, setGitPending,
 		arg.PendingSha,
 		arg.PendingMessage,
 		arg.PendingAuthor,
@@ -333,7 +333,7 @@ type SetReleaseCommitParams struct {
 }
 
 func (q *Queries) SetReleaseCommit(ctx context.Context, arg SetReleaseCommitParams) error {
-	_, err := q.exec(ctx, q.setReleaseCommitStmt, setReleaseCommit,
+	_, err := q.db.ExecContext(ctx, setReleaseCommit,
 		arg.CommitSha,
 		arg.CommitMessage,
 		arg.CommitAuthor,
@@ -366,7 +366,7 @@ type UpdateGitConnectionParams struct {
 // the secret is rotated (the caller passes the old ones otherwise);
 // installation_id and repo_id are 0 for a webhook connection.
 func (q *Queries) UpdateGitConnection(ctx context.Context, arg UpdateGitConnectionParams) (GitConnection, error) {
-	row := q.queryRow(ctx, q.updateGitConnectionStmt, updateGitConnection,
+	row := q.db.QueryRowContext(ctx, updateGitConnection,
 		arg.Repo,
 		arg.Branch,
 		arg.Dir,

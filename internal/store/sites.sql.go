@@ -25,7 +25,7 @@ type AddSiteFunnelParams struct {
 }
 
 func (q *Queries) AddSiteFunnel(ctx context.Context, arg AddSiteFunnelParams) (SiteFunnel, error) {
-	row := q.queryRow(ctx, q.addSiteFunnelStmt, addSiteFunnel,
+	row := q.db.QueryRowContext(ctx, addSiteFunnel,
 		arg.SiteID,
 		arg.Name,
 		arg.Steps,
@@ -59,7 +59,7 @@ type AddSiteGoalParams struct {
 }
 
 func (q *Queries) AddSiteGoal(ctx context.Context, arg AddSiteGoalParams) (SiteGoal, error) {
-	row := q.queryRow(ctx, q.addSiteGoalStmt, addSiteGoal,
+	row := q.db.QueryRowContext(ctx, addSiteGoal,
 		arg.SiteID,
 		arg.Name,
 		arg.Kind,
@@ -93,7 +93,7 @@ type AddSiteHostnameParams struct {
 }
 
 func (q *Queries) AddSiteHostname(ctx context.Context, arg AddSiteHostnameParams) error {
-	_, err := q.exec(ctx, q.addSiteHostnameStmt, addSiteHostname,
+	_, err := q.db.ExecContext(ctx, addSiteHostname,
 		arg.Hostname,
 		arg.SiteID,
 		arg.ServiceID,
@@ -114,7 +114,7 @@ type AddSiteMarkerParams struct {
 }
 
 func (q *Queries) AddSiteMarker(ctx context.Context, arg AddSiteMarkerParams) error {
-	_, err := q.exec(ctx, q.addSiteMarkerStmt, addSiteMarker,
+	_, err := q.db.ExecContext(ctx, addSiteMarker,
 		arg.SiteID,
 		arg.At,
 		arg.Kind,
@@ -133,7 +133,7 @@ type ArchiveSiteParams struct {
 }
 
 func (q *Queries) ArchiveSite(ctx context.Context, arg ArchiveSiteParams) error {
-	_, err := q.exec(ctx, q.archiveSiteStmt, archiveSite, arg.ArchivedAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, archiveSite, arg.ArchivedAt, arg.ID)
 	return err
 }
 
@@ -142,7 +142,7 @@ SELECT count(*) FROM site_hostnames WHERE site_id = +?
 `
 
 func (q *Queries) CountSiteHostnames(ctx context.Context, siteID int64) (int64, error) {
-	row := q.queryRow(ctx, q.countSiteHostnamesStmt, countSiteHostnames, siteID)
+	row := q.db.QueryRowContext(ctx, countSiteHostnames, siteID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -164,7 +164,7 @@ type CreateSiteParams struct {
 
 // Dock Analytics' sites (ADR 0037).
 func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error) {
-	row := q.queryRow(ctx, q.createSiteStmt, createSite,
+	row := q.db.QueryRowContext(ctx, createSite,
 		arg.EnvironmentID,
 		arg.Name,
 		arg.PublicSlug,
@@ -219,7 +219,7 @@ type DomainScopeRow struct {
 // hostname until one verifies it (ADR 0042); within an org it is one
 // service's.
 func (q *Queries) DomainScope(ctx context.Context, arg DomainScopeParams) (DomainScopeRow, error) {
-	row := q.queryRow(ctx, q.domainScopeStmt, domainScope, arg.Hostname, arg.OrgID)
+	row := q.db.QueryRowContext(ctx, domainScope, arg.Hostname, arg.OrgID)
 	var i DomainScopeRow
 	err := row.Scan(
 		&i.Hostname,
@@ -241,7 +241,7 @@ SELECT id, environment_id, name, settings, archived_at, created_by, created_at, 
 `
 
 func (q *Queries) GetSite(ctx context.Context, id int64) (Site, error) {
-	row := q.queryRow(ctx, q.getSiteStmt, getSite, id)
+	row := q.db.QueryRowContext(ctx, getSite, id)
 	var i Site
 	err := row.Scan(
 		&i.ID,
@@ -271,7 +271,7 @@ type GetSiteByNameParams struct {
 // GetSiteByName finds a live site by name in a project; names are
 // unique per project (core.createSite).
 func (q *Queries) GetSiteByName(ctx context.Context, arg GetSiteByNameParams) (Site, error) {
-	row := q.queryRow(ctx, q.getSiteByNameStmt, getSiteByName, arg.ProjectID, arg.Name)
+	row := q.db.QueryRowContext(ctx, getSiteByName, arg.ProjectID, arg.Name)
 	var i Site
 	err := row.Scan(
 		&i.ID,
@@ -296,7 +296,7 @@ type GetSiteFunnelParams struct {
 }
 
 func (q *Queries) GetSiteFunnel(ctx context.Context, arg GetSiteFunnelParams) (SiteFunnel, error) {
-	row := q.queryRow(ctx, q.getSiteFunnelStmt, getSiteFunnel, arg.SiteID, arg.Name)
+	row := q.db.QueryRowContext(ctx, getSiteFunnel, arg.SiteID, arg.Name)
 	var i SiteFunnel
 	err := row.Scan(
 		&i.ID,
@@ -314,7 +314,7 @@ SELECT hostname, site_id, service_id, added_at FROM site_hostnames WHERE hostnam
 `
 
 func (q *Queries) GetSiteHostname(ctx context.Context, hostname string) (SiteHostname, error) {
-	row := q.queryRow(ctx, q.getSiteHostnameStmt, getSiteHostname, hostname)
+	row := q.db.QueryRowContext(ctx, getSiteHostname, hostname)
 	var i SiteHostname
 	err := row.Scan(
 		&i.Hostname,
@@ -337,7 +337,7 @@ type ListAllSitesRow struct {
 // ListAllSites returns every site's settings, archived ones too: the
 // daily retention pass.
 func (q *Queries) ListAllSites(ctx context.Context) ([]ListAllSitesRow, error) {
-	rows, err := q.query(ctx, q.listAllSitesStmt, listAllSites)
+	rows, err := q.db.QueryContext(ctx, listAllSites)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +375,7 @@ type ListAnalyticsHostsRow struct {
 // ListAnalyticsHosts returns, for routing, every live site's hostnames
 // on a server's environments: the hostname and its site.
 func (q *Queries) ListAnalyticsHosts(ctx context.Context, serverID int64) ([]ListAnalyticsHostsRow, error) {
-	rows, err := q.query(ctx, q.listAnalyticsHostsStmt, listAnalyticsHosts, serverID)
+	rows, err := q.db.QueryContext(ctx, listAnalyticsHosts, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +410,7 @@ type ListLiveSitesRow struct {
 // ListLiveSites returns every live site with its settings, for the
 // ingest's per-site rules.
 func (q *Queries) ListLiveSites(ctx context.Context) ([]ListLiveSitesRow, error) {
-	rows, err := q.query(ctx, q.listLiveSitesStmt, listLiveSites)
+	rows, err := q.db.QueryContext(ctx, listLiveSites)
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +454,7 @@ type ListProjectSitesRow struct {
 // ListProjectSites returns a project's sites, live first, with their
 // environment's name.
 func (q *Queries) ListProjectSites(ctx context.Context, projectID int64) ([]ListProjectSitesRow, error) {
-	rows, err := q.query(ctx, q.listProjectSitesStmt, listProjectSites, projectID)
+	rows, err := q.db.QueryContext(ctx, listProjectSites, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +500,7 @@ type ListPublicSitesRow struct {
 // oldest first: the public dashboards' hostnames, the oldest site's
 // where two would share one.
 func (q *Queries) ListPublicSites(ctx context.Context) ([]ListPublicSitesRow, error) {
-	rows, err := q.query(ctx, q.listPublicSitesStmt, listPublicSites)
+	rows, err := q.db.QueryContext(ctx, listPublicSites)
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +548,7 @@ type ListSiteDeploysRow struct {
 // ListSiteDeploys returns the releases that went live in [from, to) for
 // the services serving a site's hostnames, oldest first: deploy markers.
 func (q *Queries) ListSiteDeploys(ctx context.Context, arg ListSiteDeploysParams) ([]ListSiteDeploysRow, error) {
-	rows, err := q.query(ctx, q.listSiteDeploysStmt, listSiteDeploys, arg.SiteID, arg.FromAt, arg.ToAt)
+	rows, err := q.db.QueryContext(ctx, listSiteDeploys, arg.SiteID, arg.FromAt, arg.ToAt)
 	if err != nil {
 		return nil, err
 	}
@@ -576,7 +576,7 @@ SELECT id, site_id, name, steps, created_by, created_at FROM site_funnels WHERE 
 
 // ListSiteFunnels returns a site's funnels in the order they were added.
 func (q *Queries) ListSiteFunnels(ctx context.Context, siteID int64) ([]SiteFunnel, error) {
-	rows, err := q.query(ctx, q.listSiteFunnelsStmt, listSiteFunnels, siteID)
+	rows, err := q.db.QueryContext(ctx, listSiteFunnels, siteID)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +611,7 @@ SELECT id, site_id, name, kind, "match", created_by, created_at FROM site_goals 
 
 // ListSiteGoals returns a site's goals in the order they were added.
 func (q *Queries) ListSiteGoals(ctx context.Context, siteID int64) ([]SiteGoal, error) {
-	rows, err := q.query(ctx, q.listSiteGoalsStmt, listSiteGoals, siteID)
+	rows, err := q.db.QueryContext(ctx, listSiteGoals, siteID)
 	if err != nil {
 		return nil, err
 	}
@@ -670,7 +670,7 @@ func (q *Queries) ListSiteHostnames(ctx context.Context, siteIds []int64) ([]Lis
 	} else {
 		query = strings.Replace(query, "/*SLICE:site_ids*/?", "NULL", 1)
 	}
-	rows, err := q.query(ctx, nil, query, queryParams...)
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
@@ -710,7 +710,7 @@ type ListSiteMarkersParams struct {
 
 // ListSiteMarkers returns a site's markers in [from, to), oldest first.
 func (q *Queries) ListSiteMarkers(ctx context.Context, arg ListSiteMarkersParams) ([]SiteMarker, error) {
-	rows, err := q.query(ctx, q.listSiteMarkersStmt, listSiteMarkers, arg.SiteID, arg.FromAt, arg.ToAt)
+	rows, err := q.db.QueryContext(ctx, listSiteMarkers, arg.SiteID, arg.FromAt, arg.ToAt)
 	if err != nil {
 		return nil, err
 	}
@@ -750,7 +750,7 @@ type ListSitesWithoutPublicSlugRow struct {
 // ListSitesWithoutPublicSlug returns the live sites from before public
 // addresses were stored (migration 0037), oldest first.
 func (q *Queries) ListSitesWithoutPublicSlug(ctx context.Context) ([]ListSitesWithoutPublicSlugRow, error) {
-	rows, err := q.query(ctx, q.listSitesWithoutPublicSlugStmt, listSitesWithoutPublicSlug)
+	rows, err := q.db.QueryContext(ctx, listSitesWithoutPublicSlug)
 	if err != nil {
 		return nil, err
 	}
@@ -781,7 +781,7 @@ WHERE json_extract(settings, '$.public_domain') = +CAST(?1 AS TEXT)
 // PublicDomainHolder returns the live site whose public domain is
 // domain, in any org. The terms match sites_live_public_domain's.
 func (q *Queries) PublicDomainHolder(ctx context.Context, domain string) (int64, error) {
-	row := q.queryRow(ctx, q.publicDomainHolderStmt, publicDomainHolder, domain)
+	row := q.db.QueryRowContext(ctx, publicDomainHolder, domain)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -794,7 +794,7 @@ SELECT id FROM sites WHERE public_slug = +?1 AND archived_at IS NULL
 // PublicSlugHolder returns the live site holding a public dashboard
 // address (stats-<slug>.<base domain>), in any org.
 func (q *Queries) PublicSlugHolder(ctx context.Context, slug *string) (int64, error) {
-	row := q.queryRow(ctx, q.publicSlugHolderStmt, publicSlugHolder, slug)
+	row := q.db.QueryRowContext(ctx, publicSlugHolder, slug)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -824,7 +824,7 @@ func (q *Queries) ReleaseNames(ctx context.Context, ids []int64) ([]ReleaseNames
 	} else {
 		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
 	}
-	rows, err := q.query(ctx, nil, query, queryParams...)
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
@@ -856,7 +856,7 @@ type RemoveSiteFunnelParams struct {
 }
 
 func (q *Queries) RemoveSiteFunnel(ctx context.Context, arg RemoveSiteFunnelParams) (int64, error) {
-	result, err := q.exec(ctx, q.removeSiteFunnelStmt, removeSiteFunnel, arg.SiteID, arg.Name)
+	result, err := q.db.ExecContext(ctx, removeSiteFunnel, arg.SiteID, arg.Name)
 	if err != nil {
 		return 0, err
 	}
@@ -873,7 +873,7 @@ type RemoveSiteGoalParams struct {
 }
 
 func (q *Queries) RemoveSiteGoal(ctx context.Context, arg RemoveSiteGoalParams) (int64, error) {
-	result, err := q.exec(ctx, q.removeSiteGoalStmt, removeSiteGoal, arg.SiteID, arg.Name)
+	result, err := q.db.ExecContext(ctx, removeSiteGoal, arg.SiteID, arg.Name)
 	if err != nil {
 		return 0, err
 	}
@@ -885,7 +885,7 @@ DELETE FROM site_hostnames WHERE hostname = +?
 `
 
 func (q *Queries) RemoveSiteHostname(ctx context.Context, hostname string) error {
-	_, err := q.exec(ctx, q.removeSiteHostnameStmt, removeSiteHostname, hostname)
+	_, err := q.db.ExecContext(ctx, removeSiteHostname, hostname)
 	return err
 }
 
@@ -899,7 +899,7 @@ type RenameSiteParams struct {
 }
 
 func (q *Queries) RenameSite(ctx context.Context, arg RenameSiteParams) error {
-	_, err := q.exec(ctx, q.renameSiteStmt, renameSite, arg.Name, arg.ID)
+	_, err := q.db.ExecContext(ctx, renameSite, arg.Name, arg.ID)
 	return err
 }
 
@@ -924,7 +924,7 @@ func (q *Queries) ServiceNames(ctx context.Context, ids []int64) ([]ServiceNames
 	} else {
 		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
 	}
-	rows, err := q.query(ctx, nil, query, queryParams...)
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
@@ -957,7 +957,7 @@ type SetAnalyticsSiteDefaultsParams struct {
 }
 
 func (q *Queries) SetAnalyticsSiteDefaults(ctx context.Context, arg SetAnalyticsSiteDefaultsParams) error {
-	_, err := q.exec(ctx, q.setAnalyticsSiteDefaultsStmt, setAnalyticsSiteDefaults, arg.SiteDefaults, arg.UpdatedBy, arg.UpdatedAt)
+	_, err := q.db.ExecContext(ctx, setAnalyticsSiteDefaults, arg.SiteDefaults, arg.UpdatedBy, arg.UpdatedAt)
 	return err
 }
 
@@ -971,7 +971,7 @@ type SetSiteEnvironmentParams struct {
 }
 
 func (q *Queries) SetSiteEnvironment(ctx context.Context, arg SetSiteEnvironmentParams) error {
-	_, err := q.exec(ctx, q.setSiteEnvironmentStmt, setSiteEnvironment, arg.EnvironmentID, arg.ID)
+	_, err := q.db.ExecContext(ctx, setSiteEnvironment, arg.EnvironmentID, arg.ID)
 	return err
 }
 
@@ -985,7 +985,7 @@ type SetSiteHostnameServiceParams struct {
 }
 
 func (q *Queries) SetSiteHostnameService(ctx context.Context, arg SetSiteHostnameServiceParams) error {
-	_, err := q.exec(ctx, q.setSiteHostnameServiceStmt, setSiteHostnameService, arg.ServiceID, arg.Hostname)
+	_, err := q.db.ExecContext(ctx, setSiteHostnameService, arg.ServiceID, arg.Hostname)
 	return err
 }
 
@@ -999,7 +999,7 @@ type SetSitePublicSlugParams struct {
 }
 
 func (q *Queries) SetSitePublicSlug(ctx context.Context, arg SetSitePublicSlugParams) error {
-	_, err := q.exec(ctx, q.setSitePublicSlugStmt, setSitePublicSlug, arg.PublicSlug, arg.ID)
+	_, err := q.db.ExecContext(ctx, setSitePublicSlug, arg.PublicSlug, arg.ID)
 	return err
 }
 
@@ -1013,7 +1013,7 @@ type SetSiteSettingsParams struct {
 }
 
 func (q *Queries) SetSiteSettings(ctx context.Context, arg SetSiteSettingsParams) error {
-	_, err := q.exec(ctx, q.setSiteSettingsStmt, setSiteSettings, arg.Settings, arg.ID)
+	_, err := q.db.ExecContext(ctx, setSiteSettings, arg.Settings, arg.ID)
 	return err
 }
 
@@ -1027,7 +1027,7 @@ ORDER BY sites.id LIMIT 1
 // SiteOfService returns a live site that one of the service's hostnames
 // belongs to, if any: enabling another hostname of the service joins it.
 func (q *Queries) SiteOfService(ctx context.Context, serviceID *int64) (Site, error) {
-	row := q.queryRow(ctx, q.siteOfServiceStmt, siteOfService, serviceID)
+	row := q.db.QueryRowContext(ctx, siteOfService, serviceID)
 	var i Site
 	err := row.Scan(
 		&i.ID,
@@ -1054,7 +1054,7 @@ SELECT CAST(EXISTS (
 // Whether any of a site's hostnames is a domain of a live service that
 // isn't stopped: a site with none has no traffic to expect (ADR 0050).
 func (q *Queries) SiteServing(ctx context.Context, siteID int64) (bool, error) {
-	row := q.queryRow(ctx, q.siteServingStmt, siteServing, siteID)
+	row := q.db.QueryRowContext(ctx, siteServing, siteID)
 	var serving bool
 	err := row.Scan(&serving)
 	return serving, err

@@ -16,7 +16,7 @@ SELECT secrets_format FROM install WHERE id = 1
 // The format of the sealed values (ADR 0041): 2 once every value is
 // bound to where it is stored.
 func (q *Queries) GetSecretsFormat(ctx context.Context) (int64, error) {
-	row := q.queryRow(ctx, q.getSecretsFormatStmt, getSecretsFormat)
+	row := q.db.QueryRowContext(ctx, getSecretsFormat)
 	var secrets_format int64
 	err := row.Scan(&secrets_format)
 	return secrets_format, err
@@ -38,7 +38,7 @@ type ListCarriedVariablesRow struct {
 // environment, for resealing those values (ADR 0041). Runs once per
 // database, so it scans.
 func (q *Queries) ListCarriedVariables(ctx context.Context) ([]ListCarriedVariablesRow, error) {
-	rows, err := q.query(ctx, q.listCarriedVariablesStmt, listCarriedVariables)
+	rows, err := q.db.QueryContext(ctx, listCarriedVariables)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ type SetReleaseCarriedParams struct {
 
 // Replaces a release's carried changes, unless they changed meanwhile.
 func (q *Queries) SetReleaseCarried(ctx context.Context, arg SetReleaseCarriedParams) error {
-	_, err := q.exec(ctx, q.setReleaseCarriedStmt, setReleaseCarried, arg.Carried, arg.ID, arg.OldCarried)
+	_, err := q.db.ExecContext(ctx, setReleaseCarried, arg.Carried, arg.ID, arg.OldCarried)
 	return err
 }
 
@@ -81,6 +81,6 @@ UPDATE install SET secrets_format = ? WHERE id = 1
 `
 
 func (q *Queries) SetSecretsFormat(ctx context.Context, secretsFormat int64) error {
-	_, err := q.exec(ctx, q.setSecretsFormatStmt, setSecretsFormat, secretsFormat)
+	_, err := q.db.ExecContext(ctx, setSecretsFormat, secretsFormat)
 	return err
 }

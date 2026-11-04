@@ -24,7 +24,7 @@ type AddServerStatsParams struct {
 }
 
 func (q *Queries) AddServerStats(ctx context.Context, arg AddServerStatsParams) error {
-	_, err := q.exec(ctx, q.addServerStatsStmt, addServerStats,
+	_, err := q.db.ExecContext(ctx, addServerStats,
 		arg.Res,
 		arg.At,
 		arg.ServerID,
@@ -51,7 +51,7 @@ type AddServiceStatsParams struct {
 }
 
 func (q *Queries) AddServiceStats(ctx context.Context, arg AddServiceStatsParams) error {
-	_, err := q.exec(ctx, q.addServiceStatsStmt, addServiceStats,
+	_, err := q.db.ExecContext(ctx, addServiceStats,
 		arg.Res,
 		arg.At,
 		arg.ServiceID,
@@ -78,7 +78,7 @@ type DownsampleServerStatsParams struct {
 // DownsampleServerStats averages the 1-minute points of [from, to) into
 // one 10-minute point at from.
 func (q *Queries) DownsampleServerStats(ctx context.Context, arg DownsampleServerStatsParams) error {
-	_, err := q.exec(ctx, q.downsampleServerStatsStmt, downsampleServerStats, arg.FromAt, arg.ToAt)
+	_, err := q.db.ExecContext(ctx, downsampleServerStats, arg.FromAt, arg.ToAt)
 	return err
 }
 
@@ -95,7 +95,7 @@ type DownsampleServiceStatsParams struct {
 }
 
 func (q *Queries) DownsampleServiceStats(ctx context.Context, arg DownsampleServiceStatsParams) error {
-	_, err := q.exec(ctx, q.downsampleServiceStatsStmt, downsampleServiceStats, arg.FromAt, arg.ToAt)
+	_, err := q.db.ExecContext(ctx, downsampleServiceStats, arg.FromAt, arg.ToAt)
 	return err
 }
 
@@ -119,7 +119,7 @@ type ListServerStatsRow struct {
 }
 
 func (q *Queries) ListServerStats(ctx context.Context, arg ListServerStatsParams) ([]ListServerStatsRow, error) {
-	rows, err := q.query(ctx, q.listServerStatsStmt, listServerStats, arg.Res, arg.At, arg.ServerID)
+	rows, err := q.db.QueryContext(ctx, listServerStats, arg.Res, arg.At, arg.ServerID)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ type ListServiceStatsRow struct {
 }
 
 func (q *Queries) ListServiceStats(ctx context.Context, arg ListServiceStatsParams) ([]ListServiceStatsRow, error) {
-	rows, err := q.query(ctx, q.listServiceStatsStmt, listServiceStats, arg.Res, arg.At, arg.ServiceID)
+	rows, err := q.db.QueryContext(ctx, listServiceStats, arg.Res, arg.At, arg.ServiceID)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ type ListStatsNamesRow struct {
 // reads them only when its set of services changes; the bus has the names
 // of projects renamed since.
 func (q *Queries) ListStatsNames(ctx context.Context) ([]ListStatsNamesRow, error) {
-	rows, err := q.query(ctx, q.listStatsNamesStmt, listStatsNames)
+	rows, err := q.db.QueryContext(ctx, listStatsNames)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ type ListStatsTargetsRow struct {
 // service, environment and server: what the stats collector samples. By
 // server, then environment, so usage events group by environment.
 func (q *Queries) ListStatsTargets(ctx context.Context) ([]ListStatsTargetsRow, error) {
-	rows, err := q.query(ctx, q.listStatsTargetsStmt, listStatsTargets)
+	rows, err := q.db.QueryContext(ctx, listStatsTargets)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +307,7 @@ type PruneServerStatsParams struct {
 }
 
 func (q *Queries) PruneServerStats(ctx context.Context, arg PruneServerStatsParams) error {
-	_, err := q.exec(ctx, q.pruneServerStatsStmt, pruneServerStats, arg.Res, arg.At)
+	_, err := q.db.ExecContext(ctx, pruneServerStats, arg.Res, arg.At)
 	return err
 }
 
@@ -321,6 +321,6 @@ type PruneServiceStatsParams struct {
 }
 
 func (q *Queries) PruneServiceStats(ctx context.Context, arg PruneServiceStatsParams) error {
-	_, err := q.exec(ctx, q.pruneServiceStatsStmt, pruneServiceStats, arg.Res, arg.At)
+	_, err := q.db.ExecContext(ctx, pruneServiceStats, arg.Res, arg.At)
 	return err
 }

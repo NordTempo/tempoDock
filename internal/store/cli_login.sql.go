@@ -15,7 +15,7 @@ SELECT count(*) FROM cli_logins WHERE status = 'pending' AND expires_at > +?
 `
 
 func (q *Queries) CountPendingCLILogins(ctx context.Context, expiresAt time.Time) (int64, error) {
-	row := q.queryRow(ctx, q.countPendingCLILoginsStmt, countPendingCLILogins, expiresAt)
+	row := q.db.QueryRowContext(ctx, countPendingCLILogins, expiresAt)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -39,7 +39,7 @@ type CreateCLILoginParams struct {
 }
 
 func (q *Queries) CreateCLILogin(ctx context.Context, arg CreateCLILoginParams) (CliLogin, error) {
-	row := q.queryRow(ctx, q.createCLILoginStmt, createCLILogin,
+	row := q.db.QueryRowContext(ctx, createCLILogin,
 		arg.DeviceHash,
 		arg.UserCode,
 		arg.ClientName,
@@ -82,7 +82,7 @@ type CreateCLILoginTokenParams struct {
 }
 
 func (q *Queries) CreateCLILoginToken(ctx context.Context, arg CreateCLILoginTokenParams) (Token, error) {
-	row := q.queryRow(ctx, q.createCLILoginTokenStmt, createCLILoginToken,
+	row := q.db.QueryRowContext(ctx, createCLILoginToken,
 		arg.Name,
 		arg.Hash,
 		arg.Scope,
@@ -127,7 +127,7 @@ type DecideCLILoginParams struct {
 }
 
 func (q *Queries) DecideCLILogin(ctx context.Context, arg DecideCLILoginParams) (int64, error) {
-	result, err := q.exec(ctx, q.decideCLILoginStmt, decideCLILogin,
+	result, err := q.db.ExecContext(ctx, decideCLILogin,
 		arg.Status,
 		arg.UserID,
 		arg.ID,
@@ -149,7 +149,7 @@ type DeleteCLILoginParams struct {
 }
 
 func (q *Queries) DeleteCLILogin(ctx context.Context, arg DeleteCLILoginParams) (int64, error) {
-	result, err := q.exec(ctx, q.deleteCLILoginStmt, deleteCLILogin, arg.ID, arg.Status)
+	result, err := q.db.ExecContext(ctx, deleteCLILogin, arg.ID, arg.Status)
 	if err != nil {
 		return 0, err
 	}
@@ -161,7 +161,7 @@ DELETE FROM cli_logins WHERE expires_at < +?
 `
 
 func (q *Queries) DeleteExpiredCLILogins(ctx context.Context, expiresAt time.Time) error {
-	_, err := q.exec(ctx, q.deleteExpiredCLILoginsStmt, deleteExpiredCLILogins, expiresAt)
+	_, err := q.db.ExecContext(ctx, deleteExpiredCLILogins, expiresAt)
 	return err
 }
 
@@ -170,7 +170,7 @@ SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, ex
 `
 
 func (q *Queries) GetCLILoginByDeviceHash(ctx context.Context, deviceHash string) (CliLogin, error) {
-	row := q.queryRow(ctx, q.getCLILoginByDeviceHashStmt, getCLILoginByDeviceHash, deviceHash)
+	row := q.db.QueryRowContext(ctx, getCLILoginByDeviceHash, deviceHash)
 	var i CliLogin
 	err := row.Scan(
 		&i.ID,
@@ -193,7 +193,7 @@ SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, ex
 `
 
 func (q *Queries) GetCLILoginByUserCode(ctx context.Context, userCode string) (CliLogin, error) {
-	row := q.queryRow(ctx, q.getCLILoginByUserCodeStmt, getCLILoginByUserCode, userCode)
+	row := q.db.QueryRowContext(ctx, getCLILoginByUserCode, userCode)
 	var i CliLogin
 	err := row.Scan(
 		&i.ID,

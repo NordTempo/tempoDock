@@ -29,7 +29,7 @@ type CreateStorageConnectionParams struct {
 }
 
 func (q *Queries) CreateStorageConnection(ctx context.Context, arg CreateStorageConnectionParams) (StorageConnection, error) {
-	row := q.queryRow(ctx, q.createStorageConnectionStmt, createStorageConnection,
+	row := q.db.QueryRowContext(ctx, createStorageConnection,
 		arg.Name,
 		arg.Endpoint,
 		arg.Region,
@@ -61,7 +61,7 @@ DELETE FROM storage_connections WHERE id = +?
 `
 
 func (q *Queries) DeleteStorageConnection(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteStorageConnectionStmt, deleteStorageConnection, id)
+	_, err := q.db.ExecContext(ctx, deleteStorageConnection, id)
 	return err
 }
 
@@ -72,7 +72,7 @@ SELECT registry_storage_id FROM platform_settings WHERE id = 1
 // The storage connection the registry keeps its images in; no row, or
 // NULL, while they are on the control plane's disk.
 func (q *Queries) GetRegistryStorageID(ctx context.Context) (*int64, error) {
-	row := q.queryRow(ctx, q.getRegistryStorageIDStmt, getRegistryStorageID)
+	row := q.db.QueryRowContext(ctx, getRegistryStorageID)
 	var registry_storage_id *int64
 	err := row.Scan(&registry_storage_id)
 	return registry_storage_id, err
@@ -83,7 +83,7 @@ SELECT id, name, endpoint, region, bucket, path_style, credentials, created_at, 
 `
 
 func (q *Queries) GetStorageConnection(ctx context.Context, name string) (StorageConnection, error) {
-	row := q.queryRow(ctx, q.getStorageConnectionStmt, getStorageConnection, name)
+	row := q.db.QueryRowContext(ctx, getStorageConnection, name)
 	var i StorageConnection
 	err := row.Scan(
 		&i.ID,
@@ -105,7 +105,7 @@ SELECT id, name, endpoint, region, bucket, path_style, credentials, created_at, 
 `
 
 func (q *Queries) GetStorageConnectionByID(ctx context.Context, id int64) (StorageConnection, error) {
-	row := q.queryRow(ctx, q.getStorageConnectionByIDStmt, getStorageConnectionByID, id)
+	row := q.db.QueryRowContext(ctx, getStorageConnectionByID, id)
 	var i StorageConnection
 	err := row.Scan(
 		&i.ID,
@@ -127,7 +127,7 @@ SELECT id, name, endpoint, region, bucket, path_style, credentials, created_at, 
 `
 
 func (q *Queries) ListStorageConnections(ctx context.Context) ([]StorageConnection, error) {
-	rows, err := q.query(ctx, q.listStorageConnectionsStmt, listStorageConnections)
+	rows, err := q.db.QueryContext(ctx, listStorageConnections)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ type SetRegistryStorageParams struct {
 }
 
 func (q *Queries) SetRegistryStorage(ctx context.Context, arg SetRegistryStorageParams) error {
-	_, err := q.exec(ctx, q.setRegistryStorageStmt, setRegistryStorage, arg.RegistryStorageID, arg.UpdatedBy, arg.UpdatedAt)
+	_, err := q.db.ExecContext(ctx, setRegistryStorage, arg.RegistryStorageID, arg.UpdatedBy, arg.UpdatedAt)
 	return err
 }
 
@@ -197,7 +197,7 @@ type UpdateStorageConnectionParams struct {
 }
 
 func (q *Queries) UpdateStorageConnection(ctx context.Context, arg UpdateStorageConnectionParams) (StorageConnection, error) {
-	row := q.queryRow(ctx, q.updateStorageConnectionStmt, updateStorageConnection,
+	row := q.db.QueryRowContext(ctx, updateStorageConnection,
 		arg.Name,
 		arg.Endpoint,
 		arg.Region,
