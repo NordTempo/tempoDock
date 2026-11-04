@@ -228,6 +228,10 @@ func (c *Core) CreateSnapshot(ctx context.Context, a Actor, ref ServiceRef, req 
 // an applied volume has nothing to keep: no snapshot and no error. Any
 // failure is an error, and the caller should not go on with the action.
 func (c *Core) SnapshotBefore(ctx context.Context, a Actor, ss svcScope, trigger apitypes.SnapshotTrigger, note string) (*apitypes.Snapshot, error) {
+	// The snapshot ends on its own terms: a caller that goes away (an
+	// HTTP request ending) must not leave it running for ever.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Hour)
+	defer cancel()
 	vols, err := c.appliedVolumes(ctx, ss)
 	if err != nil || len(vols) == 0 {
 		return nil, err
@@ -454,6 +458,9 @@ func (c *Core) runToolJob(ctx context.Context, serverID int64, rt node.Runtime, 
 func (c *Core) RestoreSnapshot(ctx context.Context, a Actor, ref ServiceRef, id int64, req apitypes.RestoreSnapshotRequest) (apitypes.SnapshotRestoreResult, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "restoring a snapshot")
 	if err != nil {
+		return apitypes.SnapshotRestoreResult{}, err
+	}
+	if err := c.notMoving(ctx, ss.envScope, "restore a snapshot"); err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
 	if err := notArchived(ss.project); err != nil {
