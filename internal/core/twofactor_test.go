@@ -400,3 +400,103 @@ func TestLockDecisionsNeedAStepUp(t *testing.T) {
 	_, err = h.c.UnlockEnvironment(h.ctx, s.a, EnvRef{"shop", "production"}, apitypes.UnlockEnvironmentRequest{})
 	wantCode(t, "unlocking from a stale session", err, apitypes.CodeReauthRequired)
 }
+
+func TestFactorWait(t *testing.T) {
+	at := time.Unix(1_800_000_000, 0)
+	for _, tc := range []struct {
+		failures int64
+		since    time.Duration
+		wait     time.Duration
+		locked   bool
+	}{
+		{9, 0, 0, false},
+		{10, 0, time.Second, false},
+		{12, time.Second, 3 * time.Second, false},
+		{40, 0, maxFactorWait, false},
+		{40, maxFactorWait, 0, false},
+		{100, 0, 0, true},
+	} {
+		last := at.Add(-tc.since)
+		wait, locked := factorWait(tc.failures, &last, at)
+		if wait != tc.wait || locked != tc.locked {
+			t.Errorf("%d failures, last %s ago: wait %s locked %v, want %s %v", tc.failures, tc.since, wait, locked, tc.wait, tc.locked)
+		}
+	}
+}
+
+// Codes from every sign-in count against one budget per user: a few in a
+// row slow the next try down, many lock codes until a password reset.
+func TestCodeGuessingHasAnOverallCap(t *testing.T) {
+	h := newHarness(t)
+	s := adaSession(t, h)
+	key, _ := addTOTP(t, h, s)
+	tryCode := func(code string) error {
+		t.Helper()
+		freshLimits(h) // a new address each time: the per-address limit isn't what's tested
+		res, err := h.c.Login(h.ctx, adaEmail, adaPasswd, testClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = h.c.LoginSecondFactor(h.ctx, res.Secret, apitypes.Verification{Code: code}, testClient)
+		return err
+	}
+	for range factorBackoffAfter {
+		wantCode(t, "wrong code", tryCode("000000"), apitypes.CodeUnauthorized)
+	}
+	wantCode(t, "right code right after ten wrong ones", tryCode(totpCode(key, totpStep(now()))), apitypes.CodeRateLimited)
+	for range factorLockAt {
+		if _, err := h.store.FailFactor(h.ctx, store.FailFactorParams{Now: ptr(now().Add(-2 * maxFactorWait)), ID: s.a.UserID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantCode(t, "right code once locked", tryCode(totpCode(key, totpStep(now()))), apitypes.CodeForbidden)
+
+	// A password reset lifts the lock, and a right code clears the count.
+	if _, err := h.c.ResetPassword(h.ctx, System, s.a.UserID, apitypes.ResetPasswordRequest{Password: adaPasswd}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tryCode(totpCode(key, totpStep(now()))); err != nil {
+		t.Fatalf("after a password reset: %v", err)
+	}
+	u, _ := h.store.GetUser(h.ctx, s.a.UserID)
+	if u.FactorFailures != 0 {
+		t.Fatalf("failures after a right code: %d", u.FactorFailures)
+	}
+}
+
+// A stolen session cookie gets a few step-up tries, then the session ends.
+func TestFailedStepUpsEndTheSession(t *testing.T) {
+	h := newHarness(t)
+	s := adaSession(t, h)
+	addTOTP(t, h, s)
+	s = age(t, h, s)
+	freshLimits(h)
+	var err error
+	for range maxFactorAttempts {
+		err = h.c.Reauth(h.ctx, s.a, apitypes.Verification{Code: "000000"}, testClient)
+	}
+	wantCode(t, "last wrong step-up", err, apitypes.CodeUnauthorized)
+	if _, err := h.c.AuthenticateSession(h.ctx, s.secret, ""); CodeOf(err) != apitypes.CodeUnauthorized {
+		t.Fatalf("session after failed step-ups: %v", err)
+	}
+}
+
+// Starting an authenticator app setup again replaces the last one, so one
+// user can't fill the store everyone's setups share.
+func TestOneAppSetupPerUser(t *testing.T) {
+	h := newHarness(t)
+	s := adaSession(t, h)
+	first, err := h.c.StartTOTP(h.ctx, s.a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.StartTOTP(h.ctx, s.a); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := totpEncoding.DecodeString(first.Secret)
+	_, err = h.c.AddTOTP(h.ctx, s.a, apitypes.AddTOTPRequest{Ceremony: first.Ceremony, Code: totpCode(key, totpStep(now()))})
+	wantCode(t, "the replaced setup", err, apitypes.CodeExpired)
+	if n := len(h.c.ceremonies.m); n != 1 {
+		t.Fatalf("%d setups held, want 1", n)
+	}
+}

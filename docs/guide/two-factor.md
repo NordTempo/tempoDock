@@ -50,7 +50,10 @@ The second step has five minutes. Five wrong codes end the attempt and you
 start again with your password. Wrong codes count toward the same limit as
 wrong passwords, per email and address, so someone who knows your password
 can't lock you out by guessing codes from elsewhere. Every wrong code is in
-the audit log.
+the audit log. Many wrong codes in a row slow the next try down, up to an
+hour; after 100, codes stop working until your password is reset (by an
+operator, or `sudo dock admin reset-2fa <email>` on the server). Only
+someone with your password gets that far, so change it if you see this.
 
 ## Confirming sensitive actions
 

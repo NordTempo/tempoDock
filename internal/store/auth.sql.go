@@ -109,7 +109,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, name, password_hash, operator)
 VALUES (?, ?, ?, ?)
-RETURNING id, email, name, password_hash, created_at, disabled_at, operator
+RETURNING id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at
 `
 
 type CreateUserParams struct {
@@ -135,6 +135,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.Operator,
+		&i.FactorFailures,
+		&i.FactorFailedAt,
 	)
 	return i, err
 }
@@ -191,7 +193,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at
 FROM sessions JOIN users ON users.id = sessions.user_id
 WHERE sessions.hash = +?
 `
@@ -214,6 +216,8 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 		&i.User.CreatedAt,
 		&i.User.DisabledAt,
 		&i.User.Operator,
+		&i.User.FactorFailures,
+		&i.User.FactorFailedAt,
 		&i.Session.ID,
 		&i.Session.UserID,
 		&i.Session.Hash,
@@ -356,7 +360,7 @@ func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetToken
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, name, password_hash, created_at, disabled_at, operator FROM users WHERE id = +?
+SELECT id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at FROM users WHERE id = +?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -370,12 +374,14 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.Operator,
+		&i.FactorFailures,
+		&i.FactorFailedAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, created_at, disabled_at, operator FROM users WHERE email = +?
+SELECT id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at FROM users WHERE email = +?
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -389,12 +395,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.Operator,
+		&i.FactorFailures,
+		&i.FactorFailedAt,
 	)
 	return i, err
 }
 
 const listOrgMembers = `-- name: ListOrgMembers :many
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, org_members.role,
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, org_members.role,
     CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1 AND NOT sessions.pending) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
         AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens,
@@ -437,6 +445,8 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 			&i.User.CreatedAt,
 			&i.User.DisabledAt,
 			&i.User.Operator,
+			&i.User.FactorFailures,
+			&i.User.FactorFailedAt,
 			&i.Role,
 			&i.Sessions,
 			&i.Tokens,
@@ -613,7 +623,7 @@ func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams
 }
 
 const setUserPassword = `-- name: SetUserPassword :exec
-UPDATE users SET password_hash = ? WHERE id = +?
+UPDATE users SET password_hash = ?, factor_failures = 0, factor_failed_at = NULL WHERE id = +?
 `
 
 type SetUserPasswordParams struct {
@@ -621,6 +631,7 @@ type SetUserPasswordParams struct {
 	ID           int64
 }
 
+// SetUserPassword also lifts a lock from wrong second factors (ADR 0051).
 func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
 	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
 	return err

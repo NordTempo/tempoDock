@@ -67,6 +67,20 @@ func (c *Core) signIn(ctx context.Context, u store.User, factor, clientIP string
 	if err != nil {
 		return LoginResult{}, err
 	}
+	// A factor added since the password was checked: this session must
+	// not outlive it (addFactor ended the others).
+	if factor == "" {
+		n, err := c.store.CountUserFactors(ctx, u.ID)
+		if err != nil {
+			return LoginResult{}, err
+		}
+		if n > 0 {
+			if err := c.store.DeleteSessionByID(ctx, a.SessionID); err != nil {
+				return LoginResult{}, err
+			}
+			return c.startSecondFactor(ctx, u)
+		}
+	}
 	summary := "logged in from " + clientIP
 	if factor != "" {
 		summary += " with " + factorName(factor)
@@ -171,17 +185,60 @@ func (c *Core) LoginSecondFactor(ctx context.Context, pendingSecret string, v ap
 
 // checkFactor verifies v as u's second factor and returns its kind.
 // Recovery codes count only with recovery (signing in, not step-ups).
+// Codes spend u's failure budget (factorWait) whichever path they come
+// through; a right one clears it.
 func (c *Core) checkFactor(ctx context.Context, u store.User, v apitypes.Verification, recovery bool) (string, error) {
 	if (v.Code != "") == (v.RecoveryCode != "") {
 		return "", invalid("give an authenticator app code or a recovery code")
 	}
-	switch {
-	case v.Code != "":
-		return factorTOTP, c.checkTOTP(ctx, u, v.Code)
-	case !recovery:
+	if !recovery && v.RecoveryCode != "" {
 		return "", invalid("recovery codes are for signing in; confirm with your authenticator app")
 	}
-	return factorRecovery, c.useRecoveryCode(ctx, u, v.RecoveryCode)
+	if wait, locked := factorWait(u.FactorFailures, u.FactorFailedAt, now()); locked {
+		return "", errf(apitypes.CodeForbidden, "two-factor sign-in is locked after %d wrong codes; an operator runs `dock admin reset-2fa %s` on the server, or resets your password", u.FactorFailures, u.Email)
+	} else if wait > 0 {
+		return "", errf(apitypes.CodeRateLimited, "too many wrong codes; wait %s and try again", wait.Round(time.Second))
+	}
+	kind, err := factorTOTP, error(nil)
+	if v.Code != "" {
+		err = c.checkTOTP(ctx, u, v.Code)
+	} else {
+		kind, err = factorRecovery, c.useRecoveryCode(ctx, u, v.RecoveryCode)
+	}
+	switch {
+	case CodeOf(err) == apitypes.CodeUnauthorized:
+		if _, ferr := c.store.FailFactor(ctx, store.FailFactorParams{Now: ptr(now()), ID: u.ID}); ferr != nil {
+			return "", ferr
+		}
+	case err == nil:
+		if cerr := c.store.ClearFactorFailures(ctx, u.ID); cerr != nil {
+			return "", cerr
+		}
+	}
+	return kind, err
+}
+
+// Wrong codes in a row a user may make before each next try waits
+// (doubling from a second up to maxFactorWait), and after which codes are
+// refused until `dock admin reset-2fa` or a password reset. With a stolen
+// password, guessing a code then takes years instead of days.
+const (
+	factorBackoffAfter = 10
+	factorLockAt       = 100
+	maxFactorWait      = time.Hour
+)
+
+// factorWait is how long a user with failures wrong codes in a row, the
+// last at last, waits before the next try at t, or locked.
+func factorWait(failures int64, last *time.Time, t time.Time) (time.Duration, bool) {
+	if failures >= factorLockAt {
+		return 0, true
+	}
+	if failures < factorBackoffAfter || last == nil {
+		return 0, false
+	}
+	d := min(time.Second<<min(failures-factorBackoffAfter, 12), maxFactorWait)
+	return max(0, last.Add(d).Sub(t)), false
 }
 
 // checkTOTP accepts an authenticator app code of u's, once.
@@ -309,6 +366,11 @@ func (c *Core) Reauth(ctx context.Context, a Actor, v apitypes.Verification, cli
 	}
 	if CodeOf(err) == apitypes.CodeUnauthorized {
 		c.audit(ctx, a.platform(), "user.reauth_failed", nil, nil, u.Email, fmt.Sprintf("failed to confirm from %s: %v", clientIP, err))
+		// A stolen session cookie gets a few tries, then the session ends.
+		if n, ferr := c.store.FailSecondFactor(ctx, a.SessionID); ferr == nil && n >= maxFactorAttempts {
+			_ = c.store.DeleteSessionByID(ctx, a.SessionID)
+			return errf(apitypes.CodeUnauthorized, "signed out after too many failed confirmations; sign in again")
+		}
 	}
 	if err != nil {
 		return err
@@ -569,6 +631,9 @@ func (c *Core) ResetTwoFactor(ctx context.Context, a Actor, email string) error 
 			return err
 		}
 		if err := q.DeleteRecoveryCodes(ctx, u.ID); err != nil {
+			return err
+		}
+		if err := q.ClearFactorFailures(ctx, u.ID); err != nil {
 			return err
 		}
 		revoked, err = endUserAccess(ctx, q, u.ID, 0)

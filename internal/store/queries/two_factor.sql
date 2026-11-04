@@ -60,9 +60,19 @@ UPDATE sessions SET attempts = attempts + 1 WHERE id = +? RETURNING attempts;
 -- name: DeleteSessionByID :exec
 DELETE FROM sessions WHERE id = +?;
 
--- SetSessionFactor records a second factor on a session, as a step-up.
+-- SetSessionFactor records a second factor on a session, as a step-up,
+-- and clears its wrong step-ups.
 -- name: SetSessionFactor :exec
-UPDATE sessions SET factor = ?, verified_at = ? WHERE id = +?;
+UPDATE sessions SET factor = ?, verified_at = ?, attempts = 0 WHERE id = +?;
+
+-- FailFactor counts a wrong code of a user's and returns how many in a
+-- row there were.
+-- name: FailFactor :one
+UPDATE users SET factor_failures = factor_failures + 1, factor_failed_at = +sqlc.arg(now)
+WHERE id = +sqlc.arg(id) RETURNING factor_failures;
+
+-- name: ClearFactorFailures :exec
+UPDATE users SET factor_failures = 0, factor_failed_at = NULL WHERE id = +? AND factor_failures > 0;
 
 -- name: VerifySession :exec
 UPDATE sessions SET verified_at = ? WHERE id = +?;

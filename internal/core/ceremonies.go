@@ -62,6 +62,15 @@ func (cs *ceremonies) put(cer *ceremony) (string, error) {
 			return "", errTooManyCeremonies
 		}
 	}
+	// One live ceremony per user and purpose: starting again replaces it,
+	// so nobody fills the store alone.
+	if cer.userID != 0 {
+		for id, x := range cs.m {
+			if x.userID == cer.userID && x.purpose == cer.purpose {
+				delete(cs.m, id)
+			}
+		}
+	}
 	id, _ := newSecret("")
 	cs.m[id] = cer
 	return id, nil

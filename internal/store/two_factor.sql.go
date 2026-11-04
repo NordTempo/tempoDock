@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+const clearFactorFailures = `-- name: ClearFactorFailures :exec
+UPDATE users SET factor_failures = 0, factor_failed_at = NULL WHERE id = +? AND factor_failures > 0
+`
+
+func (q *Queries) ClearFactorFailures(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, clearFactorFailures, id)
+	return err
+}
+
 const countRecoveryCodes = `-- name: CountRecoveryCodes :one
 SELECT count(*) FROM recovery_codes WHERE user_id = +? AND used_at IS NULL
 `
@@ -141,6 +150,25 @@ func (q *Queries) DeleteUserFactors(ctx context.Context, userID int64) (int64, e
 	return result.RowsAffected()
 }
 
+const failFactor = `-- name: FailFactor :one
+UPDATE users SET factor_failures = factor_failures + 1, factor_failed_at = +?1
+WHERE id = +?2 RETURNING factor_failures
+`
+
+type FailFactorParams struct {
+	Now *time.Time
+	ID  int64
+}
+
+// FailFactor counts a wrong code of a user's and returns how many in a
+// row there were.
+func (q *Queries) FailFactor(ctx context.Context, arg FailFactorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, failFactor, arg.Now, arg.ID)
+	var factor_failures int64
+	err := row.Scan(&factor_failures)
+	return factor_failures, err
+}
+
 const failSecondFactor = `-- name: FailSecondFactor :one
 UPDATE sessions SET attempts = attempts + 1 WHERE id = +? RETURNING attempts
 `
@@ -167,7 +195,7 @@ func (q *Queries) GetOperatorsTwoFactor(ctx context.Context) (bool, error) {
 }
 
 const getPasskeyByCredentialID = `-- name: GetPasskeyByCredentialID :one
-SELECT user_factors.id, user_factors.user_id, user_factors.kind, user_factors.name, user_factors.credential_id, user_factors.secret, user_factors.last_step, user_factors.created_at, user_factors.last_used_at, users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator
+SELECT user_factors.id, user_factors.user_id, user_factors.kind, user_factors.name, user_factors.credential_id, user_factors.secret, user_factors.last_step, user_factors.created_at, user_factors.last_used_at, users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at
 FROM user_factors JOIN users ON users.id = user_factors.user_id
 WHERE user_factors.credential_id = +?
 `
@@ -199,6 +227,8 @@ func (q *Queries) GetPasskeyByCredentialID(ctx context.Context, credentialID []b
 		&i.User.CreatedAt,
 		&i.User.DisabledAt,
 		&i.User.Operator,
+		&i.User.FactorFailures,
+		&i.User.FactorFailedAt,
 	)
 	return i, err
 }
@@ -284,7 +314,7 @@ func (q *Queries) SetOrgRequireTwoFactor(ctx context.Context, arg SetOrgRequireT
 }
 
 const setSessionFactor = `-- name: SetSessionFactor :exec
-UPDATE sessions SET factor = ?, verified_at = ? WHERE id = +?
+UPDATE sessions SET factor = ?, verified_at = ?, attempts = 0 WHERE id = +?
 `
 
 type SetSessionFactorParams struct {
@@ -293,7 +323,8 @@ type SetSessionFactorParams struct {
 	ID         int64
 }
 
-// SetSessionFactor records a second factor on a session, as a step-up.
+// SetSessionFactor records a second factor on a session, as a step-up,
+// and clears its wrong step-ups.
 func (q *Queries) SetSessionFactor(ctx context.Context, arg SetSessionFactorParams) error {
 	_, err := q.db.ExecContext(ctx, setSessionFactor, arg.Factor, arg.VerifiedAt, arg.ID)
 	return err

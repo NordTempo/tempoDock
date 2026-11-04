@@ -84,8 +84,9 @@ WHERE user_id = +sqlc.arg(user_id) AND origin = 'cli_login' AND revoked_at IS NU
 -- name: SetUserDisabled :exec
 UPDATE users SET disabled_at = ? WHERE id = +?;
 
+-- SetUserPassword also lifts a lock from wrong second factors (ADR 0051).
 -- name: SetUserPassword :exec
-UPDATE users SET password_hash = ? WHERE id = +?;
+UPDATE users SET password_hash = ?, factor_failures = 0, factor_failed_at = NULL WHERE id = +?;
 
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = +?;

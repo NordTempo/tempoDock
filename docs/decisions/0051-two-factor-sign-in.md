@@ -31,7 +31,9 @@ its own ADR.
 | Authenticator app (TOTP) | RFC 6238: HMAC-SHA1, 6 digits, 30 s, one step of drift either side. A 160-bit key, sealed in `user_factors.secret` (bound to user and kind, ADR 0041). One app per user. Each time step works once per user (`last_step`), so a code can't be replayed, even within its window |
 | Recovery codes | Ten codes of 16 characters (80 bits) when the first factor is added, shown once. Stored as SHA-256, each spent once. New codes replace all old ones. They finish a sign-in, never a step-up |
 | Sign-in | Password first. A user with a factor gets a pending session (`sessions.pending`, five minutes, its own cookie `dock_login` scoped to `/api/v1/auth`) that authenticates nothing. `POST /auth/login/verify` with a code replaces it with a real session. Five wrong factors end the pending sign-in |
-| Rate limits | Codes spend from the same `LoginLimiter` as passwords, per (email, IP). Someone with the password guessing codes from their address is stopped there; the owner still signs in from theirs. Every wrong factor is audited |
+| Rate limits | Codes spend from the same `LoginLimiter` as passwords, per (email, IP), so a guesser on one address is stopped there. Every wrong factor is audited. On top, every wrong code from any sign-in or step-up counts per user (`users.factor_failures`), cleared by a right one: after 10 in a row each next try waits twice as long (from a second up to an hour), and at 100 codes are refused until `dock admin reset-2fa` or a password reset. That caps guessing with a stolen password at about 24 tries a day once the waits reach an hour, and a lock within days, from any number of addresses. Only someone who has the password reaches the code check, so this can't be used to lock out an owner whose password is safe; one whose password leaked is told to reset it |
+| Step-up tries | A session that fails to confirm 5 times ends, so a stolen session cookie can't guess codes for long |
+| Setup | One authenticator app setup in flight per user; starting again replaces it |
 | What a session remembers | `sessions.factor`: the second factor its sign-in used (`totp`, `recovery`; later `passkey`, `sso`). Adding a factor in a session upgrades that session |
 | First factor | Adding the first factor creates the recovery codes and ends the user's other sessions, which never proved it |
 
@@ -59,6 +61,11 @@ only take power away.
 
 15 minutes: long enough that a burst of admin work asks once, short
 enough that an unlocked laptop left behind doesn't hand out secrets.
+
+The data panel's queries (`DataQuery`, writes included) don't ask for a
+step-up: who may read or write which database is the data policy's job
+(ADR 0016), with production writes confirmed by name. Revealing a
+connection URL does ask.
 
 Tokens skip step-ups: a token is its own credential, and its creation
 was the step-up.

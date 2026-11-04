@@ -748,13 +748,15 @@ type TrafficStat struct {
 }
 
 type User struct {
-	ID           int64
-	Email        string
-	Name         string
-	PasswordHash string
-	CreatedAt    time.Time
-	DisabledAt   *time.Time
-	Operator     bool
+	ID             int64
+	Email          string
+	Name           string
+	PasswordHash   string
+	CreatedAt      time.Time
+	DisabledAt     *time.Time
+	Operator       bool
+	FactorFailures int64
+	FactorFailedAt *time.Time
 }
 
 type UserFactor struct {
