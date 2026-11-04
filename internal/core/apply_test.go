@@ -456,6 +456,42 @@ func TestApplySecrets(t *testing.T) {
 	}
 }
 
+// A plan doesn't tell a token that can't reveal secrets whether a value it
+// sends matches the live one: right and wrong guesses both plan an update.
+func TestPlanHidesSecretEquality(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{Image: "web:1"})
+	h.set(EnvRef{"shop", "production"}, "web", map[string]string{"STRIPE_KEY": "sk_live_123"}, true)
+	p, _ := h.c.GetProject(h.ctx, testSystem, "shop")
+	reader := Actor{Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeRead, ProjectID: p.ID, ProjectName: "shop"}
+	file := `version = 1
+[[environments]]
+  name = "production"
+  [[environments.services]]
+    name = "web"
+    image = "web:1"
+    variables = ["STRIPE_KEY"]
+`
+	plan := func(a Actor, guess string) []string {
+		t.Helper()
+		pl, err := h.c.PlanProject(h.ctx, a, "shop", apitypes.ApplyRequest{File: file,
+			Values: []apitypes.VariableValue{{Environment: "production", Service: "web", Key: "STRIPE_KEY", Value: guess}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.DeleteFunc(lines(pl.Changes), func(l string) bool { return !strings.Contains(l, "STRIPE_KEY") })
+	}
+	want := []string{"production web variable update STRIPE_KEY"}
+	for _, guess := range []string{"sk_live_123", "wrong"} {
+		if got := plan(reader, guess); !slices.Equal(got, want) {
+			t.Fatalf("read token, guess %q: %v", guess, got)
+		}
+	}
+	if got := plan(testSystem, "sk_live_123"); len(got) != 0 {
+		t.Fatalf("admin, equal value: %v", got)
+	}
+}
+
 // A token limited to one environment plans and applies only that one; a
 // file naming others is refused rather than partly applied.
 func TestApplyEnvironmentLimitedToken(t *testing.T) {
