@@ -21,6 +21,7 @@ import { Route as AppConsoleRouteImport } from './routes/_app.console'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
 import { Route as AppOrgIndexRouteImport } from './routes/_app.$org.index'
 import { Route as AppOrgAuditRouteImport } from './routes/_app.$org.audit'
+import { Route as AppOrgRequestsRouteImport } from './routes/_app.$org.requests'
 import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
 import { Route as AppConsoleAddressRouteImport } from './routes/_app.console.address'
 import { Route as AppConsoleAlertsRouteImport } from './routes/_app.console.alerts'
@@ -121,6 +122,11 @@ const AppOrgIndexRoute = AppOrgIndexRouteImport.update({
 const AppOrgAuditRoute = AppOrgAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgRequestsRoute = AppOrgRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
   getParentRoute: () => AppOrgRoute,
 } as any)
 const AppConsoleIndexRoute = AppConsoleIndexRouteImport.update({
@@ -365,6 +371,7 @@ export interface FileRoutesByFullPath {
   '/console': typeof AppConsoleRouteWithChildren
   '/invite/$code': typeof InviteCodeRoute
   '/$org/audit': typeof AppOrgAuditRoute
+  '/$org/requests': typeof AppOrgRequestsRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/analytics': typeof AppConsoleAnalyticsRoute
@@ -418,6 +425,7 @@ export interface FileRoutesByTo {
   '/invite/$code': typeof InviteCodeRoute
   '/': typeof AppIndexRoute
   '/$org/audit': typeof AppOrgAuditRoute
+  '/$org/requests': typeof AppOrgRequestsRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
   '/console/analytics': typeof AppConsoleAnalyticsRoute
@@ -474,6 +482,7 @@ export interface FileRoutesById {
   '/invite/$code': typeof InviteCodeRoute
   '/_app/': typeof AppIndexRoute
   '/_app/$org/audit': typeof AppOrgAuditRoute
+  '/_app/$org/requests': typeof AppOrgRequestsRoute
   '/_app/console/address': typeof AppConsoleAddressRoute
   '/_app/console/alerts': typeof AppConsoleAlertsRoute
   '/_app/console/analytics': typeof AppConsoleAnalyticsRoute
@@ -531,6 +540,7 @@ export interface FileRouteTypes {
     | '/console'
     | '/invite/$code'
     | '/$org/audit'
+    | '/$org/requests'
     | '/console/address'
     | '/console/alerts'
     | '/console/analytics'
@@ -584,6 +594,7 @@ export interface FileRouteTypes {
     | '/invite/$code'
     | '/'
     | '/$org/audit'
+    | '/$org/requests'
     | '/console/address'
     | '/console/alerts'
     | '/console/analytics'
@@ -639,6 +650,7 @@ export interface FileRouteTypes {
     | '/invite/$code'
     | '/_app/'
     | '/_app/$org/audit'
+    | '/_app/$org/requests'
     | '/_app/console/address'
     | '/_app/console/alerts'
     | '/_app/console/analytics'
@@ -777,6 +789,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/$org/audit'
       preLoaderRoute: typeof AppOrgAuditRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/requests': {
+      id: '/_app/$org/requests'
+      path: '/requests'
+      fullPath: '/$org/requests'
+      preLoaderRoute: typeof AppOrgRequestsRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/console/': {
@@ -1141,6 +1160,7 @@ const AppOrgProjectEnvironmentServiceRouteWithChildren =
 
 interface AppOrgRouteChildren {
   AppOrgAuditRoute: typeof AppOrgAuditRoute
+  AppOrgRequestsRoute: typeof AppOrgRequestsRoute
   AppOrgIndexRoute: typeof AppOrgIndexRoute
   AppOrgProjectCompareRoute: typeof AppOrgProjectCompareRoute
   AppOrgSettingsGeneralRoute: typeof AppOrgSettingsGeneralRoute
@@ -1156,6 +1176,7 @@ interface AppOrgRouteChildren {
 
 const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgAuditRoute: AppOrgAuditRoute,
+  AppOrgRequestsRoute: AppOrgRequestsRoute,
   AppOrgIndexRoute: AppOrgIndexRoute,
   AppOrgProjectCompareRoute: AppOrgProjectCompareRoute,
   AppOrgSettingsGeneralRoute: AppOrgSettingsGeneralRoute,

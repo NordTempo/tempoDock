@@ -8,6 +8,7 @@ import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { cloudflareKey } from "../features/cloudflare/data";
 import { registryKey } from "../features/registry/data";
+import { applyAccessRequestEvent } from "../features/requests/data";
 import { diskKey } from "../features/servers/disk";
 import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
@@ -54,6 +55,8 @@ const busEvents = [
   "update",
   "disk",
   "analytics",
+  "environment_lock",
+  "access_request",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -255,25 +258,15 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Only operators get these: the analytics store started or failed.
       queryClient.invalidateQueries({ queryKey: ["analytics", "status"] });
       return;
-    case "environment_lock": {
-      // An environment was locked, unlocked or opened for a while.
-      const { project, environment } = event;
-      if (!project || !environment) return;
-      const lock = event.lock ?? undefined;
-      queryClient.setQueryData<ProjectOverview>(keys.overview(project), (o) =>
-        o
-          ? {
-              ...o,
-              environments: o.environments.map((env) =>
-                env.environment.name === environment
-                  ? { ...env, environment: { ...env.environment, lock } }
-                  : env,
-              ),
-            }
-          : o,
-      );
+    case "environment_lock":
+      // Locked, unlocked or opened for a while (ADR 0044).
+      applyLock(queryClient, event);
       return;
-    }
+    case "access_request":
+      // Only admins (and the token that asked) get these.
+      if (event.access_request)
+        applyAccessRequestEvent(queryClient, event.access_request);
+      return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":
@@ -282,6 +275,26 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // A new event type in the API fails the build until handled here.
       event.type satisfies never;
   }
+}
+
+/** An environment's lock changed: patch it into the project overview. */
+function applyLock(queryClient: QueryClient, event: LiveEvent) {
+  const { project, environment } = event;
+  if (!project || !environment) return;
+  // The API sends null for an unlocked environment.
+  const lock = event.lock ?? undefined;
+  queryClient.setQueryData<ProjectOverview>(
+    keys.overview(project),
+    (o) =>
+      o && {
+        ...o,
+        environments: o.environments.map((env) =>
+          env.environment.name === environment
+            ? { ...env, environment: { ...env.environment, lock } }
+            : env,
+        ),
+      },
+  );
 }
 
 /**

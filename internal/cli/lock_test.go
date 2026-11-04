@@ -57,6 +57,9 @@ func TestRequestCommands(t *testing.T) {
 	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
 	exec(t, "project", "create", "shop")
 	exec(t, "environment", "lock", "production", "-p", "shop")
+	if s := ok[apitypes.OrgLockSettings](t, "org", "locks", "--lock-production", "on", "--request-ttl", "48h"); !s.LockProduction || s.RequestTTLHours != 48 {
+		t.Fatalf("org locks: %+v", s)
+	}
 	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
 
 	code, _, stderr := exec(t, "env", "set", "A=1", "--shared", "-p", "shop", "-e", "production", "--reason", "new flag")

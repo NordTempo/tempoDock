@@ -8,7 +8,7 @@ import {
 import type { ServiceView } from "../data/types";
 import { statusTitle } from "../features/servers/parts";
 import { Icon } from "../ui/icons";
-import { Glyph, Menu, menuItem } from "../ui/kit";
+import { Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, type Tone, toneText } from "../ui/status";
 import { useOrg } from "./location";
 
@@ -51,6 +51,7 @@ export function EnvSwitch({
         <span className="dot" />
       </span>
       {environment}
+      <LockMark lock={here?.environment.lock} />
       {others.length > 0 && (
         <Icon name="chevronDown" size={11} className="text-mut" />
       )}
@@ -85,7 +86,9 @@ export function EnvSwitch({
               className={menuItem}
             >
               {dot}
-              <span className="flex-1">{e.environment.name}</span>
+              <span className="flex-1">
+                {e.environment.name} <LockMark lock={e.environment.lock} />
+              </span>
               <span className="font-mono text-2xs text-faint">
                 {twin.service.active_release
                   ? `r${twin.service.active_release}`
@@ -101,7 +104,7 @@ export function EnvSwitch({
               className={menuItem}
             >
               {dot}
-              {e.environment.name}
+              {e.environment.name} <LockMark lock={e.environment.lock} />
             </Link>
           );
         })

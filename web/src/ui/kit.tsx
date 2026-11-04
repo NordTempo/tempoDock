@@ -5,8 +5,9 @@ import {
   useRef,
   useState,
 } from "react";
-import type { AuditEvent } from "../data/types";
+import type { AuditEvent, EnvironmentLock } from "../data/types";
 import { CliHint } from "./CliHint";
+import { clock } from "./format";
 import { type GlyphChar, type State, toneText } from "./status";
 
 /**
@@ -56,6 +57,35 @@ export function Actor({
     case "system":
       return <span className="text-mut">{name}</span>;
   }
+}
+
+/**
+ * Whether a lock holds now: an environment opened for a while counts as
+ * unlocked until then and locks again by itself (ADR 0044). Read when
+ * rendering, so no timer is needed.
+ */
+export const lockHolds = (lock: EnvironmentLock, now = Date.now()) =>
+  !lock.open_until || Date.parse(lock.open_until) <= now;
+
+/**
+ * ▣ after a locked environment's name; faint while it is open for a
+ * while. Nothing for an unlocked one.
+ */
+export function LockMark({ lock }: { lock: EnvironmentLock | undefined }) {
+  if (!lock) return null;
+  const holds = lockHolds(lock);
+  return (
+    <span
+      className={holds ? "text-warn-text" : "text-faint"}
+      title={
+        holds
+          ? "locked"
+          : `open until ${clock(lock.open_until ?? "")}, then locked`
+      }
+    >
+      ▣<span className="sr-only">{holds ? " locked" : " open"}</span>
+    </span>
+  );
 }
 
 /** A release's author, which is a token or a user by name only. */

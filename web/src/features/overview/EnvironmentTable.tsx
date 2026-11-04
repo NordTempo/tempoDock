@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
   queries,
   serviceRef,
   useCanDeploy,
+  useIsAdmin,
   useSession,
 } from "../../data/queries";
 import type { EnvironmentView, ServiceView } from "../../data/types";
@@ -20,6 +21,7 @@ import { EnvServer } from "../servers/parts";
 import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
+import { LockForm, LockStrip } from "./EnvironmentLock";
 
 /** One environment on the project overview: a row per service. */
 export function EnvironmentTable({ env }: { env: EnvironmentView }) {
@@ -29,6 +31,8 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const canDeploy = useCanDeploy(ref);
   // Cloning creates an environment: deploy on the whole project.
   const canClone = canCreateEnvironment(useSession(), ref.project);
+  const admin = useIsAdmin();
+  const [locking, setLocking] = useState(false);
   const newService = () => openCreate({ kind: "service", env: ref });
   const links = "text-xs text-mut hover:text-fg";
   return (
@@ -85,11 +89,27 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 Clone
               </button>
             )}
+            {admin && !environment.lock && (
+              <button
+                type="button"
+                className={links}
+                title={`dock environment lock ${ref.environment}`}
+                aria-expanded={locking}
+                onClick={() => setLocking(!locking)}
+              >
+                Lock
+              </button>
+            )}
           </>
         }
       >
         {environment.name}
       </SectionHead>
+      {environment.lock ? (
+        <LockStrip envRef={ref} lock={environment.lock} />
+      ) : (
+        locking && <LockForm envRef={ref} onDone={() => setLocking(false)} />
+      )}
       {services.length === 0 ? (
         <p className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-panel border border-dashed border-dash px-3.5 py-3 text-mut">
           No services yet.

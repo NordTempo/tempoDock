@@ -2,16 +2,17 @@ import { queryOptions, useQueryClient } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
-import type { Scope } from "../../data/types";
+import type { OrgLockSettings, Scope } from "../../data/types";
 
-// An organization's settings (ADR 0027): the org, members, invites and
-// variables of the org the UI acts in.
+// An organization's settings (ADR 0027): the org, members, invites,
+// variables and lock settings of the org the UI acts in.
 
 const orgKeys = {
   org: ["org"],
   members: ["org", "members"],
   invites: ["org", "invites"],
   variables: (reveal: boolean) => ["org", "variables", reveal],
+  lockSettings: ["org", "lock-settings"],
 };
 
 export const orgQueries = {
@@ -39,6 +40,12 @@ export const orgQueries = {
             params: { query: { reveal } },
           }),
         ),
+    }),
+  /** Locking new production environments, and when requests expire (ADR 0044). */
+  lockSettings: () =>
+    queryOptions({
+      queryKey: orgKeys.lockSettings,
+      queryFn: () => body(api.GET("/api/v1/org/lock-settings")),
     }),
   invite: (code: string) =>
     queryOptions({
@@ -153,3 +160,18 @@ export const useRedeployOrgVariable = () =>
       ),
     () => [["audit"], ["overview"], ["releases"]],
   );
+
+/** Saves the lock settings; a request_ttl_hours of 0 keeps the current one. */
+export function useSetLockSettings() {
+  const queryClient = useQueryClient();
+  return useAction(
+    async (settings: OrgLockSettings) => {
+      const saved = await body(
+        api.PUT("/api/v1/org/lock-settings", { body: settings }),
+      );
+      queryClient.setQueryData(orgKeys.lockSettings, saved);
+      return saved;
+    },
+    () => [orgKeys.lockSettings, ["audit"]],
+  );
+}
