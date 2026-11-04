@@ -169,6 +169,9 @@ type Core struct {
 	runs runState
 	// uptime is the uptime checks' scheduler kick and state (uptime.go).
 	uptime uptimeState
+	// jobs is the job scheduler's kick and the job runs in flight
+	// (jobs.go, jobs_schedule.go).
+	jobs jobState
 
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
@@ -233,6 +236,8 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		snapshots:  newSnapshotState(),
 		runs:       runState{running: map[int64]int{}, writing: map[int64]bool{}},
 		uptime:     newUptimeState(),
+		runs:       runState{running: map[int64]int{}, writing: map[int64]bool{}, ended: map[int64]chan struct{}{}},
+		jobs:       newJobState(),
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
@@ -372,6 +377,8 @@ func (c *Core) Start(ctx context.Context) error {
 	go c.collectStats()
 	go c.scheduleBackups()
 	go c.scheduleUptime()
+	// Jobs left due by a stop run now; without jobs it exits at once.
+	c.kickJobs()
 	go c.runCloudflare()
 	// In the background: running the tunnel may pull an image.
 	go func() {

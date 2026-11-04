@@ -75,6 +75,7 @@ func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
 		d.fail(ctx, err)
 	} else {
 		c.afterActive(ctx, d.ss)
+		c.syncRepoJobs(ctx, d.ss, d.cfg)
 		c.kickBackups() // it may be newly stateful
 	}
 	if spec.done != nil {

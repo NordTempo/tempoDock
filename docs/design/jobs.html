@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jobs tab: mocks</title>
+<style>
+  :root {
+    --bg: #000; --panel: #0e0e10; --sel: #1c1c1f; --line: #232326; --soft: #1c1c1f; --ctl: #2e2e33;
+    --fg: #ededef; --sec: #c8c8cf; --mut: #a1a1aa; --faint: #8b8b94;
+    --ok: #4ade80; --warn: #fbbf24; --fail: #f87171; --info: #93c5fd;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: #fff; font: 12px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  main { max-width: 1120px; margin: 0 auto; padding: 28px 24px 64px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 14px; font-weight: 600; margin: 40px 0 10px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 0; }
+  p.note { color: var(--mut); margin: 0 0 10px; max-width: 780px; }
+  .board { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .bar .title { font-size: 14px; font-weight: 600; }
+  .bar .meta { color: var(--faint); font-size: 11px; }
+  .tabs { display: flex; gap: 2px; padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--mut); }
+  .tabs span { padding: 4px 10px; border-radius: 6px; }
+  .tabs span.on { background: #1f1f23; color: var(--fg); font-weight: 500; }
+  .content { padding: 22px 26px; display: flex; flex-direction: column; gap: 18px; }
+  .btn { border: 1px solid var(--ctl); background: transparent; color: var(--fg); border-radius: 6px; padding: 5px 10px; font: inherit; font-weight: 500; white-space: nowrap; }
+  .btn.primary { background: var(--fg); color: #0a0a0b; border-color: var(--fg); font-weight: 600; }
+  .btn.sm { padding: 3px 8px; }
+  .btn.danger { color: var(--fail); border-color: #4a2020; }
+  .btn:disabled { color: var(--faint); border-color: var(--line); }
+  .field { background: #151517; border: 1px solid var(--line); border-radius: 6px; color: var(--fg); font: inherit; padding: 5px 9px; }
+  .field[readonly] { color: var(--mut); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--ctl); border-radius: 6px; overflow: hidden; }
+  .seg span { padding: 3px 9px; color: var(--mut); }
+  .seg span.on { background: #1f1f23; color: var(--fg); }
+  .lab { color: var(--faint); }
+  .cli { color: var(--faint); font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--faint); font-weight: 400; font-size: 11px; padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 7px 14px 7px 0; border-bottom: 1px solid var(--soft); color: var(--sec); white-space: nowrap; vertical-align: top; }
+  th:first-child, td:first-child { padding-left: 14px; }
+  tr.sel > td { background: var(--sel); }
+  tr.off > td { color: var(--faint); }
+  .panel { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .ok { color: var(--ok); } .fail { color: var(--fail); } .prog { color: var(--warn); } .mut { color: var(--mut); } .faint { color: var(--faint); } .fg { color: var(--fg); }
+  .trunc { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  pre { margin: 0; background: #0a0a0b; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; color: var(--sec); font: 11.5px/1.6 "JetBrains Mono", ui-monospace, monospace; overflow: auto; max-height: 220px; white-space: pre-wrap; }
+  .form { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+  .form .lab { text-align: right; }
+  .split { display: grid; grid-template-columns: 300px minmax(0, 1fr); border-top: 1px solid var(--line); }
+  .list { border-right: 1px solid var(--line); }
+  .item { padding: 8px 14px; border-bottom: 1px solid var(--soft); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 8px; }
+  .item.sel { background: var(--sel); }
+  .item .m { color: var(--faint); font-size: 11px; }
+  .detail { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .sub { display: flex; gap: 14px; color: var(--mut); border-bottom: 1px solid var(--line); padding: 0 0 6px; }
+  .sub span.on { color: var(--fg); font-weight: 500; }
+  .pick { color: var(--ok); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<h1>Jobs tab</h1>
+<p class="note">ADR 0052. A service's scheduled jobs: their schedule in words and as written, the next time, the last run, where each is defined, on or off. A schedule editor with the next times, each job's history with a run's output, and Run now. Every mock shows the same state: four jobs, two from dock.toml, one off; nightly-cleanup selected, its last run open.</p>
+
+<h2>A. Jobs table, the selected job under it</h2>
+<div class="board">
+  <div class="bar"><span class="faint">shop /</span><span class="title">web</span><span class="meta">production</span></div>
+  <div class="tabs"><span>Overview</span><span>Logs</span><span>Run</span><span class="on">Jobs</span><span>Resources</span><span>Releases</span><span>Variables</span><span>Settings</span><span>Audit</span></div>
+  <div class="content">
+    <div class="panel">
+      <table>
+        <tr><th>Job</th><th>Schedule</th><th>Next</th><th>Last run</th><th>Source</th><th></th></tr>
+        <tr class="sel"><td class="mono fg">▾ nightly-cleanup</td><td>daily at 03:00 <span class="mono faint">0 3 * * * · Europe/Oslo</span></td><td class="mono">Nov 5 03:00</td><td><span class="ok">● succeeded</span> <span class="faint mono">03:00 · 41s</span></td><td>api</td><td><button class="btn sm">Disable</button> <button class="btn sm">Run now</button></td></tr>
+        <tr><td class="mono">▸ digest</td><td>hourly at :00 <span class="mono faint">0 * * * * · UTC</span></td><td class="mono">15:00</td><td><span class="fail">✕ failed</span> <span class="faint mono">exit 1 · 14:00</span></td><td>dock.toml</td><td><button class="btn sm">Disable</button> <button class="btn sm">Run now</button></td></tr>
+        <tr><td class="mono">▸ queue-sweep</td><td>every 5 minutes <span class="mono faint">*/5 * * * * · UTC</span></td><td class="mono">14:15</td><td><span class="mut">– skipped</span> <span class="faint mono">14:10</span></td><td>dock.toml</td><td><button class="btn sm">Disable</button> <button class="btn sm">Run now</button></td></tr>
+        <tr class="off"><td class="mono">▸ reindex</td><td>Sundays at 04:30 <span class="mono">30 4 * * 0 · UTC</span></td><td>off</td><td></td><td>api</td><td><button class="btn sm">Enable</button> <button class="btn sm">Run now</button></td></tr>
+      </table>
+    </div>
+    <div class="row"><button class="btn">New job</button></div>
+    <div class="row"><h3 class="mono">nightly-cleanup</h3><span class="faint">set by saile@nordtempo.no · Nov 2</span><span style="margin-left:auto" class="row"><button class="btn danger sm">Remove</button></span></div>
+    <div class="form">
+      <span class="lab">Schedule</span>
+      <div class="row"><input class="field mono" style="width:180px" value="0 3 * * *"><input class="field mono" style="width:160px" value="Europe/Oslo"><span>daily at 03:00</span><span class="faint mono">Nov 5 03:00 · Nov 6 03:00 · Nov 7 03:00</span></div>
+      <span class="lab">Command</span>
+      <input class="field mono" value="bin/rails runner 'Session.sweep(30.days)'">
+      <span class="lab">Timeout</span>
+      <div class="row"><select class="field mono"><option>1h</option></select><span class="lab">If still running</span><span class="seg"><span class="on">skip</span><span>run anyway</span></span></div>
+      <span></span>
+      <div class="row"><button class="btn primary" disabled>Save</button><span class="cli mono">dock job set nightly-cleanup -s web -e production --schedule '0 3 * * *' --timezone Europe/Oslo -- 'bin/rails runner …'</span></div>
+    </div>
+    <div class="panel">
+      <table>
+        <tr><th>Status</th><th>Exit</th><th>Trigger</th><th>Started</th><th>Took</th><th>Release</th></tr>
+        <tr class="sel"><td class="ok">▾ ● succeeded</td><td class="mono">0</td><td>schedule</td><td class="mono">Nov 4 03:00</td><td class="mono">41s</td><td class="mono">r42</td></tr>
+        <tr><td colspan="6" style="white-space:normal;padding-bottom:12px"><pre>Swept 1,204 sessions older than 30 days
+Done in 40.8s</pre></td></tr>
+        <tr><td class="ok">▸ ● succeeded</td><td class="mono">0</td><td>run now by saile@nordtempo.no</td><td class="mono">Nov 3 16:20</td><td class="mono">38s</td><td class="mono">r41</td></tr>
+        <tr><td class="fail">▸ ✕ timed out</td><td></td><td>schedule</td><td class="mono">Nov 3 03:00</td><td class="mono">1h 0m</td><td class="mono">r41</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h2>B. Jobs on the left, the job on the right</h2>
+<div class="board">
+  <div class="bar"><span class="faint">shop /</span><span class="title">web</span><span class="meta">production</span></div>
+  <div class="tabs"><span>Overview</span><span>Logs</span><span>Run</span><span class="on">Jobs</span><span>Releases</span><span>Settings</span></div>
+  <div class="split">
+    <div class="list">
+      <div class="item sel"><span class="mono fg">nightly-cleanup</span><span class="ok">●</span><span class="m">daily at 03:00 · next Nov 5 03:00</span></div>
+      <div class="item"><span class="mono">digest</span><span class="fail">✕</span><span class="m">hourly at :00 · next 15:00 · dock.toml</span></div>
+      <div class="item"><span class="mono">queue-sweep</span><span class="mut">–</span><span class="m">every 5 minutes · next 14:15 · dock.toml</span></div>
+      <div class="item"><span class="mono faint">reindex</span><span class="faint">off</span><span class="m">Sundays at 04:30</span></div>
+      <div class="item"><span class="mut">+ New job</span></div>
+    </div>
+    <div class="detail">
+      <div class="row"><h3 class="mono">nightly-cleanup</h3><span class="mono faint">0 3 * * * · Europe/Oslo</span><span style="margin-left:auto" class="row"><button class="btn sm">Run now</button><button class="btn sm">Disable</button><button class="btn sm">Edit</button></span></div>
+      <div class="sub"><span class="on">History</span><span>Schedule</span></div>
+      <table>
+        <tr><th>Status</th><th>Started</th><th>Took</th></tr>
+        <tr class="sel"><td class="ok">● succeeded · 0</td><td class="mono">Nov 4 03:00</td><td class="mono">41s</td></tr>
+        <tr><td class="ok">● succeeded · 0</td><td class="mono">Nov 3 16:20</td><td class="mono">38s</td></tr>
+        <tr><td class="fail">✕ timed out</td><td class="mono">Nov 3 03:00</td><td class="mono">1h 0m</td></tr>
+      </table>
+      <pre>Swept 1,204 sessions older than 30 days
+Done in 40.8s</pre>
+    </div>
+  </div>
+</div>
+
+<h2>C. One table, a job opens in place</h2>
+<div class="board">
+  <div class="bar"><span class="faint">shop /</span><span class="title">web</span><span class="meta">production</span></div>
+  <div class="tabs"><span>Overview</span><span>Logs</span><span>Run</span><span class="on">Jobs</span><span>Releases</span><span>Settings</span></div>
+  <div class="content">
+    <div class="panel">
+      <table>
+        <tr><th>Job</th><th>Schedule</th><th>Next</th><th>Last</th><th></th></tr>
+        <tr class="sel"><td class="mono fg">▾ nightly-cleanup</td><td>daily at 03:00 <span class="mono faint">Europe/Oslo</span></td><td class="mono">Nov 5 03:00</td><td class="ok">●</td><td><button class="btn sm">Run now</button></td></tr>
+        <tr><td colspan="5" style="white-space:normal;padding:4px 14px 14px">
+          <div class="sub"><span class="on">History</span><span>Schedule</span><span>Command</span></div>
+          <div class="row" style="padding:8px 0;gap:18px"><span class="ok">● Nov 4 03:00 · 41s</span><span class="ok">● Nov 3 16:20 · 38s</span><span class="fail">✕ Nov 3 03:00 · timed out</span><span class="faint">17 more</span></div>
+          <pre>Swept 1,204 sessions older than 30 days
+Done in 40.8s</pre>
+        </td></tr>
+        <tr><td class="mono">▸ digest</td><td>hourly at :00 <span class="mono faint">UTC</span></td><td class="mono">15:00</td><td class="fail">✕</td><td><button class="btn sm">Run now</button></td></tr>
+        <tr><td class="mono">▸ queue-sweep</td><td>every 5 minutes <span class="mono faint">UTC</span></td><td class="mono">14:15</td><td class="mut">–</td><td><button class="btn sm">Run now</button></td></tr>
+        <tr class="off"><td class="mono">▸ reindex</td><td>Sundays at 04:30</td><td>off</td><td></td><td><button class="btn sm">Run now</button></td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h2>Pick</h2>
+<p class="note"><span class="pick">A.</span> Every job stays in view with every column a glance needs (schedule in words and as written, timezone, next, last run, source, on or off) with Disable and Run now on its row, so a failing job is one click from a rerun. The selected job below gets the full width twice: an editor that shows its words and next three times as you type, and the history with the Run tab's open-a-row output, which is the same pattern as the Run tab and the Audit log. B squeezes the list to a few words per job and hides the editor behind a sub tab; C nests three levels of disclosure inside one table and drops the source and timezone columns to fit.</p>
+</main>
+</body>
+</html>

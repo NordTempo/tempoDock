@@ -55,8 +55,8 @@ export function RunPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
-/** Timeouts offered; 0 leaves the API's default. */
-const timeouts = [
+/** Timeouts offered; 0 leaves the API's default. The Jobs tab's too. */
+export const timeouts = [
   [0, "1h"],
   [60, "1m"],
   [300, "5m"],
@@ -77,7 +77,7 @@ const volumeModes: [RunVolumes, string][] = [
 const shellSafe = /^[\w@%+=:,./-]+$/;
 
 /** The command as one shell word, as `dock run --` sends it. */
-const quote = (command: string) =>
+export const quote = (command: string) =>
   shellSafe.test(command) ? command : `'${command.replaceAll("'", `'\\''`)}'`;
 
 /**
@@ -202,16 +202,19 @@ function RunForm({
   );
 }
 
-const runStates: Record<CommandRun["status"], State> = {
+/** A run's status as the Run and Jobs tabs show it. */
+export const runStates: Record<CommandRun["status"], State> = {
   running: { tone: "prog", glyph: "◐", label: "running" },
   succeeded: { tone: "ok", glyph: "●", label: "succeeded" },
   failed: { tone: "fail", glyph: "✕", label: "failed" },
   timed_out: { tone: "fail", glyph: "✕", label: "timed out" },
   canceled: { tone: "mut", glyph: "○", label: "canceled" },
   interrupted: { tone: "mut", glyph: "○", label: "interrupted" },
+  skipped: { tone: "mut", glyph: "–", label: "skipped" },
 };
 
-const took = (r: CommandRun) =>
+/** How long a run took, once it ended. */
+export const took = (r: CommandRun) =>
   r.finished_at
     ? elapsed(Date.parse(r.finished_at) - Date.parse(r.started_at))
     : "";
@@ -343,7 +346,7 @@ function RunDetail({
 }
 
 /** A run's output tail, scrolled to its end: the last lines matter most. */
-function Output({ text }: { text: string }) {
+export function Output({ text }: { text: string }) {
   const pre = useRef<HTMLPreElement>(null);
   useLayoutEffect(() => {
     if (pre.current) pre.current.scrollTop = pre.current.scrollHeight;

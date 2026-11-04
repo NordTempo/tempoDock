@@ -37,10 +37,14 @@ type runState struct {
 	mu      sync.Mutex
 	running map[int64]int
 	writing map[int64]bool
+	// ended holds each run in flight's channel, closed when it ends, by
+	// run ID, for WaitRun.
+	ended map[int64]chan struct{}
 }
 
 // Run is a command checked and recorded, ready to run once: Wait runs
-// it, Abandon gives it up unrun. OpenRun makes one.
+// it, Abandon gives it up unrun. OpenRun makes one, and the job
+// scheduler for a job's runs (job set).
 type Run struct {
 	c       *Core
 	actor   Actor
@@ -48,8 +52,19 @@ type Run struct {
 	rel     store.Release
 	cfg     releaseConfig
 	row     store.ServiceRun
+	job     *store.ServiceJob
 	once    sync.Once
 	release func()
+}
+
+// runSpec is what a run runs: a command's or a job's.
+type runSpec struct {
+	command string
+	timeout int // seconds, checked
+	volumes apitypes.RunVolumes
+	tty     bool
+	trigger apitypes.RunTrigger
+	job     *store.ServiceJob
 }
 
 // OpenRun checks that the actor may run req's command in the service
@@ -61,24 +76,47 @@ func (c *Core) OpenRun(ctx context.Context, a Actor, ref ServiceRef, req apitype
 	if err != nil {
 		return nil, err
 	}
-	if ss.svc.ArchivedAt != nil {
-		return nil, invalid("service %s is archived; restore it to run commands in it", ss.svc.Name)
+	cmd, err := checkCommand(req.Command)
+	if err != nil {
+		return nil, err
 	}
-	cmd := strings.TrimSpace(req.Command)
+	timeout, err := checkTimeout(req.TimeoutSeconds)
+	if err != nil {
+		return nil, err
+	}
+	return c.openRun(ctx, a, ss, runSpec{command: cmd, timeout: timeout, volumes: req.Volumes, tty: tty, trigger: apitypes.TriggerCommand})
+}
+
+// checkCommand checks a command to run and returns it trimmed.
+func checkCommand(cmd string) (string, error) {
+	cmd = strings.TrimSpace(cmd)
 	switch {
 	case cmd == "":
-		return nil, invalid("give a command to run, e.g. `dock run -- ls`")
+		return "", invalid("give a command to run, e.g. `dock run -- ls`")
 	case len(cmd) > apitypes.MaxCommandBytes:
-		return nil, invalid("the command is %d bytes; at most %d", len(cmd), apitypes.MaxCommandBytes)
+		return "", invalid("the command is %d bytes; at most %d", len(cmd), apitypes.MaxCommandBytes)
 	case !utf8.ValidString(cmd) || strings.ContainsRune(cmd, 0):
-		return nil, invalid("the command must be UTF-8 text without NUL bytes")
+		return "", invalid("the command must be UTF-8 text without NUL bytes")
 	}
-	timeout := req.TimeoutSeconds
+	return cmd, nil
+}
+
+// checkTimeout checks a run's timeout in seconds; 0 is the default.
+func checkTimeout(timeout int) (int, error) {
 	switch {
 	case timeout == 0:
-		timeout = apitypes.DefaultRunTimeoutSeconds
+		return apitypes.DefaultRunTimeoutSeconds, nil
 	case timeout < 0 || timeout > apitypes.MaxRunTimeoutSeconds:
-		return nil, invalid("timeout must be between 1 and %d seconds", apitypes.MaxRunTimeoutSeconds)
+		return 0, invalid("timeout must be between 1 and %d seconds", apitypes.MaxRunTimeoutSeconds)
+	}
+	return timeout, nil
+}
+
+// openRun records a checked run in a service as running, once it has
+// an active release, its volumes are decided and a run slot is free.
+func (c *Core) openRun(ctx context.Context, a Actor, ss svcScope, spec runSpec) (*Run, error) {
+	if ss.svc.ArchivedAt != nil {
+		return nil, invalid("service %s is archived; restore it to run commands in it", ss.svc.Name)
 	}
 	rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
 	if store.IsNotFound(err) {
@@ -91,7 +129,7 @@ func (c *Core) OpenRun(ctx context.Context, a Actor, ref ServiceRef, req apitype
 	if err != nil {
 		return nil, err
 	}
-	volumes, err := runVolumes(ss, cfg, req.Volumes)
+	volumes, err := runVolumes(ss, cfg, spec.volumes)
 	if err != nil {
 		return nil, err
 	}
@@ -100,8 +138,14 @@ func (c *Core) OpenRun(ctx context.Context, a Actor, ref ServiceRef, req apitype
 		return nil, err
 	}
 	params := store.InsertServiceRunParams{
-		ServiceID: ss.svc.ID, ReleaseID: &rel.ID, Trigger: string(apitypes.TriggerCommand), Command: cmd, Tty: tty,
-		Volumes: string(volumes), TimeoutSeconds: int64(timeout), Actor: a.Name, ActorKind: a.Kind, StartedAt: now(),
+		ServiceID: ss.svc.ID, ReleaseID: &rel.ID, Trigger: string(spec.trigger), Command: spec.command, Tty: spec.tty,
+		Volumes: string(volumes), TimeoutSeconds: int64(spec.timeout), Actor: a.Name, ActorKind: a.Kind, StartedAt: now(),
+	}
+	if spec.job != nil {
+		params.JobID = &spec.job.ID
+		endJob := c.holdJob(spec.job.ID)
+		endRun := release
+		release = func() { endRun(); endJob() }
 	}
 	if a.UserID != 0 {
 		params.UserID = &a.UserID
@@ -114,9 +158,31 @@ func (c *Core) OpenRun(ctx context.Context, a Actor, ref ServiceRef, req apitype
 		release()
 		return nil, err
 	}
-	r := &Run{c: c, actor: a, ss: ss, rel: rel, cfg: cfg, row: row, release: release}
-	c.publishRun(ss, rel, row)
+	ended := make(chan struct{})
+	c.runs.mu.Lock()
+	c.runs.ended[row.ID] = ended
+	c.runs.mu.Unlock()
+	hold := release
+	release = func() {
+		hold()
+		c.runs.mu.Lock()
+		if ch, ok := c.runs.ended[row.ID]; ok {
+			close(ch)
+			delete(c.runs.ended, row.ID)
+		}
+		c.runs.mu.Unlock()
+	}
+	r := &Run{c: c, actor: a, ss: ss, rel: rel, cfg: cfg, row: row, job: spec.job, release: release}
+	c.publishRun(ss, rel, row, r.jobName())
 	return r, nil
+}
+
+// jobName is the run's job's name, "" for a command.
+func (r *Run) jobName() string {
+	if r.job == nil {
+		return ""
+	}
+	return r.job.Name
 }
 
 // runVolumes decides how a run gets the service's volumes. A database
@@ -179,7 +245,11 @@ func (c *Core) holdRun(ss svcScope, volumes apitypes.RunVolumes) (func(), error)
 }
 
 // Info is the run as it was recorded.
-func (r *Run) Info() apitypes.CommandRun { return r.c.toRun(r.ss, r.rel, r.row) }
+func (r *Run) Info() apitypes.CommandRun {
+	out := r.c.toRun(r.ss, r.rel, r.row)
+	out.Job = r.jobName()
+	return out
+}
 
 // Abandon ends a run that never ran (the caller couldn't take its
 // output) as canceled. It does nothing once Wait was called.
@@ -278,12 +348,22 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 		c.log.Error("record the end of a run", "run", r.row.ID, "err", err)
 	}
 	r.row.Status, r.row.ExitCode, r.row.Error, r.row.Output, r.row.FinishedAt = string(status), code, msg, output, &at
+	if r.job != nil {
+		// A job's run is its history, not the audit log's (a job every
+		// minute would bury it); running one now is audited as job.run.
+		c.trimJobRuns(ctx, r.job.ID)
+		c.publishRun(r.ss, r.rel, r.row, r.job.Name)
+		c.jobEnded(r.ss, *r.job, r.row)
+	} else {
 	if err := c.store.TrimServiceRuns(ctx, store.TrimServiceRunsParams{ServiceID: r.ss.svc.ID, Keep: keepRuns}); err != nil {
 		c.log.Error("trim run history", "service", r.ss.String(), "err", err)
 	}
 	c.audit(ctx, r.actor, "service.run", &r.ss.project, &r.ss.env, r.ss.String(), runSummary(r.row))
-	c.publishRun(r.ss, r.rel, r.row)
-	return c.toRun(r.ss, r.rel, r.row)
+		c.publishRun(r.ss, r.rel, r.row, "")
+	}
+	out := c.toRun(r.ss, r.rel, r.row)
+	out.Job = r.jobName()
+	return out
 }
 
 // runSummary is a finished run's audit summary: the command and how it
@@ -343,6 +423,28 @@ func (c *Core) RunCommand(ctx context.Context, a Actor, ref ServiceRef, req apit
 	return r.Wait(ctx, nil), nil
 }
 
+// WaitRun waits until one of a service's runs ended, at most wait, and
+// returns it as GetRun does (scope deploy): ended, or still running when
+// the wait is over. Nothing polls: the run closes its channel as it ends.
+func (c *Core) WaitRun(ctx context.Context, a Actor, ref ServiceRef, id int64, wait time.Duration) (apitypes.CommandRun, error) {
+	if _, err := c.GetRun(ctx, a, ref, id); err != nil {
+		return apitypes.CommandRun{}, err
+	}
+	c.runs.mu.Lock()
+	ended, running := c.runs.ended[id]
+	c.runs.mu.Unlock()
+	if running {
+		t := time.NewTimer(wait)
+		select {
+		case <-ended:
+		case <-t.C:
+		case <-ctx.Done():
+		}
+		t.Stop()
+	}
+	return c.GetRun(ctx, a, ref, id)
+}
+
 // ListRuns returns a service's latest runs, newest first, without their
 // output. Scope read.
 func (c *Core) ListRuns(ctx context.Context, a Actor, ref ServiceRef) ([]apitypes.CommandRun, error) {
@@ -384,7 +486,13 @@ func (c *Core) GetRun(ctx context.Context, a Actor, ref ServiceRef, id int64) (a
 	if err != nil {
 		return apitypes.CommandRun{}, err
 	}
-	return c.toRun(ss, rel, row), nil
+	out := c.toRun(ss, rel, row)
+	if row.JobID != nil {
+		if job, err := c.store.GetServiceJobByID(ctx, *row.JobID); err == nil {
+			out.Job = job.Name
+		}
+	}
+	return out, nil
 }
 
 // runRelease is the release a run ran in; none (zero) for a run that
@@ -413,9 +521,9 @@ func (c *Core) toRun(ss svcScope, rel store.Release, row store.ServiceRun) apity
 // publishRun sends a run event, without the run's output: that is read
 // with deploy (GetRun), and events go to everyone who may read the
 // service.
-func (c *Core) publishRun(ss svcScope, rel store.Release, row store.ServiceRun) {
+func (c *Core) publishRun(ss svcScope, rel store.Release, row store.ServiceRun, job string) {
 	run := c.toRun(ss, rel, row)
-	run.Output = ""
+	run.Output, run.Job = "", job
 	c.publish(ss, apitypes.Event{Type: apitypes.EventRun, Run: &run})
 }
 
@@ -445,6 +553,13 @@ func (c *Core) interruptRuns(ctx context.Context) error {
 			a.TokenID = *row.TokenID
 		}
 		r := &Run{c: c, actor: a, ss: ss, rel: rel, row: row, release: func() {}}
+		if row.JobID != nil {
+			job, err := c.store.GetServiceJobByID(ctx, *row.JobID)
+			if err != nil {
+				return err
+			}
+			r.job = &job
+		}
 		r.finish(ctx, apitypes.RunInterrupted, nil, "the control plane restarted while it ran; run it again", "")
 	}
 	return nil
