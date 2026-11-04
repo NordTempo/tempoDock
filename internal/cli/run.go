@@ -136,7 +136,7 @@ func (g *globals) startRun(ctx context.Context, s *session, t target, command st
 	}
 	return g.io.Print(r, func() error {
 		g.io.Successf("Started run %d in release %d of %s/%s/%s", r.ID, r.Release, r.Project, r.Environment, r.Service)
-		g.io.Detail(fmt.Sprintf("Follow it with `dock runs show %d -s %s`.", r.ID, r.Service))
+		g.io.Detail(fmt.Sprintf("Follow it with `dock runs show %d %s`.", r.ID, target{r.Project, r.Environment, r.Service}.flags()))
 		return nil
 	})
 }
@@ -298,7 +298,8 @@ func newRunsCmd(g *globals) *cobra.Command {
 		Short: "List a service's one-off commands, newest first",
 		Long: `List the latest commands ` + "`dock run`" + `, the UI and agents ran on a service (the
 newest 50), newest first. ` + "`dock runs show <id>`" + ` adds the tail of a run's output.`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			s, t, err := g.open(f, needService)
@@ -311,7 +312,7 @@ newest 50), newest first. ` + "`dock runs show <id>`" + ` adds the tail of a run
 			}
 			return g.io.Print(runs, func() error {
 				if len(runs) == 0 {
-					g.io.Successf("%s has no runs yet. Run one with `dock run -- <command>`.", t)
+					g.io.Successf("%s has no runs yet. Run one with `dock run %s -- <command>`.", t, t.flags())
 					return nil
 				}
 				tb := g.io.Table("id", "status", "exit", "command", "by", "started", "duration")
@@ -336,8 +337,9 @@ func newRunsShowCmd(g *globals) *cobra.Command {
 		Long: `Show one run: its command, how it ended and the last 16 KB of its output
 (none for terminal sessions, whose output holds what was typed). Needs
 deploy scope, as output can show the service's variables.`,
-		Example: `  dock runs show 12 -s web`,
-		Args:    cobra.ExactArgs(1),
+		Example:           `  dock runs show 12 -s web`,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeRunArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
 			if err != nil || id <= 0 {

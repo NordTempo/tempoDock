@@ -182,7 +182,8 @@ name. Update older CLI clients before renaming projects they use.
 | `logs [-f] [-n N] [--since] [-r N] [--grep TEXT] [--stderr] [--build]` | Service output, or a build log. `-r N` reads an earlier release's output, kept on its server after its container was removed (`[logs]` limits). `--grep` keeps lines containing TEXT (plain, case-sensitive) and `--stderr` the lines written to stderr, filtered on the server after `--tail`: `-n 100 --grep x` prints the matches among the last 100 lines (`-n 0` searches all). With `-f`, new matching lines keep coming. Not with `--build` |
 | `logs drain list`, `logs drain add http\|syslog\|loki URL [--name N] [--header K=V]... [--token T]`, `logs drain test\|remove ID\|NAME [-y]` | The environment's log drains ([guide](guide/deploying.md#log-drains)): every service's output sent to HTTP (JSON lines), syslog or Loki, with lines sent and dropped, the last error and last delivery. Adding, testing and removing need admin. `-` as the URL or `--token` reads it from stdin. `test` exits 7 when the line didn't go through |
 | `traffic [--range 24h\|7d\|30d]` | What the service's domains served: requests, errors, average time, bytes sent and the most requested paths, with IDs as `:id` ([ADR 0033](decisions/0033-traffic-statistics.md)). Visitors are in `dock analytics stats` |
-| `releases`, `release list\|show N` | Release history and one release with its events |
+| `releases`, `release list\|show N [--log-lines N]` | Release history and one release with its events. For a failed release, also the last lines of its build log and of its container's output (default 40 of each, `--log-lines 0` for none) |
+| `release wait [N] [--timeout D]` | Follow a release until it is live or failed, like `deploy` does (default: the newest release), with the same output and exit codes: 0 when live, 6 when failed. A release that is already done is printed right away. `--timeout` (or Ctrl-C) stops following with exit 1; the deploy continues |
 | `rollback [N]`, `release rollback [N]` | New release from an earlier one; default the one that served before the active one. Says which release it copies and that release's image and config |
 | `restart` | New release identical to the active one |
 | `connect [service] [--port N] [--confirm ENV] [--show-url]` | Tunnel `127.0.0.1` (the service's port if free, else a free one) to the service's private port until Ctrl-C, for psql, TablePlus, redis-cli ([guide](guide/data.md#connecting-from-your-machine)). Needs data access level write with sensitive visible; production needs `--confirm`, and API tokens never get production. `--show-url` prints the connection URL with its password (audited). `--json` prints one object (`service`, `port`, `local`, `url`, ...) before serving. Exit 3 without access |
@@ -238,6 +239,29 @@ name. Update older CLI clients before renaming projects they use.
 Commands that start releases (`deploy`, `promote`, `rollback`, `restart`,
 `service start`, `apply`, `--deploy`) follow them until they are live or failed; `--detach` returns
 right after they are queued. Ctrl-C stops following, not the deploy.
+`dock release wait N` follows a release again, or one started elsewhere (a
+detached deploy, a git push).
+
+With `--json`, a failed release printed by `release show`, `release wait`,
+`deploy`, `rollback` or `restart` has a `logs` field with the end of what
+explains it, the lines `dock logs --release N` and `dock logs --build
+--release N` print:
+
+```json
+{"number": 3, "status": "failed", "error_code": "health_check_failed", "...": "...",
+ "logs": {"container": ["2026-11-03T20:57:38Z [stderr] panic: DATABASE_URL is not set"],
+          "build": ["Built dock/p1_e1_s1:3"]}}
+```
+
+`container` is the release's container output (time, `[stderr]` for
+stderr, text); `build` the build or image pull output. Either is left out
+when empty, and `logs` when both are.
+
+Hints that name a command for a release or service (`dock release show 3
+-p shop -e production -s web`) carry its `-p`, `-e` and `-s`, so they work
+as printed outside the linked directory. A deploy refused because another
+one is running (`deploy_in_progress`, exit 5) names `dock release wait` for
+it.
 
 ### `dock run`
 
@@ -304,6 +328,23 @@ says which level was missing and the rule that decided it.
 Filters (`-w`, `--filter`): `col=value` (equals), `col=op:value` with `eq`,
 `ne`, `lt`, `lte`, `gt`, `gte`, `like`, `ilike`, `in` (comma-separated), or
 `col=is_null` / `col=not_null`. Values are Postgres text input.
+
+## Shell completion
+
+`dock completion bash|zsh|fish|powershell` prints a completion script (see
+its `--help` for where to put it). Besides commands and flags, it completes
+names from the server: projects (`-p`, `project archive`), environments
+(`-e`, `promote`, `environment clone|lock|unlock`), services (`-s`,
+`service show|stop|start`, `connect`, `runs`, `backup list`), release
+numbers (`release show|wait`, `rollback`, `logs --release`), access
+requests (`request show|wait`), runs (`runs show`), snapshots (`volume
+snapshot restore|delete`) and log drains (`logs drain remove|test`); numbers
+newest first with their status. The `-p` and `-e` already typed, then the
+directory's link, narrow the list. Completion uses the same server, token
+and organization as the command would, and completes nothing (silently)
+when there is no server, no token or no answer within 3 seconds. It costs
+nothing at start-up: names are only fetched under the completion script's
+hidden `__complete` command.
 
 ## CLI-only build
 

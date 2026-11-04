@@ -118,7 +118,7 @@ func stoppedNote(svc apitypes.Service) string {
 	if svc.StoppedAt == nil || svc.ArchivedAt != nil {
 		return ""
 	}
-	return "stopped " + ago(*svc.StoppedAt) + " by " + cmp.Or(svc.StoppedBy, "unknown") + " (start it with `dock service start`)"
+	return "stopped " + ago(*svc.StoppedAt) + " by " + cmp.Or(svc.StoppedBy, "unknown") + " (start it with `dock service start " + target{svc.Project, svc.Environment, svc.Name}.flags() + "`)"
 }
 
 // oomNote says a service's container was killed for running out of

@@ -95,13 +95,13 @@ with it. --project names the project (default: the directory's name).
 			}
 			if !apply {
 				return g.io.Print(res, func() error {
-					printImport(g, res, outPath)
+					printImport(g, project, res, outPath)
 					g.io.Progressf("Create it with `dock import compose %s -p %s --apply`%s.", path, project, applyLater(outPath))
 					return nil
 				})
 			}
 			if !g.io.JSON {
-				printImport(g, res, outPath)
+				printImport(g, project, res, outPath)
 			}
 			if req.Values, err = askSecrets(g, res.Secrets, yes); err != nil {
 				return err
@@ -123,6 +123,7 @@ with it. --project names the project (default: the directory's name).
 		},
 	}
 	cmd.Flags().StringVarP(&project, "project", "p", "", "project name (default: the Compose file's directory)")
+	_ = cmd.RegisterFlagCompletionFunc("project", cobra.NoFileCompletions) // a new name
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "also write the project file here")
 	cmd.Flags().BoolVar(&apply, "apply", false, "stage and apply it")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask: keep the Compose file's secret values and apply")
@@ -258,7 +259,7 @@ func askSecrets(g *globals, secrets []apitypes.ComposeSecret, yes bool) ([]apity
 }
 
 // printImport prints a conversion: warnings, secrets, builds and the plan.
-func printImport(g *globals, res apitypes.ComposeImport, outPath string) {
+func printImport(g *globals, project string, res apitypes.ComposeImport, outPath string) {
 	for _, w := range res.Warnings {
 		where := w.Service
 		if where == "" {
@@ -269,7 +270,7 @@ func printImport(g *globals, res apitypes.ComposeImport, outPath string) {
 	for _, sec := range res.Secrets {
 		state := "value from the Compose file, never printed"
 		if !sec.HasValue {
-			state = fmt.Sprintf("needs a value: `dock env set -s %s %s=...`", sec.Service, sec.Key)
+			state = fmt.Sprintf("needs a value: `dock env set %s %s=...`", target{project, "production", sec.Service}.flags(), sec.Key)
 		}
 		g.io.Progressf("Secret %s.%s: %s", sec.Service, sec.Key, state)
 	}

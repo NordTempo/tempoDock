@@ -68,6 +68,7 @@ func newRequestListCmd(g *globals) *cobra.Command {
 func newRequestShowCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use: "show <id>", Short: "Show an access request: what it asks, its decision and its outcome", Args: cobra.ExactArgs(1),
+		ValidArgsFunction: completeRequestArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := requestID(args[0])
 			if err != nil {
@@ -94,7 +95,8 @@ func newRequestWaitCmd(g *globals) *cobra.Command {
 		Long: `Wait for an admin to decide an access request and, if approved, for its
 change to run. Exits 0 when it ran, 1 when it failed, 3 when it was
 rejected, 4 when it expired, and 5 when --timeout passes first.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeRequestArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := requestID(args[0])
 			if err != nil {

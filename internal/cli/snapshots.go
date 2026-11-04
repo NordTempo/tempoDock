@@ -52,7 +52,7 @@ use ` + "`dock backup`" + `.`,
 			}
 			return g.io.Print(snap, func() error {
 				if snap.Status == apitypes.SnapshotRunning {
-					g.io.Successf("Taking snapshot %d of %s; follow it with `dock volume snapshot list`", snap.ID, t.Service)
+					g.io.Successf("Taking snapshot %d of %s; follow it with `dock volume snapshot list %s`", snap.ID, t.Service, t.flags())
 					return nil
 				}
 				g.io.Successf("Took snapshot %d of %s: %s, paused %s", snap.ID, t.Service, bytesize(snap.SizeBytes), pausedText(snap.PausedMS))
@@ -84,7 +84,7 @@ func newSnapshotListCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return g.io.Print(ss, func() error { return printSnapshots(g, ss) })
+			return g.io.Print(ss, func() error { return printSnapshots(g, t, ss) })
 		},
 	}
 	f.add(cmd, needService)
@@ -92,7 +92,7 @@ func newSnapshotListCmd(g *globals) *cobra.Command {
 }
 
 // printSnapshots is `dock volume snapshot list`'s human output.
-func printSnapshots(g *globals, ss apitypes.ServiceSnapshots) error {
+func printSnapshots(g *globals, t target, ss apitypes.ServiceSnapshots) error {
 	restores := "in place"
 	if ss.IntoNew {
 		restores = "into a new service (--in-place replaces the service's data)"
@@ -102,7 +102,7 @@ func printSnapshots(g *globals, ss apitypes.ServiceSnapshots) error {
 		return err
 	}
 	if len(ss.Snapshots) == 0 {
-		g.io.Detail("No snapshots yet. Take one with `dock volume snapshot`.")
+		g.io.Detail(fmt.Sprintf("No snapshots yet. Take one with `dock volume snapshot %s`.", t.flags()))
 	} else {
 		tb := g.io.Table("id", "taken", "trigger", "status", "size", "paused", "note")
 		for _, sn := range ss.Snapshots {
@@ -154,7 +154,8 @@ volumes instead: it stops, a safety snapshot keeps the data it holds now
 Other services restore in place only.`,
 		Example: `  dock volume snapshot restore 12 -s postgres --as postgres-old
   dock volume snapshot restore 12 -s worker --in-place`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeSnapshotArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := snapshotArg(args[0])
 			if err != nil {
@@ -176,7 +177,7 @@ Other services restore in place only.`,
 			res, err := send[apitypes.SnapshotRestoreResult](cmd.Context(), s, http.MethodPost,
 				fmt.Sprintf("%s/snapshots/%d/restore", t.servicePath(), id), req)
 			if err != nil {
-				return err
+				return deployInProgress(err, t)
 			}
 			if !detach {
 				g.io.Progressf("Restoring snapshot %d into %s...", id, res.Restore.To)
@@ -187,12 +188,12 @@ Other services restore in place only.`,
 			return g.io.Print(res, func() error {
 				r := res.Restore
 				if r.Status == apitypes.BackupRunning {
-					g.io.Successf("Restoring snapshot %d into %s; follow it with `dock volume snapshot list`", id, r.To)
+					g.io.Successf("Restoring snapshot %d into %s; follow it with `dock volume snapshot list %s`", id, r.To, t.flags())
 				} else {
 					g.io.Successf("Restored snapshot %d into %s", id, r.To)
 				}
 				if r.InPlace {
-					g.io.Detail(fmt.Sprintf("Snapshot %d holds the data it replaced; restore it to undo: `dock volume snapshot restore %d --in-place`.", r.Safety, r.Safety))
+					g.io.Detail(fmt.Sprintf("Snapshot %d holds the data it replaced; restore it to undo: `dock volume snapshot restore %d --in-place %s`.", r.Safety, r.Safety, t.flags()))
 				} else {
 					g.io.Detail(fmt.Sprintf("%s is untouched. Check %s, then point references at it.", t.Service, r.To))
 				}
@@ -213,10 +214,11 @@ func newSnapshotDeleteCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var yes bool
 	cmd := &cobra.Command{
-		Use:     "delete <id>",
-		Aliases: []string{"rm"},
-		Short:   "Delete a snapshot and free its disk on the server",
-		Args:    cobra.ExactArgs(1),
+		Use:               "delete <id>",
+		Aliases:           []string{"rm"},
+		Short:             "Delete a snapshot and free its disk on the server",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeSnapshotArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := snapshotArg(args[0])
 			if err != nil {
@@ -300,7 +302,7 @@ func waitSnapshotRestore(ctx context.Context, s *session, t target, id int64) (a
 			case r.ID != id || r.Status == apitypes.BackupRunning:
 			case r.Status == apitypes.BackupFailed:
 				msg := fmt.Sprintf("restoring snapshot %d into %s failed: %s", r.Snapshot, r.To, r.Error)
-				return r, true, &output.Error{Exit: output.ExitError, Message: msg, Hint: restoreFailedHint(r)}
+				return r, true, &output.Error{Exit: output.ExitError, Message: msg, Hint: restoreFailedHint(t, r)}
 			default:
 				return r, true, nil
 			}
@@ -309,12 +311,12 @@ func waitSnapshotRestore(ctx context.Context, s *session, t target, id int64) (a
 	})
 }
 
-// restoreFailedHint says what to do after a failed restore.
-func restoreFailedHint(r apitypes.SnapshotRestore) string {
+// restoreFailedHint says what to do after a failed restore into t.
+func restoreFailedHint(t target, r apitypes.SnapshotRestore) string {
 	if r.InPlace {
-		return fmt.Sprintf("Snapshot %d holds the data the service had; restore it with `dock volume snapshot restore %d --in-place`.", r.Safety, r.Safety)
+		return fmt.Sprintf("Snapshot %d holds the data the service had; restore it with `dock volume snapshot restore %d --in-place %s`.", r.Safety, r.Safety, t.flags())
 	}
-	return fmt.Sprintf("%s is kept for a look; archive it when done (`dock service archive %s`).", r.To, r.To)
+	return fmt.Sprintf("%s is kept for a look; archive it when done (`dock service archive %s %s`).", r.To, r.To, target{Project: t.Project, Environment: t.Environment}.flags())
 }
 
 // waitSnapshots fetches a service's snapshots every backupPoll until

@@ -220,7 +220,8 @@ backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.`,
 				for _, e := range exports {
 					g.io.Detail(fmt.Sprintf("Other services use it with ${{%s.%s}}, e.g. `dock env set -s api %s='${{%s.%s}}'`", svc.Name, e, e, svc.Name, e))
 				}
-				g.io.Detail("Follow the deploy with `dock status`; backups run daily (`dock backup list -s " + svc.Name + "`).")
+				created := target{svc.Project, svc.Environment, svc.Name}
+				g.io.Detail(fmt.Sprintf("Follow the deploy with `dock release wait %s`; backups run daily (`dock backup list %s`).", created.flags(), created.flags()))
 				return nil
 			})
 		},
@@ -242,9 +243,10 @@ func serviceArg(f *targetFlags, args []string) {
 func newServiceShowCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	cmd := &cobra.Command{
-		Use:   "show [name]",
-		Short: "Show a service's settings and state",
-		Args:  cobra.MaximumNArgs(1),
+		Use:               "show [name]",
+		Short:             "Show a service's settings and state",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			s, t, err := g.open(f, needService)
@@ -349,7 +351,8 @@ func newServiceUpdateCmd(g *globals) *cobra.Command {
 		Long: `Stage changes to a service's settings. Only the flags you pass change; pass
 an empty value to clear a setting. Staged changes go live with the service's
 next deploy, ` + "`dock apply`" + `, or right away with --deploy.`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			req, changed := settings.update(cmd.Flags())
@@ -384,7 +387,8 @@ func newServiceStopCmd(g *globals) *cobra.Command {
 		Long: `Stop a service: its domains answer 503 and its container is removed, freeing
 its memory. Its active release, port, volumes, domains and variables are kept.
 Start it again with ` + "`dock service start`" + ` or any deploy.`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			s, t, err := g.open(f, needService)
@@ -398,10 +402,10 @@ Start it again with ` + "`dock service start`" + ` or any deploy.`,
 			}
 			svc, err := send[apitypes.Service](cmd.Context(), s, http.MethodPost, t.servicePath()+"/stop", nil)
 			if err != nil {
-				return err
+				return deployInProgress(err, t)
 			}
 			return g.io.Print(svc, func() error {
-				g.io.Successf("Stopped %s. Its domains answer 503; start it with `dock service start`.", t)
+				g.io.Successf("Stopped %s. Its domains answer 503; start it with `dock service start %s`.", t, t.flags())
 				return nil
 			})
 		},
@@ -422,7 +426,8 @@ func newServiceStartCmd(g *globals) *cobra.Command {
 		Long: `Start a stopped service: a new release copying its active one, through the
 same health-checked path as a deploy. If that release fails, the service
 stays stopped.`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			s, t, err := g.open(f, needService)
@@ -448,9 +453,10 @@ func newServiceArchiveCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "archive [name]",
-		Short: "Stop a service and remove its routes, keeping volumes and history",
-		Args:  cobra.MaximumNArgs(1),
+		Use:               "archive [name]",
+		Short:             "Stop a service and remove its routes, keeping volumes and history",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
 			s, t, err := g.open(f, needService)

@@ -37,7 +37,8 @@ Nothing is deployed unless --deploy, which deploys the images serving in
 <from> and deploy on the project.`,
 		Example: `  dock environment clone staging staging-2
   dock environment clone production staging --deploy`,
-		Args: cobra.ExactArgs(2),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeEnvironmentArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			k, err := parseKind(kind)
 			if err != nil {
@@ -168,7 +169,8 @@ well in git.
 TOML by default; --format json (or --json) prints the API's JSON.`,
 		Example: `  dock project export shop > shop.dock.toml
   dock project export --format json`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeProjectArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if format != "toml" && format != "json" {
 				return usageError(fmt.Sprintf("unknown format %q", format), "Use toml or json.")
