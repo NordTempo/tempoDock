@@ -124,3 +124,8 @@ JOIN services ON services.environment_id = environments.id
 LEFT JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
 WHERE environments.server_id = +? AND projects.archived_at IS NULL AND services.archived_at IS NULL
 ORDER BY projects.name, environments.name, services.name;
+
+-- name: ListServiceIDs :many
+-- Every service's ID, archived ones included: the log archives the
+-- retention pass keeps (ADR 0046).
+SELECT id FROM services ORDER BY id;

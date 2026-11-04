@@ -32,8 +32,11 @@ func newLogsCmd(g *globals) *cobra.Command {
 		Use:   "logs",
 		Short: "Show a service's output, or a release's build log",
 		Long: `Print the output of the service's active release (or --release N), read
-from the server's container runtime. --build prints a build log instead
-(default: the newest release's).
+from the server's container runtime. An earlier release's container is
+gone once it was replaced; its output was kept on its server when it was
+removed, for [logs] keep_days (30) and up to keep_mb_per_service (64 MB)
+per service, and --release N reads it (--follow ends after it). --build
+prints a build log instead (default: the newest release's).
 
 With --json, every line is one JSON object on its own line.`,
 		Args: cobra.NoArgs,

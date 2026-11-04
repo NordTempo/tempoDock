@@ -70,6 +70,17 @@ type Config struct {
 	Updates Updates `toml:"updates"`
 	// Analytics is this server's part in Dock Analytics (ADR 0037).
 	Analytics Analytics `toml:"analytics"`
+	// Logs bounds the history of removed containers' output (ADR 0046).
+	Logs Logs `toml:"logs"`
+}
+
+// Logs bounds log history (ADR 0046): when dock removes a container, its
+// output is kept on its server, per service at most KeepMBPerService
+// (compressed; the oldest releases go first) and KeepDays. The control
+// plane's settings apply to every server.
+type Logs struct {
+	KeepMBPerService int `toml:"keep_mb_per_service"`
+	KeepDays         int `toml:"keep_days"`
 }
 
 // Analytics configures Dock Analytics on this server (ADR 0037): every
@@ -365,6 +376,7 @@ func Default() Config {
 		Backup: Backup{
 			ResticImage: "restic/restic:0.18.1@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76",
 		},
+		Logs: Logs{KeepMBPerService: 64, KeepDays: 30},
 		Retention: Retention{
 			BuildLogDays:     30,
 			AuditDays:        365,
@@ -459,6 +471,9 @@ func (c *Config) validate() error {
 	}
 	if err := c.Retention.validate(); err != nil {
 		return err
+	}
+	if c.Logs.KeepMBPerService < 1 || c.Logs.KeepDays < 1 {
+		return errors.New("[logs] keep_mb_per_service and keep_days must be at least 1")
 	}
 	if err := c.Alerts.validate(); err != nil {
 		return err

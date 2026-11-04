@@ -1002,6 +1002,10 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 		Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source), FromRelease: r.FromRelease,
 		ImageRef: r.ImageRef, ImageID: r.ImageID, ImageDigest: r.ImageDigest, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
 		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, Commit: commitOf(r),
+		// An archive on its server, or a failed release's saved last
+		// lines (servers too old to archive) until retention trims them.
+		LogsKept: r.LogsServerID != nil ||
+			(r.Status == string(apitypes.ReleaseFailed) && r.ContainerID != "" && !r.HistoryTrimmed),
 	}
 	cfg, err := c.openConfig(r)
 	if err != nil {

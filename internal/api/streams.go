@@ -285,7 +285,7 @@ func registerStreams(s *Server, a huma.API) {
 	sse(s, a, huma.Operation{
 		OperationID: "service-logs", Method: http.MethodGet, Path: servicePathT + "/logs",
 		Summary: "Service logs", Tags: []string{"services"},
-		Description: "Output of the active release's container (or `release`), read from the runtime. For a failed release, the last 200 lines its container wrote before it was removed.",
+		Description: "Output of the active release's container (or `release`), read from the runtime. An earlier release's container is gone; its output was kept on its server when the container was removed (ADR 0046), and is read from there: `follow` ends after it. `logs_kept` on a release says it can be read.",
 	}, []string{"line"}, sseFormat[apitypes.LogLine]{
 		name: func(apitypes.LogLine) string { return "line" },
 	}, func(ctx context.Context, actor core.Actor, in *struct {

@@ -455,13 +455,17 @@ type Release struct {
 	// 0018); releases that reuse an image keep it.
 	Commit *Commit `json:"commit,omitempty"`
 	// Error and ErrorCode explain a failed release.
-	Error      string         `json:"error,omitempty"`
-	ErrorCode  ErrorCode      `json:"error_code,omitempty"`
-	Config     ReleaseConfig  `json:"config"`
-	CreatedBy  string         `json:"created_by"`
-	CreatedAt  time.Time      `json:"created_at"`
-	FinishedAt *time.Time     `json:"finished_at,omitempty"`
-	Events     []ReleaseEvent `json:"events,omitempty" doc:"Progress lines; only included when fetching one release"`
+	Error      string        `json:"error,omitempty"`
+	ErrorCode  ErrorCode     `json:"error_code,omitempty"`
+	Config     ReleaseConfig `json:"config"`
+	CreatedBy  string        `json:"created_by"`
+	CreatedAt  time.Time     `json:"created_at"`
+	FinishedAt *time.Time    `json:"finished_at,omitempty"`
+	// LogsKept says the output of the release's removed container was
+	// kept (ADR 0046), so its logs can be read; [logs] limits may have
+	// dropped it since.
+	LogsKept bool           `json:"logs_kept" doc:"The output of the release's removed container was kept, so its logs can be read until [logs] limits drop it"`
+	Events   []ReleaseEvent `json:"events,omitempty" doc:"Progress lines; only included when fetching one release"`
 }
 
 // ReleaseConfig summarises a release's resolved config without secret values.
