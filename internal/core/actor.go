@@ -34,8 +34,27 @@ type Actor struct {
 	ProjectName       string
 	EnvironmentName   string
 	// granted is the environment an approved access request lets this one
-	// call change despite its lock (ADR 0044); only core sets it.
-	granted int64
+	// call change despite its lock (ADR 0044); only core sets it, with
+	// approval for the audit log.
+	granted  int64
+	approval *approval
+	// askFirst makes every change in an environment an access request,
+	// locked or not (MCP's request_access); changes outside one fail.
+	askFirst bool
+}
+
+// approval is the access request an actor's call runs for, and who
+// approved it.
+type approval struct {
+	id int64
+	by string
+}
+
+// AskFirst returns the actor with every change it tries in an
+// environment filed as an access request instead of made, locked or not.
+func (a Actor) AskFirst() Actor {
+	a.askFirst = true
+	return a
 }
 
 // System is the actor for the daemon's own actions and for trusted local
@@ -90,6 +109,15 @@ func (a Actor) limited() bool { return a.ProjectID != 0 || a.EnvironmentID != 0 
 // require checks the actor's scope in its org. action completes "…
 // requires <scope>", e.g. "archiving a service".
 func (a Actor) require(need apitypes.Scope, action string) error {
+	if a.askFirst && rank(need) > rank(apitypes.ScopeRead) {
+		return invalid("only changes inside one environment can be asked for; %s isn't one", action)
+	}
+	return a.requireScope(need, action)
+}
+
+// requireScope is require without askFirst's refusal, for the checks of
+// operations inside an environment, where checkEnv files the request.
+func (a Actor) requireScope(need apitypes.Scope, action string) error {
 	if a.OrgID == 0 && a.Kind != "system" {
 		return a.noOrg(action)
 	}
@@ -198,7 +226,7 @@ func (a Actor) checkEnv(need apitypes.Scope, action string, p store.Project, e s
 		return err
 	}
 	if rank(need) > rank(apitypes.ScopeRead) && a.lockedOut(e) {
-		return lockedErr(p, e, action)
+		return a.lockedErr(p, e, action)
 	}
 	return nil
 }
@@ -206,7 +234,7 @@ func (a Actor) checkEnv(need apitypes.Scope, action string, p store.Project, e s
 // checkEnvAccess is checkEnv without the lock: scope and limits only.
 // Only operations that can't loosen a lock use it (locking itself).
 func (a Actor) checkEnvAccess(need apitypes.Scope, action string, p store.Project, e store.Environment) error {
-	if err := a.require(need, action); err != nil {
+	if err := a.requireScope(need, action); err != nil {
 		return err
 	}
 	if err := a.inOrg(p); err != nil {

@@ -67,16 +67,28 @@ func (c *Core) AuthenticateToken(ctx context.Context, secret, org string) (Actor
 	if err != nil {
 		return Actor{}, err
 	}
+	a, err := c.tokenActor(ctx, store.GetTokenByIDWithOwnerRow(row), org)
+	if err != nil {
+		return a, err
+	}
+	if t, n := row.Token, now(); t.LastUsedAt == nil || n.Sub(*t.LastUsedAt) > tokenTouchInterval {
+		if err := c.store.TouchToken(ctx, store.TouchTokenParams{LastUsedAt: &n, ID: t.ID}); err != nil {
+			c.log.Warn("touch token", "err", err)
+		}
+	}
+	return a, nil
+}
+
+// tokenActor is a token as an actor in org (see AuthenticateToken), as it
+// is now: revoked, expired, or for a `dock login` token its user gone or
+// disabled, it is unauthenticated. An approved access request acts as
+// the token that asked through it.
+func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRow, org string) (Actor, error) {
 	t, n := row.Token, now()
 	if t.RevokedAt != nil || (t.ExpiresAt != nil && n.After(*t.ExpiresAt)) {
 		return Actor{}, errUnauthenticated
 	}
 	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope), Operator: t.Operator}
-	if t.LastUsedAt == nil || n.Sub(*t.LastUsedAt) > tokenTouchInterval {
-		if err := c.store.TouchToken(ctx, store.TouchTokenParams{LastUsedAt: &n, ID: t.ID}); err != nil {
-			c.log.Warn("touch token", "err", err)
-		}
-	}
 	// A `dock login` token acts for the user who approved it, so it is only
 	// as good as that user now: gone or disabled refuses it, and in each
 	// org their role caps it. Acting for them lets them change their

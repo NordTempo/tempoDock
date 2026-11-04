@@ -45,7 +45,7 @@ var (
 		sealedAlertChannel, sealedGitSecret, sealedGitToken, sealedAccessKey, sealedStorageKeys,
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret,
-		sealedDataReader, sealedDataWriter,
+		sealedDataReader, sealedDataWriter, sealedRequestArgs,
 	}
 )
 

@@ -8,6 +8,34 @@ import (
 	"time"
 )
 
+type AccessRequest struct {
+	ID            int64
+	Nonce         string
+	OrgID         int64
+	ProjectID     int64
+	EnvironmentID int64
+	Status        string
+	Via           string
+	Operation     string
+	Title         string
+	Action        string
+	Args          []byte
+	Fingerprint   string
+	Reason        string
+	TokenID       *int64
+	RequestedBy   string
+	AuditMark     int64
+	Upload        string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	DecidedBy     string
+	DecidedAt     *time.Time
+	Comment       string
+	Result        string
+	Error         string
+	FinishedAt    *time.Time
+}
+
 type Alert struct {
 	ID          int64
 	Key         string
@@ -356,11 +384,12 @@ type JoinToken struct {
 }
 
 type Org struct {
-	ID             int64
-	Slug           string
-	Name           string
-	CreatedAt      time.Time
-	LockProduction int64
+	ID              int64
+	Slug            string
+	Name            string
+	CreatedAt       time.Time
+	LockProduction  int64
+	RequestTtlHours int64
 }
 
 type OrgInvite struct {

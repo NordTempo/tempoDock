@@ -73,6 +73,99 @@
         ],
         "type": "object"
       },
+      "AccessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {},
+          "changes_since": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decided_by": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requested_by": {
+            "type": "string"
+          },
+          "result": {},
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "expired",
+              "done",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "via": {
+            "enum": [
+              "api",
+              "mcp"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "project",
+          "environment",
+          "via",
+          "operation",
+          "title",
+          "summary",
+          "requested_by",
+          "created_at",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "AddDomainRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3284,6 +3377,17 @@
           "null"
         ]
       },
+      "DecideAccessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "description": "Shown to the requester and in the audit log",
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "DeployImageRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3905,6 +4009,9 @@
       "Event": {
         "additionalProperties": false,
         "properties": {
+          "access_request": {
+            "$ref": "#/components/schemas/AccessRequest"
+          },
           "alert": {
             "$ref": "#/components/schemas/Alert"
           },
@@ -3975,7 +4082,8 @@
               "project_renamed",
               "disk",
               "analytics",
-              "environment_lock"
+              "environment_lock",
+              "access_request"
             ],
             "type": "string"
           },
@@ -4896,6 +5004,13 @@
           "lock_production": {
             "description": "Lock new production environments as they are created",
             "type": "boolean"
+          },
+          "request_ttl_hours": {
+            "description": "Hours an access request waits for a decision before it expires (1 to 720). Default 24; 0 keeps the current value.",
+            "format": "int64",
+            "maximum": 720,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -34558,6 +34673,571 @@
         "summary": "Prune the registry now",
         "tags": [
           "registry"
+        ]
+      }
+    },
+    "/api/v1/requests": {
+      "get": {
+        "description": "Newest first. Admins see their organization's; a token sees the ones it filed.",
+        "operationId": "list-requests",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only requests with this status",
+            "explode": false,
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "description": "Only requests with this status",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "expired",
+                "done",
+                "failed"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "format": "int64",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccessRequest"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List access requests",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{id}": {
+      "get": {
+        "description": "With `wait` (seconds, at most 30), answers once the request is decided and has run, or when the wait is over. Admins get its arguments and how many changes its environment had since.",
+        "operationId": "get-request",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Access request number",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Access request number",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Seconds to wait for a decision",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Seconds to wait for a decision",
+              "format": "int64",
+              "maximum": 30,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessRequest"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get an access request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{id}/approve": {
+      "post": {
+        "description": "Runs the call as the token that asked, through every check it would pass now, with the environment's lock lifted for that call. Answers within seconds with the outcome, or while it still runs. Admins in a UI session only.",
+        "operationId": "approve-request",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Access request number",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Access request number",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessRequest"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Approve an access request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{id}/reject": {
+      "post": {
+        "description": "Nothing runs. Admins in a UI session only.",
+        "operationId": "reject-request",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Access request number",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Access request number",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessRequest"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Reject an access request",
+        "tags": [
+          "requests"
         ]
       }
     },

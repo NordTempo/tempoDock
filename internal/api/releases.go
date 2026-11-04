@@ -65,7 +65,9 @@ func registerReleases(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "deploy-source", Method: http.MethodPost, Path: releasesPath + "/source",
-		Summary: "Deploy source", Description: "Upload a build context as a tar (optionally gzipped) stream. It is streamed to disk, built on this server, and deployed. A `dock.toml` at its root overrides build and deploy settings. Scope: deploy.",
+		// The upload streams; it can't run again from JSON.
+		Metadata: map[string]any{"replay": false},
+		Summary:  "Deploy source", Description: "Upload a build context as a tar (optionally gzipped) stream. It is streamed to disk, built on this server, and deployed. A `dock.toml` at its root overrides build and deploy settings. Scope: deploy.",
 		Tags: tags, DefaultStatus: http.StatusAccepted,
 		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusRequestEntityTooLarge},
 		RequestBody: &huma.RequestBody{

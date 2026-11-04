@@ -91,7 +91,7 @@ var exitHints = map[output.ExitCode]string{
 // codeHints replace the exit code's hint for codes where it would mislead:
 // a server_offline 503 comes from a control plane that is answering.
 var codeHints = map[string]string{
-	"environment_locked": "Tokens can't change a locked environment. Ask an admin to unlock it in the UI, or to open it for a while.",
+	"environment_locked": "Tokens can't change a locked environment. An admin approves or rejects the access request in the UI (Requests); approved, it runs as you. Don't retry: follow it with `dock request wait <id>`.",
 	"server_offline":     "The control plane is fine; the server the environment runs on isn't connected, and its apps keep running. Check `dock server list`, and the node there (`journalctl -u dock-node`).",
 }
 

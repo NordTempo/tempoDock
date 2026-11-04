@@ -11,8 +11,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -40,6 +42,18 @@ type Server struct {
 	opts Options
 	// data replaces core for the database panel endpoints in tests.
 	data dataCore
+	// replays runs the API's changes again for approved access requests
+	// (ADR 0044), by operation ID; nil while building the spec.
+	replays map[string]func(context.Context, core.Actor, json.RawMessage) (json.RawMessage, error)
+}
+
+// replay is the API's core.Replayer.
+func (s *Server) replay(ctx context.Context, a core.Actor, op string, args json.RawMessage) (json.RawMessage, error) {
+	run, ok := s.replays[op]
+	if !ok {
+		return nil, fmt.Errorf("API operation %q can't run again", op)
+	}
+	return run(ctx, a, args)
 }
 
 // New returns the daemon's root handler: the API and the web UI.
@@ -48,7 +62,9 @@ func New(c *core.Core, opts Options) http.Handler {
 		opts.Logger = slog.Default()
 	}
 	mux := http.NewServeMux()
-	newAPI(mux, &Server{core: c, opts: opts})
+	s := &Server{core: c, opts: opts, replays: map[string]func(context.Context, core.Actor, json.RawMessage) (json.RawMessage, error){}}
+	newAPI(mux, s)
+	c.SetReplayer("api", s.replay)
 	// The MCP endpoint (ADR 0017) speaks JSON-RPC, not REST, so it sits
 	// next to the Huma API rather than in its OpenAPI spec.
 	mux.Handle(Prefix+"/mcp", mcp.Handler(c, mcp.Options{Logger: opts.Logger}))
@@ -83,6 +99,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerCLILogin(s, a)
 	registerProjects(s, a)
 	registerLocks(s, a)
+	registerRequests(s, a)
 	registerServices(s, a)
 	registerReleases(s, a)
 	registerDomains(s, a)
@@ -237,6 +254,23 @@ func authed[I, O any](s *Server, a huma.API, op huma.Operation, h func(context.C
 		// capped at proposing instead.
 		op.Errors = append(slices.Clone(op.Errors), http.StatusLocked)
 	}
+	// A change a locked environment refuses becomes an access request
+	// that runs it again, from its decoded input, once approved. Inputs
+	// that don't survive JSON (a streamed upload) opt out.
+	replayable := op.Method != http.MethodGet && op.Metadata["replay"] != false
+	if replayable && s.replays != nil {
+		s.replays[op.OperationID] = func(ctx context.Context, actor core.Actor, args json.RawMessage) (json.RawMessage, error) {
+			in := new(I)
+			if err := json.Unmarshal(args, in); err != nil {
+				return nil, err
+			}
+			o, err := h(ctx, actor, in)
+			if err != nil {
+				return nil, err
+			}
+			return replyBody(o)
+		}
+	}
 	huma.Register(a, op, func(ctx context.Context, in *I) (*O, error) {
 		actor := actorFrom(ctx)
 		if p, ok := any(in).(interface{ expectedProjectID() int64 }); ok {
@@ -244,10 +278,43 @@ func authed[I, O any](s *Server, a huma.API, op huma.Operation, h func(context.C
 		}
 		o, err := h(ctx, actor, in)
 		if err != nil {
+			if replayable {
+				err = s.fileRequest(ctx, actor, op, in, err)
+			}
 			return nil, s.problem(err)
 		}
 		return o, nil
 	})
+}
+
+// fileRequest files an access request for a call a locked environment
+// refused (core.FileRequest); other errors pass through.
+func (s *Server) fileRequest(ctx context.Context, actor core.Actor, op huma.Operation, in any, err error) error {
+	if _, ok := errors.AsType[*core.LockedError](err); !ok {
+		return err
+	}
+	args, merr := json.Marshal(in)
+	if merr != nil {
+		return err
+	}
+	reason, _ := ctx.Value(reasonKey{}).(string)
+	return s.core.FileRequest(ctx, actor, err, core.Call{Via: "api", Op: op.OperationID, Title: op.Summary, Args: args, Reason: reason})
+}
+
+// replyBody is a handler's response body as JSON: the Body field of the
+// out struct (nil for a response without one).
+func replyBody(o any) (json.RawMessage, error) {
+	v := reflect.ValueOf(o)
+	if v.Kind() == reflect.Pointer && !v.IsNil() {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil, nil
+	}
+	if b := v.FieldByName("Body"); b.IsValid() {
+		return json.Marshal(b.Interface())
+	}
+	return nil, nil
 }
 
 // public registers an operation that needs no credentials.

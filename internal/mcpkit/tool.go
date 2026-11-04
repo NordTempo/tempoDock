@@ -181,12 +181,43 @@ type textContent struct {
 	Text string `json:"text"`
 }
 
+// ToolInfo is what a host needs to know of a tool outside its call.
+type ToolInfo struct {
+	Name, Title string
+	Annotations Annotations
+}
+
+// Tool returns a tool's info, or false for no such tool.
+func (s *Server[A]) Tool(name string) (*ToolInfo, bool) {
+	s.build()
+	t, ok := s.toolsByID[name]
+	if !ok {
+		return nil, false
+	}
+	return &ToolInfo{Name: t.Name, Title: t.Title, Annotations: t.Annotations}, true
+}
+
+// Call runs a tool as a, outside any request (no progress), and returns
+// its reply: how a host runs a stored call again. Errors are returned as
+// they are, without Options.Refused.
+func (s *Server[A]) Call(ctx context.Context, a A, name string, args json.RawMessage) (Reply, error) {
+	s.build()
+	t, ok := s.toolsByID[name]
+	if !ok {
+		return Reply{}, Invalid("unknown tool %s", name)
+	}
+	return t.run(ctx, &Call[A]{Actor: a}, args)
+}
+
 // run calls a tool and renders its reply as one text block: the summary,
 // a blank line and the data as compact JSON. Errors are tool errors the
 // model can read, not protocol errors.
 func (s *Server[A]) run(ctx context.Context, t *tool[A], c *Call[A], args json.RawMessage) toolResult {
 	r, err := t.run(ctx, c, args)
 	if err != nil {
+		if s.o.Refused != nil {
+			err = s.o.Refused(ctx, c.Actor, &ToolInfo{Name: t.Name, Title: t.Title, Annotations: t.Annotations}, args, err)
+		}
 		return s.fail(err)
 	}
 	text := r.Summary
@@ -201,13 +232,22 @@ func (s *Server[A]) run(ctx context.Context, t *tool[A], c *Call[A], args json.R
 }
 
 // toolError is the JSON of a failed call, in the shape of the CLI's
-// errors: {"error": {"code", "message", "hint"}}.
+// errors: {"error": {"code", "message", "hint"}}, plus the access request
+// a refused change filed.
 type toolError struct {
 	Error struct {
 		Code    apitypes.ErrorCode `json:"code"`
 		Message string             `json:"message"`
 		Hint    string             `json:"hint,omitempty"`
+		Request int64              `json:"request,omitempty"`
 	} `json:"error"`
+}
+
+// accessRequester is an error that names an access request (Dock's
+// core.LockedError).
+type accessRequester interface {
+	error
+	AccessRequest() int64
 }
 
 // fail renders an error as a tool error. Domain errors (datapanel.Error,
@@ -225,6 +265,9 @@ func (s *Server[A]) fail(err error) toolResult {
 		s.log.Error("mcp: tool", "err", err)
 	}
 	te.Error.Hint = s.o.Hints[te.Error.Code]
+	if r, ok := errors.AsType[accessRequester](err); ok {
+		te.Error.Request = r.AccessRequest()
+	}
 	b, _ := json.Marshal(te)
 	return toolResult{IsError: true, Content: []textContent{{"text", fmt.Sprintf("%s: %s\n\n%s", te.Error.Code, te.Error.Message, b)}}}
 }

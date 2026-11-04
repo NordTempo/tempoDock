@@ -65,9 +65,23 @@ func (s *Server) authenticate(a huma.API) func(huma.Context, func(huma.Context))
 			_ = huma.WriteErr(a, ctx, ae.Status, ae.Detail)
 			return
 		}
-		next(huma.WithValue(ctx, actorKey{}, actor))
+		ctx = huma.WithValue(ctx, actorKey{}, actor)
+		if r := strings.TrimSpace(ctx.Header(reasonHeader)); r != "" {
+			ctx = huma.WithValue(ctx, reasonKey{}, r[:min(len(r), maxReason)])
+		}
+		next(ctx)
 	}
 }
+
+// reasonHeader carries why a caller makes a change (`dock --reason`); an
+// access request the change files shows it (ADR 0044).
+const reasonHeader = "Dock-Reason"
+
+// maxReason caps a reason's length in bytes.
+const maxReason = 500
+
+// reasonKey carries the request's reason in its context.
+type reasonKey struct{}
 
 // client is how a request arrived: over HTTPS (for the cookie's Secure
 // flag) and from which IP (for login rate limits). Behind a reverse proxy

@@ -36,6 +36,8 @@ type Options struct {
 // handler holds what Dock's tools call.
 type handler struct {
 	core *core.Core
+	// srv is the endpoint itself, for request_access to run a tool.
+	srv *mcpkit.Server[core.Actor]
 }
 
 // call is one tool call by a Dock actor.
@@ -61,8 +63,10 @@ func Handler(c *core.Core, opts Options) http.Handler {
 		NoToken: "send `Authorization: Bearer <token>` with a Dock API token",
 		Tools: func(s *mcpkit.Server[core.Actor]) {
 			h.addPlatformTools(s)
+			h.addRequestTools(s)
 			mcpkit.DataTools(s, c, serviceOf, core.ServiceRef.String)
 		},
+		Refused: h.refused,
 		Docs: mcpkit.Docs{
 			FS: guide.Pages, URI: "dock://docs/",
 			IndexDescription: "Index of the Tempo Dock guide and the words it uses (project, environment, service, release, ...).",
@@ -70,6 +74,8 @@ func Handler(c *core.Core, opts Options) http.Handler {
 		Hints:  hints,
 		Logger: opts.Logger,
 	})
+	h.srv = srv
+	c.SetReplayer("mcp", h.replay)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		srv.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), orgKey{}, r.URL.Query().Get("org"))))
 	})
@@ -83,17 +89,18 @@ const instructions = `Tempo Dock deploys Docker apps to your own servers. You ac
 - The server enforces every permission. A forbidden error means the token can't do it: stop and report it; don't look for another credential or a workaround.
 - Deploys are safe: a release only gets traffic after its health check passes. A failed deploy changed nothing and needs no rollback; read release_details for the reason and the container's last log lines, fix, deploy again. Roll back only a release that went live and misbehaves.
 - Variables and settings are staged: set_variables (or set_pre_deploy_command for migrations), review with show_changes, then apply_changes (or the next deploy takes them live). Secret values are write-only.
-- A locked environment (locked in project_overview) refuses every change with environment_locked. Tell the user what you wanted to do; don't retry or work around it.
+- A locked environment (locked in project_overview) refuses every change with environment_locked and files an access request: a human approves or rejects it in the UI, and once approved it runs as you. Tell the user, then wait_for_request; don't retry or work around it. request_access asks before any change, with your reason, even where nothing is locked.
 - Data tools follow the data access policy; data_status says what you may do and why. Data changes are proposals a human approves; tokens never write production data.
 - Every change is audited with the token's name. Read dock://docs/agents for the full guide.`
 
 // hints tell the model what to do next where the message doesn't.
 var hints = map[apitypes.ErrorCode]string{
-	apitypes.CodeForbidden:         "The token can't do this. Stop and report it; don't look for another credential.",
-	apitypes.CodeDeployInProgress:  "Another release of this service is deploying. Wait for it (release_details), then retry.",
-	apitypes.CodeNotFound:          "Check names with list_projects and project_overview. Don't create things to make it pass unless asked.",
-	apitypes.CodeServerOffline:     "The server the environment runs on is offline. Retry later, then report it.",
-	apitypes.CodeEnvironmentLocked: "A human locked this environment. Don't retry or work around it: tell the user what you wanted to do and why; they can unlock it.",
+	apitypes.CodeForbidden:        "The token can't do this. Stop and report it; don't look for another credential.",
+	apitypes.CodeDeployInProgress: "Another release of this service is deploying. Wait for it (release_details), then retry.",
+	apitypes.CodeNotFound:         "Check names with list_projects and project_overview. Don't create things to make it pass unless asked.",
+	apitypes.CodeServerOffline:    "The server the environment runs on is offline. Retry later, then report it.",
+	apitypes.CodeEnvironmentLocked: "A human locked this environment. Don't retry or work around it: tell the user what you asked for and why. " +
+		"The error names the access request it filed: wait_for_request waits for their decision, and the change runs as you once approved.",
 }
 
 // errf is a core error raised by the endpoint itself, mostly invalid

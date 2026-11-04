@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Environment lock and access requests: mocks</title>
+<style>
+  :root {
+    --bg: #000; --panel: #0e0e10; --sel: #151517; --line: #232326; --ctl: #2e2e33;
+    --fg: #ededef; --sec: #c8c8cf; --mut: #a1a1aa; --faint: #8b8b94;
+    --live: #4ade80; --warn: #fbbf24; --warn-text: #fcd77a; --warn-tint: #17140b; --warn-line: #3a2f12;
+    --bad: #f87171; --info: #93c5fd;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 12px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  main { max-width: 1120px; margin: 0 auto; padding: 28px 24px 64px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 14px; font-weight: 600; margin: 40px 0 10px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 22px 0 8px; color: var(--sec); }
+  p.note { color: var(--mut); margin: 0 0 10px; max-width: 780px; }
+  .board { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .bar .title { font-size: 14px; font-weight: 600; }
+  .bar .meta { color: var(--faint); font-size: 11px; }
+  .bar .right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+  .link { color: var(--mut); } .link:hover { color: var(--fg); }
+  .btn { border: 1px solid var(--ctl); background: var(--sel); color: var(--fg); border-radius: 6px; padding: 3px 9px; font: inherit; }
+  .btn.primary { background: var(--fg); color: #000; border-color: var(--fg); font-weight: 500; }
+  .btn.danger { color: var(--bad); }
+  .btn.warn { color: var(--warn-text); border-color: var(--warn-line); background: var(--warn-tint); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--faint); font-weight: 500; font-size: 11px; padding: 6px 16px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px 16px; border-bottom: 1px solid #1c1c1f; color: var(--sec); }
+  tr:last-child td { border-bottom: 0; }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 999px; background: var(--live); margin-right: 6px; vertical-align: 1px; }
+  .lock { color: var(--warn-text); }
+  .strip { display: flex; gap: 10px; align-items: center; padding: 6px 16px; background: var(--warn-tint); border-bottom: 1px solid var(--warn-line); color: var(--warn-text); }
+  .strip .mut { color: var(--mut); }
+  .grid { display: grid; grid-template-columns: 300px 1fr; min-height: 420px; }
+  .list { border-right: 1px solid var(--line); }
+  .item { padding: 8px 14px; border-bottom: 1px solid #1c1c1f; }
+  .item.sel { background: var(--sel); }
+  .item .who { color: var(--faint); font-size: 11px; }
+  .detail { padding: 14px 18px; }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; margin: 10px 0 14px; }
+  .kv dt { color: var(--faint); } .kv dd { margin: 0; color: var(--sec); }
+  pre { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; color: var(--sec); font: 11.5px/1.6 "JetBrains Mono", ui-monospace, monospace; overflow: auto; }
+  .add { color: var(--live); } .del { color: var(--bad); }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+  textarea { width: 100%; background: var(--panel); border: 1px solid var(--ctl); border-radius: 6px; color: var(--fg); font: inherit; padding: 6px 8px; height: 44px; resize: none; }
+  .warnline { color: var(--warn-text); margin-top: 10px; }
+  .badge { display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 999px; background: var(--warn); color: #000; font-size: 10px; font-weight: 600; text-align: center; }
+  .side { display: grid; grid-template-columns: 200px 1fr; }
+  .nav { border-right: 1px solid var(--line); padding: 10px 8px; background: #000; }
+  .nav div { padding: 4px 8px; border-radius: 6px; color: var(--mut); display: flex; justify-content: space-between; }
+  .nav div.on { background: var(--sel); color: var(--fg); }
+  .pick { color: var(--live); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<h1>Locked environments and access requests</h1>
+<p class="note">ADR 0044. Tokens can't change a locked environment; what they try becomes a request an admin decides here. Mocks for the environment header (where the lock shows and is changed) and the request review screen.</p>
+
+<h2>1. Environment header</h2>
+
+<h3>A. Lock in the header meta, actions on the right</h3>
+<div class="board">
+  <div class="bar">
+    <span class="title">production</span>
+    <span class="meta">on hetzner-1 · production</span>
+    <span class="lock">▣ Locked by saile · live, customers use it</span>
+    <span class="right">
+      <a class="link">Variables</a><a class="link">New service</a><a class="link">Clone</a>
+      <button class="btn">Open 1h</button><button class="btn">Unlock</button>
+    </span>
+  </div>
+  <table>
+    <tr><th>Service</th><th>Status</th><th>Release</th><th>Domain</th></tr>
+    <tr><td>web</td><td><span class="dot"></span>running</td><td class="mono">#42 · 3f9c1a2</td><td>shop.example.com</td></tr>
+    <tr><td>postgres</td><td><span class="dot"></span>running</td><td class="mono">#7</td><td>-</td></tr>
+  </table>
+</div>
+
+<h3>B. A strip under the header, with the pending requests</h3>
+<div class="board">
+  <div class="bar">
+    <span class="title">production</span>
+    <span class="meta">on hetzner-1 · production</span>
+    <span class="right"><a class="link">Variables</a><a class="link">New service</a><a class="link">Clone</a></span>
+  </div>
+  <div class="strip">
+    <span>▣ Locked</span><span class="mut">by saile, 3 days ago · live, customers use it · tokens can read, every change waits for approval</span>
+    <span style="margin-left:auto"><a class="lock">2 requests waiting</a></span>
+    <button class="btn warn">Open for…</button><button class="btn warn">Unlock</button>
+  </div>
+  <table>
+    <tr><th>Service</th><th>Status</th><th>Release</th><th>Domain</th></tr>
+    <tr><td>web</td><td><span class="dot"></span>running</td><td class="mono">#42 · 3f9c1a2</td><td>shop.example.com</td></tr>
+    <tr><td>postgres</td><td><span class="dot"></span>running</td><td class="mono">#7</td><td>-</td></tr>
+  </table>
+</div>
+<p class="note" style="margin-top:8px">Opened for a while, the strip reads <span class="lock">▣ Open until 15:40, then locked again</span> with Lock now. Unlocked production shows only a quiet Lock link in the header actions.</p>
+
+<h3>C. Lock as a toggle in the switcher and the header title</h3>
+<div class="board">
+  <div class="bar">
+    <span class="title">▣ production</span>
+    <span class="meta">on hetzner-1 · production · locked</span>
+    <span class="right"><a class="link">Variables</a><a class="link">New service</a><a class="link">Clone</a><a class="link">Lock settings</a></span>
+  </div>
+  <table>
+    <tr><th>Service</th><th>Status</th><th>Release</th><th>Domain</th></tr>
+    <tr><td>web</td><td><span class="dot"></span>running</td><td class="mono">#42 · 3f9c1a2</td><td>shop.example.com</td></tr>
+  </table>
+</div>
+
+<h2>2. Access request review</h2>
+
+<h3>A. Inbox list and detail side by side</h3>
+<div class="board side">
+  <div class="nav">
+    <div>Projects</div><div>Audit</div><div class="on">Requests <span class="badge">2</span></div><div>Settings</div>
+  </div>
+  <div class="grid">
+    <div class="list">
+      <div class="item sel">Set variables in shop/production<div class="who">token claude · 4 min ago · <span class="lock">pending</span></div></div>
+      <div class="item">Deploy source to shop/production/web<div class="who">token claude · 12 min ago · <span class="lock">pending</span></div></div>
+      <div class="item">Restart shop/production/web<div class="who">token ci · yesterday · approved by saile</div></div>
+      <div class="item">Unlock shop/production<div class="who">token claude · 2 days ago · rejected</div></div>
+    </div>
+    <div class="detail">
+      <div style="font-size:14px;font-weight:600">token claude wants to set variables in shop/production</div>
+      <dl class="kv">
+        <dt>Reason</dt><dd>"Point the app at the new Stripe price IDs for the launch"</dd>
+        <dt>Call</dt><dd class="mono">PATCH variables · set-variables (API, via dock env set)</dd>
+        <dt>Asked</dt><dd>4 min ago · expires in 23 h</dd>
+        <dt>Runs as</dt><dd>token claude (deploy, limited to shop)</dd>
+      </dl>
+      <pre><span class="mut">service web</span>
+<span class="del">- STRIPE_PRICE_PRO = price_1Ob…old</span>
+<span class="add">+ STRIPE_PRICE_PRO = price_1Pq…new</span>
+<span class="add">+ STRIPE_PRICE_TEAM = price_1Pq…tm2</span>
+<span class="mut">apply: false (stays staged until applied)</span></pre>
+      <div class="warnline">▲ 1 change in shop/production since this was asked: release #42 by saile</div>
+      <textarea placeholder="Comment (optional)"></textarea>
+      <div class="actions"><button class="btn primary">Approve and run</button><button class="btn danger">Reject</button><span class="meta" style="color:var(--faint)">Runs once, as the token, with today's checks</span></div>
+    </div>
+  </div>
+</div>
+
+<h3>B. One table, expanding rows</h3>
+<div class="board">
+  <div class="bar"><span class="title">Requests</span><span class="meta">2 pending · tokens asking to change locked environments</span></div>
+  <table>
+    <tr><th>Asked</th><th>Who</th><th>Wants to</th><th>Where</th><th>Status</th><th></th></tr>
+    <tr><td>4 min</td><td class="mono">claude</td><td>set variables</td><td>shop/production</td><td class="lock">pending</td><td><button class="btn primary">Approve</button> <button class="btn danger">Reject</button></td></tr>
+    <tr><td colspan="6"><pre><span class="del">- STRIPE_PRICE_PRO = price_1Ob…old</span>
+<span class="add">+ STRIPE_PRICE_PRO = price_1Pq…new</span></pre></td></tr>
+    <tr><td>12 min</td><td class="mono">claude</td><td>deploy source</td><td>shop/production/web</td><td class="lock">pending</td><td><button class="btn primary">Approve</button> <button class="btn danger">Reject</button></td></tr>
+    <tr><td>yesterday</td><td class="mono">ci</td><td>restart</td><td>shop/production/web</td><td>done · saile</td><td></td></tr>
+  </table>
+</div>
+
+<h3>C. A review page per request, like a release page</h3>
+<div class="board">
+  <div class="bar"><span class="title">Request #18</span><span class="meta">deploy source to shop/production/web · token claude · 12 min ago</span>
+    <span class="right"><button class="btn danger">Reject</button><button class="btn primary">Approve and deploy</button></span></div>
+  <div class="detail">
+    <dl class="kv">
+      <dt>Reason</dt><dd>"Fix the checkout rounding bug (issue 211)"</dd>
+      <dt>Source</dt><dd class="mono">upload, 2.4 MB, dock.toml at its root</dd>
+      <dt>Live now</dt><dd class="mono">release #42 · 3f9c1a2 · deployed by saile</dd>
+      <dt>After</dt><dd>a new release, built and health checked; #42 keeps serving until it passes</dd>
+    </dl>
+  </div>
+</div>
+
+<h2>Pick</h2>
+<p class="note"><span class="pick">Header B and review A.</span> B puts the lock where nobody misses it on the one environment that matters, with who and why, and links to the requests waiting there; the strip only exists while locked, so unlocked environments look as today. Review A is an inbox: the list stays visible while deciding, the detail shows the exact call, its arguments as a diff, what changed since, and both decisions next to a comment. It handles several requests in a row without page loads.</p>
+</main>
+</body>
+</html>
