@@ -229,12 +229,17 @@ func TestLogDrainsNeverReachTheServer(t *testing.T) {
 		{Kind: apitypes.DrainSyslog, URL: "tcp://127.0.0.1:514"},
 		{Kind: apitypes.DrainSyslog, URL: "udp://[::1]"},
 		{Kind: apitypes.DrainSyslog, URL: "tls://[fd00:ec2::254]:6514"},
+		// Private networks: the app firewall doesn't cover the control plane.
+		{Kind: apitypes.DrainHTTP, URL: "http://10.0.0.5/ingest"},
+		{Kind: apitypes.DrainHTTP, URL: "https://192.168.1.1"},
+		{Kind: apitypes.DrainLoki, URL: "http://100.64.1.1:3100"},
+		{Kind: apitypes.DrainSyslog, URL: "tcp://[fd00::1]:514"},
+		{Kind: apitypes.DrainSyslog, URL: "udp://172.17.0.2"},
 	} {
 		if _, err := h.c.AddLogDrain(h.ctx, testSystem, EnvRef{"shop", "production"}, req); CodeOf(err) != apitypes.CodeValidation {
 			t.Errorf("drain to %s: %v", req.URL, err)
 		}
 	}
-	h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, Name: "lan", URL: "http://192.168.1.20/ingest"})
 
 	// Added while loopback was allowed (as a name would resolve), refused
 	// when connecting.
@@ -260,13 +265,50 @@ func TestLogDrainsNeverReachTheServer(t *testing.T) {
 	}
 }
 
+// A name that resolves to a private address is refused when connecting,
+// for drains; alert channels, which only operators configure, may still
+// reach the LAN.
+func TestLogDrainGuardRefusesPrivateAddresses(t *testing.T) {
+	drains := newDrainManager()
+	for _, addr := range []string{"10.0.0.5:80", "192.168.1.1:443", "100.64.1.1:3100", "[fd00::1]:514", "[::ffff:10.0.0.5]:80"} {
+		if err := drains.guard.control("tcp", addr, nil); err == nil || !strings.Contains(err.Error(), "private address") {
+			t.Errorf("drain connection to %s: %v", addr, err)
+		}
+	}
+	if err := drains.guard.control("tcp", "203.0.113.7:443", nil); err != nil {
+		t.Errorf("drain connection to a public address: %v", err)
+	}
+	alerts := egressGuard{what: "alerts"}
+	if err := alerts.control("tcp", "192.168.1.1:443", nil); err != nil {
+		t.Errorf("alert connection to the LAN: %v", err)
+	}
+}
+
+// A drain that answers with an error shows its status, never its body:
+// that would let whoever adds a drain read what a server says.
+func TestLogDrainErrorHidesTheBody(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{})
+	h.c.AllowLoopbackLogDrains(true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, "internal-secret")
+	}))
+	defer srv.Close()
+	d := h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, URL: srv.URL})
+	res, err := h.c.TestLogDrain(h.ctx, testSystem, EnvRef{"shop", "production"}, d.ID)
+	if err != nil || res.OK || !strings.Contains(res.Error, "403") || strings.Contains(res.Error, "internal-secret") {
+		t.Fatalf("test of a failing drain = %+v, %v", res, err)
+	}
+}
+
 // Readers see an environment's drains; changing or testing them takes an
 // admin, and a token for another environment sees nothing.
 func TestLogDrainPermissions(t *testing.T) {
 	h := newHarness(t)
 	h.service("web", apitypes.CreateServiceRequest{})
-	d := h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainSyslog, URL: "udp://192.168.1.20"})
-	if d.Target != "udp://192.168.1.20:514" {
+	d := h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainSyslog, URL: "udp://203.0.113.20"})
+	if d.Target != "udp://203.0.113.20:514" {
 		t.Fatalf("target = %q", d.Target)
 	}
 	env := EnvRef{"shop", "production"}

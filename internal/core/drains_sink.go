@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -82,8 +81,9 @@ func (m *drainManager) post(ctx context.Context, d *drain, contentType string, b
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
-		return fmt.Errorf("the drain's URL answered %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
+		// Only the status: the body would let whoever adds a drain read
+		// what a server answers to the control plane.
+		return fmt.Errorf("the drain's URL answered %s", resp.Status)
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	return nil
