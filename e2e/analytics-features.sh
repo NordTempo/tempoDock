@@ -34,7 +34,7 @@ say() { printf '==> %s\n' "$*"; }
 fail() { printf 'FAIL: %s\n' "$*"; exit 1; }
 x() { local c=$1; shift; docker exec "$c" sh -c "$*"; }
 ip() { docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$1"; }
-cleanup() { docker rm -f "$CP" >/dev/null 2>&1; docker network rm "$NET" >/dev/null 2>&1; rm -rf "$W"; }
+cleanup() { docker rm -fv "$CP" >/dev/null 2>&1; docker network rm "$NET" >/dev/null 2>&1; rm -rf "$W"; }
 [[ ${KEEP:-} == 1 ]] || trap cleanup EXIT
 [[ -x $CHROME ]] || fail "no Chromium; set CHROME"
 
@@ -45,7 +45,7 @@ wait_for() {
 }
 
 say "the server"
-docker rm -f "$CP" >/dev/null 2>&1 || true
+docker rm -fv "$CP" >/dev/null 2>&1 || true
 docker network rm "$NET" >/dev/null 2>&1 || true
 docker network create "$NET" >/dev/null
 docker run -d --privileged --name "$CP" --hostname "$CP" --network "$NET" \
