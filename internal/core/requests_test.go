@@ -113,8 +113,10 @@ func TestRequestApproveRuns(t *testing.T) {
 	if _, err := h.c.DecideRequest(h.ctx, h.admin, first.Request, false, apitypes.DecideAccessRequest{}); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("deciding twice: %v", err)
 	}
-	// The grant was for that call alone.
-	h.ask("2", "")
+	// The grant was for that call alone: the next change is a new request.
+	if next := h.ask("2", ""); next.Request == first.Request {
+		t.Fatal("the approval outlived its call")
+	}
 }
 
 // TestRequestRejectAndExpire: a rejected request runs nothing; one past
