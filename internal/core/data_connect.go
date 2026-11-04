@@ -148,6 +148,11 @@ func (c *Core) ConnectInfo(ctx context.Context, a Actor, ref ServiceRef, req Con
 	if err != nil {
 		return apitypes.ConnectInfo{}, err
 	}
+	if req.Reveal {
+		if err := a.requireRecent("revealing a connection URL"); err != nil {
+			return apitypes.ConnectInfo{}, err
+		}
+	}
 	t, err := c.tunnelTarget(ctx, ss, req.Reveal)
 	if err != nil {
 		return apitypes.ConnectInfo{}, err

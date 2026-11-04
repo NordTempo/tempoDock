@@ -55,6 +55,13 @@ type Me struct {
 	// Project and Environment are set when a token is limited to them.
 	Project     string `json:"project,omitempty"`
 	Environment string `json:"environment,omitempty"`
+	// TwoFactor is the second factor this session's sign-in used (passkey,
+	// totp, recovery), or "login" for a `dock login` token approved from
+	// such a session; empty for none.
+	TwoFactor string `json:"two_factor,omitempty"`
+	// TwoFactorRequired says what needs a second factor this session
+	// didn't use (an org, or operating the platform), and what to do.
+	TwoFactorRequired string `json:"two_factor_required,omitempty"`
 }
 
 // Org is an organization the caller belongs to (ADR 0027). It owns
@@ -65,6 +72,9 @@ type Org struct {
 	// Role is the caller's role in the org.
 	Role      Scope     `json:"role" enum:"read,deploy,admin"`
 	CreatedAt time.Time `json:"created_at"`
+	// RequireTwoFactor: members act in the org only after signing in
+	// with a second factor (ADR 0041).
+	RequireTwoFactor bool `json:"require_two_factor"`
 }
 
 // CreateOrgRequest creates an org with the caller as its admin.
@@ -946,6 +956,8 @@ type User struct {
 	Sessions int `json:"sessions"`
 	// Tokens counts the usable (not revoked or expired) tokens they created.
 	Tokens int `json:"tokens"`
+	// TwoFactor is set when the user has a passkey or an authenticator app.
+	TwoFactor bool `json:"two_factor"`
 }
 
 // ResetPasswordRequest sets another user's password. Without a password

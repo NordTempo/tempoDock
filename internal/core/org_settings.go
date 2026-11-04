@@ -143,6 +143,9 @@ func (c *Core) member(ctx context.Context, a Actor, userID int64, action string)
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, action); err != nil {
 		return store.User{}, err
 	}
+	if err := a.requireRecent(action); err != nil {
+		return store.User{}, err
+	}
 	_, err := c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: a.OrgID, UserID: userID})
 	if store.IsNotFound(err) {
 		return store.User{}, notFound("user %d isn't a member of %s", userID, a.OrgSlug)
@@ -178,6 +181,9 @@ func (c *Core) keepAnAdmin(ctx context.Context, orgID, userID int64, next apityp
 // for a user signed in with that email.
 func (c *Core) CreateInvite(ctx context.Context, a Actor, req apitypes.CreateInviteRequest) (apitypes.CreatedInvite, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "inviting people"); err != nil {
+		return apitypes.CreatedInvite{}, err
+	}
+	if err := a.requireRecent("inviting people"); err != nil {
 		return apitypes.CreatedInvite{}, err
 	}
 	email := strings.TrimSpace(req.Email)
@@ -333,6 +339,9 @@ func (c *Core) ListOrgVariables(ctx context.Context, a Actor, reveal bool) ([]ap
 	}
 	if reveal {
 		if err := a.require(apitypes.ScopeAdmin, "revealing secret values"); err != nil {
+			return nil, err
+		}
+		if err := a.requireRecent("revealing secret values"); err != nil {
 			return nil, err
 		}
 	}

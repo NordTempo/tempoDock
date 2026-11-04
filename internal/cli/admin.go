@@ -5,10 +5,13 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/api"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/node/caddy"
@@ -22,7 +25,7 @@ func newAdminCmd() *cobra.Command {
 		Short: "Server-side administration (run on the server)",
 	})
 	cmd.AddCommand(newBootstrapCmd(), newCaddyConfigCmd(), newRegistryConfigCmd(), newRegistryStorageCmd(), newFirewallCmd(),
-		newAdminBackupCmd(), newAdminRestoreCmd(), newAdminUpdateCmd())
+		newAdminBackupCmd(), newAdminRestoreCmd(), newAdminUpdateCmd(), newResetTwoFactorCmd())
 	return cmd
 }
 
@@ -96,6 +99,56 @@ while the daemon is running.`,
 	}
 	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
 	cmd.Flags().StringVar(&email, "email", email, "email of the admin user (the UI login)")
+	return cmd
+}
+
+// newResetTwoFactorCmd is `dock admin reset-2fa`, the break-glass for
+// someone who lost their second factor and recovery codes (ADR 0048). It
+// opens the state directly, like bootstrap: shell access to the server is
+// the proof, so it needs no session and nobody else.
+func newResetTwoFactorCmd() *cobra.Command {
+	configPath := config.DefaultPath
+	cmd := &cobra.Command{
+		Use:     "reset-2fa <email>",
+		Aliases: []string{"reset-two-factor"},
+		Short:   "Turn off a user's two-factor sign-in, for one who lost their factor",
+		Long: `Removes the user's second factors (authenticator apps) and recovery codes,
+and ends their UI sessions and dock login tokens. Their API tokens stay.
+The audit log records it (user.2fa_reset).
+
+Run it on the server, as root or the service user. The person then signs
+in with their password alone and sets up a new factor on their account
+page. While an organization they belong to requires two-factor sign-in,
+they act in it again once they have. Safe to run while the daemon is
+running.`,
+		Example: "  sudo dock admin reset-2fa ada@example.com",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			email := strings.TrimSpace(args[0])
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return err
+			}
+			st, box, err := openState(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = st.Close() }()
+			c, err := core.New(cmd.Context(), core.Options{Config: cfg, Store: st, Secrets: box})
+			if err != nil {
+				return err
+			}
+			if err := c.ResetTwoFactor(cmd.Context(), core.System, email); err != nil {
+				if core.CodeOf(err) == apitypes.CodeNotFound {
+					return &output.Error{Exit: output.ExitNotFound, Err: err, Hint: "Check the email: `dock user list` shows the users."}
+				}
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Reset the two-factor sign-in of %s: removed their second factors and recovery codes, and ended their sessions and dock login tokens.\nThey sign in with their password and set up a new factor on their account page.\n", email)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
 	return cmd
 }
 

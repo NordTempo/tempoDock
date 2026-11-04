@@ -204,6 +204,9 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 		if err := a.requireOperator("revealing the backup password"); err != nil {
 			return apitypes.BackupSettings{}, err
 		}
+		if err := a.requireRecent("revealing the backup password"); err != nil {
+			return apitypes.BackupSettings{}, err
+		}
 	}
 	move := c.backupMove() // before the settings: see backupMove
 	s, err := c.backupSettings(ctx)

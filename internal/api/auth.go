@@ -103,6 +103,38 @@ func (c client) sessionCookie(secret string, expires time.Time) http.Cookie {
 	}
 }
 
+// pendingCookie holds a password sign-in waiting for its second factor
+// (ADR 0041), sent only to the sign-in endpoints.
+const pendingCookie = "dock_login"
+
+// pendingCookie sets (secret) or clears ("") the pending sign-in cookie.
+func (c client) pendingCookie(secret string, expires time.Time) http.Cookie {
+	ck := http.Cookie{
+		Name: pendingCookie, Value: secret, Path: Prefix + "/auth", Expires: expires,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: c.secure,
+	}
+	if secret == "" {
+		ck.Expires, ck.MaxAge = time.Time{}, -1
+	}
+	return ck
+}
+
+// signedIn answers a sign-in step: the session cookie and who the caller
+// is, or the pending sign-in's cookie and the factors to finish it with.
+func (c client) signedIn(res core.LoginResult) *loginOutput {
+	if res.Pending {
+		return &loginOutput{
+			SetCookie: []http.Cookie{c.pendingCookie(res.Secret, res.Expires)},
+			Body:      apitypes.LoginResult{SecondFactor: res.Factors},
+		}
+	}
+	me := res.Actor.Me()
+	return &loginOutput{
+		SetCookie: []http.Cookie{c.sessionCookie(res.Secret, res.Expires), c.pendingCookie("", time.Time{})},
+		Body:      apitypes.LoginResult{Me: &me},
+	}
+}
+
 type loginInput struct {
 	Body   apitypes.LoginRequest
 	client client
@@ -125,9 +157,11 @@ func (in *passwordInput) Resolve(ctx huma.Context) []error {
 	return nil
 }
 
+// loginOutput sets the session cookie, or the pending sign-in's while a
+// second factor is needed, and clears the other.
 type loginOutput struct {
-	SetCookie http.Cookie `header:"Set-Cookie"`
-	Body      apitypes.Me
+	SetCookie []http.Cookie `header:"Set-Cookie"`
+	Body      apitypes.LoginResult
 }
 
 // passwordOutput sets the caller's fresh session cookie, if it has one.
@@ -146,14 +180,14 @@ type logoutOutput struct {
 func registerAuth(s *Server, a huma.API) {
 	public(a, huma.Operation{
 		OperationID: "login", Method: http.MethodPost, Path: Prefix + "/auth/login",
-		Summary: "Log in to the UI", Description: "Sets an HttpOnly session cookie.", Tags: []string{"auth"},
+		Summary: "Log in to the UI", Description: "Sets an HttpOnly session cookie, or, for a user with a second factor, a short-lived cookie for the pending sign-in and lists the factors to finish it with at POST /auth/login/verify.", Tags: []string{"auth"},
 		Errors: []int{http.StatusUnauthorized, http.StatusTooManyRequests},
 	}, func(ctx context.Context, in *loginInput) (*loginOutput, error) {
-		secret, expires, actor, err := s.core.Login(ctx, in.Body.Email, in.Body.Password, in.client.ip)
+		res, err := s.core.Login(ctx, in.Body.Email, in.Body.Password, in.client.ip)
 		if err != nil {
 			return nil, s.problem(err)
 		}
-		return &loginOutput{SetCookie: in.client.sessionCookie(secret, expires), Body: actor.Me()}, nil
+		return in.client.signedIn(res), nil
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "change-password", Method: http.MethodPost, Path: Prefix + "/me/password",

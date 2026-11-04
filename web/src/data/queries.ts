@@ -1,10 +1,15 @@
 import {
+  type QueryFunctionContext,
+  type QueryKey,
   queryOptions,
+  type UseQueryOptions,
   useQuery,
+  useQueryClient,
   useSuspenseQueries,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { notFound } from "@tanstack/react-router";
+import { useEffect } from "react";
 import {
   ApiError,
   api,
@@ -12,6 +17,7 @@ import {
   currentOrg,
   isUnauthorized,
   list,
+  noPrompt,
   setOrg,
 } from "../api/client";
 import type { components } from "../api/schema";
@@ -199,6 +205,28 @@ export async function currentMe() {
   return body(api.GET("/api/v1/me"));
 }
 
+/**
+ * Request options for reading secret values. The first read follows a
+ * click on Reveal and may ask the person to confirm it's them (ADR 0048);
+ * a refetch of values already on screen (a live event) fails with
+ * reauth_required instead of prompting out of nowhere.
+ */
+export const revealRequest = ({ client, queryKey }: QueryFunctionContext) =>
+  client.getQueryData(queryKey) === undefined ? {} : { middleware: [noPrompt] };
+
+/**
+ * Query options for secret values: in memory only while on screen, and
+ * fetched again only when something changed them, never on focus or
+ * reconnect. Not retried: a cancelled step-up is an answer.
+ */
+export const revealed = {
+  staleTime: 0,
+  gcTime: 0,
+  retry: false,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
+} as const;
+
 // Query options double as route-loader prefetches:
 //   loader: ({ context }) => context.queryClient.ensureQueryData(queries.projects())
 export const queries = {
@@ -325,20 +353,23 @@ export const queries = {
   changes: (env: EnvRef, reveal = false) =>
     queryOptions({
       queryKey: keys.changes(env, reveal),
-      queryFn: () =>
+      queryFn: (ctx) =>
         body(
           api.GET(
             "/api/v1/projects/{project}/environments/{environment}/changes",
-            { params: { path: envPath(env), query: { reveal } } },
+            {
+              params: { path: envPath(env), query: { reveal } },
+              ...(reveal && revealRequest(ctx)),
+            },
           ),
         ).then(toChanges),
-      ...(reveal && { staleTime: 0, gcTime: 0 }),
+      ...(reveal && revealed),
     }),
   /** Shared variables, plus one service's when `service` is set. */
   variables: (env: EnvRef, service: string | null, reveal = false) =>
     queryOptions({
       queryKey: keys.variables(env, service, reveal),
-      queryFn: () =>
+      queryFn: (ctx) =>
         list(
           api.GET(
             "/api/v1/projects/{project}/environments/{environment}/variables",
@@ -347,11 +378,11 @@ export const queries = {
                 path: envPath(env),
                 query: { reveal, ...(service && { service }) },
               },
+              ...(reveal && revealRequest(ctx)),
             },
           ),
         ),
-      // Secret values live in memory only while they are on screen.
-      ...(reveal && { staleTime: 0, gcTime: 0 }),
+      ...(reveal && revealed),
     }),
   servers: () =>
     queryOptions({
@@ -557,13 +588,31 @@ export const useUsers = () => useSuspenseQuery(queries.users()).data;
 export const useAuditLog = (filter: AuditFilter = {}) =>
   useSuspenseQuery(queries.audit(filter)).data;
 
+/**
+ * A query for secret values while `enabled`. Hiding them drops them from
+ * the cache too (a disabled query keeps its data), so values live in
+ * memory only while on screen and revealing again is a fresh read, which
+ * may ask to confirm (revealRequest).
+ */
+export function useRevealedQuery<T, K extends QueryKey>(
+  options: UseQueryOptions<T, Error, T, K> & { queryKey: K },
+  enabled: boolean,
+) {
+  const queryClient = useQueryClient();
+  const { queryKey } = options;
+  useEffect(() => {
+    if (!enabled) queryClient.removeQueries({ queryKey, exact: true });
+  }, [enabled, queryClient, queryKey]);
+  return useQuery({ ...options, enabled });
+}
+
 /** Variables with values, fetched only while revealed. Needs admin. */
 export const useRevealedVariables = (
   env: EnvRef,
   service: string | null,
   enabled: boolean,
-) => useQuery({ ...queries.variables(env, service, true), enabled });
+) => useRevealedQuery(queries.variables(env, service, true), enabled);
 
 /** Staged changes with old and new values, only while revealed. */
 export const useRevealedChanges = (env: EnvRef, enabled: boolean) =>
-  useQuery({ ...queries.changes(env, true), enabled });
+  useRevealedQuery(queries.changes(env, true), enabled);

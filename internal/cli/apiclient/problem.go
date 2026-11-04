@@ -92,6 +92,11 @@ var exitHints = map[output.ExitCode]string{
 // a server_offline 503 comes from a control plane that is answering.
 var codeHints = map[string]string{
 	"environment_locked": "Tokens can't change a locked environment. An admin approves or rejects the access request in the UI (Requests); approved, it runs as you. Don't retry: follow it with `dock request wait <id>`.",
+	// A dock login token counts as two-factor only when the browser
+	// sign-in that approved it used a second factor (ADR 0048).
+	"two_factor_required": "Add an authenticator app on your account page in the browser, then run `dock login` again: its new token counts as two-factor.",
+	// Step-ups only ask browser sessions; tokens skip them.
+	"reauth_required":    "Confirm it's you in the browser, where the action asks, then try again.",
 	"server_offline":     "The control plane is fine; the server the environment runs on isn't connected, and its apps keep running. Check `dock server list`, and the node there (`journalctl -u dock-node`).",
 }
 

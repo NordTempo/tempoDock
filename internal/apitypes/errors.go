@@ -30,6 +30,12 @@ const (
 	// caller is a token (ADR 0044); Error.Request names the access request
 	// that waits for an admin's approval.
 	CodeEnvironmentLocked ErrorCode = "environment_locked"
+	// CodeReauthRequired means a sensitive action needs the person to
+	// confirm who they are again (POST /me/reauth), then retry.
+	CodeReauthRequired ErrorCode = "reauth_required"
+	// CodeTwoFactorRequired means the org (or the platform, for operators)
+	// requires a second factor this session or token didn't use.
+	CodeTwoFactorRequired ErrorCode = "two_factor_required"
 	CodeInternal          ErrorCode = "internal"
 )
 

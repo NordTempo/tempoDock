@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -41,6 +42,21 @@ type Actor struct {
 	// askFirst makes every change in an environment an access request,
 	// locked or not (MCP's request_access); changes outside one fail.
 	askFirst bool
+
+	// SessionID is the UI session a user signed in with; 0 for tokens and
+	// the system. VerifiedAt is when that session last proved who it is,
+	// for sensitive actions (requireRecent).
+	SessionID  int64
+	VerifiedAt time.Time
+	// Factor is the second factor the sign-in used ("" for none; see
+	// factorTOTP and co.), "login" for a `dock login` token approved
+	// from a session that used one (ADR 0048).
+	Factor string
+	// needs2FAOrg is the org the actor would act in but for its
+	// requirement of a second factor; operatorNeeds2FA is set when the
+	// platform's requirement took Operator away.
+	needs2FAOrg      string
+	operatorNeeds2FA bool
 }
 
 // approval is the access request an actor's call runs for, and who
@@ -80,7 +96,21 @@ func (a Actor) Me() apitypes.Me {
 	return apitypes.Me{
 		Kind: a.Kind, Name: a.Name, Email: a.Email, Scope: a.Scope, Org: a.OrgSlug, Operator: a.Operator,
 		Project: a.ProjectName, Environment: a.EnvironmentName,
+		TwoFactor: a.Factor, TwoFactorRequired: a.twoFactorRequired(),
 	}
+}
+
+// twoFactorRequired says what a second factor the actor didn't use would
+// unlock, and how to get it; "" when nothing.
+func (a Actor) twoFactorRequired() string {
+	const how = "add an authenticator app on your account page, or sign in again with yours"
+	switch {
+	case a.needs2FAOrg != "":
+		return fmt.Sprintf("organization %s requires two-factor sign-in; %s", a.needs2FAOrg, how)
+	case a.operatorNeeds2FA:
+		return "operating the platform requires two-factor sign-in; " + how
+	}
+	return ""
 }
 
 func rank(s apitypes.Scope) int {
@@ -129,6 +159,9 @@ func (a Actor) requireScope(need apitypes.Scope, action string) error {
 
 // noOrg explains why an actor without an org can't do action.
 func (a Actor) noOrg(action string) error {
+	if a.needs2FAOrg != "" {
+		return errf(apitypes.CodeTwoFactorRequired, "%s", a.twoFactorRequired())
+	}
 	if a.orgs > 1 {
 		return errf(apitypes.CodeValidation, "%s belongs to %d organizations; %s needs one: pass --org (or ?org=) with its slug, see `dock org list`", a, a.orgs, action)
 	}
@@ -140,6 +173,9 @@ func (a Actor) noOrg(action string) error {
 func (a Actor) requireOperator(action string) error {
 	if a.Operator {
 		return nil
+	}
+	if a.operatorNeeds2FA {
+		return errf(apitypes.CodeTwoFactorRequired, "%s requires two-factor sign-in: %s", action, a.twoFactorRequired())
 	}
 	return errf(apitypes.CodeForbidden, "%s is not a platform operator; %s requires one", a, action)
 }

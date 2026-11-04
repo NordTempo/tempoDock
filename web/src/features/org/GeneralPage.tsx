@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { setOrg } from "../../api/client";
 import { useIsAdmin, useSession } from "../../data/queries";
+import { CliHint } from "../../ui/CliHint";
 import { day } from "../../ui/format";
 import {
   Act,
@@ -20,11 +21,13 @@ import {
   useLeaveOrg,
   useRenameOrg,
   useSetLockSettings,
+  useSetOrgTwoFactor,
 } from "./data";
 
 /**
- * The organization itself: its name, address (slug), locked environments
- * (admins), leaving it, and deleting it while it has no projects.
+ * The organization itself: its name, address (slug), whether members
+ * must sign in with a second factor, locked environments (admins),
+ * leaving it, and deleting it while it has no projects.
  */
 export function GeneralPage() {
   const org = useSuspenseQuery(orgQueries.org()).data;
@@ -81,6 +84,12 @@ export function GeneralPage() {
                 <span className="font-sans text-faint">
                   (the slug can't change yet)
                 </span>
+              </td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-faint">Sign-in</td>
+              <td className="py-2.5">
+                <RequireTwoFactor on={org.require_two_factor} admin={admin} />
               </td>
             </tr>
             <tr>
@@ -175,6 +184,34 @@ function LockSettings() {
       </Panel>
       <ErrorText error={save.error} />
     </section>
+  );
+}
+
+/**
+ * Whether members must sign in with a second factor (`dock org two-factor`):
+ * a switch for admins, the setting for everyone else.
+ */
+function RequireTwoFactor({ on, admin }: { on: boolean; admin: boolean }) {
+  const set = useSetOrgTwoFactor();
+  if (!admin) {
+    return on ? "Two-factor sign-in required" : "Password alone is enough";
+  }
+  return (
+    <span className="flex flex-col gap-1 whitespace-normal">
+      <CliHint cli={`dock org two-factor ${on ? "off" : "on"}`} className="act">
+        <Check
+          label="Require two-factor sign-in"
+          checked={on}
+          disabled={set.isPending}
+          onChange={(require) => set.mutate(require)}
+        />
+      </CliHint>
+      <span className="text-xs text-mut">
+        Members who signed in without a second factor can't act here until they
+        add one. API tokens are not affected.
+      </span>
+      <ErrorText error={set.error} />
+    </span>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   Confirm,
   CopyButton,
   ErrorText,
+  Glyph,
   Page,
   Panel,
   TitleRow,
@@ -44,6 +45,8 @@ type Link = { email: string; url: string };
 
 function Members() {
   const members = useSuspenseQuery(orgQueries.members()).data;
+  const required = useSuspenseQuery(orgQueries.org()).data.require_two_factor;
+  const without = members.filter((u) => !u.two_factor).length;
   const invites = useSuspenseQuery(orgQueries.invites()).data;
   const me = useSession();
   const [link, setLink] = useState<Link>();
@@ -51,7 +54,7 @@ function Members() {
     <Page width="max-w-[900px]" gap="gap-5">
       <TitleRow
         title="Members"
-        context={`${members.length} ${members.length === 1 ? "person" : "people"}${invites.length ? ` · ${invites.length} invited` : ""}`}
+        context={`${members.length} ${members.length === 1 ? "person" : "people"}${invites.length ? ` · ${invites.length} invited` : ""}${without ? ` · ${without} without two-factor` : ""}`}
       />
       <InviteForm onCreated={setLink} />
       {link && (
@@ -86,6 +89,9 @@ function Members() {
             <tr>
               <th>Person</th>
               <th>Role</th>
+              <th title="Whether they sign in with a second factor">
+                Two-factor
+              </th>
               <th>Since</th>
               <th />
             </tr>
@@ -98,6 +104,8 @@ function Members() {
                 email={u.email}
                 name={u.name}
                 role={u.role}
+                twoFactor={u.two_factor}
+                required={required}
                 since={u.created_at}
                 you={me?.email === u.email}
               />
@@ -202,6 +210,8 @@ function MemberRow({
   email,
   name,
   role,
+  twoFactor,
+  required,
   since,
   you,
 }: {
@@ -209,6 +219,10 @@ function MemberRow({
   email: string;
   name: string;
   role: Scope;
+  /** They have a second factor (ADR 0048). */
+  twoFactor: boolean;
+  /** The org requires one: those without can't act here. */
+  required: boolean;
   since: string;
   you: boolean;
 }) {
@@ -218,7 +232,7 @@ function MemberRow({
   if (asking) {
     return (
       <tr>
-        <td colSpan={4} className="py-2">
+        <td colSpan={5} className="py-2">
           <Confirm
             danger
             action={`Remove ${email}`}
@@ -258,6 +272,20 @@ function MemberRow({
         </span>
         <ErrorText error={setRole.error} />
       </td>
+      <td className="py-2">
+        {twoFactor ? (
+          <span className="text-ok">
+            <Glyph char="●" /> on
+          </span>
+        ) : (
+          <span
+            className={required ? "text-warn" : "text-faint"}
+            title={required ? "Can't act here until they add one" : undefined}
+          >
+            <Glyph char="○" /> off
+          </span>
+        )}
+      </td>
       <td className="py-2 text-faint">{day(since)}</td>
       <td className="w-full py-1.5 text-right">
         {!you && (
@@ -293,6 +321,7 @@ function InviteRow({
         </span>
       </td>
       <td className="py-2 font-mono text-mut">{role}</td>
+      <td />
       <td className="py-2 text-faint">
         {expired ? "expired" : `until ${day(expires)}`}
       </td>

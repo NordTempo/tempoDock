@@ -259,6 +259,7 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 		}
 		tok, err = q.CreateCLILoginToken(ctx, store.CreateCLILoginTokenParams{
 			Name: cliTokenName(l.Hostname), Hash: hash, Scope: string(apitypes.ScopeAdmin), CreatedBy: u.Email, UserID: &u.ID, ExpiresAt: ptr(now().Add(cliTokenTTL)),
+			TwoFactor: l.TwoFactor,
 		})
 		return err
 	})
@@ -268,7 +269,11 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 	c.audit(ctx, userActor(u), "token.cli_login", nil, nil, "token "+tok.Name,
 		fmt.Sprintf("approved dock login from %s (%s, %s); created %s token %q (id %d)", l.Ip, l.Hostname, l.Os, tok.Scope, tok.Name, tok.ID))
 	out := apitypes.CLILoginWait{Status: "approved", Token: secret, User: u.Email}
-	if a, err := c.actIn(ctx, userActor(u), "", apitypes.ScopeAdmin); err == nil {
+	ua := userActor(u)
+	if l.TwoFactor {
+		ua.Factor = factorLogin
+	}
+	if a, err := c.actIn(ctx, ua, "", apitypes.ScopeAdmin); err == nil {
 		out.Scope = a.Scope // their role, if they have one org
 	}
 	return out, nil
@@ -299,9 +304,13 @@ func (c *Core) DecideCLILogin(ctx context.Context, a Actor, userCode, clientIP s
 	}
 	status := "denied"
 	if approve {
+		// Approving makes a token: a step-up, like creating one.
+		if err := a.requireRecent("approving a CLI login"); err != nil {
+			return err
+		}
 		status = "approved"
 	}
-	n, err := c.store.DecideCLILogin(ctx, store.DecideCLILoginParams{Status: status, UserID: &a.UserID, ID: l.ID, ExpiresAt: now()})
+	n, err := c.store.DecideCLILogin(ctx, store.DecideCLILoginParams{Status: status, UserID: &a.UserID, TwoFactor: a.Factor != "", ID: l.ID, ExpiresAt: now()})
 	if err != nil {
 		return err
 	}

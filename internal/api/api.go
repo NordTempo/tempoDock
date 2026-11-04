@@ -96,6 +96,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 
 	registerSystem(s, a)
 	registerAuth(s, a)
+	registerTwoFactor(s, a)
 	registerCLILogin(s, a)
 	registerProjects(s, a)
 	registerLocks(s, a)
@@ -191,7 +192,7 @@ func statusForCode(code apitypes.ErrorCode) int {
 		return http.StatusTooManyRequests
 	case apitypes.CodeServerOffline:
 		return http.StatusServiceUnavailable
-	case apitypes.CodeDenied:
+	case apitypes.CodeDenied, apitypes.CodeReauthRequired, apitypes.CodeTwoFactorRequired:
 		return http.StatusForbidden
 	case apitypes.CodeExpired:
 		return http.StatusGone

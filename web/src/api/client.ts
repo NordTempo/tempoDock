@@ -1,4 +1,5 @@
-import createFetchClient from "openapi-fetch";
+import createFetchClient, { type Middleware } from "openapi-fetch";
+import { confirmIdentity } from "./reauth";
 import type { components, paths } from "./schema";
 
 // Typed client for the daemon API, generated from web/openapi.json.
@@ -48,6 +49,62 @@ api.use({
 });
 
 type Problem = components["schemas"]["Error"];
+
+// Step-ups (ADR 0048), in one place for every call: a 403 with code
+// reauth_required asks the person to confirm it's them (./reauth.ts) and
+// sends the call again. A request's body is spent once sent, so each one
+// is cloned on the way out; only JSON and bodiless ones, so an upload is
+// never held in memory twice. Cancelling the prompt answers with the
+// original 403.
+const retries = new Map<string, Request>();
+// Calls that pass reauth_required through without a prompt (noPrompt).
+const quiet = new Set<string>();
+
+const retryable = (request: Request) =>
+  request.body === null ||
+  !!request.headers.get("Content-Type")?.includes("json");
+
+api.use({
+  onRequest({ request, id }) {
+    if (retryable(request)) retries.set(id, request.clone());
+    return undefined;
+  },
+  async onResponse({ response, id, options }) {
+    const retry = retries.get(id);
+    retries.delete(id);
+    const silent = quiet.delete(id);
+    if (response.status !== 403 || !retry || silent) return undefined;
+    const problem: unknown = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    if (!isProblem(problem) || problem.code !== "reauth_required") {
+      return undefined;
+    }
+    if (!(await confirmIdentity())) return undefined;
+    // Unbound: window.fetch called as options.fetch(...) throws
+    // "Illegal invocation".
+    const { fetch } = options;
+    return fetch(retry);
+  },
+  onError({ id }) {
+    retries.delete(id);
+    quiet.delete(id);
+    return undefined;
+  },
+});
+
+/**
+ * Per-call middleware for calls nobody just clicked (refetches of values
+ * already on screen): reauth_required comes back as an error instead of
+ * a prompt out of nowhere.
+ */
+export const noPrompt: Middleware = {
+  onRequest({ id }) {
+    quiet.add(id);
+    return undefined;
+  },
+};
 
 /** A failed API call: the problem document's status, code and message. */
 export class ApiError extends Error {

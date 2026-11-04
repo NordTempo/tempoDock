@@ -98,7 +98,10 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 			return Actor{}, errUnauthenticated
 		}
 		a.Email, a.UserID, a.Operator = *row.UserEmail, *t.UserID, *row.UserOperator
-		return c.actIn(ctx, a, org, apitypes.Scope(t.Scope))
+		if t.TwoFactor {
+			a.Factor = factorLogin
+		}
+		return c.actIn(ctx, c.gateOperator(a), org, apitypes.Scope(t.Scope))
 	}
 	if t.OrgID == nil || row.OrgSlug == nil { // manual tokens always have one
 		return Actor{}, errUnauthenticated
@@ -137,10 +140,16 @@ func (c *Core) AuthenticateSession(ctx context.Context, secret, org string) (Act
 	if err != nil {
 		return Actor{}, err
 	}
-	if now().After(row.SessionExpiresAt) || row.User.DisabledAt != nil {
+	s := row.Session
+	if s.Pending || now().After(s.ExpiresAt) || row.User.DisabledAt != nil {
 		return Actor{}, errUnauthenticated
 	}
-	return c.actIn(ctx, userActor(row.User), org, apitypes.ScopeAdmin)
+	a := userActor(row.User)
+	a.SessionID, a.Factor = s.ID, s.Factor
+	if s.VerifiedAt != nil {
+		a.VerifiedAt = *s.VerifiedAt
+	}
+	return c.actIn(ctx, c.gateOperator(a), org, apitypes.ScopeAdmin)
 }
 
 // userActor is a user in no org yet; actIn picks one.
@@ -151,7 +160,9 @@ func userActor(u store.User) Actor {
 // actIn puts a user's actor (a session or a `dock login` token) in the org
 // named by slug, or with none in the user's only org; a user with several
 // and no slug gets no org, and org-scoped operations say to choose one.
-// The actor's scope is the user's role there, capped at most.
+// The actor's scope is the user's role there, capped at most. An org that
+// requires a second factor the actor didn't use leaves it in none, and
+// org-scoped operations say so (ADR 0048).
 func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Scope) (Actor, error) {
 	if slug != "" {
 		m, err := c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: slug})
@@ -161,17 +172,27 @@ func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Sc
 		if err != nil {
 			return Actor{}, err
 		}
-		return a.member(m.Org, m.Role, most), nil
+		return a.gatedMember(m.Org, m.Role, most), nil
 	}
 	orgs, err := c.store.ListUserOrgs(ctx, a.UserID)
 	if err != nil {
 		return Actor{}, err
 	}
 	if len(orgs) == 1 {
-		return a.member(orgs[0].Org, orgs[0].Role, most), nil
+		return a.gatedMember(orgs[0].Org, orgs[0].Role, most), nil
 	}
 	a.orgs = len(orgs)
 	return a, nil
+}
+
+// gatedMember is member, unless org requires a second factor the actor
+// didn't use: then it acts in no org and says why.
+func (a Actor) gatedMember(org store.Org, role string, most apitypes.Scope) Actor {
+	if org.RequireTwoFactor && a.Factor == "" {
+		a.needs2FAOrg, a.orgs = org.Slug, 1
+		return a
+	}
+	return a.member(org, role, most)
 }
 
 // member is the actor acting in org with role, capped at most.
@@ -186,15 +207,16 @@ func (a Actor) member(org store.Org, role string, most apitypes.Scope) Actor {
 
 var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password")
 
-// Login checks a user's password and starts a session. It returns the
-// session secret for the cookie. Attempts are rate limited per client IP
-// and email (httpkit.LoginLimiter), so a guesser can't lock the owner out;
-// failures are logged and audited (never the password).
-func (c *Core) Login(ctx context.Context, email, password, clientIP string) (secret string, expires time.Time, a Actor, err error) {
+// Login checks a user's password and starts a session, or, when they
+// have a second factor, a pending sign-in for LoginSecondFactor to finish.
+// Attempts are rate limited per client IP and email
+// (httpkit.LoginLimiter), so a guesser can't lock the owner out; failures
+// are logged and audited (never the password).
+func (c *Core) Login(ctx context.Context, email, password, clientIP string) (LoginResult, error) {
 	t := now()
 	if !c.loginLimit.Allow(email, clientIP, t) {
 		c.log.Warn("login rate limited", "email", email, "ip", clientIP)
-		return "", time.Time{}, Actor{}, errf(apitypes.CodeRateLimited, "too many login attempts; wait a minute and try again")
+		return LoginResult{}, errf(apitypes.CodeRateLimited, "too many login attempts; wait a minute and try again")
 	}
 	u, err := c.checkPassword(ctx, email, password)
 	if err == nil && u.DisabledAt != nil {
@@ -205,18 +227,16 @@ func (c *Core) Login(ctx context.Context, email, password, clientIP string) (sec
 		c.audit(ctx, Actor{Kind: "user", Name: email}, "user.login_failed", nil, nil, email, fmt.Sprintf("failed login from %s: %v", clientIP, err))
 	}
 	if err != nil {
-		return "", time.Time{}, Actor{}, err
+		return LoginResult{}, err
 	}
-	secret, expires, err = c.newSession(ctx, u)
+	n, err := c.store.CountUserFactors(ctx, u.ID)
 	if err != nil {
-		return "", time.Time{}, Actor{}, err
+		return LoginResult{}, err
 	}
-	// Accounts are the platform's, so logins are platform events.
-	c.audit(ctx, userActor(u), "user.login", nil, nil, u.Email, "logged in from "+clientIP)
-	if a, err = c.actIn(ctx, userActor(u), "", apitypes.ScopeAdmin); err != nil {
-		return "", time.Time{}, Actor{}, err
+	if n > 0 {
+		return c.startSecondFactor(ctx, u)
 	}
-	return secret, expires, a, nil
+	return c.signIn(ctx, u, "", clientIP)
 }
 
 // checkPassword returns the user if password is theirs. At most a few
@@ -242,14 +262,21 @@ func (c *Core) checkPassword(ctx context.Context, email, password string) (store
 	return u, nil
 }
 
-func (c *Core) newSession(ctx context.Context, u store.User) (secret string, expires time.Time, err error) {
+// newSession starts a UI session for u, whose sign-in used factor ("" for
+// a password alone), verified now. It returns the session's secret and
+// the actor it authenticates, in no org yet.
+func (c *Core) newSession(ctx context.Context, u store.User, factor string) (secret string, expires time.Time, a Actor, err error) {
 	secret, hash := newSecret(sessionPrefix)
-	expires = now().Add(SessionTTL)
-	if err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires}); err != nil {
-		return "", time.Time{}, err
+	t := now()
+	expires = t.Add(SessionTTL)
+	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: factor, VerifiedAt: &t})
+	if err != nil {
+		return "", time.Time{}, Actor{}, err
 	}
 	_ = c.store.DeleteExpiredSessions(ctx, now())
-	return secret, expires, nil
+	a = userActor(u)
+	a.SessionID, a.Factor, a.VerifiedAt = id, factor, t
+	return secret, expires, c.gateOperator(a), nil
 }
 
 // ChangePassword changes the calling user's own password, from a UI
@@ -291,7 +318,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 		return "", time.Time{}, err
 	}
 	if a.Kind == "user" {
-		if secret, expires, err = c.newSession(ctx, u); err != nil {
+		if secret, expires, _, err = c.newSession(ctx, u, a.Factor); err != nil {
 			return "", time.Time{}, err
 		}
 	}
@@ -357,6 +384,9 @@ func (c *Core) otherUser(ctx context.Context, a Actor, id int64, verb string) (s
 	if err := a.requireOperator("managing user accounts"); err != nil {
 		return store.User{}, err
 	}
+	if err := a.requireRecent("managing user accounts"); err != nil {
+		return store.User{}, err
+	}
 	if a.UserID == id {
 		return store.User{}, invalid("you can't %s your own account", verb)
 	}
@@ -416,6 +446,9 @@ func (c *Core) ListTokens(ctx context.Context, a Actor) ([]apitypes.Token, error
 // CreateToken creates a token and returns its secret, shown only once.
 func (c *Core) CreateToken(ctx context.Context, a Actor, req apitypes.CreateTokenRequest) (apitypes.CreatedToken, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
+		return apitypes.CreatedToken{}, err
+	}
+	if err := a.requireRecent("creating a token"); err != nil {
 		return apitypes.CreatedToken{}, err
 	}
 	return c.createToken(ctx, a, req)
@@ -581,7 +614,7 @@ func (c *Core) ListUsers(ctx context.Context, a Actor) ([]apitypes.User, error) 
 	out := make([]apitypes.User, 0, len(rows))
 	for _, r := range rows {
 		u := toUser(r.User, r.Role)
-		u.Sessions, u.Tokens = int(r.Sessions), int(r.Tokens)
+		u.Sessions, u.Tokens, u.TwoFactor = int(r.Sessions), int(r.Tokens), r.TwoFactor
 		out = append(out, u)
 	}
 	return out, nil
@@ -636,6 +669,9 @@ func generatePassword() string {
 // Accounts are the platform's, so only operators create them.
 func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserRequest) (apitypes.User, error) {
 	if err := a.requireOperator("creating user accounts"); err != nil {
+		return apitypes.User{}, err
+	}
+	if err := a.requireRecent("creating user accounts"); err != nil {
 		return apitypes.User{}, err
 	}
 	if a.OrgID == 0 {

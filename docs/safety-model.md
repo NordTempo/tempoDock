@@ -48,6 +48,25 @@ access goes through the daemon's API, which enforces permissions.
   access to that environment's secrets, and limit tokens to the environments
   they need (an agent with `myapp/staging` never sees production secrets).
 
+## People sign in with a second factor
+
+The UI controls production, so a password shouldn't be enough
+([0048](decisions/0048-two-factor-sign-in.md), [guide](guide/two-factor.md)).
+
+- Users add an authenticator app; signing in then needs a code from it or a
+  one-time recovery code. Wrong codes spend from the same per (email,
+  address) limit as passwords, so a guesser can't lock the owner out.
+- Sensitive actions (revealing secrets, creating tokens, approving a `dock
+  login`, managing people and accounts, changing sign-in policies and
+  factors) need a sign-in or confirmation within the last 15 minutes. Tokens
+  skip this: creating one was the check.
+- Organizations can require a second factor of their members, and the
+  platform of its operators. A `dock login` token counts only when the
+  sign-in that approved it used one. API tokens are not affected.
+- Losing the factor and the recovery codes needs shell access to the
+  server: `sudo dock admin reset-2fa <email>`. There is no UI for it, so a
+  stolen operator session can't strip someone's second factor.
+
 ## Non-destructive by default
 
 - **Destroying a service** stops and archives it. Real deletion happens after a

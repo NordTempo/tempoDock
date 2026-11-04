@@ -1,7 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { components } from "../../api/schema";
-import { useIsAdmin } from "../../data/queries";
+import { useIsAdmin, useRevealedQuery } from "../../data/queries";
 import { since } from "../../ui/format";
 import { Act, Button, ErrorText, Page, Panel, TitleRow } from "../../ui/kit";
 import {
@@ -29,7 +29,11 @@ const useName = (u: Use) =>
 export function VariablesPage() {
   const admin = useIsAdmin();
   const [reveal, setReveal] = useState(false);
-  const vars = useSuspenseQuery(orgQueries.variables(reveal && admin)).data;
+  const masked = useSuspenseQuery(orgQueries.variables(false)).data;
+  // Values load beside the masked list, so a step-up (ADR 0048) or its
+  // refusal never blanks the page.
+  const values = useRevealedQuery(orgQueries.variables(true), reveal && admin);
+  const vars = (reveal && values.data) || masked;
   // The variable changed last, until its users are redeployed or it's
   // dismissed.
   const [changed, setChanged] = useState<string>();
@@ -64,6 +68,7 @@ export function VariablesPage() {
           onDone={() => setChanged(undefined)}
         />
       )}
+      {reveal && <ErrorText error={values.error} />}
       {vars.length === 0 ? (
         <p className="text-mut">No organization variables yet.</p>
       ) : (
