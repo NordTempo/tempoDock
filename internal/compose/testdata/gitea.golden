@@ -46,10 +46,11 @@ project = 'app'
 
 # warnings
  | networks | Dock gives every environment one network, and services reach each other by service name, so the networks section is ignored.
+ | networks.proxy | Network proxy (traefik_proxy) is external in Compose: it is made outside this file, often by a reverse proxy. Dock services don't join outside networks: Dock routes HTTP to services through their domains, and services in other projects aren't reachable by name.
 db | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
-nextcloud | labels | Container labels are ignored; Dock sets its own.
+nextcloud | labels | Caddy labels are ignored: Dock routes HTTP to the service's port through its domains, without a proxy container. Add cloud.example.com with `dock domain add cloud.example.com -s nextcloud`.
 nextcloud | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
-server | labels | Container labels are ignored; Dock sets its own.
+server | labels | Traefik labels are ignored: Dock routes HTTP to the service's port through its domains, without a proxy container. Add git.example.com with `dock domain add git.example.com -s server`.
 server | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
 server | ports | A Dock service receives traffic on one port, so 3000 is used and 2222 isn't. Other services in the environment can still reach it at server:2222.
 server | ports | Dock doesn't publish host ports, so 3000:3000 isn't opened on the server. HTTP reaches port 3000 through a generated domain when the server has a base domain; add your own with `dock domain add`.

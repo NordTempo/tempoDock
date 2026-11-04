@@ -46,13 +46,13 @@ plausible | CLICKHOUSE_DATABASE_URL | CLICKHOUSE_DATABASE_URL points at plausibl
 plausible | DATABASE_URL | DATABASE_URL points at plausible_db, so it now uses the postgres template's DATABASE_URL: ${{plausible-db.DATABASE_URL}}.
 plausible | SECRET_KEY_BASE | SECRET_KEY_BASE uses ${SECRET_KEY_BASE}, which isn't set in .env, so it is a secret without a value. Set it before the first deploy with `dock env set -s plausible SECRET_KEY_BASE=...`.
 plausible | ports | Dock doesn't publish host ports, so 8000:8000 isn't opened on the server. HTTP reaches port 8000 through a generated domain when the server has a base domain; add your own with `dock domain add`.
-plausible | ulimits | ulimits isn't supported by Dock, so it is not applied.
+plausible | ulimits | ulimits aren't applied, so the container runs with the server's default limits. If it needs more open files, raise default-ulimits in the server's Docker daemon settings.
 plausible-db |  | Compose service "plausible_db" is named "plausible-db" in Dock: service names are 1-32 lowercase letters, digits or dashes. Other services' variables that name it are updated.
 plausible-db | POSTGRES_PASSWORD | The postgres template generates its own password, so this value isn't used. Other services' variables that held it now reference ${{plausible-db.POSTGRES_PASSWORD}}.
 plausible-db | image | postgres:16-alpine becomes Dock's postgres template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used. Data in the Compose volumes isn't moved: the new database starts empty.
 plausible-db | image | The postgres template runs PostgreSQL 17, and the Compose file uses postgres:16-alpine. To move data from the old database, dump it with pg_dump and restore it into the new one.
 plausible-events-db |  | Compose service "plausible_events_db" is named "plausible-events-db" in Dock: service names are 1-32 lowercase letters, digits or dashes. Other services' variables that name it are updated.
-plausible-events-db | ulimits | ulimits isn't supported by Dock, so it is not applied.
+plausible-events-db | ulimits | ulimits aren't applied, so the container runs with the server's default limits. If it needs more open files, raise default-ulimits in the server's Docker daemon settings.
 plausible-events-db | volumes | The bind mount ./clickhouse/logs.xml:/etc/clickhouse-server/config.d/logs.xml isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
 plausible-events-db | volumes | The bind mount ./clickhouse/ipv4-only.xml:/etc/clickhouse-server/config.d/ipv4-only.xml isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
 

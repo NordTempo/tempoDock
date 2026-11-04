@@ -58,7 +58,7 @@ database | healthcheck | The health check (pg_isready --dbname="${POSTGRES_DB}" 
 database | volumes | The bind mount ./postgres:/var/lib/postgresql/data isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
 immich-machine-learning | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at immich-machine-learning.
 immich-server | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at immich-server.
-immich-server | extends | extends isn't supported, so the settings this service would inherit aren't converted. Copy them into the service and import again.
+immich-server | extends | extends isn't supported, so the settings this service inherits from service cpu in hwaccel.transcoding.yml aren't converted. Copy them into the service and import again.
 immich-server | ports | Dock doesn't publish host ports, so 2283:2283 isn't opened on the server. HTTP reaches port 2283 through a generated domain when the server has a base domain; add your own with `dock domain add`.
 immich-server | volumes | The bind mount ./library:/usr/src/app/upload isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
 immich-server | volumes | The bind mount /etc/localtime:/etc/localtime isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.

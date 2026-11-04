@@ -54,14 +54,15 @@ project = 'app'
 
 # warnings
  | networks | Dock gives every environment one network, and services reach each other by service name, so the networks section is ignored.
+ | networks.proxy | Network proxy is external in Compose: it is made outside this file, often by a reverse proxy. Dock services don't join outside networks: Dock routes HTTP to services through their domains, and services in other projects aren't reachable by name.
 jellyfin | deploy.replicas | Dock runs one instance of a service, so replicas: 3 isn't applied.
-jellyfin | deploy.resources.reservations | Dock sets limits, not reservations, so deploy.resources.reservations is ignored.
+jellyfin | deploy.resources.reservations | Dock sets limits, not reservations, so the reserved memory and CPUs aren't set aside. Set limits with `dock service update --memory` and `--cpus` if the service needs them.
 jellyfin | deploy.restart_policy | Dock restarts services that stop, so deploy.restart_policy is ignored.
 jellyfin | devices | Host devices can't be passed to a Dock service, so devices isn't applied.
 jellyfin | entrypoint | Dock keeps the image's own entrypoint and runs the start command after it, so this entrypoint runs inside it instead of replacing it. Check that the image's entrypoint runs its arguments as a command.
 jellyfin | gpus | gpus isn't supported by Dock, so it is not applied.
 jellyfin | healthcheck | The health check (curl -X POST http://localhost:8096/health) isn't used: Dock checks an HTTP path on the service's port. Set one with `dock service update --health-check-path` if the service has one.
-jellyfin | labels | Container labels are ignored; Dock sets its own.
+jellyfin | labels | Traefik labels are ignored: Dock routes HTTP to the service's port through its domains, without a proxy container. Add the service's hostname with `dock domain add <hostname> -s jellyfin`.
 jellyfin | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
 jellyfin | ports | Port 7359:7359/udp is UDP, and Dock routes only HTTP from outside, so it isn't published. Other services in the environment can still reach it at jellyfin:7359.
 jellyfin | ports | A Dock service receives traffic on one port, so 8096 is used and 8920, 1900 aren't. Other services in the environment can still reach them at jellyfin:<port>.
@@ -83,7 +84,7 @@ nextcloud | MYSQL_HOST | MYSQL_HOST names Mariadb_Main, which is named mariadb-m
 nextcloud | NEXTCLOUD_URL | NEXTCLOUD_URL points at Mariadb_Main, which is named mariadb-main in Dock, so the URL now uses that name.
 nextcloud | depends_on | Dock has no one-shot services, so waiting for mariadb-main to complete isn't supported; it only starts first. Run one-off tasks in the start command instead.
 nextcloud | depends_on | The service depends on missing_service, which isn't in the Compose file, so that is ignored.
-nextcloud | extra_hosts | extra_hosts isn't supported by Dock, so it is not applied.
+nextcloud | extra_hosts | extra_hosts isn't applied, so those hostnames don't resolve in the container. Use the service names of the environment, or full hostnames in variables.
 nextcloud | ports | Dock doesn't publish host ports, so 8080:80 isn't opened on the server. HTTP reaches port 80 through a generated domain when the server has a base domain; add your own with `dock domain add`.
 nextcloud | restart | Dock restarts services that stop, so restart: no isn't applied. If this is a one-off task (a migration), run it in the start command of the service that needs it instead.
 nextcloud | volumes | Volume "db.data" is named "db-data" in Dock: volume names are 1-32 lowercase letters, digits or dashes.

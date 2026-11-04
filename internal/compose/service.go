@@ -2,7 +2,9 @@ package compose
 
 import (
 	"fmt"
+	"maps"
 	"path"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,15 +30,17 @@ var unsupportedKeys = map[string]string{
 	"user":         "user isn't applied, so the container runs as the image's user. Set USER in the Dockerfile to change it.",
 	"working_dir":  "working_dir isn't applied. Set WORKDIR in the Dockerfile, or cd in the start command.",
 	"tmpfs":        "tmpfs mounts aren't supported, so files written there go to the container's own filesystem and are lost on the next deploy.",
-	"secrets":      "Compose secrets (files under /run/secrets) aren't supported. Set each value as a secret variable with `dock env set` instead.",
-	"configs":      "Compose configs (files mounted into the container) aren't supported; build them into the image instead.",
-	"extends":      "extends isn't supported, so the settings this service would inherit aren't converted. Copy them into the service and import again.",
-	"profiles":     "profiles aren't supported, so the service is imported whatever its profile.",
 	"scale":        "Dock runs one instance of a service, so scale isn't applied.",
 	"volumes_from": "volumes_from isn't supported: Dock volumes belong to one service. Give this service its own volume.",
-	"pid":          "", "ipc": "", "security_opt": "", "sysctls": "", "ulimits": "", "shm_size": "",
-	"extra_hosts": "", "dns": "", "dns_search": "", "dns_opt": "", "init": "", "platform": "",
-	"stop_signal": "", "stop_grace_period": "", "read_only": "", "group_add": "", "runtime": "",
+	"ulimits":      "ulimits aren't applied, so the container runs with the server's default limits. If it needs more open files, raise default-ulimits in the server's Docker daemon settings.",
+	"init":         "init isn't applied, so the service's command runs as PID 1 without an init process. If it leaves zombie processes or ignores stop signals, add tini to the image as its entrypoint.",
+	// 30s is core's stopTimeout.
+	"stop_grace_period": "stop_grace_period isn't applied: Dock gives a container 30s to stop before it kills it.",
+	"shm_size":          "shm_size isn't applied, so /dev/shm has Docker's default 64 MB. Services that need more (browsers, some databases) may fail; write to a volume instead.",
+	"extra_hosts":       "extra_hosts isn't applied, so those hostnames don't resolve in the container. Use the service names of the environment, or full hostnames in variables.",
+	"pid":               "", "ipc": "", "security_opt": "", "sysctls": "",
+	"dns": "", "dns_search": "", "dns_opt": "", "platform": "",
+	"stop_signal": "", "read_only": "", "group_add": "", "runtime": "",
 	"cgroup": "", "cgroup_parent": "", "cpu_count": "", "cpu_percent": "", "cpu_period": "",
 	"cpu_quota": "", "cpu_rt_period": "", "cpu_rt_runtime": "", "cpu_shares": "", "cpuset": "",
 	"blkio_config": "", "credential_spec": "", "device_cgroup_rules": "", "isolation": "",
@@ -55,7 +59,6 @@ var ignoredKeys = map[string]string{
 	"networks":       "Dock gives every environment one network, and services reach each other by service name, so networks is ignored.",
 	"links":          "links are ignored: services in an environment reach each other by service name.",
 	"external_links": "external_links are ignored: services in an environment reach each other by service name.",
-	"labels":         "Container labels are ignored; Dock sets its own.",
 	"logging":        "Dock keeps every service's logs itself (`dock logs`), so the logging settings are ignored.",
 	"pull_policy":    "Dock decides when to pull images, so pull_policy is ignored.",
 	"stdin_open":     "Dock services don't get a terminal, so stdin_open is ignored.",
@@ -79,8 +82,13 @@ func (c *converter) convertService(s *svc) {
 	}
 	c.dependsOn(s)
 	c.resources(s)
-	if d.Restart.set && c.str(s, "restart", d.Restart) == "no" {
-		c.warn(s, "restart", "Dock restarts services that stop, so restart: no isn't applied. If this is a one-off task (a migration), run it in the start command of the service that needs it instead.")
+	if d.Restart.set {
+		switch r := c.str(s, "restart", d.Restart); {
+		case r == "no":
+			c.warn(s, "restart", "Dock restarts services that stop, so restart: no isn't applied. If this is a one-off task (a migration), run it in the start command of the service that needs it instead.")
+		case strings.HasPrefix(r, "on-failure:"):
+			c.warn(s, "restart", "Dock restarts a service every time it stops, so the limit in restart: %s isn't applied.", r)
+		}
 	}
 }
 
@@ -96,6 +104,19 @@ func (c *converter) serviceKeys(s *svc) {
 		}
 		msg, ok := unsupportedKeys[k]
 		switch {
+		case k == "labels":
+			c.labels(s)
+		case k == "secrets":
+			c.warn(s, k, "Compose secrets (files under /run/secrets) aren't supported, so %s %s mounted. Set each value as a secret variable with `dock env set -s %s NAME=...`, and have the service read it from its environment instead of a file.",
+				joinNames(s.def.Secrets), isntArent(len(s.def.Secrets)), s.name)
+		case k == "configs":
+			c.warn(s, k, "Compose configs (files mounted into the container) aren't supported, so %s %s mounted. Build the files into the image with COPY in a Dockerfile instead.",
+				joinNames(s.def.Configs), isntArent(len(s.def.Configs)))
+		case k == "profiles":
+			c.warn(s, k, "Compose starts this service only with the profile %s (`docker compose --profile %s up`). Dock has no profiles, so it is imported and always runs; archive it with `dock service archive %s` if you don't need it.",
+				strings.Join(s.def.Profiles, " or "), firstOr(s.def.Profiles, "<name>"), s.name)
+		case k == "extends":
+			c.warn(s, k, "extends isn't supported, so the settings this service inherits from %s aren't converted. Copy them into the service and import again.", extendsTarget(s.def.Extends))
 		case k == "network_mode":
 			mode := c.str(s, k, s.def.NetworkMode)
 			c.warn(s, k, "network_mode %s isn't supported: every Dock service runs on its environment's network and reaches the others by service name. Set the service's port to the one it listens on.", mode)
@@ -677,7 +698,12 @@ func (c *converter) resources(s *svc) {
 				switch k {
 				case "limits":
 				case "reservations":
-					c.warn(s, "deploy.resources.reservations", "Dock sets limits, not reservations, so deploy.resources.reservations is ignored.")
+					if r.Reservations != nil && len(r.Reservations.Devices) > 0 {
+						c.warn(s, "deploy.resources.reservations.devices", "Devices (GPUs) can't be passed to a Dock service, so the service runs without them. Use an image that runs on the CPU.")
+					}
+					if r.Reservations == nil || slices.ContainsFunc(r.Reservations.keys, func(k string) bool { return k != "devices" }) {
+						c.warn(s, "deploy.resources.reservations", "Dock sets limits, not reservations, so the reserved memory and CPUs aren't set aside. Set limits with `dock service update --memory` and `--cpus` if the service needs them.")
+					}
 				default:
 					c.warn(s, "deploy.resources."+k, "deploy.resources.%s isn't supported by Dock, so it is not applied.", k)
 				}
@@ -720,4 +746,101 @@ func upperFirst(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// hostRuleRe matches a Traefik Host(...) matcher; quotedRe the hostnames
+// in it.
+var (
+	hostRuleRe = regexp.MustCompile("Host\\(([^)]*)\\)")
+	quotedRe   = regexp.MustCompile("[`\"']([^`\"']+)[`\"']")
+)
+
+// labels warns that container labels are ignored. A reverse proxy's
+// labels (Traefik, Caddy) get a warning naming the hostnames they route,
+// so the user can add them as domains.
+func (c *converter) labels(s *svc) {
+	all := labelsOf(s.def.Labels)
+	var proxies, hosts []string
+	for _, k := range slices.Sorted(maps.Keys(all)) {
+		v, _ := interpolate(all[k], c.lookup)
+		switch {
+		case strings.HasPrefix(k, "traefik."):
+			if !slices.Contains(proxies, "Traefik") {
+				proxies = append(proxies, "Traefik")
+			}
+			if strings.HasSuffix(k, ".rule") {
+				for _, m := range hostRuleRe.FindAllStringSubmatch(v, -1) {
+					for _, q := range quotedRe.FindAllStringSubmatch(m[1], -1) {
+						hosts = append(hosts, q[1])
+					}
+				}
+			}
+		case k == "caddy" || strings.HasPrefix(k, "caddy.") || strings.HasPrefix(k, "caddy_"):
+			if !slices.Contains(proxies, "Caddy") {
+				proxies = append(proxies, "Caddy")
+			}
+			if !strings.Contains(k, ".") && !strings.Contains(v, "{{") {
+				for _, h := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' }) {
+					if _, after, ok := strings.Cut(h, "://"); ok {
+						h = after
+					}
+					hosts = append(hosts, strings.TrimSuffix(h, "/"))
+				}
+			}
+		}
+	}
+	if len(proxies) == 0 {
+		c.warn(s, "labels", "Container labels are ignored; Dock sets its own.")
+		return
+	}
+	slices.Sort(hosts)
+	hosts = slices.Compact(hosts)
+	add := fmt.Sprintf("Add the service's hostname with `dock domain add <hostname> -s %s`.", s.name)
+	switch len(hosts) {
+	case 0:
+	case 1:
+		add = fmt.Sprintf("Add %s with `dock domain add %s -s %s`.", hosts[0], hosts[0], s.name)
+	default:
+		add = fmt.Sprintf("Add %s with `dock domain add <hostname> -s %s`, one at a time.", strings.Join(hosts, ", "), s.name)
+	}
+	c.warn(s, "labels", "%s labels are ignored: Dock routes HTTP to the service's port through its domains, without a proxy container. %s",
+		strings.Join(proxies, " and "), add)
+}
+
+// joinNames lists the names a service's secrets or configs entries refer to.
+func joinNames(entries []any) string {
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = sourceOf(e)
+	}
+	return strings.Join(names, ", ")
+}
+
+// isntArent agrees "isn't" with a count.
+func isntArent(n int) string {
+	if n == 1 {
+		return "isn't"
+	}
+	return "aren't"
+}
+
+// firstOr is the first element of list, or fallback.
+func firstOr(list []string, fallback string) string {
+	if len(list) == 0 {
+		return fallback
+	}
+	return list[0]
+}
+
+// extendsTarget says what an extends entry names: `extends: web`, or a map
+// with a service and maybe a file.
+func extendsTarget(v any) string {
+	m, ok := v.(map[any]any)
+	if !ok {
+		return fmt.Sprintf("service %v", v)
+	}
+	if f, ok := m["file"]; ok {
+		return fmt.Sprintf("service %v in %v", m["service"], f)
+	}
+	return fmt.Sprintf("service %v", m["service"])
 }

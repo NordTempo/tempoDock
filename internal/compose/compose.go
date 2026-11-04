@@ -182,10 +182,15 @@ func (c *converter) topLevel(f *file) {
 		case k == "version", k == "name", k == "services", k == "volumes", strings.HasPrefix(k, "x-"):
 		case k == "networks":
 			c.warn(nil, k, "Dock gives every environment one network, and services reach each other by service name, so the networks section is ignored.")
+			c.networks(f.Networks)
 		case k == "secrets":
-			c.warn(nil, k, "Compose secrets aren't supported. Set each value as a secret variable with `dock env set` instead.")
+			for _, name := range slices.Sorted(maps.Keys(f.Secrets)) {
+				c.warn(nil, "secrets."+name, "Compose secret %s%s isn't supported, so no file is mounted for it. Set its value as a secret variable with `dock env set -s <service> NAME=...` on each service that uses it.", name, secretSource(f.Secrets[name]))
+			}
 		case k == "configs":
-			c.warn(nil, k, "Compose configs aren't supported; build those files into the image instead.")
+			for _, name := range slices.Sorted(maps.Keys(f.Configs)) {
+				c.warn(nil, "configs."+name, "Compose config %s%s isn't supported, so no file is mounted for it. Build the file into the image with COPY in a Dockerfile instead.", name, secretSource(f.Configs[name]))
+			}
 		case k == "include":
 			c.warn(nil, k, "include isn't supported, so the Compose files it names aren't converted. Import each of them separately, or merge them into this file.")
 		default:
@@ -207,6 +212,38 @@ func (c *converter) topLevel(f *file) {
 	for _, name := range slices.Sorted(maps.Keys(f.Volumes)) {
 		c.topVolume(name, f.Volumes[name])
 	}
+}
+
+// networks warns about external networks: services can't join a network
+// made outside the project, such as a reverse proxy's.
+func (c *converter) networks(defs map[string]map[string]any) {
+	for _, name := range slices.Sorted(maps.Keys(defs)) {
+		def := defs[name]
+		if !isTrue(fmt.Sprint(def["external"])) {
+			continue
+		}
+		real := ""
+		if n, ok := def["name"]; ok && fmt.Sprint(n) != name {
+			real = fmt.Sprintf(" (%v)", n)
+		}
+		c.warn(nil, "networks."+name, "Network %s%s is external in Compose: it is made outside this file, often by a reverse proxy. Dock services don't join outside networks: Dock routes HTTP to services through their domains, and services in other projects aren't reachable by name.", name, real)
+	}
+}
+
+// secretSource says where a top-level secret or config comes from, as a
+// parenthesised suffix, or "".
+func secretSource(def map[string]any) string {
+	switch {
+	case def["file"] != nil:
+		return fmt.Sprintf(" (the file %v)", def["file"])
+	case def["environment"] != nil:
+		return fmt.Sprintf(" (the variable %v)", def["environment"])
+	case def["content"] != nil:
+		return " (inline content)"
+	case isTrue(fmt.Sprint(def["external"])):
+		return " (external)"
+	}
+	return ""
 }
 
 // topVolume warns about a top-level volume's settings Dock doesn't apply.
