@@ -716,3 +716,19 @@ func TestSnapshotTools(t *testing.T) {
 		t.Fatalf("restore_snapshot = %q %+v", c.summary, res.Restore)
 	}
 }
+
+// The logs tool's grep and stderr filter on the server.
+func TestLogsFilter(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect("shop-agent", nil)
+	if res := call(t, s, "deploy_image", map[string]any{"service": "web"}); res.isError {
+		t.Fatalf("deploy_image = %q", res.summary)
+	}
+	f.rt.AddLogs("dock_p1_e3_s1_r1", "GET /api error 500")
+	f.rt.AddStderr("dock_p1_e3_s1_r1", "error: db timeout", "warn: slow query")
+	var out struct{ Lines []string }
+	call(t, s, "logs", map[string]any{"service": "web", "grep": "error", "stderr": true}).decode(t, &out)
+	if len(out.Lines) != 1 || !strings.HasSuffix(out.Lines[0], " [stderr] error: db timeout") {
+		t.Errorf("logs grep error, stderr = %q", out.Lines)
+	}
+}

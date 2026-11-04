@@ -20,10 +20,10 @@ import (
 // logsFlags are the options of `dock logs`.
 type logsFlags struct {
 	targetFlags
-	follow, build bool
-	tail          int
-	since         string
-	release       int64
+	follow, build, stderr bool
+	tail                  int
+	since, grep           string
+	release               int64
 }
 
 func newLogsCmd(g *globals) *cobra.Command {
@@ -38,9 +38,17 @@ removed, for [logs] keep_days (30) and up to keep_mb_per_service (64 MB)
 per service, and --release N reads it (--follow ends after it). --build
 prints a build log instead (default: the newest release's).
 
+--grep TEXT keeps the lines containing TEXT (plain, case-sensitive) and
+--stderr the lines written to stderr; the server filters, after --tail:
+--tail 100 --grep x prints the matches among the last 100 lines.
+
 With --json, every line is one JSON object on its own line.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if f.build && (f.grep != "" || f.stderr) {
+				return &output.Error{Exit: output.ExitUsage, Message: "--grep and --stderr filter service output, not build logs",
+					Hint: "Pipe the build log through grep: `dock logs --build | grep TEXT`."}
+			}
 			s, t, err := g.open(f.targetFlags, needService)
 			if err != nil {
 				return err
@@ -62,11 +70,14 @@ With --json, every line is one JSON object on its own line.`,
 	cmd.Flags().IntVarP(&f.tail, "tail", "n", 100, "lines of backlog to show, 0 for all")
 	cmd.Flags().StringVar(&f.since, "since", "", "only lines newer than this: a duration like 10m or an RFC 3339 time")
 	cmd.Flags().Int64VarP(&f.release, "release", "r", 0, "release number (default: the active release; with --build, the newest)")
+	cmd.Flags().StringVar(&f.grep, "grep", "", "only lines containing this text (plain, case-sensitive; after --tail)")
+	cmd.Flags().BoolVar(&f.stderr, "stderr", false, "only lines written to stderr (after --tail)")
 	cmd.Flags().BoolVar(&f.build, "build", false, "show the build log instead of service output")
 	cmd.AddCommand(newLogDrainCmd(g))
 	return cmd
 }
 
+// serviceLogs streams a release container's output, filtered on the server.
 func (g *globals) serviceLogs(ctx context.Context, s *session, t target, f logsFlags) error {
 	q := url.Values{"tail": {strconv.Itoa(f.tail)}}
 	if f.follow {
@@ -77,6 +88,12 @@ func (g *globals) serviceLogs(ctx context.Context, s *session, t target, f logsF
 	}
 	if f.release != 0 {
 		q.Set("release", itoa(f.release))
+	}
+	if f.grep != "" {
+		q.Set("grep", f.grep)
+	}
+	if f.stderr {
+		q.Set("stderr", "true")
 	}
 	return apiclient.Follow(ctx, s.api, t.servicePath()+"/logs?"+q.Encode(), func(l apitypes.LogLine) error {
 		if g.io.JSON {

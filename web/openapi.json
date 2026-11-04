@@ -29594,6 +29594,26 @@
               "description": "RFC 3339 time or a duration like 10m",
               "type": "string"
             }
+          },
+          {
+            "description": "Only lines containing this text (plain, case-sensitive). Applied after tail: matches among the last N lines",
+            "explode": false,
+            "in": "query",
+            "name": "grep",
+            "schema": {
+              "description": "Only lines containing this text (plain, case-sensitive). Applied after tail: matches among the last N lines",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only lines written to stderr. Applied after tail, like grep",
+            "explode": false,
+            "in": "query",
+            "name": "stderr",
+            "schema": {
+              "description": "Only lines written to stderr. Applied after tail, like grep",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

@@ -276,8 +276,22 @@ func (cur *logCursor) read(path string, fn func(first int, lines []string) error
 type LogQuery struct {
 	Release int64
 	Follow  bool
-	Tail    int
-	Since   time.Time
+	// Tail is applied before Grep and Stderr, as Docker applies it: Tail 100
+	// with a Grep keeps the matches among the last 100 lines, so nothing is
+	// buffered to find 100 matches.
+	Tail  int
+	Since time.Time
+	// Grep keeps only lines whose text contains it (plain, case-sensitive).
+	Grep string
+	// Stderr keeps only lines the container wrote to stderr.
+	Stderr bool
+}
+
+// match reports whether a line passes the query's Grep and Stderr filters.
+// sendLogs calls it on the masked line, so a grep never matches, and so
+// reveals, a secret value the client doesn't see.
+func (q LogQuery) match(l apitypes.LogLine) bool {
+	return (!q.Stderr || l.Stream == "stderr") && strings.Contains(l.Text, q.Grep)
 }
 
 // savedLogLines is how much of a failed release's container output is kept.
@@ -375,7 +389,7 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 			return err
 		}
 		ready()
-		return sendLogs(lines, red, send)
+		return sendLogs(lines, red, q, send)
 	}, nil
 }
 
@@ -439,32 +453,38 @@ func (c *Core) openLogs(ctx context.Context, ss svcScope, rel store.Release, liv
 	return nil, notFound("the container of release %d of %s is gone and its logs weren't kept", rel.Number, ss)
 }
 
-// sendLogs sends a stream's lines as they come, masked by red; lines
-// queued behind the first go out in the same write. Every line a client
+// sendLogs sends a stream's lines as they come, masked by red, then
+// filtered by q.match; lines queued behind the first go out in the same
+// write, and a batch the filter empties isn't sent. Every line a client
 // gets from ServiceLogs, from Docker, an archive or the saved lines,
 // passes here.
-func sendLogs(lines <-chan node.LogLine, red *redactor, send func(...apitypes.LogLine) error) error {
-	logLine := func(l node.LogLine) apitypes.LogLine {
-		text, _ := red.line(l.Text)
-		return apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: text}
-	}
+func sendLogs(lines <-chan node.LogLine, red *redactor, q LogQuery, send func(...apitypes.LogLine) error) error {
 	batch := make([]apitypes.LogLine, 0, logSendBatch)
+	add := func(l node.LogLine) {
+		text, _ := red.line(l.Text)
+		if ll := (apitypes.LogLine{Time: l.Time, Stream: l.Stream, Text: text}); q.match(ll) {
+			batch = append(batch, ll)
+		}
+	}
 	for l := range lines {
-		batch = append(batch[:0], logLine(l))
+		batch = batch[:0]
+		add(l)
 		open := true
 	drain:
 		for open && len(batch) < logSendBatch {
 			select {
 			case l, ok := <-lines:
 				if open = ok; ok {
-					batch = append(batch, logLine(l))
+					add(l)
 				}
 			default:
 				break drain
 			}
 		}
-		if err := send(batch...); err != nil {
-			return err
+		if len(batch) > 0 {
+			if err := send(batch...); err != nil {
+				return err
+			}
 		}
 		if !open {
 			return nil
