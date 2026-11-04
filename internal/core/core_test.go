@@ -509,21 +509,24 @@ func TestArchiveStopsInBackground(t *testing.T) {
 
 	release()
 	h.waitRunning()
+	// The port is freed before the stop is recorded as an event.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if ports, _ := h.c.store.ListUsedHostPorts(h.ctx, ss.env.ServerID); len(ports) == 0 {
+		ports, _ := h.c.store.ListUsedHostPorts(h.ctx, ss.env.ServerID)
+		r1, _ := h.c.GetRelease(h.ctx, testSystem, web, 1)
+		stopped := slices.ContainsFunc(r1.Events, func(e apitypes.ReleaseEvent) bool {
+			return strings.HasPrefix(e.Message, "Stopped release 1")
+		})
+		if len(ports) == 0 && stopped {
+			if r1.Status != apitypes.ReleaseSuperseded {
+				t.Fatalf("release 1 = %s", r1.Status)
+			}
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("port never freed")
+			t.Fatalf("ports %v, release 1 = %s, events %+v", ports, r1.Status, r1.Events)
 		}
 		time.Sleep(2 * time.Millisecond)
-	}
-	r1, _ := h.c.GetRelease(h.ctx, testSystem, web, 1)
-	if r1.Status != apitypes.ReleaseSuperseded || !slices.ContainsFunc(r1.Events, func(e apitypes.ReleaseEvent) bool {
-		return strings.HasPrefix(e.Message, "Stopped release 1")
-	}) {
-		t.Fatalf("release 1 = %s, events %+v", r1.Status, r1.Events)
 	}
 }
 
