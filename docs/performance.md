@@ -166,7 +166,7 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Alerts on the tick | `internal/core/alerts.go` | with the statistics tick | always (ADR 0020) | in memory: disk use and offline time per server, quiet crash loops; one reminder query only while alerts are open (part of `BenchmarkStatsTick50`) |
 | Health restarts on the tick | `internal/core/health.go` | with the statistics tick | always (ADR 0043) | in memory: one map walk; for an unhealthy service whose backoff ran out, an inspect, two queries and a restart |
 | Ongoing health probe | Docker, inside each app container (`cmd/dock-probe`) | 30 s per container (`health_check_interval_seconds`); 2 s during a start period | a service with something to probe runs (ADR 0043) | one exec of dock-probe by Docker: a connect and at most one HTTP request, ~4 MB for a few ms in the app's cgroup. Nothing in the daemon: it reads the result from Docker's event stream |
-| Retention pass | `internal/core/retention.go` | at most hourly, on the statistics tick | always (ADR 0020) | three indexed reads when nothing is due (`BenchmarkRetentionPass`, ~50 µs); otherwise batches of 200 deletes, 10 per kind |
+| Retention pass | `internal/core/retention.go` | at most hourly, on the statistics tick | always (ADR 0020) | three indexed reads when nothing is due (`BenchmarkRetentionPass`, ~50 µs); otherwise batches of 200 deletes, 10 per kind. In the background, one service ID list and one `prune-logs` call per online server: a directory listing per service with log history (ADR 0046) |
 | Disk prune | `internal/core/retention.go` | at most hourly per server, on the statistics tick | a server's Docker disk is past `prune_disk_percent` | one image list and removals, a BuildKit prune on builders, in the background |
 | Alert delivery retry | `internal/core/alerts_notify.go` | 0, 10 s, 1 min, 5 min, 15 min | a channel has notifications queued | one HTTP POST or SMTP session per attempt |
 | Live statistics | `internal/core/stats.go` | 3 s | someone watches a server or service live | the same reads for what is watched |
@@ -251,7 +251,12 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
   (`io.LimitReader`), like `dock.toml`.
 - **No unbounded caches or maps.** Anything kept in memory has a size bound
   or is keyed by something finite and removed when it goes away (a
-  subscription, a deploy). App logs are read from Docker, never stored.
+  subscription, a deploy). App logs are read from Docker while their
+  container exists. A removed container's log is streamed once into a
+  gzip archive on its server (ADR 0046), bounded per service by `[logs]`,
+  and read back line by line; a tail keeps only its N lines in memory
+  (`BenchmarkArchivedLogsTail`). No timer of its own: archiving happens
+  when a container is removed, pruning on the hourly retention pass.
 - The analytics ingest takes requests from anyone on the internet, so it
   is capped (`internal/analytics/ingest`): a replay chunk is checked
   (site records, not a bot, the day's salt, rules, rate limits) before

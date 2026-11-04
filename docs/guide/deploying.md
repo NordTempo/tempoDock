@@ -76,6 +76,18 @@ Build output is kept per release: `dock logs --build` (the newest build),
 `dock logs --build --release 41`. Service output: `dock logs`, with
 `--follow`, `--since 10m`, `--tail 500` and `--release N`.
 
+A release's output outlives its container. When a release is replaced,
+fails or is archived, Dock copies what its container wrote to the server
+it ran on before removing it, so `dock logs --release 41` still shows
+last night's crash in the release before this one (`--follow` ends after
+it). The logs tab has the same in its release list: the live release
+first, then earlier ones with kept output. Each service keeps the newest
+64 MB (compressed) for 30 days; `[logs]` in
+[config.toml](install.md#configtoml) changes that. A server running a
+dock older than the control plane keeps only a failed release's last 200
+lines, on the control plane. Output a running container wrote before
+Docker rotated it (30 MB per container) is gone.
+
 ## Settings: where they come from
 
 For each setting, first match wins:
