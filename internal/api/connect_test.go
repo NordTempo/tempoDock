@@ -49,13 +49,22 @@ func (f *fixture) cacheService() <-chan struct{} {
 	if err != nil {
 		f.t.Fatal(err)
 	}
+	// Tunnels need the service running, which is reported just after the
+	// release goes active.
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(2 * time.Millisecond) {
 		r, err := f.core.GetRelease(ctx, sys, ref, rel.Number)
-		if err != nil || r.Status == apitypes.ReleaseActive {
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		svc, err := f.core.GetService(ctx, sys, ref)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		if r.Status == apitypes.ReleaseActive && svc.Status.State == apitypes.ServiceRunning {
 			break
 		}
-		if time.Now().After(deadline) || r.Status.Done() {
-			f.t.Fatalf("deploy: %s", r.Status)
+		if time.Now().After(deadline) || r.Status.Done() && r.Status != apitypes.ReleaseActive {
+			f.t.Fatalf("deploy: release %s, service %s", r.Status, svc.Status.State)
 		}
 	}
 	return ended
