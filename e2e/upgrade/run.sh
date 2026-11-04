@@ -30,7 +30,7 @@ IMAGE=upg-server:latest
 REPO=NordTempo/tempoDock
 
 say() { printf '\n== %s\n' "$*"; }
-in() { docker exec -i "$NAME" "$@"; }
+on() { docker exec -i "$NAME" "$@"; }
 
 # up builds the server image and starts a fresh server with FROM's assets in /root/rel.
 up() {
@@ -46,9 +46,9 @@ up() {
   # /var/lib/docker is an anonymous volume so `docker rm -v` takes it along.
   docker run -d --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock \
     -v /var/lib/docker --name "$NAME" --hostname "$NAME" "$IMAGE" >/dev/null
-  for _ in $(seq 60); do in docker info >/dev/null 2>&1 && break; sleep 1; done
-  in docker info >/dev/null
-  in mkdir -p /root/rel /root/upg
+  for _ in $(seq 60); do on docker info >/dev/null 2>&1 && break; sleep 1; done
+  on docker info >/dev/null
+  on mkdir -p /root/rel /root/upg
   for f in dock-linux-amd64 "dock-install-$FROM.tar.gz"; do docker cp "$WORK/rel/$FROM/$f" "$NAME:/root/rel/$f"; done
   docker cp "$HERE/server/." "$NAME:/root/upg/"
 }
@@ -56,11 +56,11 @@ up() {
 # install runs FROM's install.sh and saves the operator token and admin password.
 install() {
   say "install $FROM"
-  in bash -c "cd /root/rel && tar -xzf dock-install-$FROM.tar.gz && chmod +x dock-linux-amd64 \
+  on bash -c "cd /root/rel && tar -xzf dock-install-$FROM.tar.gz && chmod +x dock-linux-amd64 \
     && DOCK_BINARY=./dock-linux-amd64 DISABLE_TLS=true BASE_DOMAIN=upg.test LISTEN=127.0.0.1:7070 \
        ./deploy/install.sh > /root/upg/install.out 2> /root/upg/install.err"
-  in bash /root/upg/lib.sh save_credentials
-  gh auth token | in bash -c 'umask 027; cat > /etc/dock/github-token; chown root:dock /etc/dock/github-token'
+  on bash /root/upg/lib.sh save_credentials
+  gh auth token | on bash -c 'umask 027; cat > /etc/dock/github-token; chown root:dock /etc/dock/github-token'
 }
 
 # down removes the server and everything inside it.
@@ -69,7 +69,7 @@ down() {
   docker rm -fv "$NAME" >/dev/null 2>&1 || true
 }
 
-step() { in bash /root/upg/"$1".sh "${@:2}"; }
+step() { on bash /root/upg/"$1".sh "${@:2}"; }
 
 case "$STEP" in
   up) up ;;

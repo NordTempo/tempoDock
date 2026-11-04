@@ -3,7 +3,9 @@
 # whose binary is the current one, except that `dock serve` exits at once,
 # so the health check fails. `dock update apply vNEXT` must then put the
 # current binary, units and database back and come up on the old version
-# with the data. Run after an update, on the current version.
+# with the data. Run after an update, on the current version. The
+# updater's previous binary and backup are kept aside and put back, so
+# rollback.sh still goes back to the version before the real update.
 source /root/upg/lib.sh
 set +e
 R=$EV/failed-update.txt
@@ -33,7 +35,7 @@ grep -q '^\[updates\]' /etc/dock/config.toml || printf '\n[updates]\n' >> /etc/d
 sed -i "/^\[updates\]/a source = \"$SRC\"" /etc/dock/config.toml
 systemctl restart dock && wait_api
 
-before=$(db "SELECT count(*) FROM audit_events")
+rm -rf /var/lib/dock-update.keep && cp -a /var/lib/dock-update /var/lib/dock-update.keep
 start=$(date +%s)
 d update apply $NEXT 2>&1 | tee -a $R
 echo "apply returned after $(( $(date +%s) - start ))s" | tee -a $R
@@ -47,5 +49,6 @@ echo "variables same as after the first update: $(diff -q $EV/after/variables.tx
 cat $EV/failed/auth.txt $EV/failed/routes.txt | tee -a $R
 echo "integrity: $(cat $EV/failed/integrity.txt) migrations: $(cat $EV/failed/migrations.txt) secrets: $(cat $EV/failed/install.txt)" | tee -a $R
 
-# Put the release source back.
+# Put the release source and the update dir back, for rollback.sh.
 cp $U/config.toml.orig /etc/dock/config.toml && systemctl restart dock && wait_api
+rm -rf /var/lib/dock-update && mv /var/lib/dock-update.keep /var/lib/dock-update
