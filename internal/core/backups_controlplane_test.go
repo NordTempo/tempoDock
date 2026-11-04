@@ -294,7 +294,10 @@ func TestControlPlaneBackupHasTheAnalyticsStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the new store filled from the backup", func() bool { return storeEvents(h2) == 2 })
-	if _, err := os.Stat(filepath.Join(h2.opts.Config.DataDir, cpbackup.AnalyticsFile)); !os.IsNotExist(err) {
-		t.Errorf("the backup's snapshot is still there: %v", err)
-	}
+	// The snapshot goes once the store reports it took it, which can be
+	// after its events are readable.
+	eventually(t, "the backup's snapshot removed", func() bool {
+		_, err := os.Stat(filepath.Join(h2.opts.Config.DataDir, cpbackup.AnalyticsFile))
+		return os.IsNotExist(err)
+	})
 }
