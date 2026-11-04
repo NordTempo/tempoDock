@@ -1,10 +1,11 @@
 import { api, body } from "../../api/client";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
-import type { ApplyRequest } from "../../data/types";
+import type { ApplyRequest, ComposeImportRequest } from "../../data/types";
 
 // Project files (`dock apply FILE`, ADR 0049): plan one against the live
-// project, or stage it. Only the Apply file dialog uses these.
+// project, or stage it; and Compose files converted into one. Only the
+// Apply file dialog and New project's From Compose use these.
 
 type FileRequest = ApplyRequest & { project: string };
 
@@ -36,4 +37,24 @@ export const useStageFile = () =>
       ),
     // The project's tree holds its overview, services and staged changes.
     ({ project }) => [keys.project(project), ["audit"]],
+  );
+
+/**
+ * Converts a Compose file into a project file and plans it; with `apply`
+ * it creates the project, stages the file with the secrets' values and
+ * applies it (`dock import compose --apply`).
+ */
+export const useImportCompose = () =>
+  useAction(
+    ({ project, ...request }: ComposeImportRequest & { project: string }) =>
+      body(
+        api.POST("/api/v1/projects/{project}/import/compose", {
+          params: { path: { project } },
+          body: request,
+        }),
+      ),
+    ({ project, apply }) =>
+      apply
+        ? [keys.projects, keys.project(project), keys.servers, ["audit"]]
+        : [],
   );

@@ -30,7 +30,7 @@ Forces:
 | Format | The export's format, extended (still `version = 1`; old exports stay valid). New optional keys: `values` and `shared_values` (variables whose value is in the file: literals and references), `depends_on` (first-deploy order hint). `variables` and `shared_variables` keep meaning "names whose values are set separately" (secrets) |
 | Commands | `dock apply FILE [--plan\|--dry-run] [--prune] [--deploy] [-e ENV] [--project P]` stages a file; `dock apply` without FILE still applies staged changes. `dock import compose FILE [--project P] [-o OUT] [--apply]` |
 | API | `POST /projects/{p}/plan` (read) and `POST /projects/{p}/apply` (deploy), body `ApplyRequest`; `POST /projects/{p}/import/compose` converts and plans, and with `apply` stages too |
-| MCP | `plan_project_file` (read-only), `apply_project_file` (mutating), `import_compose` (mutating only with `apply`) |
+| MCP | `plan_project_file` (read-only), `apply_project_file` (mutating), `import_compose` (read-only: converts and plans; the agent stages the returned file with `apply_project_file`, sending secrets' values explicitly) |
 | UI | New project › "From Compose": paste or upload, see the file, warnings and plan, create. The environment's staged changes list the new kinds |
 | What applying does | Turns the plan into staged changes, nothing live. With `--deploy` it then applies each touched environment's staged changes, which is exactly `dock changes apply` |
 | New staged kinds | Service creation, service archiving, domain addition and removal (migration 0051). Variables, settings and volumes were staged already |
@@ -146,7 +146,8 @@ reviewed as a whole.
 ## Compose import
 
 `dock import compose docker-compose.yml` sends the file (and the `.env`
-and `env_file` files next to it) to the daemon, which converts it into a
+next to it; the `env_file` files it names when the daemon asks for them)
+to the daemon, which converts it into a
 project file and plans it. Nothing changes until `--apply`, which stages
 the file with the detected secrets' values and applies, after a
 confirmation. The UI does the same in New project.
@@ -157,7 +158,7 @@ confirmation. The UI does the same in New project.
 | `build` (context, dockerfile) | A source service: `dockerfile_path` inside the context. Deployed with `dock deploy` from the context, or a git connection |
 | `environment`, `env_file`, `.env` interpolation | `values`; secret-looking keys (password, secret, token, key, credential, private, salt) go to `variables` with their values kept out of the file and staged on apply; unresolved `${VAR}` without a default is a secret to set |
 | `ports`, `expose` | `port` (the container port). A service publishing a port gets a generated domain when the server has a base domain. More than one port: the first is used, a warning names the rest |
-| Named volumes | `volumes`. Bind mounts and tmpfs: warning, not mounted |
+| Named volumes | `volumes`. An anonymous volume becomes a named volume after its path (Dock never makes anonymous volumes: they leak one per container). Bind mounts and tmpfs: warning, not mounted |
 | `depends_on` | `depends_on` (order hint) |
 | `healthcheck` | `health_check_path` when the test is an HTTP GET (curl, wget) of localhost; otherwise a warning. `start_period` sets the timeout |
 | `command`, `entrypoint` | `start_command` (run with `sh -c` after the image's entrypoint) |

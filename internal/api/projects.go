@@ -176,6 +176,17 @@ func registerProjects(s *Server, a huma.API) {
 	}) (*out[apitypes.ApplyResult], error) {
 		return reply(s.core.ApplyProject(ctx, actor, in.Project, in.Body))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "import-compose", Method: http.MethodPost, Path: projectPathT + "/import/compose",
+		Summary: "Import a Docker Compose file", Tags: []string{"projects"},
+		Description: "Converts a docker-compose.yml into a project file and plans it: the file, warnings for everything that doesn't map exactly, the detected secrets (names only) and the plan. " +
+			"With `apply`, stages the file with the secrets' values (the Compose file's, or `values`) and applies it, as `apply` with `deploy` does. The project may not exist yet. Scope: read, or deploy with `apply`.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ProjectPath
+		Body apitypes.ComposeImportRequest
+	}) (*out[apitypes.ComposeImport], error) {
+		return reply(s.core.ImportCompose(ctx, actor, in.Project, in.Body))
+	})
 	// The same export as TOML, as `dock project export` prints it, so the
 	// UI can download it without a TOML encoder of its own.
 	authed(s, a, huma.Operation{

@@ -8,6 +8,7 @@ import { AuditDetail } from "./AuditDetail";
 const verbs: Record<string, string> = {
   "changes.apply": "apply changes",
   "changes.discard": "discard changes",
+  "changes.stage_file": "stage a project file",
   "domain.add": "add domain",
   "domain.remove": "remove domain",
   "environment.create": "create environment",
@@ -70,6 +71,7 @@ export const actionLabel = (action: string) => verbs[action] ?? action;
 const pastVerbs: Record<string, string> = {
   "changes.apply": "applied changes in",
   "changes.discard": "discarded changes in",
+  "changes.stage_file": "staged a project file in",
   "domain.add": "added",
   "domain.remove": "removed",
   "release.deploy": "deployed",

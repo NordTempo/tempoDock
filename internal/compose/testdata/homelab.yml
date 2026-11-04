@@ -1,0 +1,96 @@
+# A homelab stack with the parts Dock can't run.
+version: "3.8"
+
+networks:
+  proxy:
+    external: true
+
+services:
+  pihole:
+    image: pihole/pihole:latest
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    environment:
+      TZ: Europe/Oslo
+      WEBPASSWORD: ${PIHOLE_PASSWORD:?set a password}
+      FTLCONF_dns.listeningMode: all
+    volumes:
+      - ./etc-pihole:/etc/pihole
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "80:80/tcp"
+    restart: unless-stopped
+
+  jellyfin:
+    image: jellyfin/jellyfin:10.10
+    privileged: true
+    user: 1000:1000
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - jellyfin_config:/config
+      - type: bind
+        source: /mnt/media
+        target: /media
+        read_only: true
+      - type: tmpfs
+        target: /cache
+      - /transcodes
+    ports:
+      - 8096:8096
+      - target: 8920
+        published: 8920
+        protocol: tcp
+      - "7359:7359/udp"
+      - "127.0.0.1:1900:1900"
+    networks:
+      - proxy
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+      resources:
+        reservations:
+          memory: 256m
+    mem_limit: 2g
+    entrypoint: ["/jellyfin/jellyfin"]
+    command: --datadir /config --cachedir /cache
+    healthcheck:
+      test: ["CMD", "curl", "-X", "POST", "http://localhost:8096/health"]
+    labels:
+      traefik.enable: "true"
+    gpus: all
+    sidecar_mode: enabled
+
+  Mariadb_Main:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpass}
+      MARIADB_DATABASE: nextcloud
+    volumes:
+      - db.data:/var/lib/mysql:ro
+      - db.data:/backup
+    ports:
+      - "3306:3306"
+
+  nextcloud:
+    image: nextcloud:30-apache
+    environment:
+      MYSQL_HOST: Mariadb_Main
+      MYSQL_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpass}
+      NEXTCLOUD_URL: http://Mariadb_Main:3306/x
+      OVERWRITEPROTOCOL: https
+    volumes:
+      - db.data:/var/www/html/data
+    ports:
+      - 8080:80
+    depends_on:
+      Mariadb_Main:
+        condition: service_completed_successfully
+      missing_service: {}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: "no"

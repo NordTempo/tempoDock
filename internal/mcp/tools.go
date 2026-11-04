@@ -206,6 +206,29 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			return mcpkit.Reply{Summary: summary, Data: map[string]any{"plan": res.Plan, "staged": res.Staged, "applied": res.Applied, "releases": views}}, nil
 		})
 
+	mcpkit.AddTool(s, "import_compose", "Convert a Compose file",
+		"Convert a docker-compose.yml into a Dock project file and plan it: the file, warnings for everything that doesn't map exactly (nothing is dropped silently), the secrets it found (names only) and the plan. "+
+			"postgres and redis images become Dock's database templates. Nothing changes: stage the returned file with apply_project_file, sending the secrets' values in values.",
+		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
+			ProjectInput
+			Compose  string            `json:"compose" doc:"The docker-compose.yml."`
+			EnvFiles map[string]string `json:"env_files,omitempty" doc:"Files it reads: env_file paths as written in it, and .env for ${VAR} interpolation."`
+		}) (mcpkit.Reply, error) {
+			p, err := projectOf(c, in.ProjectInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			res, err := h.core.ImportCompose(ctx, c.Actor, p, apitypes.ComposeImportRequest{Compose: in.Compose, EnvFiles: in.EnvFiles})
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			summary := fmt.Sprintf("Converted into project %s with %d warnings and %d secrets. ", p, len(res.Warnings), len(res.Secrets)) + planSummary(res.Plan)
+			for _, b := range res.Builds {
+				summary += fmt.Sprintf(" %s builds from %s: deploy it from there after applying.", b.Service, b.Context)
+			}
+			return mcpkit.Reply{Summary: summary, Data: res}, nil
+		})
+
 	mcpkit.AddTool(s, "service_status", "Service status",
 		"One service's live state: running, crashed (with exit code and restarts, OOM kills), its active release and its latest release if that one failed or is still deploying.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {

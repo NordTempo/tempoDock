@@ -3,6 +3,7 @@ package apitypes
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -102,10 +103,19 @@ type GitExport struct {
 // TOML renders the export as `dock project export` prints it and the UI
 // downloads it: a header saying what it is, then the manifest.
 func (ex ProjectExport) TOML() ([]byte, error) {
+	return ex.TOMLWith(fmt.Sprintf("Tempo Dock project %s, exported with `dock project export`.\n", ex.Project) +
+		"Settings as they are live. Secrets are names only (variables); values holds only references.\n" +
+		"Apply it with `dock apply FILE --plan`, then without --plan to stage it.\n")
+}
+
+// TOMLWith renders the manifest after header, each of its lines a TOML
+// comment.
+func (ex ProjectExport) TOMLWith(header string) ([]byte, error) {
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "# Tempo Dock project %s, exported with `dock project export`.\n", ex.Project)
-	b.WriteString("# Settings as they are live. Secrets are names only (variables); values holds only references.\n")
-	b.WriteString("# Apply it with `dock apply FILE --plan`, then without --plan to stage it.\n\n")
+	for line := range strings.Lines(header) {
+		b.WriteString("# " + line)
+	}
+	b.WriteString("\n")
 	enc := toml.NewEncoder(&b)
 	enc.SetIndentTables(true)
 	if err := enc.Encode(ex); err != nil {

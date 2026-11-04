@@ -24,11 +24,8 @@ export default function CreateDialog({
         </Dialog>
       );
     case "project":
-      return (
-        <Dialog title="New project" onClose={onClose}>
-          <NewProject onClose={onClose} />
-        </Dialog>
-      );
+      // Its own dialog: From Compose widens it.
+      return <NewProject onClose={onClose} />;
     case "environment":
       return (
         <Dialog
