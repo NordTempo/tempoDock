@@ -181,48 +181,61 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	if own || rel.Status != string(apitypes.ReleaseActive) {
 		return // the daemon is stopping it, or it isn't the active container
 	}
-	s := c.getStatus(ss.svc.ID)
-	s.UpdatedAt = nil
-	if (ev.Action == "die" || ev.Action == "start" || ev.Action == "restart") && c.health.ownEvent(ev, time.Now()) {
+	// The status is changed in place under its lock (changeStatus): a
+	// read here and a write after the work below would undo what the
+	// deploy's cutover or the health watch set meanwhile.
+	now := time.Now()
+	if (ev.Action == "die" || ev.Action == "start" || ev.Action == "restart") && c.health.ownEvent(ev, now) {
 		// A health restart (health.go): not a crash, and not counted in
 		// RestartCount; HealthRestarts counts it.
-		switch ev.Action {
-		case "die":
-			s.State = apitypes.ServiceRestarting
-		case "start":
+		if ev.Action == "restart" {
+			return // its last event: the restart is over
+		}
+		c.changeStatus(ss, func(s *apitypes.ServiceStatus) {
+			if ev.Action == "die" {
+				s.State = apitypes.ServiceRestarting
+				return
+			}
 			s.State = apitypes.ServiceRunning
 			if s.Health != "" {
 				s.Health = apitypes.HealthStarting
 			}
-		default: // its restart event: the restart is over
-			return
-		}
-		c.setStatus(ss, s)
+		})
 		return
 	}
+	var restarts, limitMB int
 	switch ev.Action {
-	case "start", "restart":
-		if s.State == apitypes.ServiceCrashed || s.State == apitypes.ServiceRestarting || ev.Action == "restart" {
-			s.RestartCount++
-		}
-		s.State = apitypes.ServiceRunning
-		if ev.Action == "start" && s.Health != "" {
-			s.Health = apitypes.HealthStarting // Docker starts its check over
-		}
+	case "start", "restart", "die", "destroy":
 	case "health_status":
-		s.Health = apitypes.HealthState(ev.Health)
-		s.HealthRestarts = c.onHealth(ss, ev.ContainerID, ev.Health, time.Now())
-	case "die":
-		s.State, s.ExitCode = apitypes.ServiceCrashed, ev.ExitCode
+		restarts = c.onHealth(ss, ev.ContainerID, ev.Health, now)
 	case "oom":
-		s.OOMKilled, s.MemoryLimitMB = true, c.memoryLimitMB(rel)
-	case "destroy":
-		s.State = apitypes.ServiceStopped
-		c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s was removed outside the platform", rel.Number, ss))
+		limitMB = c.memoryLimitMB(rel)
 	default:
 		return
 	}
-	c.setStatus(ss, s)
+	c.changeStatus(ss, func(s *apitypes.ServiceStatus) {
+		switch ev.Action {
+		case "start", "restart":
+			if s.State == apitypes.ServiceCrashed || s.State == apitypes.ServiceRestarting || ev.Action == "restart" {
+				s.RestartCount++
+			}
+			s.State = apitypes.ServiceRunning
+			if ev.Action == "start" && s.Health != "" {
+				s.Health = apitypes.HealthStarting // Docker starts its check over
+			}
+		case "health_status":
+			s.Health, s.HealthRestarts = apitypes.HealthState(ev.Health), restarts
+		case "die":
+			s.State, s.ExitCode = apitypes.ServiceCrashed, ev.ExitCode
+		case "oom":
+			s.OOMKilled, s.MemoryLimitMB = true, limitMB
+		case "destroy":
+			s.State = apitypes.ServiceStopped
+		}
+	})
+	if ev.Action == "destroy" {
+		c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s was removed outside the platform", rel.Number, ss))
+	}
 }
 
 // recover fails deploys that were in flight when the daemon stopped and

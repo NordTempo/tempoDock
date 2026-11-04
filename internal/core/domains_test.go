@@ -187,3 +187,54 @@ func TestPlatformHostnamesSkipVerification(t *testing.T) {
 		t.Fatalf("under the base domain: %+v, %v", dc.Domain, err)
 	}
 }
+
+// A domain added while the deploy publishing the service's port is in its
+// cutover (routes rendered, release not active yet) is still routed: its
+// AddDomain sees no published release and a deploy in flight, so it must
+// apply routes itself after that cutover. It once was left out until the
+// next routing change.
+func TestDomainAddedDuringCutoverIsRouted(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "nginx:1") // nothing published yet
+	upstreamFor := func(rs []node.Route, host string) string {
+		for _, r := range rs {
+			if slices.Contains(r.Hostnames, host) {
+				return r.Upstream
+			}
+		}
+		return ""
+	}
+	// Hold the cutover of the release that publishes the port.
+	held, release := h.rt.HoldApplyRoutes(func(rs []node.Route) bool { return upstreamFor(rs, "a.example.com") != "" })
+	defer release()
+	add := func(host string) error {
+		_, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: host})
+		return err
+	}
+	if err := add("a.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-held:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the publishing deploy never reached its cutover")
+	}
+	done := make(chan error, 1)
+	go func() { done <- add("b.example.com") }()
+	// With the fix it waits for the cutover; give it time to get past its
+	// look at the active release, then let the cutover finish.
+	select {
+	case err := <-done:
+		done <- err
+	case <-time.After(300 * time.Millisecond):
+	}
+	release()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, 2); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("release 2 is %s", r.Status)
+	}
+	h.until("b.example.com routed", func() bool { return upstreamFor(h.rt.Routes(), "b.example.com") != "" })
+}
