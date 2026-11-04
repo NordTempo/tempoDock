@@ -45,7 +45,7 @@ printf %s upgminio-secret-42 | d storage add minio --endpoint http://$GW:9000 --
   --access-key-id upgminio --secret-access-key-stdin || echo "storage add failed"
 d backup run -p shop -e production -s db || echo "local backup failed"
 d backup move --storage minio --yes || echo "backup move failed"
-for _ in $(seq 60); do d backup status | grep -q 'Moving the backups' || break; sleep 2; done
+for _ in $(seq 60); do [[ "$(d backup status)" == *'Moving the backups'* ]] || break; sleep 2; done
 d backup run -p shop -e production -s db || echo "backup run on minio failed"
 d backup run -p shop -e production -s rawpg || echo "rawpg has no volume to back up"
 d backup status
@@ -57,7 +57,7 @@ d alerts channel add ops --webhook https://hooks.example.com/dock --secret upg-w
 d alerts channel add slack --slack https://hooks.slack.example.com/services/T0/B0/x
 
 say "analytics"
-d analytics server upg-cp || echo "analytics server failed"
+d analytics server "$(hostname)" || echo "analytics server failed"
 d analytics enable shop.example.com || echo "analytics enable failed"
 
 say "tokens"
