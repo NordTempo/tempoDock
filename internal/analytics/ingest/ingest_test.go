@@ -2,13 +2,16 @@ package ingest
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -386,25 +389,41 @@ func gz(s string) []byte {
 	return b.Bytes()
 }
 
-func TestReplayChunks(t *testing.T) {
+// chunkQuery is a replay chunk's query as the recorder sends it.
+var chunkQuery = "g=0123456789abcdef&q=0&a=1000&b=4000&c=5000&n=12&u=" + url.QueryEscape("https://shop.example.com/cart?x=1")
+
+// replayIngest returns an ingest with a replay spool, and no site rules.
+func replayIngest(t *testing.T) (*Ingest, *spool.Spool) {
+	t.Helper()
 	in, _ := newIngest(t)
 	rp, err := spool.Open(t.TempDir(), spool.Options{MaxLine: analytics.MaxReplayLine})
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.Replay = rp
-	in.Rules = &Rules{}
+	in.Replay, in.Rules = rp, &Rules{}
+	return in, rp
+}
+
+// postChunk sends a replay chunk as Caddy would forward it, its body of
+// size bytes (-1: unknown) read from body.
+func postChunk(in *Ingest, query, ip, ua string, body io.Reader, size int64) int {
+	r := httptest.NewRequest(http.MethodPost, ReplayPath+"?"+query, body)
+	r.ContentLength = size
+	r.Host = "shop.example.com"
+	r.Header.Set(TagHeader, "3.40.981")
+	r.Header.Set(ClientIPHeader, ip)
+	r.Header.Set("User-Agent", ua)
+	w := httptest.NewRecorder()
+	in.ServeHTTP(w, r)
+	return w.Code
+}
+
+func TestReplayChunks(t *testing.T) {
+	in, rp := replayIngest(t)
 	send := func(query string, body []byte) int {
-		r := httptest.NewRequest(http.MethodPost, ReplayPath+"?"+query, bytes.NewReader(body))
-		r.Host = "shop.example.com"
-		r.Header.Set(TagHeader, "3.40.981")
-		r.Header.Set(ClientIPHeader, "203.0.113.9")
-		r.Header.Set("User-Agent", chromeMac)
-		w := httptest.NewRecorder()
-		in.ServeHTTP(w, r)
-		return w.Code
+		return postChunk(in, query, "203.0.113.9", chromeMac, bytes.NewReader(body), int64(len(body)))
 	}
-	q := "g=0123456789abcdef&q=0&a=1000&b=4000&c=5000&n=12&u=" + url.QueryEscape("https://shop.example.com/cart?x=1")
+	q := chunkQuery
 	data := gz(`[{"type":4,"timestamp":1000}]`)
 	// The site doesn't record: nothing kept.
 	if code := send(q, data); code != http.StatusAccepted || in.Stats().Replays.Load() != 0 {
@@ -453,5 +472,130 @@ func TestReplayChunks(t *testing.T) {
 	in.ServeHTTP(w, r)
 	if w.Code != http.StatusOK || w.Header().Get("Content-Encoding") != "gzip" || w.Body.Len() > 50<<10 {
 		t.Errorf("recorder: %d, %q, %d bytes", w.Code, w.Header().Get("Content-Encoding"), w.Body.Len())
+	}
+}
+
+// unread is a request body that fails the test when read: for chunks the
+// ingest must turn away before reading their bodies.
+type unread struct{ t *testing.T }
+
+func (u unread) Read([]byte) (int, error) {
+	u.t.Error("the body of a chunk that isn't kept was read")
+	return 0, io.EOF
+}
+
+func TestReplayRejectsBeforeReading(t *testing.T) {
+	records := node.SiteRules{ReplayPercent: 20}
+	for name, c := range map[string]struct {
+		rules  node.SiteRules
+		later  time.Duration
+		ua     string
+		query  string
+		size   int64
+		status int
+		stat   func(*Stats) *atomic.Int64
+	}{
+		"site doesn't record": {status: http.StatusAccepted, stat: func(s *Stats) *atomic.Int64 { return &s.Excluded }},
+		"bot":                 {rules: records, ua: "curl/8.5.0", status: http.StatusAccepted, stat: func(s *Stats) *atomic.Int64 { return &s.Bots }},
+		"no salt":             {rules: records, later: 48 * time.Hour, status: http.StatusAccepted, stat: func(s *Stats) *atomic.Int64 { return &s.NoSalt }},
+		"excluded path":       {rules: node.SiteRules{ReplayPercent: 20, ExcludedPaths: []string{"/cart"}}, status: http.StatusAccepted, stat: func(s *Stats) *atomic.Int64 { return &s.Excluded }},
+		"malformed":           {rules: records, query: "g=xyz", status: http.StatusBadRequest, stat: func(s *Stats) *atomic.Int64 { return &s.Invalid }},
+		"too big":             {rules: records, size: analytics.MaxReplayChunk + 1, status: http.StatusBadRequest, stat: func(s *Stats) *atomic.Int64 { return &s.Invalid }},
+	} {
+		in, _ := replayIngest(t)
+		in.Rules.load(map[int64]node.SiteRules{3: c.rules})
+		in.Now = func() time.Time { return now.Add(c.later) }
+		code := postChunk(in, cmpStr(c.query, chunkQuery), "203.0.113.9", cmpStr(c.ua, chromeMac), unread{t}, cmp.Or(c.size, 100))
+		if n := c.stat(in.Stats()).Load(); code != c.status || n != 1 {
+			t.Errorf("%s: status %d, want %d; counted %d", name, code, c.status, n)
+		}
+	}
+}
+
+func TestReplaysInFlight(t *testing.T) {
+	in, _ := replayIngest(t)
+	in.Rules.load(map[int64]node.SiteRules{3: {ReplayPercent: 20}})
+	in.replaying.Store(maxReplays)
+	if code := postChunk(in, chunkQuery, "203.0.113.9", chromeMac, unread{t}, 100); code != http.StatusServiceUnavailable || in.Stats().Limited.Load() != 1 {
+		t.Fatalf("with %d chunks in flight: status %d, %d limited", maxReplays, code, in.Stats().Limited.Load())
+	}
+	in.replaying.Store(maxReplays - 1)
+	data := gz(`[{"type":4,"timestamp":1000}]`)
+	if code := postChunk(in, chunkQuery, "203.0.113.9", chromeMac, bytes.NewReader(data), int64(len(data))); code != http.StatusAccepted ||
+		in.Stats().Replays.Load() != 1 || in.replaying.Load() != maxReplays-1 {
+		t.Errorf("a free slot: status %d, %d kept, %d in flight after", code, in.Stats().Replays.Load(), in.replaying.Load())
+	}
+}
+
+func TestRateLimits(t *testing.T) {
+	in, _ := replayIngest(t)
+	in.limits.seed = 1 // the addresses below get slots of their own
+	in.Rules.load(map[int64]node.SiteRules{3: {ReplayPercent: 20}})
+	page := `{"k":1,"u":"https://shop.example.com/"}`
+	for range eventsPerIP + 1 {
+		if w := post(in, "shop.example.com", page, chromeMac, "203.0.113.9"); w.Code != http.StatusAccepted {
+			t.Fatalf("status %d", w.Code)
+		}
+	}
+	if in.Stats().Accepted.Load() != eventsPerIP || in.Stats().Limited.Load() != 1 {
+		t.Errorf("%d events kept and %d limited, want %d and 1", in.Stats().Accepted.Load(), in.Stats().Limited.Load(), eventsPerIP)
+	}
+	post(in, "shop.example.com", page, chromeMac, "203.0.113.10")
+	in.Now = func() time.Time { return now.Add(time.Second) }
+	post(in, "shop.example.com", page, chromeMac, "203.0.113.9")
+	if in.Stats().Accepted.Load() != eventsPerIP+2 {
+		t.Error("another address, or the same in the next second, was limited")
+	}
+
+	in.Now = func() time.Time { return now }
+	data := gz(`[{"type":4,"timestamp":1000}]`)
+	for range replaysPerIP {
+		if code := postChunk(in, chunkQuery, "203.0.113.9", chromeMac, bytes.NewReader(data), int64(len(data))); code != http.StatusAccepted {
+			t.Fatalf("status %d", code)
+		}
+	}
+	if code := postChunk(in, chunkQuery, "203.0.113.9", chromeMac, unread{t}, int64(len(data))); code != http.StatusTooManyRequests {
+		t.Errorf("a chunk over the limit: status %d", code)
+	}
+	in.Now = func() time.Time { return now.Add(time.Second) }
+	if code := postChunk(in, chunkQuery, "203.0.113.9", chromeMac, bytes.NewReader(data), int64(len(data))); code != http.StatusAccepted ||
+		in.Stats().Replays.Load() != replaysPerIP+1 {
+		t.Errorf("the next second: status %d, %d kept", code, in.Stats().Replays.Load())
+	}
+}
+
+func TestLimiterSiteBytes(t *testing.T) {
+	l := limiter{seed: 1}
+	// Ten full chunks fit a site's second, from addresses of their own.
+	for i := range replayBytesPerSite / analytics.MaxReplayChunk {
+		if !l.allow(now, true, 3, "203.0.113."+strconv.Itoa(i), analytics.MaxReplayChunk) {
+			t.Fatalf("chunk %d was limited", i)
+		}
+	}
+	switch {
+	case l.allow(now, true, 3, "198.51.100.1", analytics.MaxReplayChunk):
+		t.Error("a chunk over the site's budget was allowed")
+	case !l.allow(now, true, 4, "198.51.100.1", analytics.MaxReplayChunk):
+		t.Error("another site's chunk was limited")
+	case !l.allow(now, false, 3, "198.51.100.1", 300):
+		t.Error("the site's events were limited by its replays")
+	case !l.allow(now.Add(time.Second), true, 3, "198.51.100.1", analytics.MaxReplayChunk):
+		t.Error("the site's next second was limited")
+	}
+	if !l.allow(now, false, 5, "198.51.100.1", eventBytesPerSite) || l.allow(now, false, 5, "198.51.100.2", 1) {
+		t.Error("events past the site's budget were allowed")
+	}
+}
+
+func TestLimiterIPv6(t *testing.T) {
+	l := limiter{seed: 1}
+	for i := range replaysPerIP {
+		l.allow(now, true, 3, "2001:db8:1:2::"+strconv.Itoa(i+1), 100)
+	}
+	if l.allow(now, true, 3, "2001:db8:1:2:ffff::1", 100) {
+		t.Error("another address in the same /64 was counted apart")
+	}
+	if !l.allow(now, true, 3, "2001:db8:1:3::1", 100) {
+		t.Error("the next /64 was limited")
 	}
 }

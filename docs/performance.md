@@ -106,7 +106,9 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
 the analytics ingest and spool (`BenchmarkIngestEvent`,
 `BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs;
 `BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs;
-`BenchmarkIngestReplay`, 27 µs for a 20 KB replay chunk) and the
+`BenchmarkIngestReplay`, 27 µs and 1 KB allocated for a 20 KB replay
+chunk, `BenchmarkIngestReplayMax` 3-10 KB for a full 384 KB one: bodies
+and lines come from a pool of their own) and the
 forwarder's error counting for alerts (`BenchmarkAnalyticsWritten`), and
 masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
@@ -250,6 +252,16 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 - **No unbounded caches or maps.** Anything kept in memory has a size bound
   or is keyed by something finite and removed when it goes away (a
   subscription, a deploy). App logs are read from Docker, never stored.
+- The analytics ingest takes requests from anyone on the internet, so it
+  is capped (`internal/analytics/ingest`): a replay chunk is checked
+  (site records, not a bot, the day's salt, rules, rate limits) before
+  its body is read, and at most 4 are read at once (503 past that), under
+  900 KB each, so 3.5 MB in all. Per address (IPv6: per /64) and second,
+  50 events and 5 replay chunks are kept; per site and second, 2 MB of
+  events and 4 MB of chunks. Past them an event gets the usual 202 and a
+  chunk 429. The counts are a 16 KB table and an entry per site, reset
+  by the first request of a new second, without a timer
+  (`BenchmarkIngestEventParallel/parallel=8`).
 - Project rename canonicalization keeps one current name per renamed project ID
   for the daemon's lifetime. It is bounded by projects, not rename count, and
   avoids DB reads for in-flight events. There are no historical aliases or timers
