@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { queries, useAuditLog, useProjects } from "../../data/queries";
 import type { AuditEvent } from "../../data/types";
-import { Act, Button, Page, TitleRow } from "../../ui/kit";
+import { Act, Button, Page, PageBar } from "../../ui/kit";
 import { AuditTable } from "./AuditTable";
 import { type AuditSearch, MAX } from "./search";
 
@@ -116,10 +116,9 @@ export function AuditPage({
   ).length;
 
   return (
-    <Page gap="gap-4">
-      <TitleRow
+    <>
+      <PageBar
         title="Audit log"
-        context="Everything people and tokens did, newest first."
         actions={
           <Button
             small
@@ -129,143 +128,147 @@ export function AuditPage({
           </Button>
         }
       />
-      <form
-        aria-label="Filters"
-        className="flex flex-wrap items-center gap-2.5"
-        onSubmit={(e) => e.preventDefault()}
-      >
-        {withPlatform && (
-          <fieldset aria-label="Log" className="seg">
+      <Page gap="gap-4">
+        <form
+          aria-label="Filters"
+          className="flex flex-wrap items-center gap-2.5"
+          onSubmit={(e) => e.preventDefault()}
+        >
+          {withPlatform && (
+            <fieldset aria-label="Log" className="seg">
+              {(
+                [
+                  [undefined, "Organization"],
+                  [true, "Platform"],
+                ] as const
+              ).map(([platform, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={search.platform === platform}
+                  onClick={() => onSearch({ platform })}
+                >
+                  {label}
+                </button>
+              ))}
+            </fieldset>
+          )}
+          <fieldset aria-label="Actor type" className="seg">
             {(
               [
-                [undefined, "Organization"],
-                [true, "Platform"],
+                [undefined, "Everyone"],
+                ["token", "◇ Tokens"],
+                ["user", "○ People"],
               ] as const
-            ).map(([platform, label]) => (
+            ).map(([kind, label]) => (
               <button
                 key={label}
                 type="button"
-                aria-pressed={search.platform === platform}
-                onClick={() => onSearch({ platform })}
+                aria-pressed={search.kind === kind}
+                onClick={() => set({ kind })}
               >
                 {label}
               </button>
             ))}
           </fieldset>
-        )}
-        <fieldset aria-label="Actor type" className="seg">
-          {(
-            [
-              [undefined, "Everyone"],
-              ["token", "◇ Tokens"],
-              ["user", "○ People"],
-            ] as const
-          ).map(([kind, label]) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={search.kind === kind}
-              onClick={() => set({ kind })}
+          <select
+            aria-label="Actor"
+            value={search.actor ?? ""}
+            onChange={(e) => set({ actor: e.target.value || undefined })}
+            className="field py-[5px]"
+          >
+            <option value="">any actor</option>
+            {actors.map((a) => (
+              <option key={a}>{a}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Action"
+            value={search.action ?? ""}
+            onChange={(e) => set({ action: e.target.value || undefined })}
+            className="field py-[5px]"
+          >
+            <option value="">any action</option>
+            {actions.map(([prefix, label]) => (
+              <option key={prefix} value={prefix}>
+                {label}
+              </option>
+            ))}
+          </select>
+          {!search.platform && (
+            <select
+              aria-label="Project"
+              value={search.project ?? ""}
+              onChange={(e) =>
+                set({
+                  project: e.target.value || undefined,
+                  environment: undefined,
+                })
+              }
+              className="field py-[5px]"
             >
-              {label}
-            </button>
-          ))}
-        </fieldset>
-        <select
-          aria-label="Actor"
-          value={search.actor ?? ""}
-          onChange={(e) => set({ actor: e.target.value || undefined })}
-          className="field py-[5px]"
-        >
-          <option value="">any actor</option>
-          {actors.map((a) => (
-            <option key={a}>{a}</option>
-          ))}
-        </select>
-        <select
-          aria-label="Action"
-          value={search.action ?? ""}
-          onChange={(e) => set({ action: e.target.value || undefined })}
-          className="field py-[5px]"
-        >
-          <option value="">any action</option>
-          {actions.map(([prefix, label]) => (
-            <option key={prefix} value={prefix}>
-              {label}
-            </option>
-          ))}
-        </select>
-        {!search.platform && (
-          <select
-            aria-label="Project"
-            value={search.project ?? ""}
-            onChange={(e) =>
-              set({
-                project: e.target.value || undefined,
-                environment: undefined,
-              })
-            }
-            className="field py-[5px]"
+              <option value="">all projects</option>
+              {projects.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
+            </select>
+          )}
+          {search.project && (
+            <select
+              aria-label="Environment"
+              value={search.environment ?? ""}
+              onChange={(e) =>
+                set({ environment: e.target.value || undefined })
+              }
+              className="field py-[5px]"
+            >
+              <option value="">all environments</option>
+              {environments.map((e) => (
+                <option key={e}>{e}</option>
+              ))}
+            </select>
+          )}
+          <input
+            aria-label="Search"
+            placeholder="search target"
+            value={search.q ?? ""}
+            onChange={(e) => set({ q: e.target.value || undefined })}
+            className="field min-w-0 flex-[1_1_180px] py-[5px]"
+          />
+          <button
+            type="button"
+            onClick={() => onSearch({})}
+            className="text-mut hover:text-fg"
           >
-            <option value="">all projects</option>
-            {projects.map((p) => (
-              <option key={p}>{p}</option>
-            ))}
-          </select>
-        )}
-        {search.project && (
-          <select
-            aria-label="Environment"
-            value={search.environment ?? ""}
-            onChange={(e) => set({ environment: e.target.value || undefined })}
-            className="field py-[5px]"
-          >
-            <option value="">all environments</option>
-            {environments.map((e) => (
-              <option key={e}>{e}</option>
-            ))}
-          </select>
-        )}
-        <input
-          aria-label="Search"
-          placeholder="search target"
-          value={search.q ?? ""}
-          onChange={(e) => set({ q: e.target.value || undefined })}
-          className="field min-w-0 flex-[1_1_180px] py-[5px]"
-        />
-        <button
-          type="button"
-          onClick={() => onSearch({})}
-          className="text-mut hover:text-fg"
-        >
-          Clear
-        </button>
-      </form>
-      <p>
-        Last 24h
-        {search.project
-          ? ` in ${search.project}${search.environment ? `/${search.environment}` : ""}`
-          : ""}
-        :{" "}
-        <b className="font-semibold">
-          {deploys.length} {deploys.length === 1 ? "deploy" : "deploys"}
-          {byTokens > 0 && `, ${byTokens} by tokens`}
-        </b>
-        , {byPeople} {byPeople === 1 ? "change" : "changes"} by people.
-      </p>
-      <AuditTable events={shown} />
-      <div className="flex flex-wrap items-center gap-3 text-xs text-mut">
-        <span>
-          <span className="text-info">◇</span> token · ○ person · the newest{" "}
-          {search.limit ?? PAGE} events
-          {search.action ? " of this kind" : ""}
-        </span>
-        {!search.limit && events.length === PAGE && (
-          <Act small cli={cli} onClick={() => set({ limit: MAX })}>
-            Show up to {MAX}
-          </Act>
-        )}
-      </div>
-    </Page>
+            Clear
+          </button>
+        </form>
+        <p>
+          Last 24h
+          {search.project
+            ? ` in ${search.project}${search.environment ? `/${search.environment}` : ""}`
+            : ""}
+          :{" "}
+          <b className="font-semibold">
+            {deploys.length} {deploys.length === 1 ? "deploy" : "deploys"}
+            {byTokens > 0 && `, ${byTokens} by tokens`}
+          </b>
+          , {byPeople} {byPeople === 1 ? "change" : "changes"} by people.
+        </p>
+        <AuditTable events={shown} />
+        <div className="flex flex-wrap items-center gap-3 text-xs text-mut">
+          <span>
+            <span className="text-info">◇</span> token · ○ person · the newest{" "}
+            {search.limit ?? PAGE} events
+            {search.action ? " of this kind" : ""}
+          </span>
+          {!search.limit && events.length === PAGE && (
+            <Act small cli={cli} onClick={() => set({ limit: MAX })}>
+              Show up to {MAX}
+            </Act>
+          )}
+        </div>
+      </Page>
+    </>
   );
 }

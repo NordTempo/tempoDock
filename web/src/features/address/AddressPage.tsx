@@ -7,9 +7,9 @@ import {
   CopyButton,
   ErrorText,
   Page,
+  PageBar,
   Panel,
   StateText,
-  TitleRow,
 } from "../../ui/kit";
 import { domainState } from "../../ui/status";
 import {
@@ -26,76 +26,79 @@ import {
 export function AddressPage() {
   const { data: address, refetch, isFetching } = useAddress();
   return (
-    <Page width="max-w-[900px]" gap="gap-5">
-      <TitleRow title="Address" context="Where people and the CLI reach Dock" />
-      <Panel>
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-36 py-2.5 text-faint">Public address</td>
-              <td className="py-1.5">
-                <HostnameForm address={address} />
-              </td>
-            </tr>
-            {address.hostname && address.status && (
+    <>
+      <PageBar title="Address" />
+      <Page width="max-w-[900px]" gap="gap-5">
+        <Panel>
+          <table>
+            <tbody>
               <tr>
-                <td className="py-2.5 text-faint">Status</td>
-                <td className="py-1.5 whitespace-normal">
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <StateText
-                      state={domainState({ status: address.status })}
-                    />
-                    {address.checked_at && (
-                      <span className="text-faint">
-                        · checked {ago(address.checked_at)}
+                <td className="w-36 py-2.5 text-faint">Public address</td>
+                <td className="py-1.5">
+                  <HostnameForm address={address} />
+                </td>
+              </tr>
+              {address.hostname && address.status && (
+                <tr>
+                  <td className="py-2.5 text-faint">Status</td>
+                  <td className="py-1.5 whitespace-normal">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <StateText
+                        state={domainState({ status: address.status })}
+                      />
+                      {address.checked_at && (
+                        <span className="text-faint">
+                          · checked {ago(address.checked_at)}
+                        </span>
+                      )}
+                      {address.status !== "active" && (
+                        <Act
+                          small
+                          cli="dock address"
+                          disabled={isFetching}
+                          onClick={() => refetch()}
+                        >
+                          Check again
+                        </Act>
+                      )}
+                    </span>
+                    {address.status_reason && (
+                      <span
+                        className={`block ${address.status === "error" ? "text-fail" : "text-mut"}`}
+                      >
+                        {address.status_reason}
                       </span>
                     )}
-                    {address.status !== "active" && (
-                      <Act
-                        small
-                        cli="dock address"
-                        disabled={isFetching}
-                        onClick={() => refetch()}
-                      >
-                        Check again
-                      </Act>
-                    )}
-                  </span>
-                  {address.status_reason && (
-                    <span
-                      className={`block ${address.status === "error" ? "text-fail" : "text-mut"}`}
-                    >
-                      {address.status_reason}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            )}
-            {address.hostname && (
+                  </td>
+                </tr>
+              )}
+              {address.hostname && (
+                <tr>
+                  <td className="py-2.5 text-faint">DNS</td>
+                  <td className="py-2.5 font-mono whitespace-normal">
+                    <DNS address={address} />
+                  </td>
+                </tr>
+              )}
               <tr>
-                <td className="py-2.5 text-faint">DNS</td>
-                <td className="py-2.5 font-mono whitespace-normal">
-                  <DNS address={address} />
+                <td className="py-2.5 text-faint">Private address</td>
+                <td className="py-2.5">
+                  <span className="font-mono">{address.private_url}</span>{" "}
+                  <span className="text-faint">· always on</span>
                 </td>
               </tr>
-            )}
-            <tr>
-              <td className="py-2.5 text-faint">Private address</td>
-              <td className="py-2.5">
-                <span className="font-mono">{address.private_url}</span>{" "}
-                <span className="text-faint">· always on</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </Panel>
-      <p className="text-faint">
-        Invite links and GitHub commit statuses use the public address once set.{" "}
-        <span className="font-mono">dock login {address.url ?? "<url>"}</span>{" "}
-        works from anywhere once it is active. Logins are rate limited per
-        visitor.
-      </p>
-    </Page>
+            </tbody>
+          </table>
+        </Panel>
+        <p className="text-faint">
+          Invite links and GitHub commit statuses use the public address once
+          set.{" "}
+          <span className="font-mono">dock login {address.url ?? "<url>"}</span>{" "}
+          works from anywhere once it is active. Logins are rate limited per
+          visitor.
+        </p>
+      </Page>
+    </>
   );
 }
 

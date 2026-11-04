@@ -5,9 +5,9 @@ import {
   Button,
   ErrorText,
   Page,
+  PageBar,
   Panel,
   SectionHead,
-  TitleRow,
 } from "../../ui/kit";
 import {
   type NewStorage,
@@ -28,10 +28,12 @@ export function StoragePage() {
   const [editing, setEditing] = useState<string>();
   const edited = storage.find((s) => s.name === editing);
   return (
-    <Page>
-      <TitleRow
+    <>
+      <PageBar
         title="Storage"
-        context="S3-compatible buckets: AWS, Hetzner, Cloudflare R2, Backblaze B2, MinIO, Garage"
+        after={
+          <span className="text-xs text-faint">S3-compatible buckets</span>
+        }
         actions={
           !adding && (
             <Button
@@ -45,59 +47,61 @@ export function StoragePage() {
           )
         }
       />
-      <section aria-labelledby="connections" className="flex flex-col gap-2">
-        <SectionHead
-          id="connections"
-          aside="the registry keeps its images in one after a migration"
-        >
-          Connections
-        </SectionHead>
-        {storage.length > 0 ? (
-          <Panel>
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Endpoint</th>
-                  <th>Bucket</th>
-                  <th>Region</th>
-                  <th>Addressing</th>
-                  <th>Used by</th>
-                  <th>Changed</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {storage.map((s) => (
-                  <StorageRow
-                    key={s.name}
-                    storage={s}
-                    onEdit={() => {
-                      setAdding(false);
-                      setEditing(s.name);
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </Panel>
-        ) : (
-          !adding && (
-            <p className="py-2 text-mut">
-              No storage yet. Images stay on the control plane's disk.
-            </p>
-          )
-        )}
-        {adding && <StorageForm onClose={() => setAdding(false)} />}
-        {edited && (
-          <StorageForm
-            key={edited.name}
-            storage={edited}
-            onClose={() => setEditing(undefined)}
-          />
-        )}
-      </section>
-    </Page>
+      <Page>
+        <section aria-labelledby="connections" className="flex flex-col gap-2">
+          <SectionHead
+            id="connections"
+            aside="the registry keeps its images in one after a migration"
+          >
+            Connections
+          </SectionHead>
+          {storage.length > 0 ? (
+            <Panel>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Endpoint</th>
+                    <th>Bucket</th>
+                    <th>Region</th>
+                    <th>Addressing</th>
+                    <th>Used by</th>
+                    <th>Changed</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {storage.map((s) => (
+                    <StorageRow
+                      key={s.name}
+                      storage={s}
+                      onEdit={() => {
+                        setAdding(false);
+                        setEditing(s.name);
+                      }}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </Panel>
+          ) : (
+            !adding && (
+              <p className="py-2 text-mut">
+                No storage yet. Images stay on the control plane's disk.
+              </p>
+            )
+          )}
+          {adding && <StorageForm onClose={() => setAdding(false)} />}
+          {edited && (
+            <StorageForm
+              key={edited.name}
+              storage={edited}
+              onClose={() => setEditing(undefined)}
+            />
+          )}
+        </section>
+      </Page>
+    </>
   );
 }
 
@@ -155,7 +159,7 @@ function StorageRow({
             <Button
               small
               disabled={used}
-              title={used ? "in use; move the registry's images first" : ""}
+              reason="in use; move the registry's images first"
               onClick={() => setConfirming(true)}
             >
               Remove
@@ -166,8 +170,6 @@ function StorageRow({
     </tr>
   );
 }
-
-const field = "field py-[7px]";
 
 /**
  * Adds a connection, or changes one (storage). When changing, blank keys
@@ -251,7 +253,7 @@ function StorageForm({
             value={v.name}
             onChange={set("name")}
             placeholder="hetzner"
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
         <label className="flex flex-[3_1_320px] flex-col gap-1.5">
@@ -263,7 +265,7 @@ function StorageForm({
             onChange={set("endpoint")}
             disabled={inUse}
             placeholder="https://fsn1.your-objectstorage.com"
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
       </div>
@@ -275,7 +277,7 @@ function StorageForm({
             onChange={set("bucket")}
             disabled={inUse}
             placeholder="dock-images"
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
         <label className="flex flex-[1_1_140px] flex-col gap-1.5">
@@ -286,7 +288,7 @@ function StorageForm({
             value={v.region}
             onChange={set("region")}
             placeholder="fsn1"
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
       </div>
@@ -298,7 +300,7 @@ function StorageForm({
             onChange={set("keyId")}
             placeholder={storage ? "unchanged" : ""}
             autoComplete="off"
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
         <label className="flex flex-[1_1_180px] flex-col gap-1.5">
@@ -309,7 +311,7 @@ function StorageForm({
             onChange={set("secret")}
             placeholder={storage ? "unchanged" : ""}
             autoComplete="new-password"
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
       </div>

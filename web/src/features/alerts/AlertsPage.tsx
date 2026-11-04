@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, list } from "../../api/client";
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { since } from "../../ui/format";
 import {
   Act,
@@ -9,9 +10,9 @@ import {
   ErrorText,
   Glyph,
   Page,
+  PageBar,
   Panel,
   SectionHead,
-  TitleRow,
 } from "../../ui/kit";
 import { toneText } from "../../ui/status";
 import {
@@ -58,54 +59,58 @@ export function AlertsPage() {
     .slice(0, more ? MAX : HISTORY);
   const critical = open.filter((a) => a.severity === "critical").length;
   return (
-    <Page>
-      <TitleRow
+    <>
+      <PageBar
         title="Alerts"
-        context={
-          open.length === 0
-            ? "Nothing open"
-            : `${open.length} open${critical ? ` · ${critical} critical` : ""}`
-        }
-        actions={
-          <span className="self-center font-mono text-2xs text-mut">
-            dock alerts
+        after={
+          <span className="text-xs text-faint">
+            {open.length === 0
+              ? "nothing open"
+              : `${open.length} open${critical ? ` · ${critical} critical` : ""}`}
           </span>
         }
+        actions={
+          <span className="font-mono text-2xs text-mut">dock alerts</span>
+        }
       />
-      {open.length > 0 && (
-        <section aria-labelledby="open">
-          <SectionHead id="open">Open</SectionHead>
-          <AlertTable alerts={open} resolvable />
-        </section>
-      )}
-      <section aria-labelledby="history">
-        <SectionHead
-          id="history"
-          aside={`last ${more ? MAX : HISTORY}`}
-          right={
-            !more &&
-            resolved.length === HISTORY && (
-              <Act
-                small
-                cli={`dock alerts --all --limit ${MAX}`}
-                onClick={() => setMore(true)}
-              >
-                Show up to {MAX}
-              </Act>
-            )
-          }
-        >
-          Resolved
-        </SectionHead>
-        {resolved.length > 0 ? (
-          <AlertTable alerts={resolved} />
-        ) : (
-          <p className="py-2 text-mut">None yet.</p>
+      <Page>
+        {open.length > 0 && (
+          <section aria-labelledby="open">
+            <SectionHead id="open">Open</SectionHead>
+            <AlertTable alerts={open} resolvable />
+          </section>
         )}
-        <ErrorText error={older.error} />
-      </section>
-      <Channels />
-    </Page>
+        <section aria-labelledby="history">
+          <SectionHead
+            id="history"
+            aside={`last ${more ? MAX : HISTORY}`}
+            right={
+              !more &&
+              resolved.length === HISTORY && (
+                <Act
+                  small
+                  cli={`dock alerts --all --limit ${MAX}`}
+                  onClick={() => setMore(true)}
+                >
+                  Show up to {MAX}
+                </Act>
+              )
+            }
+          >
+            Resolved
+          </SectionHead>
+          {resolved.length > 0 ? (
+            <AlertTable alerts={resolved} />
+          ) : (
+            <p className="py-2 text-mut">None yet.</p>
+          )}
+          {older.error && (
+            <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
+          )}
+        </section>
+        <Channels />
+      </Page>
+    </>
   );
 }
 
@@ -372,7 +377,6 @@ function AddChannel({ onClose }: { onClose: () => void }) {
     );
   }
 
-  const field = "field py-[7px]";
   const cli = [
     `dock alerts channel add ${name.trim() || "<name>"}`,
     kind === "email"
@@ -438,7 +442,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="ops"
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
         <label className="flex flex-[1_1_180px] flex-col gap-1.5">
@@ -446,7 +450,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
           <select
             value={severity}
             onChange={(e) => setSeverity(e.target.value as Severity)}
-            className={field}
+            className="field py-[7px]"
           >
             <option value="warning">warning and critical</option>
             <option value="critical">critical only</option>
@@ -462,7 +466,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             step="any"
             value={hours}
             onChange={(e) => setHours(e.target.value)}
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
       </div>
@@ -505,7 +509,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
                 value={smtp[k]}
                 onChange={set(k)}
                 type={k === "password" ? "password" : "text"}
-                className={`${field} font-mono`}
+                className="field py-[7px] font-mono"
               />
             </label>
           ))}
@@ -519,7 +523,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://hooks.slack.com/services/…"
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
       )}
@@ -536,7 +540,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             autoComplete="off"
             value={signing}
             onChange={(e) => setSigning(e.target.value)}
-            className={`${field} font-mono`}
+            className="field py-[7px] font-mono"
           />
         </label>
       )}

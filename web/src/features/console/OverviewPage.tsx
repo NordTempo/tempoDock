@@ -13,10 +13,10 @@ import {
   Facts,
   Glyph,
   Page,
+  PageBar,
   Panel,
   SectionHead,
   StateText,
-  TitleRow,
 } from "../../ui/kit";
 import {
   serverState,
@@ -41,45 +41,36 @@ const DISK_WARN = 85;
 
 export function ConsoleOverview() {
   const servers = useServers();
-  const version = useControlPlaneVersion();
-  const controlPlane = servers.find((s) => s.local);
   const online = servers.filter((s) => s.status === "online").length;
   return (
-    <Page width="max-w-[1240px]">
-      <TitleRow
-        title="Overview"
-        context={[
-          version && `dock ${version}`,
-          plural(servers.length, "server"),
-          controlPlane && `control plane on ${controlPlane.name}`,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      />
-      <Attention />
-      <Numbers online={online} />
-      <section aria-labelledby="servers">
-        <SectionHead
-          id="servers"
-          right={<Link to="/console/servers">All servers</Link>}
-        >
-          Servers
-        </SectionHead>
-        <ServerTable servers={servers} />
-      </section>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] gap-x-8 gap-y-7">
-        <OpenAlerts />
-        <section aria-labelledby="activity">
+    <>
+      <PageBar title="Overview" />
+      <Page width="max-w-[1240px]">
+        <Attention />
+        <Numbers online={online} />
+        <section aria-labelledby="servers">
           <SectionHead
-            id="activity"
-            right={<Link to="/console/audit">Audit</Link>}
+            id="servers"
+            right={<Link to="/console/servers">All servers</Link>}
           >
-            Recent activity
+            Servers
           </SectionHead>
-          <AuditTable events={useAuditLog().slice(0, 6)} compact />
+          <ServerTable servers={servers} />
         </section>
-      </div>
-    </Page>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] gap-x-8 gap-y-7">
+          <OpenAlerts />
+          <section aria-labelledby="activity">
+            <SectionHead
+              id="activity"
+              right={<Link to="/console/audit">Audit</Link>}
+            >
+              Recent activity
+            </SectionHead>
+            <AuditTable events={useAuditLog().slice(0, 6)} compact />
+          </section>
+        </div>
+      </Page>
+    </>
   );
 }
 

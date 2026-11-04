@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useServers } from "../../data/queries";
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { bytes } from "../../ui/format";
 import {
   Act,
@@ -9,8 +10,8 @@ import {
   Fact,
   Facts,
   Page,
+  PageBar,
   SectionHead,
-  TitleRow,
 } from "../../ui/kit";
 import {
   analyticsDefaultsQuery,
@@ -25,71 +26,82 @@ import { fields, flags, text, valid, value } from "./settings";
 // store's state, the server it runs on, and every site's default settings.
 
 export function AnalyticsConsole() {
-  const { data: status } = useSuspenseQuery(analyticsStatusQuery());
+  const { data: status, refetch } = useSuspenseQuery(analyticsStatusQuery());
   return (
-    <Page>
-      <TitleRow
+    <>
+      <PageBar
         title="Analytics"
-        context="cookieless visits, counted per site"
+        after={
+          <span className="text-xs text-faint">
+            cookieless visits, counted per site
+          </span>
+        }
       />
-      <Facts>
-        <Fact label="Analytics">{status.enabled ? "on" : "off"}</Fact>
-        <Fact
-          label="Server"
-          note={
-            status.server_online ? (
-              "online"
+      <Page>
+        <Facts>
+          <Fact label="Analytics">{status.enabled ? "on" : "off"}</Fact>
+          <Fact
+            label="Server"
+            note={
+              status.server_online ? (
+                "online"
+              ) : (
+                <span className="text-fail">offline</span>
+              )
+            }
+          >
+            {status.server}
+          </Fact>
+          <Fact
+            label="Store"
+            note={status.store_version && `version ${status.store_version}`}
+          >
+            {status.store_running ? (
+              "running"
+            ) : status.starting ? (
+              "starting"
+            ) : status.enabled ? (
+              <span className="text-warn-text">not answering</span>
             ) : (
-              <span className="text-fail">offline</span>
-            )
-          }
-        >
-          {status.server}
-        </Fact>
-        <Fact
-          label="Store"
-          note={status.store_version && `version ${status.store_version}`}
-        >
-          {status.store_running ? (
-            "running"
-          ) : status.starting ? (
-            "starting"
-          ) : status.enabled ? (
-            <span className="text-warn-text">not answering</span>
-          ) : (
-            "not started"
-          )}
-        </Fact>
-        <Fact
-          label="Events"
-          note={status.store_running ? bytes(status.store_bytes) : undefined}
-        >
-          {status.events.toLocaleString("en-US")}
-        </Fact>
-        <Fact label="Locations" note="IP Geolocation by DB-IP, CC BY 4.0">
-          {status.geoip || "not downloaded"}
-        </Fact>
-      </Facts>
-      {status.moving_to && (
-        <p>
-          Moving to {status.moving_to} with its data. Events wait on each server
-          meanwhile.
-        </p>
-      )}
-      {status.error && <p className="text-fail">{status.error}</p>}
-      {!status.enabled && (
-        <p className="text-mut">
-          The store starts when the first hostname is counted: on a service's
-          Analytics tab, or with <code>dock analytics enable</code>.
-        </p>
-      )}
-      <ServerPicker
-        current={status.server}
-        online={status.server_online}
-        moving={!!status.moving_to}
-      />
-      <Defaults />
-    </Page>
+              "not started"
+            )}
+          </Fact>
+          <Fact
+            label="Events"
+            note={status.store_running ? bytes(status.store_bytes) : undefined}
+          >
+            {status.events.toLocaleString("en-US")}
+          </Fact>
+          <Fact label="Locations" note="IP Geolocation by DB-IP, CC BY 4.0">
+            {status.geoip || "not downloaded"}
+          </Fact>
+        </Facts>
+        {status.moving_to && (
+          <p>
+            Moving to {status.moving_to} with its data. Events wait on each
+            server meanwhile.
+          </p>
+        )}
+        {status.error && (
+          <ErrorBlock
+            error={new Error(status.error)}
+            onRetry={() => refetch()}
+          />
+        )}
+        {!status.enabled && (
+          <p className="text-mut">
+            The store starts when the first hostname is counted: on a service's
+            Analytics tab, or with <code>dock analytics enable</code>.
+          </p>
+        )}
+        <ServerPicker
+          current={status.server}
+          online={status.server_online}
+          moving={!!status.moving_to}
+        />
+        <Defaults />
+      </Page>
+    </>
   );
 }
 
