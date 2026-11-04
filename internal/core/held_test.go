@@ -154,3 +154,39 @@ func TestHeldPush(t *testing.T) {
 		t.Fatalf("UI deploy: %+v", r)
 	}
 }
+
+// TestHeldSourceReplaceDecided: a newer upload that found the pending
+// request just before an admin decided it files a request of its own
+// instead of failing and deleting its archive.
+func TestHeldSourceReplaceDecided(t *testing.T) {
+	h := newRequestHarness(t)
+	web := ServiceRef{"shop", "production", "web"}
+	_, err := h.c.DeploySource(h.ctx, h.agent, web, sourceTar("v1"), 1<<20)
+	le, _ := errors.AsType[*LockedError](err)
+	if le == nil {
+		t.Fatal(err)
+	}
+	stale, err := h.c.store.GetAccessRequest(h.ctx, le.Request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.DecideRequest(h.ctx, h.admin, le.Request, false, apitypes.DecideAccessRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	// The newer upload, as fileRequest had it when it found stale pending.
+	name := "newer.tar"
+	if err := os.WriteFile(filepath.Join(h.opts.Config.DataDir, "requests", name), sourceTar("v2").Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	org, _ := h.c.store.GetOrg(h.ctx, le.OrgID)
+	nonce := randomHex(16)
+	sealed, _ := h.c.box.Seal([]byte(`{}`), sealedRequestArgs.AAD(nonce))
+	call := Call{Via: "source", Op: "deploy-source", Title: "Deploy source", Args: json.RawMessage(`{}`), Key: "service 1", Upload: name}
+	r, err := h.c.replaceRequest(h.ctx, h.agent, stale, le, call, nonce, sealed, org)
+	if err != nil || r.ID == le.Request || r.Status != "pending" || r.Upload != name {
+		t.Fatalf("replace a decided request: %+v %v", r, err)
+	}
+	if files := h.heldFiles(); len(files) != 1 || files[0] != name {
+		t.Fatalf("held files: %v", files)
+	}
+}

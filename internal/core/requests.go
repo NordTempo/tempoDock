@@ -116,10 +116,6 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 	if err != nil {
 		return store.AccessRequest{}, err
 	}
-	var tokenID *int64
-	if a.TokenID != 0 {
-		tokenID = &a.TokenID
-	}
 	nonce := randomHex(16)
 	sealed, err := c.box.Seal(args, sealedRequestArgs.AAD(nonce))
 	if err != nil {
@@ -138,6 +134,17 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 			c.publishRequest(r, le.Project, le.Environment)
 		}
 		return r, nil
+	}
+	return c.createRequest(ctx, a, le, call, fingerprint, nonce, sealed, org)
+}
+
+// createRequest stores a new pending request for call, or returns the
+// pending one an identical call filed meanwhile.
+func (c *Core) createRequest(ctx context.Context, a Actor, le *LockedError, call Call, fingerprint, nonce string, sealed []byte, org store.Org) (store.AccessRequest, error) {
+	t := now()
+	var tokenID *int64
+	if a.TokenID != 0 {
+		tokenID = &a.TokenID
 	}
 	mark, err := c.store.LatestEnvironmentAudit(ctx, &le.EnvID)
 	if err != nil {
@@ -176,13 +183,17 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 }
 
 // replaceRequest puts a newer call in a pending request of the same Key,
-// dropping the older one's held archive.
+// dropping the older one's held archive. If old stopped waiting since it
+// was read (decided or expired), the call files a request of its own.
 func (c *Core) replaceRequest(ctx context.Context, a Actor, old store.AccessRequest, le *LockedError, call Call, nonce string, sealed []byte, org store.Org) (store.AccessRequest, error) {
 	t := now()
 	r, err := c.store.ReplaceAccessRequest(ctx, store.ReplaceAccessRequestParams{
 		Nonce: nonce, Args: sealed, Upload: call.Upload, Reason: call.Reason, RequestedBy: a.Name,
 		CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)), ID: old.ID,
 	})
+	if store.IsNotFound(err) {
+		return c.createRequest(ctx, a, le, call, old.Fingerprint, nonce, sealed, org)
+	}
 	if err != nil {
 		c.dropUpload(call.Upload)
 		return r, err
