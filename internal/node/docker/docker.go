@@ -40,7 +40,8 @@ type Runtime struct {
 	pool netip.Prefix
 	// netMu serialises picking a free subnet and creating the network.
 	netMu sync.Mutex
-	// DataDir is dock's data dir, which DiskUsage measures; "" skips it.
+	// DataDir is dock's data dir, which DiskUsage measures and log
+	// archives live in (ADR 0046); "" skips both.
 	DataDir string
 	// Probe is the host path of the installed dock-probe (probe.Install),
 	// which Start bind-mounts into containers with a spec.Health; ""

@@ -184,6 +184,31 @@ type (
 		Keep  []string `json:"keep"`
 		Repos []string `json:"repos,omitempty"` // protocol 3
 	}
+	// archiveLogsRequest is ArchiveLogs' container and limits.
+	archiveLogsRequest struct {
+		ID       string `json:"id"`
+		MaxBytes int64  `json:"max_bytes,omitempty"`
+		MaxAgeMS int64  `json:"max_age_ms,omitempty"`
+	}
+	// archiveLogsResult is node.LogArchive.
+	archiveLogsResult struct {
+		Service string `json:"service"`
+		Release string `json:"release"`
+		Bytes   int64  `json:"bytes"`
+	}
+	// archivedLogsRequest is node.LogArchiveQuery.
+	archivedLogsRequest struct {
+		Service string    `json:"service"`
+		Release string    `json:"release"`
+		Tail    int       `json:"tail,omitempty"`
+		Since   time.Time `json:"since,omitzero"`
+	}
+	// pruneLogsRequest is node.LogPrune.
+	pruneLogsRequest struct {
+		KeepServices []string `json:"keep_services"`
+		MaxBytes     int64    `json:"max_bytes,omitempty"`
+		MaxAgeMS     int64    `json:"max_age_ms,omitempty"`
+	}
 	pruneCacheRequest struct {
 		KeepBytes int64 `json:"keep_bytes"`
 	}

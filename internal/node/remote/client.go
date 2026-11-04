@@ -245,6 +245,49 @@ func (c *Client) Logs(ctx context.Context, id string, opts node.LogOptions) (<-c
 	return streamOn(ctx, s, opLogs, req, wireLogLine.node)
 }
 
+// LogsProtocol is the first protocol whose nodes keep a removed
+// container's output: archive-logs, archived-logs and prune-logs (ADR
+// 0046).
+const LogsProtocol = 14
+
+// archiveLogsTimeout bounds ArchiveLogs: a container's log is at most
+// Docker's 30 MB, which takes well under a second to compress.
+const archiveLogsTimeout = time.Minute
+
+// ArchiveLogs implements node.Containers. An older node can't: the error
+// says so, and core keeps the release's last lines itself.
+func (c *Client) ArchiveLogs(ctx context.Context, id string, limits node.LogLimits) (node.LogArchive, error) {
+	if err := c.needProtocol(ctx, LogsProtocol, "keep the logs of removed containers"); err != nil {
+		return node.LogArchive{}, err
+	}
+	req := archiveLogsRequest{ID: id, MaxBytes: limits.MaxBytes, MaxAgeMS: limits.MaxAge.Milliseconds()}
+	r, err := callWithLogs[archiveLogsResult](ctx, c, opArchiveLogs, archiveLogsTimeout, req, nil, nil)
+	return node.LogArchive(r), err
+}
+
+// ArchivedLogs implements node.Containers, streamed like Logs.
+func (c *Client) ArchivedLogs(ctx context.Context, q node.LogArchiveQuery) (<-chan node.LogLine, error) {
+	if err := c.needProtocol(ctx, LogsProtocol, "keep the logs of removed containers"); err != nil {
+		return nil, err
+	}
+	s, err := c.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req := archivedLogsRequest{Service: q.Service, Release: q.Release, Tail: q.Tail, Since: q.Since}
+	return streamOn(ctx, s, opArchivedLogs, req, wireLogLine.node)
+}
+
+// PruneLogs implements node.Containers.
+func (c *Client) PruneLogs(ctx context.Context, p node.LogPrune) (node.PruneResult, error) {
+	if err := c.needProtocol(ctx, LogsProtocol, "keep the logs of removed containers"); err != nil {
+		return node.PruneResult{}, err
+	}
+	req := pruneLogsRequest{KeepServices: p.KeepServices, MaxBytes: p.Limits.MaxBytes, MaxAgeMS: p.Limits.MaxAge.Milliseconds()}
+	r, err := unaryCall[pruneResult](ctx, c, opPruneLogs, req)
+	return node.PruneResult(r), err
+}
+
 // Events implements node.Containers. It follows the server across
 // reconnects, so the channel only closes when ctx ends. Events that happen
 // while the server is offline are lost: whenever that may have happened,
