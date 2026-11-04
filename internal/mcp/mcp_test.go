@@ -557,42 +557,43 @@ func TestStatelessHTTP(t *testing.T) {
 }
 
 // TestNoGoroutinesLeft checks that calls, including one that waits on the
-// event bus, leave nothing running once the client has closed its
-// connections.
+// event bus, leave nothing of the endpoint running once they are answered.
+// It looks for the endpoint's own goroutines by their stacks, so the
+// daemon's background work (deploys, checks, idle connections) can't make
+// it pass or fail.
 func TestNoGoroutinesLeft(t *testing.T) {
 	f := newFixture(t)
-	call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"service_status","arguments":{"service":"web"}}}`
-	post(t, f, "shop-agent", call) // warm up: build the server, open pools
-	http.DefaultClient.CloseIdleConnections()
-	before := settledGoroutines()
-
 	for range 5 {
-		post(t, f, "shop-agent", call)
+		post(t, f, "shop-agent", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"service_status","arguments":{"service":"web"}}}`)
 	}
 	post(t, f, "shop-agent", `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"deploy_image","arguments":{"service":"web"}}}`)
-	http.DefaultClient.CloseIdleConnections()
-	waitFor(t, func() bool {
-		r, err := f.core.GetRelease(context.Background(), sys, core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}, 1)
-		return err == nil && r.Status.Done()
-	})
-	if after := settledGoroutines(); after > before {
-		buf := make([]byte, 1<<16)
-		t.Errorf("goroutines: %d before, %d after\n%s", before, after, buf[:runtime.Stack(buf, true)])
+	// A handler may still be returning after its answer was read, so
+	// this waits for the endpoint's goroutines to end; a leaked one never
+	// does and fails it.
+	var left string
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if left = endpointGoroutines(); left == "" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("goroutines of the MCP endpoint still running:\n%s", left)
+		}
 	}
 }
 
-// settledGoroutines counts goroutines once their number stops falling.
-func settledGoroutines() int {
-	n := runtime.NumGoroutine()
-	for range 50 {
-		time.Sleep(20 * time.Millisecond)
-		m := runtime.NumGoroutine()
-		if m >= n {
-			return m
+// endpointGoroutines returns the stacks of goroutines running, or started
+// by, the MCP endpoint's packages (internal/mcp and internal/mcpkit, not
+// this test's).
+func endpointGoroutines() string {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+	var out []string
+	for g := range strings.SplitSeq(string(buf), "\n\n") {
+		if strings.Contains(g, "tempoDock/internal/mcp.") || strings.Contains(g, "tempoDock/internal/mcpkit.") {
+			out = append(out, g)
 		}
-		n = m
 	}
-	return n
+	return strings.Join(out, "\n\n")
 }
 
 func waitFor(t *testing.T, cond func() bool) {
