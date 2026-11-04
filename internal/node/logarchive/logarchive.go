@@ -417,10 +417,32 @@ func Read(ctx context.Context, root string, q node.LogArchiveQuery) (<-chan node
 				return false
 			}
 		}
+		if q.Tail > maxRing {
+			// A long tail is a count, then a second read that skips the
+			// lines before it: memory stays a line, not the archive.
+			all := node.LogArchiveQuery{Since: q.Since}
+			skip := -q.Tail
+			_ = scan(f, all, func(node.LogLine) bool { skip++; return ctx.Err() == nil })
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				return
+			}
+			_ = scan(f, all, func(l node.LogLine) bool {
+				if skip > 0 {
+					skip--
+					return true
+				}
+				return emit(l)
+			})
+			return
+		}
 		_ = scan(f, q, emit)
 	}()
 	return ch, nil
 }
+
+// maxRing is the longest tail Read keeps in memory while it reads; a
+// longer one reads the archive twice instead.
+const maxRing = 4096
 
 // scan reads an archive from r and emits its lines as Read describes. It
 // returns once emit refuses a line, at the end, or at the first damage.
@@ -437,7 +459,7 @@ func scan(r io.Reader, q node.LogArchiveQuery, emit func(node.LogLine) bool) err
 	sc.Split(wholeLines)
 	var tail ring
 	if q.Tail > 0 {
-		tail.slots = make([][]byte, 0, min(q.Tail, 4096))
+		tail.slots = make([][]byte, 0, min(q.Tail, maxRing))
 		tail.n = q.Tail
 	}
 	for sc.Scan() {
