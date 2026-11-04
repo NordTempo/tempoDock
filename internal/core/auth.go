@@ -362,7 +362,7 @@ func (c *Core) DeleteUser(ctx context.Context, a Actor, id int64) error {
 // otherUser loads a user an operator manages; nobody can lock themselves
 // out.
 func (c *Core) otherUser(ctx context.Context, a Actor, id int64, verb string) (store.User, error) {
-	if err := a.requireOperator("managing user accounts"); err != nil {
+	if err := a.requireAccountManager("managing user accounts"); err != nil {
 		return store.User{}, err
 	}
 	if a.UserID == id {
@@ -653,7 +653,7 @@ func generatePassword() string {
 // CreateUser creates a user account and adds it to the actor's org.
 // Accounts are the platform's, so only operators create them.
 func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserRequest) (apitypes.User, error) {
-	if err := a.requireOperator("creating user accounts"); err != nil {
+	if err := a.requireAccountManager("creating user accounts"); err != nil {
 		return apitypes.User{}, err
 	}
 	if err := c.checkAccountLock(ctx, a, "creating user accounts", true); err != nil {
