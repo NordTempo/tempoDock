@@ -276,6 +276,19 @@ scenario_lock() {
 	check "admin rejects" ui_api POST "/requests/$req/reject" '{"comment":"no"}'
 	check "a rejected change isn't staged" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' changes $(pe $p) 2>&1 | grep -q never"
 
+	# A source upload into the locked environment is kept and built on approval.
+	ensure_service $p site '{}'
+	local sh
+	sh=$(generate_domain $p site)
+	TOKEN_OVERRIDE=$tok deploy_source $p site "$APPS/static-site" >/dev/null 2>&1 &&
+		fail "a token's source deploy into a locked env was accepted" || pass "a token's source deploy waits"
+	req=$(pending_request $p)
+	if [[ $req =~ ^[0-9]+$ ]]; then pass "the upload filed request $req"; else fail "no request for the source upload"; fi
+	check "nothing was built before approval" test "$(api GET "$(svc_path $p site)/releases" | jq length)" == 0
+	check "admin approves the upload" ui_api POST "/requests/$req/approve" '{}'
+	check "the approved upload was built and went active" wait_for 300 newest_active $p site
+	check "$sh serves the uploaded site" wait_for 30 body_has "$sh" / "static-site"
+
 	check "an admin token can't unlock either: it files a request" out_has "access request" dk environment unlock $ENV_NAME -p $p
 	check "admin unlocks in a UI session" ui_api POST "/projects/$p/environments/$ENV_NAME/unlock" '{}'
 	check "after unlock the token deploys directly" bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: Bearer $tok' -H 'Content-Type: application/json' --data '{}' '$API$(svc_path $p web)/releases') == 20? ]]"
