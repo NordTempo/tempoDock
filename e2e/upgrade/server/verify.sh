@@ -61,7 +61,7 @@ check "operator, admin and project tokens and the session still work" 'diff -q b
 say "6. defaults"
 check "no environment locked" '[[ $(db "SELECT count(*) FROM environments WHERE locked_at IS NOT NULL") == 0 ]]'
 check "lock new production environments is off" '[[ $(db "SELECT count(*) FROM orgs WHERE lock_production <> 0") == 0 ]]'
-check "no ongoing health checks turned on" '[[ $(db "SELECT count(*) FROM services WHERE health_check_interval_seconds <> 0") == 0 ]]'
+check "health check settings left at their defaults (0: 30 s on the next release, ADR 0043)" '[[ $(db "SELECT count(*) FROM services WHERE health_check_interval_seconds <> 0") == 0 ]]'
 check "no service stopped" '[[ $(db "SELECT count(*) FROM services WHERE stopped_at IS NOT NULL") == 0 ]]'
 check "no app container recreated by the update" \
   '[[ "$(grep ^dock_p before/containers.txt | cut -d" " -f1)" == "$(grep ^dock_p after/containers.txt | cut -d" " -f1)" ]]'

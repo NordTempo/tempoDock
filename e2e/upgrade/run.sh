@@ -7,7 +7,12 @@
 #   e2e/upgrade/run.sh v0.14.2 v0.24.0          # everything, then clean up
 #   KEEP=1 e2e/upgrade/run.sh v0.14.2 v0.24.0   # leave the server running
 #   e2e/upgrade/run.sh v0.14.2 v0.24.0 seed     # one step: up, install, seed,
-#                                               # snapshot, update, verify, rollback, down
+#                       # snapshot, update, after, verify, failed-update, rollback, down
+#
+# Steps after `update`: verify compares the "before" and "after" snapshots
+# and checks the new version's behaviour; failed-update checks the
+# updater's own rollback with a fake release that never comes up; rollback
+# goes back to FROM by hand (old binary + the pre-update database).
 #
 # Needs Docker on the host and `gh` logged in to an account that can read
 # NordTempo/tempoDock (its token goes into the server's
@@ -72,16 +77,20 @@ case "$STEP" in
   seed) step seed ;;
   snapshot) step snapshot before ;;
   update) step update "$TO" ;;
-  verify) step verify "$FROM" "$TO" ;;
-  rollback) step rollback "$FROM" "$TO" ;;
+  after) step snapshot after ;;
+  verify) step verify ;;
+  failed-update) step failed-update ;;
+  rollback) step rollback ;;
   down) down ;;
   all)
     down; up; install
     step seed
     step snapshot before
     step update "$TO"
-    step verify "$FROM" "$TO"
-    step rollback "$FROM" "$TO"
+    step snapshot after
+    step verify
+    step failed-update
+    step rollback
     docker cp "$NAME:/root/upg/evidence" "$WORK/evidence-$FROM-$TO"
     say "evidence in $WORK/evidence-$FROM-$TO"
     [[ -n "${KEEP:-}" ]] || down
