@@ -23,7 +23,9 @@ export function ErrorBlock({
       <p className="text-fail">
         <span aria-hidden>✕</span> {errorMessage(error)}
       </p>
-      <p className="text-mut">{next ?? nextStep(error)}</p>
+      {(next ?? nextStep(error)) && (
+        <p className="text-mut">{next ?? nextStep(error)}</p>
+      )}
       {onRetry && (
         <button type="button" className="btn sm" onClick={onRetry}>
           Try again
@@ -36,18 +38,21 @@ export function ErrorBlock({
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Something went wrong.";
 
-/** A plain next step for an error, from its HTTP status. */
+/**
+ * A plain next step for an error, from its HTTP status; none when there is
+ * no status to go on (the message says it, and Try again is the button).
+ */
 function nextStep(error: unknown) {
   const status =
     typeof error === "object" && error && "status" in error
       ? Number(error.status)
       : undefined;
-  if (status === undefined) return "Try again.";
+  if (status === undefined) return undefined;
   if (status === 0)
     return "Check your connection and that Dock is running, then try again.";
   if (status === 403) return "Ask an admin of this organization for access.";
   if (status === 404) return "It may have been renamed or removed.";
   if (status >= 500)
     return "Try again in a moment. If it keeps failing, the Dock server's log says why.";
-  return "Try again.";
+  return undefined;
 }
