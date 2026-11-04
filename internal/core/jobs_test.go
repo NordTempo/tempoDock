@@ -337,3 +337,71 @@ func TestRepoJobs(t *testing.T) {
 		return len(jobs) == 1 && jobs[0].Name == "mine"
 	})
 }
+
+// TestJobRunNowRace: run now and the schedule racing for a job with
+// overlap skip start one run between them, never two.
+func TestJobRunNowRace(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.deploy(web, "app:1")
+	release := make(chan struct{})
+	h.rt.OnJobContext(func(ctx context.Context, _ node.JobSpec) (node.JobResult, error) {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return node.JobResult{}, ctx.Err()
+	})
+	defer close(release)
+	h.setJob(web, "once", apitypes.SetJobRequest{Schedule: "@yearly", Command: "x"})
+	errs := make(chan error, 8)
+	for range cap(errs) {
+		go func() {
+			_, err := h.c.RunJobNow(h.ctx, testSystem, web, "once")
+			errs <- err
+		}()
+	}
+	started := 0
+	for range cap(errs) {
+		if err := <-errs; err == nil {
+			started++
+		} else if CodeOf(err) != apitypes.CodeConflict {
+			t.Fatal(err)
+		}
+	}
+	if started != 1 {
+		t.Fatalf("%d runs started at once, want 1", started)
+	}
+}
+
+// TestJobRemovedWhileRunning: a run that fails after its job was removed
+// (a dock.toml without it) raises no alert naming the gone job.
+func TestJobRemovedWhileRunning(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.deploy(web, "app:1")
+	release := make(chan struct{})
+	h.rt.OnJobContext(func(ctx context.Context, _ node.JobSpec) (node.JobResult, error) {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return node.JobResult{ExitCode: 1}, nil
+	})
+	h.setJob(web, "gone", apitypes.SetJobRequest{Schedule: "@yearly", Command: "x"})
+	if _, err := h.c.RunJobNow(h.ctx, testSystem, web, "gone"); err != nil {
+		t.Fatal(err)
+	}
+	_, job, err := h.c.jobFor(h.ctx, testSystem, web, "gone", apitypes.ScopeRead, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.deleteJob(h.ctx, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	eventually(t, "the run to end", func() bool { return !h.c.jobRunning(job.ID) })
+	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); len(open) != 0 {
+		t.Fatalf("alerts for a removed job = %+v", open)
+	}
+}

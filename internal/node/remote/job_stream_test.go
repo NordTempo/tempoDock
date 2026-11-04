@@ -84,3 +84,21 @@ func TestStreamJobCancel(t *testing.T) {
 		t.Fatal("the job kept running on the node after cancel")
 	}
 }
+
+// TestTailWriter: the tail never holds more than node.MaxJobOutput bytes,
+// also for one write larger than that, and keeps the newest bytes.
+func TestTailWriter(t *testing.T) {
+	var tail tailWriter
+	_, _ = tail.Write([]byte("head"))
+	big := []byte(strings.Repeat("a", 3*node.MaxJobOutput-1) + "z")
+	if n, err := tail.Write(big); n != len(big) || err != nil {
+		t.Fatalf("write = %d, %v", n, err)
+	}
+	if len(tail.b) != node.MaxJobOutput || cap(tail.b) > 2*node.MaxJobOutput || !strings.HasSuffix(tail.String(), "az") {
+		t.Fatalf("after a huge write: len %d cap %d", len(tail.b), cap(tail.b))
+	}
+	_, _ = tail.Write([]byte("end"))
+	if len(tail.b) != node.MaxJobOutput || cap(tail.b) > 2*node.MaxJobOutput || !strings.HasSuffix(tail.String(), "azend") {
+		t.Fatalf("after a small write: len %d cap %d, %q", len(tail.b), cap(tail.b), tail.String()[len(tail.b)-5:])
+	}
+}

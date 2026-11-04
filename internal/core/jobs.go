@@ -33,8 +33,16 @@ func newJobState() jobState {
 }
 
 // holdJob counts a run of a job in flight; the returned func ends it.
-func (c *Core) holdJob(id int64) func() {
+// A job with overlap skip that still runs is errStillRunning: the check
+// and the count are under one lock, so a run now and a scheduled run
+// racing each other can't both start.
+func (c *Core) holdJob(job store.ServiceJob) (func(), error) {
+	id := job.ID
 	c.jobs.mu.Lock()
+	if apitypes.JobOverlap(job.Overlap) == apitypes.OverlapSkip && c.jobs.running[id] > 0 {
+		c.jobs.mu.Unlock()
+		return nil, errStillRunning
+	}
 	c.jobs.running[id]++
 	c.jobs.mu.Unlock()
 	var once sync.Once
@@ -46,7 +54,7 @@ func (c *Core) holdJob(id int64) func() {
 			}
 			c.jobs.mu.Unlock()
 		})
-	}
+	}, nil
 }
 
 // jobRunning reports whether a run of the job is in flight.
@@ -83,8 +91,6 @@ func (c *Core) startJob(ctx context.Context, jobID, serviceID int64, trigger api
 		// Stopped means "don't run this", its schedule too (ADR 0050);
 		// running it now is still asked for explicitly.
 		err = conflict("%s is stopped; `dock service start` runs its jobs again", ss.svc.Name)
-	case apitypes.JobOverlap(job.Overlap) == apitypes.OverlapSkip && c.jobRunning(job.ID):
-		err = errStillRunning
 	default:
 		r, err = c.openRun(ctx, a, ss, runSpec{
 			command: job.Command, timeout: int(job.TimeoutSeconds), volumes: apitypes.VolumesNone, trigger: trigger, job: &job,
@@ -137,7 +143,13 @@ func (c *Core) trimJobRuns(ctx context.Context, jobID int64) {
 // jobEnded is a job run's end: alert on a failure, resolve on a success,
 // and wake the scheduler, which may have skipped it meanwhile.
 func (c *Core) jobEnded(ss svcScope, job store.ServiceJob, row store.ServiceRun) {
+	defer c.kickJobs()
 	ctx := context.WithoutCancel(c.ctx)
+	if _, err := c.store.GetServiceJobByID(ctx, job.ID); store.IsNotFound(err) {
+		// Removed while it ran (a dock.toml without it): an alert now
+		// would name a job that is gone and never resolve.
+		return
+	}
 	key := jobAlertKey(ss, job)
 	switch apitypes.RunStatus(row.Status) {
 	case apitypes.RunSucceeded:
@@ -155,7 +167,6 @@ func (c *Core) jobEnded(ss svcScope, job store.ServiceJob, row store.ServiceRun)
 			Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		}, now())
 	}
-	c.kickJobs()
 }
 
 // jobAlertKey names a job's open job_failed alert.

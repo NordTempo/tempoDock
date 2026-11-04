@@ -133,19 +133,24 @@ func (c *Core) openRun(ctx context.Context, a Actor, ss svcScope, spec runSpec) 
 	if err != nil {
 		return nil, err
 	}
-	release, err := c.holdRun(ss, volumes)
-	if err != nil {
+	endJob := func() {}
+	if spec.job != nil {
+		if endJob, err = c.holdJob(*spec.job); err != nil {
 		return nil, err
 	}
+	}
+	endRun, err := c.holdRun(ss, volumes)
+	if err != nil {
+		endJob()
+		return nil, err
+	}
+	release := func() { endRun(); endJob() }
 	params := store.InsertServiceRunParams{
 		ServiceID: ss.svc.ID, ReleaseID: &rel.ID, Trigger: string(spec.trigger), Command: spec.command, Tty: spec.tty,
 		Volumes: string(volumes), TimeoutSeconds: int64(spec.timeout), Actor: a.Name, ActorKind: a.Kind, StartedAt: now(),
 	}
 	if spec.job != nil {
 		params.JobID = &spec.job.ID
-		endJob := c.holdJob(spec.job.ID)
-		endRun := release
-		release = func() { endRun(); endJob() }
 	}
 	if a.UserID != 0 {
 		params.UserID = &a.UserID

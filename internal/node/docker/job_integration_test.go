@@ -190,3 +190,13 @@ func TestRunJobStream(t *testing.T) {
 		}
 	}
 }
+
+// A job printing tens of MB returns its last node.MaxJobOutput bytes.
+func TestRunJobHugeOutput(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	res, err := e.RunJob(ctx, node.JobSpec{Name: e.name("huge"), Image: shellImage, Script: `head -c 40000000 /dev/zero | tr '\0' x; echo; echo the-end`})
+	if err != nil || res.ExitCode != 0 || len(res.Output) != node.MaxJobOutput || !strings.HasSuffix(res.Output, "x\nthe-end\n") {
+		t.Fatalf("job = %d bytes, exit %d, %v", len(res.Output), res.ExitCode, err)
+	}
+}
