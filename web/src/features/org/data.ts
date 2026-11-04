@@ -1,12 +1,29 @@
 import { queryOptions, useQueryClient } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import { useAction } from "../../data/mutations";
-import { keys } from "../../data/queries";
+import { keys, useOrgs } from "../../data/queries";
 import type { OrgLockSettings, Scope } from "../../data/types";
+import { useOrg } from "../../shell/location";
 
 // An organization's settings (ADR 0027): the org, members, invites,
 // variables, lock settings and registry credentials (ADR 0051) of the
 // org the UI acts in.
+
+/** What each role may do, in a few words: the account page and Members. */
+export const roleNote: Record<Scope, string> = {
+  read: "see status, releases, logs",
+  deploy: "also deploy, restart, roll back, stage variables",
+  admin: "everything in the organization, including members and tokens",
+};
+
+/**
+ * The name of the organization the page acts in, from the caller's
+ * organizations (any role may list them), or its slug if they lack it.
+ */
+export function useOrgName() {
+  const slug = useOrg();
+  return useOrgs().find((o) => o.slug === slug)?.name ?? slug;
+}
 
 const orgKeys = {
   org: ["org"],

@@ -4,22 +4,15 @@ import { type ReactNode, useState } from "react";
 import { api, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useSession } from "../../data/queries";
-import type { Scope } from "../../data/types";
 import { useOrg } from "../../shell/location";
-import { ErrorText, Page, SectionHead, TitleRow } from "../../ui/kit";
+import { ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
+import { roleNote } from "../org/data";
 import { useOwnTokens } from "../tokens/data";
 import { TokenTable } from "../tokens/TokenTable";
 
 // The signed-in person's own account (`dock whoami`, `dock token list
 // --mine`, `dock me password`): who they are, their role, their tokens and
 // changing their password.
-
-/** What each role may do, in a few words. */
-const roleNote: Record<Scope, string> = {
-  read: "see status, releases, logs",
-  deploy: "also deploy, restart, roll back, stage variables",
-  admin: "everything in the organization, including members and tokens",
-};
 
 /** The API's minimum for a new password. */
 const MIN_PASSWORD = 12;
@@ -38,69 +31,71 @@ export function AccountPage() {
   const me = useSession();
   if (!me) return null;
   return (
-    <Page width="max-w-[760px]">
-      <TitleRow
+    <>
+      <PageBar
         title="Account"
         actions={
           <span className="font-mono text-2xs text-mut">dock whoami</span>
         }
       />
-      <dl className="props">
-        <dt>Name</dt>
-        <dd>{me.name}</dd>
-        {me.email && (
+      <Page width="max-w-[760px]">
+        <dl className="props">
+          <dt>Name</dt>
+          <dd>{me.name}</dd>
+          {me.email && (
+            <>
+              <dt>Email</dt>
+              <dd className="font-mono">{me.email}</dd>
+            </>
+          )}
+          {me.org && (
+            <>
+              <dt>Organization</dt>
+              <dd className="font-mono">{me.org}</dd>
+            </>
+          )}
+          {me.scope && (
+            <>
+              <dt>Role</dt>
+              <dd>
+                <b className="font-medium">{me.scope}</b>{" "}
+                <span className="text-mut">{roleNote[me.scope]}</span>
+              </dd>
+            </>
+          )}
+          {me.operator && (
+            <>
+              <dt>Platform</dt>
+              <dd>
+                <b className="font-medium">operator</b>{" "}
+                <span className="text-mut">
+                  Runs servers, backups and accounts in the console.
+                </span>
+              </dd>
+            </>
+          )}
+          {me.project && (
+            <>
+              <dt>Limited to</dt>
+              <dd className="font-mono">
+                {me.project}
+                {me.environment && `/${me.environment}`}
+              </dd>
+            </>
+          )}
+        </dl>
+        {me.kind === "user" ? (
           <>
-            <dt>Email</dt>
-            <dd className="font-mono">{me.email}</dd>
+            <OwnTokens />
+            <ChangePassword />
           </>
+        ) : (
+          <p className="text-mut">
+            This session is a token; tokens have no password.
+          </p>
         )}
-        {me.org && (
-          <>
-            <dt>Organization</dt>
-            <dd className="font-mono">{me.org}</dd>
-          </>
-        )}
-        {me.scope && (
-          <>
-            <dt>Role</dt>
-            <dd>
-              <b className="font-medium">{me.scope}</b>{" "}
-              <span className="text-mut">{roleNote[me.scope]}</span>
-            </dd>
-          </>
-        )}
-        {me.operator && (
-          <>
-            <dt>Platform</dt>
-            <dd>
-              <b className="font-medium">operator</b>{" "}
-              <span className="text-mut">
-                Runs servers, backups and accounts in the console.
-              </span>
-            </dd>
-          </>
-        )}
-        {me.project && (
-          <>
-            <dt>Limited to</dt>
-            <dd className="font-mono">
-              {me.project}
-              {me.environment && `/${me.environment}`}
-            </dd>
-          </>
-        )}
-      </dl>
-      {me.kind === "user" ? (
-        <>
-          <OwnTokens />
-          <ChangePassword />
-        </>
-      ) : (
-        <p className="text-mut">
-          This session is a token; tokens have no password.
-        </p>
-      )}
-    </Page>
+      </Page>
+    </>
   );
 }
 

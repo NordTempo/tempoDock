@@ -14,11 +14,12 @@ import {
   CopyButton,
   ErrorText,
   Page,
+  PageBar,
   SectionHead,
-  TitleRow,
 } from "../../ui/kit";
 import { TokenDataFields, tokenDataFlags } from "../data/TokenData";
 import type { DataTokenAccess } from "../data/types";
+import { useOrgName } from "../org/data";
 import { TokenTable, tokenCap } from "./TokenTable";
 
 /**
@@ -35,62 +36,68 @@ export function TokensPage() {
   }>();
 
   return (
-    <Page>
-      <TitleRow
+    <>
+      <PageBar
+        parent={useOrgName()}
         title="Tokens"
-        context="For agents, CI and scripts. Every action a token takes shows in the audit log under its name."
+        after={
+          <span className="text-xs text-faint">
+            {plural(live.length, "token")} · for agents, CI and scripts
+          </span>
+        }
       />
-      {created && (
-        <section
-          aria-labelledby="new-token"
-          className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
-        >
-          <h2 id="new-token" className="font-semibold">
-            <span className="text-ok">✓</span> Created{" "}
-            <span className="font-mono font-medium">{created.name}</span>
-          </h2>
-          <p>
-            <b className="font-semibold">Copy it now.</b>{" "}
-            <span className="text-mut">
-              This is the only time the secret is shown. If you lose it, create
-              a new token.
-            </span>
-          </p>
-          <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
-            <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
-              {created.secret}
-            </code>
-            <CopyButton text={created.secret} primary />
-          </div>
-          <p className="font-mono text-xs text-mut">
-            export DOCK_TOKEN=… then: dock deploy
-            {created.project ? ` -p ${created.project}` : ""}
-          </p>
-          <McpConfig secret={created.secret} />
-          <div>
-            <Button small onClick={() => setCreated(undefined)}>
-              I've saved it
-            </Button>
-          </div>
-        </section>
-      )}
+      <Page>
+        {created && (
+          <section
+            aria-labelledby="new-token"
+            className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
+          >
+            <h2 id="new-token" className="font-semibold">
+              <span className="text-ok">✓</span> Created{" "}
+              <span className="font-mono font-medium">{created.name}</span>
+            </h2>
+            <p>
+              <b className="font-semibold">Copy it now.</b>{" "}
+              <span className="text-mut">
+                This is the only time the secret is shown. If you lose it,
+                create a new token.
+              </span>
+            </p>
+            <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
+              <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
+                {created.secret}
+              </code>
+              <CopyButton text={created.secret} primary />
+            </div>
+            <p className="font-mono text-xs text-mut">
+              export DOCK_TOKEN=… then: dock deploy
+              {created.project ? ` -p ${created.project}` : ""}
+            </p>
+            <McpConfig secret={created.secret} />
+            <div>
+              <Button small onClick={() => setCreated(undefined)}>
+                I've saved it
+              </Button>
+            </div>
+          </section>
+        )}
 
-      <section aria-labelledby="tokens">
-        <SectionHead id="tokens">{plural(live.length, "token")}</SectionHead>
-        <TokenTable tokens={tokens} />
-      </section>
-
-      <CreateToken onCreated={setCreated} />
-      {!created && (
-        <section
-          aria-labelledby="mcp"
-          className="flex max-w-[760px] flex-col gap-2.5"
-        >
-          <SectionHead id="mcp">Connect an agent</SectionHead>
-          <McpConfig />
+        <section aria-label="Tokens">
+          <TokenTable tokens={tokens} />
         </section>
-      )}
-    </Page>
+
+        <CreateToken onCreated={setCreated} />
+        {!created && (
+          <section
+            aria-labelledby="mcp"
+            className="flex max-w-[760px] flex-col gap-2.5"
+          >
+            <SectionHead id="mcp">Connect an agent</SectionHead>
+            <McpConfig />
+          </section>
+        )}
+      </Page>
+    </>
   );
 }
 
@@ -232,13 +239,8 @@ function CreateToken({
     .join(" ");
 
   return (
-    <section
-      aria-labelledby="create"
-      className="flex max-w-[760px] flex-col gap-4 rounded-panel border border-line p-4"
-    >
-      <h2 id="create" className="text-sm font-semibold">
-        Create a token
-      </h2>
+    <section aria-labelledby="create" className="flex max-w-[760px] flex-col">
+      <SectionHead id="create">Create a token</SectionHead>
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {

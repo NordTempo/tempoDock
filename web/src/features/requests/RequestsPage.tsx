@@ -11,7 +11,7 @@ import {
   Button,
   ErrorText,
   Page,
-  TitleRow,
+  PageBar,
 } from "../../ui/kit";
 import { isPending, requestQueries, useDecideRequest } from "./data";
 
@@ -62,32 +62,40 @@ export function RequestsPage({ selected }: { selected?: number }) {
   const id =
     selected ?? (requests.findLast((r) => isPending(r)) ?? requests[0])?.id;
   return (
-    <Page gap="gap-5">
-      <TitleRow
+    <>
+      <PageBar
         title="Requests"
-        context={
-          pending > 0
-            ? `${plural(pending, "request")} waiting for a decision`
-            : "Tokens ask here when a locked environment stops them"
+        after={
+          <span className="text-xs text-faint">
+            {pending > 0
+              ? `${plural(pending, "request")} waiting`
+              : "tokens ask here when a locked environment stops them"}
+          </span>
         }
       />
-      {requests.length === 0 ? (
-        <p className="text-mut">No access requests yet.</p>
-      ) : (
-        <div className="panel grid md:min-h-[420px] md:grid-cols-[300px_minmax(0,1fr)]">
-          <ul className="border-line max-md:border-b md:border-r">
-            {requests.map((r) => (
-              <li key={r.id}>
-                <RequestItem request={r} current={r.id === id} />
-              </li>
-            ))}
-          </ul>
-          {id !== undefined && (
-            <Detail key={id} id={id} item={requests.find((r) => r.id === id)} />
-          )}
-        </div>
-      )}
-    </Page>
+      <Page gap="gap-5">
+        {requests.length === 0 ? (
+          <p className="text-mut">No access requests yet.</p>
+        ) : (
+          <div className="panel grid md:min-h-[420px] md:grid-cols-[300px_minmax(0,1fr)]">
+            <ul className="border-line max-md:border-b md:border-r">
+              {requests.map((r) => (
+                <li key={r.id}>
+                  <RequestItem request={r} current={r.id === id} />
+                </li>
+              ))}
+            </ul>
+            {id !== undefined && (
+              <Detail
+                key={id}
+                id={id}
+                item={requests.find((r) => r.id === id)}
+              />
+            )}
+          </div>
+        )}
+      </Page>
+    </>
   );
 }
 
