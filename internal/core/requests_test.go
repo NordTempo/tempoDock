@@ -157,13 +157,9 @@ func TestRequestRejectAndExpire(t *testing.T) {
 func TestRequestRevalidates(t *testing.T) {
 	// A deploy started meanwhile: restarting no longer applies.
 	h2 := newRequestHarness(t)
-	var err error
-	var out apitypes.AccessRequest
-	// A deploy started meanwhile: restarting no longer applies.
-	h2 := newRequestHarness(t)
 	web := ServiceRef{"shop", "production", "web"}
 	h2.deploy(web, "app:1")
-	_, err = h2.c.Restart(h2.ctx, h2.agent, web)
+	_, err := h2.c.Restart(h2.ctx, h2.agent, web)
 	err = h2.c.FileRequest(h2.ctx, h2.agent, err, Call{Via: "test", Op: "restart", Title: "Restart", Args: json.RawMessage(`{}`)})
 	le, _ := errors.AsType[*LockedError](err)
 	if le == nil || le.Request == 0 {
@@ -174,7 +170,7 @@ func TestRequestRevalidates(t *testing.T) {
 	if _, err := h2.c.DeployImage(h2.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"}); err != nil {
 		t.Fatal(err)
 	}
-	out, err = h2.c.DecideRequest(h2.ctx, h2.admin, r.Request, true, apitypes.DecideAccessRequest{})
+	out, err := h2.c.DecideRequest(h2.ctx, h2.admin, r.Request, true, apitypes.DecideAccessRequest{})
 	if err != nil || out.Status != apitypes.RequestFailed || !strings.Contains(out.Error, "already deploying") {
 		t.Fatalf("no longer applies: %+v %v", out, err)
 	}
