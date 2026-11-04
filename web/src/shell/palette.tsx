@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { CreateHost } from "../features/create/open";
+import { DeployHost } from "../features/deploy/start";
 import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
 import { toneText } from "../ui/status";
@@ -30,7 +31,7 @@ export const usePalette = () => use(PaletteContext);
 
 /**
  * Owns the palette's open state and the global Cmd+K / Ctrl+K binding,
- * and hosts the create dialogs the palette (and pages) open.
+ * and hosts the create and Deploy windows the palette (and pages) open.
  */
 export function PaletteProvider({ children }: { children: ReactNode }) {
   const [query, setQuery] = useState<string | null>(null);
@@ -47,6 +48,7 @@ export function PaletteProvider({ children }: { children: ReactNode }) {
         <Palette initial={query} onClose={() => setQuery(null)} />
       )}
       <CreateHost />
+      <DeployHost />
     </PaletteContext>
   );
 }
@@ -60,7 +62,7 @@ function Palette({
   initial: string;
   onClose: () => void;
 }) {
-  const commands = useCommands();
+  const commands = useCommands({ withHistory: true });
   const here = useCurrentContext();
   const [query, setQuery] = useState(initial);
   const [index, setIndex] = useState(0);

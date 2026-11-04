@@ -11,12 +11,15 @@ import {
   findService,
   queries,
   servicePath,
+  useCanDeploy,
   useDeployBlock,
   useRelease,
   useReleases,
   useService,
 } from "../data/queries";
 import type { LogLine, Release } from "../data/types";
+import { openDeploy } from "../features/deploy/start";
+import { shortSha, useGitDeploy } from "../features/git/api";
 import { LogRow } from "../features/service/LogsPane";
 import { copiedConfig, imageLabel } from "../features/service/releases";
 import { deploySteps, StepTable } from "../features/service/Steps";
@@ -65,7 +68,9 @@ function ReleasePage() {
   const release = useRelease(ref, Number(params.number));
   const releases = useReleases(ref);
   const deploy = useDeploy();
+  const gitDeploy = useGitDeploy(ref);
   const rollback = useRollback();
+  const mayDeploy = useCanDeploy(ref);
   const [rollingBack, setRollingBack] = useState(false);
   const blocked = useDeployBlock(ref);
   const navigate = useNavigate();
@@ -81,6 +86,11 @@ function ReleasePage() {
   );
 
   const buildLog = { release: release.number, build: true };
+  const toService = () =>
+    navigate({
+      to: "/$org/$project/$environment/$service",
+      params: { org, ...ref },
+    });
   useShortcuts([
     {
       key: "l",
@@ -181,24 +191,23 @@ function ReleasePage() {
             >
               Open build log <kbd>L</kbd>
             </Act>
-            {failed && service.image && (
-              <Act
-                cli={`dock deploy -s ${ref.service} -e ${ref.environment}`}
-                disabled={!!view.deploying || !!blocked || deploy.isPending}
-                title={blocked}
-                onClick={() =>
-                  deploy.mutate(ref, {
-                    onSuccess: () =>
-                      navigate({
-                        to: "/$org/$project/$environment/$service",
-                        params: { org, ...ref },
-                      }),
-                  })
+            {failed && mayDeploy && (
+              <DeployAgain
+                release={release}
+                image={service.image}
+                disabled={
+                  !!view.deploying ||
+                  !!blocked ||
+                  deploy.isPending ||
+                  gitDeploy.isPending
                 }
-              >
-                Deploy {imageLabel({ image_ref: service.image, image_id: "" })}{" "}
-                again
-              </Act>
+                title={blocked}
+                onImage={() => deploy.mutate(ref, { onSuccess: toService })}
+                onCommit={(sha) =>
+                  gitDeploy.mutate(sha, { onSuccess: toService })
+                }
+                onOpen={() => openDeploy(ref)}
+              />
             )}
             <Act
               cli={`dock env set -s ${ref.service} -e ${ref.environment}`}
@@ -212,7 +221,7 @@ function ReleasePage() {
             >
               Variables of {ref.service}
             </Act>
-            {release.status === "superseded" && !rollingBack && (
+            {release.status === "superseded" && mayDeploy && !rollingBack && (
               <Act
                 cli={`dock rollback ${release.number} -s ${ref.service} -e ${ref.environment}`}
                 disabled={!!view.deploying || !!blocked}
@@ -228,10 +237,10 @@ function ReleasePage() {
               </Act>
             )}
             <span className="self-center">
-              {failed && service.image && blocked && (
+              {failed && mayDeploy && blocked && (
                 <span className="text-fail">Disabled: {blocked}. </span>
               )}
-              <ErrorText error={deploy.error} />
+              <ErrorText error={deploy.error ?? gitDeploy.error} />
             </span>
           </div>
           {rollingBack && (
@@ -275,6 +284,68 @@ function ReleasePage() {
         <LastLines release={release} />
       </Page>
     </>
+  );
+}
+
+/**
+ * Retrying a failed release the way it was made: the same commit, the
+ * service's image, or (an upload) the Deploy window for a new folder.
+ */
+function DeployAgain({
+  release,
+  image,
+  disabled,
+  title,
+  onImage,
+  onCommit,
+  onOpen,
+}: {
+  release: Release;
+  /** The service's image, for image services. */
+  image: string | undefined;
+  disabled: boolean;
+  title: string | undefined;
+  onImage: () => void;
+  onCommit: (sha: string) => void;
+  onOpen: () => void;
+}) {
+  const ref = servicePath(Route.useParams());
+  const flags = `-s ${ref.service} -e ${ref.environment}`;
+  const { commit } = release;
+  if (commit) {
+    return (
+      <Act
+        cli={`dock git deploy --ref ${commit.sha} ${flags}`}
+        disabled={disabled}
+        title={title}
+        onClick={() => onCommit(commit.sha)}
+      >
+        Deploy the commit again{" "}
+        <span className="font-mono">{shortSha(commit.sha)}</span>
+      </Act>
+    );
+  }
+  if (image) {
+    return (
+      <Act
+        cli={`dock deploy ${flags}`}
+        disabled={disabled}
+        title={title}
+        onClick={onImage}
+      >
+        Deploy {imageLabel({ image_ref: image, image_id: "" })} again
+      </Act>
+    );
+  }
+  return (
+    <Act
+      cli={`dock deploy <dir> ${flags}`}
+      disabled={disabled}
+      title={title}
+      onClick={onOpen}
+    >
+      Deploy again
+    </Act>
   );
 }
 
