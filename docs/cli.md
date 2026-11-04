@@ -82,7 +82,9 @@ used only together with `DOCK_URL`. Setting `DOCK_TOKEN` alone is a usage
 error (exit 2) rather than sending it to a context's server. The client
 never follows redirects either; a 3xx is an error naming its target.
 `dock context current` shows what the current directory resolves to and
-why.
+why. Before its first change on a server that isn't on this machine (not
+localhost or a loopback address), a command names it on stderr, as
+`→ prod (https://dock.example.com)`; like other warnings, not with `--json`.
 
 Log in with `dock login <server-url>` (no URL: the current context's
 server). On a terminal it logs in through the browser, so there is no token
