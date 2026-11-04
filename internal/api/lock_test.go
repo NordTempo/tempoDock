@@ -1,9 +1,12 @@
 package api
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"slices"
@@ -157,6 +160,9 @@ func TestLockedEnvironmentRefusesTokens(t *testing.T) {
 		locked := 0
 		for _, tok := range []string{"operator", "admin", "deploy", "shop-deploy"} {
 			resp, body := f.do(tok, op.method, op.path, op.body)
+			if op.id == "deploy-source" { // a build context, which is kept for approval
+				resp, body = f.upload(tok, op.path)
+			}
 			var p apitypes.Error
 			_ = json.Unmarshal(body, &p)
 			switch {
@@ -286,4 +292,24 @@ func TestAccessRequestFlow(t *testing.T) {
 	if !strings.Contains(string(body), "PRICE") {
 		t.Fatalf("not staged: %s", body)
 	}
+}
+
+// upload sends a one-file build context to a deploy-source path.
+func (f *fixture) upload(token, path string) (result, []byte) {
+	f.t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	_ = tw.WriteHeader(&tar.Header{Name: "server.js", Mode: 0o644, Size: 2, Typeflag: tar.TypeReg})
+	_, _ = tw.Write([]byte("hi"))
+	_ = tw.Close()
+	req, _ := http.NewRequest("POST", f.srv.URL+path, &buf)
+	req.Header.Set("Content-Type", "application/x-tar")
+	req.Header.Set("Authorization", "Bearer "+f.tokens[token])
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	return result{StatusCode: resp.StatusCode, Header: resp.Header}, b
 }
