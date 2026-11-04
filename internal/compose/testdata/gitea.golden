@@ -1,0 +1,63 @@
+# Tempo Dock project app, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'app'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'db'
+    image = 'postgis/postgis:16-3.4'
+    variables = ['POSTGRES_PASSWORD']
+    volumes = [{name = 'postgres', mount_path = '/var/lib/postgresql/data'}]
+
+    [environments.services.values]
+      POSTGRES_DB = 'gitea'
+      POSTGRES_USER = 'gitea'
+
+  [[environments.services]]
+    name = 'nextcloud'
+    image = 'nextcloud:29-apache'
+    port = 80
+    health_check_path = '/status.php'
+    volumes = [{name = 'nextcloud', mount_path = '/var/www/html'}]
+
+  [[environments.services]]
+    name = 'server'
+    image = 'docker.gitea.com/gitea:1.22.3-rootless'
+    port = 3000
+    health_check_path = '/api/healthz'
+    variables = ['GITEA__database__PASSWD']
+    depends_on = ['db']
+    volumes = [{name = 'gitea-data', mount_path = '/var/lib/gitea'}]
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      GITEA__database__DB_TYPE = 'postgres'
+      GITEA__database__HOST = 'db:5432'
+      GITEA__database__NAME = 'gitea'
+      GITEA__database__USER = 'gitea'
+      USER_GID = '1000'
+      USER_UID = '1000'
+
+# warnings
+ | networks | Dock gives every environment one network, and services reach each other by service name, so the networks section is ignored.
+db | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
+nextcloud | labels | Container labels are ignored; Dock sets its own.
+nextcloud | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
+server | labels | Container labels are ignored; Dock sets its own.
+server | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
+server | ports | A Dock service receives traffic on one port, so 3000 is used and 2222 isn't. Other services in the environment can still reach it at server:2222.
+server | ports | Dock doesn't publish host ports, so 3000:3000 isn't opened on the server. HTTP reaches port 3000 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+server | volumes | The bind mount ./config:/etc/gitea isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+server | volumes | The bind mount /etc/timezone:/etc/timezone isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+
+# secrets
+db POSTGRES_PASSWORD (value set)
+server GITEA__database__PASSWD (value set)
+
+# builds

@@ -1,0 +1,73 @@
+# Tempo Dock project immich, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'immich'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'database'
+    image = 'docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:739cdd626151ff1f796dc95a6591b55a714f341c737e27f045019ceabf8e8c52'
+    start_command = "postgres -c shared_preload_libraries=vectors.so -c 'search_path=\"$user\", public, vectors'"
+    variables = ['POSTGRES_PASSWORD']
+
+    [environments.services.values]
+      POSTGRES_DB = 'immich'
+      POSTGRES_INITDB_ARGS = '--data-checksums'
+      POSTGRES_USER = 'postgres'
+
+  [[environments.services]]
+    name = 'immich-machine-learning'
+    image = 'ghcr.io/immich-app/immich-machine-learning:release'
+    variables = ['DB_PASSWORD']
+    volumes = [{name = 'model-cache', mount_path = '/cache'}]
+
+    [environments.services.values]
+      DB_DATABASE_NAME = 'immich'
+      DB_DATA_LOCATION = './postgres'
+      DB_USERNAME = 'postgres'
+      IMMICH_VERSION = 'release'
+      UPLOAD_LOCATION = './library'
+
+  [[environments.services]]
+    name = 'immich-server'
+    image = 'ghcr.io/immich-app/immich-server:release'
+    port = 2283
+    variables = ['DB_PASSWORD']
+    depends_on = ['database', 'redis']
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      DB_DATABASE_NAME = 'immich'
+      DB_DATA_LOCATION = './postgres'
+      DB_USERNAME = 'postgres'
+      IMMICH_VERSION = 'release'
+      UPLOAD_LOCATION = './library'
+
+  [[environments.services]]
+    name = 'redis'
+    image = 'docker.io/valkey/valkey:8-bookworm@sha256:42cba146593a5ea9a622002c1b7cba5da7be248650cbb64ecb9c6c33d29794b1'
+
+# warnings
+database | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at database.
+database | healthcheck | The health check (pg_isready --dbname="${POSTGRES_DB}" --username="${POSTGRES_USER}" || exit 1) isn't used: Dock checks an HTTP path on the service's port. Set one with `dock service update --health-check-path` if the service has one.
+database | volumes | The bind mount ./postgres:/var/lib/postgresql/data isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+immich-machine-learning | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at immich-machine-learning.
+immich-server | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at immich-server.
+immich-server | extends | extends isn't supported, so the settings this service would inherit aren't converted. Copy them into the service and import again.
+immich-server | ports | Dock doesn't publish host ports, so 2283:2283 isn't opened on the server. HTTP reaches port 2283 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+immich-server | volumes | The bind mount ./library:/usr/src/app/upload isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+immich-server | volumes | The bind mount /etc/localtime:/etc/localtime isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+redis | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at redis.
+redis | healthcheck | The health check (redis-cli ping || exit 1) isn't used: Dock checks an HTTP path on the service's port. Set one with `dock service update --health-check-path` if the service has one.
+
+# secrets
+database POSTGRES_PASSWORD (value set)
+immich-machine-learning DB_PASSWORD (value set)
+immich-server DB_PASSWORD (value set)
+
+# builds

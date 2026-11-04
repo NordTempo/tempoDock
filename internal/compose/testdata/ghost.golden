@@ -1,0 +1,41 @@
+# Tempo Dock project app, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'app'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'db'
+    image = 'mysql:8.0'
+    variables = ['MYSQL_ROOT_PASSWORD']
+    volumes = [{name = 'db', mount_path = '/var/lib/mysql'}]
+
+  [[environments.services]]
+    name = 'ghost'
+    image = 'ghost:5-alpine'
+    port = 2368
+    variables = ['database__connection__password']
+    depends_on = ['db']
+    volumes = [{name = 'ghost', mount_path = '/var/lib/ghost/content'}]
+
+    [environments.services.values]
+      database__client = 'mysql'
+      database__connection__database = 'ghost'
+      database__connection__host = 'db'
+      database__connection__user = 'root'
+      url = 'http://localhost:2368'
+
+# warnings
+db | healthcheck | The health check (mysqladmin ping -h localhost) isn't used: Dock checks an HTTP path on the service's port. Set one with `dock service update --health-check-path` if the service has one.
+ghost | ports | Port 127.0.0.1:2368:2368 is bound to 127.0.0.1 in Compose, so the service gets no domain and stays private. Other services reach it at ghost:2368; add a domain with `dock domain add` to make it public.
+
+# secrets
+db MYSQL_ROOT_PASSWORD (value set)
+ghost database__connection__password (value set)
+
+# builds

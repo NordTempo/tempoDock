@@ -1,0 +1,70 @@
+networks:
+  gitea:
+    external: false
+  proxy:
+    external: true
+    name: traefik_proxy
+
+services:
+  server:
+    image: docker.gitea.com/gitea:1.22.3-rootless
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__database__DB_TYPE=postgres
+      - GITEA__database__HOST=db:5432
+      - GITEA__database__NAME=gitea
+      - GITEA__database__USER=gitea
+      - GITEA__database__PASSWD=gitea
+    restart: unless-stopped
+    networks:
+      - gitea
+      - proxy
+    volumes:
+      - gitea-data:/var/lib/gitea
+      - ./config:/etc/gitea
+      - /etc/timezone:/etc/timezone:ro
+    ports:
+      - "3000:3000"
+      - "2222:2222"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.gitea.rule=Host(`git.example.com`)
+      - traefik.http.routers.gitea.entrypoints=websecure
+      - traefik.http.routers.gitea.tls.certresolver=letsencrypt
+      - traefik.http.services.gitea.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - db
+
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=gitea
+      - POSTGRES_PASSWORD=gitea
+      - POSTGRES_DB=gitea
+    networks:
+      - gitea
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+  nextcloud:
+    image: nextcloud:29-apache
+    labels:
+      caddy: cloud.example.com
+      caddy.reverse_proxy: "{{upstreams 80}}"
+    networks:
+      - proxy
+    volumes:
+      - nextcloud:/var/www/html
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/status.php || exit 1"]
+volumes:
+  gitea-data:
+  postgres:
+  nextcloud:

@@ -1,0 +1,63 @@
+# Tempo Dock project app, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'app'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'plausible'
+    image = 'ghcr.io/plausible/community-edition:v2.1.4'
+    port = 8000
+    start_command = 'sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"'
+    variables = ['BASE_URL', 'SECRET_KEY_BASE']
+    depends_on = ['plausible-db', 'plausible-events-db']
+    volumes = [{name = 'plausible-data', mount_path = '/var/lib/plausible'}]
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      CLICKHOUSE_DATABASE_URL = 'http://plausible-events-db:8123/plausible_events_db'
+      DATABASE_URL = '${{plausible-db.DATABASE_URL}}'
+      HTTP_PORT = '8000'
+      TMPDIR = '/var/lib/plausible/tmp'
+
+  [[environments.services]]
+    name = 'plausible-db'
+    template = 'postgres'
+
+  [[environments.services]]
+    name = 'plausible-events-db'
+    image = 'clickhouse/clickhouse-server:24.3.3.102-alpine'
+    port = 8123
+    health_check_path = '/ping'
+    health_check_timeout_seconds = 150
+    volumes = [{name = 'event-data', mount_path = '/var/lib/clickhouse'}, {name = 'event-logs', mount_path = '/var/log/clickhouse-server'}]
+
+    [environments.services.values]
+      CLICKHOUSE_SKIP_USER_SETUP = '1'
+
+# warnings
+plausible | BASE_URL | BASE_URL uses ${BASE_URL}, which isn't set in .env, so it is a secret without a value. Set it before the first deploy with `dock env set -s plausible BASE_URL=...`.
+plausible | CLICKHOUSE_DATABASE_URL | CLICKHOUSE_DATABASE_URL points at plausible_events_db, which is named plausible-events-db in Dock, so the URL now uses that name.
+plausible | DATABASE_URL | DATABASE_URL points at plausible_db, so it now uses the postgres template's DATABASE_URL: ${{plausible-db.DATABASE_URL}}.
+plausible | SECRET_KEY_BASE | SECRET_KEY_BASE uses ${SECRET_KEY_BASE}, which isn't set in .env, so it is a secret without a value. Set it before the first deploy with `dock env set -s plausible SECRET_KEY_BASE=...`.
+plausible | ports | Dock doesn't publish host ports, so 8000:8000 isn't opened on the server. HTTP reaches port 8000 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+plausible | ulimits | ulimits isn't supported by Dock, so it is not applied.
+plausible-db |  | Compose service "plausible_db" is named "plausible-db" in Dock: service names are 1-32 lowercase letters, digits or dashes. Other services' variables that name it are updated.
+plausible-db | POSTGRES_PASSWORD | The postgres template generates its own password, so this value isn't used. Other services' variables that held it now reference ${{plausible-db.POSTGRES_PASSWORD}}.
+plausible-db | image | postgres:16-alpine becomes Dock's postgres template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used. Data in the Compose volumes isn't moved: the new database starts empty.
+plausible-db | image | The postgres template runs PostgreSQL 17, and the Compose file uses postgres:16-alpine. To move data from the old database, dump it with pg_dump and restore it into the new one.
+plausible-events-db |  | Compose service "plausible_events_db" is named "plausible-events-db" in Dock: service names are 1-32 lowercase letters, digits or dashes. Other services' variables that name it are updated.
+plausible-events-db | ulimits | ulimits isn't supported by Dock, so it is not applied.
+plausible-events-db | volumes | The bind mount ./clickhouse/logs.xml:/etc/clickhouse-server/config.d/logs.xml isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+plausible-events-db | volumes | The bind mount ./clickhouse/ipv4-only.xml:/etc/clickhouse-server/config.d/ipv4-only.xml isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+
+# secrets
+plausible BASE_URL (needs a value)
+plausible SECRET_KEY_BASE (needs a value)
+
+# builds
