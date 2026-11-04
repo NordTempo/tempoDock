@@ -73,6 +73,9 @@ export type AppliedChanges = Schemas["AppliedChanges"];
 export type ApplyRequest = Schemas["ApplyRequest"];
 export type ApplyPlan = Schemas["ApplyPlan"];
 export type PlanChange = Schemas["PlanChange"];
+/** A Docker Compose file to convert, plan or create (ADR 0049). */
+export type ComposeImportRequest = Schemas["ComposeImportRequest"];
+export type ComposeSecret = Schemas["ComposeSecret"];
 
 /** An environment, addressed by name like every API path. */
 export type EnvRef = { project: string; environment: string };

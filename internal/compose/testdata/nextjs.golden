@@ -1,0 +1,90 @@
+# Tempo Dock project app, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'app'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'migrate'
+    start_command = 'npx prisma migrate deploy'
+    variables = ['RESEND_API_KEY']
+    depends_on = ['postgres']
+
+    [environments.services.values]
+      DATABASE_URL = '${{postgres.DATABASE_URL}}'
+      LOG_LEVEL = 'info'
+      MAIL_FROM = 'Shop <shop@example.com>'
+      SENTRY_DSN = 'https://abc123@o1.ingest.sentry.io/42'
+
+  [[environments.services]]
+    name = 'postgres'
+    template = 'postgres'
+
+    [environments.services.values]
+      POSTGRES_USER = 'shop'
+
+  [[environments.services]]
+    name = 'web'
+    port = 3000
+    health_check_path = '/api/health'
+    health_check_timeout_seconds = 105
+    dockerfile_path = 'docker/Dockerfile.prod'
+    variables = ['NEXTAUTH_SECRET', 'RESEND_API_KEY', 'STRIPE_SECRET_KEY']
+    depends_on = ['migrate', 'postgres']
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      DATABASE_URL = '${{postgres.DATABASE_URL}}?schema=public'
+      LOG_LEVEL = 'info'
+      MAIL_FROM = 'Shop <shop@example.com>'
+      NEXTAUTH_URL = 'https://shop.example.com'
+      NODE_ENV = 'production'
+      SENTRY_DSN = 'https://abc123@o1.ingest.sentry.io/42'
+
+  [[environments.services]]
+    name = 'worker'
+    start_command = "node dist/worker.js --queue 'default emails'"
+    memory_mb = 1024
+    variables = ['RESEND_API_KEY']
+    depends_on = ['postgres']
+
+    [environments.services.values]
+      DATABASE_URL = '${{postgres.DATABASE_URL}}'
+      LOG_LEVEL = 'info'
+      MAIL_FROM = 'Shop <shop@example.com>'
+      PG_PASSWORD = '${{postgres.POSTGRES_PASSWORD}}'
+      SENTRY_DSN = 'https://abc123@o1.ingest.sentry.io/42'
+      WORKER_CONCURRENCY = '4'
+
+# warnings
+migrate | DATABASE_URL | DATABASE_URL points at postgres, so it now uses the postgres template's DATABASE_URL: ${{postgres.DATABASE_URL}}.
+migrate | restart | Dock restarts services that stop, so restart: no isn't applied. If this is a one-off task (a migration), run it in the start command of the service that needs it instead.
+postgres | PGDATA | The postgres template keeps its data in its own volume, so PGDATA isn't used.
+postgres | POSTGRES_PASSWORD | The postgres template generates its own password, so this value isn't used. Other services' variables that held it now reference ${{postgres.POSTGRES_PASSWORD}}.
+postgres | image | docker.io/library/postgres:17.2 becomes Dock's postgres template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used. Data in the Compose volumes isn't moved: the new database starts empty.
+web | DATABASE_URL | DATABASE_URL points at postgres, so it now uses the postgres template's DATABASE_URL: ${{postgres.DATABASE_URL}}?schema=public.
+web | NEXTAUTH_SECRET | NEXTAUTH_SECRET uses ${NEXTAUTH_SECRET}, which isn't set in .env, so it is a secret without a value. Set it before the first deploy with `dock env set -s web NEXTAUTH_SECRET=...`.
+web | PORT | PORT is set by Dock from the service's port setting, so this value isn't used.
+web | STRIPE_SECRET_KEY | STRIPE_SECRET_KEY has no value in the Compose file or .env, so it is a secret without a value. Set it before the first deploy with `dock env set -s web STRIPE_SECRET_KEY=...`.
+web | build.args | Build arguments aren't set separately: Dock passes the service's variables to the build as build arguments, so set any the build needs as variables.
+web | image | The service has both build and image; Dock builds it from source, so the image name acme/web:latest isn't used.
+web | ports | Dock doesn't publish host ports, so 3000:3000 isn't opened on the server. HTTP reaches port 3000 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+worker | DATABASE_URL | DATABASE_URL points at postgres, so it now uses the postgres template's DATABASE_URL: ${{postgres.DATABASE_URL}}.
+worker | PG_PASSWORD | PG_PASSWORD matches postgres's POSTGRES_PASSWORD in the Compose file, so it now references ${{postgres.POSTGRES_PASSWORD}}.
+
+# secrets
+migrate RESEND_API_KEY (value set)
+web NEXTAUTH_SECRET (needs a value)
+web RESEND_API_KEY (value set)
+web STRIPE_SECRET_KEY (needs a value)
+worker RESEND_API_KEY (value set)
+
+# builds
+migrate: context ./web, dockerfile Dockerfile
+web: context ./web, dockerfile docker/Dockerfile.prod
+worker: context ./web, dockerfile Dockerfile

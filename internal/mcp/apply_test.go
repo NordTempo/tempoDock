@@ -27,3 +27,25 @@ func TestProjectFileTools(t *testing.T) {
 		t.Fatalf("production with a staging-only token: %s %s", res.summary, res.json)
 	}
 }
+
+// import_compose converts and plans without changing anything; the file it
+// returns stages with apply_project_file.
+func TestImportComposeTool(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect("admin", nil)
+	compose := "services:\n  db:\n    image: postgres:17\n  api:\n    image: app:3\n    environment:\n      DATABASE_URL: postgres://postgres:x@db:5432/app\n      API_KEY: k-1\n"
+	res := call(t, s, "import_compose", map[string]any{"project": "imported", "compose": compose})
+	var out struct {
+		File    string
+		Secrets []struct{ Key string }
+	}
+	res.decode(t, &out)
+	if res.isError || !strings.Contains(out.File, "template = 'postgres'") || len(out.Secrets) != 1 || strings.Contains(res.json, "k-1") {
+		t.Fatalf("import_compose: %s %s", res.summary, res.json)
+	}
+	applied := call(t, s, "apply_project_file", map[string]any{"project": "imported", "file": out.File,
+		"values": []map[string]string{{"environment": "production", "service": "api", "key": "API_KEY", "value": "k-1"}}})
+	if applied.isError || !strings.Contains(applied.summary, "now staged") {
+		t.Fatalf("apply: %s %s", applied.summary, applied.json)
+	}
+}

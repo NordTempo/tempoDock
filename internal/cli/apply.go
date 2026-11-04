@@ -211,6 +211,8 @@ func planDetail(c apitypes.PlanChange) string {
 		parts = append(parts, dash(c.Old)+" → "+dash(c.New))
 	case c.New != "":
 		parts = append(parts, c.New)
+	case c.Kind == apitypes.PlanProject:
+		parts = append(parts, c.Name)
 	case c.Old != "":
 		parts = append(parts, c.Old)
 	}

@@ -70,7 +70,9 @@ func envOps(t *testing.T) []envOp {
 	// Project-level operations that change environments named in their
 	// body: a project file (ADR 0049) for shop/production.
 	file := "version = 1\n[[environments]]\nname = \"production\"\n[[environments.services]]\nname = \"web\"\nport = 9999\n"
-	ops = append(ops, envOp{"apply-project-file", "POST", "/api/v1/projects/shop/apply", apitypes.ApplyRequest{File: file}})
+	ops = append(ops, envOp{"apply-project-file", "POST", "/api/v1/projects/shop/apply", apitypes.ApplyRequest{File: file}},
+		envOp{"import-compose", "POST", "/api/v1/projects/shop/import/compose", apitypes.ComposeImportRequest{
+			Compose: "services:\n  web:\n    image: nginx\n    expose: [\"9999\"]\n", Apply: true}})
 	slices.SortFunc(ops, func(a, b envOp) int { return strings.Compare(a.id, b.id) })
 	return ops
 }

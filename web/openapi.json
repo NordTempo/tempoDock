@@ -1787,6 +1787,160 @@
         ],
         "type": "object"
       },
+      "ComposeBuild": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "dockerfile": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "context"
+        ],
+        "type": "object"
+      },
+      "ComposeImport": {
+        "additionalProperties": false,
+        "properties": {
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/ComposeBuild"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "missing_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ApplyPlan"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ApplyResult"
+          },
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/ComposeSecret"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ComposeWarning"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "file",
+          "warnings",
+          "secrets",
+          "builds",
+          "missing_files",
+          "plan"
+        ],
+        "type": "object"
+      },
+      "ComposeImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "description": "Stage and apply the converted file",
+            "type": "boolean"
+          },
+          "compose": {
+            "description": "The docker-compose.yml",
+            "type": "string"
+          },
+          "env_files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Files the Compose file reads (env_file paths as written, and .env), by path",
+            "type": "object"
+          },
+          "values": {
+            "description": "Values for detected secrets, replacing the Compose file's; never shown back",
+            "items": {
+              "$ref": "#/components/schemas/VariableValue"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "compose"
+        ],
+        "type": "object"
+      },
+      "ComposeSecret": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "has_value": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "service",
+          "key",
+          "has_value"
+        ],
+        "type": "object"
+      },
+      "ComposeWarning": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
       "ConfigureBackupRequest": {
         "additionalProperties": false,
         "properties": {
@@ -32486,6 +32640,157 @@
           }
         ],
         "summary": "Export a project's config as TOML",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/import/compose": {
+      "post": {
+        "description": "Converts a docker-compose.yml into a project file and plans it: the file, warnings for everything that doesn't map exactly, the detected secrets (names only) and the plan. With `apply`, stages the file with the secrets' values (the Compose file's, or `values`) and applies it, as `apply` with `deploy` does. The project may not exist yet. Scope: read, or deploy with `apply`.",
+        "operationId": "import-compose",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComposeImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComposeImport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Import a Docker Compose file",
         "tags": [
           "projects"
         ]

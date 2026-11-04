@@ -383,6 +383,32 @@ environment the file names that doesn't exist is created, empty.
   file as a whole, with what it would change there.
 - Applying the same file twice stages nothing new.
 
+## Move in from Docker Compose
+
+```sh
+dock import compose                          # plan ./docker-compose.yml as project <directory name>
+dock import compose stack.yml -p shop -o dock.project.toml
+dock import compose -p shop --apply          # create it
+```
+
+`dock import compose` converts a Compose file into a project file
+([ADR 0049](../decisions/0049-apply-and-compose-import.md)) and shows its
+plan; nothing changes without `--apply`. In the UI: New project › From
+Compose.
+
+| Compose | Dock |
+|---|---|
+| `image`, `build` | The service's image, or a source service (deploy it with `dock deploy <context>`) |
+| `postgres`, `redis` images | Dock's database templates, with backups. Other services' URLs and passwords pointing at them become references (`${{db.DATABASE_URL}}`) |
+| `environment`, `env_file`, `.env` | Variables. Passwords, tokens and keys are secrets: kept out of the file, their values staged from the Compose file (or asked for with `--apply` on a terminal) |
+| `ports`, `expose` | The service's port; a published HTTP port gets a generated domain |
+| Named and anonymous volumes | Named Dock volumes. Bind mounts and tmpfs aren't mounted (warned) |
+| `depends_on`, `healthcheck`, `command`, `entrypoint`, resource limits | Start order, HTTP health check path, start command, memory and CPU limits |
+
+Anything Dock can't run as written (privileged mode, host networking,
+capabilities, devices, extra ports, replicas, ...) is printed as a
+warning, never dropped silently.
+
 ## Deploy on git push
 
 Connect a service to a GitHub repository and branch, and every push to it

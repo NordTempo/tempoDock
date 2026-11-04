@@ -1,0 +1,106 @@
+# Tempo Dock project app, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'app'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'jellyfin'
+    image = 'jellyfin/jellyfin:10.10'
+    port = 8096
+    start_command = '/jellyfin/jellyfin --datadir /config --cachedir /cache'
+    memory_mb = 2048
+    volumes = [{name = 'jellyfin-config', mount_path = '/config'}, {name = 'transcodes', mount_path = '/transcodes'}]
+    domains = [{hostname = '', generated = true}]
+
+  [[environments.services]]
+    name = 'mariadb-main'
+    image = 'mariadb:11'
+    port = 3306
+    variables = ['MARIADB_ROOT_PASSWORD']
+    volumes = [{name = 'db-data', mount_path = '/var/lib/mysql'}]
+
+    [environments.services.values]
+      MARIADB_DATABASE = 'nextcloud'
+
+  [[environments.services]]
+    name = 'nextcloud'
+    image = 'nextcloud:30-apache'
+    port = 80
+    variables = ['MYSQL_PASSWORD']
+    depends_on = ['mariadb-main']
+    volumes = [{name = 'db-data', mount_path = '/var/www/html/data'}]
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      MYSQL_HOST = 'mariadb-main'
+      NEXTCLOUD_URL = 'http://mariadb-main:3306/x'
+      OVERWRITEPROTOCOL = 'https'
+
+  [[environments.services]]
+    name = 'pihole'
+    image = 'pihole/pihole:latest'
+    port = 80
+    variables = ['WEBPASSWORD']
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      TZ = 'Europe/Oslo'
+
+# warnings
+ | networks | Dock gives every environment one network, and services reach each other by service name, so the networks section is ignored.
+jellyfin | deploy.replicas | Dock runs one instance of a service, so replicas: 3 isn't applied.
+jellyfin | deploy.resources.reservations | Dock sets limits, not reservations, so deploy.resources.reservations is ignored.
+jellyfin | deploy.restart_policy | Dock restarts services that stop, so deploy.restart_policy is ignored.
+jellyfin | devices | Host devices can't be passed to a Dock service, so devices isn't applied.
+jellyfin | entrypoint | Dock keeps the image's own entrypoint and runs the start command after it, so this entrypoint runs inside it instead of replacing it. Check that the image's entrypoint runs its arguments as a command.
+jellyfin | gpus | gpus isn't supported by Dock, so it is not applied.
+jellyfin | healthcheck | The health check (curl -X POST http://localhost:8096/health) isn't used: Dock checks an HTTP path on the service's port. Set one with `dock service update --health-check-path` if the service has one.
+jellyfin | labels | Container labels are ignored; Dock sets its own.
+jellyfin | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
+jellyfin | ports | Port 7359:7359/udp is UDP, and Dock routes only HTTP from outside, so it isn't published. Other services in the environment can still reach it at jellyfin:7359.
+jellyfin | ports | A Dock service receives traffic on one port, so 8096 is used and 8920, 1900 aren't. Other services in the environment can still reach them at jellyfin:<port>.
+jellyfin | ports | Dock doesn't publish host ports, so 8096:8096 isn't opened on the server. HTTP reaches port 8096 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+jellyfin | privileged | Privileged mode isn't supported, so the container runs unprivileged.
+jellyfin | sidecar_mode | sidecar_mode isn't a Compose key Dock knows, so it is ignored. Check it for a typo.
+jellyfin | user | user isn't applied, so the container runs as the image's user. Set USER in the Dockerfile to change it.
+jellyfin | volumes | The bind mount /mnt/media:/media isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+jellyfin | volumes | The tmpfs mount at /cache isn't supported, so files written there go to the container's own filesystem and are lost on the next deploy.
+jellyfin | volumes | The anonymous volume at /transcodes becomes a named volume, transcodes, so its files are kept across deploys.
+jellyfin | volumes | Volume "jellyfin_config" is named "jellyfin-config" in Dock: volume names are 1-32 lowercase letters, digits or dashes.
+mariadb-main |  | Compose service "Mariadb_Main" is named "mariadb-main" in Dock: service names are 1-32 lowercase letters, digits or dashes. Other services' variables that name it are updated.
+mariadb-main | ports | Port 3306:3306 is published in Compose, but Dock routes only HTTP publicly, so it isn't reachable from outside. Other services in the environment reach it at mariadb-main:3306.
+mariadb-main | volumes | Volume db.data is read-only in Compose; Dock mounts it read-write.
+mariadb-main | volumes | Volume "db.data" is named "db-data" in Dock: volume names are 1-32 lowercase letters, digits or dashes.
+mariadb-main | volumes | Volume db.data is mounted more than once; Dock mounts it once, at /var/lib/mysql.
+mariadb-main | volumes | Volume db.data is also mounted by nextcloud in Compose. In Dock every service has its own volumes, so they don't share these files.
+nextcloud | MYSQL_HOST | MYSQL_HOST names Mariadb_Main, which is named mariadb-main in Dock, so it now says mariadb-main.
+nextcloud | NEXTCLOUD_URL | NEXTCLOUD_URL points at Mariadb_Main, which is named mariadb-main in Dock, so the URL now uses that name.
+nextcloud | depends_on | Dock has no one-shot services, so waiting for mariadb-main to complete isn't supported; it only starts first. Run one-off tasks in the start command instead.
+nextcloud | depends_on | The service depends on missing_service, which isn't in the Compose file, so that is ignored.
+nextcloud | extra_hosts | extra_hosts isn't supported by Dock, so it is not applied.
+nextcloud | ports | Dock doesn't publish host ports, so 8080:80 isn't opened on the server. HTTP reaches port 80 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+nextcloud | restart | Dock restarts services that stop, so restart: no isn't applied. If this is a one-off task (a migration), run it in the start command of the service that needs it instead.
+nextcloud | volumes | Volume "db.data" is named "db-data" in Dock: volume names are 1-32 lowercase letters, digits or dashes.
+nextcloud | volumes | Volume db.data is also mounted by mariadb-main in Compose. In Dock every service has its own volumes, so they don't share these files.
+pihole | FTLCONF_dns.listeningMode | FTLCONF_dns.listeningMode isn't a valid variable name in Dock (letters, digits and underscores, not starting with a digit), so it is skipped. Rename it in the app and set it with `dock env set`.
+pihole | WEBPASSWORD | WEBPASSWORD uses ${PIHOLE_PASSWORD}, which isn't set in .env, so it is a secret without a value. Set it before the first deploy with `dock env set -s pihole WEBPASSWORD=...`.
+pihole | cap_add | Added capabilities aren't supported, so the container runs with Docker's default capabilities.
+pihole | network_mode | network_mode host isn't supported: every Dock service runs on its environment's network and reaches the others by service name. Set the service's port to the one it listens on.
+pihole | ports | Port 53:53/udp is UDP, and Dock routes only HTTP from outside, so it isn't published. Other services in the environment can still reach it at pihole:53.
+pihole | ports | A Dock service receives traffic on one port, so 80 is used and 53 isn't. Other services in the environment can still reach it at pihole:53.
+pihole | ports | Dock doesn't publish host ports, so 80:80/tcp isn't opened on the server. HTTP reaches port 80 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+pihole | volumes | The bind mount ./etc-pihole:/etc/pihole isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+pihole | volumes | The bind mount /etc/localtime:/etc/localtime isn't mounted: Dock mounts only named volumes. Build the files into the image, or use a volume.
+
+# secrets
+mariadb-main MARIADB_ROOT_PASSWORD (value set)
+nextcloud MYSQL_PASSWORD (value set)
+pihole WEBPASSWORD (needs a value)
+
+# builds
