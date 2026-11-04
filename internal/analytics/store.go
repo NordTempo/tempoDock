@@ -20,6 +20,9 @@ type Store interface {
 	Overview(ctx context.Context, q Query) (Overview, error)
 	Series(ctx context.Context, q SeriesQuery) ([]Point, error)
 	Breakdown(ctx context.Context, q BreakdownQuery) ([]Row, error)
+	// Dashboard answers a dashboard's overviews, series and breakdowns
+	// in one call.
+	Dashboard(ctx context.Context, q DashboardQuery) (Dashboard, error)
 	Live(ctx context.Context, q LiveQuery) (Live, error)
 	// Health says whether the store answers, and its size.
 	Health(ctx context.Context) (Health, error)
@@ -120,6 +123,11 @@ const (
 	OverviewPath  = "/v1/overview"
 	SeriesPath    = "/v1/series"
 	BreakdownPath = "/v1/breakdown"
+	// DashboardPath takes POST with a DashboardQuery and answers
+	// Dashboard: the three above for a whole dashboard, in one request
+	// and one query slot. An older store answers 404 (Client.Dashboard
+	// falls back to the three).
+	DashboardPath = "/v1/dashboard"
 	// LivePath takes POST with a LiveQuery and answers Live.
 	LivePath = "/v1/live"
 	// ErrorsPath, ErrorPath and VitalsPath take POST with an

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var (
@@ -83,6 +84,70 @@ func (c *Client) Series(ctx context.Context, q SeriesQuery) ([]Point, error) {
 func (c *Client) Breakdown(ctx context.Context, q BreakdownQuery) ([]Row, error) {
 	var res []Row
 	return res, c.post(ctx, BreakdownPath, q, &res)
+}
+
+// Dashboard implements Store with one request (DashboardPath). A store
+// older than this client, which a Dock update leaves running until it
+// restarts the store on the new release's binary, answers that path 404
+// (405 behind some proxies); the dashboard then comes from the separate
+// requests (dashboardParts).
+func (c *Client) Dashboard(ctx context.Context, q DashboardQuery) (Dashboard, error) {
+	var res Dashboard
+	err := c.post(ctx, DashboardPath, q, &res)
+	if se, ok := errors.AsType[*StoreError](err); ok && (se.Status == http.StatusNotFound || se.Status == http.StatusMethodNotAllowed) {
+		return c.dashboardParts(ctx, q)
+	}
+	return res, err
+}
+
+// partsParallel is how many of dashboardParts' requests are in flight
+// at once: the store runs them one at a time, so more only saves round
+// trips to a store on another server.
+const partsParallel = 4
+
+// dashboardParts is Dashboard for a store without DashboardPath: an
+// overview for the range and the one before it, the series and each
+// breakdown, a request each, partsParallel at a time. The first error
+// cancels the rest and is the answer.
+func (c *Client) dashboardParts(ctx context.Context, q DashboardQuery) (Dashboard, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	var d Dashboard
+	rows := make([][]Row, len(q.Dimensions))
+	jobs := []func() error{
+		func() (err error) { d.Overview, err = c.Overview(ctx, q.Query); return err },
+		func() (err error) { d.Previous, err = c.Overview(ctx, q.Previous()); return err },
+		func() (err error) {
+			d.Series, err = c.Series(ctx, SeriesQuery{Query: q.Query, Bucket: q.Bucket})
+			return err
+		},
+	}
+	for i, dim := range q.Dimensions {
+		jobs = append(jobs, func() (err error) {
+			rows[i], err = c.Breakdown(ctx, BreakdownQuery{Query: q.Query, Dimension: dim, Limit: q.Limit})
+			return err
+		})
+	}
+	slots := make(chan struct{}, partsParallel)
+	var wg sync.WaitGroup
+	for _, job := range jobs {
+		slots <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			if err := job(); err != nil {
+				cancel(err)
+			}
+		})
+	}
+	wg.Wait()
+	if err := context.Cause(ctx); err != nil {
+		return Dashboard{}, err
+	}
+	d.Breakdowns = make(map[Dimension][]Row, len(q.Dimensions))
+	for i, dim := range q.Dimensions {
+		d.Breakdowns[dim] = rows[i]
+	}
+	return d, nil
 }
 
 // Live implements Store.

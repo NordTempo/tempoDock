@@ -156,7 +156,7 @@ func benchCmd(ctx context.Context, args []string) error {
 	var sf storeFlags
 	sf.register(fs)
 	runs := fs.Int("runs", 20, "dashboard loads per case")
-	parallel := fs.Int("parallel", 4, "queries of a dashboard run at once")
+	parallel := fs.Int("parallel", 4, "queries of a view run at once (a dashboard is one where the store has it)")
 	ranges := fs.String("ranges", "24h,30d,365d", "the ranges to time")
 	end := fs.String("end", "2026-10-30", "the end of every range (the seed's -end)")
 	url := fs.String("url", "", "time a running store's HTTP API (token in DOCK_ANALYTICS_TOKEN) instead of opening -db")
