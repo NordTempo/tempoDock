@@ -55,6 +55,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0045](0045-pre-deploy-command.md) | Pre-deploy command | accepted |
 | [0046](0046-log-history-and-drains.md) | Log history past the container, and log drains | accepted |
 | [0047](0047-volume-snapshots.md) | Volume snapshots | accepted |
+| [0048](0048-one-off-commands.md) | One-off commands (`dock run`) | accepted |
 
 ## Template
 

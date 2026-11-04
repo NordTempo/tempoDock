@@ -53,7 +53,7 @@ type Runtime struct {
 	stopGate    chan struct{}
 	domainCheck func(hostname string) node.DomainCheck
 	dialAddr    string
-	onJob       func(node.JobSpec) (node.JobResult, error)
+	onJob       func(context.Context, node.JobSpec) (node.JobResult, error)
 	jobs        []node.JobSpec
 
 	// tunnel is what EnsureTunnel last ran; nil when cloudflared isn't.
@@ -726,6 +726,16 @@ func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, err
 
 // OnJob makes RunJob answer with fn (nil: exit 0, no output).
 func (r *Runtime) OnJob(fn func(node.JobSpec) (node.JobResult, error)) {
+	if fn == nil {
+		r.OnJobContext(nil)
+		return
+	}
+	r.OnJobContext(func(_ context.Context, spec node.JobSpec) (node.JobResult, error) { return fn(spec) })
+}
+
+// OnJobContext is OnJob with the job's context, for jobs that run until
+// it ends (a timeout, a canceled caller).
+func (r *Runtime) OnJobContext(fn func(context.Context, node.JobSpec) (node.JobResult, error)) {
 	r.mu.Lock()
 	r.onJob = fn
 	r.mu.Unlock()
@@ -745,7 +755,8 @@ func (r *Runtime) Jobs() []node.JobSpec {
 // the answer ("pause <id>", "unpause <id>", with pause and unpause
 // events), so OnJob's function sees them as node.StatePaused through
 // Inspect; an unknown ID, or one of another control plane, is
-// node.ErrNotFound before anything is paused.
+// node.ErrNotFound before anything is paused. A Stream's Stdin is echoed
+// to its Stdout.
 func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
 	r.mu.Lock()
 	r.op("job %s", spec.Name)
@@ -761,12 +772,22 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 		return node.JobResult{}, err
 	}
 	if fn != nil {
-		return fn(spec)
+		return fn(ctx, spec)
 	}
 	if spec.Stdin != nil {
 		if _, err := io.Copy(io.Discard, spec.Stdin); err != nil {
 			return node.JobResult{ExitCode: 130}, fmt.Errorf("job input: %w", err)
 		}
+	}
+	if st := spec.Stream; st != nil && st.Stdin != nil {
+		// Like `cat`: the input comes back as output, until its end.
+		var out strings.Builder
+		w := io.Writer(&out)
+		if st.Stdout != nil {
+			w = io.MultiWriter(st.Stdout, &out)
+		}
+		_, err := io.Copy(w, st.Stdin)
+		return node.JobResult{Output: out.String()}, err
 	}
 	return node.JobResult{}, nil
 }

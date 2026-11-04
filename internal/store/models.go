@@ -569,6 +569,27 @@ type ServiceAccess struct {
 	UpdatedAt    time.Time
 }
 
+type ServiceRun struct {
+	ID             int64
+	ServiceID      int64
+	ReleaseID      *int64
+	Trigger        string
+	Command        string
+	Tty            bool
+	Volumes        string
+	TimeoutSeconds int64
+	Status         string
+	ExitCode       *int64
+	Error          string
+	Output         string
+	Actor          string
+	ActorKind      string
+	UserID         *int64
+	TokenID        *int64
+	StartedAt      time.Time
+	FinishedAt     *time.Time
+}
+
 type ServiceStat struct {
 	Res       int64
 	At        int64

@@ -26,7 +26,7 @@ func TestWireRoundTrip(t *testing.T) {
 		Name: "backup-1", Image: "postgres:17", Labels: labels, Env: map[string]string{"A": "1"}, Script: "pg_dump",
 		Network: "env-2", Mounts: []node.Mount{{Volume: "bin", Path: "/bin", ReadOnly: true}},
 		Resources: node.Resources{MemoryBytes: 1 << 28, NanoCPUs: 5e8}, Pause: []string{"abc", "def"},
-	}, toJobRequest, jobRequest.node, "Stdin") // input is for the local runtime only
+	}, toJobRequest, jobRequest.node, "Stdin", "Stream") // input is for the local runtime only; a stream is run-job-stream's own
 	check(t, node.JobResult{ExitCode: 2, Output: "failed"},
 		func(r node.JobResult) jobResult { return jobResult{ExitCode: r.ExitCode, Output: r.Output} },
 		func(w jobResult) node.JobResult { return node.JobResult{ExitCode: w.ExitCode, Output: w.Output} })

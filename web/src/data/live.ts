@@ -9,6 +9,7 @@ import { backupSettingsKey } from "../features/backups/settings";
 import { cloudflareKey } from "../features/cloudflare/data";
 import { registryKey } from "../features/registry/data";
 import { applyAccessRequestEvent } from "../features/requests/data";
+import { applyRunEvent } from "../features/runs/data";
 import { diskKey } from "../features/servers/disk";
 import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
@@ -57,6 +58,7 @@ const busEvents = [
   "analytics",
   "environment_lock",
   "access_request",
+  "run",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -266,6 +268,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Only admins (and the token that asked) get these.
       if (event.access_request)
         applyAccessRequestEvent(queryClient, event.access_request);
+      return;
+    case "run":
+      // A one-off command started or ended; its output isn't in the event.
+      if (event.run) applyRunEvent(queryClient, event.run);
       return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.

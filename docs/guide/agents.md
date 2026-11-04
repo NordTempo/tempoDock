@@ -196,6 +196,7 @@ $ dock request wait 12
 | Can | Can't |
 |---|---|
 | Deploy source or images, roll back, restart | Archive services (`admin`) |
+| Run one-off commands in a service's image (`dock run`, MCP `run_command`) with its variables, audited with the exit code | Run anything on the host itself |
 | Create services in its environment | Create projects (needs an unlimited token); create environments when limited to one |
 | Set, unset and apply variables | Read secret values, even in the staged-changes diff |
 | Add, generate and remove domains | Manage tokens or users |

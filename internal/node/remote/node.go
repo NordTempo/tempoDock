@@ -446,6 +446,7 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return empty{}, rt.EnsureTunnel(ctx, spec)
 	}))
 	h(opDial, serveDial(rt))
+	h(opRunJobStream, serveRunJobStream(rt))
 	h(opSetAnalytics, unary(func(ctx context.Context, a setAnalyticsRequest) (empty, error) {
 		cfg := node.AnalyticsConfig{Salts: a.Salts}
 		if a.Sites != nil {

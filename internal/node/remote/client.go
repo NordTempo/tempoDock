@@ -219,7 +219,11 @@ const SnapshotProtocol = 15
 // ends, with no deadline of its own: a backup takes as long as its data
 // does, and ending the call force-removes the job's container. A node too
 // old to run jobs is an error saying so.
+// A job with a Stream is its own full-duplex call (streamJob).
 func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
+	if spec.Stream != nil {
+		return c.streamJob(ctx, spec)
+	}
 	if spec.Stdin != nil {
 		return node.JobResult{}, errors.New("jobs with input run on the control plane's own server only")
 	}

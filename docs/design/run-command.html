@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Run tab: mocks</title>
+<style>
+  :root {
+    --bg: #000; --panel: #0e0e10; --sel: #1c1c1f; --line: #232326; --soft: #1c1c1f; --ctl: #2e2e33;
+    --fg: #ededef; --sec: #c8c8cf; --mut: #a1a1aa; --faint: #8b8b94;
+    --ok: #4ade80; --warn: #fbbf24; --warn-text: #fcd77a; --warn-tint: #17140b; --warn-line: #3a2f12;
+    --fail: #f87171; --info: #93c5fd;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 12px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  main { max-width: 1120px; margin: 0 auto; padding: 28px 24px 64px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 14px; font-weight: 600; margin: 40px 0 10px; }
+  p.note { color: var(--mut); margin: 0 0 10px; max-width: 780px; }
+  .board { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .bar .title { font-size: 14px; font-weight: 600; }
+  .bar .meta { color: var(--faint); font-size: 11px; }
+  .tabs { display: flex; gap: 2px; padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--mut); }
+  .tabs span { padding: 4px 10px; border-radius: 6px; }
+  .tabs span.on { background: #1f1f23; color: var(--fg); font-weight: 500; }
+  .content { padding: 22px 26px; display: flex; flex-direction: column; gap: 18px; }
+  .btn { border: 1px solid var(--ctl); background: transparent; color: var(--fg); border-radius: 6px; padding: 5px 10px; font: inherit; font-weight: 500; white-space: nowrap; }
+  .btn.primary { background: var(--fg); color: #0a0a0b; border-color: var(--fg); font-weight: 600; }
+  .btn.sm { padding: 3px 8px; }
+  .field { background: #151517; border: 1px solid var(--line); border-radius: 6px; color: var(--fg); font: inherit; padding: 6px 9px; }
+  .field.cmd { font-family: "JetBrains Mono", ui-monospace, monospace; flex: 1 1 auto; min-width: 0; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--ctl); border-radius: 6px; overflow: hidden; }
+  .seg span { padding: 3px 9px; color: var(--mut); }
+  .seg span.on { background: #1f1f23; color: var(--fg); }
+  .lab { color: var(--faint); }
+  .cli { color: var(--faint); font-size: 11px; }
+  .warnline { color: var(--warn-text); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--faint); font-weight: 400; font-size: 11px; padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 7px 14px 7px 0; border-bottom: 1px solid var(--soft); color: var(--sec); white-space: nowrap; vertical-align: top; }
+  th:first-child, td:first-child { padding-left: 14px; }
+  tr.sel > td { background: var(--sel); }
+  .panel { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .ok { color: var(--ok); } .fail { color: var(--fail); } .prog { color: var(--warn); } .mut { color: var(--mut); } .faint { color: var(--faint); }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+  .pi { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; border-right-color: transparent; }
+  .trunc { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  pre { margin: 0; background: #0a0a0b; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; color: var(--sec); font: 11.5px/1.6 "JetBrains Mono", ui-monospace, monospace; overflow: auto; max-height: 260px; white-space: pre-wrap; }
+  .split { display: grid; grid-template-columns: 380px minmax(0, 1fr); border-top: 1px solid var(--line); }
+  .list { border-right: 1px solid var(--line); }
+  .item { padding: 7px 14px; border-bottom: 1px solid var(--soft); display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 2px 8px; }
+  .item.sel { background: var(--sel); }
+  .item .c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .m { grid-column: 2 / 4; color: var(--faint); font-size: 11px; }
+  .detail { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .console { background: #0a0a0b; border: 1px solid var(--line); border-radius: 8px; font: 11.5px/1.6 "JetBrains Mono", ui-monospace, monospace; }
+  .console .scroll { padding: 10px 12px; max-height: 360px; overflow: auto; color: var(--sec); white-space: pre-wrap; }
+  .console .prompt { display: flex; gap: 8px; align-items: center; border-top: 1px solid var(--line); padding: 7px 12px; }
+  .console .prompt input { flex: 1; background: transparent; border: 0; color: var(--fg); font: inherit; outline: none; }
+  .console .head { color: var(--faint); }
+  .pick { color: var(--ok); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<h1>Run tab</h1>
+<p class="note">ADR 0048. One-off commands from the service's active release, in the background. A command box, its CLI equivalent, the latest 50 runs and the selected run's output. Every mock shows the same state: a stateful service, a run just finished, one still running.</p>
+
+<h2>A. Command bar, history table, output under the selected row</h2>
+<div class="board">
+  <div class="bar"><span class="faint">shop /</span><span class="title">web</span><span class="meta">production</span><span class="ok" style="font-size:11px"><span class="dot"></span> running <span class="faint mono">· r42</span></span></div>
+  <div class="tabs"><span>Overview</span><span>Backups</span><span>Logs</span><span>Resources</span><span class="on">Run</span><span>Releases</span><span>Variables</span><span>Settings</span><span>Audit</span></div>
+  <div class="content">
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="row">
+        <input class="field cmd" value="bin/rails db:seed">
+        <button class="btn primary">Run</button>
+      </div>
+      <div class="row">
+        <span class="lab">Volumes</span>
+        <span class="seg"><span class="on">read-only</span><span>none</span><span>write</span></span>
+        <span class="lab">Timeout</span>
+        <input class="field mono" style="width:70px;padding:2px 6px" value="1h">
+        <span class="cli mono">dock run -s web -e production -- bin/rails db:seed</span>
+      </div>
+    </div>
+    <div class="panel">
+      <table>
+        <tr><th>Status</th><th>Exit</th><th>Command</th><th>Who</th><th>Started</th><th>Took</th></tr>
+        <tr><td class="prog"><span class="pi"></span> running</td><td></td><td class="mono trunc">bin/rails runner 'Order.reindex_all'</td><td>○ saile@nordtempo.no</td><td class="mono">14:12</td><td class="mono faint">2m 4s</td></tr>
+        <tr class="sel"><td class="ok"><span class="dot"></span> succeeded</td><td class="mono">0</td><td class="mono trunc">bin/rails db:seed</td><td>○ saile@nordtempo.no</td><td class="mono">14:10</td><td class="mono">8s</td></tr>
+        <tr><td colspan="6" style="white-space:normal;padding-bottom:12px"><pre>Seeding products... 128 created
+Seeding users... 12 created
+Done in 7.41s</pre></td></tr>
+        <tr><td class="fail">✕ failed</td><td class="mono">1</td><td class="mono trunc">bin/rails db:migrate:status</td><td class="mono" style="color:var(--info)">◇ claude</td><td class="mono">Nov 3 22:41</td><td class="mono">3s</td></tr>
+        <tr><td class="mut">timed out</td><td></td><td class="mono trunc">bin/import --all</td><td>○ saile@nordtempo.no</td><td class="mono">Nov 2 09:05</td><td class="mono">1h 0m</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h2>B. Inbox: list on the left, the run on the right</h2>
+<div class="board">
+  <div class="bar"><span class="faint">shop /</span><span class="title">web</span><span class="meta">production</span></div>
+  <div class="tabs"><span>Overview</span><span>Logs</span><span class="on">Run</span><span>Releases</span><span>Settings</span></div>
+  <div class="content" style="padding-bottom:12px">
+    <div class="row">
+      <input class="field cmd" value="bin/rails db:seed">
+      <span class="seg"><span class="on">read-only</span><span>none</span><span>write</span></span>
+      <input class="field mono" style="width:60px" value="1h">
+      <button class="btn primary">Run</button>
+    </div>
+  </div>
+  <div class="split">
+    <div class="list">
+      <div class="item"><span class="prog"><span class="pi"></span></span><span class="c mono">bin/rails runner 'Order.reindex_all'</span><span class="faint mono">2m</span><span class="m">saile@nordtempo.no · 14:12</span></div>
+      <div class="item sel"><span class="ok"><span class="dot"></span></span><span class="c mono">bin/rails db:seed</span><span class="mono">0</span><span class="m">saile@nordtempo.no · 14:10 · 8s</span></div>
+      <div class="item"><span class="fail">✕</span><span class="c mono">bin/rails db:migrate:status</span><span class="mono fail">1</span><span class="m">◇ claude · Nov 3 22:41 · 3s</span></div>
+      <div class="item"><span class="mut">–</span><span class="c mono">bin/import --all</span><span class="mut">timed out</span><span class="m">saile@nordtempo.no · Nov 2 09:05 · 1h 0m</span></div>
+    </div>
+    <div class="detail">
+      <div class="mono" style="font-size:13px">bin/rails db:seed</div>
+      <div class="faint"><span class="ok">● succeeded</span> · exit 0 · r42 · volumes read-only · 8s</div>
+      <pre style="max-height:320px">Seeding products... 128 created
+Seeding users... 12 created
+Done in 7.41s</pre>
+    </div>
+  </div>
+</div>
+
+<h2>C. Console: output pane with the prompt at its foot</h2>
+<div class="board">
+  <div class="bar"><span class="faint">shop /</span><span class="title">web</span><span class="meta">production</span></div>
+  <div class="tabs"><span>Overview</span><span>Logs</span><span class="on">Run</span><span>Releases</span><span>Settings</span></div>
+  <div class="content">
+    <div class="console">
+      <div class="scroll"><span class="head">$ bin/rails db:seed    <span class="ok">● exit 0</span> · 8s · 14:10</span>
+Seeding products... 128 created
+Seeding users... 12 created
+Done in 7.41s
+
+<span class="head">$ bin/rails runner 'Order.reindex_all'    <span class="prog">◐ running</span> · output when it ends</span></div>
+      <div class="prompt"><span class="faint">$</span><input value="bin/rails db:seed"><span class="faint">read-only · 1h</span><button class="btn primary sm">Run</button></div>
+    </div>
+    <div class="row faint">History: <span class="mono">db:migrate:status</span> <span class="fail">✕ 1</span> · <span class="mono">bin/import --all</span> timed out · 48 more</div>
+  </div>
+</div>
+
+<h2>Pick</h2>
+<p class="note"><span class="pick">A.</span> The output gets the page's full width (logs are wide, and the 380px list in B squeezes both commands and output), and it lands right under the command box: type, Enter, the new run is the top row, selected, and its output opens there when it ends. It is the Audit table's open-a-row pattern, so nothing new to learn, and the table keeps every column the history needs (status, exit, who, when, duration) that C has to drop. C reads like a live terminal, which the tab is not: runs are background jobs whose output arrives at the end, so a prompt promises an interactivity it can't keep.</p>
+</main>
+</body>
+</html>

@@ -122,6 +122,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerSites(s, a)
 	registerSiteLive(s, a)
 	registerConnect(s, a, mux)
+	registerRuns(s, a, mux)
 	return a
 }
 
