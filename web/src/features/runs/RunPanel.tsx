@@ -150,7 +150,7 @@ function RunForm({
           type="submit"
           cli={cli}
           disabled={!!reason || !trimmed || run.isPending}
-          title={reason}
+          reason={reason}
         >
           Run
         </Act>

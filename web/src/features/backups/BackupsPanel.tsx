@@ -9,7 +9,15 @@ import { useBackups, useCanDeploy, useIsOperator } from "../../data/queries";
 import type { BackupRun, ServiceBackups, ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago, clock, day, size, until } from "../../ui/format";
-import { Act, Button, Check, ErrorText, Panel, StateText } from "../../ui/kit";
+import {
+  Act,
+  Button,
+  Check,
+  ErrorText,
+  Panel,
+  SectionHead,
+  StateText,
+} from "../../ui/kit";
 import type { State } from "../../ui/status";
 import { backupHow, exportOf, hourLabel } from "./backups";
 
@@ -28,9 +36,34 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   const [restored, setRestored] = useState<string | null>(null);
 
+  // Why Run now is off, said beside it.
+  const why = !canDeploy
+    ? "needs deploy access"
+    : running
+      ? "a backup or restore is running"
+      : undefined;
   return (
-    <>
-      <dl className="props max-w-[960px] grid-cols-[120px_minmax(0,1fr)]">
+    <section aria-labelledby="backups" className="flex flex-col gap-2.5">
+      <SectionHead
+        id="backups"
+        right={
+          <span className="flex items-center gap-2">
+            <Act
+              small
+              cli={`dock backup run ${flags}`}
+              disabled={!!why || run.isPending}
+              reason={why}
+              onClick={() => run.mutate(ref)}
+            >
+              Run now
+            </Act>
+            <ErrorText error={run.error} />
+          </span>
+        }
+      >
+        Backups
+      </SectionHead>
+      <dl className="props grid-cols-[120px_minmax(0,1fr)]">
         <Item label="How">
           {backupHow[backups.kind]}
           {backups.warning && (
@@ -54,24 +87,6 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <Schedule serviceRef={ref} backups={backups} disabled={!operator} />
         </Item>
       </dl>
-      <div className="flex flex-wrap items-center gap-2.5">
-        <Act
-          primary
-          cli={`dock backup run ${flags}`}
-          disabled={!canDeploy || running || run.isPending}
-          title={
-            !canDeploy
-              ? "Needs deploy access"
-              : running
-                ? "A backup or restore is running"
-                : undefined
-          }
-          onClick={() => run.mutate(ref)}
-        >
-          Run now
-        </Act>
-        <ErrorText error={run.error} />
-      </div>
       {restored && (
         <RestoringInto
           serviceRef={ref}
@@ -85,7 +100,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         canRestore={canDeploy && !running}
         onRestored={setRestored}
       />
-    </>
+    </section>
   );
 }
 
