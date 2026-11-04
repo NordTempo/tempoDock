@@ -9,6 +9,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // defaultPreDeployTimeout bounds a pre-deploy command whose service (and
@@ -46,27 +47,12 @@ func (d *deployment) preDeploy(ctx context.Context) error {
 	if d.cfg.PreDeployTimeout > 0 {
 		timeout = time.Duration(d.cfg.PreDeployTimeout) * time.Second
 	}
-	image := d.rel.ImageRef
-	if d.rel.ImageID != "" {
-		image = d.rel.ImageID
-	}
 	d.event(ctx, "Running pre-deploy command: "+cmd)
 	_, _ = fmt.Fprintf(d.log, "\n$ %s\n", cmd)
 	jctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	start := time.Now()
-	res, err := d.rt.RunJob(jctx, node.JobSpec{
-		Name:    containerName(d.ss, d.rel.Number) + "_predeploy",
-		Image:   image,
-		Labels:  d.c.labels(d.ss, d.rel.ID),
-		Env:     d.cfg.Env,
-		Script:  cmd,
-		Network: networkName(d.ss.envScope),
-		Resources: node.Resources{
-			MemoryBytes: int64(d.cfg.MemoryMB) << 20,
-			NanoCPUs:    int64(d.cfg.CPUs * 1e9),
-		},
-	})
+	res, err := d.rt.RunJob(jctx, d.c.releaseJob(d.ss, d.rel, d.cfg, containerName(d.ss, d.rel.Number)+"_predeploy", cmd))
 	if res.Output != "" {
 		_, _ = d.log.Write([]byte(res.Output))
 		if !strings.HasSuffix(res.Output, "\n") {
@@ -87,6 +73,30 @@ func (d *deployment) preDeploy(ctx context.Context) error {
 	}
 	d.event(ctx, fmt.Sprintf("Pre-deploy command finished in %s", took))
 	return nil
+}
+
+// releaseJob is a one-off job in a release's image (by ID), with its
+// resolved variables and resource limits, on the environment's private
+// network and without volumes: the pre-deploy command (ADR 0045) and the
+// commands of `dock run` (ADR 0048) and scheduled jobs (ADR 0049). It carries the
+// release's labels; as a job it is never taken for one of its containers.
+func (c *Core) releaseJob(ss svcScope, rel store.Release, cfg releaseConfig, name, cmd string) node.JobSpec {
+	image := rel.ImageRef
+	if rel.ImageID != "" {
+		image = rel.ImageID
+	}
+	return node.JobSpec{
+		Name:    name,
+		Image:   image,
+		Labels:  c.labels(ss, rel.ID),
+		Env:     cfg.Env,
+		Script:  cmd,
+		Network: networkName(ss.envScope),
+		Resources: node.Resources{
+			MemoryBytes: int64(cfg.MemoryMB) << 20,
+			NanoCPUs:    int64(cfg.CPUs * 1e9),
+		},
+	}
 }
 
 // lastLines returns the last n lines of s, without its trailing newlines.

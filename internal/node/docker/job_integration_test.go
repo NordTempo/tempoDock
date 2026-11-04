@@ -146,3 +146,34 @@ func (e *testEnv) waitState(ctx context.Context, id string, want node.ContainerS
 type errReader struct{ err error }
 
 func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
+// A streamed job's output arrives as it is written, stdout and stderr
+// apart, its input reaches it, and with a terminal it sees one of the
+// given size; the container is gone afterwards.
+func TestRunJobStream(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	var stdout, stderr strings.Builder
+	res, err := e.RunJob(ctx, node.JobSpec{
+		Name: e.name("stream"), Image: shellImage, Script: `read line; echo "got $line"; echo oops >&2; exit 4`,
+		Stream: &node.JobStream{Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader("hello\n")},
+	})
+	if err != nil || res.ExitCode != 4 || stdout.String() != "got hello\n" || stderr.String() != "oops\n" || !strings.Contains(res.Output, "got hello") {
+		t.Fatalf("job = %+v, %v; stdout %q, stderr %q", res, err, stdout.String(), stderr.String())
+	}
+
+	var term strings.Builder
+	res, err = e.RunJob(ctx, node.JobSpec{
+		Name: e.name("tty"), Image: shellImage, Script: `stty size; [ -t 0 ] && echo tty`,
+		Stream: &node.JobStream{Stdout: &term, TTY: true, Size: node.TermSize{Cols: 132, Rows: 43}},
+	})
+	if err != nil || res.ExitCode != 0 || !strings.Contains(term.String(), "43 132") || !strings.Contains(term.String(), "tty") {
+		t.Fatalf("tty job = %+v, %v; output %q", res, err, term.String())
+	}
+	for _, name := range []string{e.name("stream"), e.name("tty")} {
+		left, err := e.cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: make(client.Filters).Add("name", name)})
+		if err != nil || len(left.Items) != 0 {
+			t.Errorf("job container %s left behind: %v", name, err)
+		}
+	}
+}

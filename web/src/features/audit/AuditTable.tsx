@@ -20,6 +20,7 @@ const verbs: Record<string, string> = {
   "service.archive": "archive service",
   "service.create": "create service",
   "service.update": "stage settings",
+  "service.run": "run a command",
   "token.create": "create token",
   "token.revoke": "revoke token",
   "user.create": "create user",
@@ -79,6 +80,7 @@ const pastVerbs: Record<string, string> = {
   "volume.add": "staged a volume for",
   "service.create": "created",
   "service.archive": "archived",
+  "service.run": "ran a command in",
   "environment.create": "created",
 };
 

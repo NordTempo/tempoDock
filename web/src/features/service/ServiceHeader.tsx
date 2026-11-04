@@ -57,6 +57,12 @@ const tabs = [
     to: "/$org/$project/$environment/$service/logs",
     key: "g l",
   },
+  // One-off commands (ADR 0048). G C, "command": G R is Releases.
+  {
+    label: "Run",
+    to: "/$org/$project/$environment/$service/run",
+    key: "g c",
+  },
   // CPU and memory. G M, from its old name Metrics: G R is Releases.
   {
     label: "Resources",

@@ -69,7 +69,7 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 		newMCPCmd(g))
 	addGroup(root, "ship", "Deploy and operate:",
 		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newTrafficCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g),
-		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g), newConnectCmd(g), newGitCmd(g), newBackupCmd(g), newRequestCmd(g))
+		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g), newConnectCmd(g), newRunCmd(g), newRunsCmd(g), newGitCmd(g), newBackupCmd(g), newRequestCmd(g))
 	addGroup(root, "config", "Configure (changes are staged until applied):",
 		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newDiscardCmd(g), newDomainCmd(g), newAccessCmd(g), newVolumeCmd(g),
 		newServiceCmd(g), newEnvironmentCmd(g), newProjectCmd(g))
@@ -82,6 +82,9 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return 0
+	}
+	if code, ok := errors.AsType[exitStatus](err); ok {
+		return int(code) // `dock run`: the command's own status, nothing to print
 	}
 	io.JSON = g.json
 	if _, ok := errors.AsType[*output.Error](err); !ok && !g.started {

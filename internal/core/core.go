@@ -159,6 +159,8 @@ type Core struct {
 	backups backupState
 	// snapshots holds the in-place snapshot restores in flight (ADR 0047).
 	snapshots snapshotState
+	// runs counts one-off commands in flight (runs.go).
+	runs runState
 
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
@@ -220,6 +222,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		cliLogins:  newCLILogins(),
 		backups:    newBackupState(),
 		snapshots:  newSnapshotState(),
+		runs:       runState{running: map[int64]int{}, writing: map[int64]bool{}},
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
@@ -315,6 +318,9 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	if err := c.failInterruptedSnapshots(ctx); err != nil {
 		return fmt.Errorf("recover snapshots: %w", err)
+	}
+	if err := c.interruptRuns(ctx); err != nil {
+		return fmt.Errorf("recover runs: %w", err)
 	}
 	c.applyRegistryStorage(ctx)
 	if err := c.convertBackupRepository(ctx); err != nil {

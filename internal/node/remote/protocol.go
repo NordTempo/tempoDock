@@ -68,8 +68,9 @@ const (
 	// health state and health_status events (ADR 0043); 14 added
 	// archive-logs, archived-logs and prune-logs (ADR 0046).
 	// 15 adds run-job's pause: containers frozen while the job runs (ADR
-	// 0047).
-	Protocol = 15
+	// 0047); 16 adds run-job-stream, jobs connected to their caller
+	// (`dock run`, ADR 0048).
+	Protocol = 16
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -167,7 +168,8 @@ const (
 	opArchiveLogs  = "archive-logs"
 	opArchivedLogs = "archived-logs"
 	opPruneLogs    = "prune-logs"
-	opRunJob       = "run-job" // protocol 2
+	opRunJob       = "run-job"        // protocol 2
+	opRunJobStream = "run-job-stream" // protocol 16, full duplex: see job_stream.go
 	opRotate       = "rotate"
 	opUpdate       = "update" // protocol 4
 	// Joining mode (join.go) only.

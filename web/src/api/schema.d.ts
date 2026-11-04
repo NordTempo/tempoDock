@@ -2192,6 +2192,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a service's runs
+         * @description Its latest one-off commands, newest first, without their output.
+         */
+        get: operations["list-runs"];
+        put?: never;
+        /**
+         * Run a command
+         * @description Runs a one-off command in the background in the service's active image: its resolved variables, CPU and memory limits and its environment's private network, with `/bin/sh -c`. The answer is the run, running; run events follow it. Audited as service.run with the exit code. Scope: deploy. To stream output and input (a console), `GET /api/v1/projects/{project}/environments/{environment}/services/{service}/run` with `Connection: Upgrade` and `Upgrade: dock-run` and the same fields as query parameters, plus `tty`, `stdin`, `cols` and `rows` (bearer token only); `dock run` does.
+         */
+        post: operations["run-command"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a run
+         * @description One run with the tail of its output (none for terminal sessions). Scope: deploy, as output can show the service's variables.
+         */
+        get: operations["get-run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots": {
         parameters: {
             query?: never;
@@ -3909,6 +3953,34 @@ export interface components {
             /** @example tempo.run */
             name: string;
         };
+        CommandRun: {
+            command: string;
+            created_by: string;
+            environment: string;
+            error?: string;
+            /** Format: int64 */
+            exit_code?: number;
+            /** Format: date-time */
+            finished_at?: string;
+            /** Format: int64 */
+            id: number;
+            output?: string;
+            project: string;
+            /** Format: int64 */
+            release: number;
+            service: string;
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed" | "timed_out" | "canceled" | "interrupted";
+            /** Format: int64 */
+            timeout_seconds: number;
+            /** @enum {string} */
+            trigger: "command";
+            tty: boolean;
+            /** @enum {string} */
+            volumes: "none" | "read" | "write";
+        };
         Commit: {
             /** @description GitHub login of the author, else their name */
             author: string;
@@ -4587,6 +4659,7 @@ export interface components {
             project_renamed?: components["schemas"]["ProjectRenamed"];
             release?: components["schemas"]["Release"];
             release_event?: components["schemas"]["ReleaseEvent"];
+            run?: components["schemas"]["CommandRun"];
             server?: components["schemas"]["Server"];
             service?: string;
             service_status?: components["schemas"]["ServiceStatus"];
@@ -4594,7 +4667,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run";
             update?: components["schemas"]["UpdateStatus"];
             usage?: components["schemas"]["UsageUpdate"];
         };
@@ -5204,6 +5277,20 @@ export interface components {
             project: string;
             reason?: string;
             service: string;
+        };
+        RunCommandRequest: {
+            /** @description Run with /bin/sh -c in the service's active image, its variables and its environment's private network */
+            command: string;
+            /**
+             * Format: int64
+             * @description Stopped after this long. Default 3600
+             */
+            timeout_seconds?: number;
+            /**
+             * @description The service's volumes: read-only by default on a stateful service, none on a database template (never mounted) or a stateless service. write mounts them read-write next to the running service: only for apps whose storage takes a second writer
+             * @enum {string}
+             */
+            volumes?: "none" | "read" | "write";
         };
         SMTPSettings: {
             from: string;
@@ -19466,6 +19553,308 @@ export interface operations {
             };
             /** @description Locked */
             423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-runs": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandRun"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "run-command": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandRun"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-run": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandRun"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

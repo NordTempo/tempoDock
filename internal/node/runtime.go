@@ -164,6 +164,8 @@ type Containers interface {
 	// the result says how it ended. Cancelling ctx kills and removes it.
 	// spec.Pause freezes service containers for exactly the job's run
 	// (ADR 0047: snapshots).
+	// With spec.Stream it is connected to its caller while it runs (`dock
+	// run`, ADR 0048; on a remote server since node protocol 16).
 	RunJob(ctx context.Context, spec JobSpec) (JobResult, error)
 }
 
@@ -222,7 +224,34 @@ type JobSpec struct {
 	// unpauses them when it starts again (the Docker runtime's
 	// UnpauseStranded).
 	Pause []string
+	// Stream, when set, connects the job to its caller while it runs
+	// (`dock run`, ADR 0048): output as it is written, and optionally a
+	// terminal and input. Not together with Stdin.
+	Stream *JobStream
 }
+
+// JobStream connects a running job to its caller. JobResult.Output still
+// holds the tail of the output.
+type JobStream struct {
+	// Stdout gets the job's standard output as it is written; with TTY,
+	// everything its terminal shows. Stderr gets its standard error
+	// (without TTY); nil sends it to Stdout. Writes come from one
+	// goroutine; a failing write stops the job.
+	Stdout, Stderr io.Writer
+	// Stdin, when set, is the job's standard input, passed on as it
+	// arrives; its end (EOF or an error) closes the job's input. Unlike
+	// JobSpec.Stdin the job may end before reading all of it, and RunJob
+	// doesn't wait for it to end: the caller ends it after RunJob returns.
+	Stdin io.Reader
+	// TTY gives the job a terminal of Size, resized on every value from
+	// Resize (which may be nil).
+	TTY    bool
+	Size   TermSize
+	Resize <-chan TermSize
+}
+
+// TermSize is a terminal's size in characters.
+type TermSize struct{ Cols, Rows uint16 }
 
 // JobResult is how a job ended.
 type JobResult struct {

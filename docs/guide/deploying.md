@@ -257,6 +257,35 @@ Creates a new release identical to the active one: same image, same resolved
 config. It does not pick up staged changes; use `dock apply` for
 that.
 
+## Run a command
+
+```sh
+dock run -s web -- bin/rails db:seed
+dock run -it -s web -- bin/rails console
+dock run -s app --volumes write -- ./fix-uploads.sh
+dock runs -s web                 # the last 50 runs; `dock runs show <id>` for one's output
+```
+
+Runs a one-off command in a container of its own, next to the service:
+the active release's image, its variables as they are live (not staged
+changes), its CPU and memory limits and the environment's private network,
+so it reaches the databases the service does. The command runs with
+`/bin/sh -c`, so the image needs `sh`. It never touches the running
+container, and works while the service is crash looping. `-i` passes
+your stdin, `-t` gives it a terminal (with `-i`, a console); `dock run`
+exits with the command's exit code.
+
+| | |
+|---|---|
+| Who | Scope `deploy` on the environment. A locked environment refuses tokens like any change (ADR 0044) |
+| Volumes | A database's volume is never mounted (connect over the network). Another stateful service's volumes are read-only unless `--volumes write`, which mounts them next to the running service: only for storage that takes a second writer. One writer per service at a time |
+| Limits | `--timeout`, default 1 hour, at most 24 hours; 4 runs per service at once |
+| Record | Audited as `service.run` with the command and exit code. The service's last 50 runs keep their status and the last 16 KB of output, except terminal sessions, which keep no output |
+
+The service's Run tab in the UI runs commands too (without a terminal),
+and agents have the MCP tool `run_command`. Design: [ADR
+0048](../decisions/0048-one-off-commands.md).
+
 ## Promote
 
 ```sh

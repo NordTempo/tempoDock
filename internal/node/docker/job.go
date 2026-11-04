@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -26,11 +27,18 @@ import (
 // force-removed before RunJob returns. With spec.Stdin the job gets it on
 // standard input (attached before the start); the container is removed
 // before that connection closes, so a job that didn't get all of its
-// input never sees the end of it. spec.Pause's running containers are
-// paused right before the start and unpaused before the job container is
+// input never sees the end of it. With spec.Stream it is attached to its
+// caller instead (streamJob). spec.Pause's running containers are paused
+// right before the start and unpaused before the job container is
 // removed; an unpause that fails is part of the returned error. The job
 // container records them (labelPauses) for UnpauseStranded.
 func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (_ node.JobResult, err error) {
+	switch {
+	case spec.Stdin != nil && spec.Stream != nil:
+		return node.JobResult{}, errors.New("a job takes Stdin or Stream, not both")
+	case spec.Stream != nil && len(spec.Pause) > 0:
+		return node.JobResult{}, errors.New("a streamed job can't pause containers")
+	}
 	if err := r.checkDeps(ctx, node.ContainerSpec{Network: spec.Network, Mounts: spec.Mounts, Labels: spec.Labels}); err != nil {
 		return node.JobResult{}, err
 	}
@@ -56,6 +64,9 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (_ node.JobResu
 			attached.Close()
 		}
 	}()
+	if spec.Stream != nil {
+		return r.streamJob(ctx, created.ID, spec)
+	}
 	if spec.Stdin != nil {
 		att, err := r.cli.ContainerAttach(ctx, created.ID, client.ContainerAttachOptions{Stream: true, Stdin: true})
 		if err != nil {
@@ -106,6 +117,109 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (_ node.JobResu
 		}
 		return res, nil
 	}
+}
+
+// streamJob runs a created job connected to spec.Stream (`dock run`, ADR
+// 0048): attached before the start, so no output is missed, its output
+// copied to the stream as it comes and kept in a tail for the result.
+// RunJob's deferred remove ends it however this returns.
+func (r *Runtime) streamJob(ctx context.Context, id string, spec node.JobSpec) (node.JobResult, error) {
+	st := spec.Stream
+	att, err := r.cli.ContainerAttach(ctx, id, client.ContainerAttachOptions{Stream: true, Stdin: st.Stdin != nil, Stdout: true, Stderr: true})
+	if err != nil {
+		return node.JobResult{}, fmt.Errorf("attach to job %s: %w", spec.Name, err)
+	}
+	defer att.Close()
+	wait := r.cli.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNextExit})
+	if _, err := r.cli.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
+		return node.JobResult{}, fmt.Errorf("start job %s: %w", spec.Name, err)
+	}
+	ended := make(chan struct{})
+	defer close(ended)
+	if st.TTY {
+		go r.resizeJob(ctx, id, st, ended)
+	}
+	if st.Stdin != nil {
+		go func() {
+			_, _ = io.Copy(att.Conn, st.Stdin)
+			_ = att.CloseWrite()
+		}()
+	}
+	var tail tailBuffer
+	copied := make(chan error, 1)
+	go func() {
+		stdout := teeTail(st.Stdout, &tail)
+		var err error
+		if st.TTY {
+			_, err = io.Copy(stdout, att.Reader)
+		} else {
+			_, err = stdcopy.StdCopy(stdout, teeTail(cmp.Or(st.Stderr, st.Stdout), &tail), att.Reader)
+		}
+		copied <- err
+	}()
+	var res node.JobResult
+	for done := false; !done; {
+		select {
+		case w := <-wait.Result:
+			res.ExitCode = int(w.StatusCode)
+			if w.Error != nil && w.Error.Message != "" {
+				return res, fmt.Errorf("job %s: %s", spec.Name, w.Error.Message)
+			}
+			done = true
+		case err := <-wait.Error:
+			return res, fmt.Errorf("wait for job %s: %w", spec.Name, err)
+		case err := <-copied:
+			if err != nil && !errors.Is(err, io.EOF) {
+				// The caller stopped taking output: the job ends with it.
+				return res, fmt.Errorf("job %s output: %w", spec.Name, err)
+			}
+			copied = nil // the stream ended with the job; its exit follows
+		case <-ctx.Done():
+			return res, ctx.Err()
+		}
+	}
+	if copied != nil {
+		// The attach stream ends right after the exit; wait for the last
+		// of the output, but not for a stream that hangs.
+		select {
+		case err := <-copied:
+			_ = err // the job's end is what counts now
+		case <-time.After(5 * time.Second):
+		}
+	}
+	res.Output = tail.String()
+	return res, nil
+}
+
+// resizeJob gives a terminal job its size right after the start (Docker
+// may not apply the created ConsoleSize to an attached terminal), then
+// each size from st.Resize until the job ended.
+func (r *Runtime) resizeJob(ctx context.Context, id string, st *node.JobStream, ended <-chan struct{}) {
+	size := st.Size
+	for {
+		if size.Cols > 0 && size.Rows > 0 {
+			_, _ = r.cli.ContainerResize(ctx, id, client.ContainerResizeOptions{Height: uint(size.Rows), Width: uint(size.Cols)})
+		}
+		select {
+		case s, ok := <-st.Resize:
+			if !ok {
+				return
+			}
+			size = s
+		case <-ended:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// teeTail writes to w (if any) and the tail.
+func teeTail(w io.Writer, tail *tailBuffer) io.Writer {
+	if w == nil {
+		return tail
+	}
+	return io.MultiWriter(w, tail)
 }
 
 // feedJob copies in to a started job's standard input and closes it. If
@@ -172,6 +286,11 @@ func jobOptions(spec node.JobSpec, pause []string, owner string) client.Containe
 		OpenStdin: spec.Stdin != nil,
 		StdinOnce: spec.Stdin != nil,
 	}
+	if st := spec.Stream; st != nil {
+		cfg.Tty = st.TTY
+		cfg.OpenStdin, cfg.StdinOnce, cfg.AttachStdin = st.Stdin != nil, st.Stdin != nil, st.Stdin != nil
+		cfg.AttachStdout, cfg.AttachStderr = true, true
+	}
 	host := &container.HostConfig{
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 		LogConfig:     container.LogConfig{Type: "local", Config: map[string]string{"max-size": "10m", "max-file": "2"}},
@@ -181,6 +300,9 @@ func jobOptions(spec node.JobSpec, pause []string, owner string) client.Containe
 			NanoCPUs:   spec.Resources.NanoCPUs,
 		},
 		SecurityOpt: []string{"no-new-privileges"},
+	}
+	if st := spec.Stream; st != nil && st.TTY && st.Size.Cols > 0 && st.Size.Rows > 0 {
+		host.ConsoleSize = [2]uint{uint(st.Size.Rows), uint(st.Size.Cols)}
 	}
 	for _, m := range spec.Mounts {
 		host.Mounts = append(host.Mounts, volumeMount(m))

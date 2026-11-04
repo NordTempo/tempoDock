@@ -405,6 +405,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.finishControlPlaneBackupStmt, err = db.PrepareContext(ctx, finishControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query FinishControlPlaneBackup: %w", err)
 	}
+	if q.finishServiceRunStmt, err = db.PrepareContext(ctx, finishServiceRun); err != nil {
+		return nil, fmt.Errorf("error preparing query FinishServiceRun: %w", err)
+	}
 	if q.finishSnapshotStmt, err = db.PrepareContext(ctx, finishSnapshot); err != nil {
 		return nil, fmt.Errorf("error preparing query FinishSnapshot: %w", err)
 	}
@@ -579,6 +582,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getServiceDomainStmt, err = db.PrepareContext(ctx, getServiceDomain); err != nil {
 		return nil, fmt.Errorf("error preparing query GetServiceDomain: %w", err)
 	}
+	if q.getServiceRunStmt, err = db.PrepareContext(ctx, getServiceRun); err != nil {
+		return nil, fmt.Errorf("error preparing query GetServiceRun: %w", err)
+	}
 	if q.getSessionUserStmt, err = db.PrepareContext(ctx, getSessionUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSessionUser: %w", err)
 	}
@@ -629,6 +635,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.insertRestoredVariableStmt, err = db.PrepareContext(ctx, insertRestoredVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertRestoredVariable: %w", err)
+	}
+	if q.insertServiceRunStmt, err = db.PrepareContext(ctx, insertServiceRun); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertServiceRun: %w", err)
 	}
 	if q.insertVariableStmt, err = db.PrepareContext(ctx, insertVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertVariable: %w", err)
@@ -864,6 +873,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listRoutableDomainsStmt, err = db.PrepareContext(ctx, listRoutableDomains); err != nil {
 		return nil, fmt.Errorf("error preparing query ListRoutableDomains: %w", err)
 	}
+	if q.listRunningServiceRunsStmt, err = db.PrepareContext(ctx, listRunningServiceRuns); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRunningServiceRuns: %w", err)
+	}
 	if q.listRunningSnapshotRestoresStmt, err = db.PrepareContext(ctx, listRunningSnapshotRestores); err != nil {
 		return nil, fmt.Errorf("error preparing query ListRunningSnapshotRestores: %w", err)
 	}
@@ -902,6 +914,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listServiceIDsStmt, err = db.PrepareContext(ctx, listServiceIDs); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServiceIDs: %w", err)
+	}
+	if q.listServiceRunsStmt, err = db.PrepareContext(ctx, listServiceRuns); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServiceRuns: %w", err)
 	}
 	if q.listServiceSnapshotRestoresStmt, err = db.PrepareContext(ctx, listServiceSnapshotRestores); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServiceSnapshotRestores: %w", err)
@@ -1286,6 +1301,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.trafficTotalsStmt, err = db.PrepareContext(ctx, trafficTotals); err != nil {
 		return nil, fmt.Errorf("error preparing query TrafficTotals: %w", err)
+	}
+	if q.trimServiceRunsStmt, err = db.PrepareContext(ctx, trimServiceRuns); err != nil {
+		return nil, fmt.Errorf("error preparing query TrimServiceRuns: %w", err)
 	}
 	if q.trimTrafficPathsStmt, err = db.PrepareContext(ctx, trimTrafficPaths); err != nil {
 		return nil, fmt.Errorf("error preparing query TrimTrafficPaths: %w", err)
@@ -1984,6 +2002,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing finishControlPlaneBackupStmt: %w", cerr)
 		}
 	}
+	if q.finishServiceRunStmt != nil {
+		if cerr := q.finishServiceRunStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing finishServiceRunStmt: %w", cerr)
+		}
+	}
 	if q.finishSnapshotStmt != nil {
 		if cerr := q.finishSnapshotStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing finishSnapshotStmt: %w", cerr)
@@ -2274,6 +2297,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getServiceDomainStmt: %w", cerr)
 		}
 	}
+	if q.getServiceRunStmt != nil {
+		if cerr := q.getServiceRunStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getServiceRunStmt: %w", cerr)
+		}
+	}
 	if q.getSessionUserStmt != nil {
 		if cerr := q.getSessionUserStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getSessionUserStmt: %w", cerr)
@@ -2357,6 +2385,11 @@ func (q *Queries) Close() error {
 	if q.insertRestoredVariableStmt != nil {
 		if cerr := q.insertRestoredVariableStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertRestoredVariableStmt: %w", cerr)
+		}
+	}
+	if q.insertServiceRunStmt != nil {
+		if cerr := q.insertServiceRunStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertServiceRunStmt: %w", cerr)
 		}
 	}
 	if q.insertVariableStmt != nil {
@@ -2749,6 +2782,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listRoutableDomainsStmt: %w", cerr)
 		}
 	}
+	if q.listRunningServiceRunsStmt != nil {
+		if cerr := q.listRunningServiceRunsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRunningServiceRunsStmt: %w", cerr)
+		}
+	}
 	if q.listRunningSnapshotRestoresStmt != nil {
 		if cerr := q.listRunningSnapshotRestoresStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listRunningSnapshotRestoresStmt: %w", cerr)
@@ -2812,6 +2850,11 @@ func (q *Queries) Close() error {
 	if q.listServiceIDsStmt != nil {
 		if cerr := q.listServiceIDsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServiceIDsStmt: %w", cerr)
+		}
+	}
+	if q.listServiceRunsStmt != nil {
+		if cerr := q.listServiceRunsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServiceRunsStmt: %w", cerr)
 		}
 	}
 	if q.listServiceSnapshotRestoresStmt != nil {
@@ -3454,6 +3497,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing trafficTotalsStmt: %w", cerr)
 		}
 	}
+	if q.trimServiceRunsStmt != nil {
+		if cerr := q.trimServiceRunsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing trimServiceRunsStmt: %w", cerr)
+		}
+	}
 	if q.trimTrafficPathsStmt != nil {
 		if cerr := q.trimTrafficPathsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing trimTrafficPathsStmt: %w", cerr)
@@ -3715,6 +3763,7 @@ type Queries struct {
 	finishAccessRequestStmt             *sql.Stmt
 	finishBackupStmt                    *sql.Stmt
 	finishControlPlaneBackupStmt        *sql.Stmt
+	finishServiceRunStmt                *sql.Stmt
 	finishSnapshotStmt                  *sql.Stmt
 	finishSnapshotRestoreStmt           *sql.Stmt
 	forgetRunningControlPlaneBackupStmt *sql.Stmt
@@ -3773,6 +3822,7 @@ type Queries struct {
 	getServiceAccessStmt                *sql.Stmt
 	getServiceByNameStmt                *sql.Stmt
 	getServiceDomainStmt                *sql.Stmt
+	getServiceRunStmt                   *sql.Stmt
 	getSessionUserStmt                  *sql.Stmt
 	getSiteStmt                         *sql.Stmt
 	getSiteByNameStmt                   *sql.Stmt
@@ -3790,6 +3840,7 @@ type Queries struct {
 	hostnameExistsStmt                  *sql.Stmt
 	insertLiveVariableStmt              *sql.Stmt
 	insertRestoredVariableStmt          *sql.Stmt
+	insertServiceRunStmt                *sql.Stmt
 	insertVariableStmt                  *sql.Stmt
 	latestEnvironmentAuditStmt          *sql.Stmt
 	listActiveReleasesStmt              *sql.Stmt
@@ -3868,6 +3919,7 @@ type Queries struct {
 	listRepositorySnapshotsStmt         *sql.Stmt
 	listRetiredPortHoldersStmt          *sql.Stmt
 	listRoutableDomainsStmt             *sql.Stmt
+	listRunningServiceRunsStmt          *sql.Stmt
 	listRunningSnapshotRestoresStmt     *sql.Stmt
 	listSavedQueriesStmt                *sql.Stmt
 	listSensitiveColumnsStmt            *sql.Stmt
@@ -3881,6 +3933,7 @@ type Queries struct {
 	listServiceBackupsStmt              *sql.Stmt
 	listServiceCloudflareRecordsStmt    *sql.Stmt
 	listServiceIDsStmt                  *sql.Stmt
+	listServiceRunsStmt                 *sql.Stmt
 	listServiceSnapshotRestoresStmt     *sql.Stmt
 	listServiceSnapshotsStmt            *sql.Stmt
 	listServiceStatsStmt                *sql.Stmt
@@ -4009,6 +4062,7 @@ type Queries struct {
 	touchLocalServerStmt                *sql.Stmt
 	touchTokenStmt                      *sql.Stmt
 	trafficTotalsStmt                   *sql.Stmt
+	trimServiceRunsStmt                 *sql.Stmt
 	trimTrafficPathsStmt                *sql.Stmt
 	unapplyVolumeStmt                   *sql.Stmt
 	updateAlertStmt                     *sql.Stmt
@@ -4161,6 +4215,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		finishAccessRequestStmt:             q.finishAccessRequestStmt,
 		finishBackupStmt:                    q.finishBackupStmt,
 		finishControlPlaneBackupStmt:        q.finishControlPlaneBackupStmt,
+		finishServiceRunStmt:                q.finishServiceRunStmt,
 		finishSnapshotStmt:                  q.finishSnapshotStmt,
 		finishSnapshotRestoreStmt:           q.finishSnapshotRestoreStmt,
 		forgetRunningControlPlaneBackupStmt: q.forgetRunningControlPlaneBackupStmt,
@@ -4219,6 +4274,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getServiceAccessStmt:                q.getServiceAccessStmt,
 		getServiceByNameStmt:                q.getServiceByNameStmt,
 		getServiceDomainStmt:                q.getServiceDomainStmt,
+		getServiceRunStmt:                   q.getServiceRunStmt,
 		getSessionUserStmt:                  q.getSessionUserStmt,
 		getSiteStmt:                         q.getSiteStmt,
 		getSiteByNameStmt:                   q.getSiteByNameStmt,
@@ -4236,6 +4292,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		hostnameExistsStmt:                  q.hostnameExistsStmt,
 		insertLiveVariableStmt:              q.insertLiveVariableStmt,
 		insertRestoredVariableStmt:          q.insertRestoredVariableStmt,
+		insertServiceRunStmt:                q.insertServiceRunStmt,
 		insertVariableStmt:                  q.insertVariableStmt,
 		latestEnvironmentAuditStmt:          q.latestEnvironmentAuditStmt,
 		listActiveReleasesStmt:              q.listActiveReleasesStmt,
@@ -4314,6 +4371,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listRepositorySnapshotsStmt:         q.listRepositorySnapshotsStmt,
 		listRetiredPortHoldersStmt:          q.listRetiredPortHoldersStmt,
 		listRoutableDomainsStmt:             q.listRoutableDomainsStmt,
+		listRunningServiceRunsStmt:          q.listRunningServiceRunsStmt,
 		listRunningSnapshotRestoresStmt:     q.listRunningSnapshotRestoresStmt,
 		listSavedQueriesStmt:                q.listSavedQueriesStmt,
 		listSensitiveColumnsStmt:            q.listSensitiveColumnsStmt,
@@ -4327,6 +4385,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listServiceBackupsStmt:              q.listServiceBackupsStmt,
 		listServiceCloudflareRecordsStmt:    q.listServiceCloudflareRecordsStmt,
 		listServiceIDsStmt:                  q.listServiceIDsStmt,
+		listServiceRunsStmt:                 q.listServiceRunsStmt,
 		listServiceSnapshotRestoresStmt:     q.listServiceSnapshotRestoresStmt,
 		listServiceSnapshotsStmt:            q.listServiceSnapshotsStmt,
 		listServiceStatsStmt:                q.listServiceStatsStmt,
@@ -4455,6 +4514,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		touchLocalServerStmt:                q.touchLocalServerStmt,
 		touchTokenStmt:                      q.touchTokenStmt,
 		trafficTotalsStmt:                   q.trafficTotalsStmt,
+		trimServiceRunsStmt:                 q.trimServiceRunsStmt,
 		trimTrafficPathsStmt:                q.trimTrafficPathsStmt,
 		unapplyVolumeStmt:                   q.unapplyVolumeStmt,
 		updateAlertStmt:                     q.updateAlertStmt,

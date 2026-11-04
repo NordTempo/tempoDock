@@ -13,6 +13,8 @@ What scripts, CI and agents can rely on. The goals behind these are in
   is the secret `dock token create` returns, once.
 - Streaming commands (`dock logs`, `dock db query`) print one JSON object
   per line instead.
+- `dock run --json` sends the command's output to stderr and prints only
+  the run on stdout once it ended ([`dock run`](#dock-run)).
 - Progress (deploy steps, build output) goes to stderr and is silent with
   `--json`.
 - With `--json`, an error is one JSON object on stderr:
@@ -183,6 +185,8 @@ name. Update older CLI clients before renaming projects they use.
 | `rollback [N]`, `release rollback [N]` | New release from an earlier one; default the one that served before the active one. Says which release it copies and that release's image and config |
 | `restart` | New release identical to the active one |
 | `connect [service] [--port N] [--confirm ENV] [--show-url]` | Tunnel `127.0.0.1` (the service's port if free, else a free one) to the service's private port until Ctrl-C, for psql, TablePlus, redis-cli ([guide](guide/data.md#connecting-from-your-machine)). Needs data access level write with sensitive visible; production needs `--confirm`, and API tokens never get production. `--show-url` prints the connection URL with its password (audited). `--json` prints one object (`service`, `port`, `local`, `url`, ...) before serving. Exit 3 without access |
+| `run [service] [-i] [-t] [-d] [--timeout D] [--volumes none\|read\|write] -- COMMAND...` | Run a one-off command in a new container from the service's active release, streamed; exits with the command's exit code ([below](#dock-run)) |
+| `runs [service]`, `runs show ID` | The service's latest one-off commands (the newest 50), newest first; one with the tail of its output (deploy scope) |
 | `git connect OWNER/REPO [--mode app\|webhook] [--branch B] [--dir D] [--token-stdin\|--remove-token] [--status] [--rotate-secret]` | Deploy on every push to a GitHub branch ([guide](guide/deploying.md#deploy-on-git-push)). Through Dock's GitHub App when it is installed for the org (statuses on, no token), else, or with `--mode webhook`, with its own webhook: prints the webhook settings for GitHub and its secret, once (again only with `--rotate-secret`). Running it again changes the branch, directory, token, statuses or mode. The token is read from stdin only and never printed |
 | `git status`, `git deploy [--ref R]`, `git disconnect [-y]` | The GitHub source: the App or the webhook URL, token set or not, queued push, latest delivery; queue the branch's head (or a SHA, branch or tag) now, even if live; remove the connection and its token |
 | `github status`, `github app create [--owner ORG] [--open=false]\|remove [-y]`, `github install ORG [--open=false]`, `github assign ID ORG`, `github unassign ID` | Operator: Dock's GitHub App ([ADR 0031](decisions/0031-github-app.md)). `app create` and `install` print a link valid for an hour (on stderr with `--json`) and open it in a browser; GitHub sends the browser back to Dock. `status` lists the App's installations with their org; `assign` lets an org deploy from one |
@@ -229,6 +233,46 @@ name. Update older CLI clients before renaming projects they use.
 Commands that start releases (`deploy`, `promote`, `rollback`, `restart`, `apply`,
 `--deploy`) follow them until they are live or failed; `--detach` returns
 right after they are queued. Ctrl-C stops following, not the deploy.
+
+### `dock run`
+
+One-off commands ([ADR 0048](decisions/0048-one-off-commands.md)): a job
+container from the service's active release, with its image, variables,
+CPU and memory limits and its environment's private network, running
+`/bin/sh -c COMMAND`. The running service is never touched. Needs deploy
+scope; every run is audited (`service.run`) and listed by `dock runs`.
+
+- The command is everything after `--`, which is required; only the
+  service may come before it (`dock run web -- ls` or `dock run -s web --
+  ls`). One argument is sent as it is (`dock run -- 'rake a && rake b'`);
+  several are each quoted for the shell when needed (`dock run -- psql -c
+  'select 1'` sends `psql -c 'select 1'`). Flags after `--`, `--json`
+  included, are part of the command.
+- `-i` sends stdin to the command, closing its input at stdin's end;
+  without it stdin is never read. `-t` gives the command a terminal when
+  stdin is one (otherwise a warning, and it runs without); with `-i` the
+  local terminal is in raw mode until the run ends and follows resizes.
+  `dock run -it web -- bin/rails console` is a console.
+- `--timeout` (default 1h, at most 24h) stops the command after that long.
+  `--volumes`: a stateful service's volumes are mounted read-only by
+  default; `write` mounts them read-write next to the running service.
+  Databases' volumes are never mounted.
+- `-d`/`--detach` starts the run in the background (no `-i` or `-t`),
+  prints it and exits 0; `dock runs show ID` follows it. In a locked
+  environment a run is refused (`environment_locked`, exit 5) and files
+  an access request (`dock request wait ID`); approved, it runs in the
+  background, without a terminal.
+- Output: the command's stdout to stdout, its stderr to stderr. With
+  `--json`, the command's stdout goes to stderr too, and stdout is only the
+  run (`CommandRun`) as JSON once it ended (with `--detach`, as it
+  started).
+- Exit code: the command's own when it exited, with nothing printed. A run
+  that ended without one (`timed_out`, `canceled`, `interrupted`, or
+  `failed` because it couldn't start) is an error with the status as its
+  `code`, exit 1; with `--json` the run is still printed on stdout. Ctrl-C
+  without a terminal closes the connection, which stops the command, and
+  exits 130. Errors before it starts (no release, a locked environment,
+  permissions) are the usual exit codes.
 
 ### `dock db`
 
