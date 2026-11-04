@@ -27,11 +27,12 @@ import {
   canCreateProject,
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
+import { isPending, useRequestsIfAdmin } from "../features/requests/data";
 import { useUpdateNote } from "../features/update/data";
 import type { FileRoutesById } from "../routeTree.gen";
 import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
-import { ErrorText, Glyph, Menu, menuItem } from "../ui/kit";
+import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, toneText } from "../ui/status";
 import { modKey } from "./keys";
 import { useCurrentContext, useOrg } from "./location";
@@ -158,6 +159,12 @@ function AppNav() {
       <NavLink to="/$org/audit" icon="activity">
         Activity
       </NavLink>
+      {admin && (
+        <NavLink to="/$org/requests" icon="inbox">
+          <span className="flex-1">Requests</span>
+          <PendingRequestCount />
+        </NavLink>
+      )}
       {admin && (
         <NavLink to="/$org/settings/tokens" icon="key">
           Tokens
@@ -312,7 +319,18 @@ function Me() {
   );
 }
 
-/** How many alerts are open, in the worst one's colour; nothing when none. */
+/** How many access requests wait for a decision; nothing when none. */
+function PendingRequestCount() {
+  const pending = useRequestsIfAdmin().filter((r) => isPending(r)).length;
+  if (pending === 0) return null;
+  return (
+    <span className="text-2xs text-warn">
+      {pending}
+      <span className="sr-only"> pending</span>
+    </span>
+  );
+}
+
 /** The newer release, or that an update runs; nothing when up to date. */
 function UpdateBadge() {
   const st = useUpdateNote();
@@ -326,6 +344,7 @@ function UpdateBadge() {
   );
 }
 
+/** How many alerts are open, in the worst one's colour; nothing when none. */
 function OpenAlertCount() {
   const open = useOpenAlertsIfAdmin();
   if (open.length === 0) return null;
@@ -421,9 +440,10 @@ function ProjectTree() {
             </div>
             {expanded && env && (
               <ul className="flex flex-col gap-px pb-1">
-                {environments.length > 1 && (
+                {(environments.length > 1 || env.environment.lock) && (
                   <li className="truncate pt-0.5 pb-0.5 pl-[30px] text-2xs text-faint">
-                    {env.environment.name}
+                    {env.environment.name}{" "}
+                    <LockMark lock={env.environment.lock} />
                   </li>
                 )}
                 {env.services.map((s) => (

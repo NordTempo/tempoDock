@@ -359,7 +359,10 @@ export function useCommands(): Command[] {
   }
   const orgPages = [
     ...(session?.scope === "admin"
-      ? ([["Tokens", "/$org/settings/tokens", "dock token list"]] as const)
+      ? ([
+          ["Tokens", "/$org/settings/tokens", "dock token list"],
+          ["Requests", "/$org/requests", "dock request list"],
+        ] as const)
       : []),
     ...(operator
       ? []

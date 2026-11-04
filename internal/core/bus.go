@@ -28,6 +28,10 @@ type busEvent struct {
 	// (publishBuildLog): as written for subscribers that may reveal them,
 	// masked for the rest.
 	secrets secretsView
+	// adminsOnly limits the event to admins and, when set, the token with
+	// ID requester (access requests).
+	adminsOnly bool
+	requester  int64
 }
 
 // secretsView says which subscribers get an event (busEvent.secrets).
@@ -38,6 +42,11 @@ const (
 	secretsRevealed                    // as written: subscribers that reveal secrets
 	secretsMasked                      // masked: the other subscribers
 )
+
+// seenBy reports whether the event's audience includes a, beyond canSee.
+func (e busEvent) seenBy(a Actor) bool {
+	return !e.adminsOnly || rank(a.Scope) >= rank(apitypes.ScopeAdmin) || (e.requester != 0 && a.TokenID == e.requester)
+}
 
 // LiveEvent is an event as delivered to subscribers. Every subscriber that
 // receives an event shares one LiveEvent, so its JSON is encoded once

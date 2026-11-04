@@ -40,6 +40,14 @@ SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_ope
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.hash = +?;
 
+-- GetTokenByIDWithOwner is GetTokenByHash by ID: an approved access
+-- request acts as the token that asked, checked as it is now.
+-- name: GetTokenByIDWithOwner :one
+SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_operator,
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug
+FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
+WHERE tokens.id = +?;
+
 -- name: GetToken :one
 SELECT * FROM tokens WHERE id = +?;
 

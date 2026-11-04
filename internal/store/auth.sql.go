@@ -266,6 +266,53 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 	return i, err
 }
 
+const getTokenByIDWithOwner = `-- name: GetTokenByIDWithOwner :one
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, users.email AS user_email, users.operator AS user_operator,
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug
+FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
+WHERE tokens.id = +?
+`
+
+type GetTokenByIDWithOwnerRow struct {
+	Token          Token
+	UserEmail      *string
+	UserOperator   *bool
+	UserDisabledAt *time.Time
+	OrgSlug        *string
+}
+
+// GetTokenByIDWithOwner is GetTokenByHash by ID: an approved access
+// request acts as the token that asked, checked as it is now.
+func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetTokenByIDWithOwnerRow, error) {
+	row := q.queryRow(ctx, q.getTokenByIDWithOwnerStmt, getTokenByIDWithOwner, id)
+	var i GetTokenByIDWithOwnerRow
+	err := row.Scan(
+		&i.Token.ID,
+		&i.Token.Name,
+		&i.Token.Hash,
+		&i.Token.Scope,
+		&i.Token.ProjectID,
+		&i.Token.EnvironmentID,
+		&i.Token.CreatedBy,
+		&i.Token.CreatedAt,
+		&i.Token.ExpiresAt,
+		&i.Token.LastUsedAt,
+		&i.Token.RevokedAt,
+		&i.Token.Origin,
+		&i.Token.DataProduction,
+		&i.Token.DataNonProduction,
+		&i.Token.DataSensitive,
+		&i.Token.UserID,
+		&i.Token.OrgID,
+		&i.Token.Operator,
+		&i.UserEmail,
+		&i.UserOperator,
+		&i.UserDisabledAt,
+		&i.OrgSlug,
+	)
+	return i, err
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, email, name, password_hash, created_at, disabled_at, operator FROM users WHERE id = +?
 `

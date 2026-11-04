@@ -54,7 +54,7 @@ func (g *globals) connect() (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	api.Org = r.Org
+	api.Org, api.Reason = r.Org, g.reason
 	return &session{api: api, cfg: cfg, server: r, link: link}, nil
 }
 

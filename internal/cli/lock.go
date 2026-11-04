@@ -124,3 +124,61 @@ func lockWords(l *apitypes.EnvironmentLock) string {
 	}
 	return "locked by " + l.LockedBy
 }
+
+// newOrgLocksCmd is `dock org locks`: the organization's lock settings.
+func newOrgLocksCmd(g *globals) *cobra.Command {
+	var production string
+	var ttl time.Duration
+	cmd := &cobra.Command{
+		Use:   "locks [--lock-production on|off] [--request-ttl 24h]",
+		Short: "Show or change how environments lock and how long access requests wait",
+		Long: `Without flags, show the organization's lock settings. --lock-production on
+makes new production environments start locked (existing ones keep their
+lock); --request-ttl is how long an access request waits for a decision
+before it expires (1h to 720h). Changing them needs an unlimited admin.`,
+		Example: `  dock org locks --lock-production on --request-ttl 48h`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			path := apiPrefix + "/org/lock-settings"
+			cur, err := get[apitypes.OrgLockSettings](cmd.Context(), s, path)
+			if err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("lock-production") || cmd.Flags().Changed("request-ttl") {
+				switch production {
+				case "on":
+					cur.LockProduction = true
+				case "off":
+					cur.LockProduction = false
+				case "":
+				default:
+					return &output.Error{Exit: output.ExitUsage, Message: "--lock-production is on or off"}
+				}
+				if cmd.Flags().Changed("request-ttl") {
+					if ttl < time.Hour || ttl > 720*time.Hour || ttl%time.Hour != 0 {
+						return &output.Error{Exit: output.ExitUsage, Message: "--request-ttl is whole hours from 1h to 720h"}
+					}
+					cur.RequestTTLHours = int(ttl / time.Hour)
+				}
+				if cur, err = send[apitypes.OrgLockSettings](cmd.Context(), s, http.MethodPut, path, cur); err != nil {
+					return err
+				}
+			}
+			return g.io.Print(cur, func() error {
+				state := "start unlocked"
+				if cur.LockProduction {
+					state = "start locked"
+				}
+				_, _ = fmt.Fprintf(g.io.Out, "New production environments %s; access requests wait %d hours.\n", state, cur.RequestTTLHours)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&production, "lock-production", "", "on: new production environments start locked; off: they don't")
+	cmd.Flags().DurationVar(&ttl, "request-ttl", 0, "how long access requests wait for a decision, e.g. 24h")
+	return cmd
+}

@@ -167,6 +167,7 @@ func (c *Core) buildCacheKeep() int64 { return int64(c.cfg.Retention.BuildCacheK
 type retained struct {
 	releases, audit int
 	alerts          int64
+	requests        int64
 }
 
 // retain runs one retention pass. Failures are logged; the next pass
@@ -181,12 +182,18 @@ func (c *Core) retain(ctx context.Context, now time.Time) retained {
 	if out.audit, err = c.trimAudit(ctx, now); err != nil {
 		c.log.Warn("retention: audit log", "err", err)
 	}
+	if err := c.expireRequests(ctx, now); err != nil {
+		c.log.Warn("retention: access requests", "err", err)
+	}
+	if out.requests, err = c.store.PruneAccessRequests(ctx, now.Add(-days(c.cfg.Retention.AuditDays)).UTC()); err != nil {
+		c.log.Warn("retention: access requests", "err", err)
+	}
 	if out.alerts, err = c.store.PruneResolvedAlerts(ctx, ptr(now.Add(-days(c.cfg.Retention.AlertDays)).UTC())); err != nil {
 		c.log.Warn("retention: alerts", "err", err)
 	}
 	took := time.Since(started).Round(time.Microsecond)
 	if out != (retained{}) {
-		c.log.Info("retention", "release_histories", out.releases, "audit_events", out.audit, "alerts", out.alerts, "took", took)
+		c.log.Info("retention", "release_histories", out.releases, "audit_events", out.audit, "alerts", out.alerts, "access_requests", out.requests, "took", took)
 	} else {
 		c.log.Debug("retention: nothing to trim", "took", took)
 	}

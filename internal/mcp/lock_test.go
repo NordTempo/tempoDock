@@ -27,7 +27,10 @@ func TestLockedEnvironmentRefusesTools(t *testing.T) {
 	}
 	// Cloning reads the environment and creates another one. Data tools
 	// are capped at proposing instead (core's TestLockedDataProposes).
-	skip := func(name string) bool { return name == "clone_environment" || strings.Contains(name, "data") }
+	// request_access asks rather than changes.
+	skip := func(name string) bool {
+		return name == "clone_environment" || strings.Contains(name, "data") || name == "request_access"
+	}
 	n := 0
 	for _, tool := range list.Tools {
 		if tool.Annotations != nil && tool.Annotations.ReadOnlyHint || skip(tool.Name) {
@@ -88,4 +91,54 @@ func toolArgs(schema any) map[string]any {
 		args["from"], args["to"] = "production", "staging"
 	}
 	return args
+}
+
+// TestAccessRequestTools: a refused tool call names the request it filed;
+// request_access asks first even where nothing is locked, with a reason;
+// once an admin approves, wait_for_request returns the tool's result.
+func TestAccessRequestTools(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if _, err := f.core.LockEnvironment(ctx, sys, core.EnvRef{Project: "shop", Environment: "staging"}, apitypes.LockEnvironmentRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	s := f.connect("admin", nil)
+	res := call(t, s, "set_variables", map[string]any{"project": "shop", "environment": "staging", "service": "web", "set": map[string]string{"A": "1"}})
+	var e struct {
+		Error struct {
+			Code    apitypes.ErrorCode
+			Request int64
+			Hint    string
+		}
+	}
+	res.decode(t, &e)
+	if e.Error.Code != apitypes.CodeEnvironmentLocked || e.Error.Request == 0 || !strings.Contains(e.Error.Hint, "wait_for_request") {
+		t.Fatalf("refused: %s %s", res.summary, res.json)
+	}
+
+	// Asking first in blog/production, which isn't locked.
+	res = call(t, s, "request_access", map[string]any{
+		"tool": "set_variables", "reason": "rotate the key",
+		"arguments": map[string]any{"project": "blog", "environment": "production", "service": "api", "set": map[string]string{"KEY": "new"}},
+	})
+	var asked struct {
+		ID     int64
+		Status apitypes.AccessRequestStatus
+		Reason string
+	}
+	res.decode(t, &asked)
+	if res.isError || asked.ID == 0 || asked.Status != apitypes.RequestPending || asked.Reason != "rotate the key" {
+		t.Fatalf("request_access: %s %s", res.summary, res.json)
+	}
+	admin := core.Actor{Kind: "user", OrgID: 1, Name: "saile@example.com", UserID: 1, Scope: apitypes.ScopeAdmin}
+	if _, err := f.core.DecideRequest(ctx, admin, asked.ID, true, apitypes.DecideAccessRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	res = call(t, s, "wait_for_request", map[string]any{"id": asked.ID, "wait_seconds": 5})
+	if res.isError || !strings.Contains(res.summary, "ran") || !strings.Contains(res.json, "KEY") {
+		t.Fatalf("wait: %s %s", res.summary, res.json)
+	}
+	if res := call(t, s, "request_access", map[string]any{"tool": "list_projects", "arguments": map[string]any{}, "reason": "x"}); !res.isError {
+		t.Fatalf("asking for a read: %s", res.summary)
+	}
 }

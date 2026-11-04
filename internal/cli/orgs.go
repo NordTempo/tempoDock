@@ -27,7 +27,7 @@ it. With several, pick one for the context with ` + "`dock org use`" + `, for on
 command with --org, or with DOCK_ORG; a linked directory acts in the
 organization it was linked in.`,
 	})
-	cmd.AddCommand(newOrgListCmd(g), newOrgCreateCmd(g), newOrgUseCmd(g),
+	cmd.AddCommand(newOrgListCmd(g), newOrgCreateCmd(g), newOrgUseCmd(g), newOrgLocksCmd(g),
 		newOrgMembersCmd(g), newOrgMemberCmd(g), newOrgInviteCmd(g), newOrgInvitesCmd(g), newOrgJoinCmd(g),
 		newOrgEnvCmd(g), newOrgRenameCmd(g),
 		newOrgGoneCmd(g, "leave", "Leave the organization; the last admin can't", "POST", "/leave",

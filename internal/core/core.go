@@ -83,7 +83,9 @@ type Options struct {
 
 // Core is the control plane.
 type Core struct {
-	cfg config.Config
+	// replay runs approved access requests' calls (requests.go).
+	replays replayers
+	cfg     config.Config
 	// configPath is Options.ConfigPath.
 	configPath string
 	store      *store.Store
@@ -302,6 +304,9 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.recover(ctx); err != nil {
 		return fmt.Errorf("recover: %w", err)
 	}
+	if err := c.recoverRequests(ctx); err != nil {
+		return fmt.Errorf("recover access requests: %w", err)
+	}
 	if err := c.failInterruptedBackups(ctx); err != nil {
 		return fmt.Errorf("recover backups: %w", err)
 	}
@@ -410,6 +415,10 @@ func now() time.Time { return time.Now().UTC() }
 // project's org, else in the actor's; the system's actions outside a
 // project are the platform's.
 func (c *Core) audit(ctx context.Context, a Actor, action string, p *store.Project, e *store.Environment, target, summary string) {
+	if a.approval != nil {
+		// The call an approved access request runs (ADR 0044).
+		summary += fmt.Sprintf(" (access request #%d, approved by %s)", a.approval.id, a.approval.by)
+	}
 	params := store.AddAuditEventParams{
 		Actor: a.Name, ActorKind: a.Kind, Action: action, Target: target, Summary: summary, CreatedAt: now(),
 	}

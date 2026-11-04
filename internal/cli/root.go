@@ -35,6 +35,9 @@ type globals struct {
 	// org is --org: the organization to act in, over DOCK_ORG, the link's
 	// and the context's.
 	org string
+	// reason is --reason: why this command's changes are made, shown with
+	// an access request they file (ADR 0044).
+	reason string
 	// started is set once flags and arguments were accepted, so errors
 	// before that point are usage errors.
 	started bool
@@ -56,6 +59,7 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 	}
 	root.PersistentFlags().BoolVar(&g.json, "json", false, "print stable, machine-readable JSON (see docs/cli.md)")
 	root.PersistentFlags().StringVar(&g.org, "org", "", "organization to act in (default: the linked one, then `dock org use`'s)")
+	root.PersistentFlags().StringVar(&g.reason, "reason", "", "why you make this change; shown to the admin if a locked environment turns it into an access request")
 	root.SetArgs(args)
 	root.SetIn(io.In)
 	root.SetOut(io.Out)
@@ -65,7 +69,7 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 		newMCPCmd(g))
 	addGroup(root, "ship", "Deploy and operate:",
 		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newTrafficCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g),
-		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g), newConnectCmd(g), newGitCmd(g), newBackupCmd(g))
+		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g), newConnectCmd(g), newGitCmd(g), newBackupCmd(g), newRequestCmd(g))
 	addGroup(root, "config", "Configure (changes are staged until applied):",
 		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newDiscardCmd(g), newDomainCmd(g), newAccessCmd(g), newVolumeCmd(g),
 		newServiceCmd(g), newEnvironmentCmd(g), newProjectCmd(g))

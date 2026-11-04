@@ -48,6 +48,9 @@ const (
 	// (ADR 0043). The control plane restarts it, with backoff; the alert
 	// resolves when the check passes again.
 	AlertUnhealthy AlertKind = "unhealthy"
+	// AlertAccessRequest: a token asks to change a locked environment
+	// (ADR 0044); deciding or expiring the request resolves it.
+	AlertAccessRequest AlertKind = "access_request"
 )
 
 // Alert is one occurrence of a problem, open until its condition clears or

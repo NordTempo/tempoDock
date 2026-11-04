@@ -66,7 +66,14 @@ they try is refused with `environment_locked`: deploys, rollbacks,
 restarts, variables, settings, domains, volumes, backups, archive and
 unlocking it. Their data access there is capped at proposing changesets.
 People in the web UI are not affected, and an admin can open a locked
-environment for a while. The check is core's `checkEnv`, which every
+environment for a while.
+
+What a token tried becomes an **access request**: the exact call and its
+arguments, sealed, with who asked and why. An admin approves or rejects
+it in the web UI; approved, it runs as the token, through every check it
+would pass then (a revoked token or a call that no longer applies fails
+safely), and the audit log records the token and the approver. Tokens
+never approve. The check is core's `checkEnv`, which every
 operation inside an environment passes, so new actions are covered without
 code of their own.
 

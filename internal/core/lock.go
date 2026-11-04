@@ -32,7 +32,7 @@ func envLock(e store.Environment) *apitypes.EnvironmentLock {
 // lockedOut reports whether e's lock stops the actor: it is a token, the
 // lock holds, and no approved request lets this call through.
 func (a Actor) lockedOut(e store.Environment) bool {
-	return a.Kind == "token" && a.granted != e.ID && lockHolds(e, now())
+	return a.askFirst || (a.Kind == "token" && a.granted != e.ID && lockHolds(e, now()))
 }
 
 // checkLock is checkEnv's lock alone, for the few changes whose scope
@@ -40,7 +40,7 @@ func (a Actor) lockedOut(e store.Environment) bool {
 // with read scope.
 func (a Actor) checkLock(es envScope, action string) error {
 	if a.lockedOut(es.env) {
-		return lockedErr(es.project, es.env, action)
+		return a.lockedErr(es.project, es.env, action)
 	}
 	return nil
 }
@@ -58,6 +58,8 @@ type LockedError struct {
 	Project, Environment, Action string
 	// Request is the access request filed for the call, 0 before one is.
 	Request int64
+	// askedFirst: the environment isn't locked; the caller asked first.
+	askedFirst bool
 }
 
 func (e *LockedError) Error() string { return e.err.Msg }
@@ -70,20 +72,32 @@ func (e *LockedError) Unwrap() error { return e.err }
 func (e *LockedError) AccessRequest() int64 { return e.Request }
 
 // lockedErr is the error checkEnv returns when the lock stops a token.
-func lockedErr(p store.Project, e store.Environment, action string) *LockedError {
-	le := &LockedError{OrgID: p.OrgID, ProjectID: p.ID, EnvID: e.ID, Project: p.Name, Environment: e.Name, Action: action}
+func (a Actor) lockedErr(p store.Project, e store.Environment, action string) *LockedError {
+	le := &LockedError{OrgID: p.OrgID, ProjectID: p.ID, EnvID: e.ID, Project: p.Name, Environment: e.Name, Action: action,
+		askedFirst: a.askFirst && (a.Kind != "token" || !lockHolds(e, now()))}
 	le.err = &Error{Code: apitypes.CodeEnvironmentLocked, Msg: le.message()}
 	return le
 }
 
 // message says what was refused and what to do next.
 func (e *LockedError) message() string {
-	what := fmt.Sprintf("environment %s/%s is locked: tokens can't change anything in it (%s)", e.Project, e.Environment, e.Action)
-	if e.Request == 0 {
-		return what + "; ask an admin to unlock it in the UI, or to open it for a while"
+	follow := fmt.Sprintf("An admin approves or rejects it in the UI (Requests); approved, it runs as you. Follow it with `dock request wait %d`", e.Request)
+	switch {
+	case e.Request != 0 && e.askedFirst:
+		return fmt.Sprintf("%s in %s/%s waits for an admin's approval as access request #%d. %s", e.Action, e.Project, e.Environment, e.Request, follow)
+	case e.Request != 0:
+		return fmt.Sprintf("environment %s/%s is locked: %s waits for an admin's approval as access request #%d. %s", e.Project, e.Environment, e.Action, e.Request, follow)
 	}
-	return fmt.Sprintf("%s. Access request #%d waits for an admin's approval in the UI (Requests); "+
-		"once approved it runs as you. Follow it with `dock request wait %d`", what, e.Request, e.Request)
+	return fmt.Sprintf("environment %s/%s is locked: tokens can't change anything in it (%s); ask an admin to unlock it in the UI, or to open it for a while",
+		e.Project, e.Environment, e.Action)
+}
+
+// withRequest names the access request filed for the call.
+func (e *LockedError) withRequest(id int64) *LockedError {
+	out := *e
+	out.Request = id
+	out.err = &Error{Code: apitypes.CodeEnvironmentLocked, Msg: out.message()}
+	return &out
 }
 
 // checkProjectLocks is checkEnv's lock for project-wide changes that
@@ -99,7 +113,7 @@ func (c *Core) checkProjectLocks(ctx context.Context, a Actor, p store.Project, 
 	}
 	for _, e := range envs {
 		if a.lockedOut(e) {
-			return lockedErr(p, e, action)
+			return a.lockedErr(p, e, action)
 		}
 	}
 	return nil
@@ -186,7 +200,7 @@ func (c *Core) GetOrgLockSettings(ctx context.Context, a Actor) (apitypes.OrgLoc
 		return apitypes.OrgLockSettings{}, err
 	}
 	o, err := c.store.GetOrg(ctx, a.OrgID)
-	return apitypes.OrgLockSettings{LockProduction: o.LockProduction != 0}, err
+	return apitypes.OrgLockSettings{LockProduction: o.LockProduction != 0, RequestTTLHours: int(requestTTL(o) / time.Hour)}, err
 }
 
 // SetOrgLockSettings changes the org's settings for locked environments.
@@ -196,17 +210,30 @@ func (c *Core) SetOrgLockSettings(ctx context.Context, a Actor, req apitypes.Org
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "changing the organization's lock settings"); err != nil {
 		return apitypes.OrgLockSettings{}, err
 	}
+	if req.RequestTTLHours < 0 || req.RequestTTLHours > 720 {
+		return apitypes.OrgLockSettings{}, invalid("request_ttl_hours must be between 1 and 720 (30 days)")
+	}
 	var on int64
 	if req.LockProduction {
 		on = 1
 	}
-	if err := c.store.SetOrgLockProduction(ctx, store.SetOrgLockProductionParams{LockProduction: on, ID: a.OrgID}); err != nil {
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.SetOrgLockProduction(ctx, store.SetOrgLockProductionParams{LockProduction: on, ID: a.OrgID}); err != nil {
+			return err
+		}
+		if req.RequestTTLHours == 0 {
+			return nil
+		}
+		return q.SetOrgRequestTTL(ctx, store.SetOrgRequestTTLParams{RequestTtlHours: int64(req.RequestTTLHours), ID: a.OrgID})
+	})
+	if err != nil {
 		return apitypes.OrgLockSettings{}, err
 	}
 	state := "no longer start locked"
 	if req.LockProduction {
 		state = "start locked"
 	}
-	c.audit(ctx, a, "org.lock_settings", nil, nil, a.OrgSlug, "new production environments "+state)
-	return req, nil
+	out, err := c.GetOrgLockSettings(ctx, a)
+	c.audit(ctx, a, "org.lock_settings", nil, nil, a.OrgSlug, fmt.Sprintf("new production environments %s; access requests wait %d hours", state, out.RequestTTLHours))
+	return out, err
 }

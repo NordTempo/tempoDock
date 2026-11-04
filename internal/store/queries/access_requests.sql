@@ -1,0 +1,75 @@
+-- name: CreateAccessRequest :one
+INSERT INTO access_requests (nonce, org_id, project_id, environment_id, status, via, operation, title, action, args,
+    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at)
+VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- GetPendingAccessRequest is the pending request with a fingerprint, so an
+-- identical call joins it instead of filing another.
+-- name: GetPendingAccessRequest :one
+SELECT * FROM access_requests WHERE fingerprint = +? AND status = 'pending';
+
+-- name: GetAccessRequest :one
+SELECT * FROM access_requests WHERE id = +?;
+
+-- SetAccessRequestReason gives a pending request the reason a later
+-- identical call sent, when it had none.
+-- name: SetAccessRequestReason :exec
+UPDATE access_requests SET reason = ? WHERE id = +? AND reason = '';
+
+-- ListOrgAccessRequests is an org's requests, newest first (the inbox).
+-- name: ListOrgAccessRequests :many
+SELECT * FROM access_requests WHERE org_id = +? ORDER BY id DESC LIMIT +?;
+
+-- ListTokenAccessRequests is the requests a token filed, newest first.
+-- name: ListTokenAccessRequests :many
+SELECT * FROM access_requests WHERE token_id = +? ORDER BY id DESC LIMIT +?;
+
+-- DecideAccessRequest moves a pending request to approved or rejected;
+-- it changes nothing (no row) if it was already decided or has expired.
+-- name: DecideAccessRequest :one
+UPDATE access_requests SET status = ?, decided_by = ?, decided_at = ?, comment = ?
+WHERE id = +? AND status = 'pending' AND expires_at > +?
+RETURNING *;
+
+-- FinishAccessRequest records an approved request's run.
+-- name: FinishAccessRequest :one
+UPDATE access_requests SET status = ?, result = ?, error = ?, finished_at = ?
+WHERE id = +? AND status = 'approved'
+RETURNING *;
+
+-- ExpireAccessRequests marks pending requests past their time expired.
+-- name: ExpireAccessRequests :many
+UPDATE access_requests SET status = 'expired', finished_at = expires_at
+WHERE status = 'pending' AND expires_at <= +?
+RETURNING *;
+
+-- FailRunningAccessRequests fails requests whose run a restart cut off.
+-- name: FailRunningAccessRequests :many
+UPDATE access_requests SET status = 'failed', error = ?, finished_at = ?
+WHERE status = 'approved'
+RETURNING *;
+
+-- CountPendingAccessRequests counts an org's pending requests, for the
+-- nav's badge.
+-- name: CountPendingAccessRequests :one
+SELECT count(*) FROM access_requests WHERE org_id = +? AND status = 'pending' AND expires_at > +?;
+
+-- LatestEnvironmentAudit is the newest audit event's ID in an
+-- environment (0 for none): where an access request starts counting
+-- changes.
+-- name: LatestEnvironmentAudit :one
+SELECT CAST(coalesce(max(id), 0) AS INTEGER) FROM audit_events WHERE environment_id = +?;
+
+-- CountEnvironmentAuditSince counts the environment's changes after an
+-- audit event, leaving out access requests' own (asked, decided).
+-- name: CountEnvironmentAuditSince :one
+SELECT count(*) FROM audit_events WHERE environment_id = +? AND id > +? AND action NOT LIKE 'request.%';
+
+-- name: SetOrgRequestTTL :exec
+UPDATE orgs SET request_ttl_hours = ? WHERE id = +?;
+
+-- PruneAccessRequests deletes decided requests asked before a time, with
+-- the audit log's retention.
+-- name: PruneAccessRequests :execrows
+DELETE FROM access_requests WHERE created_at < +? AND status NOT IN ('pending', 'approved');

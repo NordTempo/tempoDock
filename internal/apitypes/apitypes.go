@@ -1448,11 +1448,15 @@ const (
 	// EventEnvironmentLock: an environment was locked, unlocked or opened
 	// for a while (ADR 0044). Lock is the new lock, nil when unlocked.
 	EventEnvironmentLock EventType = "environment_lock"
+	// EventAccessRequest: an access request was filed, decided or ran
+	// (AccessRequest, without its arguments). Admins and the token that
+	// asked get it.
+	EventAccessRequest EventType = "access_request"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock"`
+	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request"`
 	Time           time.Time        `json:"time"`
 	ProjectRenamed *ProjectRenamed  `json:"project_renamed,omitempty"`
 	Project        string           `json:"project,omitempty"`
@@ -1471,6 +1475,7 @@ type Event struct {
 	Update         *UpdateStatus    `json:"update,omitempty"`
 	Disk           *ServerDisk      `json:"disk,omitempty"`
 	Lock           *EnvironmentLock `json:"lock,omitempty"`
+	AccessRequest  *AccessRequest   `json:"access_request,omitempty"`
 	Message        string           `json:"message,omitempty"`
 }
 

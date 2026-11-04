@@ -123,6 +123,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countConnectionUseStmt, err = db.PrepareContext(ctx, countConnectionUse); err != nil {
 		return nil, fmt.Errorf("error preparing query CountConnectionUse: %w", err)
 	}
+	if q.countEnvironmentAuditSinceStmt, err = db.PrepareContext(ctx, countEnvironmentAuditSince); err != nil {
+		return nil, fmt.Errorf("error preparing query CountEnvironmentAuditSince: %w", err)
+	}
 	if q.countInstallationConnectionsStmt, err = db.PrepareContext(ctx, countInstallationConnections); err != nil {
 		return nil, fmt.Errorf("error preparing query CountInstallationConnections: %w", err)
 	}
@@ -135,6 +138,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countOrgProjectsStmt, err = db.PrepareContext(ctx, countOrgProjects); err != nil {
 		return nil, fmt.Errorf("error preparing query CountOrgProjects: %w", err)
 	}
+	if q.countPendingAccessRequestsStmt, err = db.PrepareContext(ctx, countPendingAccessRequests); err != nil {
+		return nil, fmt.Errorf("error preparing query CountPendingAccessRequests: %w", err)
+	}
 	if q.countPendingCLILoginsStmt, err = db.PrepareContext(ctx, countPendingCLILogins); err != nil {
 		return nil, fmt.Errorf("error preparing query CountPendingCLILogins: %w", err)
 	}
@@ -143,6 +149,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.countUsersStmt, err = db.PrepareContext(ctx, countUsers); err != nil {
 		return nil, fmt.Errorf("error preparing query CountUsers: %w", err)
+	}
+	if q.createAccessRequestStmt, err = db.PrepareContext(ctx, createAccessRequest); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateAccessRequest: %w", err)
 	}
 	if q.createAlertChannelStmt, err = db.PrepareContext(ctx, createAlertChannel); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateAlertChannel: %w", err)
@@ -221,6 +230,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.createVolumeStmt, err = db.PrepareContext(ctx, createVolume); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateVolume: %w", err)
+	}
+	if q.decideAccessRequestStmt, err = db.PrepareContext(ctx, decideAccessRequest); err != nil {
+		return nil, fmt.Errorf("error preparing query DecideAccessRequest: %w", err)
 	}
 	if q.decideCLILoginStmt, err = db.PrepareContext(ctx, decideCLILogin); err != nil {
 		return nil, fmt.Errorf("error preparing query DecideCLILogin: %w", err)
@@ -354,17 +366,26 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.downsampleServiceStatsStmt, err = db.PrepareContext(ctx, downsampleServiceStats); err != nil {
 		return nil, fmt.Errorf("error preparing query DownsampleServiceStats: %w", err)
 	}
+	if q.expireAccessRequestsStmt, err = db.PrepareContext(ctx, expireAccessRequests); err != nil {
+		return nil, fmt.Errorf("error preparing query ExpireAccessRequests: %w", err)
+	}
 	if q.expireChangesetsStmt, err = db.PrepareContext(ctx, expireChangesets); err != nil {
 		return nil, fmt.Errorf("error preparing query ExpireChangesets: %w", err)
 	}
 	if q.failReleaseStmt, err = db.PrepareContext(ctx, failRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query FailRelease: %w", err)
 	}
+	if q.failRunningAccessRequestsStmt, err = db.PrepareContext(ctx, failRunningAccessRequests); err != nil {
+		return nil, fmt.Errorf("error preparing query FailRunningAccessRequests: %w", err)
+	}
 	if q.failRunningBackupsStmt, err = db.PrepareContext(ctx, failRunningBackups); err != nil {
 		return nil, fmt.Errorf("error preparing query FailRunningBackups: %w", err)
 	}
 	if q.failRunningControlPlaneBackupStmt, err = db.PrepareContext(ctx, failRunningControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query FailRunningControlPlaneBackup: %w", err)
+	}
+	if q.finishAccessRequestStmt, err = db.PrepareContext(ctx, finishAccessRequest); err != nil {
+		return nil, fmt.Errorf("error preparing query FinishAccessRequest: %w", err)
 	}
 	if q.finishBackupStmt, err = db.PrepareContext(ctx, finishBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query FinishBackup: %w", err)
@@ -374,6 +395,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.forgetRunningControlPlaneBackupStmt, err = db.PrepareContext(ctx, forgetRunningControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query ForgetRunningControlPlaneBackup: %w", err)
+	}
+	if q.getAccessRequestStmt, err = db.PrepareContext(ctx, getAccessRequest); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAccessRequest: %w", err)
 	}
 	if q.getActiveReleaseStmt, err = db.PrepareContext(ctx, getActiveRelease); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActiveRelease: %w", err)
@@ -489,6 +513,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getOrgInviteStmt, err = db.PrepareContext(ctx, getOrgInvite); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOrgInvite: %w", err)
 	}
+	if q.getPendingAccessRequestStmt, err = db.PrepareContext(ctx, getPendingAccessRequest); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPendingAccessRequest: %w", err)
+	}
 	if q.getPlacementStmt, err = db.PrepareContext(ctx, getPlacement); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPlacement: %w", err)
 	}
@@ -561,6 +588,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getTokenByHashStmt, err = db.PrepareContext(ctx, getTokenByHash); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTokenByHash: %w", err)
 	}
+	if q.getTokenByIDWithOwnerStmt, err = db.PrepareContext(ctx, getTokenByIDWithOwner); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTokenByIDWithOwner: %w", err)
+	}
 	if q.getUserStmt, err = db.PrepareContext(ctx, getUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUser: %w", err)
 	}
@@ -581,6 +611,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.insertVariableStmt, err = db.PrepareContext(ctx, insertVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertVariable: %w", err)
+	}
+	if q.latestEnvironmentAuditStmt, err = db.PrepareContext(ctx, latestEnvironmentAudit); err != nil {
+		return nil, fmt.Errorf("error preparing query LatestEnvironmentAudit: %w", err)
 	}
 	if q.listActiveReleasesStmt, err = db.PrepareContext(ctx, listActiveReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListActiveReleases: %w", err)
@@ -710,6 +743,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listOpenAlertsStmt, err = db.PrepareContext(ctx, listOpenAlerts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOpenAlerts: %w", err)
+	}
+	if q.listOrgAccessRequestsStmt, err = db.PrepareContext(ctx, listOrgAccessRequests); err != nil {
+		return nil, fmt.Errorf("error preparing query ListOrgAccessRequests: %w", err)
 	}
 	if q.listOrgGitHubInstallationsStmt, err = db.PrepareContext(ctx, listOrgGitHubInstallations); err != nil {
 		return nil, fmt.Errorf("error preparing query ListOrgGitHubInstallations: %w", err)
@@ -873,6 +909,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listStorageConnectionsStmt, err = db.PrepareContext(ctx, listStorageConnections); err != nil {
 		return nil, fmt.Errorf("error preparing query ListStorageConnections: %w", err)
 	}
+	if q.listTokenAccessRequestsStmt, err = db.PrepareContext(ctx, listTokenAccessRequests); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTokenAccessRequests: %w", err)
+	}
 	if q.listTrafficHostsStmt, err = db.PrepareContext(ctx, listTrafficHosts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListTrafficHosts: %w", err)
 	}
@@ -929,6 +968,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.promoteServerKeyStmt, err = db.PrepareContext(ctx, promoteServerKey); err != nil {
 		return nil, fmt.Errorf("error preparing query PromoteServerKey: %w", err)
+	}
+	if q.pruneAccessRequestsStmt, err = db.PrepareContext(ctx, pruneAccessRequests); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneAccessRequests: %w", err)
 	}
 	if q.pruneBackupStmt, err = db.PrepareContext(ctx, pruneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query PruneBackup: %w", err)
@@ -1041,6 +1083,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.serviceNamesStmt, err = db.PrepareContext(ctx, serviceNames); err != nil {
 		return nil, fmt.Errorf("error preparing query ServiceNames: %w", err)
 	}
+	if q.setAccessRequestReasonStmt, err = db.PrepareContext(ctx, setAccessRequestReason); err != nil {
+		return nil, fmt.Errorf("error preparing query SetAccessRequestReason: %w", err)
+	}
 	if q.setAlertChannelFailedStmt, err = db.PrepareContext(ctx, setAlertChannelFailed); err != nil {
 		return nil, fmt.Errorf("error preparing query SetAlertChannelFailed: %w", err)
 	}
@@ -1100,6 +1145,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setOrgLockProductionStmt, err = db.PrepareContext(ctx, setOrgLockProduction); err != nil {
 		return nil, fmt.Errorf("error preparing query SetOrgLockProduction: %w", err)
+	}
+	if q.setOrgRequestTTLStmt, err = db.PrepareContext(ctx, setOrgRequestTTL); err != nil {
+		return nil, fmt.Errorf("error preparing query SetOrgRequestTTL: %w", err)
 	}
 	if q.setPendingSettingsStmt, err = db.PrepareContext(ctx, setPendingSettings); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPendingSettings: %w", err)
@@ -1433,6 +1481,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing countConnectionUseStmt: %w", cerr)
 		}
 	}
+	if q.countEnvironmentAuditSinceStmt != nil {
+		if cerr := q.countEnvironmentAuditSinceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countEnvironmentAuditSinceStmt: %w", cerr)
+		}
+	}
 	if q.countInstallationConnectionsStmt != nil {
 		if cerr := q.countInstallationConnectionsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countInstallationConnectionsStmt: %w", cerr)
@@ -1453,6 +1506,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing countOrgProjectsStmt: %w", cerr)
 		}
 	}
+	if q.countPendingAccessRequestsStmt != nil {
+		if cerr := q.countPendingAccessRequestsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countPendingAccessRequestsStmt: %w", cerr)
+		}
+	}
 	if q.countPendingCLILoginsStmt != nil {
 		if cerr := q.countPendingCLILoginsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countPendingCLILoginsStmt: %w", cerr)
@@ -1466,6 +1524,11 @@ func (q *Queries) Close() error {
 	if q.countUsersStmt != nil {
 		if cerr := q.countUsersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countUsersStmt: %w", cerr)
+		}
+	}
+	if q.createAccessRequestStmt != nil {
+		if cerr := q.createAccessRequestStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createAccessRequestStmt: %w", cerr)
 		}
 	}
 	if q.createAlertChannelStmt != nil {
@@ -1596,6 +1659,11 @@ func (q *Queries) Close() error {
 	if q.createVolumeStmt != nil {
 		if cerr := q.createVolumeStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createVolumeStmt: %w", cerr)
+		}
+	}
+	if q.decideAccessRequestStmt != nil {
+		if cerr := q.decideAccessRequestStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing decideAccessRequestStmt: %w", cerr)
 		}
 	}
 	if q.decideCLILoginStmt != nil {
@@ -1818,6 +1886,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing downsampleServiceStatsStmt: %w", cerr)
 		}
 	}
+	if q.expireAccessRequestsStmt != nil {
+		if cerr := q.expireAccessRequestsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing expireAccessRequestsStmt: %w", cerr)
+		}
+	}
 	if q.expireChangesetsStmt != nil {
 		if cerr := q.expireChangesetsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing expireChangesetsStmt: %w", cerr)
@@ -1828,6 +1901,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing failReleaseStmt: %w", cerr)
 		}
 	}
+	if q.failRunningAccessRequestsStmt != nil {
+		if cerr := q.failRunningAccessRequestsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing failRunningAccessRequestsStmt: %w", cerr)
+		}
+	}
 	if q.failRunningBackupsStmt != nil {
 		if cerr := q.failRunningBackupsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing failRunningBackupsStmt: %w", cerr)
@@ -1836,6 +1914,11 @@ func (q *Queries) Close() error {
 	if q.failRunningControlPlaneBackupStmt != nil {
 		if cerr := q.failRunningControlPlaneBackupStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing failRunningControlPlaneBackupStmt: %w", cerr)
+		}
+	}
+	if q.finishAccessRequestStmt != nil {
+		if cerr := q.finishAccessRequestStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing finishAccessRequestStmt: %w", cerr)
 		}
 	}
 	if q.finishBackupStmt != nil {
@@ -1851,6 +1934,11 @@ func (q *Queries) Close() error {
 	if q.forgetRunningControlPlaneBackupStmt != nil {
 		if cerr := q.forgetRunningControlPlaneBackupStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing forgetRunningControlPlaneBackupStmt: %w", cerr)
+		}
+	}
+	if q.getAccessRequestStmt != nil {
+		if cerr := q.getAccessRequestStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAccessRequestStmt: %w", cerr)
 		}
 	}
 	if q.getActiveReleaseStmt != nil {
@@ -2043,6 +2131,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getOrgInviteStmt: %w", cerr)
 		}
 	}
+	if q.getPendingAccessRequestStmt != nil {
+		if cerr := q.getPendingAccessRequestStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPendingAccessRequestStmt: %w", cerr)
+		}
+	}
 	if q.getPlacementStmt != nil {
 		if cerr := q.getPlacementStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPlacementStmt: %w", cerr)
@@ -2163,6 +2256,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getTokenByHashStmt: %w", cerr)
 		}
 	}
+	if q.getTokenByIDWithOwnerStmt != nil {
+		if cerr := q.getTokenByIDWithOwnerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTokenByIDWithOwnerStmt: %w", cerr)
+		}
+	}
 	if q.getUserStmt != nil {
 		if cerr := q.getUserStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getUserStmt: %w", cerr)
@@ -2196,6 +2294,11 @@ func (q *Queries) Close() error {
 	if q.insertVariableStmt != nil {
 		if cerr := q.insertVariableStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertVariableStmt: %w", cerr)
+		}
+	}
+	if q.latestEnvironmentAuditStmt != nil {
+		if cerr := q.latestEnvironmentAuditStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing latestEnvironmentAuditStmt: %w", cerr)
 		}
 	}
 	if q.listActiveReleasesStmt != nil {
@@ -2411,6 +2514,11 @@ func (q *Queries) Close() error {
 	if q.listOpenAlertsStmt != nil {
 		if cerr := q.listOpenAlertsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listOpenAlertsStmt: %w", cerr)
+		}
+	}
+	if q.listOrgAccessRequestsStmt != nil {
+		if cerr := q.listOrgAccessRequestsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listOrgAccessRequestsStmt: %w", cerr)
 		}
 	}
 	if q.listOrgGitHubInstallationsStmt != nil {
@@ -2683,6 +2791,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listStorageConnectionsStmt: %w", cerr)
 		}
 	}
+	if q.listTokenAccessRequestsStmt != nil {
+		if cerr := q.listTokenAccessRequestsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTokenAccessRequestsStmt: %w", cerr)
+		}
+	}
 	if q.listTrafficHostsStmt != nil {
 		if cerr := q.listTrafficHostsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listTrafficHostsStmt: %w", cerr)
@@ -2776,6 +2889,11 @@ func (q *Queries) Close() error {
 	if q.promoteServerKeyStmt != nil {
 		if cerr := q.promoteServerKeyStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing promoteServerKeyStmt: %w", cerr)
+		}
+	}
+	if q.pruneAccessRequestsStmt != nil {
+		if cerr := q.pruneAccessRequestsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneAccessRequestsStmt: %w", cerr)
 		}
 	}
 	if q.pruneBackupStmt != nil {
@@ -2963,6 +3081,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing serviceNamesStmt: %w", cerr)
 		}
 	}
+	if q.setAccessRequestReasonStmt != nil {
+		if cerr := q.setAccessRequestReasonStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setAccessRequestReasonStmt: %w", cerr)
+		}
+	}
 	if q.setAlertChannelFailedStmt != nil {
 		if cerr := q.setAlertChannelFailedStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setAlertChannelFailedStmt: %w", cerr)
@@ -3061,6 +3184,11 @@ func (q *Queries) Close() error {
 	if q.setOrgLockProductionStmt != nil {
 		if cerr := q.setOrgLockProductionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setOrgLockProductionStmt: %w", cerr)
+		}
+	}
+	if q.setOrgRequestTTLStmt != nil {
+		if cerr := q.setOrgRequestTTLStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setOrgRequestTTLStmt: %w", cerr)
 		}
 	}
 	if q.setPendingSettingsStmt != nil {
@@ -3405,13 +3533,16 @@ type Queries struct {
 	clearReleaseHostPortStmt            *sql.Stmt
 	consumeJoinTokenStmt                *sql.Stmt
 	countConnectionUseStmt              *sql.Stmt
+	countEnvironmentAuditSinceStmt      *sql.Stmt
 	countInstallationConnectionsStmt    *sql.Stmt
 	countKindEnvironmentsStmt           *sql.Stmt
 	countOrgAdminsStmt                  *sql.Stmt
 	countOrgProjectsStmt                *sql.Stmt
+	countPendingAccessRequestsStmt      *sql.Stmt
 	countPendingCLILoginsStmt           *sql.Stmt
 	countSiteHostnamesStmt              *sql.Stmt
 	countUsersStmt                      *sql.Stmt
+	createAccessRequestStmt             *sql.Stmt
 	createAlertChannelStmt              *sql.Stmt
 	createAnalyticsSettingsStmt         *sql.Stmt
 	createBackupStmt                    *sql.Stmt
@@ -3438,6 +3569,7 @@ type Queries struct {
 	createTokenStmt                     *sql.Stmt
 	createUserStmt                      *sql.Stmt
 	createVolumeStmt                    *sql.Stmt
+	decideAccessRequestStmt             *sql.Stmt
 	decideCLILoginStmt                  *sql.Stmt
 	decideChangesetStmt                 *sql.Stmt
 	deleteAlertChannelStmt              *sql.Stmt
@@ -3482,13 +3614,17 @@ type Queries struct {
 	domainScopeStmt                     *sql.Stmt
 	downsampleServerStatsStmt           *sql.Stmt
 	downsampleServiceStatsStmt          *sql.Stmt
+	expireAccessRequestsStmt            *sql.Stmt
 	expireChangesetsStmt                *sql.Stmt
 	failReleaseStmt                     *sql.Stmt
+	failRunningAccessRequestsStmt       *sql.Stmt
 	failRunningBackupsStmt              *sql.Stmt
 	failRunningControlPlaneBackupStmt   *sql.Stmt
+	finishAccessRequestStmt             *sql.Stmt
 	finishBackupStmt                    *sql.Stmt
 	finishControlPlaneBackupStmt        *sql.Stmt
 	forgetRunningControlPlaneBackupStmt *sql.Stmt
+	getAccessRequestStmt                *sql.Stmt
 	getActiveReleaseStmt                *sql.Stmt
 	getAlertStmt                        *sql.Stmt
 	getAlertChannelStmt                 *sql.Stmt
@@ -3527,6 +3663,7 @@ type Queries struct {
 	getOrgStmt                          *sql.Stmt
 	getOrgBySlugStmt                    *sql.Stmt
 	getOrgInviteStmt                    *sql.Stmt
+	getPendingAccessRequestStmt         *sql.Stmt
 	getPlacementStmt                    *sql.Stmt
 	getProjectStmt                      *sql.Stmt
 	getProjectByNameStmt                *sql.Stmt
@@ -3551,6 +3688,7 @@ type Queries struct {
 	getStorageConnectionByIDStmt        *sql.Stmt
 	getTokenStmt                        *sql.Stmt
 	getTokenByHashStmt                  *sql.Stmt
+	getTokenByIDWithOwnerStmt           *sql.Stmt
 	getUserStmt                         *sql.Stmt
 	getUserByEmailStmt                  *sql.Stmt
 	getVariableStmt                     *sql.Stmt
@@ -3558,6 +3696,7 @@ type Queries struct {
 	insertLiveVariableStmt              *sql.Stmt
 	insertRestoredVariableStmt          *sql.Stmt
 	insertVariableStmt                  *sql.Stmt
+	latestEnvironmentAuditStmt          *sql.Stmt
 	listActiveReleasesStmt              *sql.Stmt
 	listAlertChannelsStmt               *sql.Stmt
 	listAlertNoticesStmt                *sql.Stmt
@@ -3601,6 +3740,7 @@ type Queries struct {
 	listLocalBackupServersStmt          *sql.Stmt
 	listOldestAuditEventsStmt           *sql.Stmt
 	listOpenAlertsStmt                  *sql.Stmt
+	listOrgAccessRequestsStmt           *sql.Stmt
 	listOrgGitHubInstallationsStmt      *sql.Stmt
 	listOrgInvitesStmt                  *sql.Stmt
 	listOrgMembersStmt                  *sql.Stmt
@@ -3655,6 +3795,7 @@ type Queries struct {
 	listStatsNamesStmt                  *sql.Stmt
 	listStatsTargetsStmt                *sql.Stmt
 	listStorageConnectionsStmt          *sql.Stmt
+	listTokenAccessRequestsStmt         *sql.Stmt
 	listTrafficHostsStmt                *sql.Stmt
 	listTrafficStatsStmt                *sql.Stmt
 	listUnprunedBackupsStmt             *sql.Stmt
@@ -3674,6 +3815,7 @@ type Queries struct {
 	openAlertStmt                       *sql.Stmt
 	orgSlugTakenStmt                    *sql.Stmt
 	promoteServerKeyStmt                *sql.Stmt
+	pruneAccessRequestsStmt             *sql.Stmt
 	pruneBackupStmt                     *sql.Stmt
 	pruneBackupSnapshotStmt             *sql.Stmt
 	pruneGitDeliveriesStmt              *sql.Stmt
@@ -3711,6 +3853,7 @@ type Queries struct {
 	saveCloudflareZoneStmt              *sql.Stmt
 	saveQueryStmt                       *sql.Stmt
 	serviceNamesStmt                    *sql.Stmt
+	setAccessRequestReasonStmt          *sql.Stmt
 	setAlertChannelFailedStmt           *sql.Stmt
 	setAlertChannelSentStmt             *sql.Stmt
 	setAnalyticsEnabledStmt             *sql.Stmt
@@ -3731,6 +3874,7 @@ type Queries struct {
 	setJoinTokenServerStmt              *sql.Stmt
 	setMemberRoleStmt                   *sql.Stmt
 	setOrgLockProductionStmt            *sql.Stmt
+	setOrgRequestTTLStmt                *sql.Stmt
 	setPendingSettingsStmt              *sql.Stmt
 	setPublicHostStmt                   *sql.Stmt
 	setRegistryStorageStmt              *sql.Stmt
@@ -3824,13 +3968,16 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		clearReleaseHostPortStmt:            q.clearReleaseHostPortStmt,
 		consumeJoinTokenStmt:                q.consumeJoinTokenStmt,
 		countConnectionUseStmt:              q.countConnectionUseStmt,
+		countEnvironmentAuditSinceStmt:      q.countEnvironmentAuditSinceStmt,
 		countInstallationConnectionsStmt:    q.countInstallationConnectionsStmt,
 		countKindEnvironmentsStmt:           q.countKindEnvironmentsStmt,
 		countOrgAdminsStmt:                  q.countOrgAdminsStmt,
 		countOrgProjectsStmt:                q.countOrgProjectsStmt,
+		countPendingAccessRequestsStmt:      q.countPendingAccessRequestsStmt,
 		countPendingCLILoginsStmt:           q.countPendingCLILoginsStmt,
 		countSiteHostnamesStmt:              q.countSiteHostnamesStmt,
 		countUsersStmt:                      q.countUsersStmt,
+		createAccessRequestStmt:             q.createAccessRequestStmt,
 		createAlertChannelStmt:              q.createAlertChannelStmt,
 		createAnalyticsSettingsStmt:         q.createAnalyticsSettingsStmt,
 		createBackupStmt:                    q.createBackupStmt,
@@ -3857,6 +4004,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createTokenStmt:                     q.createTokenStmt,
 		createUserStmt:                      q.createUserStmt,
 		createVolumeStmt:                    q.createVolumeStmt,
+		decideAccessRequestStmt:             q.decideAccessRequestStmt,
 		decideCLILoginStmt:                  q.decideCLILoginStmt,
 		decideChangesetStmt:                 q.decideChangesetStmt,
 		deleteAlertChannelStmt:              q.deleteAlertChannelStmt,
@@ -3901,13 +4049,17 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		domainScopeStmt:                     q.domainScopeStmt,
 		downsampleServerStatsStmt:           q.downsampleServerStatsStmt,
 		downsampleServiceStatsStmt:          q.downsampleServiceStatsStmt,
+		expireAccessRequestsStmt:            q.expireAccessRequestsStmt,
 		expireChangesetsStmt:                q.expireChangesetsStmt,
 		failReleaseStmt:                     q.failReleaseStmt,
+		failRunningAccessRequestsStmt:       q.failRunningAccessRequestsStmt,
 		failRunningBackupsStmt:              q.failRunningBackupsStmt,
 		failRunningControlPlaneBackupStmt:   q.failRunningControlPlaneBackupStmt,
+		finishAccessRequestStmt:             q.finishAccessRequestStmt,
 		finishBackupStmt:                    q.finishBackupStmt,
 		finishControlPlaneBackupStmt:        q.finishControlPlaneBackupStmt,
 		forgetRunningControlPlaneBackupStmt: q.forgetRunningControlPlaneBackupStmt,
+		getAccessRequestStmt:                q.getAccessRequestStmt,
 		getActiveReleaseStmt:                q.getActiveReleaseStmt,
 		getAlertStmt:                        q.getAlertStmt,
 		getAlertChannelStmt:                 q.getAlertChannelStmt,
@@ -3946,6 +4098,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getOrgStmt:                          q.getOrgStmt,
 		getOrgBySlugStmt:                    q.getOrgBySlugStmt,
 		getOrgInviteStmt:                    q.getOrgInviteStmt,
+		getPendingAccessRequestStmt:         q.getPendingAccessRequestStmt,
 		getPlacementStmt:                    q.getPlacementStmt,
 		getProjectStmt:                      q.getProjectStmt,
 		getProjectByNameStmt:                q.getProjectByNameStmt,
@@ -3970,6 +4123,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getStorageConnectionByIDStmt:        q.getStorageConnectionByIDStmt,
 		getTokenStmt:                        q.getTokenStmt,
 		getTokenByHashStmt:                  q.getTokenByHashStmt,
+		getTokenByIDWithOwnerStmt:           q.getTokenByIDWithOwnerStmt,
 		getUserStmt:                         q.getUserStmt,
 		getUserByEmailStmt:                  q.getUserByEmailStmt,
 		getVariableStmt:                     q.getVariableStmt,
@@ -3977,6 +4131,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		insertLiveVariableStmt:              q.insertLiveVariableStmt,
 		insertRestoredVariableStmt:          q.insertRestoredVariableStmt,
 		insertVariableStmt:                  q.insertVariableStmt,
+		latestEnvironmentAuditStmt:          q.latestEnvironmentAuditStmt,
 		listActiveReleasesStmt:              q.listActiveReleasesStmt,
 		listAlertChannelsStmt:               q.listAlertChannelsStmt,
 		listAlertNoticesStmt:                q.listAlertNoticesStmt,
@@ -4020,6 +4175,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listLocalBackupServersStmt:          q.listLocalBackupServersStmt,
 		listOldestAuditEventsStmt:           q.listOldestAuditEventsStmt,
 		listOpenAlertsStmt:                  q.listOpenAlertsStmt,
+		listOrgAccessRequestsStmt:           q.listOrgAccessRequestsStmt,
 		listOrgGitHubInstallationsStmt:      q.listOrgGitHubInstallationsStmt,
 		listOrgInvitesStmt:                  q.listOrgInvitesStmt,
 		listOrgMembersStmt:                  q.listOrgMembersStmt,
@@ -4074,6 +4230,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listStatsNamesStmt:                  q.listStatsNamesStmt,
 		listStatsTargetsStmt:                q.listStatsTargetsStmt,
 		listStorageConnectionsStmt:          q.listStorageConnectionsStmt,
+		listTokenAccessRequestsStmt:         q.listTokenAccessRequestsStmt,
 		listTrafficHostsStmt:                q.listTrafficHostsStmt,
 		listTrafficStatsStmt:                q.listTrafficStatsStmt,
 		listUnprunedBackupsStmt:             q.listUnprunedBackupsStmt,
@@ -4093,6 +4250,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		openAlertStmt:                       q.openAlertStmt,
 		orgSlugTakenStmt:                    q.orgSlugTakenStmt,
 		promoteServerKeyStmt:                q.promoteServerKeyStmt,
+		pruneAccessRequestsStmt:             q.pruneAccessRequestsStmt,
 		pruneBackupStmt:                     q.pruneBackupStmt,
 		pruneBackupSnapshotStmt:             q.pruneBackupSnapshotStmt,
 		pruneGitDeliveriesStmt:              q.pruneGitDeliveriesStmt,
@@ -4130,6 +4288,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		saveCloudflareZoneStmt:              q.saveCloudflareZoneStmt,
 		saveQueryStmt:                       q.saveQueryStmt,
 		serviceNamesStmt:                    q.serviceNamesStmt,
+		setAccessRequestReasonStmt:          q.setAccessRequestReasonStmt,
 		setAlertChannelFailedStmt:           q.setAlertChannelFailedStmt,
 		setAlertChannelSentStmt:             q.setAlertChannelSentStmt,
 		setAnalyticsEnabledStmt:             q.setAnalyticsEnabledStmt,
@@ -4150,6 +4309,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setJoinTokenServerStmt:              q.setJoinTokenServerStmt,
 		setMemberRoleStmt:                   q.setMemberRoleStmt,
 		setOrgLockProductionStmt:            q.setOrgLockProductionStmt,
+		setOrgRequestTTLStmt:                q.setOrgRequestTTLStmt,
 		setPendingSettingsStmt:              q.setPendingSettingsStmt,
 		setPublicHostStmt:                   q.setPublicHostStmt,
 		setRegistryStorageStmt:              q.setRegistryStorageStmt,

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
@@ -225,5 +226,64 @@ func TestLockOpensForAWhile(t *testing.T) {
 	_, body = f.do("admin", "GET", "/api/v1/audit?action=environment.unlock", nil)
 	if !strings.Contains(string(body), "opened for 30m0s") {
 		t.Fatalf("audit: %s", body)
+	}
+}
+
+// TestAccessRequestFlow: a token's refused change answers 423 naming the
+// request it filed, with the reason it sent; an admin in the UI sees it
+// with its arguments, approves it, and it has run as the token.
+func TestAccessRequestFlow(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.core.LockEnvironment(context.Background(), sys, core.EnvRef{Project: "shop", Environment: "production"}, apitypes.LockEnvironmentRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	set := apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"PRICE": "42"}}
+	req, _ := http.NewRequest("PATCH", f.srv.URL+shopProd+"/variables", strings.NewReader(`{"service":"web","set":{"PRICE":"42"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+f.tokens["deploy"])
+	req.Header.Set("Dock-Reason", "launch prices")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p apitypes.Error
+	_ = json.NewDecoder(resp.Body).Decode(&p)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusLocked || p.Request == 0 || !strings.Contains(p.Detail, "dock request wait") {
+		t.Fatalf("refused: %d %+v", resp.StatusCode, p)
+	}
+	// The same call again joins it.
+	if _, body := f.do("deploy", "PATCH", shopProd+"/variables", set); !strings.Contains(string(body), fmt.Sprintf(`"request":%d`, p.Request)) {
+		t.Fatalf("retry: %s", body)
+	}
+
+	admin := f.login()
+	_, body := f.as(admin, "GET", "/api/v1/requests?status=pending", nil)
+	var list []apitypes.AccessRequest
+	_ = json.Unmarshal(body, &list)
+	if len(list) != 1 || list[0].ID != p.Request || list[0].Reason != "launch prices" || list[0].Operation != "set-variables" {
+		t.Fatalf("inbox: %s", body)
+	}
+	_, body = f.as(admin, "GET", fmt.Sprintf("/api/v1/requests/%d", p.Request), nil)
+	if !strings.Contains(string(body), `"args":`) || !strings.Contains(string(body), `"PRICE":"42"`) {
+		t.Fatalf("detail: %s", body)
+	}
+	// A token never approves.
+	if resp, _ := f.do("admin", "POST", fmt.Sprintf("/api/v1/requests/%d/approve", p.Request), apitypes.DecideAccessRequest{}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("token approves: %d", resp.StatusCode)
+	}
+	resp2, body := f.as(admin, "POST", fmt.Sprintf("/api/v1/requests/%d/approve", p.Request), apitypes.DecideAccessRequest{Comment: "ok"})
+	var done apitypes.AccessRequest
+	_ = json.Unmarshal(body, &done)
+	if resp2.StatusCode != 200 || done.Status != apitypes.RequestDone {
+		t.Fatalf("approve: %d %s", resp2.StatusCode, body)
+	}
+	_, body = f.do("deploy", "GET", fmt.Sprintf("/api/v1/requests/%d?wait=1", p.Request), nil)
+	if !strings.Contains(string(body), `"status":"done"`) || strings.Contains(string(body), `"args"`) {
+		t.Fatalf("token's view: %s", body)
+	}
+	_, body = f.do("admin", "GET", shopProd+"/changes", nil)
+	if !strings.Contains(string(body), "PRICE") {
+		t.Fatalf("not staged: %s", body)
 	}
 }

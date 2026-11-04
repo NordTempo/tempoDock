@@ -31,9 +31,12 @@ type Client struct {
 	// ProjectID constrains project-path requests from an ID-linked directory.
 	ProjectID string
 	Org       string
-	base      *url.URL
-	token     string
-	http      *http.Client
+	// Reason, when set, says why the caller makes its changes (the
+	// Dock-Reason header); an access request a change files shows it.
+	Reason string
+	base   *url.URL
+	token  string
+	http   *http.Client
 	// upgrades is the HTTP/1.1-only client of Upgrade, made on first use.
 	upgrades     *http.Client
 	upgradesOnce sync.Once
@@ -92,6 +95,9 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body io.Re
 	req.Header.Set("User-Agent", UserAgent)
 	if c.ProjectID != "" {
 		req.Header.Set("Dock-Project-ID", c.ProjectID)
+	}
+	if c.Reason != "" {
+		req.Header.Set("Dock-Reason", c.Reason)
 	}
 	req.Header.Set("Accept", "application/json, application/problem+json")
 	if c.token != "" {

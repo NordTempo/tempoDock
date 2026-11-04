@@ -32,7 +32,7 @@ can do whatever." The roadmap's "human approval for selected actions" and
 | Data panel | Within the existing policy, a token's level in a locked environment is capped at `propose`: an agent drafts a changeset and an admin approves it in the Data panel. That flow already is the access request for data |
 | Locking | Admins (a UI session or an admin token: locking only takes power away). `dock env lock [--reason]`, the environment header in the UI. Audited `environment.lock` |
 | Unlocking | Admins in a UI session. A token asking to unlock gets an access request like any other blocked action. `dock env unlock [--for 30m]`; the UI offers unlock and "open for 15 min / 1 h / 4 h". Audited `environment.unlock` |
-| Default | An org setting, "lock new production environments", off by default (on would break existing agent workflows the day they upgrade). The setting is in Settings › General and `dock org lock-production on\|off` |
+| Default | An org setting, "lock new production environments", off by default (on would break existing agent workflows the day they upgrade). The setting is in Settings › General and `dock org locks --lock-production on\|off`, with the requests' expiry (`--request-ttl`) |
 | Shown | The environment header, the switcher, project overview, `dock status`, `dock env list`, MCP `project_overview` |
 
 ### Access requests

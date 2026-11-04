@@ -4,12 +4,27 @@ import { useState } from "react";
 import { setOrg } from "../../api/client";
 import { useIsAdmin, useSession } from "../../data/queries";
 import { day } from "../../ui/format";
-import { Act, Confirm, ErrorText, Page, Panel, TitleRow } from "../../ui/kit";
-import { orgQueries, useDeleteOrg, useLeaveOrg, useRenameOrg } from "./data";
+import {
+  Act,
+  Button,
+  Check,
+  Confirm,
+  ErrorText,
+  Page,
+  Panel,
+  TitleRow,
+} from "../../ui/kit";
+import {
+  orgQueries,
+  useDeleteOrg,
+  useLeaveOrg,
+  useRenameOrg,
+  useSetLockSettings,
+} from "./data";
 
 /**
- * The organization itself: its name, address (slug), leaving it, and
- * deleting it while it has no projects.
+ * The organization itself: its name, address (slug), locked environments
+ * (admins), leaving it, and deleting it while it has no projects.
  */
 export function GeneralPage() {
   const org = useSuspenseQuery(orgQueries.org()).data;
@@ -75,9 +90,91 @@ export function GeneralPage() {
           </tbody>
         </table>
       </Panel>
+      {admin && <LockSettings />}
       {user && <Leave name={org.name} />}
       {admin && <Delete name={org.name} slug={org.slug} />}
     </Page>
+  );
+}
+
+/** Hours an access request may wait, as the API allows. */
+const TTL_MIN = 1;
+const TTL_MAX = 720;
+
+/**
+ * Locked environments (ADR 0044): whether new production environments
+ * start locked, and how long an access request waits for a decision.
+ */
+function LockSettings() {
+  const settings = useSuspenseQuery(orgQueries.lockSettings()).data;
+  const save = useSetLockSettings();
+  const current = settings.request_ttl_hours ?? 24;
+  const [hours, setHours] = useState(String(current));
+  const n = Number(hours);
+  const valid = Number.isInteger(n) && n >= TTL_MIN && n <= TTL_MAX;
+  return (
+    <section aria-labelledby="locks" className="flex flex-col gap-2">
+      <h2 id="locks" className="text-sm font-semibold">
+        Locked environments
+      </h2>
+      <Panel>
+        <table>
+          <tbody>
+            <tr>
+              <td className="w-32 py-2.5 text-faint">New production</td>
+              <td className="py-2.5">
+                <Check
+                  label="Lock new production environments"
+                  title={`dock org locks --lock-production ${settings.lock_production ? "off" : "on"}`}
+                  checked={settings.lock_production}
+                  disabled={save.isPending}
+                  onChange={(lock_production) =>
+                    save.mutate({ lock_production })
+                  }
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-faint">Access requests</td>
+              <td className="py-1.5">
+                <form
+                  className="flex flex-wrap items-center gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    save.mutate({
+                      lock_production: settings.lock_production,
+                      request_ttl_hours: n,
+                    });
+                  }}
+                >
+                  <label className="flex items-center gap-2">
+                    Expire after
+                    <input
+                      type="number"
+                      min={TTL_MIN}
+                      max={TTL_MAX}
+                      value={hours}
+                      onChange={(e) => setHours(e.target.value)}
+                      className="field w-20 py-[5px] font-mono"
+                    />
+                    hours
+                  </label>
+                  <Button
+                    small
+                    type="submit"
+                    title={`dock org locks --request-ttl ${n}h`}
+                    disabled={!valid || n === current || save.isPending}
+                  >
+                    Save
+                  </Button>
+                </form>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </Panel>
+      <ErrorText error={save.error} />
+    </section>
   );
 }
 

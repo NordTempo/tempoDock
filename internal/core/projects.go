@@ -108,7 +108,7 @@ func (c *Core) projectFor(ctx context.Context, a Actor, name string, need apityp
 }
 
 func (c *Core) envFor(ctx context.Context, a Actor, ref EnvRef, need apitypes.Scope, action string) (envScope, error) {
-	if err := a.require(need, action); err != nil {
+	if err := a.requireScope(need, action); err != nil {
 		return envScope{}, err
 	}
 	es, err := c.loadEnv(ctx, a.OrgID, ref)
@@ -119,7 +119,7 @@ func (c *Core) envFor(ctx context.Context, a Actor, ref EnvRef, need apitypes.Sc
 }
 
 func (c *Core) serviceFor(ctx context.Context, a Actor, ref ServiceRef, need apitypes.Scope, action string) (svcScope, error) {
-	if err := a.require(need, action); err != nil {
+	if err := a.requireScope(need, action); err != nil {
 		return svcScope{}, err
 	}
 	ss, err := c.loadService(ctx, a.OrgID, ref)

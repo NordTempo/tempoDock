@@ -9,6 +9,8 @@ type Schemas = components["schemas"];
 export type Scope = Schemas["User"]["role"];
 export type Session = Schemas["Me"];
 export type Org = Schemas["Org"];
+/** Whether new production environments start locked; request expiry. */
+export type OrgLockSettings = Schemas["OrgLockSettings"];
 export type Project = Schemas["Project"];
 export type Server = Schemas["Server"];
 export type ServerStatus = Server["status"];
@@ -25,6 +27,11 @@ export type MemoryPart = Schemas["MemoryPart"];
 export type ServiceUsage = Schemas["ServiceUsage"];
 export type Placement = Schemas["Placement"];
 export type EnvironmentKind = Schemas["Environment"]["kind"];
+export type Environment = Schemas["Environment"];
+/** An environment's lock (ADR 0044); absent when unlocked. */
+export type EnvironmentLock = Schemas["EnvironmentLock"];
+/** A token's call a locked environment stopped, waiting for an admin. */
+export type AccessRequest = Schemas["AccessRequest"];
 /** How far back statistics go: a point a minute, 10 minutes for 7d. */
 export type StatsRange = Schemas["ServerStats"]["range"];
 export type Service = Schemas["Service"];

@@ -64,6 +64,10 @@ type Options[A any] struct {
 	Tools func(s *Server[A])
 	// Docs are the host's guide pages as resources; zero serves none.
 	Docs Docs
+	// Refused, when set, sees every tool error before it is rendered, with
+	// the call and its arguments, and returns the error to render (Dock
+	// files an access request for a change a locked environment refused).
+	Refused func(ctx context.Context, a A, tool *ToolInfo, args json.RawMessage, err error) error
 	// Hints tell the model what to do next after an error with that code,
 	// where the message doesn't.
 	Hints  map[apitypes.ErrorCode]string
