@@ -1,0 +1,38 @@
+# A small stack for `dock import compose` (e2e/features.sh apply): a web
+# server that checks it can reach its Postgres, and the database.
+services:
+  web:
+    image: python:3.13-alpine
+    # Answers whether DATABASE_URL's host:port takes connections.
+    command:
+      - python
+      - -c
+      - |
+        import http.server, os, socket, urllib.parse
+        u = urllib.parse.urlparse(os.environ["DATABASE_URL"])
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                try:
+                    socket.create_connection((u.hostname, u.port or 5432), 3).close(); msg = "db-reachable"
+                except OSError as e:
+                    msg = "db-unreachable " + str(e)
+                self.send_response(200); self.end_headers()
+                self.wfile.write((os.environ.get("GREETING", "") + " " + msg + "\n").encode())
+        http.server.ThreadingHTTPServer(("", 8080), H).serve_forever()
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@db:5432/app
+      GREETING: hello-compose
+    depends_on:
+      - db
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:

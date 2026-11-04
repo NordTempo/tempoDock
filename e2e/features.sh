@@ -367,6 +367,52 @@ scenario_snapshot() {
 	check "the in-place restore left a safety snapshot" test "$(api GET "$(svc_path $p db)/snapshots" | jq 'if type == "array" then . else .snapshots end | length')" -ge 2
 }
 
+scenario_apply() {
+	local p=e2e2-apply-$RUN h f=$TMP/project.toml out who
+	fresh $p || return
+	h=$(busybox_web $p web apply-v1) || return
+	check "dock project export" bash -c "'${DOCK_BIN:-$E2E_DIR/../bin/dock}' project export $p > $f"
+	check "the export round-trips: its plan changes nothing" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' apply $f --plan 2>&1 | grep -qE '^ +[+~-] '"
+	# The file adds a service and changes web's start command.
+	cp "$f" "$f.orig"
+	printf '\n  [[environments.services]]\n    name = %s\n    image = %s\n    port = 80\n' "'who'" "'traefik/whoami:v1.11'" >>"$f"
+	sed -i 's|echo \$MSG >|echo applied-\$MSG >|' "$f"
+	out=$(dk apply "$f" --dry-run 2>&1)
+	check "the dry run shows the new service" grep -qE '\+.*who' <<<"$out"
+	check "the dry run shows the changed start command" grep -qE '~.*web.*start_command' <<<"$out"
+	check "the dry run stages nothing" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' changes $(pe $p) 2>&1 | grep -qE 'who|start_command'"
+	check "the dry run creates no service" test "$(api_status GET "$(svc_path $p who)")" == 404
+	check "--plan --json is machine-readable" bash -c "'${DOCK_BIN:-$E2E_DIR/../bin/dock}' apply $f --plan --json 2>/dev/null | jq -e . >/dev/null"
+	check "dock apply FILE stages it" dk apply "$f"
+	check "the staged changes list it" out_has 'start_command|who' dk changes $(pe $p)
+	check "dock apply deploys the staged changes" dk apply $(pe $p)
+	check "who is active" wait_for 180 newest_active $p who
+	check "web runs the new start command" wait_for 120 body_has "$h" / applied-apply-v1
+	who=$(generate_domain $p who)
+	check "$who serves" wait_for 30 code_is "$who" / 200
+	check "applying the file again plans nothing" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' apply $f --plan 2>&1 | grep -qE '^ +[+~-] '"
+	# Removing who from the file removes nothing unless --prune.
+	sed 's|echo \$MSG >|echo applied-\$MSG >|' "$f.orig" >"$f"
+	check "the file without who is valid" dk apply "$f" --plan
+	check "without --prune nothing is removed" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' apply $f --plan 2>&1 | grep -qE '^ +- '"
+	check "--prune plans who's removal" out_has '^ +-.*who' dk apply "$f" --plan --prune
+
+	# A Compose stack: web plus Postgres.
+	local c=e2e2-compose-$RUN wh
+	out=$(dk import compose "$APPS/compose-stack/docker-compose.yml" -p $c 2>&1)
+	check "compose plan maps postgres to the template" grep -qE '\+.*db.*template postgres' <<<"$out"
+	check "compose plan rewrites web's DATABASE_URL to the template's" grep -q 'db.DATABASE_URL' <<<"$out"
+	check "compose plan warns about the host port" grep -q "8080:8080" <<<"$out"
+	check "the plan created nothing" test "$(api_status GET "/projects/$c")" == 404
+	check "dock import compose --apply --yes" dk import compose "$APPS/compose-stack/docker-compose.yml" -p $c --apply --yes
+	use_proxy_of $c
+	check "compose db is active" wait_for 240 newest_active $c db
+	check "compose web is active" wait_for 240 newest_active $c web
+	wh=$(api GET "$(svc_path $c web)/domains" | jq -r '.[0].hostname')
+	check "compose web reaches its database" wait_for 60 body_has "$wh" / 'hello-compose db-reachable'
+	check "compose db has a volume" test "$(api GET "$(svc_path $c db)/volumes" | jq length)" -ge 1
+}
+
 # svc_status P S FIELD prints a field of the service's status.
 svc_status() { api GET "$(svc_path "$1" "$2")" | jq -r ".status.$3"; }
 status_is() { [[ $(svc_status "$1" "$2" "$3") == "$4" ]]; }
