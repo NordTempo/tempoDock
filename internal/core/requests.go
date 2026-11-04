@@ -484,6 +484,7 @@ func (c *Core) DecideRequest(ctx context.Context, a Actor, id int64, approve boo
 	c.publishRequest(decided, es.project.Name, es.env.Name)
 	if !approve {
 		c.dropUpload(decided.Upload)
+		c.endHeldPush(ctx, decided, "the request was rejected")
 		return c.GetRequest(ctx, a, id)
 	}
 	done := make(chan struct{})
@@ -606,8 +607,9 @@ func (c *Core) endOrphanedRequests(ctx context.Context) {
 }
 
 // endedRequests finishes requests that ended without running (expired,
-// cut off by a restart, orphaned): their alerts resolve, their held archives go and
-// open pages hear of it.
+// cut off by a restart, orphaned, replaced by a newer call): their alerts
+// resolve, their held archives go, an expired held push's commit status
+// fails and open pages hear of it.
 func (c *Core) endedRequests(ctx context.Context, rows []store.AccessRequest) {
 	if len(rows) == 0 {
 		return
@@ -620,6 +622,9 @@ func (c *Core) endedRequests(ctx context.Context, rows []store.AccessRequest) {
 	for _, r := range rows {
 		c.signalAlert(ctx, alertSignal{Key: requestAlertKey(r.ID), Resolve: true})
 		c.dropUpload(r.Upload)
+		if r.Status == string(apitypes.RequestExpired) {
+			c.endHeldPush(ctx, r, "the request expired")
+		}
 		es := scopes[r.EnvironmentID]
 		c.publishRequest(r, es.project.Name, es.env.Name)
 	}
