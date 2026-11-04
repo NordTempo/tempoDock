@@ -137,10 +137,12 @@ func (c *Core) scheduleBackups() {
 	}
 }
 
-// backupPass runs every scheduled backup that is due, the services' and
-// then the control plane's own (ADR 0021), and returns when the next one
-// is due (zero: none scheduled).
+// backupPass deletes snapshots past their age, runs every scheduled
+// backup that is due, the services' and then the control plane's own
+// (ADR 0021), and returns when the next one is due (zero: none
+// scheduled).
 func (c *Core) backupPass(ctx context.Context) (time.Time, error) {
+	c.pruneExpiredSnapshots(ctx) // ADR 0047: rides on this pass, at least daily
 	next, err := c.serviceBackupPass(ctx)
 	if err != nil {
 		return next, err

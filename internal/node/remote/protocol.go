@@ -67,7 +67,9 @@ const (
 	// ongoing health check: the container spec's health, a container's
 	// health state and health_status events (ADR 0043); 14 added
 	// archive-logs, archived-logs and prune-logs (ADR 0046).
-	Protocol = 14
+	// 15 adds run-job's pause: containers frozen while the job runs (ADR
+	// 0047).
+	Protocol = 15
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

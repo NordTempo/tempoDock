@@ -278,6 +278,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	h.addConfigTools(s)
+	h.addSnapshotTools(s)
 	h.addAnalyticsTools(s)
 
 	mcpkit.AddTool(s, "list_servers", "List servers",

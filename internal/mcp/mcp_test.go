@@ -621,3 +621,58 @@ func TestAnalyticsTools(t *testing.T) {
 		t.Errorf("another project's site: %s", code)
 	}
 }
+
+// An agent takes a snapshot and restores it into a new service, waiting
+// for each; restoring in place isn't offered.
+func TestSnapshotTools(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	pg := core.ServiceRef{Project: "shop", Environment: "staging", Service: "pg"}
+	if _, err := f.core.CreateService(ctx, sys, pg.Env(), apitypes.CreateServiceRequest{Name: "pg", Template: apitypes.TemplatePostgres}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		rels, err := f.core.ListReleases(ctx, sys, pg, 1)
+		return err == nil && len(rels) == 1 && rels[0].Status == apitypes.ReleaseActive
+	})
+	f.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		if strings.Contains(spec.Script, "dock-snapshot: size") {
+			return node.JobResult{Output: "dock-snapshot: size 64\n"}, nil
+		}
+		return node.JobResult{Output: "dock-snapshot: restored\n"}, nil
+	})
+	s := f.connect("shop-agent", nil)
+
+	tools, err := s.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name != "restore_snapshot" {
+			continue
+		}
+		schema, err := json.Marshal(tl.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(schema), "in_place") {
+			t.Errorf("restore_snapshot offers an in-place restore: %s", schema)
+		}
+	}
+
+	var snap apitypes.Snapshot
+	c := call(t, s, "create_snapshot", map[string]any{"service": "pg", "note": "before 2.0"})
+	c.decode(t, &snap)
+	if c.isError || snap.Status != apitypes.SnapshotReady || snap.Note != "before 2.0" {
+		t.Fatalf("create_snapshot = %q %+v", c.summary, snap)
+	}
+	if c := call(t, s, "list_snapshots", map[string]any{"service": "pg"}); c.isError || !strings.Contains(c.summary, "1 snapshots") {
+		t.Errorf("list_snapshots = %q", c.summary)
+	}
+	var res apitypes.SnapshotRestoreResult
+	c = call(t, s, "restore_snapshot", map[string]any{"service": "pg", "snapshot": snap.ID, "as": "pg-old"})
+	c.decode(t, &res)
+	if c.isError || res.Restore.InPlace || res.Restore.To != "pg-old" || res.Restore.Status != apitypes.BackupSucceeded {
+		t.Fatalf("restore_snapshot = %q %+v", c.summary, res.Restore)
+	}
+}

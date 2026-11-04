@@ -182,7 +182,7 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		}
 	}
 
-	var backups, dockVolumes, cacheBytes, otherVolumes int64
+	var backups, snapshots, dockVolumes, cacheBytes, otherVolumes int64
 	for _, v := range du.Volumes {
 		switch {
 		case v.ControlPlane != "" && v.ControlPlane != c.install:
@@ -191,6 +191,8 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 			cacheBytes += v.Bytes
 		case strings.HasPrefix(v.Name, backup.LocalVolumePrefix):
 			backups += v.Bytes
+		case strings.HasPrefix(v.Name, snapshotVolumePrefix):
+			snapshots += v.Bytes
 		case v.Service != "":
 			name, ok := names[v.Service]
 			if !ok {
@@ -223,6 +225,7 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		add(apitypes.DiskDock, "registry", "the image registry's storage dir", registry, 0)
 	}
 	add(apitypes.DiskDock, "local backups", "restic repository on this server, not off-box", backups, 0)
+	add(apitypes.DiskDock, "volume snapshots", "copies of volumes kept on this server (dock volume snapshot)", snapshots, 0)
 	add(apitypes.DiskDock, "other volumes", "Dock's other volumes", dockVolumes, 0)
 	add(apitypes.DiskOther, "volumes not Dock's", "", du.OtherVolumes+otherVolumes, 0)
 

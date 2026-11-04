@@ -19,7 +19,6 @@ import { backupHow, exportOf, hourLabel } from "./backups";
  * template databases.
  */
 export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const org = useOrg();
   const backups = useBackups(ref);
   const canDeploy = useCanDeploy(ref);
   // Backups are the platform's: operators set schedules (ADR 0027).
@@ -74,23 +73,11 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <ErrorText error={run.error} />
       </div>
       {restored && (
-        <p>
-          Restoring into{" "}
-          <Link
-            to="/$org/$project/$environment/$service"
-            params={{ org, ...ref, service: restored }}
-            className="font-mono"
-          >
-            {restored}
-          </Link>{" "}
-          in the background. Nothing uses it until references point at{" "}
-          <code className="font-mono">
-            {"${{"}
-            {restored}.{exportOf(backups.kind)}
-            {"}}"}
-          </code>
-          .
-        </p>
+        <RestoringInto
+          serviceRef={ref}
+          service={restored}
+          kind={backups.kind}
+        />
       )}
       <Runs
         serviceRef={ref}
@@ -99,6 +86,38 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         onRestored={setRestored}
       />
     </>
+  );
+}
+
+/** Says a restore into a new service runs, and how to start using it. */
+export function RestoringInto({
+  serviceRef: ref,
+  service,
+  kind,
+}: {
+  serviceRef: ServiceRef;
+  service: string;
+  kind: ServiceBackups["kind"];
+}) {
+  const org = useOrg();
+  return (
+    <p>
+      Restoring into{" "}
+      <Link
+        to="/$org/$project/$environment/$service"
+        params={{ org, ...ref, service }}
+        className="font-mono"
+      >
+        {service}
+      </Link>{" "}
+      in the background. Nothing uses it until references point at{" "}
+      <code className="font-mono">
+        {"${{"}
+        {service}.{exportOf(kind)}
+        {"}}"}
+      </code>
+      .
+    </p>
   );
 }
 

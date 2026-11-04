@@ -219,6 +219,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createSiteStmt, err = db.PrepareContext(ctx, createSite); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSite: %w", err)
 	}
+	if q.createSnapshotStmt, err = db.PrepareContext(ctx, createSnapshot); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateSnapshot: %w", err)
+	}
+	if q.createSnapshotRestoreStmt, err = db.PrepareContext(ctx, createSnapshotRestore); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateSnapshotRestore: %w", err)
+	}
 	if q.createStorageConnectionStmt, err = db.PrepareContext(ctx, createStorageConnection); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateStorageConnection: %w", err)
 	}
@@ -339,6 +345,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteSessionStmt, err = db.PrepareContext(ctx, deleteSession); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSession: %w", err)
 	}
+	if q.deleteSnapshotStmt, err = db.PrepareContext(ctx, deleteSnapshot); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteSnapshot: %w", err)
+	}
 	if q.deleteStorageConnectionStmt, err = db.PrepareContext(ctx, deleteStorageConnection); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteStorageConnection: %w", err)
 	}
@@ -384,6 +393,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.failRunningControlPlaneBackupStmt, err = db.PrepareContext(ctx, failRunningControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query FailRunningControlPlaneBackup: %w", err)
 	}
+	if q.failRunningSnapshotsStmt, err = db.PrepareContext(ctx, failRunningSnapshots); err != nil {
+		return nil, fmt.Errorf("error preparing query FailRunningSnapshots: %w", err)
+	}
 	if q.finishAccessRequestStmt, err = db.PrepareContext(ctx, finishAccessRequest); err != nil {
 		return nil, fmt.Errorf("error preparing query FinishAccessRequest: %w", err)
 	}
@@ -392,6 +404,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.finishControlPlaneBackupStmt, err = db.PrepareContext(ctx, finishControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query FinishControlPlaneBackup: %w", err)
+	}
+	if q.finishSnapshotStmt, err = db.PrepareContext(ctx, finishSnapshot); err != nil {
+		return nil, fmt.Errorf("error preparing query FinishSnapshot: %w", err)
+	}
+	if q.finishSnapshotRestoreStmt, err = db.PrepareContext(ctx, finishSnapshotRestore); err != nil {
+		return nil, fmt.Errorf("error preparing query FinishSnapshotRestore: %w", err)
 	}
 	if q.forgetRunningControlPlaneBackupStmt, err = db.PrepareContext(ctx, forgetRunningControlPlaneBackup); err != nil {
 		return nil, fmt.Errorf("error preparing query ForgetRunningControlPlaneBackup: %w", err)
@@ -576,6 +594,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getSiteHostnameStmt, err = db.PrepareContext(ctx, getSiteHostname); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSiteHostname: %w", err)
 	}
+	if q.getSnapshotStmt, err = db.PrepareContext(ctx, getSnapshot); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSnapshot: %w", err)
+	}
 	if q.getStorageConnectionStmt, err = db.PrepareContext(ctx, getStorageConnection); err != nil {
 		return nil, fmt.Errorf("error preparing query GetStorageConnection: %w", err)
 	}
@@ -707,6 +728,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listExpiredReleaseHistoryStmt, err = db.PrepareContext(ctx, listExpiredReleaseHistory); err != nil {
 		return nil, fmt.Errorf("error preparing query ListExpiredReleaseHistory: %w", err)
+	}
+	if q.listExpiredSnapshotsStmt, err = db.PrepareContext(ctx, listExpiredSnapshots); err != nil {
+		return nil, fmt.Errorf("error preparing query ListExpiredSnapshots: %w", err)
 	}
 	if q.listFailedLatestReleasesStmt, err = db.PrepareContext(ctx, listFailedLatestReleases); err != nil {
 		return nil, fmt.Errorf("error preparing query ListFailedLatestReleases: %w", err)
@@ -840,6 +864,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listRoutableDomainsStmt, err = db.PrepareContext(ctx, listRoutableDomains); err != nil {
 		return nil, fmt.Errorf("error preparing query ListRoutableDomains: %w", err)
 	}
+	if q.listRunningSnapshotRestoresStmt, err = db.PrepareContext(ctx, listRunningSnapshotRestores); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRunningSnapshotRestores: %w", err)
+	}
 	if q.listSavedQueriesStmt, err = db.PrepareContext(ctx, listSavedQueries); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSavedQueries: %w", err)
 	}
@@ -875,6 +902,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listServiceIDsStmt, err = db.PrepareContext(ctx, listServiceIDs); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServiceIDs: %w", err)
+	}
+	if q.listServiceSnapshotRestoresStmt, err = db.PrepareContext(ctx, listServiceSnapshotRestores); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServiceSnapshotRestores: %w", err)
+	}
+	if q.listServiceSnapshotsStmt, err = db.PrepareContext(ctx, listServiceSnapshots); err != nil {
+		return nil, fmt.Errorf("error preparing query ListServiceSnapshots: %w", err)
 	}
 	if q.listServiceStatsStmt, err = db.PrepareContext(ctx, listServiceStats); err != nil {
 		return nil, fmt.Errorf("error preparing query ListServiceStats: %w", err)
@@ -1641,6 +1674,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createSiteStmt: %w", cerr)
 		}
 	}
+	if q.createSnapshotStmt != nil {
+		if cerr := q.createSnapshotStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createSnapshotStmt: %w", cerr)
+		}
+	}
+	if q.createSnapshotRestoreStmt != nil {
+		if cerr := q.createSnapshotRestoreStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createSnapshotRestoreStmt: %w", cerr)
+		}
+	}
 	if q.createStorageConnectionStmt != nil {
 		if cerr := q.createStorageConnectionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createStorageConnectionStmt: %w", cerr)
@@ -1841,6 +1884,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteSessionStmt: %w", cerr)
 		}
 	}
+	if q.deleteSnapshotStmt != nil {
+		if cerr := q.deleteSnapshotStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteSnapshotStmt: %w", cerr)
+		}
+	}
 	if q.deleteStorageConnectionStmt != nil {
 		if cerr := q.deleteStorageConnectionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteStorageConnectionStmt: %w", cerr)
@@ -1916,6 +1964,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing failRunningControlPlaneBackupStmt: %w", cerr)
 		}
 	}
+	if q.failRunningSnapshotsStmt != nil {
+		if cerr := q.failRunningSnapshotsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing failRunningSnapshotsStmt: %w", cerr)
+		}
+	}
 	if q.finishAccessRequestStmt != nil {
 		if cerr := q.finishAccessRequestStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing finishAccessRequestStmt: %w", cerr)
@@ -1929,6 +1982,16 @@ func (q *Queries) Close() error {
 	if q.finishControlPlaneBackupStmt != nil {
 		if cerr := q.finishControlPlaneBackupStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing finishControlPlaneBackupStmt: %w", cerr)
+		}
+	}
+	if q.finishSnapshotStmt != nil {
+		if cerr := q.finishSnapshotStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing finishSnapshotStmt: %w", cerr)
+		}
+	}
+	if q.finishSnapshotRestoreStmt != nil {
+		if cerr := q.finishSnapshotRestoreStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing finishSnapshotRestoreStmt: %w", cerr)
 		}
 	}
 	if q.forgetRunningControlPlaneBackupStmt != nil {
@@ -2236,6 +2299,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getSiteHostnameStmt: %w", cerr)
 		}
 	}
+	if q.getSnapshotStmt != nil {
+		if cerr := q.getSnapshotStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSnapshotStmt: %w", cerr)
+		}
+	}
 	if q.getStorageConnectionStmt != nil {
 		if cerr := q.getStorageConnectionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getStorageConnectionStmt: %w", cerr)
@@ -2454,6 +2522,11 @@ func (q *Queries) Close() error {
 	if q.listExpiredReleaseHistoryStmt != nil {
 		if cerr := q.listExpiredReleaseHistoryStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listExpiredReleaseHistoryStmt: %w", cerr)
+		}
+	}
+	if q.listExpiredSnapshotsStmt != nil {
+		if cerr := q.listExpiredSnapshotsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listExpiredSnapshotsStmt: %w", cerr)
 		}
 	}
 	if q.listFailedLatestReleasesStmt != nil {
@@ -2676,6 +2749,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listRoutableDomainsStmt: %w", cerr)
 		}
 	}
+	if q.listRunningSnapshotRestoresStmt != nil {
+		if cerr := q.listRunningSnapshotRestoresStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRunningSnapshotRestoresStmt: %w", cerr)
+		}
+	}
 	if q.listSavedQueriesStmt != nil {
 		if cerr := q.listSavedQueriesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listSavedQueriesStmt: %w", cerr)
@@ -2734,6 +2812,16 @@ func (q *Queries) Close() error {
 	if q.listServiceIDsStmt != nil {
 		if cerr := q.listServiceIDsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listServiceIDsStmt: %w", cerr)
+		}
+	}
+	if q.listServiceSnapshotRestoresStmt != nil {
+		if cerr := q.listServiceSnapshotRestoresStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServiceSnapshotRestoresStmt: %w", cerr)
+		}
+	}
+	if q.listServiceSnapshotsStmt != nil {
+		if cerr := q.listServiceSnapshotsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listServiceSnapshotsStmt: %w", cerr)
 		}
 	}
 	if q.listServiceStatsStmt != nil {
@@ -3565,6 +3653,8 @@ type Queries struct {
 	createServiceStmt                   *sql.Stmt
 	createSessionStmt                   *sql.Stmt
 	createSiteStmt                      *sql.Stmt
+	createSnapshotStmt                  *sql.Stmt
+	createSnapshotRestoreStmt           *sql.Stmt
 	createStorageConnectionStmt         *sql.Stmt
 	createTokenStmt                     *sql.Stmt
 	createUserStmt                      *sql.Stmt
@@ -3605,6 +3695,7 @@ type Queries struct {
 	deleteServerPlacementsStmt          *sql.Stmt
 	deleteServiceAccessStmt             *sql.Stmt
 	deleteSessionStmt                   *sql.Stmt
+	deleteSnapshotStmt                  *sql.Stmt
 	deleteStorageConnectionStmt         *sql.Stmt
 	deleteUserStmt                      *sql.Stmt
 	deleteUserSessionsStmt              *sql.Stmt
@@ -3620,9 +3711,12 @@ type Queries struct {
 	failRunningAccessRequestsStmt       *sql.Stmt
 	failRunningBackupsStmt              *sql.Stmt
 	failRunningControlPlaneBackupStmt   *sql.Stmt
+	failRunningSnapshotsStmt            *sql.Stmt
 	finishAccessRequestStmt             *sql.Stmt
 	finishBackupStmt                    *sql.Stmt
 	finishControlPlaneBackupStmt        *sql.Stmt
+	finishSnapshotStmt                  *sql.Stmt
+	finishSnapshotRestoreStmt           *sql.Stmt
 	forgetRunningControlPlaneBackupStmt *sql.Stmt
 	getAccessRequestStmt                *sql.Stmt
 	getActiveReleaseStmt                *sql.Stmt
@@ -3684,6 +3778,7 @@ type Queries struct {
 	getSiteByNameStmt                   *sql.Stmt
 	getSiteFunnelStmt                   *sql.Stmt
 	getSiteHostnameStmt                 *sql.Stmt
+	getSnapshotStmt                     *sql.Stmt
 	getStorageConnectionStmt            *sql.Stmt
 	getStorageConnectionByIDStmt        *sql.Stmt
 	getTokenStmt                        *sql.Stmt
@@ -3728,6 +3823,7 @@ type Queries struct {
 	listEnvironmentVolumesStmt          *sql.Stmt
 	listEnvironmentsStmt                *sql.Stmt
 	listExpiredReleaseHistoryStmt       *sql.Stmt
+	listExpiredSnapshotsStmt            *sql.Stmt
 	listFailedLatestReleasesStmt        *sql.Stmt
 	listGitHubInstallationsStmt         *sql.Stmt
 	listGitPendingServicesStmt          *sql.Stmt
@@ -3772,6 +3868,7 @@ type Queries struct {
 	listRepositorySnapshotsStmt         *sql.Stmt
 	listRetiredPortHoldersStmt          *sql.Stmt
 	listRoutableDomainsStmt             *sql.Stmt
+	listRunningSnapshotRestoresStmt     *sql.Stmt
 	listSavedQueriesStmt                *sql.Stmt
 	listSensitiveColumnsStmt            *sql.Stmt
 	listServerCloudflareRecordsStmt     *sql.Stmt
@@ -3784,6 +3881,8 @@ type Queries struct {
 	listServiceBackupsStmt              *sql.Stmt
 	listServiceCloudflareRecordsStmt    *sql.Stmt
 	listServiceIDsStmt                  *sql.Stmt
+	listServiceSnapshotRestoresStmt     *sql.Stmt
+	listServiceSnapshotsStmt            *sql.Stmt
 	listServiceStatsStmt                *sql.Stmt
 	listServicesStmt                    *sql.Stmt
 	listSiteDeploysStmt                 *sql.Stmt
@@ -4000,6 +4099,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createServiceStmt:                   q.createServiceStmt,
 		createSessionStmt:                   q.createSessionStmt,
 		createSiteStmt:                      q.createSiteStmt,
+		createSnapshotStmt:                  q.createSnapshotStmt,
+		createSnapshotRestoreStmt:           q.createSnapshotRestoreStmt,
 		createStorageConnectionStmt:         q.createStorageConnectionStmt,
 		createTokenStmt:                     q.createTokenStmt,
 		createUserStmt:                      q.createUserStmt,
@@ -4040,6 +4141,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteServerPlacementsStmt:          q.deleteServerPlacementsStmt,
 		deleteServiceAccessStmt:             q.deleteServiceAccessStmt,
 		deleteSessionStmt:                   q.deleteSessionStmt,
+		deleteSnapshotStmt:                  q.deleteSnapshotStmt,
 		deleteStorageConnectionStmt:         q.deleteStorageConnectionStmt,
 		deleteUserStmt:                      q.deleteUserStmt,
 		deleteUserSessionsStmt:              q.deleteUserSessionsStmt,
@@ -4055,9 +4157,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		failRunningAccessRequestsStmt:       q.failRunningAccessRequestsStmt,
 		failRunningBackupsStmt:              q.failRunningBackupsStmt,
 		failRunningControlPlaneBackupStmt:   q.failRunningControlPlaneBackupStmt,
+		failRunningSnapshotsStmt:            q.failRunningSnapshotsStmt,
 		finishAccessRequestStmt:             q.finishAccessRequestStmt,
 		finishBackupStmt:                    q.finishBackupStmt,
 		finishControlPlaneBackupStmt:        q.finishControlPlaneBackupStmt,
+		finishSnapshotStmt:                  q.finishSnapshotStmt,
+		finishSnapshotRestoreStmt:           q.finishSnapshotRestoreStmt,
 		forgetRunningControlPlaneBackupStmt: q.forgetRunningControlPlaneBackupStmt,
 		getAccessRequestStmt:                q.getAccessRequestStmt,
 		getActiveReleaseStmt:                q.getActiveReleaseStmt,
@@ -4119,6 +4224,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getSiteByNameStmt:                   q.getSiteByNameStmt,
 		getSiteFunnelStmt:                   q.getSiteFunnelStmt,
 		getSiteHostnameStmt:                 q.getSiteHostnameStmt,
+		getSnapshotStmt:                     q.getSnapshotStmt,
 		getStorageConnectionStmt:            q.getStorageConnectionStmt,
 		getStorageConnectionByIDStmt:        q.getStorageConnectionByIDStmt,
 		getTokenStmt:                        q.getTokenStmt,
@@ -4163,6 +4269,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listEnvironmentVolumesStmt:          q.listEnvironmentVolumesStmt,
 		listEnvironmentsStmt:                q.listEnvironmentsStmt,
 		listExpiredReleaseHistoryStmt:       q.listExpiredReleaseHistoryStmt,
+		listExpiredSnapshotsStmt:            q.listExpiredSnapshotsStmt,
 		listFailedLatestReleasesStmt:        q.listFailedLatestReleasesStmt,
 		listGitHubInstallationsStmt:         q.listGitHubInstallationsStmt,
 		listGitPendingServicesStmt:          q.listGitPendingServicesStmt,
@@ -4207,6 +4314,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listRepositorySnapshotsStmt:         q.listRepositorySnapshotsStmt,
 		listRetiredPortHoldersStmt:          q.listRetiredPortHoldersStmt,
 		listRoutableDomainsStmt:             q.listRoutableDomainsStmt,
+		listRunningSnapshotRestoresStmt:     q.listRunningSnapshotRestoresStmt,
 		listSavedQueriesStmt:                q.listSavedQueriesStmt,
 		listSensitiveColumnsStmt:            q.listSensitiveColumnsStmt,
 		listServerCloudflareRecordsStmt:     q.listServerCloudflareRecordsStmt,
@@ -4219,6 +4327,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listServiceBackupsStmt:              q.listServiceBackupsStmt,
 		listServiceCloudflareRecordsStmt:    q.listServiceCloudflareRecordsStmt,
 		listServiceIDsStmt:                  q.listServiceIDsStmt,
+		listServiceSnapshotRestoresStmt:     q.listServiceSnapshotRestoresStmt,
+		listServiceSnapshotsStmt:            q.listServiceSnapshotsStmt,
 		listServiceStatsStmt:                q.listServiceStatsStmt,
 		listServicesStmt:                    q.listServicesStmt,
 		listSiteDeploysStmt:                 q.listSiteDeploysStmt,

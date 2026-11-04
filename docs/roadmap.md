@@ -103,6 +103,8 @@ doesn't affect production.
   backup presets ([ADR 0011](decisions/0011-stateful-services-and-databases.md)).
 - Non-destructive restore into a new service; `dock connect` tunnels
   ([ADR 0023](decisions/0023-connect-tunnels.md)).
+- Volume snapshots before risky actions, restored into a new service or
+  in place ([ADR 0047](decisions/0047-volume-snapshots.md)).
 
 ## M6: Ready for others (if we go open source)
 

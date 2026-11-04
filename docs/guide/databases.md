@@ -110,6 +110,44 @@ Backups of other volumes are restored by hand for now: with the repository
 password, `restic -r <repository> restore <snapshot> --target <dir>`
 (locally, the repository is the `dock_backups_*` volume on the server).
 
+## Snapshots
+
+A snapshot is a quick copy of a service's volumes on its own server, for
+the minutes before something risky: a migration, a bulk edit, a
+`dock run` ([ADR 0047](../decisions/0047-volume-snapshots.md)). It works for
+any service with a volume.
+
+```sh
+dock volume snapshot -s db --note "before 2.0"   # take one now
+dock volume snapshot list -s db                  # snapshots and restores
+dock volume snapshot restore 12 -s db            # into a new service db-snapshot-12
+dock volume snapshot restore 12 -s db --in-place # replace db's data
+dock volume snapshot delete 12 -s db
+```
+
+The service's containers are paused (not stopped) while its volumes are
+copied: requests wait for a few seconds instead of failing, and the copy
+is what a power cut at that moment would leave, which databases recover
+from. The **Backups** tab lists them with Take snapshot, Restore and
+Delete.
+
+| | Snapshot | Backup |
+|---|---|---|
+| Where | the service's server | a restic repository, ideally off-box |
+| When | by hand, and before risky actions | daily |
+| Kept | the newest 5 per service, at most 7 days | 7 daily, 4 weekly, 6 monthly |
+| Restore | seconds: files copied back | a dump loaded into a new service |
+
+A template database restores into a **new** service by default, with the
+credentials of the snapshot's data, and the original keeps running. Any
+service restores **in place**: it stops, its current data is snapshotted
+first (the *safety snapshot*, which undoes the restore), the snapshot is
+copied in, and it starts again. Deploys wait meanwhile.
+
+Snapshots count against the server's disk: a snapshot that would leave
+less than a tenth of the disk free is refused. Change retention with
+`[backup] snapshot_keep` and `snapshot_days` in `config.toml`.
+
 ## Permissions
 
 Backups are the platform's: they run on their own, and the platform's
@@ -117,6 +155,6 @@ operator decides where they go and when.
 
 | Action | Needs |
 |---|---|
-| See backups and settings | read |
-| Back up now, restore | deploy |
+| See backups, snapshots and settings | read |
+| Back up now, restore; take, restore and delete snapshots | deploy |
 | Change a service's schedule, configure retention, move the backups, reveal the repository password | operator |
