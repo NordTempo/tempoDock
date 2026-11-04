@@ -67,7 +67,7 @@ func (s *Server) authenticate(a huma.API) func(huma.Context, func(huma.Context))
 		}
 		ctx = huma.WithValue(ctx, actorKey{}, actor)
 		if r := strings.TrimSpace(ctx.Header(reasonHeader)); r != "" {
-			ctx = huma.WithValue(ctx, reasonKey{}, r[:min(len(r), maxReason)])
+			ctx = huma.WithContext(ctx, core.WithReason(ctx.Context(), r[:min(len(r), maxReason)]))
 		}
 		next(ctx)
 	}
@@ -79,9 +79,6 @@ const reasonHeader = "Dock-Reason"
 
 // maxReason caps a reason's length in bytes.
 const maxReason = 500
-
-// reasonKey carries the request's reason in its context.
-type reasonKey struct{}
 
 // client is how a request arrived: over HTTPS (for the cookie's Secure
 // flag) and from which IP (for login rate limits). Behind a reverse proxy

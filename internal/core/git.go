@@ -437,7 +437,8 @@ func (c *Core) GitDeploy(ctx context.Context, a Actor, ref ServiceRef, req apity
 		return apitypes.GitDeployResult{}, err
 	}
 	if err := c.store.SetGitPending(ctx, store.SetGitPendingParams{
-		PendingSha: commit.SHA, PendingMessage: commit.Message, PendingAuthor: commit.Author, PendingBy: a.Name, PendingForce: true, ID: conn.ID,
+		// Whoever got here may deploy it, also into a locked environment.
+		PendingSha: commit.SHA, PendingMessage: commit.Message, PendingAuthor: commit.Author, PendingBy: a.Name, PendingForce: true, PendingApproved: 1, ID: conn.ID,
 	}); err != nil {
 		return apitypes.GitDeployResult{}, err
 	}
@@ -585,6 +586,18 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 		if active, err := c.store.GetActiveRelease(ctx, serviceID); err == nil && active.CommitSha == sha {
 			return finish(fmt.Sprintf("push %s: already live in release %d", shortSHA(sha), active.Number))
 		}
+	}
+	// A push into a locked environment waits for an admin (ADR 0044).
+	if lockHolds(ss.env, now()) && conn.PendingApproved == 0 {
+		id, err := c.holdPush(ctx, ss, conn)
+		if err != nil {
+			c.log.Error("hold push", "service", serviceID, "err", err)
+			return gitDone
+		}
+		if conn.PostStatus {
+			c.postGitStatus(ss, conn, store.Release{}, "pending", fmt.Sprintf("Waiting for approval in Dock (access request #%d)", id))
+		}
+		return finish(fmt.Sprintf("push %s: %s is locked; waits for approval as access request #%d", shortSHA(sha), ss.envScope, id))
 	}
 	cred, err := c.gitCred(ctx, ss, conn)
 	if err != nil {

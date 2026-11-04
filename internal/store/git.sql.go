@@ -29,7 +29,7 @@ func (q *Queries) AddGitDelivery(ctx context.Context, arg AddGitDeliveryParams) 
 
 const clearGitPending = `-- name: ClearGitPending :execrows
 UPDATE git_connections
-SET pending_sha = '', pending_message = '', pending_author = '', pending_by = '', pending_force = 0
+SET pending_sha = '', pending_message = '', pending_author = '', pending_by = '', pending_force = 0, pending_approved = 0
 WHERE id = +?1 AND pending_sha = CAST(?2 AS TEXT)
 `
 
@@ -51,7 +51,7 @@ func (q *Queries) ClearGitPending(ctx context.Context, arg ClearGitPendingParams
 const createGitConnection = `-- name: CreateGitConnection :one
 INSERT INTO git_connections (service_id, hook_id, repo, branch, dir, secret, token, post_status, installation_id, repo_id, created_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id
+RETURNING id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id, pending_approved
 `
 
 type CreateGitConnectionParams struct {
@@ -104,6 +104,7 @@ func (q *Queries) CreateGitConnection(ctx context.Context, arg CreateGitConnecti
 		&i.CreatedAt,
 		&i.InstallationID,
 		&i.RepoID,
+		&i.PendingApproved,
 	)
 	return i, err
 }
@@ -118,7 +119,7 @@ func (q *Queries) DeleteGitConnection(ctx context.Context, serviceID int64) erro
 }
 
 const getAppGitConnections = `-- name: GetAppGitConnections :many
-SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id FROM git_connections WHERE repo_id = +? AND installation_id = +?
+SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id, pending_approved FROM git_connections WHERE repo_id = +? AND installation_id = +?
 `
 
 type GetAppGitConnectionsParams struct {
@@ -158,6 +159,7 @@ func (q *Queries) GetAppGitConnections(ctx context.Context, arg GetAppGitConnect
 			&i.CreatedAt,
 			&i.InstallationID,
 			&i.RepoID,
+			&i.PendingApproved,
 		); err != nil {
 			return nil, err
 		}
@@ -173,7 +175,7 @@ func (q *Queries) GetAppGitConnections(ctx context.Context, arg GetAppGitConnect
 }
 
 const getGitConnectionByHook = `-- name: GetGitConnectionByHook :one
-SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id FROM git_connections WHERE hook_id = +?
+SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id, pending_approved FROM git_connections WHERE hook_id = +?
 `
 
 func (q *Queries) GetGitConnectionByHook(ctx context.Context, hookID string) (GitConnection, error) {
@@ -200,12 +202,13 @@ func (q *Queries) GetGitConnectionByHook(ctx context.Context, hookID string) (Gi
 		&i.CreatedAt,
 		&i.InstallationID,
 		&i.RepoID,
+		&i.PendingApproved,
 	)
 	return i, err
 }
 
 const getGitConnectionByService = `-- name: GetGitConnectionByService :one
-SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id FROM git_connections WHERE service_id = +?
+SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id, pending_approved FROM git_connections WHERE service_id = +?
 `
 
 func (q *Queries) GetGitConnectionByService(ctx context.Context, serviceID int64) (GitConnection, error) {
@@ -232,6 +235,7 @@ func (q *Queries) GetGitConnectionByService(ctx context.Context, serviceID int64
 		&i.CreatedAt,
 		&i.InstallationID,
 		&i.RepoID,
+		&i.PendingApproved,
 	)
 	return i, err
 }
@@ -289,17 +293,18 @@ func (q *Queries) SetGitLastEvent(ctx context.Context, arg SetGitLastEventParams
 
 const setGitPending = `-- name: SetGitPending :exec
 UPDATE git_connections
-SET pending_sha = ?, pending_message = ?, pending_author = ?, pending_by = ?, pending_force = ?
+SET pending_sha = ?, pending_message = ?, pending_author = ?, pending_by = ?, pending_force = ?, pending_approved = ?
 WHERE id = +?
 `
 
 type SetGitPendingParams struct {
-	PendingSha     string
-	PendingMessage string
-	PendingAuthor  string
-	PendingBy      string
-	PendingForce   bool
-	ID             int64
+	PendingSha      string
+	PendingMessage  string
+	PendingAuthor   string
+	PendingBy       string
+	PendingForce    bool
+	PendingApproved int64
+	ID              int64
 }
 
 // Queues a push, replacing any older one that hasn't started.
@@ -310,6 +315,7 @@ func (q *Queries) SetGitPending(ctx context.Context, arg SetGitPendingParams) er
 		arg.PendingAuthor,
 		arg.PendingBy,
 		arg.PendingForce,
+		arg.PendingApproved,
 		arg.ID,
 	)
 	return err
@@ -340,7 +346,7 @@ const updateGitConnection = `-- name: UpdateGitConnection :one
 UPDATE git_connections
 SET repo = ?, branch = ?, dir = ?, token = ?, post_status = ?, hook_id = ?, secret = ?, installation_id = ?, repo_id = ?
 WHERE id = +?
-RETURNING id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id
+RETURNING id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id, pending_approved
 `
 
 type UpdateGitConnectionParams struct {
@@ -394,6 +400,7 @@ func (q *Queries) UpdateGitConnection(ctx context.Context, arg UpdateGitConnecti
 		&i.CreatedAt,
 		&i.InstallationID,
 		&i.RepoID,
+		&i.PendingApproved,
 	)
 	return i, err
 }

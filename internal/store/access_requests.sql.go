@@ -48,8 +48,8 @@ func (q *Queries) CountPendingAccessRequests(ctx context.Context, arg CountPendi
 
 const createAccessRequest = `-- name: CreateAccessRequest :one
 INSERT INTO access_requests (nonce, org_id, project_id, environment_id, status, via, operation, title, action, args,
-    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at)
-VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at, upload)
+VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at
 `
 
@@ -70,6 +70,7 @@ type CreateAccessRequestParams struct {
 	AuditMark     int64
 	CreatedAt     time.Time
 	ExpiresAt     time.Time
+	Upload        string
 }
 
 func (q *Queries) CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error) {
@@ -90,6 +91,7 @@ func (q *Queries) CreateAccessRequest(ctx context.Context, arg CreateAccessReque
 		arg.AuditMark,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.Upload,
 	)
 	var i AccessRequest
 	err := row.Scan(
@@ -440,6 +442,34 @@ func (q *Queries) LatestEnvironmentAudit(ctx context.Context, environmentID *int
 	return column_1, err
 }
 
+const listHeldUploads = `-- name: ListHeldUploads :many
+SELECT upload FROM access_requests WHERE upload != '' AND status IN ('pending', 'approved')
+`
+
+// ListHeldUploads is the archives of requests that may still run.
+func (q *Queries) ListHeldUploads(ctx context.Context) ([]string, error) {
+	rows, err := q.query(ctx, q.listHeldUploadsStmt, listHeldUploads)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var upload string
+		if err := rows.Scan(&upload); err != nil {
+			return nil, err
+		}
+		items = append(items, upload)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgAccessRequests = `-- name: ListOrgAccessRequests :many
 SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at FROM access_requests WHERE org_id = +? ORDER BY id DESC LIMIT +?
 `
@@ -570,6 +600,67 @@ func (q *Queries) PruneAccessRequests(ctx context.Context, createdAt time.Time) 
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const replaceAccessRequest = `-- name: ReplaceAccessRequest :one
+UPDATE access_requests SET nonce = ?, args = ?, upload = ?, reason = ?, requested_by = ?, created_at = ?, expires_at = ?
+WHERE id = +? AND status = 'pending'
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at
+`
+
+type ReplaceAccessRequestParams struct {
+	Nonce       string
+	Args        []byte
+	Upload      string
+	Reason      string
+	RequestedBy string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	ID          int64
+}
+
+// ReplaceAccessRequest gives a pending request a newer call of the same
+// kind (a newer push or upload replaces the one waiting).
+func (q *Queries) ReplaceAccessRequest(ctx context.Context, arg ReplaceAccessRequestParams) (AccessRequest, error) {
+	row := q.queryRow(ctx, q.replaceAccessRequestStmt, replaceAccessRequest,
+		arg.Nonce,
+		arg.Args,
+		arg.Upload,
+		arg.Reason,
+		arg.RequestedBy,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.ID,
+	)
+	var i AccessRequest
+	err := row.Scan(
+		&i.ID,
+		&i.Nonce,
+		&i.OrgID,
+		&i.ProjectID,
+		&i.EnvironmentID,
+		&i.Status,
+		&i.Via,
+		&i.Operation,
+		&i.Title,
+		&i.Action,
+		&i.Args,
+		&i.Fingerprint,
+		&i.Reason,
+		&i.TokenID,
+		&i.RequestedBy,
+		&i.AuditMark,
+		&i.Upload,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.Comment,
+		&i.Result,
+		&i.Error,
+		&i.FinishedAt,
+	)
+	return i, err
 }
 
 const setAccessRequestReason = `-- name: SetAccessRequestReason :exec

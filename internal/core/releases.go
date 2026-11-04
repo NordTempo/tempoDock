@@ -752,8 +752,14 @@ func (c *Core) DeployImage(ctx context.Context, a Actor, ref ServiceRef, req api
 
 // DeploySource streams a source tarball (tar or tar.gz) to disk, then builds
 // and deploys it. Uploads larger than maxBytes fail with CodeTooLarge.
+//
+// A token's upload into a locked environment is checked and held as an
+// access request instead (holdSource); approved, it deploys.
 func (c *Core) DeploySource(ctx context.Context, a Actor, ref ServiceRef, body io.Reader, maxBytes int64) (apitypes.Release, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "deploying")
+	if le, ok := errors.AsType[*LockedError](err); ok && a.Kind == "token" && a.TokenID != 0 {
+		return apitypes.Release{}, c.holdSource(ctx, a, le, ref, body, maxBytes)
+	}
 	if err != nil {
 		return apitypes.Release{}, err
 	}

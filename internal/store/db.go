@@ -750,6 +750,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listGitPendingServicesStmt, err = db.PrepareContext(ctx, listGitPendingServices); err != nil {
 		return nil, fmt.Errorf("error preparing query ListGitPendingServices: %w", err)
 	}
+	if q.listHeldUploadsStmt, err = db.PrepareContext(ctx, listHeldUploads); err != nil {
+		return nil, fmt.Errorf("error preparing query ListHeldUploads: %w", err)
+	}
 	if q.listHostnameClaimsStmt, err = db.PrepareContext(ctx, listHostnameClaims); err != nil {
 		return nil, fmt.Errorf("error preparing query ListHostnameClaims: %w", err)
 	}
@@ -1085,6 +1088,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.renameSiteStmt, err = db.PrepareContext(ctx, renameSite); err != nil {
 		return nil, fmt.Errorf("error preparing query RenameSite: %w", err)
+	}
+	if q.replaceAccessRequestStmt, err = db.PrepareContext(ctx, replaceAccessRequest); err != nil {
+		return nil, fmt.Errorf("error preparing query ReplaceAccessRequest: %w", err)
 	}
 	if q.resolveAlertStmt, err = db.PrepareContext(ctx, resolveAlert); err != nil {
 		return nil, fmt.Errorf("error preparing query ResolveAlert: %w", err)
@@ -2577,6 +2583,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listGitPendingServicesStmt: %w", cerr)
 		}
 	}
+	if q.listHeldUploadsStmt != nil {
+		if cerr := q.listHeldUploadsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listHeldUploadsStmt: %w", cerr)
+		}
+	}
 	if q.listHostnameClaimsStmt != nil {
 		if cerr := q.listHostnameClaimsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listHostnameClaimsStmt: %w", cerr)
@@ -3135,6 +3146,11 @@ func (q *Queries) Close() error {
 	if q.renameSiteStmt != nil {
 		if cerr := q.renameSiteStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing renameSiteStmt: %w", cerr)
+		}
+	}
+	if q.replaceAccessRequestStmt != nil {
+		if cerr := q.replaceAccessRequestStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing replaceAccessRequestStmt: %w", cerr)
 		}
 	}
 	if q.resolveAlertStmt != nil {
@@ -3878,6 +3894,7 @@ type Queries struct {
 	listFailedLatestReleasesStmt        *sql.Stmt
 	listGitHubInstallationsStmt         *sql.Stmt
 	listGitPendingServicesStmt          *sql.Stmt
+	listHeldUploadsStmt                 *sql.Stmt
 	listHostnameClaimsStmt              *sql.Stmt
 	listInFlightReleasesStmt            *sql.Stmt
 	listKeptDigestsStmt                 *sql.Stmt
@@ -3990,6 +4007,7 @@ type Queries struct {
 	renameProjectStmt                   *sql.Stmt
 	renameProjectAlertsStmt             *sql.Stmt
 	renameSiteStmt                      *sql.Stmt
+	replaceAccessRequestStmt            *sql.Stmt
 	resolveAlertStmt                    *sql.Stmt
 	restoreVariableStmt                 *sql.Stmt
 	retryCloudflareRecordStmt           *sql.Stmt
@@ -4330,6 +4348,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listFailedLatestReleasesStmt:        q.listFailedLatestReleasesStmt,
 		listGitHubInstallationsStmt:         q.listGitHubInstallationsStmt,
 		listGitPendingServicesStmt:          q.listGitPendingServicesStmt,
+		listHeldUploadsStmt:                 q.listHeldUploadsStmt,
 		listHostnameClaimsStmt:              q.listHostnameClaimsStmt,
 		listInFlightReleasesStmt:            q.listInFlightReleasesStmt,
 		listKeptDigestsStmt:                 q.listKeptDigestsStmt,
@@ -4442,6 +4461,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		renameProjectStmt:                   q.renameProjectStmt,
 		renameProjectAlertsStmt:             q.renameProjectAlertsStmt,
 		renameSiteStmt:                      q.renameSiteStmt,
+		replaceAccessRequestStmt:            q.replaceAccessRequestStmt,
 		resolveAlertStmt:                    q.resolveAlertStmt,
 		restoreVariableStmt:                 q.restoreVariableStmt,
 		retryCloudflareRecordStmt:           q.retryCloudflareRecordStmt,

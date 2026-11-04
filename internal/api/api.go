@@ -299,8 +299,8 @@ func (s *Server) fileRequest(ctx context.Context, actor core.Actor, op huma.Oper
 	if merr != nil {
 		return err
 	}
-	reason, _ := ctx.Value(reasonKey{}).(string)
-	return s.core.FileRequest(ctx, actor, err, core.Call{Via: "api", Op: op.OperationID, Title: op.Summary, Args: args, Reason: reason})
+	// The reason is in ctx (core.WithReason, from the Dock-Reason header).
+	return s.core.FileRequest(ctx, actor, err, core.Call{Via: "api", Op: op.OperationID, Title: op.Summary, Args: args})
 }
 
 // replyBody is a handler's response body as JSON: the Body field of the

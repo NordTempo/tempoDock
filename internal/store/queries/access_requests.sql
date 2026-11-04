@@ -1,7 +1,7 @@
 -- name: CreateAccessRequest :one
 INSERT INTO access_requests (nonce, org_id, project_id, environment_id, status, via, operation, title, action, args,
-    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at)
-VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at, upload)
+VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- GetPendingAccessRequest is the pending request with a fingerprint, so an
@@ -73,3 +73,14 @@ UPDATE orgs SET request_ttl_hours = ? WHERE id = +?;
 -- the audit log's retention.
 -- name: PruneAccessRequests :execrows
 DELETE FROM access_requests WHERE created_at < +? AND status NOT IN ('pending', 'approved');
+
+-- ReplaceAccessRequest gives a pending request a newer call of the same
+-- kind (a newer push or upload replaces the one waiting).
+-- name: ReplaceAccessRequest :one
+UPDATE access_requests SET nonce = ?, args = ?, upload = ?, reason = ?, requested_by = ?, created_at = ?, expires_at = ?
+WHERE id = +? AND status = 'pending'
+RETURNING *;
+
+-- ListHeldUploads is the archives of requests that may still run.
+-- name: ListHeldUploads :many
+SELECT upload FROM access_requests WHERE upload != '' AND status IN ('pending', 'approved');

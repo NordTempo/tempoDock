@@ -29,14 +29,14 @@ DELETE FROM git_connections WHERE service_id = +?;
 -- name: SetGitPending :exec
 -- Queues a push, replacing any older one that hasn't started.
 UPDATE git_connections
-SET pending_sha = ?, pending_message = ?, pending_author = ?, pending_by = ?, pending_force = ?
+SET pending_sha = ?, pending_message = ?, pending_author = ?, pending_by = ?, pending_force = ?, pending_approved = ?
 WHERE id = +?;
 
 -- name: ClearGitPending :execrows
 -- Clears the queued push if it is still sha (a newer one may have
 -- replaced it meanwhile).
 UPDATE git_connections
-SET pending_sha = '', pending_message = '', pending_author = '', pending_by = '', pending_force = 0
+SET pending_sha = '', pending_message = '', pending_author = '', pending_by = '', pending_force = 0, pending_approved = 0
 WHERE id = +sqlc.arg(id) AND pending_sha = CAST(sqlc.arg(pending_sha) AS TEXT);
 
 -- name: SetGitLastEvent :exec
