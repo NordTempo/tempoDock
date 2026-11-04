@@ -52,6 +52,18 @@ jobs:
       - run: make build-tempobase
         if: hashFiles('cmd/tempobase/*.go') != ''
 
+  # The race detector on the packages with the most concurrency (deploys,
+  # the event bus, SSE streams, MCP sessions). Its own job, as -race makes
+  # them several times slower than make test.
+  race:
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: make test-race
+
   # Dock Analytics' store (ADR 0037): its own module with CGO and DuckDB,
   # which the root's lint and tests don't enter. The binary is built as
   # the release builds it, to check the Dockerfile.
