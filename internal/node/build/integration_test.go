@@ -69,7 +69,7 @@ func init() {
 		}
 		defer func() { _ = docker.Close() }()
 		ctx := context.Background()
-		_, _ = docker.ContainerRemove(ctx, testContainer, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.ContainerRemove(ctx, testContainer, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 		_, _ = docker.VolumeRemove(ctx, testCache, client.VolumeRemoveOptions{Force: true})
 	})
 }
@@ -152,7 +152,7 @@ func run(t *testing.T, docker *client.Client, name, image string, cmd ...string)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	})
 	if _, err := docker.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		t.Fatal(err)
@@ -325,7 +325,7 @@ func TestBuildNetwork(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		// The next build recreates BuildKit on the default bridge.
-		_, _ = docker.ContainerRemove(context.Background(), testContainer, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.ContainerRemove(context.Background(), testContainer, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 		_, _ = docker.NetworkRemove(context.Background(), name, client.NetworkRemoveOptions{})
 	})
 	b := newBuilder(t, docker, 1024)
@@ -508,7 +508,7 @@ func runHelper(t *testing.T, docker *client.Client, host container.HostConfig, s
 		t.Fatal(err)
 	}
 	defer func() {
-		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}()
 	wait := docker.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNextExit})
 	if _, err := docker.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {

@@ -63,7 +63,7 @@ func TestPushPullPrune(t *testing.T) {
 	b := newBuilder(t, docker, 1024)
 	b.name, b.cacheVolume = name+"-buildkit", name+"-buildkit-cache"
 	t.Cleanup(func() {
-		_, _ = docker.ContainerRemove(context.Background(), b.name, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.ContainerRemove(context.Background(), b.name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 		_, _ = docker.VolumeRemove(context.Background(), b.cacheVolume, client.VolumeRemoveOptions{Force: true})
 	})
 

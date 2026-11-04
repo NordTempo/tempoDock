@@ -205,7 +205,7 @@ func (a *AnalyticsStore) remove(ctx context.Context) error {
 	if _, err := a.cli.ContainerStop(ctx, a.name, client.ContainerStopOptions{Timeout: &timeout}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("stop %s: %w", a.name, err)
 	}
-	if _, err := a.cli.ContainerRemove(ctx, a.name, client.ContainerRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
+	if _, err := a.cli.ContainerRemove(ctx, a.name, client.ContainerRemoveOptions{RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove %s: %w", a.name, err)
 	}
 	return nil

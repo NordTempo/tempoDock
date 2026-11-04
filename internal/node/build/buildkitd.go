@@ -86,7 +86,8 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 		}
 		if problem != "" {
 			_, _ = fmt.Fprintf(logs, "recreating %s: %s\n", b.name, problem)
-			if _, err := b.docker.ContainerRemove(ctx, b.name, client.ContainerRemoveOptions{Force: true}); err != nil {
+			// Anonymous volumes go with it; the cache is the named CacheVolume.
+			if _, err := b.docker.ContainerRemove(ctx, b.name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 				return nil, fmt.Errorf("remove %s: %w", b.name, err)
 			}
 			if err := b.createDaemon(ctx, want, logs); err != nil {

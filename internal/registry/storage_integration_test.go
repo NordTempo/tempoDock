@@ -245,7 +245,7 @@ func startPlatform(t *testing.T, docker *client.Client, name string) *registry.P
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = docker.ContainerRemove(context.Background(), created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	})
 	if _, err := docker.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		t.Fatal(err)

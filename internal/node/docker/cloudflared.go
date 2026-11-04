@@ -68,7 +68,7 @@ func (c *Cloudflared) EnsureTunnel(ctx context.Context, spec *node.TunnelSpec) e
 		if !exists {
 			return nil
 		}
-		if _, err := c.cli.ContainerRemove(ctx, c.name, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		if _, err := c.cli.ContainerRemove(ctx, c.name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			return fmt.Errorf("remove %s: %w", c.name, err)
 		}
 		return nil
@@ -89,7 +89,7 @@ func (c *Cloudflared) EnsureTunnel(ctx context.Context, spec *node.TunnelSpec) e
 		return err
 	}
 	if exists {
-		if _, err := c.cli.ContainerRemove(ctx, c.name, client.ContainerRemoveOptions{Force: true}); err != nil {
+		if _, err := c.cli.ContainerRemove(ctx, c.name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 			return fmt.Errorf("remove %s: %w", c.name, err)
 		}
 	}
