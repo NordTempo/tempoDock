@@ -153,6 +153,29 @@ func registerProjects(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[apitypes.ProjectExport], error) {
 		return reply(s.core.ExportProject(ctx, actor, in.Project))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "plan-project-file", Method: http.MethodPost, Path: projectPathT + "/plan",
+		Summary: "Plan a project file", Tags: []string{"projects"},
+		Description: "Compares a project file (the export's format, TOML or JSON) with the live state: what applying it stages (`changes`), " +
+			"live things the file doesn't mention (`kept`; `prune` lists the removable ones as removals instead) and what needs a person (`manual`). " +
+			"The project may not exist yet. Variable values are never in a plan. Scope: read.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ProjectPath
+		Body apitypes.ApplyRequest
+	}) (*out[apitypes.ApplyPlan], error) {
+		return reply(s.core.PlanProject(ctx, actor, in.Project, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "apply-project-file", Method: http.MethodPost, Path: projectPathT + "/apply",
+		Summary: "Stage a project file", Tags: []string{"projects"},
+		Description: "Turns a project file's plan into staged changes in each of its environments; nothing goes live. A missing project and missing environments are created empty. " +
+			"Removals only with `prune` (archiving services needs admin). With `deploy`, each touched environment's staged changes are applied afterwards, as `changes/apply` does. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ProjectPath
+		Body apitypes.ApplyRequest
+	}) (*out[apitypes.ApplyResult], error) {
+		return reply(s.core.ApplyProject(ctx, actor, in.Project, in.Body))
+	})
 	// The same export as TOML, as `dock project export` prints it, so the
 	// UI can download it without a TOML encoder of its own.
 	authed(s, a, huma.Operation{

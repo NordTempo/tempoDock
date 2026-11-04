@@ -12,7 +12,7 @@ import (
 
 // An export lists live settings, variable names, volumes, domains and git
 // connections, sorted by name whatever the creation order, and never a
-// value, a token or a webhook secret. Environment-limited readers see
+// value (only references), a token or a webhook secret. Environment-limited readers see
 // their environment only.
 func TestExportProject(t *testing.T) {
 	h := newHarness(t)
@@ -58,7 +58,8 @@ func TestExportProject(t *testing.T) {
 			},
 			{
 				Name: "web", Port: 3000, HealthCheckPath: "/up", StartCommand: "node server.js", MemoryMB: 256, CPUs: 0.5,
-				Variables: []string{"DATABASE_URL", "STRIPE_KEY"},
+				Variables: []string{"STRIPE_KEY"},
+				Values:    map[string]string{"DATABASE_URL": "${{postgres.DATABASE_URL}}"},
 				Domains:   []apitypes.DomainExport{{Hostname: "a.example.com", RedirectTo: "shop.example.com"}, {Hostname: "shop.example.com"}},
 				Git:       &apitypes.GitExport{Repository: "acme/shop", Branch: "main", Directory: "apps/web"},
 			},

@@ -607,13 +607,15 @@ function ServiceLink({ view }: { view: ServiceView }) {
   const state = serviceState(view);
   const { service } = view;
   const note =
-    state.tone === "ok"
-      ? isDatabase(service)
-        ? "db"
-        : service.status.updated_at && since(service.status.updated_at)
-      : view.deploying
-        ? "deploying"
-        : state.label;
+    service.staged === "archive" && !view.deploying
+      ? "archive staged"
+      : state.tone === "ok"
+        ? isDatabase(service)
+          ? "db"
+          : service.status.updated_at && since(service.status.updated_at)
+        : view.deploying
+          ? "deploying"
+          : state.label;
   return (
     <Link
       to="/$org/$project/$environment/$service"
@@ -622,9 +624,14 @@ function ServiceLink({ view }: { view: ServiceView }) {
       className="nav-row py-[5px] pl-[30px]"
       title={state.label}
     >
-      <span className={toneText[state.tone]}>
-        <Glyph char={state.glyph ?? "○"} />
-      </span>
+      {state.glyph ? (
+        <span className={toneText[state.tone]}>
+          <Glyph char={state.glyph} />
+        </span>
+      ) : (
+        // A staged new service runs nothing: no dot, the space for one.
+        <span aria-hidden className="w-[7px] flex-none" />
+      )}
       <span className="flex-1 truncate">{service.name}</span>
       <span
         className={`max-w-24 truncate text-2xs ${state.tone === "ok" || state.tone === "mut" ? "text-faint" : toneText[state.tone]}`}

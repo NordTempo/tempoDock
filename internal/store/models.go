@@ -558,6 +558,7 @@ type Service struct {
 	HealthCheckStartPeriodSeconds  int64
 	PreDeployCommand               string
 	PreDeployTimeoutSeconds        int64
+	Staged                         string
 }
 
 type ServiceAccess struct {
@@ -652,6 +653,16 @@ type SiteMarker struct {
 	At      time.Time
 	Kind    string
 	Message string
+}
+
+type StagedDomain struct {
+	ID         int64
+	ServiceID  int64
+	Hostname   string
+	Action     string
+	Generated  bool
+	RedirectTo string
+	CreatedAt  time.Time
 }
 
 type StorageConnection struct {

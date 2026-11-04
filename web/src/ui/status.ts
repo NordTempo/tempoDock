@@ -95,10 +95,16 @@ export function isCrashLooping(status: ServiceView["service"]["status"]) {
   );
 }
 
-/** A service's container state; a deploy in flight wins. */
+/**
+ * A service's container state; a deploy in flight wins. A service whose
+ * creation is staged (ADR 0049) runs nothing yet: "staged", with no glyph.
+ */
 export function serviceState(s: ServiceView): State {
   if (s.deploying) {
     return releaseStates[s.deploying.status];
+  }
+  if (s.service.staged === "create") {
+    return { tone: "mut", label: "staged" };
   }
   return containerState(s.service);
 }

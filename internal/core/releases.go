@@ -582,7 +582,13 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 	}
 	ss.svc = svc
 	ch := spec.carried
-	if spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged {
+	takesStaged := spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged
+	if svc.Staged == "create" && !takesStaged {
+		// Promote, restart and rollback don't apply staged changes, so
+		// they'd run a service whose creation isn't applied (ADR 0049).
+		return ss, rel, invalid("service %s is staged, not created yet; apply the environment's changes (`dock apply`) or deploy it", ss)
+	}
+	if takesStaged {
 		// A deploy takes the service's own staged changes with it.
 		res, err := applyPending(ctx, q, ss.env.ID, &ss.svc.ID)
 		if err != nil {

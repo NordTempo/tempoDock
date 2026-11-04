@@ -343,9 +343,45 @@ dock project export shop > shop.dock.toml
 
 Prints the project's live configuration as TOML (`--format json` for
 JSON): environments, services and their settings, volumes, domains, git
-connections and variable names. Values are never included. Everything is
-sorted by name, so the file diffs well in git. Reading it back
-(`import`) is not supported yet.
+connections and variables. Secret values are never included: a variable
+is listed by name, unless its value is only references
+(`${{postgres.DATABASE_URL}}`). Everything is sorted by name, so the file
+diffs well in git.
+
+## Config as code: `dock apply FILE`
+
+The export is also a project file you can apply
+([ADR 0049](../decisions/0049-apply-and-compose-import.md), format in
+[project files](../project-file.md)):
+
+```sh
+dock project export shop > dock.project.toml   # edit it, commit it
+dock apply dock.project.toml --plan             # what would change (--json for agents)
+dock apply dock.project.toml                    # stage it
+dock changes -e production                      # review, like any staged change
+dock apply -e production                        # make it live
+```
+
+Applying a file never changes anything live: the difference becomes staged
+changes in each environment, reviewed and applied like edits from the CLI
+or UI, under the same permissions, environment locks and audit log. New
+services are staged too (they run nothing until applied); a new image or
+database service gets its first release when the environment's changes
+are applied. `--deploy` applies right after staging. A project or
+environment the file names that doesn't exist is created, empty.
+
+- **Nothing is removed by default.** Variables, domains and services the
+  file doesn't mention are listed as kept. `--prune` stages their removal
+  (archiving a service needs an admin, to stage and to apply). Volumes and
+  environments are never removed by a file.
+- **Secrets stay out of the file.** List a secret's name in `variables`;
+  the plan says which ones still need a value and the command to set it.
+  `values` holds the variables you do want in git: literals and
+  references.
+- `-e ENV` applies one environment of the file, which is what a token
+  limited to one environment needs. A locked environment refuses a token's
+  file as a whole, with what it would change there.
+- Applying the same file twice stages nothing new.
 
 ## Deploy on git push
 

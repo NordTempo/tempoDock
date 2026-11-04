@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -171,6 +172,20 @@ func printChanges(g *globals, p apitypes.PendingChanges, reveal bool) error {
 	for _, v := range p.Volumes {
 		t.Row("+", v.Service, "volume "+v.Name, "at "+v.MountPath)
 	}
+	for _, sv := range p.Services {
+		what := "service (created when applied)"
+		if sv.Action == apitypes.ChangeRemove {
+			what = "service (archived when applied)"
+		}
+		t.Row(changeGlyph[sv.Action], sv.Service, what, sv.Summary)
+	}
+	for _, d := range p.Domains {
+		detail := ""
+		if d.RedirectTo != "" {
+			detail = "redirects to " + d.RedirectTo
+		}
+		t.Row(changeGlyph[d.Action], d.Service, "domain "+cmp.Or(d.Hostname, "(generated)"), detail)
+	}
 	if err := t.Flush(); err != nil {
 		return err
 	}
@@ -189,41 +204,6 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-func newApplyCmd(g *globals) *cobra.Command {
-	var f targetFlags
-	var detach bool
-	cmd := &cobra.Command{
-		Use:   "apply",
-		Short: "Apply the environment's staged changes",
-		Long: `Make every staged change in the environment live in one step, then redeploy
-each affected running service with a config release, following progress
-unless --detach.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, t, err := g.open(f, needEnvironment)
-			if err != nil {
-				return err
-			}
-			ctx := cmd.Context()
-			var w *watcher
-			if !detach {
-				if w, err = g.watch(ctx, s, target{Project: t.Project, Environment: t.Environment}); err != nil {
-					return err
-				}
-				defer w.close()
-			}
-			a, err := send[apitypes.AppliedChanges](ctx, s, http.MethodPost, t.envPath()+"/changes/apply", nil)
-			if err != nil {
-				return err
-			}
-			return g.finishApplied(ctx, s, w, a, func(a apitypes.AppliedChanges) any { return a })
-		},
-	}
-	f.add(cmd, needEnvironment)
-	addDetachFlag(cmd, &detach)
-	return cmd
 }
 
 func newDiscardCmd(g *globals) *cobra.Command {
@@ -324,6 +304,16 @@ func discardSelection(p apitypes.PendingChanges, keys []string, owner, only stri
 		for _, v := range p.Volumes {
 			if v.Service == only {
 				sel.Volumes = append(sel.Volumes, apitypes.VolumeRef{Service: only, Name: v.Name})
+			}
+		}
+		for _, d := range p.Domains {
+			if d.Service == only {
+				sel.Domains = append(sel.Domains, apitypes.DomainRef{Service: only, Hostname: d.Hostname})
+			}
+		}
+		for _, sv := range p.Services {
+			if sv.Service == only {
+				sel.Services = append(sel.Services, only)
 			}
 		}
 		return sel, plural(p.CountFor(only), "staged change") + " of " + only

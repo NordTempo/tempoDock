@@ -57,7 +57,7 @@ const tabs = [
     to: "/$org/$project/$environment/$service/logs",
     key: "g l",
   },
-  // One-off commands (ADR 0048). G C, "command": G R is Releases.
+  // One-off commands (ADR 0049). G C, "command": G R is Releases.
   {
     label: "Run",
     to: "/$org/$project/$environment/$service/run",
@@ -152,6 +152,9 @@ export function ServiceBar({
             {serving && state.tone === "ok" && (
               <span className="font-mono text-faint"> · r{serving}</span>
             )}
+            {view.service.staged === "archive" && (
+              <span className="text-mut"> · archive staged</span>
+            )}
           </span>
         </>
       }
@@ -186,7 +189,9 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const mine = (c: { service?: string }) =>
     !c.service || c.service === ref.service;
   const marks: Partial<Record<(typeof tabs)[number]["label"], boolean>> = {
-    Domains: view.domains.some(domainNeedsAttention),
+    Domains:
+      view.domains.some(domainNeedsAttention) ||
+      changes.domains.some((d) => d.service === ref.service),
     Variables: changes.variables.some(mine),
     Settings:
       changes.settings.some(mine) ||

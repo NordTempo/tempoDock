@@ -1211,6 +1211,26 @@ export interface paths {
         patch: operations["rename-project"];
         trace?: never;
     };
+    "/api/v1/projects/{project}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage a project file
+         * @description Turns a project file's plan into staged changes in each of its environments; nothing goes live. A missing project and missing environments are created empty. Removals only with `prune` (archiving services needs admin). With `deploy`, each touched environment's staged changes are applied afterwards, as `changes/apply` does. Scope: deploy.
+         */
+        post: operations["apply-project-file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/archive": {
         parameters: {
             query?: never;
@@ -2527,6 +2547,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan a project file
+         * @description Compares a project file (the export's format, TOML or JSON) with the live state: what applying it stages (`changes`), live things the file doesn't mention (`kept`; `prune` lists the removable ones as removals instead) and what needs a person (`manual`). The project may not exist yet. Variable values are never in a plan. Scope: read.
+         */
+        post: operations["plan-project-file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/promote": {
         parameters: {
             query?: never;
@@ -3679,8 +3719,32 @@ export interface components {
             store_version?: string;
         };
         AppliedChanges: {
+            failed?: string[] | null;
             releases: components["schemas"]["Release"][] | null;
             skipped: string[] | null;
+        };
+        ApplyPlan: {
+            changes: components["schemas"]["PlanChange"][] | null;
+            kept: components["schemas"]["PlanChange"][] | null;
+            manual: components["schemas"]["PlanChange"][] | null;
+            project: string;
+        };
+        ApplyRequest: {
+            /** @description Apply each touched environment's staged changes afterwards (apply only) */
+            deploy?: boolean;
+            /** @description Only this environment of the file */
+            environment?: string;
+            /** @description The project file, TOML or JSON, as dock project export writes it */
+            file: string;
+            /** @description Also remove variables, domains and services the file doesn't mention */
+            prune?: boolean;
+            /** @description Values for variables the file names without one; staged, never shown back */
+            values?: components["schemas"]["VariableValue"][] | null;
+        };
+        ApplyResult: {
+            applied?: components["schemas"]["EnvironmentApplied"][] | null;
+            plan: components["schemas"]["ApplyPlan"];
+            staged: components["schemas"]["PendingChanges"][] | null;
         };
         AuditDetail: {
             /** Format: int64 */
@@ -4477,6 +4541,8 @@ export interface components {
             image?: string;
         };
         DiscardChangesRequest: {
+            domains?: components["schemas"]["DomainRef"][] | null;
+            services?: string[] | null;
             settings?: components["schemas"]["SettingRef"][] | null;
             variables?: components["schemas"]["VariableRef"][] | null;
             volumes?: components["schemas"]["VolumeRef"][] | null;
@@ -4538,6 +4604,18 @@ export interface components {
             hostname: string;
             redirect_to?: string;
         };
+        DomainRef: {
+            hostname?: string;
+            service: string;
+        };
+        DomainStaging: {
+            /** @enum {string} */
+            action: "add" | "remove";
+            generated?: boolean;
+            hostname?: string;
+            redirect_to?: string;
+            service: string;
+        };
         EnableAnalyticsRequest: {
             site?: string;
         };
@@ -4554,10 +4632,19 @@ export interface components {
             /** @description Server the environment runs on */
             server: string;
         };
+        EnvironmentApplied: {
+            environment: string;
+            failed?: string[] | null;
+            releases: components["schemas"]["Release"][] | null;
+            skipped: string[] | null;
+        };
         EnvironmentExport: {
             kind: string;
             name: string;
             services?: components["schemas"]["ServiceExport"][] | null;
+            shared_values?: {
+                [key: string]: string;
+            };
             shared_variables?: string[] | null;
         };
         EnvironmentLock: {
@@ -4964,9 +5051,11 @@ export interface components {
             affected: string[] | null;
             /** Format: int64 */
             count: number;
+            domains: components["schemas"]["DomainStaging"][] | null;
             environment: string;
             last_failure?: string;
             project: string;
+            services: components["schemas"]["ServiceStaging"][] | null;
             settings: components["schemas"]["SettingChange"][] | null;
             variables: components["schemas"]["VariableChange"][] | null;
             volumes: components["schemas"]["VolumeAddition"][] | null;
@@ -4979,6 +5068,18 @@ export interface components {
             kind: "production" | "non_production";
             pinned: boolean;
             server: string;
+        };
+        PlanChange: {
+            /** @enum {string} */
+            action: "add" | "update" | "remove";
+            environment?: string;
+            /** @enum {string} */
+            kind: "project" | "environment" | "service" | "setting" | "variable" | "volume" | "domain" | "git" | "database";
+            name?: string;
+            new?: string;
+            note?: string;
+            old?: string;
+            service?: string;
         };
         Project: {
             /** @description Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there), and environment networks left on them */
@@ -5545,6 +5646,8 @@ export interface components {
              */
             pre_deploy_timeout_seconds: number;
             project: string;
+            /** @enum {string} */
+            staged?: "create" | "archive";
             start_command: string;
             stateful: boolean;
             status: components["schemas"]["ServiceStatus"];
@@ -5568,6 +5671,7 @@ export interface components {
             cpus?: number;
             database?: string;
             database_url_variable?: string;
+            depends_on?: string[] | null;
             dockerfile_path?: string;
             domains?: components["schemas"]["DomainExport"][] | null;
             git?: components["schemas"]["GitExport"];
@@ -5593,6 +5697,9 @@ export interface components {
             pre_deploy_timeout_seconds?: number;
             start_command?: string;
             template?: string;
+            values?: {
+                [key: string]: string;
+            };
             variables?: string[] | null;
             volumes?: components["schemas"]["VolumeExport"][] | null;
         };
@@ -5613,6 +5720,12 @@ export interface components {
             restores: components["schemas"]["SnapshotRestore"][] | null;
             service: string;
             snapshots: components["schemas"]["Snapshot"][] | null;
+        };
+        ServiceStaging: {
+            /** @enum {string} */
+            action: "add" | "remove";
+            service: string;
+            summary?: string;
         };
         ServiceStats: {
             current?: components["schemas"]["ServiceUsage"];
@@ -6378,6 +6491,13 @@ export interface components {
             environment: string;
             project: string;
             service?: string;
+        };
+        VariableValue: {
+            environment: string;
+            key: string;
+            /** @description Empty for a shared (environment-level) variable */
+            service?: string;
+            value: string;
         };
         Version: {
             /** @example v1 */
@@ -13120,6 +13240,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "apply-project-file": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyResult"];
                 };
             };
             /** @description Bad Request */
@@ -21515,6 +21740,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Placement"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "plan-project-file": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyPlan"];
                 };
             };
             /** @description Bad Request */

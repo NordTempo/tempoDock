@@ -285,6 +285,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteEnsureRunningStmt, err = db.PrepareContext(ctx, deleteEnsureRunning); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteEnsureRunning: %w", err)
 	}
+	if q.deleteEnvironmentStagedDomainsStmt, err = db.PrepareContext(ctx, deleteEnvironmentStagedDomains); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteEnvironmentStagedDomains: %w", err)
+	}
 	if q.deleteExpiredCLILoginsStmt, err = db.PrepareContext(ctx, deleteExpiredCLILogins); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteExpiredCLILogins: %w", err)
 	}
@@ -342,11 +345,26 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteServiceAccessStmt, err = db.PrepareContext(ctx, deleteServiceAccess); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteServiceAccess: %w", err)
 	}
+	if q.deleteServiceStagedDomainsStmt, err = db.PrepareContext(ctx, deleteServiceStagedDomains); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteServiceStagedDomains: %w", err)
+	}
+	if q.deleteServiceStagedVolumesStmt, err = db.PrepareContext(ctx, deleteServiceStagedVolumes); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteServiceStagedVolumes: %w", err)
+	}
+	if q.deleteServiceVariablesStmt, err = db.PrepareContext(ctx, deleteServiceVariables); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteServiceVariables: %w", err)
+	}
 	if q.deleteSessionStmt, err = db.PrepareContext(ctx, deleteSession); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSession: %w", err)
 	}
 	if q.deleteSnapshotStmt, err = db.PrepareContext(ctx, deleteSnapshot); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSnapshot: %w", err)
+	}
+	if q.deleteStagedDomainStmt, err = db.PrepareContext(ctx, deleteStagedDomain); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteStagedDomain: %w", err)
+	}
+	if q.deleteStagedServiceStmt, err = db.PrepareContext(ctx, deleteStagedService); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteStagedService: %w", err)
 	}
 	if q.deleteStorageConnectionStmt, err = db.PrepareContext(ctx, deleteStorageConnection); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteStorageConnection: %w", err)
@@ -639,6 +657,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.insertServiceRunStmt, err = db.PrepareContext(ctx, insertServiceRun); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertServiceRun: %w", err)
 	}
+	if q.insertStagedDomainStmt, err = db.PrepareContext(ctx, insertStagedDomain); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertStagedDomain: %w", err)
+	}
 	if q.insertVariableStmt, err = db.PrepareContext(ctx, insertVariable); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertVariable: %w", err)
 	}
@@ -728,6 +749,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listEnvironmentDomainsStmt, err = db.PrepareContext(ctx, listEnvironmentDomains); err != nil {
 		return nil, fmt.Errorf("error preparing query ListEnvironmentDomains: %w", err)
+	}
+	if q.listEnvironmentGitConnectionsStmt, err = db.PrepareContext(ctx, listEnvironmentGitConnections); err != nil {
+		return nil, fmt.Errorf("error preparing query ListEnvironmentGitConnections: %w", err)
+	}
+	if q.listEnvironmentStagedDomainsStmt, err = db.PrepareContext(ctx, listEnvironmentStagedDomains); err != nil {
+		return nil, fmt.Errorf("error preparing query ListEnvironmentStagedDomains: %w", err)
 	}
 	if q.listEnvironmentVolumesStmt, err = db.PrepareContext(ctx, listEnvironmentVolumes); err != nil {
 		return nil, fmt.Errorf("error preparing query ListEnvironmentVolumes: %w", err)
@@ -834,6 +861,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listProjectLatestBackupsStmt, err = db.PrepareContext(ctx, listProjectLatestBackups); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectLatestBackups: %w", err)
 	}
+	if q.listProjectLiveVariablesStmt, err = db.PrepareContext(ctx, listProjectLiveVariables); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjectLiveVariables: %w", err)
+	}
 	if q.listProjectReleaseHeadsStmt, err = db.PrepareContext(ctx, listProjectReleaseHeads); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectReleaseHeads: %w", err)
 	}
@@ -842,9 +872,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listProjectSitesStmt, err = db.PrepareContext(ctx, listProjectSites); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectSites: %w", err)
-	}
-	if q.listProjectVariableNamesStmt, err = db.PrepareContext(ctx, listProjectVariableNames); err != nil {
-		return nil, fmt.Errorf("error preparing query ListProjectVariableNames: %w", err)
 	}
 	if q.listProjectVolumesStmt, err = db.PrepareContext(ctx, listProjectVolumes); err != nil {
 		return nil, fmt.Errorf("error preparing query ListProjectVolumes: %w", err)
@@ -1259,6 +1286,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setServiceRecordsAbsentStmt, err = db.PrepareContext(ctx, setServiceRecordsAbsent); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServiceRecordsAbsent: %w", err)
+	}
+	if q.setServiceStagedStmt, err = db.PrepareContext(ctx, setServiceStaged); err != nil {
+		return nil, fmt.Errorf("error preparing query SetServiceStaged: %w", err)
 	}
 	if q.setServiceTemplateStmt, err = db.PrepareContext(ctx, setServiceTemplate); err != nil {
 		return nil, fmt.Errorf("error preparing query SetServiceTemplate: %w", err)
@@ -1808,6 +1838,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteEnsureRunningStmt: %w", cerr)
 		}
 	}
+	if q.deleteEnvironmentStagedDomainsStmt != nil {
+		if cerr := q.deleteEnvironmentStagedDomainsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteEnvironmentStagedDomainsStmt: %w", cerr)
+		}
+	}
 	if q.deleteExpiredCLILoginsStmt != nil {
 		if cerr := q.deleteExpiredCLILoginsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteExpiredCLILoginsStmt: %w", cerr)
@@ -1903,6 +1938,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteServiceAccessStmt: %w", cerr)
 		}
 	}
+	if q.deleteServiceStagedDomainsStmt != nil {
+		if cerr := q.deleteServiceStagedDomainsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteServiceStagedDomainsStmt: %w", cerr)
+		}
+	}
+	if q.deleteServiceStagedVolumesStmt != nil {
+		if cerr := q.deleteServiceStagedVolumesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteServiceStagedVolumesStmt: %w", cerr)
+		}
+	}
+	if q.deleteServiceVariablesStmt != nil {
+		if cerr := q.deleteServiceVariablesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteServiceVariablesStmt: %w", cerr)
+		}
+	}
 	if q.deleteSessionStmt != nil {
 		if cerr := q.deleteSessionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSessionStmt: %w", cerr)
@@ -1911,6 +1961,16 @@ func (q *Queries) Close() error {
 	if q.deleteSnapshotStmt != nil {
 		if cerr := q.deleteSnapshotStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSnapshotStmt: %w", cerr)
+		}
+	}
+	if q.deleteStagedDomainStmt != nil {
+		if cerr := q.deleteStagedDomainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteStagedDomainStmt: %w", cerr)
+		}
+	}
+	if q.deleteStagedServiceStmt != nil {
+		if cerr := q.deleteStagedServiceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteStagedServiceStmt: %w", cerr)
 		}
 	}
 	if q.deleteStorageConnectionStmt != nil {
@@ -2398,6 +2458,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing insertServiceRunStmt: %w", cerr)
 		}
 	}
+	if q.insertStagedDomainStmt != nil {
+		if cerr := q.insertStagedDomainStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertStagedDomainStmt: %w", cerr)
+		}
+	}
 	if q.insertVariableStmt != nil {
 		if cerr := q.insertVariableStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertVariableStmt: %w", cerr)
@@ -2546,6 +2611,16 @@ func (q *Queries) Close() error {
 	if q.listEnvironmentDomainsStmt != nil {
 		if cerr := q.listEnvironmentDomainsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listEnvironmentDomainsStmt: %w", cerr)
+		}
+	}
+	if q.listEnvironmentGitConnectionsStmt != nil {
+		if cerr := q.listEnvironmentGitConnectionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listEnvironmentGitConnectionsStmt: %w", cerr)
+		}
+	}
+	if q.listEnvironmentStagedDomainsStmt != nil {
+		if cerr := q.listEnvironmentStagedDomainsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listEnvironmentStagedDomainsStmt: %w", cerr)
 		}
 	}
 	if q.listEnvironmentVolumesStmt != nil {
@@ -2723,6 +2798,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listProjectLatestBackupsStmt: %w", cerr)
 		}
 	}
+	if q.listProjectLiveVariablesStmt != nil {
+		if cerr := q.listProjectLiveVariablesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectLiveVariablesStmt: %w", cerr)
+		}
+	}
 	if q.listProjectReleaseHeadsStmt != nil {
 		if cerr := q.listProjectReleaseHeadsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listProjectReleaseHeadsStmt: %w", cerr)
@@ -2736,11 +2816,6 @@ func (q *Queries) Close() error {
 	if q.listProjectSitesStmt != nil {
 		if cerr := q.listProjectSitesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listProjectSitesStmt: %w", cerr)
-		}
-	}
-	if q.listProjectVariableNamesStmt != nil {
-		if cerr := q.listProjectVariableNamesStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing listProjectVariableNamesStmt: %w", cerr)
 		}
 	}
 	if q.listProjectVolumesStmt != nil {
@@ -3433,6 +3508,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setServiceRecordsAbsentStmt: %w", cerr)
 		}
 	}
+	if q.setServiceStagedStmt != nil {
+		if cerr := q.setServiceStagedStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setServiceStagedStmt: %w", cerr)
+		}
+	}
 	if q.setServiceTemplateStmt != nil {
 		if cerr := q.setServiceTemplateStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setServiceTemplateStmt: %w", cerr)
@@ -3739,6 +3819,7 @@ type Queries struct {
 	deleteDataPolicyRulesStmt           *sql.Stmt
 	deleteDomainStmt                    *sql.Stmt
 	deleteEnsureRunningStmt             *sql.Stmt
+	deleteEnvironmentStagedDomainsStmt  *sql.Stmt
 	deleteExpiredCLILoginsStmt          *sql.Stmt
 	deleteExpiredSessionsStmt           *sql.Stmt
 	deleteGitConnectionStmt             *sql.Stmt
@@ -3758,8 +3839,13 @@ type Queries struct {
 	deleteServerStmt                    *sql.Stmt
 	deleteServerPlacementsStmt          *sql.Stmt
 	deleteServiceAccessStmt             *sql.Stmt
+	deleteServiceStagedDomainsStmt      *sql.Stmt
+	deleteServiceStagedVolumesStmt      *sql.Stmt
+	deleteServiceVariablesStmt          *sql.Stmt
 	deleteSessionStmt                   *sql.Stmt
 	deleteSnapshotStmt                  *sql.Stmt
+	deleteStagedDomainStmt              *sql.Stmt
+	deleteStagedServiceStmt             *sql.Stmt
 	deleteStorageConnectionStmt         *sql.Stmt
 	deleteUserStmt                      *sql.Stmt
 	deleteUserSessionsStmt              *sql.Stmt
@@ -3857,6 +3943,7 @@ type Queries struct {
 	insertLiveVariableStmt              *sql.Stmt
 	insertRestoredVariableStmt          *sql.Stmt
 	insertServiceRunStmt                *sql.Stmt
+	insertStagedDomainStmt              *sql.Stmt
 	insertVariableStmt                  *sql.Stmt
 	latestEnvironmentAuditStmt          *sql.Stmt
 	listActiveReleasesStmt              *sql.Stmt
@@ -3887,6 +3974,8 @@ type Queries struct {
 	listEnsureRunningStmt               *sql.Stmt
 	listEnvironmentActiveReleasesStmt   *sql.Stmt
 	listEnvironmentDomainsStmt          *sql.Stmt
+	listEnvironmentGitConnectionsStmt   *sql.Stmt
+	listEnvironmentStagedDomainsStmt    *sql.Stmt
 	listEnvironmentVolumesStmt          *sql.Stmt
 	listEnvironmentsStmt                *sql.Stmt
 	listExpiredReleaseHistoryStmt       *sql.Stmt
@@ -3922,10 +4011,10 @@ type Queries struct {
 	listProjectDomainsStmt              *sql.Stmt
 	listProjectGitConnectionsStmt       *sql.Stmt
 	listProjectLatestBackupsStmt        *sql.Stmt
+	listProjectLiveVariablesStmt        *sql.Stmt
 	listProjectReleaseHeadsStmt         *sql.Stmt
 	listProjectServicesStmt             *sql.Stmt
 	listProjectSitesStmt                *sql.Stmt
-	listProjectVariableNamesStmt        *sql.Stmt
 	listProjectVolumesStmt              *sql.Stmt
 	listProjectsStmt                    *sql.Stmt
 	listPromotableReleasesStmt          *sql.Stmt
@@ -4064,6 +4153,7 @@ type Queries struct {
 	setServiceCopiedSettingsStmt        *sql.Stmt
 	setServiceDatabaseSettingsStmt      *sql.Stmt
 	setServiceRecordsAbsentStmt         *sql.Stmt
+	setServiceStagedStmt                *sql.Stmt
 	setServiceTemplateStmt              *sql.Stmt
 	setSiteEnvironmentStmt              *sql.Stmt
 	setSiteHostnameServiceStmt          *sql.Stmt
@@ -4193,6 +4283,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteDataPolicyRulesStmt:           q.deleteDataPolicyRulesStmt,
 		deleteDomainStmt:                    q.deleteDomainStmt,
 		deleteEnsureRunningStmt:             q.deleteEnsureRunningStmt,
+		deleteEnvironmentStagedDomainsStmt:  q.deleteEnvironmentStagedDomainsStmt,
 		deleteExpiredCLILoginsStmt:          q.deleteExpiredCLILoginsStmt,
 		deleteExpiredSessionsStmt:           q.deleteExpiredSessionsStmt,
 		deleteGitConnectionStmt:             q.deleteGitConnectionStmt,
@@ -4212,8 +4303,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteServerStmt:                    q.deleteServerStmt,
 		deleteServerPlacementsStmt:          q.deleteServerPlacementsStmt,
 		deleteServiceAccessStmt:             q.deleteServiceAccessStmt,
+		deleteServiceStagedDomainsStmt:      q.deleteServiceStagedDomainsStmt,
+		deleteServiceStagedVolumesStmt:      q.deleteServiceStagedVolumesStmt,
+		deleteServiceVariablesStmt:          q.deleteServiceVariablesStmt,
 		deleteSessionStmt:                   q.deleteSessionStmt,
 		deleteSnapshotStmt:                  q.deleteSnapshotStmt,
+		deleteStagedDomainStmt:              q.deleteStagedDomainStmt,
+		deleteStagedServiceStmt:             q.deleteStagedServiceStmt,
 		deleteStorageConnectionStmt:         q.deleteStorageConnectionStmt,
 		deleteUserStmt:                      q.deleteUserStmt,
 		deleteUserSessionsStmt:              q.deleteUserSessionsStmt,
@@ -4311,6 +4407,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		insertLiveVariableStmt:              q.insertLiveVariableStmt,
 		insertRestoredVariableStmt:          q.insertRestoredVariableStmt,
 		insertServiceRunStmt:                q.insertServiceRunStmt,
+		insertStagedDomainStmt:              q.insertStagedDomainStmt,
 		insertVariableStmt:                  q.insertVariableStmt,
 		latestEnvironmentAuditStmt:          q.latestEnvironmentAuditStmt,
 		listActiveReleasesStmt:              q.listActiveReleasesStmt,
@@ -4341,6 +4438,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listEnsureRunningStmt:               q.listEnsureRunningStmt,
 		listEnvironmentActiveReleasesStmt:   q.listEnvironmentActiveReleasesStmt,
 		listEnvironmentDomainsStmt:          q.listEnvironmentDomainsStmt,
+		listEnvironmentGitConnectionsStmt:   q.listEnvironmentGitConnectionsStmt,
+		listEnvironmentStagedDomainsStmt:    q.listEnvironmentStagedDomainsStmt,
 		listEnvironmentVolumesStmt:          q.listEnvironmentVolumesStmt,
 		listEnvironmentsStmt:                q.listEnvironmentsStmt,
 		listExpiredReleaseHistoryStmt:       q.listExpiredReleaseHistoryStmt,
@@ -4376,10 +4475,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listProjectDomainsStmt:              q.listProjectDomainsStmt,
 		listProjectGitConnectionsStmt:       q.listProjectGitConnectionsStmt,
 		listProjectLatestBackupsStmt:        q.listProjectLatestBackupsStmt,
+		listProjectLiveVariablesStmt:        q.listProjectLiveVariablesStmt,
 		listProjectReleaseHeadsStmt:         q.listProjectReleaseHeadsStmt,
 		listProjectServicesStmt:             q.listProjectServicesStmt,
 		listProjectSitesStmt:                q.listProjectSitesStmt,
-		listProjectVariableNamesStmt:        q.listProjectVariableNamesStmt,
 		listProjectVolumesStmt:              q.listProjectVolumesStmt,
 		listProjectsStmt:                    q.listProjectsStmt,
 		listPromotableReleasesStmt:          q.listPromotableReleasesStmt,
@@ -4518,6 +4617,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setServiceCopiedSettingsStmt:        q.setServiceCopiedSettingsStmt,
 		setServiceDatabaseSettingsStmt:      q.setServiceDatabaseSettingsStmt,
 		setServiceRecordsAbsentStmt:         q.setServiceRecordsAbsentStmt,
+		setServiceStagedStmt:                q.setServiceStagedStmt,
 		setServiceTemplateStmt:              q.setServiceTemplateStmt,
 		setSiteEnvironmentStmt:              q.setSiteEnvironmentStmt,
 		setSiteHostnameServiceStmt:          q.setSiteHostnameServiceStmt,

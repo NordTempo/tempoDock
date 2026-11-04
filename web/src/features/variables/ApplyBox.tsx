@@ -20,7 +20,7 @@ import {
   isSettingKey,
   settingLabel,
 } from "../settings/settings";
-import { affectedServices, nextRelease } from "./apply";
+import { affectedServices, nextRelease, stagedDomain } from "./apply";
 
 const marks: Record<VariableChange["action"], string> = {
   add: "+",
@@ -72,13 +72,21 @@ export function ApplyBox({
       (r) => `${r.service} r${r.number}`,
     );
     const skipped = applied.skipped ?? [];
+    const failed = applied.failed ?? [];
     return (
-      <p className="text-mut">
-        <span className="text-ok">✓</span> Applied.{" "}
-        {started.length > 0 && `Started ${started.join(", ")}. `}
-        {skipped.length > 0 &&
-          `${skipped.join(", ")} picks it up after the deploy in progress.`}
-      </p>
+      <div className="flex flex-col gap-1 text-mut">
+        <p>
+          <span className="text-ok">✓</span> Applied.{" "}
+          {started.length > 0 && `Started ${started.join(", ")}. `}
+          {skipped.length > 0 &&
+            `${skipped.join(", ")} picks it up after the deploy in progress.`}
+        </p>
+        {failed.map((f) => (
+          <p key={f} className="text-warn">
+            ▲ Still staged: {f}
+          </p>
+        ))}
+      </div>
     );
   }
 
@@ -93,11 +101,19 @@ export function ApplyBox({
     volumes: changes.volumes
       .filter((c) => c.service === service)
       .map((c) => ({ service: c.service, name: c.name })),
+    services: changes.services
+      .filter((c) => c.service === service)
+      .map((c) => c.service),
+    domains: changes.domains
+      .filter((c) => c.service === service)
+      .map((c) => ({ service: c.service, hostname: c.hostname })),
   };
   const ownCount =
     (own.variables?.length ?? 0) +
     (own.settings?.length ?? 0) +
-    (own.volumes?.length ?? 0);
+    (own.volumes?.length ?? 0) +
+    (own.services?.length ?? 0) +
+    (own.domains?.length ?? 0);
 
   const values = new Map(
     (revealed?.variables ?? []).map((c) => [`${c.service ?? ""}:${c.key}`, c]),
@@ -109,6 +125,22 @@ export function ApplyBox({
     body: ReactNode;
     note?: string;
   }> = [
+    ...changes.services.map((c) => ({
+      id: `c:${c.service}`,
+      mark: marks[c.action],
+      scope: c.service,
+      body: (
+        <>
+          service{" "}
+          <span className="text-mut">
+            {c.action === "add"
+              ? "(created when applied)"
+              : "(archived when applied)"}
+          </span>
+        </>
+      ),
+      note: c.summary,
+    })),
     ...changes.variables.map((c) => {
       const v = values.get(`${c.service ?? ""}:${c.key}`);
       const overriders =
@@ -170,6 +202,13 @@ export function ApplyBox({
           volume {v.name} at {v.mount_path}
         </>
       ),
+    })),
+    // Generated domains to add have no hostname yet, so the index keeps keys apart.
+    ...changes.domains.map((d, i) => ({
+      id: `d:${i}:${d.service}:${d.hostname ?? ""}`,
+      mark: marks[d.action],
+      scope: d.service,
+      body: stagedDomain(d),
     })),
   ];
 
