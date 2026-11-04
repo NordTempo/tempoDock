@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// Two-factor sign-in (ADR 0049): authenticator apps as second factors,
+// Two-factor sign-in (ADR 0050): authenticator apps as second factors,
 // recovery codes, step-up re-authentication.
 
 // LoginResult answers a password check: signed in (Me), or a second factor

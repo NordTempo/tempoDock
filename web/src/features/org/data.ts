@@ -65,7 +65,7 @@ export const useRenameOrg = () =>
 
 /**
  * Requires (or stops requiring) a second factor of every member's
- * sign-in (ADR 0049). Turning it on needs the caller's own sign-in to
+ * sign-in (ADR 0050). Turning it on needs the caller's own sign-in to
  * have used one; members without it lose the org until they add one.
  */
 export const useSetOrgTwoFactor = () =>

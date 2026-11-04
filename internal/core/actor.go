@@ -50,7 +50,7 @@ type Actor struct {
 	VerifiedAt time.Time
 	// Factor is the second factor the sign-in used ("" for none; see
 	// factorTOTP and co.), "login" for a `dock login` token approved
-	// from a session that used one (ADR 0049).
+	// from a session that used one (ADR 0050).
 	Factor string
 	// needs2FAOrg is the org the actor would act in but for its
 	// requirement of a second factor; operatorNeeds2FA is set when the

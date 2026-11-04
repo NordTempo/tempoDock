@@ -8,7 +8,7 @@ import (
 )
 
 // Ceremonies are sign-in steps in flight that hold a secret until the
-// person answers (ADR 0049): an authenticator app's new key waiting for
+// person answers (ADR 0050): an authenticator app's new key waiting for
 // its first code. They live in memory for ceremonyTTL, bound to the user
 // and session that started them, and are taken out when answered, so an
 // answer works once. A restart forgets them; the person starts again.

@@ -30,7 +30,7 @@ export function VariablesPage() {
   const admin = useIsAdmin();
   const [reveal, setReveal] = useState(false);
   const masked = useSuspenseQuery(orgQueries.variables(false)).data;
-  // Values load beside the masked list, so a step-up (ADR 0049) or its
+  // Values load beside the masked list, so a step-up (ADR 0050) or its
   // refusal never blanks the page.
   const values = useRevealedQuery(orgQueries.variables(true), reveal && admin);
   const vars = (reveal && values.data) || masked;

@@ -4,7 +4,7 @@ import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
 
-// Two-factor sign-in on the account page (ADR 0049): the caller's
+// Two-factor sign-in on the account page (ADR 0050): the caller's
 // factors, setting up an authenticator app, recovery codes. Also read by
 // the step-up dialog, which asks for the factor when there is one.
 

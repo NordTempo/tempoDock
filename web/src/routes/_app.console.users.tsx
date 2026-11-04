@@ -143,7 +143,7 @@ function Users() {
 }
 
 /**
- * The platform's sign-in policy (ADR 0049): whether operators run the
+ * The platform's sign-in policy (ADR 0050): whether operators run the
  * platform only after signing in with a second factor.
  */
 function OperatorsTwoFactor() {

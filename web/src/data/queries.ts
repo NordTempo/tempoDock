@@ -207,7 +207,7 @@ export async function currentMe() {
 
 /**
  * Request options for reading secret values. The first read follows a
- * click on Reveal and may ask the person to confirm it's them (ADR 0049);
+ * click on Reveal and may ask the person to confirm it's them (ADR 0050);
  * a refetch of values already on screen (a live event) fails with
  * reauth_required instead of prompting out of nowhere.
  */

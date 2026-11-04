@@ -42,7 +42,7 @@ var (
 	sealedAppKey                       = secrets.Column{Table: "github_app", Name: "private_key"}
 	sealedAppWebhookSecret             = secrets.Column{Table: "github_app", Name: "webhook_secret"}
 	sealedDataReader, sealedDataWriter = datapanel.AccessColumns("service_id")
-	// sealedUserFactor is a second factor's key (ADR 0049): one
+	// sealedUserFactor is a second factor's key (ADR 0050): one
 	// authenticator app per user, passkeys by credential ID.
 	sealedUserFactor = secrets.Column{Table: "user_factors", Name: "secret", Key: []string{"user_id", "kind", "coalesce(hex(credential_id), '')"}}
 

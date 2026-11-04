@@ -149,7 +149,7 @@ func (c *Core) UnlockEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
-	// Unlocking lets tokens change it: a step-up (ADR 0049).
+	// Unlocking lets tokens change it: a step-up (ADR 0050).
 	if err := a.requireRecent("unlocking an environment"); err != nil {
 		return apitypes.Environment{}, err
 	}

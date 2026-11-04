@@ -104,7 +104,7 @@ func (c client) sessionCookie(secret string, expires time.Time) http.Cookie {
 }
 
 // pendingCookie holds a password sign-in waiting for its second factor
-// (ADR 0049), sent only to the sign-in endpoints.
+// (ADR 0050), sent only to the sign-in endpoints.
 const pendingCookie = "dock_login"
 
 // pendingCookie sets (secret) or clears ("") the pending sign-in cookie.

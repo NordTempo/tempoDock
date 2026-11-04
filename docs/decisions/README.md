@@ -59,6 +59,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0049](0049-apply-and-compose-import.md) | Config as code with `dock apply FILE`, and importing Compose files | accepted |
 | [0050](0050-stop-start-service.md) | Stop and start a service | accepted |
 | [0049](0049-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted |
+| [0050](0050-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted |
 
 ## Template
 

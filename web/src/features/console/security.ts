@@ -3,7 +3,7 @@ import { api, body } from "../../api/client";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
 
-// The platform's sign-in policy (ADR 0049, `dock security`): whether
+// The platform's sign-in policy (ADR 0050, `dock security`): whether
 // operators run the platform only after signing in with a second factor.
 
 const securityKey = ["platform-security"];
