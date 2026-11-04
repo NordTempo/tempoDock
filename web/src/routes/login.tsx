@@ -22,7 +22,7 @@ export const Route = createFileRoute("/login")({
 
 const field = "field px-3 py-2.5 text-md";
 
-/** What finishes a sign-in after the password (ADR 0050). */
+/** What finishes a sign-in after the password (ADR 0051). */
 type SecondFactor = NonNullable<
   components["schemas"]["LoginResult"]["second_factor"]
 >[number];

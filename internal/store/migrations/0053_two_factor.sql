@@ -1,4 +1,4 @@
--- Two-factor sign-in (ADR 0050): passkeys and authenticator apps as second
+-- Two-factor sign-in (ADR 0051): passkeys and authenticator apps as second
 -- factors, one-time recovery codes, what each session proved, and the org
 -- and platform settings that require a second factor.
 

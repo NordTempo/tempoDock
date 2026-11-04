@@ -162,7 +162,7 @@ func userActor(u store.User) Actor {
 // and no slug gets no org, and org-scoped operations say to choose one.
 // The actor's scope is the user's role there, capped at most. An org that
 // requires a second factor the actor didn't use leaves it in none, and
-// org-scoped operations say so (ADR 0050).
+// org-scoped operations say so (ADR 0051).
 func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Scope) (Actor, error) {
 	if slug != "" {
 		m, err := c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: slug})

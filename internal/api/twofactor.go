@@ -10,7 +10,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// Two-factor sign-in, step-ups and managing second factors (ADR 0050).
+// Two-factor sign-in, step-ups and managing second factors (ADR 0051).
 
 // verifyInput finishes a pending sign-in, from its cookie.
 type verifyInput struct {

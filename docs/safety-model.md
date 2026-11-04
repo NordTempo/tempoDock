@@ -51,7 +51,7 @@ access goes through the daemon's API, which enforces permissions.
 ## People sign in with a second factor
 
 The UI controls production, so a password shouldn't be enough
-([0050](decisions/0050-two-factor-sign-in.md), [guide](guide/two-factor.md)).
+([0051](decisions/0051-two-factor-sign-in.md), [guide](guide/two-factor.md)).
 
 - Users add an authenticator app; signing in then needs a code from it or a
   one-time recovery code. Wrong codes spend from the same per (email,

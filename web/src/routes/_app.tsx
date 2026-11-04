@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_app")({
     // The shell shows one organization's projects; with none, there's a
     // page saying so (and invite links work outside the shell). An org
     // that requires a second factor the session didn't use leaves only
-    // the account page, to add one (ADR 0050).
+    // the account page, to add one (ADR 0051).
     if (!session.org && session.kind === "user") {
       if (!session.two_factor_required) throw redirect({ to: "/no-org" });
       if (location.pathname !== "/account") throw redirect({ to: "/account" });

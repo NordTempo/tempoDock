@@ -11,7 +11,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// Two-factor sign-in (ADR 0050): your own factors, and the organization's
+// Two-factor sign-in (ADR 0051): your own factors, and the organization's
 // and the platform's requirements. Factors are set up in the browser, on
 // the account page; the break-glass reset is `dock admin reset-2fa`.
 

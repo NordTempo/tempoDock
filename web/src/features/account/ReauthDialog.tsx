@@ -8,7 +8,7 @@ import { Button, ErrorText } from "../../ui/kit";
 import { twoFactorQuery } from "./data";
 
 /**
- * "Confirm it's you" before a sensitive action (ADR 0050): the code from
+ * "Confirm it's you" before a sensitive action (ADR 0051): the code from
  * the authenticator app when the person has one, else their password.
  * Loaded by ui/ReauthHost when a call answers reauth_required; onDone
  * says whether to retry it.

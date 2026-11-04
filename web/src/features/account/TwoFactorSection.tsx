@@ -17,7 +17,7 @@ const SetupTOTP = lazy(() => import("./SetupTOTP"));
 const RecoveryCodesDialog = lazy(() => import("./RecoveryCodesDialog"));
 
 /**
- * The caller's two-factor sign-in (ADR 0050, `dock me two-factor`): whether it
+ * The caller's two-factor sign-in (ADR 0051, `dock me two-factor`): whether it
  * is on, their authenticator app, setting one up, and recovery codes.
  * Changes ask to confirm it's you when the session is older than 15
  * minutes (the API client's step-up).

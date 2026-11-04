@@ -103,7 +103,7 @@ while the daemon is running.`,
 }
 
 // newResetTwoFactorCmd is `dock admin reset-2fa`, the break-glass for
-// someone who lost their second factor and recovery codes (ADR 0050). It
+// someone who lost their second factor and recovery codes (ADR 0051). It
 // opens the state directly, like bootstrap: shell access to the server is
 // the proof, so it needs no session and nobody else.
 func newResetTwoFactorCmd() *cobra.Command {
