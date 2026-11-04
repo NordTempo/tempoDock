@@ -196,6 +196,7 @@ func (c *Core) ArchiveProject(ctx context.Context, a Actor, name string) (apityp
 	if err != nil || already {
 		return toProject(p), err
 	}
+	c.endOrphanedRequests(ctx)
 	notes, stopped := c.finishArchive(ctx, done)
 	notes = append(notes, c.removeNetworks(ctx, p, envs, done, stopped)...)
 	c.maybePruneRegistry()

@@ -86,6 +86,37 @@ func TestHeldSourceRejected(t *testing.T) {
 	}
 }
 
+// TestHeldSourceEnded: a held upload's archive goes when its request
+// expires or its token is revoked.
+func TestHeldSourceEnded(t *testing.T) {
+	h := newRequestHarness(t)
+	web := ServiceRef{"shop", "production", "web"}
+	_, err := h.c.DeploySource(h.ctx, h.agent, web, sourceTar("v1"), 1<<20)
+	le, _ := errors.AsType[*LockedError](err)
+	if le == nil || len(h.heldFiles()) != 1 {
+		t.Fatalf("held: %v", err)
+	}
+	if _, err := h.store.DB.ExecContext(h.ctx, "UPDATE access_requests SET expires_at = ? WHERE id = ?", now().Add(-time.Minute), le.Request); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.expireRequests(h.ctx, now()); err != nil {
+		t.Fatal(err)
+	}
+	if files := h.heldFiles(); len(files) != 0 {
+		t.Fatalf("files after expiry: %v", files)
+	}
+
+	if _, err := h.c.DeploySource(h.ctx, h.agent, web, sourceTar("v2"), 1<<20); len(h.heldFiles()) != 1 {
+		t.Fatalf("held again: %v", err)
+	}
+	if err := h.c.RevokeToken(h.ctx, testSystem, h.agent.TokenID); err != nil {
+		t.Fatal(err)
+	}
+	if files := h.heldFiles(); len(files) != 0 {
+		t.Fatalf("files after revoke: %v", files)
+	}
+}
+
 // TestHeldPush: a GitHub push into a locked environment waits as an
 // access request (the newest push replacing an older one) and deploys
 // once approved; a person's Deploy isn't held.

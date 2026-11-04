@@ -181,6 +181,68 @@ func (q *Queries) DecideAccessRequest(ctx context.Context, arg DecideAccessReque
 	return i, err
 }
 
+const endOrphanedAccessRequests = `-- name: EndOrphanedAccessRequests :many
+UPDATE access_requests SET status = 'rejected', decided_by = 'system', decided_at = ?1, finished_at = ?1,
+    comment = CASE WHEN project_id IN (SELECT id FROM projects WHERE archived_at IS NOT NULL)
+        THEN 'its project was archived' ELSE 'the token that asked was revoked' END
+WHERE status = 'pending' AND (
+    token_id IN (SELECT id FROM tokens WHERE revoked_at IS NOT NULL)
+    OR project_id IN (SELECT id FROM projects WHERE archived_at IS NOT NULL))
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at
+`
+
+// EndOrphanedAccessRequests rejects, for the system, pending requests
+// that can no longer run: their token was revoked or their project
+// archived. The revoke and archive paths call it.
+func (q *Queries) EndOrphanedAccessRequests(ctx context.Context, now *time.Time) ([]AccessRequest, error) {
+	rows, err := q.db.QueryContext(ctx, endOrphanedAccessRequests, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessRequest
+	for rows.Next() {
+		var i AccessRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.Nonce,
+			&i.OrgID,
+			&i.ProjectID,
+			&i.EnvironmentID,
+			&i.Status,
+			&i.Via,
+			&i.Operation,
+			&i.Title,
+			&i.Action,
+			&i.Args,
+			&i.Fingerprint,
+			&i.Reason,
+			&i.TokenID,
+			&i.RequestedBy,
+			&i.AuditMark,
+			&i.Upload,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.DecidedBy,
+			&i.DecidedAt,
+			&i.Comment,
+			&i.Result,
+			&i.Error,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const expireAccessRequests = `-- name: ExpireAccessRequests :many
 UPDATE access_requests SET status = 'expired', finished_at = expires_at
 WHERE status = 'pending' AND expires_at <= +?
