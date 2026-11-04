@@ -63,6 +63,14 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
             >
               Variables
             </Link>
+            <Link
+              to="/$org/$project/$environment"
+              params={{ org, ...ref }}
+              hash="log-drains"
+              className={links}
+            >
+              Log drains
+            </Link>
             {canDeploy && (
               <button
                 type="button"

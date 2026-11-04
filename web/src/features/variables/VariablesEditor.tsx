@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { type RefObject, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useRef, useState } from "react";
 import { useDiscardChanges, useStageVariables } from "../../data/mutations";
 import {
   useEnvironment,
@@ -41,15 +41,18 @@ const idOf = (v: { key: string; scope: string; service?: string }) =>
  * An environment's variables as an .env-like editor: pick what to look at
  * (the environment's shared lines, or what one service sees at runtime),
  * edit lines in place, paste a .env, and apply staged lines together.
- * Values stay masked until an admin reveals them.
+ * Values stay masked until an admin reveals them. footer goes under
+ * them: the environment's other settings (log drains).
  */
 export function VariablesEditor({
   env,
   service,
+  footer,
 }: {
   env: EnvRef;
   /** The service whose runtime view to show; null for shared lines only. */
   service: string | null;
+  footer?: ReactNode;
 }) {
   const org = useOrg();
   const all = useVariables(env, null);
@@ -237,6 +240,7 @@ export function VariablesEditor({
             variables={all}
             service={service}
           />
+          {footer}
         </div>
       </div>
     </>
