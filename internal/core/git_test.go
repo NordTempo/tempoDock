@@ -436,13 +436,26 @@ func TestGitNewestPushWins(t *testing.T) {
 	if second.Status != apitypes.ReleaseActive || second.Commit.SHA != shaC {
 		t.Fatalf("second release: %s %+v", second.Status, second.Commit)
 	}
-	time.Sleep(20 * time.Millisecond)
+	h.gitSettled(web)
 	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 2 {
 		t.Fatalf("%d releases, want 2 (B never deploys)", len(rels))
 	}
-	if src, _ := h.c.GitStatus(h.ctx, testSystem, web); src.Connection.Pending != nil {
-		t.Fatalf("still pending: %+v", src.Connection.Pending)
-	}
+}
+
+// gitSettled waits until no push is queued for the service and no git
+// worker runs. Only a worker deploys a queued push, and a deploy's end
+// starts one only while a push is queued, so after this no release can
+// start from a push the test already made. Workers are checked first: one
+// that deploys clears the queue only once its release exists.
+func (h *harness) gitSettled(ref ServiceRef) {
+	h.t.Helper()
+	eventually(h.t, "the queued push to deploy", func() bool {
+		h.c.git.mu.Lock()
+		idle := len(h.c.git.workers) == 0
+		h.c.git.mu.Unlock()
+		src, err := h.c.GitStatus(h.ctx, testSystem, ref)
+		return idle && err == nil && src.Connection.Pending == nil
+	})
 }
 
 // A queued push survives a restart and deploys after it.

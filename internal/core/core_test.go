@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -140,40 +141,44 @@ func (h *harness) deploy(ref ServiceRef, image string) apitypes.Release {
 	return h.wait(ref, rel.Number)
 }
 
-// wait polls until a release finishes deploying.
+// wait waits until a release finishes deploying and returns it.
 func (h *harness) wait(ref ServiceRef, number int64) apitypes.Release {
 	h.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		rel, err := h.c.GetRelease(h.ctx, testSystem, ref, number)
-		if err != nil {
-			h.t.Fatal(err)
-		}
-		if rel.Status.Done() {
-			return rel
-		}
-		if time.Now().After(deadline) {
-			h.t.Fatalf("release %d stuck in %s", number, rel.Status)
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
+	return h.waitRelease(ref, number, "finished", func(s apitypes.ReleaseStatus) bool { return s.Done() })
 }
 
+// waitStatus waits until a release has status want.
 func (h *harness) waitStatus(ref ServiceRef, number int64, want apitypes.ReleaseStatus) {
 	h.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	h.waitRelease(ref, number, string(want), func(s apitypes.ReleaseStatus) bool { return s == want })
+}
+
+// waitRelease waits until a release's status satisfies ok and returns the
+// release, failing the test after 5 seconds. It doesn't poll: every
+// release status change is followed by an event for its service on the
+// bus, so it reads the release again after each of those. Subscribing
+// before the first read means no change can fall in between.
+func (h *harness) waitRelease(ref ServiceRef, number int64, want string, ok func(apitypes.ReleaseStatus) bool) apitypes.Release {
+	h.t.Helper()
+	sub := h.c.bus.subscribe(func(e busEvent) bool {
+		return e.ev.Project == ref.Project && e.ev.Environment == ref.Environment && e.ev.Service == ref.Service
+	})
+	defer sub.close()
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
 	for {
 		rel, err := h.c.GetRelease(h.ctx, testSystem, ref, number)
 		if err != nil {
 			h.t.Fatal(err)
 		}
-		if rel.Status == want {
-			return
+		if ok(rel.Status) {
+			return rel
 		}
-		if time.Now().After(deadline) {
+		select {
+		case <-sub.ch:
+		case <-timeout.C:
 			h.t.Fatalf("release %d is %s, want %s", number, rel.Status, want)
 		}
-		time.Sleep(2 * time.Millisecond)
 	}
 }
 
@@ -372,22 +377,15 @@ func TestStatefulServiceIsRecreated(t *testing.T) {
 }
 
 // settleEvents waits until the runtime events of every container the daemon
-// removed (up to their destroy event) have been handled.
+// removed (up to their destroy event) have been handled. In a synctest
+// bubble, synctest.Wait does the same without polling.
 func (h *harness) settleEvents() {
 	h.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	eventually(h.t, "the removed containers' events to be handled", func() bool {
 		h.c.statusMu.Lock()
-		n := len(h.c.removing)
-		h.c.statusMu.Unlock()
-		if n == 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			h.t.Fatalf("%d removed containers still have unhandled events", n)
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
+		defer h.c.statusMu.Unlock()
+		return len(h.c.removing) == 0
+	})
 }
 
 // drift lists drift entries: the org's (in a project) and the platform's.
@@ -406,30 +404,34 @@ func (h *harness) drift() []apitypes.AuditEvent {
 
 // The die and destroy events of containers the daemon stops itself (the
 // active one in a stateful recreate, an archived service's) are neither a
-// crash nor drift.
+// crash nor drift. It runs in a synctest bubble: synctest.Wait returns once
+// every daemon goroutine is idle, so all runtime events have been handled
+// when the status and the drift log are checked.
 func TestOwnRemovalsAreNotDrift(t *testing.T) {
-	h := newHarness(t)
-	db := h.service("db", apitypes.CreateServiceRequest{Port: 5432})
-	if _, err := h.c.AddVolume(h.ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
-		t.Fatal(err)
-	}
-	h.deploy(db, "postgres:17")
-	h.deploy(db, "postgres:17.1")
-	h.settleEvents()
-	if svc, _ := h.c.GetService(h.ctx, testSystem, db); svc.Status.State != apitypes.ServiceRunning {
-		t.Fatalf("status after recreate = %+v", svc.Status)
-	}
-	if _, err := h.c.ArchiveService(h.ctx, testSystem, db); err != nil {
-		t.Fatal(err)
-	}
-	h.waitRunning()
-	h.settleEvents()
-	if svc, _ := h.c.GetService(h.ctx, testSystem, db); svc.Status.State != apitypes.ServiceNone {
-		t.Fatalf("status after archive = %+v", svc.Status)
-	}
-	if d := h.drift(); len(d) > 0 {
-		t.Fatalf("drift reported: %+v", d)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t)
+		db := h.service("db", apitypes.CreateServiceRequest{Port: 5432})
+		if _, err := h.c.AddVolume(h.ctx, testSystem, db, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+			t.Fatal(err)
+		}
+		h.deploy(db, "postgres:17")
+		h.deploy(db, "postgres:17.1")
+		synctest.Wait()
+		if svc, _ := h.c.GetService(h.ctx, testSystem, db); svc.Status.State != apitypes.ServiceRunning {
+			t.Fatalf("status after recreate = %+v", svc.Status)
+		}
+		if _, err := h.c.ArchiveService(h.ctx, testSystem, db); err != nil {
+			t.Fatal(err)
+		}
+		h.waitRunning()
+		synctest.Wait()
+		if svc, _ := h.c.GetService(h.ctx, testSystem, db); svc.Status.State != apitypes.ServiceNone {
+			t.Fatalf("status after archive = %+v", svc.Status)
+		}
+		if d := h.drift(); len(d) > 0 {
+			t.Fatalf("drift reported: %+v", d)
+		}
+	})
 }
 
 // Containers labelled for another control plane on the same Docker host

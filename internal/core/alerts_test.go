@@ -101,6 +101,20 @@ func (k *receiver) events(t *testing.T, n int) []string {
 	}
 }
 
+// outboxSent waits until the alert outbox is empty: each channel's sender
+// removes its queue once everything in it was sent or given up on. raise
+// and remind queue before they return, so after this nothing they caused
+// is still to be delivered.
+func (h *harness) outboxSent() {
+	h.t.Helper()
+	o := &h.c.alerts.outbox
+	eventually(h.t, "the alert outbox to empty", func() bool {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		return len(o.queues) == 0
+	})
+}
+
 func (h *harness) channel(req apitypes.CreateAlertChannelRequest) apitypes.CreatedAlertChannel {
 	h.t.Helper()
 	ch, err := h.c.CreateAlertChannel(h.ctx, testSystem, req)
@@ -474,7 +488,7 @@ func TestSeverityFilterAndReminders(t *testing.T) {
 	h.c.remind(h.ctx, t0.Add(30*time.Second))
 	h.c.remind(h.ctx, t0.Add(61*time.Second))
 	evs := k.events(t, 2)
-	time.Sleep(20 * time.Millisecond)
+	h.outboxSent()
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if len(k.got) != 2 || strings.Join(evs, ",") != "opened,reminder" || k.got[0].Alert.Title != "major" || k.got[1].Alert.Title != "major" {

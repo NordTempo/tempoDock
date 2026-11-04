@@ -15,6 +15,18 @@ import (
 	"github.com/NordTempo/tempoDock/internal/version"
 )
 
+// callsInFlight is the number of calls the control plane has open on the
+// node's current session: a call counts until its reply was read.
+func (h *harness) callsInFlight() int {
+	h.hub.mu.Lock()
+	s := h.hub.sessions[h.id]
+	h.hub.mu.Unlock()
+	if s == nil {
+		return 0
+	}
+	return s.cc.InFlight()
+}
+
 // A release goes over the link to the node, which checks it, writes it
 // and asks its updater; once the node is back on the version, UpdateNode
 // returns.
@@ -56,11 +68,14 @@ func TestUpdateNode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The node's "updater": once the request is there, restart the node
-	// as the new version.
+	// The node's "updater": once the request is there and the control
+	// plane has the node's reply (no call left in flight on the link),
+	// restart the node as the new version. Restarting the moment the
+	// request appears could cut the reply off; the real updater verifies
+	// the release first.
 	dir := update.Dir(h.dataDir)
 	go func() {
-		for !update.Exists(dir, update.RequestFile) {
+		for !update.Exists(dir, update.RequestFile) || h.callsInFlight() > 0 {
 			time.Sleep(5 * time.Millisecond)
 		}
 		version.Version = "v9.9.9"

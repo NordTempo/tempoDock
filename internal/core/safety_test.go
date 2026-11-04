@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -236,31 +237,37 @@ func TestFailedReleaseKeepsContainerLogs(t *testing.T) {
 }
 
 // DNS right but no certificate yet is issuing_certificate, until it has
-// been so for certPatience.
+// been so for certPatience. It runs in a synctest bubble: once
+// synctest.Wait returns, the daemon's own domain checker has handled the
+// new domain and sleeps on a timer that can't fire while the test runs,
+// so it can't overwrite the status between a check and its read.
 func TestPendingCertificateIsIssuing(t *testing.T) {
-	h := newHarness(t)
-	web := h.service("web", apitypes.CreateServiceRequest{})
-	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
-		t.Fatal(err)
-	}
-	h.rt.SetDomainCheck(func(string) node.DomainCheck { return node.DomainCheck{DNSOK: true} })
-	ss, _ := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
-	status := func(dnsOK time.Time) string {
-		t.Helper()
-		ds, err := h.store.ListDomainsByService(h.ctx, ss.svc.ID)
-		if err != nil {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t)
+		web := h.service("web", apitypes.CreateServiceRequest{})
+		h.rt.SetDomainCheck(func(string) node.DomainCheck { return node.DomainCheck{DNSOK: true} })
+		if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
 			t.Fatal(err)
 		}
-		h.c.checkDomain(h.ctx, ds[0], &dnsOK)
-		ds, _ = h.store.ListDomainsByService(h.ctx, ss.svc.ID)
-		return ds[0].Status
-	}
-	if s := status(time.Time{}); s != string(apitypes.DomainIssuingCertificate) {
-		t.Fatalf("pending certificate: %s", s)
-	}
-	if s := status(time.Now().Add(-certPatience - time.Minute)); s != string(apitypes.DomainError) {
-		t.Fatalf("certificate pending too long: %s", s)
-	}
+		synctest.Wait()
+		ss, _ := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
+		status := func(dnsOK time.Time) string {
+			t.Helper()
+			ds, err := h.store.ListDomainsByService(h.ctx, ss.svc.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.c.checkDomain(h.ctx, ds[0], &dnsOK)
+			ds, _ = h.store.ListDomainsByService(h.ctx, ss.svc.ID)
+			return ds[0].Status
+		}
+		if s := status(time.Time{}); s != string(apitypes.DomainIssuingCertificate) {
+			t.Fatalf("pending certificate: %s", s)
+		}
+		if s := status(time.Now().Add(-certPatience - time.Minute)); s != string(apitypes.DomainError) {
+			t.Fatalf("certificate pending too long: %s", s)
+		}
+	})
 }
 
 // waitOp waits until the runtime has seen op.
