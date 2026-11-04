@@ -21,7 +21,7 @@ type AddAlertNoticeParams struct {
 }
 
 func (q *Queries) AddAlertNotice(ctx context.Context, arg AddAlertNoticeParams) error {
-	_, err := q.exec(ctx, q.addAlertNoticeStmt, addAlertNotice, arg.AlertID, arg.ChannelID, arg.NotifiedAt)
+	_, err := q.db.ExecContext(ctx, addAlertNotice, arg.AlertID, arg.ChannelID, arg.NotifiedAt)
 	return err
 }
 
@@ -42,7 +42,7 @@ type CreateAlertChannelParams struct {
 }
 
 func (q *Queries) CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error) {
-	row := q.queryRow(ctx, q.createAlertChannelStmt, createAlertChannel,
+	row := q.db.QueryRowContext(ctx, createAlertChannel,
 		arg.Name,
 		arg.Kind,
 		arg.Target,
@@ -74,7 +74,7 @@ DELETE FROM alert_channels WHERE id = +?
 `
 
 func (q *Queries) DeleteAlertChannel(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteAlertChannelStmt, deleteAlertChannel, id)
+	_, err := q.db.ExecContext(ctx, deleteAlertChannel, id)
 	return err
 }
 
@@ -83,7 +83,7 @@ DELETE FROM alert_notices WHERE alert_id = +?
 `
 
 func (q *Queries) DeleteAlertNotices(ctx context.Context, alertID int64) error {
-	_, err := q.exec(ctx, q.deleteAlertNoticesStmt, deleteAlertNotices, alertID)
+	_, err := q.db.ExecContext(ctx, deleteAlertNotices, alertID)
 	return err
 }
 
@@ -92,7 +92,7 @@ SELECT id, "key", kind, severity, title, message, project, environment, service,
 `
 
 func (q *Queries) GetAlert(ctx context.Context, id int64) (Alert, error) {
-	row := q.queryRow(ctx, q.getAlertStmt, getAlert, id)
+	row := q.db.QueryRowContext(ctx, getAlert, id)
 	var i Alert
 	err := row.Scan(
 		&i.ID,
@@ -119,7 +119,7 @@ SELECT id, name, kind, target, config, min_severity, renotify_minutes, created_a
 `
 
 func (q *Queries) GetAlertChannel(ctx context.Context, name string) (AlertChannel, error) {
-	row := q.queryRow(ctx, q.getAlertChannelStmt, getAlertChannel, name)
+	row := q.db.QueryRowContext(ctx, getAlertChannel, name)
 	var i AlertChannel
 	err := row.Scan(
 		&i.ID,
@@ -143,7 +143,7 @@ SELECT id, name, kind, target, config, min_severity, renotify_minutes, created_a
 `
 
 func (q *Queries) GetAlertChannelByID(ctx context.Context, id int64) (AlertChannel, error) {
-	row := q.queryRow(ctx, q.getAlertChannelByIDStmt, getAlertChannelByID, id)
+	row := q.db.QueryRowContext(ctx, getAlertChannelByID, id)
 	var i AlertChannel
 	err := row.Scan(
 		&i.ID,
@@ -167,7 +167,7 @@ SELECT id, name, kind, target, config, min_severity, renotify_minutes, created_a
 `
 
 func (q *Queries) ListAlertChannels(ctx context.Context) ([]AlertChannel, error) {
-	rows, err := q.query(ctx, q.listAlertChannelsStmt, listAlertChannels)
+	rows, err := q.db.QueryContext(ctx, listAlertChannels)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ SELECT channel_id FROM alert_notices WHERE alert_id = +?
 
 // The channels told about an alert.
 func (q *Queries) ListAlertNotices(ctx context.Context, alertID int64) ([]int64, error) {
-	rows, err := q.query(ctx, q.listAlertNoticesStmt, listAlertNotices, alertID)
+	rows, err := q.db.QueryContext(ctx, listAlertNotices, alertID)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ type ListAlertsParams struct {
 
 // Every alert, open or not, newest first; page with before_id.
 func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert, error) {
-	rows, err := q.query(ctx, q.listAlertsStmt, listAlerts, arg.BeforeID, arg.MaxRows)
+	rows, err := q.db.QueryContext(ctx, listAlerts, arg.BeforeID, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +294,7 @@ type ListDueRemindersRow struct {
 // Open alerts a channel was told about longer than its renotify interval
 // ago. Notices exist only for open alerts, a handful at a time.
 func (q *Queries) ListDueReminders(ctx context.Context, now int64) ([]ListDueRemindersRow, error) {
-	rows, err := q.query(ctx, q.listDueRemindersStmt, listDueReminders, now)
+	rows, err := q.db.QueryContext(ctx, listDueReminders, now)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ type ListFailedLatestReleasesRow struct {
 // (CROSS JOIN keeps SQLite from scanning releases instead), each newest
 // release found through (service_id, number).
 func (q *Queries) ListFailedLatestReleases(ctx context.Context) ([]ListFailedLatestReleasesRow, error) {
-	rows, err := q.query(ctx, q.listFailedLatestReleasesStmt, listFailedLatestReleases)
+	rows, err := q.db.QueryContext(ctx, listFailedLatestReleases)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +379,7 @@ SELECT id, "key", kind, severity, title, message, project, environment, service,
 
 // Read once when the daemon starts; the alert engine keeps them in memory.
 func (q *Queries) ListOpenAlerts(ctx context.Context) ([]Alert, error) {
-	rows, err := q.query(ctx, q.listOpenAlertsStmt, listOpenAlerts)
+	rows, err := q.db.QueryContext(ctx, listOpenAlerts)
 	if err != nil {
 		return nil, err
 	}
@@ -440,7 +440,7 @@ type OpenAlertParams struct {
 }
 
 func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, error) {
-	row := q.queryRow(ctx, q.openAlertStmt, openAlert,
+	row := q.db.QueryRowContext(ctx, openAlert,
 		arg.Key,
 		arg.Kind,
 		arg.Severity,
@@ -481,7 +481,7 @@ DELETE FROM alerts WHERE resolved_at < +?
 `
 
 func (q *Queries) PruneResolvedAlerts(ctx context.Context, resolvedAt *time.Time) (int64, error) {
-	result, err := q.exec(ctx, q.pruneResolvedAlertsStmt, pruneResolvedAlerts, resolvedAt)
+	result, err := q.db.ExecContext(ctx, pruneResolvedAlerts, resolvedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -503,7 +503,7 @@ type RenameProjectAlertsParams struct {
 
 // Rename only open alerts of this project; closed alerts keep their snapshots.
 func (q *Queries) RenameProjectAlerts(ctx context.Context, arg RenameProjectAlertsParams) ([]Alert, error) {
-	rows, err := q.query(ctx, q.renameProjectAlertsStmt, renameProjectAlerts, arg.Name, arg.OldName, arg.ProjectID)
+	rows, err := q.db.QueryContext(ctx, renameProjectAlerts, arg.Name, arg.OldName, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -551,7 +551,7 @@ type ResolveAlertParams struct {
 }
 
 func (q *Queries) ResolveAlert(ctx context.Context, arg ResolveAlertParams) error {
-	_, err := q.exec(ctx, q.resolveAlertStmt, resolveAlert, arg.At, arg.ID)
+	_, err := q.db.ExecContext(ctx, resolveAlert, arg.At, arg.ID)
 	return err
 }
 
@@ -566,7 +566,7 @@ type SetAlertChannelFailedParams struct {
 }
 
 func (q *Queries) SetAlertChannelFailed(ctx context.Context, arg SetAlertChannelFailedParams) error {
-	_, err := q.exec(ctx, q.setAlertChannelFailedStmt, setAlertChannelFailed, arg.LastError, arg.LastErrorAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, setAlertChannelFailed, arg.LastError, arg.LastErrorAt, arg.ID)
 	return err
 }
 
@@ -580,7 +580,7 @@ type SetAlertChannelSentParams struct {
 }
 
 func (q *Queries) SetAlertChannelSent(ctx context.Context, arg SetAlertChannelSentParams) error {
-	_, err := q.exec(ctx, q.setAlertChannelSentStmt, setAlertChannelSent, arg.LastSentAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, setAlertChannelSent, arg.LastSentAt, arg.ID)
 	return err
 }
 
@@ -598,7 +598,7 @@ type UpdateAlertParams struct {
 }
 
 func (q *Queries) UpdateAlert(ctx context.Context, arg UpdateAlertParams) error {
-	_, err := q.exec(ctx, q.updateAlertStmt, updateAlert,
+	_, err := q.db.ExecContext(ctx, updateAlert,
 		arg.Severity,
 		arg.Title,
 		arg.Message,

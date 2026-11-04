@@ -20,7 +20,7 @@ type AddAnalyticsSaltParams struct {
 }
 
 func (q *Queries) AddAnalyticsSalt(ctx context.Context, arg AddAnalyticsSaltParams) error {
-	_, err := q.exec(ctx, q.addAnalyticsSaltStmt, addAnalyticsSalt, arg.Day, arg.Salt)
+	_, err := q.db.ExecContext(ctx, addAnalyticsSalt, arg.Day, arg.Salt)
 	return err
 }
 
@@ -39,7 +39,7 @@ type CreateAnalyticsSettingsParams struct {
 // CreateAnalyticsSettings makes the row with a new token and the
 // analytics server, unless it exists.
 func (q *Queries) CreateAnalyticsSettings(ctx context.Context, arg CreateAnalyticsSettingsParams) error {
-	_, err := q.exec(ctx, q.createAnalyticsSettingsStmt, createAnalyticsSettings,
+	_, err := q.db.ExecContext(ctx, createAnalyticsSettings,
 		arg.Token,
 		arg.ServerID,
 		arg.UpdatedBy,
@@ -53,7 +53,7 @@ DELETE FROM analytics_salts WHERE day < +?1
 `
 
 func (q *Queries) DeleteAnalyticsSaltsBefore(ctx context.Context, day int64) error {
-	_, err := q.exec(ctx, q.deleteAnalyticsSaltsBeforeStmt, deleteAnalyticsSaltsBefore, day)
+	_, err := q.db.ExecContext(ctx, deleteAnalyticsSaltsBefore, day)
 	return err
 }
 
@@ -62,7 +62,7 @@ SELECT id, server_id, token, enabled, updated_by, updated_at, site_defaults FROM
 `
 
 func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, error) {
-	row := q.queryRow(ctx, q.getAnalyticsSettingsStmt, getAnalyticsSettings)
+	row := q.db.QueryRowContext(ctx, getAnalyticsSettings)
 	var i AnalyticsSetting
 	err := row.Scan(
 		&i.ID,
@@ -82,7 +82,7 @@ SELECT day, salt FROM analytics_salts WHERE day >= +?1 ORDER BY day
 
 // ListAnalyticsSalts returns the salts of day and later, oldest first.
 func (q *Queries) ListAnalyticsSalts(ctx context.Context, day int64) ([]AnalyticsSalt, error) {
-	rows, err := q.query(ctx, q.listAnalyticsSaltsStmt, listAnalyticsSalts, day)
+	rows, err := q.db.QueryContext(ctx, listAnalyticsSalts, day)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ type SetAnalyticsEnabledParams struct {
 }
 
 func (q *Queries) SetAnalyticsEnabled(ctx context.Context, arg SetAnalyticsEnabledParams) error {
-	_, err := q.exec(ctx, q.setAnalyticsEnabledStmt, setAnalyticsEnabled, arg.UpdatedBy, arg.UpdatedAt)
+	_, err := q.db.ExecContext(ctx, setAnalyticsEnabled, arg.UpdatedBy, arg.UpdatedAt)
 	return err
 }
 
@@ -129,6 +129,6 @@ type SetAnalyticsServerParams struct {
 }
 
 func (q *Queries) SetAnalyticsServer(ctx context.Context, arg SetAnalyticsServerParams) error {
-	_, err := q.exec(ctx, q.setAnalyticsServerStmt, setAnalyticsServer, arg.ServerID, arg.UpdatedBy, arg.UpdatedAt)
+	_, err := q.db.ExecContext(ctx, setAnalyticsServer, arg.ServerID, arg.UpdatedBy, arg.UpdatedAt)
 	return err
 }

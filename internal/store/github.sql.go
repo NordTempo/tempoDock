@@ -29,7 +29,7 @@ type ClaimGitHubInstallationParams struct {
 // assignment to the same org is refreshed. No row affected means another
 // org has it. The check is part of the write, so no race gets past it.
 func (q *Queries) ClaimGitHubInstallation(ctx context.Context, arg ClaimGitHubInstallationParams) (int64, error) {
-	result, err := q.exec(ctx, q.claimGitHubInstallationStmt, claimGitHubInstallation,
+	result, err := q.db.ExecContext(ctx, claimGitHubInstallation,
 		arg.InstallationID,
 		arg.OrgID,
 		arg.Account,
@@ -54,7 +54,7 @@ type CountInstallationConnectionsRow struct {
 
 // Connections per installation, for the console.
 func (q *Queries) CountInstallationConnections(ctx context.Context) ([]CountInstallationConnectionsRow, error) {
-	rows, err := q.query(ctx, q.countInstallationConnectionsStmt, countInstallationConnections)
+	rows, err := q.db.QueryContext(ctx, countInstallationConnections)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ DELETE FROM github_app
 `
 
 func (q *Queries) DeleteGitHubApp(ctx context.Context) error {
-	_, err := q.exec(ctx, q.deleteGitHubAppStmt, deleteGitHubApp)
+	_, err := q.db.ExecContext(ctx, deleteGitHubApp)
 	return err
 }
 
@@ -90,7 +90,7 @@ DELETE FROM github_installations WHERE installation_id = +?
 `
 
 func (q *Queries) DeleteGitHubInstallation(ctx context.Context, installationID int64) error {
-	_, err := q.exec(ctx, q.deleteGitHubInstallationStmt, deleteGitHubInstallation, installationID)
+	_, err := q.db.ExecContext(ctx, deleteGitHubInstallation, installationID)
 	return err
 }
 
@@ -99,7 +99,7 @@ DELETE FROM github_installations
 `
 
 func (q *Queries) DeleteGitHubInstallations(ctx context.Context) error {
-	_, err := q.exec(ctx, q.deleteGitHubInstallationsStmt, deleteGitHubInstallations)
+	_, err := q.db.ExecContext(ctx, deleteGitHubInstallations)
 	return err
 }
 
@@ -109,7 +109,7 @@ SELECT id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_se
 
 // The install's GitHub App; no row until one is registered.
 func (q *Queries) GetGitHubApp(ctx context.Context) (GithubApp, error) {
-	row := q.queryRow(ctx, q.getGitHubAppStmt, getGitHubApp)
+	row := q.db.QueryRowContext(ctx, getGitHubApp)
 	var i GithubApp
 	err := row.Scan(
 		&i.ID,
@@ -132,7 +132,7 @@ SELECT installation_id, org_id, account, assigned_by, assigned_at FROM github_in
 `
 
 func (q *Queries) GetGitHubInstallation(ctx context.Context, installationID int64) (GithubInstallation, error) {
-	row := q.queryRow(ctx, q.getGitHubInstallationStmt, getGitHubInstallation, installationID)
+	row := q.db.QueryRowContext(ctx, getGitHubInstallation, installationID)
 	var i GithubInstallation
 	err := row.Scan(
 		&i.InstallationID,
@@ -161,7 +161,7 @@ type ListGitHubInstallationsRow struct {
 
 // Every assigned installation with its org's slug, for the console.
 func (q *Queries) ListGitHubInstallations(ctx context.Context) ([]ListGitHubInstallationsRow, error) {
-	rows, err := q.query(ctx, q.listGitHubInstallationsStmt, listGitHubInstallations)
+	rows, err := q.db.QueryContext(ctx, listGitHubInstallations)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ SELECT installation_id, org_id, account, assigned_by, assigned_at FROM github_in
 `
 
 func (q *Queries) ListOrgGitHubInstallations(ctx context.Context, orgID int64) ([]GithubInstallation, error) {
-	rows, err := q.query(ctx, q.listOrgGitHubInstallationsStmt, listOrgGitHubInstallations, orgID)
+	rows, err := q.db.QueryContext(ctx, listOrgGitHubInstallations, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ type SetGitHubAppParams struct {
 // Stores the App registered through the manifest flow, replacing any
 // earlier one.
 func (q *Queries) SetGitHubApp(ctx context.Context, arg SetGitHubAppParams) error {
-	_, err := q.exec(ctx, q.setGitHubAppStmt, setGitHubApp,
+	_, err := q.db.ExecContext(ctx, setGitHubApp,
 		arg.AppID,
 		arg.HookID,
 		arg.Slug,
@@ -279,7 +279,7 @@ type SetGitHubInstallationParams struct {
 
 // Assigns an installation to an org, moving it if it had another.
 func (q *Queries) SetGitHubInstallation(ctx context.Context, arg SetGitHubInstallationParams) error {
-	_, err := q.exec(ctx, q.setGitHubInstallationStmt, setGitHubInstallation,
+	_, err := q.db.ExecContext(ctx, setGitHubInstallation,
 		arg.InstallationID,
 		arg.OrgID,
 		arg.Account,

@@ -27,7 +27,7 @@ type CreateSnapshotParams struct {
 }
 
 func (q *Queries) CreateSnapshot(ctx context.Context, arg CreateSnapshotParams) (VolumeSnapshot, error) {
-	row := q.queryRow(ctx, q.createSnapshotStmt, createSnapshot,
+	row := q.db.QueryRowContext(ctx, createSnapshot,
 		arg.ServiceID,
 		arg.ServerID,
 		arg.Trigger,
@@ -72,7 +72,7 @@ type CreateSnapshotRestoreParams struct {
 }
 
 func (q *Queries) CreateSnapshotRestore(ctx context.Context, arg CreateSnapshotRestoreParams) (VolumeSnapshotRestore, error) {
-	row := q.queryRow(ctx, q.createSnapshotRestoreStmt, createSnapshotRestore,
+	row := q.db.QueryRowContext(ctx, createSnapshotRestore,
 		arg.SnapshotID,
 		arg.ServiceID,
 		arg.ToServiceID,
@@ -103,7 +103,7 @@ DELETE FROM volume_snapshots WHERE id = +?
 `
 
 func (q *Queries) DeleteSnapshot(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteSnapshotStmt, deleteSnapshot, id)
+	_, err := q.db.ExecContext(ctx, deleteSnapshot, id)
 	return err
 }
 
@@ -117,7 +117,7 @@ type FailRunningSnapshotsParams struct {
 }
 
 func (q *Queries) FailRunningSnapshots(ctx context.Context, arg FailRunningSnapshotsParams) (int64, error) {
-	result, err := q.exec(ctx, q.failRunningSnapshotsStmt, failRunningSnapshots, arg.Error, arg.FinishedAt)
+	result, err := q.db.ExecContext(ctx, failRunningSnapshots, arg.Error, arg.FinishedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -138,7 +138,7 @@ type FinishSnapshotParams struct {
 }
 
 func (q *Queries) FinishSnapshot(ctx context.Context, arg FinishSnapshotParams) error {
-	_, err := q.exec(ctx, q.finishSnapshotStmt, finishSnapshot,
+	_, err := q.db.ExecContext(ctx, finishSnapshot,
 		arg.Status,
 		arg.SizeBytes,
 		arg.PausedMs,
@@ -161,7 +161,7 @@ type FinishSnapshotRestoreParams struct {
 }
 
 func (q *Queries) FinishSnapshotRestore(ctx context.Context, arg FinishSnapshotRestoreParams) error {
-	_, err := q.exec(ctx, q.finishSnapshotRestoreStmt, finishSnapshotRestore,
+	_, err := q.db.ExecContext(ctx, finishSnapshotRestore,
 		arg.Status,
 		arg.Error,
 		arg.FinishedAt,
@@ -175,7 +175,7 @@ SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused
 `
 
 func (q *Queries) GetSnapshot(ctx context.Context, id int64) (VolumeSnapshot, error) {
-	row := q.queryRow(ctx, q.getSnapshotStmt, getSnapshot, id)
+	row := q.db.QueryRowContext(ctx, getSnapshot, id)
 	var i VolumeSnapshot
 	err := row.Scan(
 		&i.ID,
@@ -206,7 +206,7 @@ type ListExpiredSnapshotsParams struct {
 
 // Finished snapshots taken before a time, oldest first, for retention.
 func (q *Queries) ListExpiredSnapshots(ctx context.Context, arg ListExpiredSnapshotsParams) ([]VolumeSnapshot, error) {
-	rows, err := q.query(ctx, q.listExpiredSnapshotsStmt, listExpiredSnapshots, arg.StartedAt, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listExpiredSnapshots, arg.StartedAt, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +247,7 @@ SELECT id, snapshot_id, service_id, to_service_id, in_place, safety_id, status, 
 `
 
 func (q *Queries) ListRunningSnapshotRestores(ctx context.Context) ([]VolumeSnapshotRestore, error) {
-	rows, err := q.query(ctx, q.listRunningSnapshotRestoresStmt, listRunningSnapshotRestores)
+	rows, err := q.db.QueryContext(ctx, listRunningSnapshotRestores)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ type ListServiceSnapshotRestoresParams struct {
 
 // A service's restores (into it, or from its snapshots), newest first.
 func (q *Queries) ListServiceSnapshotRestores(ctx context.Context, arg ListServiceSnapshotRestoresParams) ([]VolumeSnapshotRestore, error) {
-	rows, err := q.query(ctx, q.listServiceSnapshotRestoresStmt, listServiceSnapshotRestores, arg.ServiceID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listServiceSnapshotRestores, arg.ServiceID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +337,7 @@ type ListServiceSnapshotsParams struct {
 
 // A service's snapshots, newest first.
 func (q *Queries) ListServiceSnapshots(ctx context.Context, arg ListServiceSnapshotsParams) ([]VolumeSnapshot, error) {
-	rows, err := q.query(ctx, q.listServiceSnapshotsStmt, listServiceSnapshots, arg.ServiceID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listServiceSnapshots, arg.ServiceID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

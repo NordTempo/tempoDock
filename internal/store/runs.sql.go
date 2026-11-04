@@ -24,7 +24,7 @@ type FinishServiceRunParams struct {
 }
 
 func (q *Queries) FinishServiceRun(ctx context.Context, arg FinishServiceRunParams) error {
-	_, err := q.exec(ctx, q.finishServiceRunStmt, finishServiceRun,
+	_, err := q.db.ExecContext(ctx, finishServiceRun,
 		arg.Status,
 		arg.ExitCode,
 		arg.Error,
@@ -46,7 +46,7 @@ type GetServiceRunParams struct {
 
 // A service's run by ID: the service guards IDs from other services.
 func (q *Queries) GetServiceRun(ctx context.Context, arg GetServiceRunParams) (ServiceRun, error) {
-	row := q.queryRow(ctx, q.getServiceRunStmt, getServiceRun, arg.ID, arg.ServiceID)
+	row := q.db.QueryRowContext(ctx, getServiceRun, arg.ID, arg.ServiceID)
 	var i ServiceRun
 	err := row.Scan(
 		&i.ID,
@@ -93,7 +93,7 @@ type InsertServiceRunParams struct {
 }
 
 func (q *Queries) InsertServiceRun(ctx context.Context, arg InsertServiceRunParams) (ServiceRun, error) {
-	row := q.queryRow(ctx, q.insertServiceRunStmt, insertServiceRun,
+	row := q.db.QueryRowContext(ctx, insertServiceRun,
 		arg.ServiceID,
 		arg.ReleaseID,
 		arg.Trigger,
@@ -137,7 +137,7 @@ SELECT id, service_id, release_id, "trigger", command, tty, volumes, timeout_sec
 
 // Runs still marked running: at start, the ones a restart cut short.
 func (q *Queries) ListRunningServiceRuns(ctx context.Context) ([]ServiceRun, error) {
-	rows, err := q.query(ctx, q.listRunningServiceRunsStmt, listRunningServiceRuns)
+	rows, err := q.db.QueryContext(ctx, listRunningServiceRuns)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ type ListServiceRunsRow struct {
 // A service's runs newest first, without their output, with the number
 // of the release each ran in.
 func (q *Queries) ListServiceRuns(ctx context.Context, arg ListServiceRunsParams) ([]ListServiceRunsRow, error) {
-	rows, err := q.query(ctx, q.listServiceRunsStmt, listServiceRuns, arg.ServiceID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listServiceRuns, arg.ServiceID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -266,6 +266,6 @@ type TrimServiceRunsParams struct {
 
 // Deletes a service's finished runs older than its newest `keep`.
 func (q *Queries) TrimServiceRuns(ctx context.Context, arg TrimServiceRunsParams) error {
-	_, err := q.exec(ctx, q.trimServiceRunsStmt, trimServiceRuns, arg.ServiceID, arg.Keep)
+	_, err := q.db.ExecContext(ctx, trimServiceRuns, arg.ServiceID, arg.Keep)
 	return err
 }

@@ -37,7 +37,7 @@ type AddTrafficParams struct {
 
 // AddTraffic adds to a service's point: a new minute, or the hour so far.
 func (q *Queries) AddTraffic(ctx context.Context, arg AddTrafficParams) error {
-	_, err := q.exec(ctx, q.addTrafficStmt, addTraffic,
+	_, err := q.db.ExecContext(ctx, addTraffic,
 		arg.ServiceID,
 		arg.Res,
 		arg.At,
@@ -66,7 +66,7 @@ type AddTrafficPathParams struct {
 }
 
 func (q *Queries) AddTrafficPath(ctx context.Context, arg AddTrafficPathParams) error {
-	_, err := q.exec(ctx, q.addTrafficPathStmt, addTrafficPath,
+	_, err := q.db.ExecContext(ctx, addTrafficPath,
 		arg.ServiceID,
 		arg.At,
 		arg.Method,
@@ -103,7 +103,7 @@ type ListTrafficHostsRow struct {
 // tick drains. The collector reads it again only when a drained hostname
 // is missing.
 func (q *Queries) ListTrafficHosts(ctx context.Context) ([]ListTrafficHostsRow, error) {
-	rows, err := q.query(ctx, q.listTrafficHostsStmt, listTrafficHosts)
+	rows, err := q.db.QueryContext(ctx, listTrafficHosts)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ type ListTrafficStatsRow struct {
 }
 
 func (q *Queries) ListTrafficStats(ctx context.Context, arg ListTrafficStatsParams) ([]ListTrafficStatsRow, error) {
-	rows, err := q.query(ctx, q.listTrafficStatsStmt, listTrafficStats, arg.ServiceID, arg.Res, arg.At)
+	rows, err := q.db.QueryContext(ctx, listTrafficStats, arg.ServiceID, arg.Res, arg.At)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ DELETE FROM traffic_paths WHERE at < +?
 `
 
 func (q *Queries) PruneTrafficPaths(ctx context.Context, at int64) error {
-	_, err := q.exec(ctx, q.pruneTrafficPathsStmt, pruneTrafficPaths, at)
+	_, err := q.db.ExecContext(ctx, pruneTrafficPaths, at)
 	return err
 }
 
@@ -208,7 +208,7 @@ type PruneTrafficStatsParams struct {
 }
 
 func (q *Queries) PruneTrafficStats(ctx context.Context, arg PruneTrafficStatsParams) error {
-	_, err := q.exec(ctx, q.pruneTrafficStatsStmt, pruneTrafficStats, arg.Res, arg.At)
+	_, err := q.db.ExecContext(ctx, pruneTrafficStats, arg.Res, arg.At)
 	return err
 }
 
@@ -232,7 +232,7 @@ type TopTrafficPathsRow struct {
 
 // TopTrafficPaths is a service's most requested paths since a time.
 func (q *Queries) TopTrafficPaths(ctx context.Context, arg TopTrafficPathsParams) ([]TopTrafficPathsRow, error) {
-	rows, err := q.query(ctx, q.topTrafficPathsStmt, topTrafficPaths, arg.ServiceID, arg.At, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, topTrafficPaths, arg.ServiceID, arg.At, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ type TrafficTotalsRow struct {
 
 // TrafficTotals adds up a service's hour points since a time.
 func (q *Queries) TrafficTotals(ctx context.Context, arg TrafficTotalsParams) (TrafficTotalsRow, error) {
-	row := q.queryRow(ctx, q.trafficTotalsStmt, trafficTotals, arg.ServiceID, arg.At)
+	row := q.db.QueryRowContext(ctx, trafficTotals, arg.ServiceID, arg.At)
 	var i TrafficTotalsRow
 	err := row.Scan(
 		&i.Requests,
@@ -310,6 +310,6 @@ WHERE traffic_paths.at = +?1 AND (traffic_paths.service_id, traffic_paths.method
 // TrimTrafficPaths keeps the 100 most requested paths of each service in
 // an hour that is over.
 func (q *Queries) TrimTrafficPaths(ctx context.Context, hour int64) error {
-	_, err := q.exec(ctx, q.trimTrafficPathsStmt, trimTrafficPaths, hour)
+	_, err := q.db.ExecContext(ctx, trimTrafficPaths, hour)
 	return err
 }

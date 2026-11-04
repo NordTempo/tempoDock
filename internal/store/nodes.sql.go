@@ -23,7 +23,7 @@ WHERE host_port > 0 AND service_id IN (
 // removed (before MoveArchivedEnvironments): their containers, if any are
 // left, are on that server, not where the environments move.
 func (q *Queries) ClearArchivedHostPorts(ctx context.Context, serverID int64) error {
-	_, err := q.exec(ctx, q.clearArchivedHostPortsStmt, clearArchivedHostPorts, serverID)
+	_, err := q.db.ExecContext(ctx, clearArchivedHostPorts, serverID)
 	return err
 }
 
@@ -43,7 +43,7 @@ type ConsumeJoinTokenParams struct {
 // the transaction that registers the server (RegisterNodeServer, then
 // SetJoinTokenServer), so a failed registration leaves the token unused.
 func (q *Queries) ConsumeJoinToken(ctx context.Context, arg ConsumeJoinTokenParams) (JoinToken, error) {
-	row := q.queryRow(ctx, q.consumeJoinTokenStmt, consumeJoinToken, arg.Now, arg.Hash)
+	row := q.db.QueryRowContext(ctx, consumeJoinToken, arg.Now, arg.Hash)
 	var i JoinToken
 	err := row.Scan(
 		&i.ID,
@@ -89,7 +89,7 @@ type CreateJoinTokenParams struct {
 // ever shown once, to the admin. cloudflare_id: make the server a tunnel
 // with that connection once it joins (ADR 0036).
 func (q *Queries) CreateJoinToken(ctx context.Context, arg CreateJoinTokenParams) (JoinToken, error) {
-	row := q.queryRow(ctx, q.createJoinTokenStmt, createJoinToken,
+	row := q.db.QueryRowContext(ctx, createJoinToken,
 		arg.Hash,
 		arg.ServerName,
 		arg.AcceptsProduction,
@@ -145,7 +145,7 @@ type CreatePromotedReleaseParams struct {
 // by digest, with the target's own config. image_id is set when the
 // image is already on the target's server (same server, no registry).
 func (q *Queries) CreatePromotedRelease(ctx context.Context, arg CreatePromotedReleaseParams) (Release, error) {
-	row := q.queryRow(ctx, q.createPromotedReleaseStmt, createPromotedRelease,
+	row := q.db.QueryRowContext(ctx, createPromotedRelease,
 		arg.ServiceID,
 		arg.Number,
 		arg.ImageRef,
@@ -195,7 +195,7 @@ DELETE FROM join_tokens WHERE id = +?1 AND used_at IS NULL
 
 // Cancels an unused token.
 func (q *Queries) DeleteJoinToken(ctx context.Context, id int64) (int64, error) {
-	result, err := q.exec(ctx, q.deleteJoinTokenStmt, deleteJoinToken, id)
+	result, err := q.db.ExecContext(ctx, deleteJoinToken, id)
 	if err != nil {
 		return 0, err
 	}
@@ -211,7 +211,7 @@ WHERE servers.id = +?1 AND servers.local = 0
 // Removes a remote server with no environments. 0 rows: local, or
 // environments are still placed there (MoveArchivedEnvironments first).
 func (q *Queries) DeleteServer(ctx context.Context, id int64) (int64, error) {
-	result, err := q.exec(ctx, q.deleteServerStmt, deleteServer, id)
+	result, err := q.db.ExecContext(ctx, deleteServer, id)
 	if err != nil {
 		return 0, err
 	}
@@ -224,7 +224,7 @@ DELETE FROM project_placements WHERE server_id = +?1
 
 // Drops a server's project placements (pins included), before DeleteServer.
 func (q *Queries) DeleteServerPlacements(ctx context.Context, serverID int64) error {
-	_, err := q.exec(ctx, q.deleteServerPlacementsStmt, deleteServerPlacements, serverID)
+	_, err := q.db.ExecContext(ctx, deleteServerPlacements, serverID)
 	return err
 }
 
@@ -235,7 +235,7 @@ SELECT install_id FROM install WHERE id = 1
 // This control plane's install ID (migration 0015), the value of the
 // dock.control_plane label on everything it creates.
 func (q *Queries) GetInstallID(ctx context.Context) (string, error) {
-	row := q.queryRow(ctx, q.getInstallIDStmt, getInstallID)
+	row := q.db.QueryRowContext(ctx, getInstallID)
 	var install_id string
 	err := row.Scan(&install_id)
 	return install_id, err
@@ -249,7 +249,7 @@ WHERE key_fingerprint = +CAST(?1 AS TEXT) OR next_key_fingerprint = +CAST(?1 AS 
 // The server a connecting node's key belongs to, by its current or its
 // next (rotating) key. Runs on every node handshake.
 func (q *Queries) GetServerByFingerprint(ctx context.Context, fingerprint string) (Server, error) {
-	row := q.queryRow(ctx, q.getServerByFingerprintStmt, getServerByFingerprint, fingerprint)
+	row := q.db.QueryRowContext(ctx, getServerByFingerprint, fingerprint)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -297,7 +297,7 @@ WHERE releases.image_digest != ''
 // services primary key; pruning runs at most hourly, after a deploy or an
 // archive.
 func (q *Queries) ListKeptDigests(ctx context.Context, keep int64) ([]string, error) {
-	rows, err := q.query(ctx, q.listKeptDigestsStmt, listKeptDigests, keep)
+	rows, err := q.db.QueryContext(ctx, listKeptDigests, keep)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +325,7 @@ SELECT id, hash, server_name, accepts_production, accepts_non_production, builde
 
 // Unused, unexpired tokens: servers that are still "joining".
 func (q *Queries) ListPendingJoinTokens(ctx context.Context, now time.Time) ([]JoinToken, error) {
-	rows, err := q.query(ctx, q.listPendingJoinTokensStmt, listPendingJoinTokens, now)
+	rows, err := q.db.QueryContext(ctx, listPendingJoinTokens, now)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +375,7 @@ type ListPromotableReleasesRow struct {
 // What `dock promote` carries from an environment: each live service's
 // active release, with the service's name to match in the target.
 func (q *Queries) ListPromotableReleases(ctx context.Context, environmentID int64) ([]ListPromotableReleasesRow, error) {
-	rows, err := q.query(ctx, q.listPromotableReleasesStmt, listPromotableReleases, environmentID)
+	rows, err := q.db.QueryContext(ctx, listPromotableReleases, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +472,7 @@ type ListRegistryServicesRow struct {
 // through the (service_id, number) key, its active release through
 // releases_one_active.
 func (q *Queries) ListRegistryServices(ctx context.Context, keep int64) ([]ListRegistryServicesRow, error) {
-	rows, err := q.query(ctx, q.listRegistryServicesStmt, listRegistryServices, keep)
+	rows, err := q.db.QueryContext(ctx, listRegistryServices, keep)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +520,7 @@ type MoveArchivedEnvironmentsParams struct {
 // the control plane's own server: nothing of theirs runs anywhere, and an
 // environment always names a server.
 func (q *Queries) MoveArchivedEnvironments(ctx context.Context, arg MoveArchivedEnvironmentsParams) error {
-	_, err := q.exec(ctx, q.moveArchivedEnvironmentsStmt, moveArchivedEnvironments, arg.LocalServerID, arg.ServerID)
+	_, err := q.db.ExecContext(ctx, moveArchivedEnvironments, arg.LocalServerID, arg.ServerID)
 	return err
 }
 
@@ -538,7 +538,7 @@ type PromoteServerKeyParams struct {
 // Finishes a key rotation once the node connected with its next key: that
 // key becomes the only one. sql.ErrNoRows: no such rotation in progress.
 func (q *Queries) PromoteServerKey(ctx context.Context, arg PromoteServerKeyParams) (Server, error) {
-	row := q.queryRow(ctx, q.promoteServerKeyStmt, promoteServerKey, arg.ID, arg.Fingerprint)
+	row := q.db.QueryRowContext(ctx, promoteServerKey, arg.ID, arg.Fingerprint)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -590,7 +590,7 @@ type RegisterNodeServerParams struct {
 // keeps its settings and environments. sql.ErrNoRows: the name belongs to
 // a server that isn't revoked (or the local one).
 func (q *Queries) RegisterNodeServer(ctx context.Context, arg RegisterNodeServerParams) (Server, error) {
-	row := q.queryRow(ctx, q.registerNodeServerStmt, registerNodeServer,
+	row := q.db.QueryRowContext(ctx, registerNodeServer,
 		arg.Name,
 		arg.AcceptsProduction,
 		arg.AcceptsNonProduction,
@@ -640,7 +640,7 @@ type RevokeServerParams struct {
 // Forgets a remote server's keys, so its next handshake fails; it stays
 // (with its environments) until it re-joins or is removed.
 func (q *Queries) RevokeServer(ctx context.Context, arg RevokeServerParams) (Server, error) {
-	row := q.queryRow(ctx, q.revokeServerStmt, revokeServer, arg.Now, arg.ID)
+	row := q.db.QueryRowContext(ctx, revokeServer, arg.Now, arg.ID)
 	var i Server
 	err := row.Scan(
 		&i.ID,
@@ -681,7 +681,7 @@ type SetJoinTokenServerParams struct {
 
 // Records which server a consumed token created or re-keyed.
 func (q *Queries) SetJoinTokenServer(ctx context.Context, arg SetJoinTokenServerParams) error {
-	_, err := q.exec(ctx, q.setJoinTokenServerStmt, setJoinTokenServer, arg.ServerID, arg.ID)
+	_, err := q.db.ExecContext(ctx, setJoinTokenServer, arg.ServerID, arg.ID)
 	return err
 }
 
@@ -698,7 +698,7 @@ type SetReleaseDigestParams struct {
 
 // Records a pushed build: its registry digest and the builder that made it.
 func (q *Queries) SetReleaseDigest(ctx context.Context, arg SetReleaseDigestParams) error {
-	_, err := q.exec(ctx, q.setReleaseDigestStmt, setReleaseDigest, arg.ImageDigest, arg.BuiltOnServerID, arg.ID)
+	_, err := q.db.ExecContext(ctx, setReleaseDigest, arg.ImageDigest, arg.BuiltOnServerID, arg.ID)
 	return err
 }
 
@@ -714,7 +714,7 @@ type SetServerDisconnectedParams struct {
 
 // Records a link that went down at now, and why.
 func (q *Queries) SetServerDisconnected(ctx context.Context, arg SetServerDisconnectedParams) error {
-	_, err := q.exec(ctx, q.setServerDisconnectedStmt, setServerDisconnected, arg.Now, arg.Reason, arg.ID)
+	_, err := q.db.ExecContext(ctx, setServerDisconnected, arg.Now, arg.Reason, arg.ID)
 	return err
 }
 
@@ -743,7 +743,7 @@ type SetServerHelloParams struct {
 // Records a link that came up and passed hello: the facts the node
 // reported, and now as connected_at and last_seen_at.
 func (q *Queries) SetServerHello(ctx context.Context, arg SetServerHelloParams) (Server, error) {
-	row := q.queryRow(ctx, q.setServerHelloStmt, setServerHello,
+	row := q.db.QueryRowContext(ctx, setServerHello,
 		arg.Version,
 		arg.DockerVersion,
 		arg.Ingress,
@@ -796,7 +796,7 @@ type SetServerNextKeyParams struct {
 // Starts a key rotation: the node's new key is accepted alongside the
 // current one until PromoteServerKey. 0 rows: revoked or local.
 func (q *Queries) SetServerNextKey(ctx context.Context, arg SetServerNextKeyParams) (int64, error) {
-	result, err := q.exec(ctx, q.setServerNextKeyStmt, setServerNextKey, arg.Fingerprint, arg.ID)
+	result, err := q.db.ExecContext(ctx, setServerNextKey, arg.Fingerprint, arg.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -817,7 +817,7 @@ type UpdateServerSettingsParams struct {
 
 // The control plane's own settings for a server (`dock server set`).
 func (q *Queries) UpdateServerSettings(ctx context.Context, arg UpdateServerSettingsParams) (Server, error) {
-	row := q.queryRow(ctx, q.updateServerSettingsStmt, updateServerSettings, arg.BaseDomain, arg.Builder, arg.ID)
+	row := q.db.QueryRowContext(ctx, updateServerSettings, arg.BaseDomain, arg.Builder, arg.ID)
 	var i Server
 	err := row.Scan(
 		&i.ID,

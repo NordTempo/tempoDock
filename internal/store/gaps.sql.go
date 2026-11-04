@@ -35,7 +35,7 @@ type ListAuditEventsByTargetParams struct {
 // "project/environment/service". Match the environment/service suffix so
 // historical targets remain readable after a project rename.
 func (q *Queries) ListAuditEventsByTarget(ctx context.Context, arg ListAuditEventsByTargetParams) ([]AuditEvent, error) {
-	rows, err := q.query(ctx, q.listAuditEventsByTargetStmt, listAuditEventsByTarget,
+	rows, err := q.db.QueryContext(ctx, listAuditEventsByTarget,
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.Target,

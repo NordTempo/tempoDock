@@ -26,7 +26,7 @@ type CreateDomainParams struct {
 // CreateDomain adds a claim on a hostname: verified_at is set for one
 // that needs no TXT record (ADR 0042), else NULL until it verifies.
 func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Domain, error) {
-	row := q.queryRow(ctx, q.createDomainStmt, createDomain,
+	row := q.db.QueryRowContext(ctx, createDomain,
 		arg.Hostname,
 		arg.ServiceID,
 		arg.Generated,
@@ -55,7 +55,7 @@ DELETE FROM domains WHERE id = +?
 `
 
 func (q *Queries) DeleteDomain(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteDomainStmt, deleteDomain, id)
+	_, err := q.db.ExecContext(ctx, deleteDomain, id)
 	return err
 }
 
@@ -66,7 +66,7 @@ SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason
 // GetDomainByHostname returns the domain that holds a hostname: its
 // verified claim, the one that routes (ADR 0042).
 func (q *Queries) GetDomainByHostname(ctx context.Context, hostname string) (Domain, error) {
-	row := q.queryRow(ctx, q.getDomainByHostnameStmt, getDomainByHostname, hostname)
+	row := q.db.QueryRowContext(ctx, getDomainByHostname, hostname)
 	var i Domain
 	err := row.Scan(
 		&i.ID,
@@ -95,7 +95,7 @@ type GetServiceDomainParams struct {
 // GetServiceDomain returns a service's claim on a hostname, verified or
 // not.
 func (q *Queries) GetServiceDomain(ctx context.Context, arg GetServiceDomainParams) (Domain, error) {
-	row := q.queryRow(ctx, q.getServiceDomainStmt, getServiceDomain, arg.Hostname, arg.ServiceID)
+	row := q.db.QueryRowContext(ctx, getServiceDomain, arg.Hostname, arg.ServiceID)
 	var i Domain
 	err := row.Scan(
 		&i.ID,
@@ -119,7 +119,7 @@ SELECT EXISTS (SELECT 1 FROM domains WHERE hostname = +?)
 // HostnameExists reports whether any service claims a hostname, verified
 // or not.
 func (q *Queries) HostnameExists(ctx context.Context, hostname string) (bool, error) {
-	row := q.queryRow(ctx, q.hostnameExistsStmt, hostnameExists, hostname)
+	row := q.db.QueryRowContext(ctx, hostnameExists, hostname)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -130,7 +130,7 @@ SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason
 `
 
 func (q *Queries) ListDomainsByService(ctx context.Context, serviceID int64) ([]Domain, error) {
-	rows, err := q.query(ctx, q.listDomainsByServiceStmt, listDomainsByService, serviceID)
+	rows, err := q.db.QueryContext(ctx, listDomainsByService, serviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +171,7 @@ WHERE services.environment_id = +?
 
 // Every domain of every service in an environment, in no particular order.
 func (q *Queries) ListEnvironmentDomains(ctx context.Context, environmentID int64) ([]Domain, error) {
-	rows, err := q.query(ctx, q.listEnvironmentDomainsStmt, listEnvironmentDomains, environmentID)
+	rows, err := q.db.QueryContext(ctx, listEnvironmentDomains, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ type ListHostnameClaimsRow struct {
 // ListHostnameClaims returns every claim on a hostname with the org that
 // made it, for adding and verifying one (ADR 0042).
 func (q *Queries) ListHostnameClaims(ctx context.Context, hostname string) ([]ListHostnameClaimsRow, error) {
-	rows, err := q.query(ctx, q.listHostnameClaimsStmt, listHostnameClaims, hostname)
+	rows, err := q.db.QueryContext(ctx, listHostnameClaims, hostname)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +256,7 @@ SELECT id, hostname, service_id, "generated", redirect_to, status, status_reason
 `
 
 func (q *Queries) ListPendingDomains(ctx context.Context) ([]Domain, error) {
-	rows, err := q.query(ctx, q.listPendingDomainsStmt, listPendingDomains)
+	rows, err := q.db.QueryContext(ctx, listPendingDomains)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +299,7 @@ ORDER BY domains.service_id, domains.id
 
 // Every domain of every service in a project.
 func (q *Queries) ListProjectDomains(ctx context.Context, projectID int64) ([]Domain, error) {
-	rows, err := q.query(ctx, q.listProjectDomainsStmt, listProjectDomains, projectID)
+	rows, err := q.db.QueryContext(ctx, listProjectDomains, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +371,7 @@ type ListRoutableDomainsRow struct {
 // (0 if none), the service's access protection (mode ” when public), and
 // its name and whether it is stopped (ADR 0050).
 func (q *Queries) ListRoutableDomains(ctx context.Context, serverID int64) ([]ListRoutableDomainsRow, error) {
-	rows, err := q.query(ctx, q.listRoutableDomainsStmt, listRoutableDomains, serverID)
+	rows, err := q.db.QueryContext(ctx, listRoutableDomains, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +416,7 @@ type UpdateDomainStatusParams struct {
 }
 
 func (q *Queries) UpdateDomainStatus(ctx context.Context, arg UpdateDomainStatusParams) error {
-	_, err := q.exec(ctx, q.updateDomainStatusStmt, updateDomainStatus, arg.Status, arg.StatusReason, arg.ID)
+	_, err := q.db.ExecContext(ctx, updateDomainStatus, arg.Status, arg.StatusReason, arg.ID)
 	return err
 }
 
@@ -432,7 +432,7 @@ type VerifyDomainParams struct {
 // VerifyDomain marks a claim verified; it affects no row when it already
 // was. The partial unique index refuses a second verified claim.
 func (q *Queries) VerifyDomain(ctx context.Context, arg VerifyDomainParams) (int64, error) {
-	result, err := q.exec(ctx, q.verifyDomainStmt, verifyDomain, arg.VerifiedAt, arg.ID)
+	result, err := q.db.ExecContext(ctx, verifyDomain, arg.VerifiedAt, arg.ID)
 	if err != nil {
 		return 0, err
 	}

@@ -20,7 +20,7 @@ type AcceptOrgInviteParams struct {
 }
 
 func (q *Queries) AcceptOrgInvite(ctx context.Context, arg AcceptOrgInviteParams) (int64, error) {
-	result, err := q.exec(ctx, q.acceptOrgInviteStmt, acceptOrgInvite, arg.AcceptedAt, arg.ID)
+	result, err := q.db.ExecContext(ctx, acceptOrgInvite, arg.AcceptedAt, arg.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -38,7 +38,7 @@ type AddOrgMemberParams struct {
 }
 
 func (q *Queries) AddOrgMember(ctx context.Context, arg AddOrgMemberParams) error {
-	_, err := q.exec(ctx, q.addOrgMemberStmt, addOrgMember, arg.OrgID, arg.UserID, arg.Role)
+	_, err := q.db.ExecContext(ctx, addOrgMember, arg.OrgID, arg.UserID, arg.Role)
 	return err
 }
 
@@ -47,7 +47,7 @@ SELECT count(*) FROM org_members WHERE org_id = +? AND role = 'admin'
 `
 
 func (q *Queries) CountOrgAdmins(ctx context.Context, orgID int64) (int64, error) {
-	row := q.queryRow(ctx, q.countOrgAdminsStmt, countOrgAdmins, orgID)
+	row := q.db.QueryRowContext(ctx, countOrgAdmins, orgID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -58,7 +58,7 @@ SELECT count(*) FROM projects WHERE org_id = +?
 `
 
 func (q *Queries) CountOrgProjects(ctx context.Context, orgID int64) (int64, error) {
-	row := q.queryRow(ctx, q.countOrgProjectsStmt, countOrgProjects, orgID)
+	row := q.db.QueryRowContext(ctx, countOrgProjects, orgID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -74,7 +74,7 @@ type CreateOrgParams struct {
 }
 
 func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, error) {
-	row := q.queryRow(ctx, q.createOrgStmt, createOrg, arg.Slug, arg.Name)
+	row := q.db.QueryRowContext(ctx, createOrg, arg.Slug, arg.Name)
 	var i Org
 	err := row.Scan(
 		&i.ID,
@@ -104,7 +104,7 @@ type CreateOrgInviteParams struct {
 }
 
 func (q *Queries) CreateOrgInvite(ctx context.Context, arg CreateOrgInviteParams) (OrgInvite, error) {
-	row := q.queryRow(ctx, q.createOrgInviteStmt, createOrgInvite,
+	row := q.db.QueryRowContext(ctx, createOrgInvite,
 		arg.OrgID,
 		arg.Email,
 		arg.Role,
@@ -134,7 +134,7 @@ DELETE FROM orgs WHERE id = +?
 `
 
 func (q *Queries) DeleteOrg(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteOrgStmt, deleteOrg, id)
+	_, err := q.db.ExecContext(ctx, deleteOrg, id)
 	return err
 }
 
@@ -143,7 +143,7 @@ DELETE FROM data_policy_rules WHERE org_id = +?
 `
 
 func (q *Queries) DeleteOrgDataPolicy(ctx context.Context, orgID int64) error {
-	_, err := q.exec(ctx, q.deleteOrgDataPolicyStmt, deleteOrgDataPolicy, orgID)
+	_, err := q.db.ExecContext(ctx, deleteOrgDataPolicy, orgID)
 	return err
 }
 
@@ -152,7 +152,7 @@ DELETE FROM org_invites WHERE org_id = +?
 `
 
 func (q *Queries) DeleteOrgInvites(ctx context.Context, orgID int64) error {
-	_, err := q.exec(ctx, q.deleteOrgInvitesStmt, deleteOrgInvites, orgID)
+	_, err := q.db.ExecContext(ctx, deleteOrgInvites, orgID)
 	return err
 }
 
@@ -164,7 +164,7 @@ DELETE FROM org_members WHERE org_id = +?
 // -Variables, -DataPolicy, RevokeOrgTokens and DeleteOrg, in one
 // transaction. Audit events stay.
 func (q *Queries) DeleteOrgMembers(ctx context.Context, orgID int64) error {
-	_, err := q.exec(ctx, q.deleteOrgMembersStmt, deleteOrgMembers, orgID)
+	_, err := q.db.ExecContext(ctx, deleteOrgMembers, orgID)
 	return err
 }
 
@@ -178,7 +178,7 @@ type DeleteOrgVariableParams struct {
 }
 
 func (q *Queries) DeleteOrgVariable(ctx context.Context, arg DeleteOrgVariableParams) (int64, error) {
-	result, err := q.exec(ctx, q.deleteOrgVariableStmt, deleteOrgVariable, arg.OrgID, arg.Key)
+	result, err := q.db.ExecContext(ctx, deleteOrgVariable, arg.OrgID, arg.Key)
 	if err != nil {
 		return 0, err
 	}
@@ -190,7 +190,7 @@ DELETE FROM org_variables WHERE org_id = +?
 `
 
 func (q *Queries) DeleteOrgVariables(ctx context.Context, orgID int64) error {
-	_, err := q.exec(ctx, q.deleteOrgVariablesStmt, deleteOrgVariables, orgID)
+	_, err := q.db.ExecContext(ctx, deleteOrgVariables, orgID)
 	return err
 }
 
@@ -208,7 +208,7 @@ type GetInviteByHashRow struct {
 // GetInviteByHash also returns the invite's org, for the page that shows
 // it before it is accepted.
 func (q *Queries) GetInviteByHash(ctx context.Context, hash string) (GetInviteByHashRow, error) {
-	row := q.queryRow(ctx, q.getInviteByHashStmt, getInviteByHash, hash)
+	row := q.db.QueryRowContext(ctx, getInviteByHash, hash)
 	var i GetInviteByHashRow
 	err := row.Scan(
 		&i.OrgInvite.ID,
@@ -241,7 +241,7 @@ type GetMemberRoleParams struct {
 }
 
 func (q *Queries) GetMemberRole(ctx context.Context, arg GetMemberRoleParams) (string, error) {
-	row := q.queryRow(ctx, q.getMemberRoleStmt, getMemberRole, arg.OrgID, arg.UserID)
+	row := q.db.QueryRowContext(ctx, getMemberRole, arg.OrgID, arg.UserID)
 	var role string
 	err := row.Scan(&role)
 	return role, err
@@ -260,7 +260,7 @@ type GetMemberRoleByEmailParams struct {
 // GetMemberRoleByEmail is the role in an org of the user with an email
 // (tokens record their creator by email).
 func (q *Queries) GetMemberRoleByEmail(ctx context.Context, arg GetMemberRoleByEmailParams) (string, error) {
-	row := q.queryRow(ctx, q.getMemberRoleByEmailStmt, getMemberRoleByEmail, arg.OrgID, arg.Email)
+	row := q.db.QueryRowContext(ctx, getMemberRoleByEmail, arg.OrgID, arg.Email)
 	var role string
 	err := row.Scan(&role)
 	return role, err
@@ -284,7 +284,7 @@ type GetMembershipRow struct {
 
 // GetMembership is the caller's org and role for the org named by slug.
 func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (GetMembershipRow, error) {
-	row := q.queryRow(ctx, q.getMembershipStmt, getMembership, arg.UserID, arg.Slug)
+	row := q.db.QueryRowContext(ctx, getMembership, arg.UserID, arg.Slug)
 	var i GetMembershipRow
 	err := row.Scan(
 		&i.Org.ID,
@@ -303,7 +303,7 @@ SELECT id, slug, name, created_at, lock_production, request_ttl_hours FROM orgs 
 `
 
 func (q *Queries) GetOrg(ctx context.Context, id int64) (Org, error) {
-	row := q.queryRow(ctx, q.getOrgStmt, getOrg, id)
+	row := q.db.QueryRowContext(ctx, getOrg, id)
 	var i Org
 	err := row.Scan(
 		&i.ID,
@@ -321,7 +321,7 @@ SELECT id, slug, name, created_at, lock_production, request_ttl_hours FROM orgs 
 `
 
 func (q *Queries) GetOrgBySlug(ctx context.Context, slug string) (Org, error) {
-	row := q.queryRow(ctx, q.getOrgBySlugStmt, getOrgBySlug, slug)
+	row := q.db.QueryRowContext(ctx, getOrgBySlug, slug)
 	var i Org
 	err := row.Scan(
 		&i.ID,
@@ -344,7 +344,7 @@ type GetOrgInviteParams struct {
 }
 
 func (q *Queries) GetOrgInvite(ctx context.Context, arg GetOrgInviteParams) (OrgInvite, error) {
-	row := q.queryRow(ctx, q.getOrgInviteStmt, getOrgInvite, arg.ID, arg.OrgID)
+	row := q.db.QueryRowContext(ctx, getOrgInvite, arg.ID, arg.OrgID)
 	var i OrgInvite
 	err := row.Scan(
 		&i.ID,
@@ -370,7 +370,7 @@ ORDER BY id DESC
 // ListOrgInvites is an org's open invites, newest first; expired ones are
 // listed until revoked so an admin sees they lapsed.
 func (q *Queries) ListOrgInvites(ctx context.Context, orgID int64) ([]OrgInvite, error) {
-	rows, err := q.query(ctx, q.listOrgInvitesStmt, listOrgInvites, orgID)
+	rows, err := q.db.QueryContext(ctx, listOrgInvites, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +412,7 @@ WHERE projects.org_id = +?
 // ListOrgServerIDs is the servers an org's environments run on, once per
 // environment (DISTINCT would sort them in a temporary b-tree).
 func (q *Queries) ListOrgServerIDs(ctx context.Context, orgID int64) ([]int64, error) {
-	rows, err := q.query(ctx, q.listOrgServerIDsStmt, listOrgServerIDs, orgID)
+	rows, err := q.db.QueryContext(ctx, listOrgServerIDs, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -440,7 +440,7 @@ SELECT slug FROM orgs ORDER BY slug
 
 // Every org's slug, for operators choosing one (the GitHub App console).
 func (q *Queries) ListOrgSlugs(ctx context.Context) ([]string, error) {
-	rows, err := q.query(ctx, q.listOrgSlugsStmt, listOrgSlugs)
+	rows, err := q.db.QueryContext(ctx, listOrgSlugs)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +487,7 @@ type ListOrgVariableUsesRow struct {
 // ListOrgVariableUses is every live or staged variable of an org's live
 // projects, with where it is, for finding ${{org.KEY}} references.
 func (q *Queries) ListOrgVariableUses(ctx context.Context, orgID int64) ([]ListOrgVariableUsesRow, error) {
-	rows, err := q.query(ctx, q.listOrgVariableUsesStmt, listOrgVariableUses, orgID)
+	rows, err := q.db.QueryContext(ctx, listOrgVariableUses, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +523,7 @@ SELECT org_id, "key", value, updated_at, updated_by FROM org_variables WHERE org
 `
 
 func (q *Queries) ListOrgVariables(ctx context.Context, orgID int64) ([]OrgVariable, error) {
-	rows, err := q.query(ctx, q.listOrgVariablesStmt, listOrgVariables, orgID)
+	rows, err := q.db.QueryContext(ctx, listOrgVariables, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +566,7 @@ type ListUserOrgsRow struct {
 // ListUserOrgs is every org a user belongs to, with their role in it,
 // oldest first.
 func (q *Queries) ListUserOrgs(ctx context.Context, userID int64) ([]ListUserOrgsRow, error) {
-	rows, err := q.query(ctx, q.listUserOrgsStmt, listUserOrgs, userID)
+	rows, err := q.db.QueryContext(ctx, listUserOrgs, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +601,7 @@ SELECT EXISTS (SELECT 1 FROM orgs WHERE slug = +?)
 `
 
 func (q *Queries) OrgSlugTaken(ctx context.Context, slug string) (bool, error) {
-	row := q.queryRow(ctx, q.orgSlugTakenStmt, orgSlugTaken, slug)
+	row := q.db.QueryRowContext(ctx, orgSlugTaken, slug)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -617,7 +617,7 @@ type RemoveOrgMemberParams struct {
 }
 
 func (q *Queries) RemoveOrgMember(ctx context.Context, arg RemoveOrgMemberParams) (int64, error) {
-	result, err := q.exec(ctx, q.removeOrgMemberStmt, removeOrgMember, arg.OrgID, arg.UserID)
+	result, err := q.db.ExecContext(ctx, removeOrgMember, arg.OrgID, arg.UserID)
 	if err != nil {
 		return 0, err
 	}
@@ -634,7 +634,7 @@ type RenameOrgParams struct {
 }
 
 func (q *Queries) RenameOrg(ctx context.Context, arg RenameOrgParams) (Org, error) {
-	row := q.queryRow(ctx, q.renameOrgStmt, renameOrg, arg.Name, arg.ID)
+	row := q.db.QueryRowContext(ctx, renameOrg, arg.Name, arg.ID)
 	var i Org
 	err := row.Scan(
 		&i.ID,
@@ -658,7 +658,7 @@ type RevokeOrgInviteParams struct {
 }
 
 func (q *Queries) RevokeOrgInvite(ctx context.Context, arg RevokeOrgInviteParams) (int64, error) {
-	result, err := q.exec(ctx, q.revokeOrgInviteStmt, revokeOrgInvite, arg.RevokedAt, arg.ID, arg.OrgID)
+	result, err := q.db.ExecContext(ctx, revokeOrgInvite, arg.RevokedAt, arg.ID, arg.OrgID)
 	if err != nil {
 		return 0, err
 	}
@@ -678,7 +678,7 @@ type RevokeOrgTokensParams struct {
 // RevokeOrgTokens revokes an org's tokens and detaches them from it, so
 // the org can go; a manual token without an org never authenticates.
 func (q *Queries) RevokeOrgTokens(ctx context.Context, arg RevokeOrgTokensParams) error {
-	_, err := q.exec(ctx, q.revokeOrgTokensStmt, revokeOrgTokens, arg.Now, arg.OrgID)
+	_, err := q.db.ExecContext(ctx, revokeOrgTokens, arg.Now, arg.OrgID)
 	return err
 }
 
@@ -693,7 +693,7 @@ type SetMemberRoleParams struct {
 }
 
 func (q *Queries) SetMemberRole(ctx context.Context, arg SetMemberRoleParams) (int64, error) {
-	result, err := q.exec(ctx, q.setMemberRoleStmt, setMemberRole, arg.Role, arg.OrgID, arg.UserID)
+	result, err := q.db.ExecContext(ctx, setMemberRole, arg.Role, arg.OrgID, arg.UserID)
 	if err != nil {
 		return 0, err
 	}
@@ -710,7 +710,7 @@ type SetOrgLockProductionParams struct {
 }
 
 func (q *Queries) SetOrgLockProduction(ctx context.Context, arg SetOrgLockProductionParams) error {
-	_, err := q.exec(ctx, q.setOrgLockProductionStmt, setOrgLockProduction, arg.LockProduction, arg.ID)
+	_, err := q.db.ExecContext(ctx, setOrgLockProduction, arg.LockProduction, arg.ID)
 	return err
 }
 
@@ -728,7 +728,7 @@ type UpsertOrgVariableParams struct {
 }
 
 func (q *Queries) UpsertOrgVariable(ctx context.Context, arg UpsertOrgVariableParams) error {
-	_, err := q.exec(ctx, q.upsertOrgVariableStmt, upsertOrgVariable,
+	_, err := q.db.ExecContext(ctx, upsertOrgVariable,
 		arg.OrgID,
 		arg.Key,
 		arg.Value,

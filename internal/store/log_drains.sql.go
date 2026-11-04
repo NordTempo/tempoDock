@@ -27,7 +27,7 @@ type AddLogDrainParams struct {
 }
 
 func (q *Queries) AddLogDrain(ctx context.Context, arg AddLogDrainParams) (LogDrain, error) {
-	row := q.queryRow(ctx, q.addLogDrainStmt, addLogDrain,
+	row := q.db.QueryRowContext(ctx, addLogDrain,
 		arg.EnvironmentID,
 		arg.Kind,
 		arg.Name,
@@ -55,7 +55,7 @@ DELETE FROM log_drains WHERE id = +?
 `
 
 func (q *Queries) DeleteLogDrain(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteLogDrainStmt, deleteLogDrain, id)
+	_, err := q.db.ExecContext(ctx, deleteLogDrain, id)
 	return err
 }
 
@@ -69,7 +69,7 @@ type GetLogDrainParams struct {
 }
 
 func (q *Queries) GetLogDrain(ctx context.Context, arg GetLogDrainParams) (LogDrain, error) {
-	row := q.queryRow(ctx, q.getLogDrainStmt, getLogDrain, arg.ID, arg.EnvironmentID)
+	row := q.db.QueryRowContext(ctx, getLogDrain, arg.ID, arg.EnvironmentID)
 	var i LogDrain
 	err := row.Scan(
 		&i.ID,
@@ -110,7 +110,7 @@ type GetLogSourceRow struct {
 // A release with what its log lines are labelled with when drained, and
 // where its service runs.
 func (q *Queries) GetLogSource(ctx context.Context, id int64) (GetLogSourceRow, error) {
-	row := q.queryRow(ctx, q.getLogSourceStmt, getLogSource, id)
+	row := q.db.QueryRowContext(ctx, getLogSource, id)
 	var i GetLogSourceRow
 	err := row.Scan(
 		&i.Release.ID,
@@ -155,7 +155,7 @@ SELECT id, environment_id, kind, name, target, config, created_by, created_at FR
 
 // Every drain, read once when the daemon starts.
 func (q *Queries) ListAllLogDrains(ctx context.Context) ([]LogDrain, error) {
-	rows, err := q.query(ctx, q.listAllLogDrainsStmt, listAllLogDrains)
+	rows, err := q.db.QueryContext(ctx, listAllLogDrains)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ type ListDrainContainersRow struct {
 // follow when a drain is added, the daemon starts or a server reconnects.
 // The release's config holds the secret values its lines are masked of.
 func (q *Queries) ListDrainContainers(ctx context.Context, environmentID int64) ([]ListDrainContainersRow, error) {
-	rows, err := q.query(ctx, q.listDrainContainersStmt, listDrainContainers, environmentID)
+	rows, err := q.db.QueryContext(ctx, listDrainContainers, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ SELECT id, environment_id, kind, name, target, config, created_by, created_at FR
 
 // An environment's drains, by name.
 func (q *Queries) ListLogDrains(ctx context.Context, environmentID int64) ([]LogDrain, error) {
-	rows, err := q.query(ctx, q.listLogDrainsStmt, listLogDrains, environmentID)
+	rows, err := q.db.QueryContext(ctx, listLogDrains, environmentID)
 	if err != nil {
 		return nil, err
 	}

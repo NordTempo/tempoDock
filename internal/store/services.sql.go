@@ -15,7 +15,7 @@ UPDATE variables SET value = pending_value, pending = '', pending_value = NULL W
 `
 
 func (q *Queries) ApplyVariable(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.applyVariableStmt, applyVariable, id)
+	_, err := q.db.ExecContext(ctx, applyVariable, id)
 	return err
 }
 
@@ -24,7 +24,7 @@ UPDATE volumes SET pending = 0 WHERE id = +?
 `
 
 func (q *Queries) ApplyVolume(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.applyVolumeStmt, applyVolume, id)
+	_, err := q.db.ExecContext(ctx, applyVolume, id)
 	return err
 }
 
@@ -38,7 +38,7 @@ type ArchiveServiceParams struct {
 }
 
 func (q *Queries) ArchiveService(ctx context.Context, arg ArchiveServiceParams) error {
-	_, err := q.exec(ctx, q.archiveServiceStmt, archiveService, arg.ArchivedAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, archiveService, arg.ArchivedAt, arg.ID)
 	return err
 }
 
@@ -48,7 +48,7 @@ UPDATE services SET pending_settings = NULL WHERE environment_id = +? AND pendin
 
 // Drops every staged settings change in an environment (apply and discard).
 func (q *Queries) ClearEnvironmentPendingSettings(ctx context.Context, environmentID int64) error {
-	_, err := q.exec(ctx, q.clearEnvironmentPendingSettingsStmt, clearEnvironmentPendingSettings, environmentID)
+	_, err := q.db.ExecContext(ctx, clearEnvironmentPendingSettings, environmentID)
 	return err
 }
 
@@ -58,7 +58,7 @@ UPDATE services SET stopped_at = NULL, stopped_by = '' WHERE id = +?
 
 // A release of a stopped service went live: it runs again (ADR 0050).
 func (q *Queries) ClearServiceStopped(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.clearServiceStoppedStmt, clearServiceStopped, id)
+	_, err := q.db.ExecContext(ctx, clearServiceStopped, id)
 	return err
 }
 
@@ -93,7 +93,7 @@ type CreateServiceParams struct {
 }
 
 func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) (Service, error) {
-	row := q.queryRow(ctx, q.createServiceStmt, createService,
+	row := q.db.QueryRowContext(ctx, createService,
 		arg.EnvironmentID,
 		arg.Name,
 		arg.Image,
@@ -158,7 +158,7 @@ type CreateVolumeParams struct {
 }
 
 func (q *Queries) CreateVolume(ctx context.Context, arg CreateVolumeParams) (Volume, error) {
-	row := q.queryRow(ctx, q.createVolumeStmt, createVolume,
+	row := q.db.QueryRowContext(ctx, createVolume,
 		arg.ServiceID,
 		arg.Name,
 		arg.DockerName,
@@ -183,7 +183,7 @@ DELETE FROM variables WHERE id = +?
 `
 
 func (q *Queries) DeleteVariable(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteVariableStmt, deleteVariable, id)
+	_, err := q.db.ExecContext(ctx, deleteVariable, id)
 	return err
 }
 
@@ -193,7 +193,7 @@ DELETE FROM volumes WHERE id = +? AND pending = 1
 
 // Only for discarding staged (never created) volumes.
 func (q *Queries) DeleteVolume(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteVolumeStmt, deleteVolume, id)
+	_, err := q.db.ExecContext(ctx, deleteVolume, id)
 	return err
 }
 
@@ -202,7 +202,7 @@ SELECT id, environment_id, name, image, port, health_check_path, health_check_ti
 `
 
 func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
-	row := q.queryRow(ctx, q.getServiceStmt, getService, id)
+	row := q.db.QueryRowContext(ctx, getService, id)
 	var i Service
 	err := row.Scan(
 		&i.ID,
@@ -246,7 +246,7 @@ type GetServiceByNameParams struct {
 }
 
 func (q *Queries) GetServiceByName(ctx context.Context, arg GetServiceByNameParams) (Service, error) {
-	row := q.queryRow(ctx, q.getServiceByNameStmt, getServiceByName, arg.EnvironmentID, arg.Name)
+	row := q.db.QueryRowContext(ctx, getServiceByName, arg.EnvironmentID, arg.Name)
 	var i Service
 	err := row.Scan(
 		&i.ID,
@@ -294,7 +294,7 @@ type GetVariableParams struct {
 }
 
 func (q *Queries) GetVariable(ctx context.Context, arg GetVariableParams) (Variable, error) {
-	row := q.queryRow(ctx, q.getVariableStmt, getVariable, arg.EnvironmentID, arg.ServiceID, arg.Key)
+	row := q.db.QueryRowContext(ctx, getVariable, arg.EnvironmentID, arg.ServiceID, arg.Key)
 	var i Variable
 	err := row.Scan(
 		&i.ID,
@@ -324,7 +324,7 @@ type InsertRestoredVariableParams struct {
 
 // Re-creates a variable an applied unset deleted, with the unset staged.
 func (q *Queries) InsertRestoredVariable(ctx context.Context, arg InsertRestoredVariableParams) error {
-	_, err := q.exec(ctx, q.insertRestoredVariableStmt, insertRestoredVariable,
+	_, err := q.db.ExecContext(ctx, insertRestoredVariable,
 		arg.EnvironmentID,
 		arg.ServiceID,
 		arg.Key,
@@ -348,7 +348,7 @@ type InsertVariableParams struct {
 }
 
 func (q *Queries) InsertVariable(ctx context.Context, arg InsertVariableParams) error {
-	_, err := q.exec(ctx, q.insertVariableStmt, insertVariable,
+	_, err := q.db.ExecContext(ctx, insertVariable,
 		arg.EnvironmentID,
 		arg.ServiceID,
 		arg.Key,
@@ -367,7 +367,7 @@ ORDER BY volumes.service_id, volumes.name
 
 // Every volume of every service in an environment, including staged ones.
 func (q *Queries) ListEnvironmentVolumes(ctx context.Context, environmentID int64) ([]Volume, error) {
-	rows, err := q.query(ctx, q.listEnvironmentVolumesStmt, listEnvironmentVolumes, environmentID)
+	rows, err := q.db.QueryContext(ctx, listEnvironmentVolumes, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +406,7 @@ ORDER BY services.environment_id, services.name
 
 // Every service in a project, by environment, then name.
 func (q *Queries) ListProjectServices(ctx context.Context, projectID int64) ([]Service, error) {
-	rows, err := q.query(ctx, q.listProjectServicesStmt, listProjectServices, projectID)
+	rows, err := q.db.QueryContext(ctx, listProjectServices, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +466,7 @@ ORDER BY volumes.service_id, volumes.name
 
 // Every volume of every service in a project, including staged ones.
 func (q *Queries) ListProjectVolumes(ctx context.Context, projectID int64) ([]Volume, error) {
-	rows, err := q.query(ctx, q.listProjectVolumesStmt, listProjectVolumes, projectID)
+	rows, err := q.db.QueryContext(ctx, listProjectVolumes, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +521,7 @@ type ListServerServicesRow struct {
 // The services of the environments on a server, with their active
 // release: the services table of a server page.
 func (q *Queries) ListServerServices(ctx context.Context, serverID int64) ([]ListServerServicesRow, error) {
-	rows, err := q.query(ctx, q.listServerServicesStmt, listServerServices, serverID)
+	rows, err := q.db.QueryContext(ctx, listServerServices, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -558,7 +558,7 @@ SELECT id FROM services ORDER BY id
 // Every service's ID, archived ones included: the log archives the
 // retention pass keeps (ADR 0046).
 func (q *Queries) ListServiceIDs(ctx context.Context) ([]int64, error) {
-	rows, err := q.query(ctx, q.listServiceIDsStmt, listServiceIDs)
+	rows, err := q.db.QueryContext(ctx, listServiceIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -585,7 +585,7 @@ SELECT id, environment_id, name, image, port, health_check_path, health_check_ti
 `
 
 func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Service, error) {
-	rows, err := q.query(ctx, q.listServicesStmt, listServices, environmentID)
+	rows, err := q.db.QueryContext(ctx, listServices, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -642,7 +642,7 @@ SELECT id, environment_id, service_id, "key", value, pending, pending_value, upd
 // All variables of an environment: shared ones (service_id NULL) and every
 // service's own, live and staged.
 func (q *Queries) ListVariables(ctx context.Context, environmentID int64) ([]Variable, error) {
-	rows, err := q.query(ctx, q.listVariablesStmt, listVariables, environmentID)
+	rows, err := q.db.QueryContext(ctx, listVariables, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -678,7 +678,7 @@ SELECT id, service_id, name, docker_name, mount_path, pending, created_at FROM v
 `
 
 func (q *Queries) ListVolumes(ctx context.Context, serviceID int64) ([]Volume, error) {
-	rows, err := q.query(ctx, q.listVolumesStmt, listVolumes, serviceID)
+	rows, err := q.db.QueryContext(ctx, listVolumes, serviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -723,7 +723,7 @@ type RestoreVariableParams struct {
 // Puts back a variable's live value and staged change (restaging the changes
 // of a failed release).
 func (q *Queries) RestoreVariable(ctx context.Context, arg RestoreVariableParams) error {
-	_, err := q.exec(ctx, q.restoreVariableStmt, restoreVariable,
+	_, err := q.db.ExecContext(ctx, restoreVariable,
 		arg.Value,
 		arg.Pending,
 		arg.PendingValue,
@@ -743,7 +743,7 @@ type SetEnvironmentApplyErrorParams struct {
 }
 
 func (q *Queries) SetEnvironmentApplyError(ctx context.Context, arg SetEnvironmentApplyErrorParams) error {
-	_, err := q.exec(ctx, q.setEnvironmentApplyErrorStmt, setEnvironmentApplyError, arg.ApplyError, arg.ID)
+	_, err := q.db.ExecContext(ctx, setEnvironmentApplyError, arg.ApplyError, arg.ID)
 	return err
 }
 
@@ -757,7 +757,7 @@ type SetPendingSettingsParams struct {
 }
 
 func (q *Queries) SetPendingSettings(ctx context.Context, arg SetPendingSettingsParams) error {
-	_, err := q.exec(ctx, q.setPendingSettingsStmt, setPendingSettings, arg.PendingSettings, arg.ID)
+	_, err := q.db.ExecContext(ctx, setPendingSettings, arg.PendingSettings, arg.ID)
 	return err
 }
 
@@ -773,7 +773,7 @@ type SetVariablePendingParams struct {
 }
 
 func (q *Queries) SetVariablePending(ctx context.Context, arg SetVariablePendingParams) error {
-	_, err := q.exec(ctx, q.setVariablePendingStmt, setVariablePending,
+	_, err := q.db.ExecContext(ctx, setVariablePending,
 		arg.Pending,
 		arg.PendingValue,
 		arg.UpdatedAt,
@@ -794,7 +794,7 @@ type StopServiceParams struct {
 
 // Marks a service stopped (ADR 0050). 0 rows: it already was.
 func (q *Queries) StopService(ctx context.Context, arg StopServiceParams) (int64, error) {
-	result, err := q.exec(ctx, q.stopServiceStmt, stopService, arg.StoppedAt, arg.StoppedBy, arg.ID)
+	result, err := q.db.ExecContext(ctx, stopService, arg.StoppedAt, arg.StoppedBy, arg.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -807,7 +807,7 @@ UPDATE volumes SET pending = 1 WHERE id = +? AND pending = 0
 
 // Stages an applied volume again (its release failed). Never deletes it.
 func (q *Queries) UnapplyVolume(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.unapplyVolumeStmt, unapplyVolume, id)
+	_, err := q.db.ExecContext(ctx, unapplyVolume, id)
 	return err
 }
 
@@ -842,7 +842,7 @@ type UpdateServiceParams struct {
 }
 
 func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) (Service, error) {
-	row := q.queryRow(ctx, q.updateServiceStmt, updateService,
+	row := q.db.QueryRowContext(ctx, updateService,
 		arg.Image,
 		arg.Port,
 		arg.HealthCheckPath,

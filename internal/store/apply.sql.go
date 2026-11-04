@@ -16,7 +16,7 @@ DELETE FROM staged_domains WHERE service_id IN (SELECT id FROM services WHERE en
 
 // Discards every staged domain change of an environment.
 func (q *Queries) DeleteEnvironmentStagedDomains(ctx context.Context, environmentID int64) error {
-	_, err := q.exec(ctx, q.deleteEnvironmentStagedDomainsStmt, deleteEnvironmentStagedDomains, environmentID)
+	_, err := q.db.ExecContext(ctx, deleteEnvironmentStagedDomains, environmentID)
 	return err
 }
 
@@ -25,7 +25,7 @@ DELETE FROM staged_domains WHERE service_id = +?
 `
 
 func (q *Queries) DeleteServiceStagedDomains(ctx context.Context, serviceID int64) error {
-	_, err := q.exec(ctx, q.deleteServiceStagedDomainsStmt, deleteServiceStagedDomains, serviceID)
+	_, err := q.db.ExecContext(ctx, deleteServiceStagedDomains, serviceID)
 	return err
 }
 
@@ -34,7 +34,7 @@ DELETE FROM volumes WHERE service_id = +? AND pending = 1
 `
 
 func (q *Queries) DeleteServiceStagedVolumes(ctx context.Context, serviceID int64) error {
-	_, err := q.exec(ctx, q.deleteServiceStagedVolumesStmt, deleteServiceStagedVolumes, serviceID)
+	_, err := q.db.ExecContext(ctx, deleteServiceStagedVolumes, serviceID)
 	return err
 }
 
@@ -50,7 +50,7 @@ type DeleteServiceVariablesParams struct {
 
 // Only for discarding a staged service's variables.
 func (q *Queries) DeleteServiceVariables(ctx context.Context, arg DeleteServiceVariablesParams) error {
-	_, err := q.exec(ctx, q.deleteServiceVariablesStmt, deleteServiceVariables, arg.EnvironmentID, arg.ServiceID)
+	_, err := q.db.ExecContext(ctx, deleteServiceVariables, arg.EnvironmentID, arg.ServiceID)
 	return err
 }
 
@@ -59,7 +59,7 @@ DELETE FROM staged_domains WHERE id = +?
 `
 
 func (q *Queries) DeleteStagedDomain(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteStagedDomainStmt, deleteStagedDomain, id)
+	_, err := q.db.ExecContext(ctx, deleteStagedDomain, id)
 	return err
 }
 
@@ -70,7 +70,7 @@ DELETE FROM services WHERE id = +? AND staged = 'create'
 // Only for discarding a staged creation: the service never ran. Its
 // staged variables, volumes and domains are deleted first.
 func (q *Queries) DeleteStagedService(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteStagedServiceStmt, deleteStagedService, id)
+	_, err := q.db.ExecContext(ctx, deleteStagedService, id)
 	return err
 }
 
@@ -90,7 +90,7 @@ type InsertStagedDomainParams struct {
 
 // Stages a domain change; staging the same hostname again replaces it.
 func (q *Queries) InsertStagedDomain(ctx context.Context, arg InsertStagedDomainParams) error {
-	_, err := q.exec(ctx, q.insertStagedDomainStmt, insertStagedDomain,
+	_, err := q.db.ExecContext(ctx, insertStagedDomain,
 		arg.ServiceID,
 		arg.Hostname,
 		arg.Action,
@@ -120,7 +120,7 @@ type ListEnvironmentGitConnectionsRow struct {
 // The non-secret settings of an environment's git connections, by
 // service: what a plan compares (ADR 0049).
 func (q *Queries) ListEnvironmentGitConnections(ctx context.Context, environmentID int64) ([]ListEnvironmentGitConnectionsRow, error) {
-	rows, err := q.query(ctx, q.listEnvironmentGitConnectionsStmt, listEnvironmentGitConnections, environmentID)
+	rows, err := q.db.QueryContext(ctx, listEnvironmentGitConnections, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ type ListEnvironmentStagedDomainsRow struct {
 
 // An environment's staged domain changes, by service name and hostname.
 func (q *Queries) ListEnvironmentStagedDomains(ctx context.Context, environmentID int64) ([]ListEnvironmentStagedDomainsRow, error) {
-	rows, err := q.query(ctx, q.listEnvironmentStagedDomainsStmt, listEnvironmentStagedDomains, environmentID)
+	rows, err := q.db.QueryContext(ctx, listEnvironmentStagedDomains, environmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +217,7 @@ type ListProjectLiveVariablesRow struct {
 // scope and key. For plans and the export, which only writes values made
 // of references (ADR 0049).
 func (q *Queries) ListProjectLiveVariables(ctx context.Context, projectID int64) ([]ListProjectLiveVariablesRow, error) {
-	rows, err := q.query(ctx, q.listProjectLiveVariablesStmt, listProjectLiveVariables, projectID)
+	rows, err := q.db.QueryContext(ctx, listProjectLiveVariables, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -256,6 +256,6 @@ type SetServiceStagedParams struct {
 // Stages a service's creation or archive ('create', 'archive'), or clears
 // it (”) once applied or discarded (ADR 0049).
 func (q *Queries) SetServiceStaged(ctx context.Context, arg SetServiceStagedParams) error {
-	_, err := q.exec(ctx, q.setServiceStagedStmt, setServiceStaged, arg.Staged, arg.ID)
+	_, err := q.db.ExecContext(ctx, setServiceStaged, arg.Staged, arg.ID)
 	return err
 }

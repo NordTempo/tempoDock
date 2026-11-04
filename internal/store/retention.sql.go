@@ -18,7 +18,7 @@ DELETE FROM audit_details WHERE audit_details.id <= ?1
 // Details up to an ID that no remaining event points at (details are
 // written just before their event, so a trimmed event's is below it).
 func (q *Queries) DeleteAuditDetailsThrough(ctx context.Context, through int64) error {
-	_, err := q.exec(ctx, q.deleteAuditDetailsThroughStmt, deleteAuditDetailsThrough, through)
+	_, err := q.db.ExecContext(ctx, deleteAuditDetailsThrough, through)
 	return err
 }
 
@@ -27,7 +27,7 @@ DELETE FROM audit_events WHERE id <= ?
 `
 
 func (q *Queries) DeleteAuditEventsThrough(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteAuditEventsThroughStmt, deleteAuditEventsThrough, id)
+	_, err := q.db.ExecContext(ctx, deleteAuditEventsThrough, id)
 	return err
 }
 
@@ -36,7 +36,7 @@ DELETE FROM release_events WHERE release_id = +?
 `
 
 func (q *Queries) DeleteReleaseEvents(ctx context.Context, releaseID int64) error {
-	_, err := q.exec(ctx, q.deleteReleaseEventsStmt, deleteReleaseEvents, releaseID)
+	_, err := q.db.ExecContext(ctx, deleteReleaseEvents, releaseID)
 	return err
 }
 
@@ -62,7 +62,7 @@ type ListExpiredReleaseHistoryParams struct {
 // newest keep releases, by number, as ListKeptDigests). Read through
 // releases_history, so trimmed releases are never looked at again.
 func (q *Queries) ListExpiredReleaseHistory(ctx context.Context, arg ListExpiredReleaseHistoryParams) ([]int64, error) {
-	rows, err := q.query(ctx, q.listExpiredReleaseHistoryStmt, listExpiredReleaseHistory, arg.Cutoff, arg.Keep, arg.MaxRows)
+	rows, err := q.db.QueryContext(ctx, listExpiredReleaseHistory, arg.Cutoff, arg.Keep, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ type ListKeptImageIDsParams struct {
 // rollback windows and active and in-flight releases. Image pruning
 // keeps them. Archived services are never rolled back, so theirs go.
 func (q *Queries) ListKeptImageIDs(ctx context.Context, arg ListKeptImageIDsParams) ([]string, error) {
-	rows, err := q.query(ctx, q.listKeptImageIDsStmt, listKeptImageIDs, arg.ServerID, arg.Keep)
+	rows, err := q.db.QueryContext(ctx, listKeptImageIDs, arg.ServerID, arg.Keep)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ type ListOldestAuditEventsRow struct {
 
 // The start of the audit log, for retention to trim from.
 func (q *Queries) ListOldestAuditEvents(ctx context.Context, limit int64) ([]ListOldestAuditEventsRow, error) {
-	rows, err := q.query(ctx, q.listOldestAuditEventsStmt, listOldestAuditEvents, limit)
+	rows, err := q.db.QueryContext(ctx, listOldestAuditEvents, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ UPDATE releases SET history_trimmed = 1 WHERE id = +?
 `
 
 func (q *Queries) MarkReleaseHistoryTrimmed(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.markReleaseHistoryTrimmedStmt, markReleaseHistoryTrimmed, id)
+	_, err := q.db.ExecContext(ctx, markReleaseHistoryTrimmed, id)
 	return err
 }
 
@@ -173,7 +173,7 @@ SELECT CAST(coalesce(max(id), 0) AS INTEGER) AS id FROM audit_events
 `
 
 func (q *Queries) MaxAuditEventID(ctx context.Context) (int64, error) {
-	row := q.queryRow(ctx, q.maxAuditEventIDStmt, maxAuditEventID)
+	row := q.db.QueryRowContext(ctx, maxAuditEventID)
 	var id int64
 	err := row.Scan(&id)
 	return id, err

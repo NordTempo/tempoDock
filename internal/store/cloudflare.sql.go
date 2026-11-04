@@ -16,7 +16,7 @@ SELECT COUNT(*) FROM cloudflare_tunnels WHERE connection_id = +?
 
 // Tunnels Dock keeps with a connection; it can't be removed while any.
 func (q *Queries) CountConnectionUse(ctx context.Context, connectionID int64) (int64, error) {
-	row := q.queryRow(ctx, q.countConnectionUseStmt, countConnectionUse, connectionID)
+	row := q.db.QueryRowContext(ctx, countConnectionUse, connectionID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -39,7 +39,7 @@ type CreateCloudflareConnectionParams struct {
 }
 
 func (q *Queries) CreateCloudflareConnection(ctx context.Context, arg CreateCloudflareConnectionParams) (CloudflareConnection, error) {
-	row := q.queryRow(ctx, q.createCloudflareConnectionStmt, createCloudflareConnection,
+	row := q.db.QueryRowContext(ctx, createCloudflareConnection,
 		arg.Name,
 		arg.AccountID,
 		arg.AccountName,
@@ -82,7 +82,7 @@ type CreateCloudflareTunnelParams struct {
 }
 
 func (q *Queries) CreateCloudflareTunnel(ctx context.Context, arg CreateCloudflareTunnelParams) (CloudflareTunnel, error) {
-	row := q.queryRow(ctx, q.createCloudflareTunnelStmt, createCloudflareTunnel,
+	row := q.db.QueryRowContext(ctx, createCloudflareTunnel,
 		arg.ServerID,
 		arg.ServerName,
 		arg.ConnectionID,
@@ -117,7 +117,7 @@ DELETE FROM cloudflare_connections WHERE id = +?
 `
 
 func (q *Queries) DeleteCloudflareConnection(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.deleteCloudflareConnectionStmt, deleteCloudflareConnection, id)
+	_, err := q.db.ExecContext(ctx, deleteCloudflareConnection, id)
 	return err
 }
 
@@ -132,7 +132,7 @@ type DeleteCloudflareRecordParams struct {
 
 // A deleted record's row, unless it was asked for again meanwhile.
 func (q *Queries) DeleteCloudflareRecord(ctx context.Context, arg DeleteCloudflareRecordParams) error {
-	_, err := q.exec(ctx, q.deleteCloudflareRecordStmt, deleteCloudflareRecord, arg.ID, arg.Gen)
+	_, err := q.db.ExecContext(ctx, deleteCloudflareRecord, arg.ID, arg.Gen)
 	return err
 }
 
@@ -147,7 +147,7 @@ type DeleteCloudflareTunnelParams struct {
 
 // A deleted tunnel's row, unless it was asked for again meanwhile.
 func (q *Queries) DeleteCloudflareTunnel(ctx context.Context, arg DeleteCloudflareTunnelParams) error {
-	_, err := q.exec(ctx, q.deleteCloudflareTunnelStmt, deleteCloudflareTunnel, arg.ID, arg.Gen)
+	_, err := q.db.ExecContext(ctx, deleteCloudflareTunnel, arg.ID, arg.Gen)
 	return err
 }
 
@@ -156,7 +156,7 @@ DELETE FROM cloudflare_zones WHERE connection_id = +?
 `
 
 func (q *Queries) DeleteCloudflareZones(ctx context.Context, connectionID int64) error {
-	_, err := q.exec(ctx, q.deleteCloudflareZonesStmt, deleteCloudflareZones, connectionID)
+	_, err := q.db.ExecContext(ctx, deleteCloudflareZones, connectionID)
 	return err
 }
 
@@ -165,7 +165,7 @@ SELECT id, name, account_id, account_name, token, status, status_reason, created
 `
 
 func (q *Queries) GetCloudflareConnection(ctx context.Context, name string) (CloudflareConnection, error) {
-	row := q.queryRow(ctx, q.getCloudflareConnectionStmt, getCloudflareConnection, name)
+	row := q.db.QueryRowContext(ctx, getCloudflareConnection, name)
 	var i CloudflareConnection
 	err := row.Scan(
 		&i.ID,
@@ -187,7 +187,7 @@ SELECT id, name, account_id, account_name, token, status, status_reason, created
 `
 
 func (q *Queries) GetCloudflareConnectionByID(ctx context.Context, id int64) (CloudflareConnection, error) {
-	row := q.queryRow(ctx, q.getCloudflareConnectionByIDStmt, getCloudflareConnectionByID, id)
+	row := q.db.QueryRowContext(ctx, getCloudflareConnectionByID, id)
 	var i CloudflareConnection
 	err := row.Scan(
 		&i.ID,
@@ -209,7 +209,7 @@ SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, co
 `
 
 func (q *Queries) GetCloudflareRecord(ctx context.Context, hostname string) (CloudflareRecord, error) {
-	row := q.queryRow(ctx, q.getCloudflareRecordStmt, getCloudflareRecord, hostname)
+	row := q.db.QueryRowContext(ctx, getCloudflareRecord, hostname)
 	var i CloudflareRecord
 	err := row.Scan(
 		&i.ID,
@@ -237,7 +237,7 @@ SELECT id, server_id, server_name, connection_id, tunnel_id, token, adopted, wan
 `
 
 func (q *Queries) GetCloudflareTunnelByServer(ctx context.Context, serverID *int64) (CloudflareTunnel, error) {
-	row := q.queryRow(ctx, q.getCloudflareTunnelByServerStmt, getCloudflareTunnelByServer, serverID)
+	row := q.db.QueryRowContext(ctx, getCloudflareTunnelByServer, serverID)
 	var i CloudflareTunnel
 	err := row.Scan(
 		&i.ID,
@@ -263,7 +263,7 @@ SELECT id, name, account_id, account_name, token, status, status_reason, created
 `
 
 func (q *Queries) ListCloudflareConnections(ctx context.Context) ([]CloudflareConnection, error) {
-	rows, err := q.query(ctx, q.listCloudflareConnectionsStmt, listCloudflareConnections)
+	rows, err := q.db.QueryContext(ctx, listCloudflareConnections)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +314,7 @@ type ListCloudflareRecordsRow struct {
 // Every record row for the console, failed ones first, with the
 // server's name (empty once removed).
 func (q *Queries) ListCloudflareRecords(ctx context.Context, max int64) ([]ListCloudflareRecordsRow, error) {
-	rows, err := q.query(ctx, q.listCloudflareRecordsStmt, listCloudflareRecords, max)
+	rows, err := q.db.QueryContext(ctx, listCloudflareRecords, max)
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +368,7 @@ type ListCloudflareTunnelsRow struct {
 
 // Every tunnel row, with its connection's name; one per tunnel server.
 func (q *Queries) ListCloudflareTunnels(ctx context.Context) ([]ListCloudflareTunnelsRow, error) {
-	rows, err := q.query(ctx, q.listCloudflareTunnelsStmt, listCloudflareTunnels)
+	rows, err := q.db.QueryContext(ctx, listCloudflareTunnels)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +412,7 @@ SELECT id, connection_id, zone_id, name FROM cloudflare_zones ORDER BY name
 
 // Every connection's zones; few, kept in memory to match hostnames.
 func (q *Queries) ListCloudflareZones(ctx context.Context) ([]CloudflareZone, error) {
-	rows, err := q.query(ctx, q.listCloudflareZonesStmt, listCloudflareZones)
+	rows, err := q.db.QueryContext(ctx, listCloudflareZones)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +456,7 @@ type ListDueCloudflareRecordsParams struct {
 // Pending records whose connection works and whose retry is due. The sort
 // is over pending rows only, a few at a time.
 func (q *Queries) ListDueCloudflareRecords(ctx context.Context, arg ListDueCloudflareRecordsParams) ([]CloudflareRecord, error) {
-	rows, err := q.query(ctx, q.listDueCloudflareRecordsStmt, listDueCloudflareRecords, arg.Now, arg.Max)
+	rows, err := q.db.QueryContext(ctx, listDueCloudflareRecords, arg.Now, arg.Max)
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +505,7 @@ ORDER BY cloudflare_tunnels.id
 
 // Pending tunnels whose connection works and whose retry is due.
 func (q *Queries) ListDueCloudflareTunnels(ctx context.Context, now *time.Time) ([]CloudflareTunnel, error) {
-	rows, err := q.query(ctx, q.listDueCloudflareTunnelsStmt, listDueCloudflareTunnels, now)
+	rows, err := q.db.QueryContext(ctx, listDueCloudflareTunnels, now)
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +548,7 @@ SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, co
 
 // The domains Dock routes through a server's tunnel.
 func (q *Queries) ListServerCloudflareRecords(ctx context.Context, serverID *int64) ([]CloudflareRecord, error) {
-	rows, err := q.query(ctx, q.listServerCloudflareRecordsStmt, listServerCloudflareRecords, serverID)
+	rows, err := q.db.QueryContext(ctx, listServerCloudflareRecords, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -593,7 +593,7 @@ SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, co
 
 // The records of a service's domains, for its domain list.
 func (q *Queries) ListServiceCloudflareRecords(ctx context.Context, serviceID int64) ([]CloudflareRecord, error) {
-	rows, err := q.query(ctx, q.listServiceCloudflareRecordsStmt, listServiceCloudflareRecords, serviceID)
+	rows, err := q.db.QueryContext(ctx, listServiceCloudflareRecords, serviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -641,7 +641,7 @@ ORDER BY cloudflare_records.retry_at LIMIT 1
 
 // The earliest held-back retry of a pending record whose connection works.
 func (q *Queries) NextCloudflareRecordRetry(ctx context.Context) ([]*time.Time, error) {
-	rows, err := q.query(ctx, q.nextCloudflareRecordRetryStmt, nextCloudflareRecordRetry)
+	rows, err := q.db.QueryContext(ctx, nextCloudflareRecordRetry)
 	if err != nil {
 		return nil, err
 	}
@@ -672,7 +672,7 @@ ORDER BY cloudflare_tunnels.retry_at LIMIT 1
 
 // The earliest held-back retry of a pending tunnel whose connection works.
 func (q *Queries) NextCloudflareTunnelRetry(ctx context.Context) ([]*time.Time, error) {
-	rows, err := q.query(ctx, q.nextCloudflareTunnelRetryStmt, nextCloudflareTunnelRetry)
+	rows, err := q.db.QueryContext(ctx, nextCloudflareTunnelRetry)
 	if err != nil {
 		return nil, err
 	}
@@ -706,7 +706,7 @@ type RetryCloudflareRecordParams struct {
 
 // Works on a record again.
 func (q *Queries) RetryCloudflareRecord(ctx context.Context, arg RetryCloudflareRecordParams) error {
-	_, err := q.exec(ctx, q.retryCloudflareRecordStmt, retryCloudflareRecord, arg.UpdatedAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, retryCloudflareRecord, arg.UpdatedAt, arg.ID)
 	return err
 }
 
@@ -721,7 +721,7 @@ type RetryCloudflareTunnelParams struct {
 }
 
 func (q *Queries) RetryCloudflareTunnel(ctx context.Context, arg RetryCloudflareTunnelParams) error {
-	_, err := q.exec(ctx, q.retryCloudflareTunnelStmt, retryCloudflareTunnel, arg.UpdatedAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, retryCloudflareTunnel, arg.UpdatedAt, arg.ID)
 	return err
 }
 
@@ -731,7 +731,7 @@ WHERE status = 'error'
 `
 
 func (q *Queries) RetryFailedCloudflare(ctx context.Context, updatedAt time.Time) (int64, error) {
-	result, err := q.exec(ctx, q.retryFailedCloudflareStmt, retryFailedCloudflare, updatedAt)
+	result, err := q.db.ExecContext(ctx, retryFailedCloudflare, updatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -744,7 +744,7 @@ WHERE status = 'error'
 `
 
 func (q *Queries) RetryFailedCloudflareTunnels(ctx context.Context, updatedAt time.Time) (int64, error) {
-	result, err := q.exec(ctx, q.retryFailedCloudflareTunnelsStmt, retryFailedCloudflareTunnels, updatedAt)
+	result, err := q.db.ExecContext(ctx, retryFailedCloudflareTunnels, updatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -775,7 +775,7 @@ type SaveCloudflareRecordParams struct {
 // deleted (absent) comes back; what it made is kept when the zone is the
 // same.
 func (q *Queries) SaveCloudflareRecord(ctx context.Context, arg SaveCloudflareRecordParams) error {
-	_, err := q.exec(ctx, q.saveCloudflareRecordStmt, saveCloudflareRecord,
+	_, err := q.db.ExecContext(ctx, saveCloudflareRecord,
 		arg.Hostname,
 		arg.DomainID,
 		arg.ServerID,
@@ -799,7 +799,7 @@ type SaveCloudflareZoneParams struct {
 
 // A zone another connection reached before moves to this one.
 func (q *Queries) SaveCloudflareZone(ctx context.Context, arg SaveCloudflareZoneParams) error {
-	_, err := q.exec(ctx, q.saveCloudflareZoneStmt, saveCloudflareZone, arg.ConnectionID, arg.ZoneID, arg.Name)
+	_, err := q.db.ExecContext(ctx, saveCloudflareZone, arg.ConnectionID, arg.ZoneID, arg.Name)
 	return err
 }
 
@@ -814,7 +814,7 @@ type SetCloudflareConnectionStatusParams struct {
 }
 
 func (q *Queries) SetCloudflareConnectionStatus(ctx context.Context, arg SetCloudflareConnectionStatusParams) error {
-	_, err := q.exec(ctx, q.setCloudflareConnectionStatusStmt, setCloudflareConnectionStatus, arg.Status, arg.StatusReason, arg.ID)
+	_, err := q.db.ExecContext(ctx, setCloudflareConnectionStatus, arg.Status, arg.StatusReason, arg.ID)
 	return err
 }
 
@@ -830,7 +830,7 @@ type SetCloudflareTunnelAbsentParams struct {
 
 // The server goes: delete what Dock made.
 func (q *Queries) SetCloudflareTunnelAbsent(ctx context.Context, arg SetCloudflareTunnelAbsentParams) error {
-	_, err := q.exec(ctx, q.setCloudflareTunnelAbsentStmt, setCloudflareTunnelAbsent, arg.UpdatedAt, arg.ServerID)
+	_, err := q.db.ExecContext(ctx, setCloudflareTunnelAbsent, arg.UpdatedAt, arg.ServerID)
 	return err
 }
 
@@ -846,7 +846,7 @@ type SetCloudflareTunnelIDParams struct {
 // The tunnel the worker made, saved whatever else changed: a removal
 // must find it to delete it.
 func (q *Queries) SetCloudflareTunnelID(ctx context.Context, arg SetCloudflareTunnelIDParams) error {
-	_, err := q.exec(ctx, q.setCloudflareTunnelIDStmt, setCloudflareTunnelID, arg.TunnelID, arg.ID)
+	_, err := q.db.ExecContext(ctx, setCloudflareTunnelID, arg.TunnelID, arg.ID)
 	return err
 }
 
@@ -860,7 +860,7 @@ type SetCloudflareTunnelReasonParams struct {
 }
 
 func (q *Queries) SetCloudflareTunnelReason(ctx context.Context, arg SetCloudflareTunnelReasonParams) error {
-	_, err := q.exec(ctx, q.setCloudflareTunnelReasonStmt, setCloudflareTunnelReason, arg.Reason, arg.ID)
+	_, err := q.db.ExecContext(ctx, setCloudflareTunnelReason, arg.Reason, arg.ID)
 	return err
 }
 
@@ -876,7 +876,7 @@ type SetDomainRecordAbsentParams struct {
 
 // The domain goes: delete the record Dock made for it.
 func (q *Queries) SetDomainRecordAbsent(ctx context.Context, arg SetDomainRecordAbsentParams) error {
-	_, err := q.exec(ctx, q.setDomainRecordAbsentStmt, setDomainRecordAbsent, arg.UpdatedAt, arg.DomainID)
+	_, err := q.db.ExecContext(ctx, setDomainRecordAbsent, arg.UpdatedAt, arg.DomainID)
 	return err
 }
 
@@ -892,7 +892,7 @@ type SetServiceRecordsAbsentParams struct {
 
 // The service is archived: delete the records Dock made for its domains.
 func (q *Queries) SetServiceRecordsAbsent(ctx context.Context, arg SetServiceRecordsAbsentParams) error {
-	_, err := q.exec(ctx, q.setServiceRecordsAbsentStmt, setServiceRecordsAbsent, arg.UpdatedAt, arg.ServiceID)
+	_, err := q.db.ExecContext(ctx, setServiceRecordsAbsent, arg.UpdatedAt, arg.ServiceID)
 	return err
 }
 
@@ -914,7 +914,7 @@ type UpdateCloudflareConnectionParams struct {
 
 // A new token (checked): the connection works again.
 func (q *Queries) UpdateCloudflareConnection(ctx context.Context, arg UpdateCloudflareConnectionParams) (CloudflareConnection, error) {
-	row := q.queryRow(ctx, q.updateCloudflareConnectionStmt, updateCloudflareConnection,
+	row := q.db.QueryRowContext(ctx, updateCloudflareConnection,
 		arg.AccountID,
 		arg.AccountName,
 		arg.Token,
@@ -960,7 +960,7 @@ type UpdateCloudflareRecordParams struct {
 // What the worker found or did, saved only if nothing else changed the
 // row since it loaded generation gen.
 func (q *Queries) UpdateCloudflareRecord(ctx context.Context, arg UpdateCloudflareRecordParams) (int64, error) {
-	result, err := q.exec(ctx, q.updateCloudflareRecordStmt, updateCloudflareRecord,
+	result, err := q.db.ExecContext(ctx, updateCloudflareRecord,
 		arg.RecordID,
 		arg.Content,
 		arg.RouteTunnel,
@@ -998,7 +998,7 @@ type UpdateCloudflareTunnelParams struct {
 // The worker's result, saved only if nothing else changed the row since
 // it loaded generation gen.
 func (q *Queries) UpdateCloudflareTunnel(ctx context.Context, arg UpdateCloudflareTunnelParams) (int64, error) {
-	result, err := q.exec(ctx, q.updateCloudflareTunnelStmt, updateCloudflareTunnel,
+	result, err := q.db.ExecContext(ctx, updateCloudflareTunnel,
 		arg.Token,
 		arg.Status,
 		arg.Reason,

@@ -29,7 +29,7 @@ type CreateBackupParams struct {
 }
 
 func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (Backup, error) {
-	row := q.queryRow(ctx, q.createBackupStmt, createBackup,
+	row := q.db.QueryRowContext(ctx, createBackup,
 		arg.ServiceID,
 		arg.Operation,
 		arg.Kind,
@@ -75,7 +75,7 @@ type CreateBackupPasswordParams struct {
 // it exists: a caller holding the defaults never overwrites settings
 // written meanwhile.
 func (q *Queries) CreateBackupPassword(ctx context.Context, arg CreateBackupPasswordParams) error {
-	_, err := q.exec(ctx, q.createBackupPasswordStmt, createBackupPassword, arg.Password, arg.UpdatedAt)
+	_, err := q.db.ExecContext(ctx, createBackupPassword, arg.Password, arg.UpdatedAt)
 	return err
 }
 
@@ -90,7 +90,7 @@ type FailRunningBackupsParams struct {
 
 // Runs a restart cut short.
 func (q *Queries) FailRunningBackups(ctx context.Context, arg FailRunningBackupsParams) (int64, error) {
-	result, err := q.exec(ctx, q.failRunningBackupsStmt, failRunningBackups, arg.Error, arg.FinishedAt)
+	result, err := q.db.ExecContext(ctx, failRunningBackups, arg.Error, arg.FinishedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -111,7 +111,7 @@ type FinishBackupParams struct {
 }
 
 func (q *Queries) FinishBackup(ctx context.Context, arg FinishBackupParams) error {
-	_, err := q.exec(ctx, q.finishBackupStmt, finishBackup,
+	_, err := q.db.ExecContext(ctx, finishBackup,
 		arg.Status,
 		arg.SnapshotID,
 		arg.SizeBytes,
@@ -127,7 +127,7 @@ SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_
 `
 
 func (q *Queries) GetBackup(ctx context.Context, id int64) (Backup, error) {
-	row := q.queryRow(ctx, q.getBackupStmt, getBackup, id)
+	row := q.db.QueryRowContext(ctx, getBackup, id)
 	var i Backup
 	err := row.Scan(
 		&i.ID,
@@ -164,7 +164,7 @@ type GetBackupBySnapshotParams struct {
 // A service's succeeded backup by snapshot ID or a prefix of it (restic's
 // short IDs are 8 characters).
 func (q *Queries) GetBackupBySnapshot(ctx context.Context, arg GetBackupBySnapshotParams) (Backup, error) {
-	row := q.queryRow(ctx, q.getBackupBySnapshotStmt, getBackupBySnapshot, arg.ServiceID, arg.Prefix)
+	row := q.db.QueryRowContext(ctx, getBackupBySnapshot, arg.ServiceID, arg.Prefix)
 	var i Backup
 	err := row.Scan(
 		&i.ID,
@@ -191,7 +191,7 @@ SELECT service_id, enabled, hour FROM backup_schedules WHERE service_id = +?
 `
 
 func (q *Queries) GetBackupSchedule(ctx context.Context, serviceID int64) (BackupSchedule, error) {
-	row := q.queryRow(ctx, q.getBackupScheduleStmt, getBackupSchedule, serviceID)
+	row := q.db.QueryRowContext(ctx, getBackupSchedule, serviceID)
 	var i BackupSchedule
 	err := row.Scan(&i.ServiceID, &i.Enabled, &i.Hour)
 	return i, err
@@ -202,7 +202,7 @@ SELECT id, repository, credentials, password, keep_daily, keep_weekly, keep_mont
 `
 
 func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) {
-	row := q.queryRow(ctx, q.getBackupSettingsStmt, getBackupSettings)
+	row := q.db.QueryRowContext(ctx, getBackupSettings)
 	var i BackupSetting
 	err := row.Scan(
 		&i.ID,
@@ -246,7 +246,7 @@ type ListBackupCandidatesRow struct {
 // in a live project) with its server and schedule override, for the
 // scheduler. A stopped service changes nothing to back up (ADR 0050).
 func (q *Queries) ListBackupCandidates(ctx context.Context) ([]ListBackupCandidatesRow, error) {
-	rows, err := q.query(ctx, q.listBackupCandidatesStmt, listBackupCandidates)
+	rows, err := q.db.QueryContext(ctx, listBackupCandidates)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ type ListBackupRepositoriesRow struct {
 // count and size. For the Backups page; the table holds a few rows per
 // service and day, so a scan is fine.
 func (q *Queries) ListBackupRepositories(ctx context.Context) ([]ListBackupRepositoriesRow, error) {
-	rows, err := q.query(ctx, q.listBackupRepositoriesStmt, listBackupRepositories)
+	rows, err := q.db.QueryContext(ctx, listBackupRepositories)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +333,7 @@ SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_
 
 // Each service's latest scheduled backup attempt.
 func (q *Queries) ListLatestScheduledBackups(ctx context.Context) ([]Backup, error) {
-	rows, err := q.query(ctx, q.listLatestScheduledBackupsStmt, listLatestScheduledBackups)
+	rows, err := q.db.QueryContext(ctx, listLatestScheduledBackups)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +382,7 @@ WHERE backups.repository = '' AND backups.operation = 'backup' AND backups.statu
 // The servers holding a local repository with backups restores can still
 // use: where a backup move copies from.
 func (q *Queries) ListLocalBackupServers(ctx context.Context) ([]int64, error) {
-	rows, err := q.query(ctx, q.listLocalBackupServersStmt, listLocalBackupServers)
+	rows, err := q.db.QueryContext(ctx, listLocalBackupServers)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +416,7 @@ SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_
 
 // Each service's latest backup run in a project, for the overview.
 func (q *Queries) ListProjectLatestBackups(ctx context.Context, projectID int64) ([]Backup, error) {
-	rows, err := q.query(ctx, q.listProjectLatestBackupsStmt, listProjectLatestBackups, projectID)
+	rows, err := q.db.QueryContext(ctx, listProjectLatestBackups, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +461,7 @@ WHERE repository = +? AND operation = 'backup' AND status = 'succeeded' AND prun
 
 // The snapshots of one repository that backups restores can use point at.
 func (q *Queries) ListRepositorySnapshots(ctx context.Context, repository string) ([]string, error) {
-	rows, err := q.query(ctx, q.listRepositorySnapshotsStmt, listRepositorySnapshots, repository)
+	rows, err := q.db.QueryContext(ctx, listRepositorySnapshots, repository)
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +493,7 @@ type ListServiceBackupsParams struct {
 }
 
 func (q *Queries) ListServiceBackups(ctx context.Context, arg ListServiceBackupsParams) ([]Backup, error) {
-	rows, err := q.query(ctx, q.listServiceBackupsStmt, listServiceBackups, arg.ServiceID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listServiceBackups, arg.ServiceID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +545,7 @@ type ListUnprunedBackupsParams struct {
 // A service's succeeded backups in one repository that retention hasn't
 // removed yet.
 func (q *Queries) ListUnprunedBackups(ctx context.Context, arg ListUnprunedBackupsParams) ([]Backup, error) {
-	rows, err := q.query(ctx, q.listUnprunedBackupsStmt, listUnprunedBackups, arg.ServiceID, arg.Repository)
+	rows, err := q.db.QueryContext(ctx, listUnprunedBackups, arg.ServiceID, arg.Repository)
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +596,7 @@ type MoveBackupSnapshotParams struct {
 
 // Points a backup at its copy in another repository (a backup move).
 func (q *Queries) MoveBackupSnapshot(ctx context.Context, arg MoveBackupSnapshotParams) error {
-	_, err := q.exec(ctx, q.moveBackupSnapshotStmt, moveBackupSnapshot,
+	_, err := q.db.ExecContext(ctx, moveBackupSnapshot,
 		arg.Repository,
 		arg.SnapshotID,
 		arg.Repository_2,
@@ -610,7 +610,7 @@ UPDATE backups SET pruned = 1 WHERE id = +?
 `
 
 func (q *Queries) PruneBackup(ctx context.Context, id int64) error {
-	_, err := q.exec(ctx, q.pruneBackupStmt, pruneBackup, id)
+	_, err := q.db.ExecContext(ctx, pruneBackup, id)
 	return err
 }
 
@@ -625,7 +625,7 @@ type PruneBackupSnapshotParams struct {
 
 // Marks the backups of a snapshot gone: a move found it in no repository.
 func (q *Queries) PruneBackupSnapshot(ctx context.Context, arg PruneBackupSnapshotParams) error {
-	_, err := q.exec(ctx, q.pruneBackupSnapshotStmt, pruneBackupSnapshot, arg.Repository, arg.SnapshotID)
+	_, err := q.db.ExecContext(ctx, pruneBackupSnapshot, arg.Repository, arg.SnapshotID)
 	return err
 }
 
@@ -641,7 +641,7 @@ type RelabelBackupRepositoryParams struct {
 // Renames a repository in the backups' history (an old repository URL
 // converted to a storage connection).
 func (q *Queries) RelabelBackupRepository(ctx context.Context, arg RelabelBackupRepositoryParams) error {
-	_, err := q.exec(ctx, q.relabelBackupRepositoryStmt, relabelBackupRepository, arg.Repository, arg.Repository_2)
+	_, err := q.db.ExecContext(ctx, relabelBackupRepository, arg.Repository, arg.Repository_2)
 	return err
 }
 
@@ -655,7 +655,7 @@ type SetServiceTemplateParams struct {
 }
 
 func (q *Queries) SetServiceTemplate(ctx context.Context, arg SetServiceTemplateParams) error {
-	_, err := q.exec(ctx, q.setServiceTemplateStmt, setServiceTemplate, arg.Template, arg.ID)
+	_, err := q.db.ExecContext(ctx, setServiceTemplate, arg.Template, arg.ID)
 	return err
 }
 
@@ -671,7 +671,7 @@ type UpsertBackupScheduleParams struct {
 }
 
 func (q *Queries) UpsertBackupSchedule(ctx context.Context, arg UpsertBackupScheduleParams) error {
-	_, err := q.exec(ctx, q.upsertBackupScheduleStmt, upsertBackupSchedule, arg.ServiceID, arg.Enabled, arg.Hour)
+	_, err := q.db.ExecContext(ctx, upsertBackupSchedule, arg.ServiceID, arg.Enabled, arg.Hour)
 	return err
 }
 
@@ -701,7 +701,7 @@ type UpsertBackupSettingsParams struct {
 }
 
 func (q *Queries) UpsertBackupSettings(ctx context.Context, arg UpsertBackupSettingsParams) (BackupSetting, error) {
-	row := q.queryRow(ctx, q.upsertBackupSettingsStmt, upsertBackupSettings,
+	row := q.db.QueryRowContext(ctx, upsertBackupSettings,
 		arg.Repository,
 		arg.Credentials,
 		arg.Password,

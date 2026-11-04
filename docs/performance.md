@@ -14,10 +14,10 @@ a small server, so a runner's core count doesn't move their memory.
 
 | What | Budget | Measured (8-core Ryzen VM) |
 |---|---|---|
-| Daemon idle memory | ≤ 30 MB anonymous RSS | 11-12 MB |
+| Daemon idle memory | ≤ 30 MB anonymous RSS | 22-25 MB (analytics on; 11-12 MB before it) |
 | Daemon idle CPU | ≤ 2 clock ticks in 30 s | 0 |
 | Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00-0.03/s; 1.0-2.1/s with 20 streams |
-| Daemon memory with 20 SSE clients | ≤ 30 MB | 14-17 MB |
+| Daemon memory with 20 SSE clients | ≤ 30 MB | 23-26 MB |
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 4.5-5 ms |
 | API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.4-6 ms; with a staged change, overview 6-8 ms and changes 3-4.5 ms |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 128 KB (13 files) |
@@ -214,9 +214,13 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
   new or changed query against a seeded database. No `SCAN` of a table that
   grows (releases, events, audit, variables, domains) and no `USE TEMP
   B-TREE FOR ORDER BY` on one. Paginate with `id < ?`, never `OFFSET`.
-- **Prepared statements.** sqlc queries are prepared once per connection
-  (`store.Prepare`), and the pool keeps all connections open. Don't build
-  SQL strings at runtime.
+- **Prepared statements.** sqlc queries are prepared on first use and
+  reused (`internal/store/stmts.go`), once per connection they run on, and
+  the pool keeps all connections open. Not up front: preparing all ~460
+  queries at start cost an idle daemon about 4 MB of SQLite memory for
+  queries it never runs. A transaction that meets a query for the first
+  time runs it unprepared and has it prepared in the background, since
+  preparing needs a second connection. Don't build SQL strings at runtime.
 - **The re-prepare pitfall.** The SQLite in `modernc.org/sqlite` is built
   with `SQLITE_ENABLE_STAT4`, so the planner looks at bound values for
   `column = ?` on an indexed column, for `LIMIT ?` and for `LIKE ?`, and
