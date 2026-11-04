@@ -196,7 +196,7 @@ func (q *Queries) GetSnapshot(ctx context.Context, id int64) (VolumeSnapshot, er
 }
 
 const listExpiredSnapshots = `-- name: ListExpiredSnapshots :many
-SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at FROM volume_snapshots WHERE started_at < +? AND status != 'running' ORDER BY id LIMIT +?
+SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at FROM volume_snapshots WHERE started_at < +? AND status != 'running' ORDER BY started_at, id LIMIT +?
 `
 
 type ListExpiredSnapshotsParams struct {
@@ -205,6 +205,8 @@ type ListExpiredSnapshotsParams struct {
 }
 
 // Finished snapshots taken before a time, oldest first, for retention.
+// Ordered by started_at so it seeks volume_snapshots_started instead of
+// scanning the table in ID order.
 func (q *Queries) ListExpiredSnapshots(ctx context.Context, arg ListExpiredSnapshotsParams) ([]VolumeSnapshot, error) {
 	rows, err := q.db.QueryContext(ctx, listExpiredSnapshots, arg.StartedAt, arg.Limit)
 	if err != nil {
