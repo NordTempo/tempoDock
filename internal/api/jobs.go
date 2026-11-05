@@ -10,7 +10,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// Scheduled jobs (ADR 0052): a service's named cron schedules, their runs
+// Scheduled jobs (ADR 0054): a service's named cron schedules, their runs
 // and running one now.
 
 // JobPath names one of a service's jobs.

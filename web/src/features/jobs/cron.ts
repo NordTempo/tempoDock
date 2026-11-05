@@ -1,4 +1,4 @@
-// Cron expressions as the daemon reads them (internal/cron, ADR 0052),
+// Cron expressions as the daemon reads them (internal/cron, ADR 0054),
 // for the Jobs tab: the editor checks an expression and previews its next
 // times as it is typed, and every schedule reads in words. The daemon
 // stays the authority; this only has to agree with it for display.

@@ -47,7 +47,7 @@ type RunTrigger string
 const (
 	// TriggerCommand: someone ran a command (`dock run`, the UI, MCP).
 	TriggerCommand RunTrigger = "command"
-	// TriggerSchedule: a job came due (ADR 0052).
+	// TriggerSchedule: a job came due (ADR 0054).
 	TriggerSchedule RunTrigger = "schedule"
 	// TriggerManual: someone ran a job now.
 	TriggerManual RunTrigger = "manual"

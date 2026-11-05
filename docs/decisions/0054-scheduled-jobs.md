@@ -1,4 +1,4 @@
-# 0052: Scheduled jobs (cron)
+# 0054: Scheduled jobs (cron)
 
 Status: accepted (asked by Saile, 2026-11-03).
 

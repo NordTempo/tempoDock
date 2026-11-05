@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// Scheduled jobs (ADR 0052): named cron schedules on a service, each
+// Scheduled jobs (ADR 0054): named cron schedules on a service, each
 // running a command from its active image like `dock run`.
 
 // JobOverlap is what happens when a job comes due while it still runs.

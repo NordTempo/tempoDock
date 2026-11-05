@@ -309,7 +309,7 @@ scope; every run is audited (`service.run`) and listed by `dock runs`.
 
 ### `dock job`
 
-Scheduled jobs ([ADR 0052](decisions/0052-scheduled-jobs.md)): a cron
+Scheduled jobs ([ADR 0054](decisions/0054-scheduled-jobs.md)): a cron
 expression in a timezone and a command that runs like `dock run` in the
 service's active image, its variables and private network, without
 volumes. Reading jobs and their history needs read scope; setting,

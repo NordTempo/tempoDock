@@ -10,7 +10,7 @@ import { servicePath } from "../../data/queries";
 import type { LiveEvent, ServiceRef } from "../../data/types";
 import { type CommandRun, upsertRun } from "../runs/data";
 
-// A service's scheduled jobs (ADR 0052). The list and each job's history
+// A service's scheduled jobs (ADR 0054). The list and each job's history
 // stay live through events: `job` events (set, on or off, removed) and
 // `run` events of runs with a job. Mutations patch the cache with their
 // answer; nothing polls or refetches.

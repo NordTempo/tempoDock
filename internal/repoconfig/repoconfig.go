@@ -41,7 +41,7 @@ const maxSize = 64 << 10
 type Config struct {
 	Build  Build
 	Deploy Deploy
-	// Jobs are the service's scheduled jobs (ADR 0052). A release from a
+	// Jobs are the service's scheduled jobs (ADR 0054). A release from a
 	// source with this file makes them the service's file jobs, an empty
 	// list removing them.
 	Jobs []Job

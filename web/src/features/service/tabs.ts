@@ -32,7 +32,7 @@ export const serviceTabs = [
     to: "/$org/$project/$environment/$service/run",
     key: "g c",
   },
-  // Scheduled jobs (ADR 0052). G J, "jobs".
+  // Scheduled jobs (ADR 0054). G J, "jobs".
   {
     label: "Jobs",
     to: "/$org/$project/$environment/$service/jobs",

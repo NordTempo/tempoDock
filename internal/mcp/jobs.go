@@ -11,7 +11,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/mcpkit"
 )
 
-// Scheduled jobs for agents (ADR 0052): list, set, remove and run a
+// Scheduled jobs for agents (ADR 0054): list, set, remove and run a
 // service's cron jobs, and read their history.
 
 // JobInput names one of a service's jobs.

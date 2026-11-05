@@ -38,7 +38,7 @@ func (c *Core) kickJobs() {
 	}
 }
 
-// scheduleJobs is the job scheduler (ADR 0052): one goroutine and one
+// scheduleJobs is the job scheduler (ADR 0054): one goroutine and one
 // timer for every job. Each pass starts the jobs that are due and sleeps
 // until the next one is due, or until kicked (kickJobs). With nothing to
 // wait for (no enabled job, or only ones waiting for an offline server)

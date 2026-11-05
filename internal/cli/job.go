@@ -16,7 +16,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// Scheduled jobs (ADR 0052): `dock job` lists, sets, removes, turns on and
+// Scheduled jobs (ADR 0054): `dock job` lists, sets, removes, turns on and
 // off, runs now and shows the history of a service's cron jobs. A job's
 // run is a `dock run` started by the clock, so its output is
 // `dock runs show <id>`.

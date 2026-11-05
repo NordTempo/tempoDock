@@ -4,7 +4,7 @@ import { servicePath } from "../data/queries";
 import { jobQueries } from "../features/jobs/data";
 import { JobsPanel } from "../features/jobs/JobsPanel";
 
-// Scheduled jobs (ADR 0052): the service's jobs, the selected one's
+// Scheduled jobs (ADR 0054): the service's jobs, the selected one's
 // schedule editor and history, and Run now.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/jobs",

@@ -10,7 +10,7 @@ import (
 )
 
 // syncRepoJobs makes a newly active release's dock.toml jobs the
-// service's file jobs (ADR 0052): added or changed to match the file,
+// service's file jobs (ADR 0054): added or changed to match the file,
 // removed once the file no longer has them. A release whose source had
 // no dock.toml (an image deploy) leaves them. A file job takes over a
 // UI job of its name; a file job's on or off is kept, it's the UI's.

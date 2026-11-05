@@ -88,7 +88,7 @@ type repoDeploy struct {
 	PreDeployCommand               string `json:"pre_deploy_command,omitempty"`
 	PreDeployTimeoutSeconds        int    `json:"pre_deploy_timeout_seconds,omitempty"`
 	// JobsFromFile says the source had a dock.toml, so Jobs are the
-	// service's file jobs (ADR 0052), none removing them.
+	// service's file jobs (ADR 0054), none removing them.
 	JobsFromFile bool      `json:"jobs_from_file,omitempty"`
 	Jobs         []repoJob `json:"jobs,omitempty"`
 }

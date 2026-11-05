@@ -43,7 +43,7 @@ pre_deploy_command = "npx prisma migrate deploy"
 # How long the pre-deploy command may run (default 10m).
 pre_deploy_timeout = "15m"
 
-# Scheduled jobs (ADR 0052), one [[jobs]] table each: a command from the
+# Scheduled jobs (ADR 0054), one [[jobs]] table each: a command from the
 # release's image on a cron schedule. See "Jobs" below.
 [[jobs]]
 name = "nightly-cleanup"
@@ -82,7 +82,7 @@ nothing. To use the platform's value, leave the key out.
 ## Jobs
 
 `[[jobs]]` are the service's scheduled jobs
-([ADR 0052](decisions/0052-scheduled-jobs.md)), at most 50. Each runs its
+([ADR 0054](decisions/0054-scheduled-jobs.md)), at most 50. Each runs its
 command like [`dock run`](cli.md#dock-run): in a new container from the
 service's active image, with its variables and private network, without
 volumes. The schedule is five fields (minute, hour, day of month, month,

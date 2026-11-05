@@ -29,7 +29,7 @@ import {
 type Selection = { job: string; run: number | null } | "new" | null;
 
 /**
- * A service's Jobs tab (ADR 0052): every job in a table with Run now,
+ * A service's Jobs tab (ADR 0054): every job in a table with Run now,
  * and the selected one under it, its schedule editor over its history.
  * Job and run events keep both current; nothing polls.
  */

@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Scheduled jobs (ADR 0052): named cron schedules on a service. A job's
+// Scheduled jobs (ADR 0054): named cron schedules on a service. A job's
 // run is a run like `dock run`'s (runs.go) with the job's command, no
 // volumes and the system as its actor; jobs_schedule.go starts them.
 

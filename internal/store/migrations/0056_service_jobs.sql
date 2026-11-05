@@ -1,4 +1,4 @@
--- Scheduled jobs (ADR 0052): named cron schedules on a service, each
+-- Scheduled jobs (ADR 0054): named cron schedules on a service, each
 -- running a command from its active image. Their runs are service_runs
 -- with the job.
 CREATE TABLE service_jobs (

@@ -1,5 +1,5 @@
 // Package cron parses cron expressions and finds when they are due next
-// (scheduled jobs, ADR 0052).
+// (scheduled jobs, ADR 0054).
 //
 // An expression has the five standard fields, minute (0-59), hour (0-23),
 // day of month (1-31), month (1-12 or jan-dec) and day of week (0-7 or
