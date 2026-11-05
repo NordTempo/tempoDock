@@ -7,7 +7,7 @@ import { Ingress, statusTitle, Version } from "../features/servers/parts";
 import { useServerSwitches } from "../features/servers/switches";
 import { useShortcuts } from "../shell/keys";
 import { pct, plural, since, size, until } from "../ui/format";
-import { Act, ErrorText, Page, Panel, StateText, TitleRow } from "../ui/kit";
+import { Act, ErrorText, Page, PageBar, Panel, StateText } from "../ui/kit";
 import { serverState } from "../ui/status";
 
 // Every server: link status, version, ingress, what it accepts, how loaded
@@ -44,10 +44,10 @@ function Servers() {
   useShortcuts([{ key: "a", label: "add server", run: () => setAdding(true) }]);
 
   return (
-    <Page width="max-w-[1400px]" gap="gap-[18px]">
-      <TitleRow
+    <>
+      <PageBar
         title="Servers"
-        context={context}
+        after={<span className="text-xs text-faint">{context}</span>}
         actions={
           <Act
             primary
@@ -59,36 +59,38 @@ function Servers() {
           </Act>
         }
       />
-      {adding && <AddServer onClose={() => setAdding(false)} />}
-      <Kinds servers={servers} />
-      <Panel>
-        <table>
-          <thead>
-            <tr>
-              <th>Server</th>
-              <th>Status</th>
-              <th>Version</th>
-              <th>Ingress</th>
-              <th>Builds</th>
-              <th>Accepts</th>
-              <th>Placement</th>
-              <th>CPU</th>
-              <th>Memory</th>
-              <th title="Memory limits of the services placed here">
-                Reserved
-              </th>
-              <th>Disk</th>
-              <th>Placed</th>
-            </tr>
-          </thead>
-          <tbody>
-            {servers.map((s) => (
-              <ServerRow key={s.id} server={s} />
-            ))}
-          </tbody>
-        </table>
-      </Panel>
-    </Page>
+      <Page width="max-w-[1400px]" gap="gap-[18px]">
+        {adding && <AddServer onClose={() => setAdding(false)} />}
+        <Kinds servers={servers} />
+        <Panel>
+          <table>
+            <thead>
+              <tr>
+                <th>Server</th>
+                <th>Status</th>
+                <th>Version</th>
+                <th>Ingress</th>
+                <th>Builds</th>
+                <th>Accepts</th>
+                <th>Placement</th>
+                <th>CPU</th>
+                <th>Memory</th>
+                <th title="Memory limits of the services placed here">
+                  Reserved
+                </th>
+                <th>Disk</th>
+                <th>Placed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {servers.map((s) => (
+                <ServerRow key={s.id} server={s} />
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      </Page>
+    </>
   );
 }
 

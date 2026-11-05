@@ -286,11 +286,7 @@ function Actions({ server: s }: { server: Server }) {
         <Act
           cli={`dock server rotate-key ${s.name}`}
           disabled={s.status !== "online"}
-          title={
-            s.status === "online"
-              ? undefined
-              : "The server must be online to make a new key"
-          }
+          reason="The server must be online to make a new key"
           onClick={() => setAsk("rotate")}
         >
           Rotate key
@@ -309,16 +305,11 @@ function Actions({ server: s }: { server: Server }) {
         danger
         cli={`dock server remove ${s.name}`}
         disabled={!!placed}
-        title={placed ? `${placed}. Remove them first.` : undefined}
+        reason={placed ? `Remove needs an empty server: ${placed}.` : undefined}
         onClick={() => setAsk("remove")}
       >
         {joining ? "Cancel join" : "Remove server"}
       </Act>
-      {placed && (
-        <span className="self-center text-mut">
-          Remove needs an empty server: {placed}.
-        </span>
-      )}
     </div>
   );
 }

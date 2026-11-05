@@ -70,46 +70,48 @@ export function SnapshotsPanel({
     <section aria-labelledby="snapshots" className="flex flex-col gap-2.5">
       <SectionHead
         id="snapshots"
-        aside={`Copies of the volumes${server ? ` on ${server}` : ""}, paused while copied. Keeps ${snaps.keep}, ${snaps.keep_days} days.`}
+        aside={`volume copies${server ? ` on ${server}` : ""}, paused while copied · keeps ${snaps.keep}, ${snaps.keep_days} days`}
+        right={
+          <form
+            aria-label="Take snapshot"
+            className="flex flex-wrap items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              take.mutate(
+                { ref, note: note.trim() },
+                { onSuccess: () => setNote("") },
+              );
+            }}
+          >
+            <input
+              aria-label="Note"
+              placeholder="note, optional"
+              maxLength={200}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="field w-56 py-[3px] text-fg"
+            />
+            <Act
+              small
+              type="submit"
+              cli={`dock volume snapshot ${flags}${note.trim() ? ` --note ${JSON.stringify(note.trim())}` : ""}`}
+              disabled={!canDeploy || busy || take.isPending}
+              reason={
+                !canDeploy
+                  ? "needs deploy access"
+                  : busy
+                    ? "a snapshot or restore is running"
+                    : undefined
+              }
+            >
+              Take snapshot
+            </Act>
+            <ErrorText error={take.error} />
+          </form>
+        }
       >
         Snapshots
       </SectionHead>
-      <form
-        aria-label="Take snapshot"
-        className="flex flex-wrap items-center gap-2.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          take.mutate(
-            { ref, note: note.trim() },
-            { onSuccess: () => setNote("") },
-          );
-        }}
-      >
-        <input
-          aria-label="Note"
-          placeholder="note, optional"
-          maxLength={200}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          className="field w-64 py-[5px]"
-        />
-        <Act
-          primary
-          type="submit"
-          cli={`dock volume snapshot ${flags}${note.trim() ? ` --note ${JSON.stringify(note.trim())}` : ""}`}
-          disabled={!canDeploy || busy || take.isPending}
-          title={
-            !canDeploy
-              ? "Needs deploy access"
-              : busy
-                ? "A snapshot or restore is running"
-                : undefined
-          }
-        >
-          Take snapshot
-        </Act>
-        <ErrorText error={take.error} />
-      </form>
       {restored && (
         <RestoringInto serviceRef={ref} service={restored} kind={kind} />
       )}

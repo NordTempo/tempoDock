@@ -1,12 +1,13 @@
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { ago, day, plural } from "../../ui/format";
 import {
   Act,
   ErrorText,
   Glyph,
   Page,
+  PageBar,
   Panel,
   SectionHead,
-  TitleRow,
 } from "../../ui/kit";
 import type { GlyphChar, Tone } from "../../ui/status";
 import { toneText } from "../../ui/status";
@@ -66,11 +67,11 @@ export function UpdatesPage() {
     );
   }
   return (
-    <Page>
-      <TitleRow
+    <>
+      <PageBar
         title="Updates"
-        context={
-          <>
+        after={
+          <span className="text-xs text-faint">
             runs <span className="font-mono">{st.version}</span>
             {st.checked_at && <> · checked {ago(st.checked_at)}</>} ·{" "}
             <button
@@ -81,35 +82,45 @@ export function UpdatesPage() {
             >
               {check.isPending ? "Checking…" : "Check now"}
             </button>
-          </>
+          </span>
         }
         actions={action}
       />
-      <ErrorText error={start.error ?? check.error} />
-      <Problems st={st} />
-      {st.last && st.last.status !== "succeeded" && !running && (
-        <LastFailed last={st.last} />
-      )}
-      {running ? (
-        <Progress st={st} />
-      ) : (
-        <div className="grid gap-8 lg:grid-cols-2">
-          <ReleaseNotes st={st} />
-          <Plan st={st} />
-        </div>
-      )}
-    </Page>
+      <Page>
+        <ErrorText error={start.error ?? check.error} />
+        <Problems st={st} onCheck={() => check.mutate()} />
+        {st.last && st.last.status !== "succeeded" && !running && (
+          <LastFailed last={st.last} />
+        )}
+        {running ? (
+          <Progress st={st} />
+        ) : (
+          <div className="grid gap-8 lg:grid-cols-2">
+            <ReleaseNotes st={st} />
+            <Plan st={st} />
+          </div>
+        )}
+      </Page>
+    </>
   );
 }
 
 /** Why the check or an update can't happen, and what to do. */
-function Problems({ st }: { st: UpdateStatus }) {
+function Problems({
+  st,
+  onCheck,
+}: {
+  st: UpdateStatus;
+  /** Checks for releases again. */
+  onCheck: () => void;
+}) {
   return (
     <>
       {st.check_error && (
-        <p className="text-fail">
-          Could not check {st.source}: {st.check_error}
-        </p>
+        <ErrorBlock
+          error={new Error(`Could not check ${st.source}: ${st.check_error}`)}
+          onRetry={onCheck}
+        />
       )}
       {!st.updater && (
         <p className="text-warn">

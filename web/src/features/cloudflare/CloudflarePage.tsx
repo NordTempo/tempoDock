@@ -5,10 +5,10 @@ import {
   Button,
   ErrorText,
   Page,
+  PageBar,
   Panel,
   SectionHead,
   StateText,
-  TitleRow,
 } from "../../ui/kit";
 import {
   type Cloudflare,
@@ -30,12 +30,16 @@ export function CloudflarePage() {
   const [editing, setEditing] = useState<string>();
   const edited = connections.find((c) => c.name === editing);
   return (
-    <Page>
-      <TitleRow
+    <>
+      <PageBar
         title="Cloudflare"
-        context="API tokens Dock runs tunnels and domains with"
+        after={
+          <span className="text-xs text-faint">
+            API tokens Dock runs tunnels and domains with
+          </span>
+        }
         actions={
-          <span className="flex items-center gap-2.5">
+          <>
             {connections.length > 0 && <RetryFailed />}
             {!adding && (
               <Button
@@ -47,61 +51,63 @@ export function CloudflarePage() {
                 Add connection
               </Button>
             )}
-          </span>
+          </>
         }
       />
-      <section aria-labelledby="connections" className="flex flex-col gap-2">
-        <SectionHead
-          id="connections"
-          aside="domains are added from their zones, through server tunnels"
-        >
-          Connections
-        </SectionHead>
-        {connections.length > 0 ? (
-          <Panel>
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Account</th>
-                  <th>Zones</th>
-                  <th>Tunnels</th>
-                  <th>Status</th>
-                  <th>Changed</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {connections.map((c) => (
-                  <ConnectionRow
-                    key={c.name}
-                    connection={c}
-                    onEdit={() => {
-                      setAdding(false);
-                      setEditing(c.name);
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </Panel>
-        ) : (
-          !adding && (
-            <p className="py-2 text-mut">
-              No connection. Tunnels and their DNS are set up by hand.
-            </p>
-          )
-        )}
-        {adding && <TokenForm onClose={() => setAdding(false)} />}
-        {edited && (
-          <TokenForm
-            key={edited.name}
-            connection={edited}
-            onClose={() => setEditing(undefined)}
-          />
-        )}
-      </section>
-    </Page>
+      <Page>
+        <section aria-labelledby="connections" className="flex flex-col gap-2">
+          <SectionHead
+            id="connections"
+            aside="domains are added from their zones, through server tunnels"
+          >
+            Connections
+          </SectionHead>
+          {connections.length > 0 ? (
+            <Panel>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Account</th>
+                    <th>Zones</th>
+                    <th>Tunnels</th>
+                    <th>Status</th>
+                    <th>Changed</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {connections.map((c) => (
+                    <ConnectionRow
+                      key={c.name}
+                      connection={c}
+                      onEdit={() => {
+                        setAdding(false);
+                        setEditing(c.name);
+                      }}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </Panel>
+          ) : (
+            !adding && (
+              <p className="py-2 text-mut">
+                No connection. Tunnels and their DNS are set up by hand.
+              </p>
+            )
+          )}
+          {adding && <TokenForm onClose={() => setAdding(false)} />}
+          {edited && (
+            <TokenForm
+              key={edited.name}
+              connection={edited}
+              onClose={() => setEditing(undefined)}
+            />
+          )}
+        </section>
+      </Page>
+    </>
   );
 }
 
@@ -199,7 +205,7 @@ function ConnectionRow({
             <Button
               small
               disabled={tunnels.length > 0}
-              title={tunnels.length > 0 ? "a server's tunnel uses it" : ""}
+              reason="a server's tunnel uses it"
               onClick={() => setConfirming(true)}
             >
               Remove
@@ -210,8 +216,6 @@ function ConnectionRow({
     </tr>
   );
 }
-
-const field = "field py-[7px] font-mono";
 
 /**
  * Adds a connection, or gives one a new token. Dock checks the token and
@@ -276,7 +280,7 @@ function TokenForm({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="home"
-              className={field}
+              className="field py-[7px] font-mono"
             />
           </label>
         )}
@@ -287,7 +291,7 @@ function TokenForm({
             value={token}
             onChange={(e) => setToken(e.target.value)}
             autoComplete="new-password"
-            className={field}
+            className="field py-[7px] font-mono"
           />
         </label>
         <label className="flex flex-[1_1_200px] flex-col gap-1.5">
@@ -300,7 +304,7 @@ function TokenForm({
             placeholder={
               connection?.account_id ?? "if the token reaches several"
             }
-            className={field}
+            className="field py-[7px] font-mono"
           />
         </label>
       </div>

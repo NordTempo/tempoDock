@@ -20,8 +20,8 @@ import {
   Menu,
   menuItem,
   Page,
+  PageBar,
   Panel,
-  TitleRow,
 } from "../ui/kit";
 
 // People who sign in to the UI. Nobody can disable, delete or reset
@@ -43,88 +43,95 @@ function Users() {
   const active = users.filter((u) => !u.disabled_at).length;
 
   return (
-    <Page width="max-w-[1240px]">
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-7">
-        <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-6">
-          <TitleRow
-            title="Users"
-            context={`People who sign in. ${active} active${users.length > active ? `, ${users.length - active} disabled` : ""}. Roles match token scopes.`}
-          />
-          <AddUser />
-          {reset && (
-            <section
-              aria-labelledby="new-password"
-              className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
-            >
-              <h2 id="new-password" className="font-semibold">
-                <span className="text-ok">✓</span> New password for{" "}
-                <span className="font-mono font-medium">{reset.email}</span>
-              </h2>
-              <p>
-                <b className="font-semibold">Copy it now.</b>{" "}
-                <span className="text-mut">
-                  It is shown only this once. Their sessions ended; they sign in
-                  with it next.
-                </span>
-              </p>
-              <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
-                <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
-                  {reset.password}
-                </code>
-                <CopyButton text={reset.password} primary />
-              </div>
-              <div>
-                <Button small onClick={() => setReset(undefined)}>
-                  I've passed it on
-                </Button>
-              </div>
-            </section>
-          )}
-          <Panel>
-            <table>
-              <thead>
-                <tr>
-                  <th>Person</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th title="Signed-in browser sessions">Sessions</th>
-                  <th title="Usable tokens they created">Tokens</th>
-                  <th>Added</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <UserRow
-                    key={u.id}
-                    user={u}
-                    you={me?.email === u.email}
-                    onReset={setReset}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </Panel>
-          <p className="text-2xs text-faint">
-            Your own account can't be disabled, deleted or reset here. Change
-            your password on{" "}
-            <Link to="/account" className="text-info hover:underline">
-              your account
-            </Link>
-            . Tokens for agents, CI and scripts are in{" "}
-            <Link
-              to="/$org/settings/tokens"
-              params={{ org }}
-              className="text-info hover:underline"
-            >
-              the organization's settings
-            </Link>
-            .
-          </p>
+    <>
+      <PageBar
+        title="Users"
+        after={
+          <span className="text-xs text-faint">
+            {active} active
+            {users.length > active && ` · ${users.length - active} disabled`}
+          </span>
+        }
+      />
+      <Page width="max-w-[1240px]">
+        <div className="flex flex-wrap items-start gap-x-8 gap-y-7">
+          <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-6">
+            <AddUser />
+            {reset && (
+              <section
+                aria-labelledby="new-password"
+                className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
+              >
+                <h2 id="new-password" className="font-semibold">
+                  <span className="text-ok">✓</span> New password for{" "}
+                  <span className="font-mono font-medium">{reset.email}</span>
+                </h2>
+                <p>
+                  <b className="font-semibold">Copy it now.</b>{" "}
+                  <span className="text-mut">
+                    It is shown only this once. Their sessions ended; they sign
+                    in with it next.
+                  </span>
+                </p>
+                <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
+                  <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
+                    {reset.password}
+                  </code>
+                  <CopyButton text={reset.password} primary />
+                </div>
+                <div>
+                  <Button small onClick={() => setReset(undefined)}>
+                    I've passed it on
+                  </Button>
+                </div>
+              </section>
+            )}
+            <Panel>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th title="Signed-in browser sessions">Sessions</th>
+                    <th title="Usable tokens they created">Tokens</th>
+                    <th>Added</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u) => (
+                    <UserRow
+                      key={u.id}
+                      user={u}
+                      you={me?.email === u.email}
+                      onReset={setReset}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </Panel>
+            <p className="text-2xs text-faint">
+              Your own account can't be disabled, deleted or reset here. Change
+              your password on{" "}
+              <Link to="/account" className="text-info hover:underline">
+                your account
+              </Link>
+              . Tokens for agents, CI and scripts are in{" "}
+              <Link
+                to="/$org/settings/tokens"
+                params={{ org }}
+                className="text-info hover:underline"
+              >
+                the organization's settings
+              </Link>
+              .
+            </p>
+          </div>
+          <RoleGuide />
         </div>
-        <RoleGuide />
-      </div>
-    </Page>
+      </Page>
+    </>
   );
 }
 

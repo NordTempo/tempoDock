@@ -6,10 +6,10 @@ import {
   CopyButton,
   ErrorText,
   Page,
+  PageBar,
   Panel,
   SectionHead,
   StateText,
-  TitleRow,
 } from "../../ui/kit";
 import { BackupStorage } from "./BackupStorage";
 import { hourLabel } from "./backups";
@@ -33,17 +33,19 @@ export function BackupSettingsPage() {
   const latest = settings.control_plane.latest;
   const busy = settings.move?.running;
   return (
-    <Page>
-      <TitleRow
+    <>
+      <PageBar
         title="Backups"
-        context={
-          busy
-            ? `Moving to ${settings.move?.to}`
-            : settings.storage
-              ? `Off-box in ${settings.storage}, folder ${settings.path}`
-              : settings.off_box
-                ? `Off-box to ${settings.repository}`
-                : "Local repositories, one on each server"
+        after={
+          <span className="text-xs text-faint">
+            {busy
+              ? `moving to ${settings.move?.to}`
+              : settings.storage
+                ? `off-box in ${settings.storage}, folder ${settings.path}`
+                : settings.off_box
+                  ? `off-box to ${settings.repository}`
+                  : "local repositories, one on each server"}
+          </span>
         }
         actions={
           <>
@@ -62,22 +64,24 @@ export function BackupSettingsPage() {
           </>
         }
       />
-      {!settings.off_box && (
-        <p className="rounded-panel border border-warn-edge bg-warn-bg/60 px-3.5 py-3 text-warn-text">
-          Backups stay on the server they were made on, so losing a server loses
-          its backups. Move them to a bucket to send them off-box.
-        </p>
-      )}
-      <ErrorText error={run.error} />
-      <BackupStorage
-        settings={settings}
-        moving={moving}
-        onMoved={() => setMoving(false)}
-      />
-      <ControlPlane settings={settings} />
-      <Settings settings={settings} />
-      <Password />
-    </Page>
+      <Page>
+        {!settings.off_box && (
+          <p className="rounded-panel border border-warn-edge bg-warn-bg/60 px-3.5 py-3 text-warn-text">
+            Backups stay on the server they were made on, so losing a server
+            loses its backups. Move them to a bucket to send them off-box.
+          </p>
+        )}
+        <ErrorText error={run.error} />
+        <BackupStorage
+          settings={settings}
+          moving={moving}
+          onMoved={() => setMoving(false)}
+        />
+        <ControlPlane settings={settings} />
+        <Settings settings={settings} />
+        <Password />
+      </Page>
+    </>
   );
 }
 
@@ -154,8 +158,6 @@ function ControlPlane({ settings }: { settings: BackupSettings }) {
   );
 }
 
-const field = "field py-[7px]";
-
 /** Retention and the hour in one form; only changed fields are sent. */
 function Settings({ settings }: { settings: BackupSettings }) {
   const configure = useConfigureBackups();
@@ -195,7 +197,7 @@ function Settings({ settings }: { settings: BackupSettings }) {
         max={max}
         value={keep[k]}
         onChange={(e) => setKeep({ ...keep, [k]: Number(e.target.value) })}
-        className={`${field} font-mono`}
+        className="field py-[7px] font-mono"
       />
     </label>
   );
@@ -228,7 +230,7 @@ function Settings({ settings }: { settings: BackupSettings }) {
             <select
               value={hour}
               onChange={(e) => setHour(Number(e.target.value))}
-              className={field}
+              className="field py-[7px]"
             >
               {Array.from({ length: 24 }, (_, h) => (
                 <option key={h} value={h}>

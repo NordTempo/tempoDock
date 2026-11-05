@@ -32,10 +32,10 @@ import {
   ErrorText,
   Glyph,
   Page,
+  PageBar,
   Panel,
   SectionHead,
   StateText,
-  TitleRow,
 } from "../ui/kit";
 import { containerState, kindLabel } from "../ui/status";
 
@@ -71,85 +71,91 @@ function ServerPage() {
     useServerSwitches(server);
 
   return (
-    <Page>
-      <TitleRow
-        title={<span className="font-mono">{name}</span>}
-        context={[
-          server.version && `dock ${server.version}`,
-          server.local && "control plane",
-          server.builder && "builds images",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-        actions={
-          <Link to="/console/servers" className="self-center text-mut">
-            All servers
+    <>
+      <PageBar
+        parent={
+          <Link to="/console/servers" className="hover:text-fg">
+            Servers
           </Link>
         }
-      />
-      <StatusSentence detail={detail} />
-
-      <LinkSection server={server} />
-      {(server.tunnel || server.tunnel_port > 0) && (
-        <TunnelSection server={server} />
-      )}
-
-      <section aria-label="Now" className="flex flex-col gap-2">
-        <Now usage={server.usage} server={server} />
-        <LiveNote state={server.status === "online" ? live : "lost"} />
-      </section>
-
-      <section aria-labelledby="history">
-        <SectionHead
-          id="history"
-          aside={rangeLabel[range]}
-          right={
-            <RangeSwitch
-              value={range}
-              options={ranges}
-              onChange={(r) =>
-                navigate({
-                  search: r === "1h" ? {} : { range: r },
-                  replace: true,
-                })
-              }
-            />
-          }
-        >
-          History
-        </SectionHead>
-        <History
-          name={name}
-          range={range}
-          usage={server.usage}
-          server={server}
-        />
-      </section>
-
-      <section aria-labelledby="placement" className="flex flex-col gap-2">
-        <SectionHead id="placement">Placement</SectionHead>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <span>
-            <span className="text-mut">Accepts</span> {accepts}
+        title={<span className="font-mono">{name}</span>}
+        after={
+          <span className="text-xs text-faint">
+            {[
+              server.version && `dock ${server.version}`,
+              server.local && "control plane",
+              server.builder && "builds images",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
-          {placement}
-          {builder}
-        </div>
-        {confirm}
-        <ErrorText error={error} />
-        <p className="font-mono text-2xs text-mut">
-          dock server update {name} --production | --no-production |
-          --non-production | --no-non-production | --disable-placement |
-          --enable-placement | --builder | --no-builder
-        </p>
-        <Placements detail={detail} />
-      </section>
+        }
+      />
+      <Page>
+        <StatusSentence detail={detail} />
 
-      <MemoryBreakdown usage={server.usage} />
-      {server.status === "online" && <DiskBreakdown server={name} />}
+        <LinkSection server={server} />
+        {(server.tunnel || server.tunnel_port > 0) && (
+          <TunnelSection server={server} />
+        )}
 
-      <Services name={name} services={detail.services} />
-    </Page>
+        <section aria-label="Now" className="flex flex-col gap-2">
+          <Now usage={server.usage} server={server} />
+          <LiveNote state={server.status === "online" ? live : "lost"} />
+        </section>
+
+        <section aria-labelledby="history">
+          <SectionHead
+            id="history"
+            aside={rangeLabel[range]}
+            right={
+              <RangeSwitch
+                value={range}
+                options={ranges}
+                onChange={(r) =>
+                  navigate({
+                    search: r === "1h" ? {} : { range: r },
+                    replace: true,
+                  })
+                }
+              />
+            }
+          >
+            History
+          </SectionHead>
+          <History
+            name={name}
+            range={range}
+            usage={server.usage}
+            server={server}
+          />
+        </section>
+
+        <section aria-labelledby="placement" className="flex flex-col gap-2">
+          <SectionHead id="placement">Placement</SectionHead>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <span>
+              <span className="text-mut">Accepts</span> {accepts}
+            </span>
+            {placement}
+            {builder}
+          </div>
+          {confirm}
+          <ErrorText error={error} />
+          <p className="font-mono text-2xs text-mut">
+            dock server update {name} --production | --no-production |
+            --non-production | --no-non-production | --disable-placement |
+            --enable-placement | --builder | --no-builder
+          </p>
+          <Placements detail={detail} />
+        </section>
+
+        <MemoryBreakdown usage={server.usage} />
+        {server.status === "online" && <DiskBreakdown server={name} />}
+
+        <Services name={name} services={detail.services} />
+      </Page>
+    </>
   );
 }
 

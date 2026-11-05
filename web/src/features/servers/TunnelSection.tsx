@@ -164,8 +164,10 @@ function Unmanaged({ server: s }: { server: Server }) {
         disabled={
           set.isPending || s.status !== "online" || connections.length === 0
         }
-        title={
-          connections.length === 0 ? "add a Cloudflare connection first" : ""
+        reason={
+          connections.length === 0
+            ? "add a Cloudflare connection first"
+            : undefined
         }
         onClick={() =>
           set.mutate({

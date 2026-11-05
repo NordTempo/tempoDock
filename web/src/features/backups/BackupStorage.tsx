@@ -151,7 +151,6 @@ function MoveForm({
   const snapshots = (settings.repositories ?? [])
     .filter((r) => !r.current)
     .reduce((n, r) => n + r.snapshots, 0);
-  const field = "field py-[7px]";
   return (
     <form
       aria-label="Move backups"
@@ -176,7 +175,7 @@ function MoveForm({
             <select
               value={to}
               onChange={(e) => setPicked(e.target.value)}
-              className={field}
+              className="field py-[7px]"
             >
               {storage.map((s) => (
                 <option key={s.name} value={s.name}>
@@ -190,7 +189,7 @@ function MoveForm({
             <input
               value={path}
               onChange={(e) => setPath(e.target.value)}
-              className={`${field} font-mono`}
+              className="field py-[7px] font-mono"
             />
           </label>
         </div>

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { ErrorBlock } from "../../ui/ErrorBlock";
 import { ago } from "../../ui/format";
 import {
   Act,
@@ -8,8 +9,8 @@ import {
   CopyButton,
   ErrorText,
   Page,
+  PageBar,
   Panel,
-  TitleRow,
 } from "../../ui/kit";
 import {
   type GitHubInstallation,
@@ -28,37 +29,43 @@ import {
 export function GitHubPage() {
   const { data: gh, refetch, isFetching } = useGitHub();
   return (
-    <Page width="max-w-[900px]" gap="gap-5">
-      <TitleRow
+    <>
+      <PageBar
         title="GitHub"
-        context="Pushes deploy services with no webhook or token of their own"
-      />
-      {gh.hooks_hint && (
-        <p className="text-warn">
-          GitHub needs a public address to deliver pushes to.{" "}
-          <Link to="/console/address">Set Dock's address</Link> first.
-        </p>
-      )}
-      {gh.app ? (
-        <>
-          <AppPanel gh={gh} />
-          <Installations gh={gh} />
-          <span className="flex flex-wrap items-center gap-2">
-            <InstallForm orgs={gh.orgs ?? []} />
-            <Act
-              small
-              cli="dock github status"
-              disabled={isFetching}
-              onClick={() => refetch()}
-            >
-              Check again
-            </Act>
+        after={
+          <span className="text-xs text-faint">
+            pushes deploy services with no webhook or token of their own
           </span>
-        </>
-      ) : (
-        <CreateForm disabled={!!gh.hooks_hint} />
-      )}
-    </Page>
+        }
+      />
+      <Page width="max-w-[900px]" gap="gap-5">
+        {gh.hooks_hint && (
+          <p className="text-warn">
+            GitHub needs a public address to deliver pushes to.{" "}
+            <Link to="/console/address">Set Dock's address</Link> first.
+          </p>
+        )}
+        {gh.app ? (
+          <>
+            <AppPanel gh={gh} />
+            <Installations gh={gh} />
+            <span className="flex flex-wrap items-center gap-2">
+              <InstallForm orgs={gh.orgs ?? []} />
+              <Act
+                small
+                cli="dock github status"
+                disabled={isFetching}
+                onClick={() => refetch()}
+              >
+                Check again
+              </Act>
+            </span>
+          </>
+        ) : (
+          <CreateForm disabled={!!gh.hooks_hint} />
+        )}
+      </Page>
+    </>
   );
 }
 
@@ -143,13 +150,19 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
 /** The App's installations, each assigned to an org from a select. */
 function Installations({ gh }: { gh: GitHubStatus }) {
   const assign = useAssign();
+  const { refetch } = useGitHub();
   const installations = gh.installations ?? [];
   return (
     <section className="flex flex-col gap-2">
       {gh.installations_error && (
-        <p className="text-fail">
-          GitHub couldn't list the installations: {gh.installations_error}
-        </p>
+        <ErrorBlock
+          error={
+            new Error(
+              `GitHub couldn't list the installations: ${gh.installations_error}`,
+            )
+          }
+          onRetry={() => refetch()}
+        />
       )}
       {installations.length === 0 ? (
         <p className="text-mut">
