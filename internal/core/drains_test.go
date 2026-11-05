@@ -2,6 +2,7 @@ package core
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"net"
@@ -49,7 +50,13 @@ func newDrainReceiver(h *harness, blocked bool) *drainReceiver {
 	}
 	k.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-k.block
-		sc := bufio.NewScanner(r.Body)
+		// A delivery cut short (the drain gave up or the test ended while
+		// the request was held) was never delivered: skip its partial body.
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return
+		}
+		sc := bufio.NewScanner(bytes.NewReader(body))
 		k.mu.Lock()
 		defer k.mu.Unlock()
 		k.headers = append(k.headers, r.Header.Clone())
