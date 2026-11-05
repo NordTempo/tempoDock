@@ -43,14 +43,20 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     info.data?.engine === "postgres"
       ? `psql -h 127.0.0.1 -p ${info.data.port} -U ${info.data.user} ${info.data.database}`
       : undefined;
-  return (
-    <div className="grid grid-cols-[max-content_minmax(0,max-content)_max-content_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
-      <span className="text-faint">Tunnel</span>
-      <code className="truncate font-mono" title={cli}>
-        {cli}
+  const row = (label: string, line: string) => (
+    <div className="flex items-center gap-3">
+      <span className="w-12 flex-none text-faint">{label}</span>
+      <code className="min-w-0 truncate font-mono" title={line}>
+        {line}
       </code>
-      <CopyButton text={cli} />
-      <span className="min-w-0 truncate">
+      <CopyButton text={line} />
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-1.5 text-xs">
+      {row("Tunnel", cli)}
+      {psql && row("Then", psql)}
+      <span className="pl-[60px]">
         {info.data ? (
           <span className="text-mut">
             <span className="text-ok">✓</span> You have access. Forwards to :
@@ -62,16 +68,6 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <span className="text-faint">Checking your access</span>
         )}
       </span>
-      {psql && (
-        <>
-          <span className="text-faint">Then</span>
-          <code className="truncate font-mono" title={psql}>
-            {psql}
-          </code>
-          <CopyButton text={psql} />
-          <span />
-        </>
-      )}
     </div>
   );
 }

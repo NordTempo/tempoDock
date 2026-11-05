@@ -142,7 +142,7 @@ function RunForm({
       <div className="flex items-center gap-2.5">
         <input
           aria-label="Command"
-          placeholder="bin/rails db:seed"
+          placeholder="a command, e.g. npm run migrate"
           spellCheck={false}
           autoComplete="off"
           maxLength={16_384}

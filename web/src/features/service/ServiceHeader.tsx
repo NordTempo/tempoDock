@@ -44,7 +44,13 @@ import {
 import { openDeploy } from "../deploy/start";
 import { EnvServer } from "../servers/parts";
 import { useStartService, useStopService } from "./data";
-import { copiedConfig, errorSummary, rollbackTarget } from "./releases";
+import { RollbackConfirm } from "./ReleasesTable";
+import {
+  errorSummary,
+  imageLabel,
+  rollbackTarget,
+  shortImage,
+} from "./releases";
 import { type ServiceTab, tabsFor } from "./tabs";
 import { CpuUsage, MemoryUsage } from "./Usage";
 
@@ -177,11 +183,24 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service } = view;
   const domain =
     view.domains.find((d) => d.status === "active") ?? view.domains[0];
+  const running = view.active_release
+    ? imageLabel(view.active_release)
+    : service.image;
+  const next = service.image?.replace(/^docker\.io\/(library\/)?/, "");
   const facts: [string, ReactNode][] = [
     [
-      "Source",
-      <span key="s" className="font-mono">
-        {service.image ?? "built from source"}
+      "Image",
+      // What runs now; the image setting only when the next deploy differs
+      // (after a rollback, or a failed deploy of a new tag).
+      <span key="s" className="flex flex-col font-mono">
+        <span className="truncate" title={running}>
+          {running ? shortImage(running) : "built from source"}
+        </span>
+        {next && next !== running && (
+          <span className="break-all text-warn-text" title={next}>
+            next: {shortImage(next)}
+          </span>
+        )}
       </span>,
     ],
     [
@@ -468,30 +487,29 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   // Read-only callers see the state, not buttons they can't use.
   if (!mayDeploy) return null;
 
-  if (confirming === "stop") {
-    return (
+  const close = () => setConfirming(null);
+  // The question in a modal over the page; the buttons stay where they are.
+  const asking =
+    confirming === "stop" ? (
       <Confirm
+        title={`Stop ${ref.service} in ${ref.environment}?`}
         action={`Stop ${ref.service}`}
         cli={`dock service stop ${ref.service} -e ${ref.environment}`}
         danger
         pending={!canStop}
         error={stop.error}
-        onConfirm={() =>
-          stop.mutate(ref, { onSuccess: () => setConfirming(null) })
-        }
+        onConfirm={() => stop.mutate(ref, { onSuccess: close })}
         onCancel={() => {
           stop.reset();
-          setConfirming(null);
+          close();
         }}
       >
-        Its domains answer 503 until it starts again.
+        Its container is removed and its domains answer 503 until you start it
+        again. Volumes and releases are kept.
       </Confirm>
-    );
-  }
-
-  if (confirming === "archive") {
-    return (
+    ) : confirming === "archive" ? (
       <Confirm
+        title={`Archive ${ref.service}?`}
         action={`Archive ${ref.service}`}
         cli={`dock service archive ${ref.service} -e ${ref.environment} -p ${ref.project}`}
         danger
@@ -508,41 +526,25 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         }
         onCancel={() => {
           archive.reset();
-          setConfirming(null);
+          close();
         }}
       >
         Stops its container and removes its routes in {ref.environment}. Volumes
         and history are kept.
       </Confirm>
-    );
-  }
-
-  if (confirming === "rollback" && target) {
-    return (
-      <Confirm
-        action={`Roll back to r${target.number}`}
-        cli={`dock rollback ${target.number} ${flags}`}
-        pending={!canRollback}
-        error={rollback.error}
-        onConfirm={() =>
-          rollback.mutate(
-            { ref, to: target.number },
-            { onSuccess: () => setConfirming(null) },
-          )
-        }
-        onCancel={() => {
-          rollback.reset();
-          setConfirming(null);
-        }}
-      >
-        A new release with r{target.number}'s image and config:{" "}
-        <span className="font-mono text-mut">{copiedConfig(target)}</span>
-      </Confirm>
-    );
-  }
+    ) : confirming === "rollback" && target ? (
+      <RollbackConfirm
+        serviceRef={ref}
+        target={target}
+        serving={releases.find((r) => r.status === "active")}
+        blocked={!!busy}
+        onDone={close}
+      />
+    ) : null;
 
   return (
     <div className="flex flex-wrap items-start gap-2">
+      {asking}
       {stopped ? (
         <Act
           cli={`dock service start ${ref.service} -e ${ref.environment}`}
@@ -609,7 +611,21 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Menu
           label="More actions"
           right
-          button={<span className="btn">⋯</span>}
+          button={
+            <span className="btn px-2">
+              <svg
+                aria-hidden
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="currentColor"
+              >
+                <circle cx="3" cy="7" r="1.3" />
+                <circle cx="7" cy="7" r="1.3" />
+                <circle cx="11" cy="7" r="1.3" />
+              </svg>
+            </span>
+          }
         >
           {(close) => (
             <button
@@ -628,7 +644,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       )}
       <span className="self-center text-xs">
         {blocked && <span className="text-fail">Disabled: {blocked}.</span>}{" "}
-        <ErrorText error={restart.error ?? rollback.error ?? start.error} />
+        <ErrorText error={restart.error ?? start.error} />
       </span>
     </div>
   );

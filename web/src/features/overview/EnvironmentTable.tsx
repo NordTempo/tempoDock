@@ -201,7 +201,16 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
         </p>
       ) : (
         <Panel>
-          <table>
+          {/* Fixed columns line up across the environments stacked here. */}
+          <table className="table-fixed">
+            <colgroup>
+              <col className="w-[30%]" />
+              <col className="w-[14%]" />
+              <col className="w-[8%]" />
+              <col className="w-[20%]" />
+              <col className="w-[16%]" />
+              <col className="w-[12%]" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Service</th>
@@ -254,7 +263,7 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
           {service.name}
         </Link>
         <div
-          className="max-w-[40ch] truncate font-mono text-2xs text-faint"
+          className="truncate font-mono text-2xs text-faint"
           title={newImage || oldImage || service.image || undefined}
         >
           {oldImage || (!deploying && service.image) || ""}
@@ -292,10 +301,10 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
         )}
       </td>
       <td className="py-2.5 font-mono">
-        {active ? `r${active.number}` : <span className="text-mut">none</span>}
+        {active ? `r${active.number}` : <span className="text-faint">·</span>}
         {deploying && <span className="text-prog"> → r{deploying.number}</span>}
       </td>
-      <td className="py-2.5 font-mono">
+      <td className="truncate py-2.5 font-mono">
         {primary ? (
           <>
             {primary.hostname}
@@ -311,7 +320,7 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
             )}
           </>
         ) : (
-          <span className="font-sans text-faint">none</span>
+          <span className="text-faint">·</span>
         )}
       </td>
       <td className="py-2.5 text-xs">
@@ -331,7 +340,7 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
             </span>
           ))
         ) : (
-          <span className="font-sans text-faint">none</span>
+          <span className="text-faint">·</span>
         )}
       </td>
     </tr>

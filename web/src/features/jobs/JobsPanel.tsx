@@ -520,7 +520,7 @@ function Editor({
       </label>
       <textarea
         id="job-command"
-        placeholder="bin/rails runner 'Session.sweep'"
+        placeholder="a command, e.g. node scripts/cleanup.js"
         spellCheck={false}
         autoComplete="off"
         maxLength={16_384}

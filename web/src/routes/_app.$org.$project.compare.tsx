@@ -25,7 +25,7 @@ import {
   promotionPlan,
 } from "../features/promote/plan";
 import { EnvServer } from "../features/servers/parts";
-import { imageLabel } from "../features/service/releases";
+import { imageLabel, shortImage } from "../features/service/releases";
 import { useShortcuts } from "../shell/keys";
 import { useOrg } from "../shell/location";
 import { limits } from "../ui/format";
@@ -491,14 +491,4 @@ function differences(
     });
   }
   return diffs;
-}
-
-/**
- * An image as people say it: the last path part and its tag, a digest
- * cut to 7 characters ("shop-web:1.3.0", "redis:8-alpine@615b4ce").
- */
-function shortImage(ref: string) {
-  const [name = "", digest] = ref.split("@sha256:");
-  const last = name.split("/").at(-1) ?? name;
-  return digest ? `${last}@${digest.slice(0, 7)}` : last;
 }
