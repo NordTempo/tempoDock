@@ -1545,6 +1545,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An environment's move
+         * @description The running move, or the latest one: its step, each service's progress, the downtime and what is left to do by hand. 404 if the environment never moved. Scope: read.
+         */
+        get: operations["get-environment-move"];
+        put?: never;
+        /**
+         * Move an environment to another server
+         * @description Checks everything first and refuses with the reason: the target accepts the environment's kind, both servers are online, the target has the memory and disk, every active release's image can reach it, and domains routed through Cloudflare have a tunnel on it. Then answers with the move, running, and works in the background: stateful services are down while their volumes copy; the rest keep serving until the switch. A failure before the switch rolls back and leaves the environment where it was. Progress is published as environment_move events; environment.moved or environment.move_failed is audited at the end. Operators only, and the environment's lock applies.
+         */
+        post: operations["move-environment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/preview": {
         parameters: {
             query?: never;
@@ -5064,6 +5088,7 @@ export interface components {
             /** @enum {string} */
             kind: "production" | "non_production";
             lock?: components["schemas"]["EnvironmentLock"];
+            moving_to?: string;
             name: string;
             /** @description The pull request this preview environment belongs to */
             preview?: components["schemas"]["PullRequestRef"];
@@ -5094,6 +5119,30 @@ export interface components {
             /** Format: date-time */
             open_until?: string;
             reason?: string;
+        };
+        EnvironmentMove: {
+            created_by: string;
+            /** Format: date-time */
+            downtime_from?: string;
+            /** Format: date-time */
+            downtime_to?: string;
+            environment: string;
+            error?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            from: string;
+            /** Format: int64 */
+            id: number;
+            notes: string[] | null;
+            project: string;
+            services: components["schemas"]["MoveService"][] | null;
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            status: "running" | "rolling_back" | "succeeded" | "failed";
+            /** @enum {string} */
+            step: "prepare" | "stop" | "copy" | "start" | "switch" | "cleanup" | "done";
+            to: string;
         };
         EnvironmentOverview: {
             environment: components["schemas"]["Environment"];
@@ -5188,6 +5237,7 @@ export interface components {
             job?: components["schemas"]["Job"];
             lock?: components["schemas"]["EnvironmentLock"];
             message?: string;
+            move?: components["schemas"]["EnvironmentMove"];
             project?: string;
             project_renamed?: components["schemas"]["ProjectRenamed"];
             release?: components["schemas"]["Release"];
@@ -5200,7 +5250,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move";
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
@@ -5524,6 +5574,18 @@ export interface components {
             path?: string;
             /** @description the storage connection */
             storage: string;
+        };
+        MoveEnvironmentRequest: {
+            to: string;
+        };
+        MoveService: {
+            /** Format: int64 */
+            copied_bytes: number;
+            error?: string;
+            service: string;
+            stateful: boolean;
+            /** @enum {string} */
+            status: "waiting" | "stopped" | "copied" | "started" | "healthy" | "failed";
         };
         Org: {
             /** Format: date-time */
@@ -16095,6 +16157,216 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-environment-move": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentMove"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "move-environment": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveEnvironmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentMove"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
