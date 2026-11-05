@@ -289,6 +289,35 @@ func TestLineWriterDemux(t *testing.T) {
 	}
 }
 
+// A container that never writes a newline costs at most maxLogLine bytes:
+// the line is cut there, on a rune boundary, and the rest of it dropped.
+func TestLineWriterCapsLongLines(t *testing.T) {
+	var got []node.LogLine
+	w := &lineWriter{stream: "stdout", emit: func(l node.LogLine) error { got = append(got, l); return nil }}
+	ts := "2026-10-21T10:00:00Z "
+	long := ts + strings.Repeat("x", maxLogLine-len(ts)-1) + "é" // é straddles the cap
+	for range 1000 {
+		if _, err := w.Write([]byte(long)); err != nil {
+			t.Fatal(err)
+		}
+		if len(w.buf) > maxLogLine {
+			t.Fatalf("buffered %d bytes", len(w.buf))
+		}
+	}
+	if _, err := w.Write([]byte(" end\n" + ts + "next\n")); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d lines, want 2", len(got))
+	}
+	if want := maxLogLine - len(ts) - 1; len(got[0].Text) != want || got[0].Time.IsZero() {
+		t.Errorf("cut line: %d bytes at %v, want %d bytes with its time", len(got[0].Text), got[0].Time, want)
+	}
+	if got[1].Text != "next" {
+		t.Errorf("line after the cut = %q", got[1].Text)
+	}
+}
+
 func TestToEvent(t *testing.T) {
 	ev := toEvent(events.Message{
 		Type:   events.ContainerEventType,

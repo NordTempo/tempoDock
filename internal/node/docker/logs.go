@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
@@ -65,28 +66,71 @@ func (r *Runtime) Logs(ctx context.Context, id string, opts node.LogOptions) (<-
 	return ch, nil
 }
 
+// maxLogLine bounds one line, its timestamp included: past it the rest of
+// the line, up to its newline, is dropped, as the node link truncates
+// lines (remote's maxLogText). Without it a container that never writes
+// a newline grows the buffer without bound, and log drains follow every
+// container all the time (ADR 0046).
+const maxLogLine = 64 << 10
+
 // lineWriter splits one demultiplexed stream into timestamped lines and
 // hands each to emit. Docker prefixes every line with an RFC 3339 timestamp
-// when timestamps are requested.
+// when timestamps are requested. It buffers at most maxLogLine bytes.
 type lineWriter struct {
 	stream string
 	emit   func(node.LogLine) error
 	buf    []byte
+	// skip drops input up to the next newline: the rest of a line already
+	// emitted cut at maxLogLine.
+	skip bool
 }
 
 func (w *lineWriter) Write(p []byte) (int, error) {
-	w.buf = append(w.buf, p...)
-	for {
-		i := bytes.IndexByte(w.buf, '\n')
-		if i < 0 {
-			return len(p), nil
+	n := len(p)
+	for len(p) > 0 {
+		i := bytes.IndexByte(p, '\n')
+		if w.skip {
+			if i < 0 {
+				return n, nil
+			}
+			w.skip, p = false, p[i+1:]
+			continue
 		}
-		line := string(w.buf[:i])
-		w.buf = w.buf[i+1:]
+		if i < 0 {
+			if len(w.buf)+len(p) <= maxLogLine {
+				w.buf = append(w.buf, p...)
+				return n, nil
+			}
+			w.buf = append(w.buf, p[:maxLogLine-len(w.buf)]...)
+			w.skip, p = true, nil
+		} else {
+			w.buf = append(w.buf, p[:min(i, max(0, maxLogLine-len(w.buf)))]...)
+			p = p[i+1:]
+		}
+		line := string(truncateRunes(w.buf))
+		w.buf = w.buf[:0]
 		if err := w.emit(w.parse(line)); err != nil {
 			return 0, err
 		}
 	}
+	return n, nil
+}
+
+// truncateRunes drops a rune cut short at the end of b, left by cutting a
+// line at maxLogLine.
+func truncateRunes(b []byte) []byte {
+	if len(b) < maxLogLine {
+		return b
+	}
+	for i := len(b) - 1; i >= max(0, len(b)-utf8.UTFMax); i-- {
+		if utf8.RuneStart(b[i]) {
+			if !utf8.FullRune(b[i:]) {
+				return b[:i]
+			}
+			return b
+		}
+	}
+	return b
 }
 
 // flush emits a trailing line that had no newline.
