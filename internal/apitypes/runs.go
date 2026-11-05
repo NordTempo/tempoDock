@@ -35,6 +35,9 @@ const (
 	RunCanceled RunStatus = "canceled"
 	// RunInterrupted: the control plane stopped or restarted while it ran.
 	RunInterrupted RunStatus = "interrupted"
+	// RunSkipped: a job's scheduled run didn't start (still running, no
+	// active release, the service stopped); Error says why.
+	RunSkipped RunStatus = "skipped"
 )
 
 // RunTrigger says what started a run.
@@ -44,6 +47,10 @@ type RunTrigger string
 const (
 	// TriggerCommand: someone ran a command (`dock run`, the UI, MCP).
 	TriggerCommand RunTrigger = "command"
+	// TriggerSchedule: a job came due (ADR 0054).
+	TriggerSchedule RunTrigger = "schedule"
+	// TriggerManual: someone ran a job now.
+	TriggerManual RunTrigger = "manual"
 )
 
 // Command limits.
@@ -73,15 +80,17 @@ type CommandRun struct {
 	Project     string     `json:"project"`
 	Environment string     `json:"environment"`
 	Service     string     `json:"service"`
-	Trigger     RunTrigger `json:"trigger" enum:"command"`
-	Command     string     `json:"command"`
+	Trigger     RunTrigger `json:"trigger" enum:"command,schedule,manual"`
+	// Job is the job a scheduled or run-now run belongs to.
+	Job     string `json:"job,omitempty"`
+	Command string `json:"command"`
 	// Release is the number of the release it ran in; 0 when there was
 	// none (a scheduled run skipped for it).
 	Release        int64      `json:"release"`
 	TTY            bool       `json:"tty"`
 	Volumes        RunVolumes `json:"volumes" enum:"none,read,write"`
 	TimeoutSeconds int        `json:"timeout_seconds"`
-	Status         RunStatus  `json:"status" enum:"running,succeeded,failed,timed_out,canceled,interrupted"`
+	Status         RunStatus  `json:"status" enum:"running,succeeded,failed,timed_out,canceled,interrupted,skipped"`
 	// ExitCode is set once it exited by itself.
 	ExitCode *int   `json:"exit_code,omitempty"`
 	Error    string `json:"error,omitempty"`

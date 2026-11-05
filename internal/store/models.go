@@ -595,6 +595,23 @@ type ServiceAccess struct {
 	UpdatedAt    time.Time
 }
 
+type ServiceJob struct {
+	ID             int64
+	ServiceID      int64
+	Name           string
+	Schedule       string
+	Timezone       string
+	Command        string
+	TimeoutSeconds int64
+	Overlap        string
+	Enabled        bool
+	Source         string
+	LastDueAt      *time.Time
+	CreatedBy      string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type ServiceRun struct {
 	ID             int64
 	ServiceID      int64
@@ -614,6 +631,7 @@ type ServiceRun struct {
 	TokenID        *int64
 	StartedAt      time.Time
 	FinishedAt     *time.Time
+	JobID          *int64
 }
 
 type ServiceStat struct {

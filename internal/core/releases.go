@@ -87,13 +87,35 @@ type repoDeploy struct {
 	HealthCheckStartPeriodSeconds  int    `json:"health_check_start_period_seconds,omitempty"`
 	PreDeployCommand               string `json:"pre_deploy_command,omitempty"`
 	PreDeployTimeoutSeconds        int    `json:"pre_deploy_timeout_seconds,omitempty"`
+	// JobsFromFile says the source had a dock.toml, so Jobs are the
+	// service's file jobs (ADR 0054), none removing them.
+	JobsFromFile bool      `json:"jobs_from_file,omitempty"`
+	Jobs         []repoJob `json:"jobs,omitempty"`
+}
+
+// repoJob is a [[jobs]] entry of dock.toml.
+type repoJob struct {
+	Name           string `json:"name"`
+	Schedule       string `json:"schedule"`
+	Timezone       string `json:"timezone,omitempty"`
+	Command        string `json:"command"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+	Overlap        string `json:"overlap,omitempty"`
 }
 
 func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
-	if rc == nil || rc.Deploy == (repoconfig.Deploy{}) {
+	if rc == nil {
 		return nil
 	}
+	jobs := make([]repoJob, 0, len(rc.Jobs))
+	for _, j := range rc.Jobs {
+		jobs = append(jobs, repoJob{
+			Name: j.Name, Schedule: j.Schedule, Timezone: j.Timezone, Command: j.Command,
+			TimeoutSeconds: int(j.Timeout / time.Second), Overlap: j.Overlap,
+		})
+	}
 	return &repoDeploy{
+		JobsFromFile: true, Jobs: jobs,
 		StartCommand: rc.Deploy.StartCommand, Port: rc.Deploy.Port, HealthCheckPath: rc.Deploy.HealthCheckPath,
 		HealthCheckTimeoutSeconds:      int(rc.Deploy.HealthCheckTimeout / time.Second),
 		HealthCheckIntervalSeconds:     intervalSeconds(rc.Deploy.HealthCheckInterval),

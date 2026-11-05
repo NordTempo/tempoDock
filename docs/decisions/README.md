@@ -60,6 +60,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0050](0050-stop-start-service.md) | Stop and start a service | accepted |
 | [0051](0051-registry-credentials.md) | Pull credentials for private registries | accepted |
 | [0052](0052-anonymous-volumes-of-served-containers.md) | Keeping the anonymous volumes of containers that served | accepted |
+| [0054](0054-scheduled-jobs.md) | Scheduled jobs (cron) | accepted |
 | [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted |
 
 ## Template

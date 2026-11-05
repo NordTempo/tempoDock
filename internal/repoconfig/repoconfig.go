@@ -4,7 +4,7 @@
 //
 // The CLI reads it from a directory with Load; the server reads it from an
 // uploaded build context with FromTar. Keep this package free of
-// dependencies beyond go-toml.
+// dependencies beyond go-toml (and internal/cron, the standard library's).
 package repoconfig
 
 import (
@@ -19,10 +19,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/NordTempo/tempoDock/internal/cron"
 )
 
 // FileName is the config file's name at the root of a repo.
@@ -38,6 +41,24 @@ const maxSize = 64 << 10
 type Config struct {
 	Build  Build
 	Deploy Deploy
+	// Jobs are the service's scheduled jobs (ADR 0054). A release from a
+	// source with this file makes them the service's file jobs, an empty
+	// list removing them.
+	Jobs []Job
+}
+
+// Job is a [[jobs]] entry: a command from the release's image on a cron
+// schedule.
+type Job struct {
+	Name     string
+	Schedule string
+	// Timezone is an IANA name; empty is UTC.
+	Timezone string
+	Command  string
+	// Timeout bounds one run; zero is the platform's default.
+	Timeout time.Duration
+	// Overlap is "skip" or "allow"; empty is skip.
+	Overlap string
 }
 
 // Build configures how source becomes an image.
@@ -102,7 +123,24 @@ type file struct {
 		PreDeployCommand *string `toml:"pre_deploy_command"`
 		PreDeployTimeout *string `toml:"pre_deploy_timeout"`
 	} `toml:"deploy"`
+	Jobs []struct {
+		Name     *string `toml:"name"`
+		Schedule *string `toml:"schedule"`
+		Timezone *string `toml:"timezone"`
+		Command  *string `toml:"command"`
+		Timeout  *string `toml:"timeout"`
+		Overlap  *string `toml:"overlap"`
+	} `toml:"jobs"`
 }
+
+// jobName is a job's name, as the platform takes it.
+var jobName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$`)
+
+// maxJobs and maxJobTimeout bound [[jobs]] like the platform does.
+const (
+	maxJobs       = 50
+	maxJobTimeout = 24 * time.Hour
+)
 
 // Bounds of the deploy section's health check keys; the platform's
 // service settings have the same ones.
@@ -195,6 +233,41 @@ func Parse(b []byte) (Config, error) {
 	cfg.Deploy.HealthCheckStartPeriod = duration("deploy.health_check_start_period", f.Deploy.HealthCheckStartPeriod, maxStartPeriod)
 	cfg.Deploy.PreDeployCommand = nonEmpty("deploy.pre_deploy_command", f.Deploy.PreDeployCommand)
 	cfg.Deploy.PreDeployTimeout = duration("deploy.pre_deploy_timeout", f.Deploy.PreDeployTimeout, maxPreDeployTimeout)
+
+	if len(f.Jobs) > maxJobs {
+		bad("jobs", "at most %d jobs, got %d", maxJobs, len(f.Jobs))
+	}
+	seen := map[string]bool{}
+	for i, j := range f.Jobs {
+		key := fmt.Sprintf("jobs[%d]", i)
+		job := Job{
+			Name: nonEmpty(key+".name", j.Name), Schedule: nonEmpty(key+".schedule", j.Schedule),
+			Timezone: nonEmpty(key+".timezone", j.Timezone), Command: nonEmpty(key+".command", j.Command),
+			Overlap: nonEmpty(key+".overlap", j.Overlap), Timeout: duration(key+".timeout", j.Timeout, maxJobTimeout),
+		}
+		switch {
+		case job.Name == "" || job.Schedule == "" || job.Command == "":
+			bad(key, "needs name, schedule and command")
+			continue
+		case !jobName.MatchString(job.Name):
+			bad(key+".name", "%q must be lower-case letters, digits and dashes, at most 40", job.Name)
+		case seen[job.Name]:
+			bad(key+".name", "%q is there twice", job.Name)
+		}
+		seen[job.Name] = true
+		if _, err := cron.Parse(job.Schedule); err != nil {
+			bad(key+".schedule", "%v", err)
+		}
+		if job.Timezone != "" {
+			if _, err := time.LoadLocation(job.Timezone); err != nil {
+				bad(key+".timezone", "%q is not an IANA timezone, e.g. \"Europe/Oslo\"", job.Timezone)
+			}
+		}
+		if job.Overlap != "" && job.Overlap != "skip" && job.Overlap != "allow" {
+			bad(key+".overlap", "must be \"skip\" or \"allow\"")
+		}
+		cfg.Jobs = append(cfg.Jobs, job)
+	}
 
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)

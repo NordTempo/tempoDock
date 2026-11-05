@@ -7,6 +7,7 @@ import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { cloudflareKey } from "../features/cloudflare/data";
+import { applyJobEvent, applyJobRunEvent } from "../features/jobs/data";
 import { registryKey } from "../features/registry/data";
 import { applyAccessRequestEvent } from "../features/requests/data";
 import { applyRunEvent } from "../features/runs/data";
@@ -62,6 +63,7 @@ const busEvents = [
   "access_request",
   "run",
   "uptime",
+  "job",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -283,8 +285,16 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
         applyAccessRequestEvent(queryClient, event.access_request);
       return;
     case "run":
-      // A one-off command started or ended; its output isn't in the event.
-      if (event.run) applyRunEvent(queryClient, event.run);
+      // A command or a job's run started or ended; its output isn't in
+      // the event. Each list takes its own kind.
+      if (event.run) {
+        applyRunEvent(queryClient, event.run);
+        applyJobRunEvent(queryClient, event.run);
+      }
+      return;
+    case "job":
+      // A scheduled job was set, turned on or off, or removed.
+      applyJobEvent(queryClient, event);
       return;
     case "uptime": {
       // An uptime check went up or down (ADR 0055).
@@ -538,6 +548,9 @@ function invalidateForAudit(
   invalidate(["audit"]);
   if (!audit || auditedReads.has(audit.action)) return;
   if (audit.action === "project.rename") return; // Its typed event moves the cache.
+  // Job changes reach the Jobs tab as job and run events, and change
+  // nothing else in the environment.
+  if (audit.action.startsWith("job.")) return;
   const [kind] = audit.action.split(".");
   if (kind === "project") invalidate(keys.projects);
   if (kind === "token") invalidate(keys.tokens);

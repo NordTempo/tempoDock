@@ -366,6 +366,38 @@ deploy to a stopped service also starts it when its release goes live. A server 
 plane answers `502` instead of the `503` page until it updates
 ([ADR 0050](../decisions/0050-stop-start-service.md)).
 
+## Scheduled jobs
+
+```sh
+dock job set nightly -s web --schedule '0 3 * * *' --timezone Europe/Oslo -- bin/rails cleanup
+dock job list -s web             # schedules, next times, last runs
+dock job run nightly -s web      # now, outside the schedule
+dock job history nightly -s web
+dock job disable nightly -s web
+```
+
+A job is a command on a cron schedule, run like `dock run` (above) in the
+service's active image, with its variables and network and without its
+volumes. A service can have several. The schedule has the five usual
+fields (`minute hour day-of-month month day-of-week`, with ranges, lists,
+steps and names) or `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`,
+read in the job's timezone (default UTC).
+
+| | |
+|---|---|
+| Overlap | A job still running when it comes due again is skipped (`--overlap allow` runs both) |
+| Downtime | A time missed while the control plane was down or the server offline runs once on recovery, however many were missed |
+| Skipped | No active release, or the service is stopped (`dock service stop`): the run is recorded as skipped with why |
+| Timeout | `--timeout`, default 1 hour, at most 24 hours |
+| History | The last 20 runs per job, with exit code, duration and the last 16 KB of output |
+| Failures | A failed or timed-out run raises a `job_failed` alert through the alert channels; the next good run resolves it |
+| Who | Scope `deploy` to set, remove or run one; a locked environment refuses tokens, but its schedules keep running |
+
+Jobs can live in `dock.toml` as `[[jobs]]` ([reference](../dock-toml.md));
+they follow the active release. The service's Jobs tab edits them in the
+UI, and agents have `list_jobs`, `set_job`, `run_job` and `job_history`.
+Design: [ADR 0054](../decisions/0054-scheduled-jobs.md).
+
 ## Promote
 
 ```sh

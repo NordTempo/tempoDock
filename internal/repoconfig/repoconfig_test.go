@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -44,7 +45,7 @@ pre_deploy_timeout = "15m"
 			PreDeployTimeout:        15 * time.Minute,
 		},
 	}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("got %+v, want %+v", cfg, want)
 	}
 }
@@ -58,7 +59,7 @@ func TestParseIntervalOff(t *testing.T) {
 
 func TestParseEmptyFileSetsNothing(t *testing.T) {
 	cfg, err := Parse(nil)
-	if err != nil || cfg != (Config{}) {
+	if err != nil || !reflect.DeepEqual(cfg, Config{}) {
 		t.Fatalf("got %+v, %v", cfg, err)
 	}
 }
@@ -191,5 +192,50 @@ func TestFromTar(t *testing.T) {
 	_, found, err := FromTar(archive(true, map[string]string{"sub/dock.toml": "port = 1"}))
 	if err != nil || found {
 		t.Fatalf("nested dock.toml must be ignored: found=%v err=%v", found, err)
+	}
+}
+
+// TestJobs: [[jobs]] parse with their defaults left empty, and each
+// mistake is named by its key.
+func TestJobs(t *testing.T) {
+	cfg, err := Parse([]byte(`
+[[jobs]]
+name = "nightly"
+schedule = "0 3 * * *"
+timezone = "Europe/Oslo"
+command = "bin/cleanup"
+timeout = "30m"
+
+[[jobs]]
+name = "sweep"
+schedule = "@hourly"
+command = "bin/sweep"
+overlap = "allow"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Job{
+		{Name: "nightly", Schedule: "0 3 * * *", Timezone: "Europe/Oslo", Command: "bin/cleanup", Timeout: 30 * time.Minute},
+		{Name: "sweep", Schedule: "@hourly", Command: "bin/sweep", Overlap: "allow"},
+	}
+	if !reflect.DeepEqual(cfg.Jobs, want) {
+		t.Fatalf("jobs = %+v", cfg.Jobs)
+	}
+	_, err = Parse([]byte(`
+[[jobs]]
+name = "Bad Name"
+schedule = "61 * * * *"
+timezone = "Mars/Olympus"
+command = "x"
+overlap = "queue"
+
+[[jobs]]
+name = "x"
+`))
+	for _, key := range []string{"jobs[0].name", "jobs[0].schedule", "jobs[0].timezone", "jobs[0].overlap", "jobs[1]: needs"} {
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("error %v doesn't name %s", err, key)
+		}
 	}
 }

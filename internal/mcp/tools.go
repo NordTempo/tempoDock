@@ -378,6 +378,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	h.addSnapshotTools(s)
 	h.addAnalyticsTools(s)
 	h.addRunTools(s)
+	h.addJobTools(s)
 
 	mcpkit.AddTool(s, "list_servers", "List servers",
 		"The servers apps run on: status (online, offline, ...), which environment kinds each accepts, its base domain for generated hostnames, and memory reserved by the services placed there.",

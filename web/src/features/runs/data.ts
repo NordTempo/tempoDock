@@ -65,16 +65,20 @@ export const isRunning = (r: Pick<CommandRun, "status">) =>
   r.status === "running";
 
 /**
- * The list with run in it, newest first. A finished run is final, so a
- * running copy arriving late (the POST's answer after the end event)
- * never replaces it.
+ * The list with run in it, newest first, at most keep long. A finished
+ * run is final, so a running copy arriving late (the POST's answer after
+ * the end event) never replaces it. Jobs' histories use it too.
  */
-function upsertRun(runs: CommandRun[] | undefined, run: CommandRun) {
+export function upsertRun(
+  runs: CommandRun[] | undefined,
+  run: CommandRun,
+  keep = KEEP,
+) {
   if (!runs) return runs;
   const old = runs.find((r) => r.id === run.id);
   if (old && !isRunning(old) && isRunning(run)) return runs;
   const rest = runs.filter((r) => r.id !== run.id);
-  return [run, ...rest].sort((a, b) => b.id - a.id).slice(0, KEEP);
+  return [run, ...rest].sort((a, b) => b.id - a.id).slice(0, keep);
 }
 
 const refOf = (run: CommandRun): ServiceRef => ({
@@ -85,9 +89,11 @@ const refOf = (run: CommandRun): ServiceRef => ({
 
 /**
  * A run started or ended (from here, the CLI or an agent), or a POST
- * answered with one: patch the service's cached list.
+ * answered with one: patch the service's cached list. A job's runs are
+ * kept apart by the API (applyJobRunEvent has them).
  */
 export function applyRunEvent(queryClient: QueryClient, run: CommandRun) {
+  if (run.job) return;
   queryClient.setQueryData<CommandRun[]>(runKeys.list(refOf(run)), (runs) =>
     upsertRun(runs, run),
   );

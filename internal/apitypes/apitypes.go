@@ -1522,11 +1522,14 @@ const (
 	// EventUptime carries an uptime check whose state changed (ADR
 	// 0055).
 	EventUptime EventType = "uptime"
+	// EventJob carries a service's scheduled job as it was set (ADR
+	// 0048); with Message "removed", only its name.
+	EventJob EventType = "job"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime"`
+	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job"`
 	Time           time.Time        `json:"time"`
 	ProjectRenamed *ProjectRenamed  `json:"project_renamed,omitempty"`
 	Project        string           `json:"project,omitempty"`
@@ -1548,6 +1551,7 @@ type Event struct {
 	AccessRequest  *AccessRequest   `json:"access_request,omitempty"`
 	Run            *CommandRun      `json:"run,omitempty"`
 	Uptime         *UptimeUpdate    `json:"uptime,omitempty"`
+	Job            *Job             `json:"job,omitempty"`
 	Message        string           `json:"message,omitempty"`
 }
 

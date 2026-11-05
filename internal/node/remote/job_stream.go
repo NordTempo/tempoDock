@@ -229,12 +229,17 @@ func receiveJobInput(fr *runframe.Reader, stdin *io.PipeWriter, resize chan node
 // result's Output.
 type tailWriter struct{ b []byte }
 
+// Write trims before it appends, so the buffer never holds more than
+// node.MaxJobOutput bytes, however large one write is.
 func (t *tailWriter) Write(p []byte) (int, error) {
-	t.b = append(t.b, p...)
-	if over := len(t.b) - node.MaxJobOutput; over > 0 {
-		t.b = append(t.b[:0], t.b[over:]...)
+	n := len(p)
+	if len(p) >= node.MaxJobOutput {
+		p, t.b = p[len(p)-node.MaxJobOutput:], t.b[:0]
+	} else if over := len(t.b) + len(p) - node.MaxJobOutput; over > 0 {
+		t.b = t.b[:copy(t.b, t.b[over:])]
 	}
-	return len(p), nil
+	t.b = append(t.b, p...)
+	return n, nil
 }
 
 func (t *tailWriter) String() string { return string(t.b) }

@@ -26,11 +26,17 @@ export const serviceTabs = [
     to: "/$org/$project/$environment/$service/logs",
     key: "g l",
   },
-  // One-off commands (ADR 0049). G C, "command": G R is Releases.
+  // One-off commands (ADR 0048). G C, "command": G R is Releases.
   {
     label: "Run",
     to: "/$org/$project/$environment/$service/run",
     key: "g c",
+  },
+  // Scheduled jobs (ADR 0054). G J, "jobs".
+  {
+    label: "Jobs",
+    to: "/$org/$project/$environment/$service/jobs",
+    key: "g j",
   },
   // CPU and memory. G M, from its old name Metrics: G R is Releases.
   {

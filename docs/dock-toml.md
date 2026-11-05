@@ -42,6 +42,16 @@ health_check_start_period = "60s"
 pre_deploy_command = "npx prisma migrate deploy"
 # How long the pre-deploy command may run (default 10m).
 pre_deploy_timeout = "15m"
+
+# Scheduled jobs (ADR 0054), one [[jobs]] table each: a command from the
+# release's image on a cron schedule. See "Jobs" below.
+[[jobs]]
+name = "nightly-cleanup"
+schedule = "0 3 * * *"
+timezone = "Europe/Oslo"
+command = "bin/rails cleanup"
+timeout = "30m"
+overlap = "skip"
 ```
 
 | Key | Type | Rules |
@@ -58,7 +68,33 @@ pre_deploy_timeout = "15m"
 | `deploy.health_check_start_period` | duration string | 1s to 1h |
 | `deploy.pre_deploy_command` | string | See [pre-deploy command](guide/deploying.md#pre-deploy-command) |
 | `deploy.pre_deploy_timeout` | duration string | 1s to 1h |
+| `jobs[].name` | string | Required. Lower-case letters, digits and dashes, at most 40; unique in the file |
+| `jobs[].schedule` | string | Required. Five cron fields, or `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly` |
+| `jobs[].timezone` | string | IANA name, e.g. `"Europe/Oslo"`. Default UTC |
+| `jobs[].command` | string | Required. Run with `sh -c` |
+| `jobs[].timeout` | duration string | 1s to 24h. Default 1h |
+| `jobs[].overlap` | `"skip"` or `"allow"` | Default `skip` |
 
 Parsing is strict: unknown keys, wrong types and empty strings are errors
 (reported with line numbers where possible), so a typo never silently does
 nothing. To use the platform's value, leave the key out.
+
+## Jobs
+
+`[[jobs]]` are the service's scheduled jobs
+([ADR 0054](decisions/0054-scheduled-jobs.md)), at most 50. Each runs its
+command like [`dock run`](cli.md#dock-run): in a new container from the
+service's active image, with its variables and private network, without
+volumes. The schedule is five fields (minute, hour, day of month, month,
+day of week) with ranges, lists, steps and names, read in `timezone`. A run
+that goes past `timeout` is stopped (`timed_out`). With `overlap = "skip"`
+a job still running when it comes due again records that run as
+`skipped`; `"allow"` runs them side by side.
+
+The file's jobs take effect when a release from it goes active: jobs are
+added or changed to match, and removed once the file drops them. A file
+with no `[[jobs]]` removes them all; a release without a dock.toml (an
+image deploy) leaves them. A file job replaces a job of the same name set
+in the UI or CLI. File jobs can't be changed or removed with `dock job
+set` or `remove`, only in the file, but `dock job disable`, `enable` and
+`run` work on them, and a job turned off stays off across deploys.
