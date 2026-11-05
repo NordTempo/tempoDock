@@ -573,7 +573,8 @@ func (d *deployment) publish(ctx context.Context) {
 func (d *deployment) event(ctx context.Context, msg string) { d.c.releaseEvent(ctx, d.ss, d.rel, msg) }
 
 // restartRelease starts an existing release's container again (after a
-// stateful deploy failed, or when recovery finds it missing).
+// stateful deploy failed, or when recovery finds it missing) and reads
+// the new container's health.
 func (c *Core) restartRelease(ctx context.Context, ss svcScope, rel store.Release) error {
 	cfg, err := c.openConfig(rel)
 	if err != nil {
@@ -587,6 +588,7 @@ func (c *Core) restartRelease(ctx context.Context, ss svcScope, rel store.Releas
 		return err
 	}
 	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
+	c.adoptHealth(ctx, ss, ctr.ID)
 	return nil
 }
 
