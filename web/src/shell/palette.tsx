@@ -10,6 +10,7 @@ import {
 } from "react";
 import { CreateHost } from "../features/create/open";
 import { DeployHost } from "../features/deploy/start";
+import { Dialog } from "../ui/Dialog";
 import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
 import { toneText } from "../ui/status";
@@ -87,12 +88,13 @@ function Palette({
   const selected = rows[Math.min(index, rows.length - 1)];
 
   // Hand focus back to wherever it was when the palette opened.
+  // Taken while rendering: the dialog focuses its input before effects run.
+  const [previous] = useState(() => document.activeElement);
   useEffect(() => {
-    const previous = document.activeElement;
     return () => {
       if (previous instanceof HTMLElement) previous.focus();
     };
-  }, []);
+  }, [previous]);
 
   useEffect(() => {
     list.current
@@ -124,9 +126,6 @@ function Palette({
     else if (event.key === "Enter") {
       event.preventDefault();
       run(selected?.command);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
     } else if (
       (event.metaKey || event.ctrlKey) &&
       event.key === "c" &&
@@ -138,26 +137,24 @@ function Palette({
     }
   }
 
+  // The native <dialog> traps focus and closes on Escape; the input keeps
+  // focus and points at the selected row with aria-activedescendant.
+  const optionId = (i: number) => `palette-option-${i}`;
+  const selectedIndex = selected ? rows.indexOf(selected) : -1;
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: a click outside the dialog closes it; Escape does too
-    <div
-      className="fixed inset-0 z-30 flex items-start justify-center bg-black/60 px-4 pt-24"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Dialog
+      title="Command palette"
+      bare
+      onClose={onClose}
+      className="mx-auto mt-24 mb-auto max-w-[min(720px,calc(100vw-2rem))] overflow-hidden shadow-2xl shadow-black/50"
     >
-      <div
-        role="dialog"
-        aria-modal
-        aria-label="Command palette"
-        className="w-full max-w-[720px] overflow-hidden rounded-panel border border-edge bg-panel shadow-2xl shadow-black/50"
-        onKeyDown={onKeyDown}
-      >
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: keys come from the combobox input inside */}
+      <div onKeyDown={onKeyDown}>
         <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5">
           <Icon name="search" className="text-mut" />
           <input
-            // biome-ignore lint/a11y/noAutofocus: the palette exists to be typed into
-            autoFocus
+            // The dialog focuses it when it opens.
+            data-autofocus
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -168,6 +165,10 @@ function Palette({
             role="combobox"
             aria-expanded
             aria-controls="palette-list"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              selectedIndex >= 0 ? optionId(selectedIndex) : undefined
+            }
             className="min-w-0 flex-1 bg-transparent text-md outline-none"
           />
           {here.project && <span className="pill">{here.project}</span>}
@@ -191,6 +192,7 @@ function Palette({
                 </div>
               )}
               <Item
+                id={optionId(i)}
                 command={row.command}
                 selected={row === selected}
                 onHover={() => setIndex(i)}
@@ -216,16 +218,18 @@ function Palette({
           </span>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
 function Item({
+  id,
   command,
   selected,
   onHover,
   onRun,
 }: {
+  id: string;
   command: Command;
   selected: boolean;
   onHover: () => void;
@@ -234,6 +238,7 @@ function Item({
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: keys go through the combobox input
     <div
+      id={id}
       role="option"
       aria-selected={selected}
       tabIndex={-1}

@@ -6,17 +6,23 @@ import { type ReactNode, useEffect, useRef } from "react";
  * the first field, gets focus. Render it only while open; closing
  * (Esc, the backdrop, or the caller's own buttons) calls onClose, and the
  * caller unmounts it. Forms inside use their own submit button.
+ * `bare` drops the title bar and padding for windows that lay out their
+ * own (the command palette); `className` then places and sizes it.
  */
 export function Dialog({
   title,
   onClose,
   children,
   wide,
+  bare,
+  className,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  bare?: boolean;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   // React's autoFocus runs before showModal, which then focuses the first
@@ -41,20 +47,26 @@ export function Dialog({
       }}
       // A click on the backdrop lands on the <dialog> itself.
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      className={`dlg m-auto w-full rounded-panel border border-edge bg-panel p-0 text-fg ${wide ? "max-w-[640px]" : "max-w-[440px]"}`}
+      className={`dlg w-full rounded-panel border border-edge bg-panel p-0 text-fg ${className ?? `m-auto ${wide ? "max-w-[640px]" : "max-w-[440px]"}`}`}
     >
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold">{title}</h2>
-        <button
-          type="button"
-          aria-label="Close"
-          className="text-faint hover:text-fg"
-          onClick={onClose}
-        >
-          esc
-        </button>
-      </div>
-      <div className="px-4 py-3.5">{children}</div>
+      {bare ? (
+        children
+      ) : (
+        <>
+          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+            <h2 className="text-[13px] font-semibold">{title}</h2>
+            <button
+              type="button"
+              aria-label="Close"
+              className="text-faint hover:text-fg"
+              onClick={onClose}
+            >
+              esc
+            </button>
+          </div>
+          <div className="px-4 py-3.5">{children}</div>
+        </>
+      )}
     </dialog>
   );
 }
