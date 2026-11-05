@@ -79,11 +79,13 @@ reviewing a request. Saile wasn't watching live, so the agent picked:
   token as its user, which is right for data policy. For a lock it would
   leave the most common agent setup (an agent in the owner's shell)
   unguarded. Approving one's own request is one click.
-- **Tokens can't escape it through accounts.** While any environment of
-  an organization is locked, its tokens can't create or re-enable users,
-  reset passwords, invite members, change roles or create admin or
-  operator tokens (`checkAccountLock`); a person in the web UI does
-  those. Revoking, disabling, removing members and deploy or read tokens
+- **Tokens can't escape it through accounts.** Tokens never create,
+  reset, enable, disable or delete user accounts, locked or not
+  (`requireAccountManager`): a person does that from a signed-in session.
+  While any environment of an organization is locked, its tokens also
+  can't invite members, change roles or create admin or operator tokens
+  (`checkAccountLock`); a person in the web UI does those. Revoking,
+  removing members and deploy or read tokens
   stay open. The lock still guards against an agent's mistakes and
   overreach, not every hostile admin token path: give agents `deploy`
   tokens limited to the environments they work in.

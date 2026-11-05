@@ -144,16 +144,16 @@ func (a Actor) requireOperator(action string) error {
 	return errf(apitypes.CodeForbidden, "%s is not a platform operator; %s requires one", a, action)
 }
 
-// requireAccountManager guards creating, resetting, disabling and deleting
-// user accounts: an operator, but not a token. A token that could mint or
-// reset an admin account could sign in as it and get around environment
-// locks and access-request approvals, which only bind tokens.
+// requireAccountManager guards creating, resetting, enabling, disabling and
+// deleting user accounts: an operator, but never a token. A token that could
+// mint or reset an admin account could sign in as it and get around
+// environment locks and access-request approvals, which only bind tokens.
 func (a Actor) requireAccountManager(action string) error {
 	if err := a.requireOperator(action); err != nil {
 		return err
 	}
 	if a.Kind == "token" {
-		return errf(apitypes.CodeForbidden, "%s is a token; manage accounts from a signed-in browser session (the console), not with a token", a)
+		return errf(apitypes.CodeForbidden, "%s is for a person, not %s; ask a person to do it from a signed-in session in the web UI", action, a)
 	}
 	return nil
 }

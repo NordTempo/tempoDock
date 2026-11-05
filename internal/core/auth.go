@@ -313,11 +313,6 @@ func (c *Core) SetUserDisabled(ctx context.Context, a Actor, id int64, disabled 
 	if err != nil {
 		return apitypes.User{}, err
 	}
-	if !disabled {
-		if err := c.checkAccountLock(ctx, a, "enabling user accounts", true); err != nil {
-			return apitypes.User{}, err
-		}
-	}
 	var revoked int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.SetUserDisabled(ctx, store.SetUserDisabledParams{DisabledAt: at, ID: u.ID}); err != nil || !disabled {
@@ -610,9 +605,6 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	if err != nil {
 		return apitypes.ResetPasswordResult{}, err
 	}
-	if err := c.checkAccountLock(ctx, a, "resetting passwords", true); err != nil {
-		return apitypes.ResetPasswordResult{}, err
-	}
 	var out apitypes.ResetPasswordResult
 	pw := req.Password
 	if pw == "" {
@@ -654,9 +646,6 @@ func generatePassword() string {
 // Accounts are the platform's, so only operators create them.
 func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserRequest) (apitypes.User, error) {
 	if err := a.requireAccountManager("creating user accounts"); err != nil {
-		return apitypes.User{}, err
-	}
-	if err := c.checkAccountLock(ctx, a, "creating user accounts", true); err != nil {
 		return apitypes.User{}, err
 	}
 	if a.OrgID == 0 {

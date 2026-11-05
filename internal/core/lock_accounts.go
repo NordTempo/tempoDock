@@ -9,17 +9,16 @@ import (
 
 // Account changes while environments are locked (ADR 0044). The lock stops
 // tokens changing a locked environment; an admin or operator token could
-// still escape it by managing accounts: creating a user or resetting a
-// password and signing in to the UI as that person, inviting one, raising a
-// member's role, or minting an admin token. While any environment holds its
-// lock, those changes are for a person in the web UI. Changes that only
-// take power away (revoking, disabling, removing, deploy and read tokens)
-// stay open to tokens.
+// still escape it by handing out more power: inviting someone, raising a
+// member's role or minting an admin token. While any environment holds its
+// lock, those changes are for a person in the web UI. Creating, resetting
+// and enabling user accounts is never open to tokens (requireAccountManager),
+// so it needs no lock check. Changes that only take power away (revoking,
+// removing, deploy and read tokens) stay open to tokens.
 
-// checkAccountLock refuses a token action ("creating user accounts")
-// while a locked environment holds: one in the actor's org, or in any
-// org when platform is set (user accounts are the platform's, so a
-// password reset reaches every org the user is in).
+// checkAccountLock refuses a token action ("inviting people") while a
+// locked environment holds: one in the actor's org, or in any org when
+// platform is set (an operator token reaches every org).
 // People and the daemon pass; tokens cost one query.
 func (c *Core) checkAccountLock(ctx context.Context, a Actor, action string, platform bool) error {
 	if a.Kind != "token" {
