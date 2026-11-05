@@ -71,8 +71,8 @@ const (
 	// 0047); 16 adds run-job-stream, jobs connected to their caller
 	// (`dock run`, ADR 0048); 17 adds the routes' stopped service,
 	// answered with a 503 page (ADR 0050); 18 adds the pull's registry
-	// username and password (ADR 0051).
-	Protocol = 18
+	// username and password (ADR 0051); 19 added probe (ADR 0055).
+	Protocol = 19
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -172,6 +172,7 @@ const (
 	opPruneLogs    = "prune-logs"
 	opRunJob       = "run-job"        // protocol 2
 	opRunJobStream = "run-job-stream" // protocol 16, full duplex: see job_stream.go
+	opProbe        = "probe"          // protocol 19
 	opRotate       = "rotate"
 	opUpdate       = "update" // protocol 4
 	// Joining mode (join.go) only.

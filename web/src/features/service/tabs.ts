@@ -51,6 +51,12 @@ export const serviceTabs = [
     to: "/$org/$project/$environment/$service/analytics",
     key: "g y",
   },
+  // Services with a domain or uptime checks: their checks (ADR 0055).
+  {
+    label: "Uptime",
+    to: "/$org/$project/$environment/$service/uptime",
+    key: "g u",
+  },
   {
     label: "Releases",
     to: "/$org/$project/$environment/$service/releases",
@@ -80,8 +86,11 @@ export const serviceTabs = [
 
 export type ServiceTab = (typeof serviceTabs)[number];
 
-/** The tabs this service has: Data, Backups, Traffic and Analytics only where they apply. */
-export const tabsFor = (view: Pick<ServiceView, "service" | "domains">) =>
+/** The tabs this service has: Data, Backups, Traffic, Analytics and Uptime only where they apply. */
+export const tabsFor = (
+  view: Pick<ServiceView, "service" | "domains"> &
+    Partial<Pick<ServiceView, "uptime">>,
+) =>
   serviceTabs.filter((tab) => {
     switch (tab.label) {
       case "Data":
@@ -91,6 +100,8 @@ export const tabsFor = (view: Pick<ServiceView, "service" | "domains">) =>
       case "Traffic":
       case "Analytics":
         return view.domains.length > 0;
+      case "Uptime":
+        return view.domains.length > 0 || !!view.uptime;
       default:
         return true;
     }

@@ -133,6 +133,43 @@ Notes:
 
 See [ADR 0030](../decisions/0030-access-protection.md).
 
+## Uptime checks
+
+An uptime check fetches a URL on one of the service's domains from outside
+the server that serves it, so "production is down" reaches you within a
+minute or two, even when the container still runs ([ADR
+0055](../decisions/0055-uptime-checks.md)).
+
+```sh
+dock uptime add https://shop.example.com/health          # GET every minute, expects 200
+dock uptime add https://shop.example.com/ --status 3xx --interval 5m --timeout 5s
+dock uptime list                                         # state, 24h/7d/30d uptime, last probe
+dock uptime remove 3
+```
+
+- A probe is one `GET`, redirects not followed. Up means the expected
+  status (a code, or `2xx`/`3xx` for any of the class) within the timeout.
+- Another online server probes, picked by the check so checks spread
+  over servers; with no other server, the control plane probes its own
+  apps, which sees the app and Caddy failing but not the network or DNS.
+  The UI and `dock uptime list` say which server probes.
+- Two failed probes in a row open an `uptime_down` alert (critical) on the
+  alert channels; the next successful probe resolves it.
+- Interval 30 seconds to 1 hour (default 1 minute); timeout 1 to 30 seconds
+  and below the interval (default 10 s); at most 10 checks per service.
+- Checks go on verified domains only (the TXT record above), and removing
+  a domain removes its checks. Probes reach public addresses on ports 80
+  and 443 only: a domain that resolves to a private, tailnet, Docker or
+  cloud metadata address reads as down ("the domain resolves to an
+  address that isn't public"). A site only on your LAN can't be checked.
+- An organization has at most 50 checks; a server runs at most 8 probes
+  at once and 2 per organization, and skips a probe rather than queue it.
+- Project admins add and remove checks; everyone who can read the service
+  sees them: the service's Uptime tab (checks, a 24-hour strip, uptime
+  over 24 hours, 7 and 30 days, the last incidents) and `dock status`.
+
+History is kept per minute for a day and per hour for 30 days.
+
 ## TLS
 
 - Caddy gets a certificate (ACME, Let's Encrypt) on the first HTTPS request

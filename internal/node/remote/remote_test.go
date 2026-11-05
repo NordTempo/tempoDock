@@ -218,6 +218,12 @@ func TestCalls(t *testing.T) {
 		t.Fatalf("the prune filter didn't reach the node: %v", ops[len(ops)-1])
 	}
 
+	down := node.ProbeResult{Status: 502, Latency: 40 * time.Millisecond, Error: "answered 502, expected 200"}
+	h.rt.SetProbe("https://web.example.com/health", down)
+	if got, err := h.client.Probe(ctx, node.ProbeRequest{URL: "https://web.example.com/health", Timeout: time.Second}); err != nil || got != down {
+		t.Fatalf("probe = %+v, %v", got, err)
+	}
+
 	tunnel := node.TunnelSpec{Token: "tunnel-token", Hostname: "6ff42ae2-765d-4adf-8112-31c55c1551ef.cfargotunnel.com"}
 	if err := h.client.EnsureTunnel(ctx, &tunnel); err != nil || h.rt.Tunnel() == nil || *h.rt.Tunnel() != tunnel {
 		t.Fatalf("ensure tunnel: %v, node runs %+v", err, h.rt.Tunnel())

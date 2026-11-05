@@ -1451,6 +1451,8 @@ type ServiceOverview struct {
 	Domains       []Domain        `json:"domains"`
 	// Backup is the latest backup run of a stateful service, if any.
 	Backup *BackupRun `json:"backup,omitempty"`
+	// Uptime sums up the service's uptime checks, if it has any.
+	Uptime *ServiceUptime `json:"uptime,omitempty"`
 }
 
 // ReleaseSummary is the short form of a release.
@@ -1517,11 +1519,14 @@ const (
 	// EventRun carries a service's command run as it starts and ends
 	// (ADR 0049), without its output (read the run for that).
 	EventRun EventType = "run"
+	// EventUptime carries an uptime check whose state changed (ADR
+	// 0055).
+	EventUptime EventType = "uptime"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run"`
+	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime"`
 	Time           time.Time        `json:"time"`
 	ProjectRenamed *ProjectRenamed  `json:"project_renamed,omitempty"`
 	Project        string           `json:"project,omitempty"`
@@ -1542,6 +1547,7 @@ type Event struct {
 	Lock           *EnvironmentLock `json:"lock,omitempty"`
 	AccessRequest  *AccessRequest   `json:"access_request,omitempty"`
 	Run            *CommandRun      `json:"run,omitempty"`
+	Uptime         *UptimeUpdate    `json:"uptime,omitempty"`
 	Message        string           `json:"message,omitempty"`
 }
 

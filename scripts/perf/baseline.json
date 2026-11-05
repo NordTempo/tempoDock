@@ -225,6 +225,16 @@
       "bytes_op": 2182992,
       "allocs_op": 36988
     },
+    "core.BenchmarkUptimeRecord": {
+      "ns_op": 10055,
+      "bytes_op": 392,
+      "allocs_op": 9
+    },
+    "core.BenchmarkUptimeRollup": {
+      "ns_op": 1830507,
+      "bytes_op": 5907,
+      "allocs_op": 47
+    },
     "data/pg.BenchmarkAppendRow": {
       "ns_op": 69106,
       "bytes_op": 115,

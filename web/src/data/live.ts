@@ -13,6 +13,7 @@ import { applyRunEvent } from "../features/runs/data";
 import { diskKey } from "../features/servers/disk";
 import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
+import { applyUptimeEvent } from "../features/uptime/data";
 import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
 import { setLiveStatus, useLiveAttempt } from "./liveStatus";
@@ -60,6 +61,7 @@ const busEvents = [
   "environment_lock",
   "access_request",
   "run",
+  "uptime",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -284,6 +286,16 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // A one-off command started or ended; its output isn't in the event.
       if (event.run) applyRunEvent(queryClient, event.run);
       return;
+    case "uptime": {
+      // An uptime check went up or down (ADR 0055).
+      const update = event.uptime;
+      if (!ref || !update) return;
+      const state = applyUptimeEvent(queryClient, ref, update);
+      patchService(queryClient, ref, (s) =>
+        s.uptime ? { ...s, uptime: { ...s.uptime, state } } : s,
+      );
+      return;
+    }
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":

@@ -744,6 +744,26 @@ type TrafficStat struct {
 	DurationMs int64
 }
 
+type UptimeCheck struct {
+	ID           int64
+	ServiceID    int64
+	Url          string
+	ExpectStatus int64
+	IntervalS    int64
+	TimeoutMs    int64
+	CreatedAt    time.Time
+	CreatedBy    string
+}
+
+type UptimeStat struct {
+	CheckID      int64
+	Res          int64
+	At           int64
+	Up           int64
+	Total        int64
+	LatencyMsSum int64
+}
+
 type User struct {
 	ID           int64
 	Email        string

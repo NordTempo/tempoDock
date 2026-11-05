@@ -60,6 +60,10 @@ type Options struct {
 	// CutoverDrain overrides DefaultCutoverDrain when positive (tests use
 	// a tiny value).
 	CutoverDrain time.Duration
+	// UptimeSecond, when positive, is how long a second of an uptime
+	// check's interval lasts (ADR 0055), so tests probe every few
+	// milliseconds.
+	UptimeSecond time.Duration
 	// GitHubAPI overrides the GitHub REST API's base URL
 	// (https://api.github.com) for push-to-deploy; tests point it at a
 	// fake.
@@ -163,6 +167,8 @@ type Core struct {
 	snapshots snapshotState
 	// runs counts one-off commands in flight (runs.go).
 	runs runState
+	// uptime is the uptime checks' scheduler kick and state (uptime.go).
+	uptime uptimeState
 
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
@@ -226,6 +232,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		backups:    newBackupState(),
 		snapshots:  newSnapshotState(),
 		runs:       runState{running: map[int64]int{}, writing: map[int64]bool{}},
+		uptime:     newUptimeState(),
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
@@ -241,6 +248,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	c.panel = newDataPanel(c)
 	if o.CutoverDrain > 0 {
 		c.drain = o.CutoverDrain
+	}
+	if o.UptimeSecond > 0 {
+		c.uptime.second = o.UptimeSecond
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	var err error
@@ -356,11 +366,12 @@ func (c *Core) Start(ctx context.Context) error {
 		// Apps are served either way; only analytics waits.
 		c.log.Error("start analytics", "err", err)
 	}
-	c.wg.Add(6)
+	c.wg.Add(7)
 	go c.watchRuntime(events)
 	go c.checkDomains()
 	go c.collectStats()
 	go c.scheduleBackups()
+	go c.scheduleUptime()
 	go c.runCloudflare()
 	// In the background: running the tunnel may pull an image.
 	go func() {

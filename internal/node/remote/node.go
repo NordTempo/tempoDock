@@ -437,6 +437,10 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		s, err := rt.ContainerStats(ctx, a.IDs)
 		return containerStatsResult{Stats: toWireContainerStats(s)}, err
 	}))
+	h(opProbe, unary(func(ctx context.Context, a probeRequest) (probeResult, error) {
+		r, err := rt.Probe(ctx, node.ProbeRequest{URL: a.URL, ExpectStatus: a.ExpectStatus, Timeout: time.Duration(a.TimeoutMS) * time.Millisecond})
+		return probeResult{Up: r.Up, Status: r.Status, LatencyMS: r.Latency.Milliseconds(), Error: r.Error}, err
+	}))
 	h(opDiskUsage, unary(func(ctx context.Context, a pruneImagesRequest) (wireDiskUsage, error) {
 		d, err := rt.DiskUsage(ctx, node.PruneImagesRequest{Keep: a.Keep, Repos: a.Repos})
 		return toWireDiskUsage(d), err

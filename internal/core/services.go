@@ -339,6 +339,7 @@ func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedServ
 func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes []string, stopped *sync.WaitGroup) {
 	stopped = &sync.WaitGroup{}
 	c.kickCloudflare() // archiveTx gave up their DNS records
+	c.kickUptime()     // their checks stop
 	links := map[int64]serverLink{}
 	stopping := map[int64]int{} // containers to stop, by server
 	for _, as := range done {
