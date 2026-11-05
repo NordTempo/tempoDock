@@ -153,7 +153,7 @@ job.set.`,
 	cmd.Flags().StringVar(&o.timezone, "timezone", "", "IANA timezone the schedule is read in, e.g. Europe/Oslo (default UTC)")
 	cmd.Flags().DurationVar(&o.timeout, "timeout", 0, "stop a run after this long, at most 24h (default 1h)")
 	cmd.Flags().StringVar(&o.overlap, "overlap", "", "when it comes due while still running: skip or allow (default skip)")
-	cmd.Flags().BoolVar(&o.disabled, "disabled", false, "set it turned off (`dock job enable` turns it on)")
+	cmd.Flags().BoolVar(&o.disabled, "disabled", false, "set it turned off (dock job enable turns it on)")
 	return cmd
 }
 
