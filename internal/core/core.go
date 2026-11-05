@@ -234,7 +234,6 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		cliLogins:  newCLILogins(),
 		backups:    newBackupState(),
 		snapshots:  newSnapshotState(),
-		runs:       runState{running: map[int64]int{}, writing: map[int64]bool{}},
 		uptime:     newUptimeState(),
 		runs:       runState{running: map[int64]int{}, writing: map[int64]bool{}, ended: map[int64]chan struct{}{}},
 		jobs:       newJobState(),
