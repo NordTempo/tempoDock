@@ -1,8 +1,10 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import type { components } from "../../api/schema";
 import { useIsAdmin, useSession } from "../../data/queries";
-import type { Scope } from "../../data/types";
-import { day } from "../../ui/format";
+import type { Scope, User } from "../../data/types";
+import { CliHint } from "../../ui/CliHint";
+import { day, plural } from "../../ui/format";
 import {
   Act,
   Button,
@@ -10,120 +12,189 @@ import {
   CopyButton,
   ErrorText,
   Page,
+  PageBar,
   Panel,
-  TitleRow,
 } from "../../ui/kit";
 import {
   orgQueries,
+  roleNote,
   useCreateInvite,
+  useOrgName,
   useRemoveMember,
   useRevokeInvite,
   useSetMemberRole,
 } from "./data";
 
+type Invite = components["schemas"]["Invite"];
+
 const roles: Scope[] = ["read", "deploy", "admin"];
 
 /**
  * The organization's members and open invites (`dock org members`,
- * `dock org invite`). Admins only: the API refuses everyone else.
+ * `dock org invite`), with what each role may do beside them. Admins
+ * only: the API refuses everyone else, so others are told whom to ask.
  */
 export function MembersPage() {
+  const org = useOrgName();
   if (!useIsAdmin()) {
+    // Non-admins can't list members, so the admins can't be named.
     return (
-      <Page>
-        <TitleRow title="Members" />
-        <p className="text-mut">Only the organization's admins see members.</p>
-      </Page>
+      <>
+        <PageBar parent={org} title="Members" />
+        <Page>
+          <p className="text-mut">
+            Ask an admin of {org} to invite people or change roles.
+          </p>
+        </Page>
+      </>
     );
   }
-  return <Members />;
+  return <Members org={org} />;
 }
 
 /** A created invite's link, shown once. */
 type Link = { email: string; url: string };
 
-function Members() {
+function Members({ org }: { org: string }) {
   const members = useSuspenseQuery(orgQueries.members()).data;
   const invites = useSuspenseQuery(orgQueries.invites()).data;
   const me = useSession();
+  const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<Link>();
   return (
-    <Page width="max-w-[900px]" gap="gap-5">
-      <TitleRow
+    <>
+      <PageBar
+        parent={org}
         title="Members"
-        context={`${members.length} ${members.length === 1 ? "person" : "people"}${invites.length ? ` · ${invites.length} invited` : ""}`}
-      />
-      <InviteForm onCreated={setLink} />
-      {link && (
-        <section
-          aria-labelledby="invite-link"
-          className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
-        >
-          <h2 id="invite-link" className="font-semibold">
-            <span className="text-ok">✓</span> Invite for{" "}
-            <span className="font-mono font-medium">{link.email}</span>
-          </h2>
-          <p className="text-mut">
-            Send them this link. It works once, for 7 days, and only signed in
-            as {link.email}. It isn't shown again.
-          </p>
-          <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
-            <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
-              {link.url}
-            </code>
-            <CopyButton text={link.url} primary />
-          </div>
-          <div>
-            <Button small onClick={() => setLink(undefined)}>
-              Done
+        after={
+          <span className="text-xs text-faint">
+            {plural(members.length, "person", "people")}
+            {invites.length > 0 && ` · ${invites.length} invited`}
+          </span>
+        }
+        actions={
+          !inviting && (
+            <Button primary onClick={() => setInviting(true)}>
+              Invite people
             </Button>
+          )
+        }
+      />
+      <Page gap="gap-5">
+        <div className="flex flex-wrap items-start gap-8">
+          <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+            {inviting && (
+              <InviteForm
+                onCreated={(created) => {
+                  setInviting(false);
+                  setLink(created);
+                }}
+                onCancel={() => setInviting(false)}
+              />
+            )}
+            {link && (
+              <InviteLink link={link} onDone={() => setLink(undefined)} />
+            )}
+            <Panel>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    <th>Role</th>
+                    <th>Access</th>
+                    <th>Since</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((u) => (
+                    <MemberRow
+                      key={u.id}
+                      member={u}
+                      you={me?.email === u.email}
+                    />
+                  ))}
+                  {invites.map((i) => (
+                    <InviteRow key={`invite-${i.id}`} invite={i} />
+                  ))}
+                </tbody>
+              </table>
+            </Panel>
+            <p className="text-2xs text-faint">
+              Removing someone takes them out of this organization; their
+              account stays. Leave the organization from General.
+            </p>
           </div>
-        </section>
-      )}
-      <Panel>
-        <table>
-          <thead>
-            <tr>
-              <th>Person</th>
-              <th>Role</th>
-              <th>Since</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((u) => (
-              <MemberRow
-                key={u.id}
-                id={u.id}
-                email={u.email}
-                name={u.name}
-                role={u.role}
-                since={u.created_at}
-                you={me?.email === u.email}
-              />
-            ))}
-            {invites.map((i) => (
-              <InviteRow
-                key={`invite-${i.id}`}
-                id={i.id}
-                email={i.email}
-                role={i.role}
-                expires={i.expires_at}
-                expired={!!i.expired}
-              />
-            ))}
-          </tbody>
-        </table>
-      </Panel>
-      <p className="text-2xs text-faint">
-        Removing someone takes them out of this organization; their account
-        stays. Leave the organization from General.
-      </p>
-    </Page>
+          <Roles />
+        </div>
+      </Page>
+    </>
   );
 }
 
-function InviteForm({ onCreated }: { onCreated: (link: Link) => void }) {
+/** What each role can do, beside the members table. */
+function Roles() {
+  return (
+    <aside
+      aria-labelledby="roles"
+      className="flex max-w-[360px] min-w-0 flex-[1_1_280px] flex-col gap-3"
+    >
+      <h2 id="roles" className="font-semibold">
+        What each role can do
+      </h2>
+      <dl className="panel">
+        {roles.map((r) => (
+          <div
+            key={r}
+            className="border-b border-soft px-3.5 py-3 last:border-b-0"
+          >
+            <dt className="font-medium">{r}</dt>
+            <dd className="text-xs text-mut">{roleNote[r]}</dd>
+          </div>
+        ))}
+      </dl>
+    </aside>
+  );
+}
+
+/** The link of an invite just created, with copy; it isn't shown again. */
+function InviteLink({ link, onDone }: { link: Link; onDone: () => void }) {
+  return (
+    <section
+      aria-labelledby="invite-link"
+      className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
+    >
+      <h2 id="invite-link" className="font-semibold">
+        <span className="text-ok">✓</span> Invite for{" "}
+        <span className="font-mono font-medium">{link.email}</span>
+      </h2>
+      <p className="text-mut">
+        Send them this link. It works once, for 7 days, and only signed in as{" "}
+        {link.email}. It isn't shown again.
+      </p>
+      <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
+        <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
+          {link.url}
+        </code>
+        <CopyButton text={link.url} primary />
+      </div>
+      <div>
+        <Button small onClick={onDone}>
+          Done
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+/** Invites someone by email with a role; opened from the bar's button. */
+function InviteForm({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (link: Link) => void;
+  onCancel: () => void;
+}) {
   const create = useCreateInvite();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Scope>("deploy");
@@ -136,13 +207,11 @@ function InviteForm({ onCreated }: { onCreated: (link: Link) => void }) {
         create.mutate(
           { email: email.trim(), role },
           {
-            onSuccess: (c) => {
-              setEmail("");
+            onSuccess: (c) =>
               onCreated({
                 email: c.invite.email,
                 url: `${window.location.origin}/invite/${c.code}`,
-              });
-            },
+              }),
           },
         );
       }}
@@ -151,6 +220,8 @@ function InviteForm({ onCreated }: { onCreated: (link: Link) => void }) {
         type="email"
         aria-label="Email"
         placeholder="name@company.com"
+        // biome-ignore lint/a11y/noAutofocus: opened by "Invite people"
+        autoFocus
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         className="field min-w-0 flex-[1_1_260px] py-[7px]"
@@ -164,6 +235,7 @@ function InviteForm({ onCreated }: { onCreated: (link: Link) => void }) {
       >
         Invite
       </Act>
+      <Button onClick={onCancel}>Cancel</Button>
       <ErrorText error={create.error} />
     </form>
   );
@@ -197,28 +269,44 @@ function RoleSelect({
   );
 }
 
-function MemberRow({
-  id,
-  email,
-  name,
-  role,
-  since,
-  you,
-}: {
-  id: number;
-  email: string;
-  name: string;
-  role: Scope;
-  since: string;
-  you: boolean;
-}) {
+/** A person's initial in a circle; an invite gets an empty dashed one. */
+function Avatar({ name }: { name?: string }) {
+  if (!name) {
+    return (
+      <span
+        aria-hidden
+        className="size-6 flex-none rounded-full border border-dashed border-dash"
+      />
+    );
+  }
+  return (
+    <span
+      aria-hidden
+      className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold text-fg"
+    >
+      {name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+/** A member's live sessions and usable tokens, "2 sessions · 1 token". */
+const signedIn = (u: User) =>
+  [
+    u.sessions > 0 && plural(u.sessions, "session"),
+    u.tokens > 0 && plural(u.tokens, "token"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+function MemberRow({ member, you }: { member: User; you: boolean }) {
+  const { id, email, name, role } = member;
   const setRole = useSetMemberRole();
   const remove = useRemoveMember();
   const [asking, setAsking] = useState(false);
   if (asking) {
     return (
       <tr>
-        <td colSpan={4} className="py-2">
+        <td colSpan={5} className="py-2">
           <Confirm
             danger
             action={`Remove ${email}`}
@@ -237,28 +325,36 @@ function MemberRow({
       </tr>
     );
   }
+  const access = signedIn(member);
   return (
-    <tr>
+    <tr className="*:align-middle">
       <td className="py-2">
-        <span className="font-mono">{email}</span>
-        {name && name !== email && (
-          <span className="text-faint"> · {name}</span>
-        )}
-        {you && <span className="text-faint"> · you</span>}
+        <span className="flex items-center gap-2.5">
+          <Avatar name={name || email} />
+          <span>
+            {email}
+            {name && name !== email && (
+              <span className="text-faint"> · {name}</span>
+            )}
+            {you && <span className="text-faint"> (you)</span>}
+          </span>
+        </span>
       </td>
       <td className="py-1.5">
-        <span className="act">
+        <CliHint cli={`dock org member role ${email} <role>`} className="act">
           <RoleSelect
             label={`Role of ${email}`}
             value={role}
             disabled={setRole.isPending}
             onChange={(r) => setRole.mutate({ id, role: r })}
           />
-          <span className="cli">{`dock org member role ${email} <role>`}</span>
-        </span>
+        </CliHint>
         <ErrorText error={setRole.error} />
       </td>
-      <td className="py-2 text-faint">{day(since)}</td>
+      <td className={`py-2 ${access ? "text-mut" : "text-faint"}`}>
+        {access || "none"}
+      </td>
+      <td className="py-2 text-faint">{day(member.created_at)}</td>
       <td className="w-full py-1.5 text-right">
         {!you && (
           <Button small onClick={() => setAsking(true)}>
@@ -270,31 +366,24 @@ function MemberRow({
   );
 }
 
-function InviteRow({
-  id,
-  email,
-  role,
-  expires,
-  expired,
-}: {
-  id: number;
-  email: string;
-  role: Scope;
-  expires: string;
-  expired: boolean;
-}) {
+function InviteRow({ invite }: { invite: Invite }) {
+  const { id, email, role, expires_at } = invite;
   const revoke = useRevokeInvite();
   return (
-    <tr>
+    <tr className="*:align-middle">
       <td className="py-2">
-        <span className="font-mono">{email}</span>{" "}
-        <span className="rounded-full border border-warn-edge bg-stage-bg px-1.5 text-2xs text-warn-text">
-          {expired ? "invite expired" : "invited"}
+        <span className="flex items-center gap-2.5">
+          <Avatar />
+          <span className="text-mut">{email}</span>
+          <span className="text-2xs text-warn">
+            {invite.expired ? "invite expired" : "invited"}
+          </span>
         </span>
       </td>
-      <td className="py-2 font-mono text-mut">{role}</td>
+      <td className="py-2 text-mut">{role}</td>
+      <td />
       <td className="py-2 text-faint">
-        {expired ? "expired" : `until ${day(expires)}`}
+        {invite.expired ? "expired" : `until ${day(expires_at)}`}
       </td>
       <td className="w-full py-1.5 text-right">
         <Act

@@ -3,10 +3,11 @@ import { useState } from "react";
 import type { components } from "../../api/schema";
 import { useIsAdmin } from "../../data/queries";
 import { since } from "../../ui/format";
-import { Act, Button, ErrorText, Page, Panel, TitleRow } from "../../ui/kit";
+import { Act, Button, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
 import {
   orgQueries,
   useDeleteOrgVariable,
+  useOrgName,
   useRedeployOrgVariable,
   useSetOrgVariable,
 } from "./data";
@@ -35,20 +36,19 @@ export function VariablesPage() {
   const [changed, setChanged] = useState<string>();
   const changedVar = vars.find((v) => v.key === changed);
   return (
-    <Page width="max-w-[900px]" gap="gap-5">
-      <TitleRow
+    <>
+      <PageBar
+        parent={useOrgName()}
         title="Variables"
-        context={
-          <>
-            Shared by every project, used where a variable says{" "}
-            <span className="font-mono">{orgRef}</span>. Never added to services
-            by themselves.
-          </>
+        after={
+          <span className="text-xs text-faint">
+            shared by every project, used only as{" "}
+            <span className="font-mono">{orgRef}</span>
+          </span>
         }
         actions={
           admin && (
             <Act
-              small
               cli="dock org env list --reveal"
               onClick={() => setReveal(!reveal)}
             >
@@ -57,45 +57,47 @@ export function VariablesPage() {
           )
         }
       />
-      {changedVar?.used_by && changedVar.used_by.length > 0 && (
-        <Changed
-          name={changedVar.key}
-          uses={changedVar.used_by}
-          onDone={() => setChanged(undefined)}
-        />
-      )}
-      {vars.length === 0 ? (
-        <p className="text-mut">No organization variables yet.</p>
-      ) : (
-        <Panel>
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Value</th>
-                <th>Used by</th>
-                <th>Updated</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {vars.map((v) => (
-                <VariableRow
-                  key={v.key}
-                  name={v.key}
-                  value={v.value}
-                  uses={v.used_by ?? []}
-                  updated={v.updated_at}
-                  admin={admin}
-                  onChanged={() => setChanged(v.key)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-      )}
-      {admin && <AddVariable onAdded={setChanged} />}
-    </Page>
+      <Page width="max-w-[900px]" gap="gap-5">
+        {changedVar?.used_by && changedVar.used_by.length > 0 && (
+          <Changed
+            name={changedVar.key}
+            uses={changedVar.used_by}
+            onDone={() => setChanged(undefined)}
+          />
+        )}
+        {vars.length === 0 ? (
+          <p className="text-mut">No organization variables yet.</p>
+        ) : (
+          <Panel>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Value</th>
+                  <th>Used by</th>
+                  <th>Updated</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {vars.map((v) => (
+                  <VariableRow
+                    key={v.key}
+                    name={v.key}
+                    value={v.value}
+                    uses={v.used_by ?? []}
+                    updated={v.updated_at}
+                    admin={admin}
+                    onChanged={() => setChanged(v.key)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </Panel>
+        )}
+        {admin && <AddVariable onAdded={setChanged} />}
+      </Page>
+    </>
   );
 }
 
@@ -254,7 +256,7 @@ function VariableRow({
               small
               cli={`dock org env unset ${name}`}
               disabled={uses.length > 0 || remove.isPending}
-              title={
+              reason={
                 uses.length > 0 ? "Remove the references first" : undefined
               }
               onClick={() => remove.mutate(name)}

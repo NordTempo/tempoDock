@@ -11,8 +11,8 @@ import {
   Confirm,
   ErrorText,
   Page,
+  PageBar,
   Panel,
-  TitleRow,
 } from "../../ui/kit";
 import {
   orgQueries,
@@ -33,67 +33,76 @@ export function GeneralPage() {
   const rename = useRenameOrg();
   const [name, setName] = useState(org.name);
   return (
-    <Page width="max-w-[760px]" gap="gap-5">
-      <TitleRow title="General" context={`Your role here: ${org.role}`} />
-      <Panel>
-        <table>
-          <tbody>
-            <tr>
-              <td className="w-32 py-2.5 text-faint">Name</td>
-              <td className="py-1.5">
-                {admin ? (
-                  <form
-                    className="flex flex-wrap items-center gap-2"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      rename.mutate(name.trim());
-                    }}
-                  >
-                    <input
-                      aria-label="Name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="field min-w-0 flex-[1_1_220px] py-[5px]"
-                    />
-                    <Act
-                      small
-                      type="submit"
-                      cli={`dock org rename ${JSON.stringify(name.trim())}`}
-                      disabled={
-                        !name.trim() ||
-                        name.trim() === org.name ||
-                        rename.isPending
-                      }
+    <>
+      <PageBar
+        parent={org.name}
+        title="General"
+        after={
+          <span className="text-xs text-faint">your role: {org.role}</span>
+        }
+      />
+      <Page width="max-w-[760px]" gap="gap-5">
+        <Panel>
+          <table>
+            <tbody>
+              <tr>
+                <td className="w-32 py-2.5 text-faint">Name</td>
+                <td className="py-1.5">
+                  {admin ? (
+                    <form
+                      className="flex flex-wrap items-center gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        rename.mutate(name.trim());
+                      }}
                     >
-                      Save
-                    </Act>
-                    <ErrorText error={rename.error} />
-                  </form>
-                ) : (
-                  org.name
-                )}
-              </td>
-            </tr>
-            <tr>
-              <td className="py-2.5 text-faint">Address</td>
-              <td className="py-2.5 font-mono">
-                {window.location.host}/<b className="font-medium">{org.slug}</b>{" "}
-                <span className="font-sans text-faint">
-                  (the slug can't change yet)
-                </span>
-              </td>
-            </tr>
-            <tr>
-              <td className="py-2.5 text-faint">Created</td>
-              <td className="py-2.5 text-mut">{day(org.created_at)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </Panel>
-      {admin && <LockSettings />}
-      {user && <Leave name={org.name} />}
-      {admin && <Delete name={org.name} slug={org.slug} />}
-    </Page>
+                      <input
+                        aria-label="Name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="field min-w-0 flex-[1_1_220px] py-[5px]"
+                      />
+                      <Act
+                        small
+                        type="submit"
+                        cli={`dock org rename ${JSON.stringify(name.trim())}`}
+                        disabled={
+                          !name.trim() ||
+                          name.trim() === org.name ||
+                          rename.isPending
+                        }
+                      >
+                        Save
+                      </Act>
+                      <ErrorText error={rename.error} />
+                    </form>
+                  ) : (
+                    org.name
+                  )}
+                </td>
+              </tr>
+              <tr>
+                <td className="py-2.5 text-faint">Address</td>
+                <td className="py-2.5 font-mono">
+                  {window.location.host}/
+                  <b className="font-medium">{org.slug}</b>{" "}
+                  <span className="font-sans text-faint">
+                    (the slug can't change yet)
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="py-2.5 text-faint">Created</td>
+                <td className="py-2.5 text-mut">{day(org.created_at)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </Panel>
+        {admin && <LockSettings />}
+        {user && <Leave name={org.name} />}
+        {admin && <Delete name={org.name} slug={org.slug} />}
+      </Page>
+    </>
   );
 }
 
