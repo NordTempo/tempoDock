@@ -26,6 +26,9 @@ type Problem struct {
 	Errors []ProblemDetail `json:"errors,omitempty"`
 	// Request is the access request an environment_locked error filed.
 	Request int64 `json:"request,omitempty"`
+	// Release is the release a deploy_in_progress error is about: the one
+	// deploying. Older servers don't send it.
+	Release int64 `json:"release,omitempty"`
 }
 
 // ProblemDetail is one validation failure.

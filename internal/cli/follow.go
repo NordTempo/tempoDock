@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -217,21 +215,18 @@ func releaseFailure(ctx context.Context, s *session, r apitypes.Release) error {
 }
 
 // deployInProgress gives a deploy_in_progress error a hint that waits for
-// the deploy holding t: `dock release wait N -p -e -s`, with N when the
-// message names the release ("release 12 of shop/production/web is already
-// deploying"). Other errors are returned as they are.
+// the deploy holding t: `dock release wait N -p -e -s`, with the number of
+// the release the server names. Without one (an older server), plain
+// `dock release wait` follows the in-flight release just the same. Other
+// errors are returned as they are.
 func deployInProgress(err error, t target) error {
 	e, ok := errors.AsType[*output.Error](err)
 	if !ok || e.Code != string(apitypes.CodeDeployInProgress) {
 		return err
 	}
 	wait := "dock release wait"
-	if _, rest, ok := strings.Cut(e.Error(), "release "); ok {
-		if num, _, ok := strings.Cut(rest, " of "); ok {
-			if n, err := strconv.ParseInt(num, 10, 64); err == nil {
-				wait += " " + itoa(n)
-			}
-		}
+	if p, ok := errors.AsType[*apiclient.Problem](err); ok && p.Release > 0 {
+		wait += " " + itoa(p.Release)
 	}
 	c := *e
 	c.Hint = fmt.Sprintf("Wait for it with `%s %s`, then try again.", wait, t.flags())
