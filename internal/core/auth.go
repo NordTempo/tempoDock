@@ -295,6 +295,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 			return "", time.Time{}, err
 		}
 	}
+	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.password", nil, nil, u.Email, "changed own password; other sessions ended"+revokedNote(revoked))
 	return secret, expires, nil
 }
@@ -329,6 +330,7 @@ func (c *Core) SetUserDisabled(ctx context.Context, a Actor, id int64, disabled 
 		return apitypes.User{}, err
 	}
 	u.DisabledAt = at
+	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user."+verb, nil, nil, u.Email, fmt.Sprintf(summary, u.Email)+revokedNote(revoked))
 	return c.userIn(ctx, a, u), nil
 }
@@ -352,6 +354,7 @@ func (c *Core) DeleteUser(ctx context.Context, a Actor, id int64) error {
 	if err != nil {
 		return err
 	}
+	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.delete", nil, nil, u.Email, "deleted user "+u.Email+revokedNote(revoked))
 	return nil
 }
@@ -532,6 +535,7 @@ func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
 	if err := c.store.RevokeToken(ctx, store.RevokeTokenParams{RevokedAt: &n, ID: id}); err != nil {
 		return err
 	}
+	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a, "token.revoke", nil, nil, "token "+t.Name, fmt.Sprintf("revoked token %q (id %d)", t.Name, t.ID))
 	return nil
 }
@@ -633,6 +637,7 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	if err != nil {
 		return out, err
 	}
+	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions"+revokedNote(revoked))
 	out.User = c.userIn(ctx, a, u)
 	return out, nil

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -150,36 +151,26 @@ func TestRequestRejectAndExpire(t *testing.T) {
 	}
 }
 
-// TestRequestRevalidates: approval runs the call as things are now. A
-// revoked token runs nothing; a call that no longer applies fails with
-// its own error, and the request says so.
+// TestRequestRevalidates: approval runs the call as things are now: a
+// call that no longer applies fails with its own error, and the request
+// says so.
 func TestRequestRevalidates(t *testing.T) {
-	h := newRequestHarness(t)
-	r := h.ask("1", "")
-	if err := h.c.RevokeToken(h.ctx, testSystem, h.agent.TokenID); err != nil {
-		t.Fatal(err)
-	}
-	out, err := h.c.DecideRequest(h.ctx, h.admin, r.Request, true, apitypes.DecideAccessRequest{})
-	if err != nil || out.Status != apitypes.RequestFailed || !strings.Contains(out.Error, "revoked") || h.staged() {
-		t.Fatalf("revoked: %+v %v", out, err)
-	}
-
 	// A deploy started meanwhile: restarting no longer applies.
 	h2 := newRequestHarness(t)
 	web := ServiceRef{"shop", "production", "web"}
 	h2.deploy(web, "app:1")
-	_, err = h2.c.Restart(h2.ctx, h2.agent, web)
+	_, err := h2.c.Restart(h2.ctx, h2.agent, web)
 	err = h2.c.FileRequest(h2.ctx, h2.agent, err, Call{Via: "test", Op: "restart", Title: "Restart", Args: json.RawMessage(`{}`)})
 	le, _ := errors.AsType[*LockedError](err)
 	if le == nil || le.Request == 0 {
 		t.Fatalf("restart: %v", err)
 	}
-	r = le
+	r := le
 	defer h2.rt.HoldHealthChecks()()
 	if _, err := h2.c.DeployImage(h2.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"}); err != nil {
 		t.Fatal(err)
 	}
-	out, err = h2.c.DecideRequest(h2.ctx, h2.admin, r.Request, true, apitypes.DecideAccessRequest{})
+	out, err := h2.c.DecideRequest(h2.ctx, h2.admin, r.Request, true, apitypes.DecideAccessRequest{})
 	if err != nil || out.Status != apitypes.RequestFailed || !strings.Contains(out.Error, "already deploying") {
 		t.Fatalf("no longer applies: %+v %v", out, err)
 	}
@@ -217,5 +208,109 @@ func TestAskFirst(t *testing.T) {
 	}
 	if _, err := h.c.CreateEnvironment(h.ctx, h.agent.AskFirst(), "shop", apitypes.CreateEnvironmentRequest{Name: "qa"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("ask first outside an environment: %v", err)
+	}
+}
+
+// waitFor waits in the background, as the admin, for request id to be
+// decided, and returns where its answer arrives.
+func (h *requestHarness) waitFor(id int64) <-chan apitypes.AccessRequest {
+	got := make(chan apitypes.AccessRequest, 1)
+	go func() {
+		r, err := h.c.WaitRequest(h.ctx, h.admin, id, 5*time.Second)
+		if err != nil {
+			h.t.Errorf("wait: %v", err)
+		}
+		got <- r
+	}()
+	return got
+}
+
+// TestRequestEndsWhenTokenRevoked: revoking the token that asked rejects
+// its pending requests at once, for the system: waiters hear of it, the
+// alert resolves, and there is nothing left to approve.
+func TestRequestEndsWhenTokenRevoked(t *testing.T) {
+	h := newRequestHarness(t)
+	r := h.ask("1", "")
+	h.openAlert(requestAlertKey(r.Request), true)
+	waiter := h.waitFor(r.Request)
+	time.Sleep(20 * time.Millisecond) // let the waiter subscribe
+	if err := h.c.RevokeToken(h.ctx, testSystem, h.agent.TokenID); err != nil {
+		t.Fatal(err)
+	}
+	got := <-waiter
+	if got.Status != apitypes.RequestRejected || got.DecidedBy != "system" || !strings.Contains(got.Comment, "revoked") {
+		t.Fatalf("after revoke: %+v", got)
+	}
+	h.openAlert(requestAlertKey(r.Request), false)
+	if _, err := h.c.DecideRequest(h.ctx, h.admin, r.Request, true, apitypes.DecideAccessRequest{}); CodeOf(err) != apitypes.CodeConflict || h.staged() {
+		t.Fatalf("approve after revoke: %v", err)
+	}
+}
+
+// TestRequestEndsWhenProjectArchived: archiving the project rejects its
+// pending requests.
+func TestRequestEndsWhenProjectArchived(t *testing.T) {
+	h := newRequestHarness(t)
+	r := h.ask("1", "")
+	if _, err := h.c.ArchiveProject(h.ctx, testSystem, "shop"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.c.GetRequest(h.ctx, h.admin, r.Request)
+	if err != nil || got.Status != apitypes.RequestRejected || got.Comment != "its project was archived" {
+		t.Fatalf("after archive: %+v %v", got, err)
+	}
+	h.openAlert(requestAlertKey(r.Request), false)
+}
+
+// TestRequestExpiryWakesWaiter: a waiter wakes when the request's time
+// runs out and sees it expired; the retention pass resolves its alert.
+func TestRequestExpiryWakesWaiter(t *testing.T) {
+	h := newRequestHarness(t)
+	r := h.ask("1", "")
+	h.openAlert(requestAlertKey(r.Request), true)
+	if _, err := h.store.DB.ExecContext(h.ctx, "UPDATE access_requests SET expires_at = ? WHERE id = ?", now().Add(100*time.Millisecond), r.Request); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-h.waitFor(r.Request); got.Status != apitypes.RequestExpired {
+		t.Fatalf("waiter got %s", got.Status)
+	}
+	if err := h.c.expireRequests(h.ctx, now()); err != nil {
+		t.Fatal(err)
+	}
+	h.openAlert(requestAlertKey(r.Request), false)
+}
+
+// TestRequestApproveAfterUnlock: a request approved after its
+// environment was unlocked still runs.
+func TestRequestApproveAfterUnlock(t *testing.T) {
+	h := newRequestHarness(t)
+	r := h.ask("1", "")
+	if _, err := h.c.UnlockEnvironment(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.UnlockEnvironmentRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := h.c.DecideRequest(h.ctx, h.admin, r.Request, true, apitypes.DecideAccessRequest{})
+	if err != nil || out.Status != apitypes.RequestDone || !h.staged() {
+		t.Fatalf("approve after unlock: %+v %v", out, err)
+	}
+}
+
+// TestRequestApproveRace: two admins approving at once run the call once.
+func TestRequestApproveRace(t *testing.T) {
+	h := newRequestHarness(t)
+	r := h.ask("1", "")
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Go(func() {
+			_, errs[i] = h.c.DecideRequest(h.ctx, h.admin, r.Request, true, apitypes.DecideAccessRequest{})
+		})
+	}
+	wg.Wait()
+	if (errs[0] == nil) == (errs[1] == nil) || CodeOf(errors.Join(errs[0], errs[1])) != apitypes.CodeConflict {
+		t.Fatalf("want one approval and one conflict: %v", errs)
+	}
+	evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "variables.set"})
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("ran %d times: %v", len(evs), err)
 	}
 }

@@ -84,3 +84,15 @@ RETURNING *;
 -- ListHeldUploads is the archives of requests that may still run.
 -- name: ListHeldUploads :many
 SELECT upload FROM access_requests WHERE upload != '' AND status IN ('pending', 'approved');
+
+-- EndOrphanedAccessRequests rejects, for the system, pending requests
+-- that can no longer run: their token was revoked or their project
+-- archived. The revoke and archive paths call it.
+-- name: EndOrphanedAccessRequests :many
+UPDATE access_requests SET status = 'rejected', decided_by = 'system', decided_at = sqlc.arg(now), finished_at = sqlc.arg(now),
+    comment = CASE WHEN project_id IN (SELECT id FROM projects WHERE archived_at IS NOT NULL)
+        THEN 'its project was archived' ELSE 'the token that asked was revoked' END
+WHERE status = 'pending' AND (
+    token_id IN (SELECT id FROM tokens WHERE revoked_at IS NOT NULL)
+    OR project_id IN (SELECT id FROM projects WHERE archived_at IS NOT NULL))
+RETURNING *;

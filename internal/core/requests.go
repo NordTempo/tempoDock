@@ -595,8 +595,21 @@ func (c *Core) expireRequests(ctx context.Context, t time.Time) error {
 	return nil
 }
 
+// endOrphanedRequests rejects, for the system, pending requests that can
+// no longer run (their token revoked, their project archived), so they
+// end at once instead of failing when approved. Revoking tokens and
+// archiving a project call it after their change.
+func (c *Core) endOrphanedRequests(ctx context.Context) {
+	rows, err := c.store.EndOrphanedAccessRequests(ctx, ptr(now()))
+	if err != nil {
+		c.log.Error("end orphaned access requests", "err", err)
+		return
+	}
+	c.endedRequests(ctx, rows)
+}
+
 // endedRequests finishes requests that ended without running (expired,
-// cut off by a restart): their alerts resolve, their held archives go and
+// cut off by a restart, orphaned): their alerts resolve, their held archives go and
 // open pages hear of it.
 func (c *Core) endedRequests(ctx context.Context, rows []store.AccessRequest) {
 	if len(rows) == 0 {
