@@ -103,7 +103,7 @@ func (a Actor) Me() apitypes.Me {
 // twoFactorRequired says what a second factor the actor didn't use would
 // unlock, and how to get it; "" when nothing.
 func (a Actor) twoFactorRequired() string {
-	const how = "add an authenticator app on your account page, or sign in again with yours"
+	const how = "add a passkey or an authenticator app on your account page, or sign in again with yours"
 	switch {
 	case a.needs2FAOrg != "":
 		return fmt.Sprintf("organization %s requires two-factor sign-in; %s", a.needs2FAOrg, how)

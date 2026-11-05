@@ -22,9 +22,10 @@ func newMeTwoFactorCmd(g *globals) *cobra.Command {
 		Use:     "two-factor",
 		Aliases: []string{"2fa"},
 		Short:   "Your second factors and unused recovery codes",
-		Long: `List your second factors (authenticator apps) with when each was added and
-last used, and how many unused recovery codes you have. Set them up, remove
-them and create new recovery codes on your account page in the browser.
+		Long: `List your second factors (passkeys and authenticator apps) with when each
+was added and last used, and how many unused recovery codes you have. Set
+them up, remove them and create new recovery codes on your account page in
+the browser.
 
 Needs a token from a browser ` + "`dock login`" + `, which acts for you; API tokens
 have no second factors. After adding your first factor, run ` + "`dock login`" + `
@@ -44,7 +45,7 @@ used one (` + "`dock whoami`" + ` says).`,
 			return g.io.Print(tf, func() error {
 				if len(tf.Factors) == 0 {
 					g.io.Warnf("Two-factor sign-in is off: you have no second factor")
-					g.io.Detail("Add an authenticator app on your account page: " + account)
+					g.io.Detail("Add a passkey or an authenticator app on your account page: " + account)
 					return nil
 				}
 				t := g.io.Table("kind", "name", "added", "last used")

@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
 import { api, body, done, setOrg } from "../api/client";
+import type { components } from "../api/schema";
 import { currentMe, envPath, keys, servicePath } from "./queries";
 import type {
   DiscardSelection,
@@ -536,14 +537,14 @@ export function useLogin() {
 }
 
 /**
- * Finishes a password sign-in with an authenticator app code or a
- * recovery code; the pending sign-in's cookie rides along. A 410
+ * Finishes a password sign-in with a passkey, an authenticator app code
+ * or a recovery code; the pending sign-in's cookie rides along. A 410
  * (expired) means it ended: enter the password again.
  */
 export function useLoginVerify() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (v: { code: string } | { recovery_code: string }) => {
+    mutationFn: async (v: components["schemas"]["Verification"]) => {
       await body(api.POST("/api/v1/auth/login/verify", { body: v }));
       queryClient.setQueryData(keys.session, await currentMe());
     },

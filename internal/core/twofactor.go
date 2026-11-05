@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,11 +13,12 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Two-factor sign-in (ADR 0057). A user with an authenticator app signs
-// in with their password, then a code from the app (or a recovery code):
-// Login leaves a pending session that authenticates nothing, and
+// Two-factor sign-in (ADR 0057). A user with a passkey or an authenticator
+// app signs in with their password, then the second factor (or a recovery
+// code): Login leaves a pending session that authenticates nothing, and
 // LoginSecondFactor replaces it with a real one that remembers the factor
-// (sessions.factor). Sensitive
+// (sessions.factor). A passkey alone (PasskeyLogin) also signs in, as two
+// factors. Sensitive
 // actions need the session to have proved who it is within ReauthWindow
 // (requireRecent); Reauth renews that. Orgs and the platform can require
 // a second factor of every member or operator (gate).
@@ -39,6 +41,7 @@ const (
 
 // Factor kinds (user_factors.kind, sessions.factor).
 const (
+	factorPasskey  = "passkey"
 	factorTOTP     = "totp"
 	factorRecovery = "recovery"
 	// factorLogin marks a `dock login` token approved from a session with a
@@ -97,6 +100,8 @@ func (c *Core) signIn(ctx context.Context, u store.User, factor, clientIP string
 // factorName is a factor kind in words.
 func factorName(kind string) string {
 	switch kind {
+	case factorPasskey:
+		return "a passkey"
 	case factorTOTP:
 		return "an authenticator app"
 	case factorRecovery:
@@ -117,9 +122,9 @@ func (c *Core) startSecondFactor(ctx context.Context, u store.User) (LoginResult
 		return LoginResult{}, err
 	}
 	var kinds []string
-	for _, f := range rows {
-		if f.Kind == factorTOTP {
-			kinds = append(kinds, factorTOTP)
+	for _, k := range []string{factorPasskey, factorTOTP} {
+		if slices.ContainsFunc(rows, func(f store.UserFactor) bool { return f.Kind == k }) {
+			kinds = append(kinds, k)
 		}
 	}
 	if codes > 0 {
@@ -147,7 +152,7 @@ func (c *Core) pendingSession(ctx context.Context, secret string) (store.GetSess
 }
 
 // LoginSecondFactor finishes a password sign-in pending in pendingSecret
-// with an authenticator app code or a recovery code. Wrong
+// with a passkey, an authenticator app code or a recovery code. Wrong
 // factors count per user (a few a minute) and per sign-in
 // (maxFactorAttempts, then the password again); each is audited.
 func (c *Core) LoginSecondFactor(ctx context.Context, pendingSecret string, v apitypes.Verification, clientIP string) (LoginResult, error) {
@@ -164,7 +169,7 @@ func (c *Core) LoginSecondFactor(ctx context.Context, pendingSecret string, v ap
 	if v.Password != "" {
 		return LoginResult{}, invalid("the password was checked already; use your second factor")
 	}
-	kind, err := c.checkFactor(ctx, u, v, true)
+	kind, err := c.checkFactor(ctx, ceremonySecond, u, s.ID, v, true)
 	if CodeOf(err) == apitypes.CodeUnauthorized || CodeOf(err) == apitypes.CodeValidation {
 		c.log.Warn("login: wrong second factor", "email", u.Email, "ip", clientIP)
 		c.audit(ctx, userActor(u), "user.login_failed", nil, nil, u.Email, fmt.Sprintf("wrong second factor from %s: %v", clientIP, err))
@@ -183,16 +188,20 @@ func (c *Core) LoginSecondFactor(ctx context.Context, pendingSecret string, v ap
 	return c.signIn(ctx, u, kind, clientIP)
 }
 
-// checkFactor verifies v as u's second factor and returns its kind.
+// checkFactor verifies v as u's second factor, answering a passkey
+// ceremony of purpose started in session sessionID, and returns its kind.
 // Recovery codes count only with recovery (signing in, not step-ups).
 // Codes spend u's failure budget (factorWait) whichever path they come
-// through; a right one clears it.
-func (c *Core) checkFactor(ctx context.Context, u store.User, v apitypes.Verification, recovery bool) (string, error) {
-	if (v.Code != "") == (v.RecoveryCode != "") {
-		return "", invalid("give an authenticator app code or a recovery code")
+// through; a right one clears it. Passkeys can't be guessed and don't.
+func (c *Core) checkFactor(ctx context.Context, purpose string, u store.User, sessionID int64, v apitypes.Verification, recovery bool) (string, error) {
+	if n := countTrue(v.Passkey != nil, v.Code != "", v.RecoveryCode != ""); n != 1 {
+		return "", invalid("give one of a passkey, an authenticator app code or a recovery code")
 	}
 	if !recovery && v.RecoveryCode != "" {
-		return "", invalid("recovery codes are for signing in; confirm with your authenticator app")
+		return "", invalid("recovery codes are for signing in; confirm with your passkey or authenticator app")
+	}
+	if v.Passkey != nil {
+		return factorPasskey, c.checkPasskey(ctx, purpose, u, sessionID, v.Passkey)
 	}
 	if wait, locked := factorWait(u.FactorFailures, u.FactorFailedAt, now()); locked {
 		return "", errf(apitypes.CodeForbidden, "two-factor sign-in is locked after %d wrong codes; an operator runs `dock admin reset-2fa %s` on the server, or resets your password", u.FactorFailures, u.Email)
@@ -239,6 +248,17 @@ func factorWait(failures int64, last *time.Time, t time.Time) (time.Duration, bo
 	}
 	d := min(time.Second<<min(failures-factorBackoffAfter, 12), maxFactorWait)
 	return max(0, last.Add(d).Sub(t)), false
+}
+
+// countTrue counts the true bs.
+func countTrue(bs ...bool) int {
+	n := 0
+	for _, b := range bs {
+		if b {
+			n++
+		}
+	}
+	return n
 }
 
 // checkTOTP accepts an authenticator app code of u's, once.
@@ -335,6 +355,19 @@ func (c *Core) sessionUser(ctx context.Context, a Actor, action string) (store.U
 	return c.store.GetUser(ctx, a.UserID)
 }
 
+// ReauthOptions starts a passkey step-up for the caller's session, which
+// Reauth finishes.
+func (c *Core) ReauthOptions(ctx context.Context, a Actor, origin string) (apitypes.PasskeyChallenge, error) {
+	if a.SessionID == 0 {
+		return apitypes.PasskeyChallenge{}, invalid("API tokens don't need to confirm; only browser sessions do")
+	}
+	u, err := c.store.GetUser(ctx, a.UserID)
+	if err != nil {
+		return apitypes.PasskeyChallenge{}, err
+	}
+	return c.beginPasskey(ctx, ceremonyReauth, origin, &u, a.SessionID)
+}
+
 // Reauth confirms the caller is still the person who signed in, so the
 // session may do sensitive things for ReauthWindow: with a second factor
 // when they have one, else their password.
@@ -356,9 +389,9 @@ func (c *Core) Reauth(ctx context.Context, a Actor, v apitypes.Verification, cli
 	factor := a.Factor
 	switch {
 	case n > 0 && v.Password != "":
-		err = invalid("confirm with your authenticator app")
+		err = invalid("confirm with your passkey or authenticator app")
 	case n > 0:
-		factor, err = c.checkFactor(ctx, u, v, false)
+		factor, err = c.checkFactor(ctx, ceremonyReauth, u, a.SessionID, v, false)
 	case v.Password == "":
 		err = invalid("confirm with your password")
 	default:
@@ -492,7 +525,10 @@ func (c *Core) addFactor(ctx context.Context, a Actor, u store.User, p store.Cre
 		return q.DeleteOtherSessions(ctx, store.DeleteOtherSessionsParams{UserID: u.ID, Keep: a.SessionID})
 	})
 	if store.IsUnique(err) {
-		return out, conflict("this authenticator app is on your account already")
+		if p.Kind == factorTOTP {
+			return out, conflict("you have an authenticator app already; remove it first to set up another")
+		}
+		return out, conflict("this passkey is on an account already")
 	}
 	if err != nil {
 		return out, err
@@ -595,7 +631,7 @@ func (c *Core) NewRecoveryCodes(ctx context.Context, a Actor) (apitypes.Recovery
 			return err
 		}
 		if n == 0 {
-			return invalid("recovery codes come with a second factor; add an authenticator app first")
+			return invalid("recovery codes come with a second factor; add a passkey or an authenticator app first")
 		}
 		codes, err = replaceRecoveryCodes(ctx, q, u.ID)
 		return err
@@ -668,7 +704,7 @@ func (c *Core) SetOrgRequireTwoFactor(ctx context.Context, a Actor, req apitypes
 		return apitypes.Org{}, err
 	}
 	if req.Require && a.UserID != 0 && a.Factor == "" {
-		return apitypes.Org{}, invalid("sign in with a second factor yourself first: add an authenticator app on your account page")
+		return apitypes.Org{}, invalid("sign in with a second factor yourself first: add a passkey or an authenticator app on your account page")
 	}
 	o, err := c.store.SetOrgRequireTwoFactor(ctx, store.SetOrgRequireTwoFactorParams{RequireTwoFactor: req.Require, ID: a.OrgID})
 	if err != nil {
@@ -701,7 +737,7 @@ func (c *Core) SetPlatformSecurity(ctx context.Context, a Actor, req apitypes.Pl
 		return apitypes.PlatformSecurity{}, err
 	}
 	if req.OperatorsTwoFactor && a.UserID != 0 && a.Factor == "" {
-		return apitypes.PlatformSecurity{}, invalid("sign in with a second factor yourself first: add an authenticator app on your account page")
+		return apitypes.PlatformSecurity{}, invalid("sign in with a second factor yourself first: add a passkey or an authenticator app on your account page")
 	}
 	if err := c.store.SetOperatorsTwoFactor(ctx, store.SetOperatorsTwoFactorParams{OperatorsTwoFactor: req.OperatorsTwoFactor, UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
 		return apitypes.PlatformSecurity{}, err

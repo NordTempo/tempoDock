@@ -112,9 +112,9 @@ func newResetTwoFactorCmd() *cobra.Command {
 		Use:     "reset-2fa <email>",
 		Aliases: []string{"reset-two-factor"},
 		Short:   "Turn off a user's two-factor sign-in, for one who lost their factor",
-		Long: `Removes the user's second factors (authenticator apps) and recovery codes,
-and ends their UI sessions and dock login tokens. Their API tokens stay.
-The audit log records it (user.2fa_reset).
+		Long: `Removes the user's second factors (passkeys and authenticator apps) and
+recovery codes, and ends their UI sessions and dock login tokens. Their API
+tokens stay. The audit log records it (user.2fa_reset).
 
 Run it on the server, as root or the service user. The person then signs
 in with their password alone and sets up a new factor on their account

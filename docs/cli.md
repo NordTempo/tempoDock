@@ -106,7 +106,7 @@ to create or paste:
 
 With two-factor sign-in ([guide](guide/two-factor.md)), approving is a
 sensitive action: a browser sign-in older than 15 minutes confirms with
-your authenticator app first. The token counts as two-factor only when
+your passkey or authenticator app first. The token counts as two-factor only when
 the sign-in that approved it used a second factor; after adding your
 first factor, run `dock login` again. `dock whoami` says which it is.
 
@@ -185,7 +185,7 @@ name. Update older CLI clients before renaming projects they use.
 | `org rename <name>`, `org leave [-y]`, `org delete [-y]` | Rename (admin; the slug stays); leave (the last admin can't); delete an organization without projects (admin) |
 | `mcp [--show-token] [--name N]` | Print the MCP client config for the context's server ([agents](guide/agents.md#mcp)): the endpoint URL, a `claude mcp add` command and an `mcp.json` entry. The token is `${DOCK_TOKEN}` unless `--show-token` |
 | `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions and other browser-login tokens end; the CLI's own token stays valid |
-| `me two-factor` | Your second factors (kind, name, added, last used) and how many unused recovery codes you have. Needs a browser-login token; setting factors up, removing them and new recovery codes are on your account page in the browser |
+| `me two-factor` | Your second factors, passkeys and authenticator apps (kind, name, added, last used), and how many unused recovery codes you have. Needs a browser-login token; setting factors up, removing them and new recovery codes are on your account page in the browser |
 | `link [-p -e -s]`, `unlink` | Link the directory. Pickers on a terminal; otherwise `--project` (and `--environment` when there are several) |
 | `deploy [dir] [--image ref] [-d]` | Pack and stream the directory (or deploy an image) and follow build, start, health check and cutover. A `--service` that doesn't exist yet is created. An image deploy sets the service's `image` setting; a source deploy clears it. Exit 6 when the release fails. When the environment's server is offline or revoked, a source deploy stops before packing anything (`server_offline`, exit 7) |
 | `promote FROM TO [-s service...] [-d]` | Deploy the images serving in environment FROM to TO (same project), by digest, with TO's own variables and settings; nothing is rebuilt. One service at a time, stopping at the first failure. Services missing in TO (or with nothing running in FROM) are skipped and listed. Needs deploy on TO. Exit 6 when a release fails, exit 4 when nothing was promoted (every service skipped; the skipped list is still printed, and with `--json` the result still goes to stdout) |

@@ -1,17 +1,20 @@
 package apitypes
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
-// Two-factor sign-in (ADR 0057): authenticator apps as second factors,
-// recovery codes, step-up re-authentication.
+// Two-factor sign-in (ADR 0057): passkeys and authenticator apps as second
+// factors, recovery codes, step-up re-authentication.
 
 // LoginResult answers a password check: signed in (Me), or a second factor
 // is needed (SecondFactor), finished at POST /auth/login/verify.
 type LoginResult struct {
 	Me *Me `json:"me,omitempty"`
-	// SecondFactor lists the factors the user can finish with: totp,
-	// recovery. Set when the password was right and one is needed.
-	SecondFactor []string `json:"second_factor,omitempty" enum:"totp,recovery"`
+	// SecondFactor lists the factors the user can finish with: passkey,
+	// totp, recovery. Set when the password was right and one is needed.
+	SecondFactor []string `json:"second_factor,omitempty" enum:"passkey,totp,recovery"`
 }
 
 // Verification proves who the caller is: the second factor of a sign-in,
@@ -23,12 +26,46 @@ type Verification struct {
 	Code string `json:"code,omitempty"`
 	// RecoveryCode is a one-time recovery code (sign-in only).
 	RecoveryCode string `json:"recovery_code,omitempty"`
+	// Passkey answers a passkey challenge: POST /auth/passkey/options
+	// (purpose second) when signing in, POST /me/reauth/options for a
+	// step-up.
+	Passkey *PasskeyResponse `json:"passkey,omitempty"`
+}
+
+// PasskeyChallenge starts a WebAuthn ceremony. Options is the
+// PublicKeyCredentialCreationOptions or ...RequestOptions as JSON (binary
+// fields base64url), for navigator.credentials. Ceremony names it in the
+// answer; it works once, for a few minutes.
+type PasskeyChallenge struct {
+	Ceremony string          `json:"ceremony"`
+	Options  json.RawMessage `json:"options"`
+}
+
+// PasskeyResponse answers a PasskeyChallenge: the PublicKeyCredential the
+// browser returned, as JSON (PublicKeyCredential.toJSON()).
+type PasskeyResponse struct {
+	Ceremony   string          `json:"ceremony" minLength:"1"`
+	Credential json.RawMessage `json:"credential"`
+}
+
+// PasskeyOptionsRequest says what a passkey sign-in challenge is for.
+type PasskeyOptionsRequest struct {
+	// Purpose: "login" to sign in with a passkey alone, "second" for the
+	// second factor of a password sign-in in progress.
+	Purpose string `json:"purpose" enum:"login,second"`
+}
+
+// AddPasskeyRequest registers the passkey a PasskeyChallenge from POST
+// /me/passkeys/options created.
+type AddPasskeyRequest struct {
+	Name    string          `json:"name" maxLength:"64" doc:"What the passkey is on, e.g. \"MacBook\""`
+	Passkey PasskeyResponse `json:"passkey"`
 }
 
 // Factor is one of a user's second factors.
 type Factor struct {
 	ID         int64      `json:"id"`
-	Kind       string     `json:"kind" enum:"totp"`
+	Kind       string     `json:"kind" enum:"passkey,totp"`
 	Name       string     `json:"name"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`

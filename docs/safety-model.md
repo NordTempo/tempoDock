@@ -53,9 +53,11 @@ access goes through the daemon's API, which enforces permissions.
 The UI controls production, so a password shouldn't be enough
 ([0057](decisions/0057-two-factor-sign-in.md), [guide](guide/two-factor.md)).
 
-- Users add an authenticator app; signing in then needs a code from it or a
-  one-time recovery code. Wrong codes spend from the same per (email,
-  address) limit as passwords, so a guesser can't lock the owner out.
+- Users add a passkey or an authenticator app; signing in then needs the
+  passkey, a code from the app or a one-time recovery code. A passkey with
+  the device's PIN or biometrics also signs in alone. Wrong factors spend
+  from the same per (email, address) limit as passwords, so a guesser can't
+  lock the owner out.
 - Sensitive actions (revealing secrets, creating tokens, approving a `dock
   login`, managing people and accounts, changing sign-in policies and
   factors) need a sign-in or confirmation within the last 15 minutes. Tokens

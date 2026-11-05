@@ -4,14 +4,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 // Ceremonies are sign-in steps in flight that hold a secret until the
-// person answers (ADR 0057): an authenticator app's new key waiting for
-// its first code. They live in memory for ceremonyTTL, bound to the user
-// and session that started them, and are taken out when answered, so an
-// answer works once. A restart forgets them; the person starts again.
+// person answers (ADR 0057): a passkey challenge, or an authenticator
+// app's new key waiting for its first code. They live in memory for
+// ceremonyTTL, bound to the user and session that started them, and are
+// taken out when answered, so an answer works once. A restart forgets
+// them; the person starts again.
 
 const (
 	ceremonyTTL = 5 * time.Minute
@@ -21,15 +24,22 @@ const (
 
 // Ceremony purposes: what a ceremony may be answered for.
 const (
-	ceremonyTOTP = "totp" // an authenticator app awaiting its first code
+	ceremonyRegister = "register" // adding a passkey
+	ceremonyLogin    = "login"    // signing in with a passkey alone
+	ceremonySecond   = "second"   // a password sign-in's second factor
+	ceremonyReauth   = "reauth"   // a step-up
+	ceremonyTOTP     = "totp"     // an authenticator app awaiting its first code
 )
 
 // ceremony is a step in flight, bound to the user and session that
-// started it.
+// started it (userID 0 for a passkey sign-in, which learns the user from
+// the answer) and, for passkeys, the origin it was asked from.
 type ceremony struct {
 	purpose   string
 	userID    int64
 	sessionID int64
+	origin    string
+	webauthn  webauthn.SessionData
 	totpKey   []byte
 	attempts  int
 	expires   time.Time
@@ -84,7 +94,7 @@ func (cs *ceremonies) take(id, purpose string, userID, sessionID int64) (*ceremo
 	cer := cs.m[id]
 	delete(cs.m, id)
 	if cer == nil || now().After(cer.expires) || cer.purpose != purpose || cer.userID != userID || cer.sessionID != sessionID {
-		return nil, errf(apitypes.CodeExpired, "this step expired or was already used; start again")
+		return nil, errf(apitypes.CodeExpired, "this %s expired or was already used; start again", ceremonyWords(purpose))
 	}
 	return cer, nil
 }
@@ -94,4 +104,15 @@ func (cs *ceremonies) retry(id string, cer *ceremony) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.m[id] = cer
+}
+
+// ceremonyWords names what a ceremony of purpose is, for its errors.
+func ceremonyWords(purpose string) string {
+	switch purpose {
+	case ceremonyTOTP:
+		return "authenticator app setup"
+	case ceremonyRegister:
+		return "passkey setup"
+	}
+	return "passkey prompt"
 }

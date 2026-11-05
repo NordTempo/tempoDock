@@ -1,5 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { lazy, Suspense, useState } from "react";
+import { passkeysAvailable } from "../../api/webauthn";
 import { useSession } from "../../data/queries";
 import { ago, day, plural } from "../../ui/format";
 import { Button, Confirm, ErrorText, Glyph, SectionHead } from "../../ui/kit";
@@ -7,6 +8,7 @@ import {
   type Factor,
   type TOTPSetup,
   twoFactorQuery,
+  useAddPasskey,
   useNewRecoveryCodes,
   useRemoveFactor,
   useStartTOTP,
@@ -18,7 +20,8 @@ const RecoveryCodesDialog = lazy(() => import("./RecoveryCodesDialog"));
 
 /**
  * The caller's two-factor sign-in (ADR 0057, `dock me two-factor`): whether it
- * is on, their authenticator app, setting one up, and recovery codes.
+ * is on, their passkeys and authenticator app, adding them, and recovery
+ * codes.
  * Changes ask to confirm it's you when the session is older than 15
  * minutes (the API client's step-up).
  */
@@ -30,6 +33,8 @@ export function TwoFactorSection() {
   // Recovery codes just made, shown once.
   const [codes, setCodes] = useState<string[]>();
   const on = tf.factors.length > 0;
+  const passkeys = tf.factors.filter((f) => f.kind === "passkey");
+  const apps = tf.factors.filter((f) => f.kind === "totp");
 
   return (
     <section aria-labelledby="two-factor" className="flex flex-col gap-3">
@@ -50,18 +55,25 @@ export function TwoFactorSection() {
           )}{" "}
           <span className="text-mut">
             {on
-              ? "signing in takes your password and a code"
+              ? "signing in takes a second factor"
               : "your password alone signs you in"}
             {me?.two_factor &&
               `; this session used ${factorWord(me.two_factor)}`}
           </span>
         </dd>
-        <dt>Authenticator app</dt>
+        <dt>Passkeys</dt>
         <dd className="flex flex-col gap-2">
-          {tf.factors.map((f) => (
+          {passkeys.map((f) => (
             <FactorRow key={f.id} factor={f} />
           ))}
-          {!on && !setup && (
+          <AddPasskey onRecoveryCodes={setCodes} />
+        </dd>
+        <dt>Authenticator app</dt>
+        <dd className="flex flex-col gap-2">
+          {apps.map((f) => (
+            <FactorRow key={f.id} factor={f} />
+          ))}
+          {apps.length === 0 && !setup && (
             <span className="flex flex-wrap items-center gap-3">
               <Button
                 small
@@ -97,8 +109,8 @@ export function TwoFactorSection() {
         )}
       </dl>
       <p className="text-xs text-mut">
-        Lost your phone and your recovery codes? Someone with shell access to
-        the server runs{" "}
+        Lost your second factors and your recovery codes? Someone with shell
+        access to the server runs{" "}
         <span className="font-mono text-fg">
           sudo dock admin reset-2fa {me?.email ?? "<email>"}
         </span>
@@ -119,6 +131,8 @@ export function TwoFactorSection() {
 /** How Me.two_factor reads in a sentence. */
 function factorWord(kind: string) {
   switch (kind) {
+    case "passkey":
+      return "a passkey";
     case "totp":
       return "your authenticator app";
     case "recovery":
@@ -128,7 +142,57 @@ function factorWord(kind: string) {
   }
 }
 
-/** An authenticator app with when it was added and used, and Remove. */
+/**
+ * Adding a passkey: a name for where it lives, then the browser creates
+ * it. A first factor brings recovery codes, shown once.
+ */
+function AddPasskey({
+  onRecoveryCodes,
+}: {
+  onRecoveryCodes: (codes: string[]) => void;
+}) {
+  const add = useAddPasskey();
+  const [name, setName] = useState("");
+  if (!passkeysAvailable()) {
+    return (
+      <span className="text-mut">
+        Passkeys need Dock's public address (https) or localhost.
+      </span>
+    );
+  }
+  return (
+    <form
+      className="flex flex-wrap items-center gap-x-3 gap-y-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        add.mutate(name.trim(), {
+          onSuccess: (added) => {
+            setName("");
+            if (added.recovery_codes?.length) {
+              onRecoveryCodes(added.recovery_codes);
+            }
+          },
+        });
+      }}
+    >
+      <input
+        aria-label="Passkey name"
+        placeholder="Name, e.g. MacBook"
+        maxLength={64}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        disabled={add.isPending}
+        className="field w-[200px] py-[5px]"
+      />
+      <Button small primary type="submit" disabled={add.isPending}>
+        Add a passkey
+      </Button>
+      <ErrorText error={add.error} />
+    </form>
+  );
+}
+
+/** A passkey or authenticator app with when it was added and used, and Remove. */
 function FactorRow({ factor: f }: { factor: Factor }) {
   const remove = useRemoveFactor();
   const [asking, setAsking] = useState(false);
