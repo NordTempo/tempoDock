@@ -228,6 +228,10 @@ func (c *Core) CreateSnapshot(ctx context.Context, a Actor, ref ServiceRef, req 
 // an applied volume has nothing to keep: no snapshot and no error. Any
 // failure is an error, and the caller should not go on with the action.
 func (c *Core) SnapshotBefore(ctx context.Context, a Actor, ss svcScope, trigger apitypes.SnapshotTrigger, note string) (*apitypes.Snapshot, error) {
+	// The snapshot ends on its own terms: a caller that goes away (an
+	// HTTP request ending) must not leave it running for ever.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Hour)
+	defer cancel()
 	vols, err := c.appliedVolumes(ctx, ss)
 	if err != nil || len(vols) == 0 {
 		return nil, err
@@ -278,6 +282,9 @@ func (c *Core) startSnapshot(ctx context.Context, a Actor, ss svcScope, trigger 
 		return store.VolumeSnapshot{}, nil, invalid("%s has no volume, so there is nothing to snapshot", ss)
 	}
 	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
+		return store.VolumeSnapshot{}, nil, err
+	}
+	if err := c.notMoving(ctx, ss.envScope, "take a snapshot"); err != nil {
 		return store.VolumeSnapshot{}, nil, err
 	}
 	if !c.claimService(ss.svc.ID) {
@@ -414,11 +421,19 @@ func (c *Core) runSnapshotJob(ctx context.Context, serverID int64, rt node.Runti
 	if err := rt.EnsureVolume(ctx, vol, node.Labels{ControlPlane: c.install}); err != nil {
 		return "", fmt.Errorf("create the snapshot volume: %w", c.nodeErr(serverID, err))
 	}
+	spec.Mounts = append(spec.Mounts, node.Mount{Volume: vol, Path: snapshotsPath})
+	return c.runToolJob(ctx, serverID, rt, spec)
+}
+
+// runToolJob runs spec in the restic image, a small Alpine with busybox's
+// cp, du and tar, with the job memory limit: snapshots (ADR 0047) and
+// moving volumes (ADR 0053). A job that exits non-zero is an error with
+// the end of its output.
+func (c *Core) runToolJob(ctx context.Context, serverID int64, rt node.Runtime, spec node.JobSpec) (string, error) {
 	spec.Image = c.cfg.Backup.ResticImage
 	if err := c.ensureImage(ctx, serverID, rt, spec.Image); err != nil {
 		return "", err
 	}
-	spec.Mounts = append(spec.Mounts, node.Mount{Volume: vol, Path: snapshotsPath})
 	spec.Resources = node.Resources{MemoryBytes: jobMemoryMB << 20, NanoCPUs: 1e9}
 	res, err := rt.RunJob(ctx, spec)
 	if err != nil {
@@ -443,6 +458,9 @@ func (c *Core) runSnapshotJob(ctx context.Context, serverID int64, rt node.Runti
 func (c *Core) RestoreSnapshot(ctx context.Context, a Actor, ref ServiceRef, id int64, req apitypes.RestoreSnapshotRequest) (apitypes.SnapshotRestoreResult, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "restoring a snapshot")
 	if err != nil {
+		return apitypes.SnapshotRestoreResult{}, err
+	}
+	if err := c.notMoving(ctx, ss.envScope, "restore a snapshot"); err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
 	if err := notArchived(ss.project); err != nil {
@@ -507,15 +525,21 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 	if err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
-	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
-		return apitypes.SnapshotRestoreResult{}, deployInProgress(ss, r)
-	}
 	// The safety snapshot is recorded now, so the claim covers both.
 	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, fmt.Sprintf("before restoring snapshot %d", snap.ID))
 	if err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
+	// Marked before the deploy check, which startRelease makes in its
+	// transaction too: a deploy and an in-place restore never both go
+	// ahead on one volume.
 	c.setRestoringInPlace(ss.svc.ID, true)
+	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
+		c.setRestoringInPlace(ss.svc.ID, false)
+		c.failSafety(ctx, safety, "a deploy started first, so nothing was restored")
+		c.releaseService(ss.svc.ID)
+		return apitypes.SnapshotRestoreResult{}, deployInProgress(ss, r)
+	}
 	// Read the service again now that StopService refuses to run: a stop
 	// that went ahead after ss was loaded is seen here, so the restore
 	// leaves the service stopped instead of starting it again.
@@ -634,6 +658,9 @@ func (c *Core) restoreIntoNew(ctx context.Context, a Actor, ss svcScope, t dbTem
 	}
 	keep, err := c.templateLiterals(ctx, ss, t)
 	if err != nil {
+		return apitypes.SnapshotRestoreResult{}, err
+	}
+	if err := c.notMoving(ctx, ss.envScope, "restore a snapshot"); err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
 	if !c.claimService(ss.svc.ID) {
@@ -755,6 +782,9 @@ func (c *Core) DeleteSnapshot(ctx context.Context, a Actor, ref ServiceRef, id i
 	}
 	snap, err := c.serviceSnapshot(ctx, ss, id)
 	if err != nil {
+		return err
+	}
+	if err := c.notMoving(ctx, ss.envScope, "delete a snapshot"); err != nil {
 		return err
 	}
 	if !c.claimService(ss.svc.ID) {

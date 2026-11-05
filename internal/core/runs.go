@@ -115,6 +115,10 @@ func checkTimeout(timeout int) (int, error) {
 // openRun records a checked run in a service as running, once it has
 // an active release, its volumes are decided and a run slot is free.
 func (c *Core) openRun(ctx context.Context, a Actor, ss svcScope, spec runSpec) (*Run, error) {
+	// Writes to a moving environment's source volumes would be lost.
+	if err := c.notMoving(ctx, ss.envScope, "run a command"); err != nil {
+		return nil, err
+	}
 	if ss.svc.ArchivedAt != nil {
 		return nil, invalid("service %s is archived; restore it to run commands in it", ss.svc.Name)
 	}

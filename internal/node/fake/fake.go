@@ -33,9 +33,12 @@ type Runtime struct {
 	images     map[string]string
 	networks   map[string]node.Labels
 	volumes    map[string]node.Labels
-	routes     []node.Route
-	ops        []string
-	logs       map[string][]node.LogLine
+	// data is what volumes hold, for jobs that archive or unpack one
+	// (SetVolumeData).
+	data   map[string][]byte
+	routes []node.Route
+	ops    []string
+	logs   map[string][]node.LogLine
 	// changed is closed (and cleared) when logs or a container's state
 	// change, waking Logs followers.
 	changed  chan struct{}
@@ -95,6 +98,7 @@ func New() *Runtime {
 		images:     map[string]string{},
 		networks:   map[string]node.Labels{},
 		volumes:    map[string]node.Labels{},
+		data:       map[string][]byte{},
 		logs:       map[string][]node.LogLine{},
 		ctrStats:   map[string]node.ContainerStats{},
 		archives:   map[string]map[string]*fakeArchive{},
@@ -861,6 +865,37 @@ func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, err
 	return d.DialContext(ctx, "tcp", addr)
 }
 
+// ErrDefault, returned by OnJob's function, lets RunJob answer a job as
+// it does without one.
+var ErrDefault = errors.New("fake: answer as by default")
+
+// tarVolume is the volume a job archives or unpacks, as the fake plays
+// it: a script containing op ("tar -cf" or "tar -xf") with one mount.
+func tarVolume(spec node.JobSpec, op string) (string, bool) {
+	if !strings.Contains(spec.Script, op) || len(spec.Mounts) != 1 {
+		return "", false
+	}
+	return spec.Mounts[0].Volume, true
+}
+
+// SetVolumeData sets what volume holds, for jobs that archive it: one
+// with a Stream whose script contains "tar -cf" and mounts only that
+// volume writes it to the Stream's Stdout, and one with "tar -xf" sets
+// it from the Stream's Stdin. Enough for core's tests to follow a
+// volume's copy between servers (ADR 0053).
+func (r *Runtime) SetVolumeData(volume string, data []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data[volume] = slices.Clone(data)
+}
+
+// VolumeData returns what volume holds (SetVolumeData).
+func (r *Runtime) VolumeData(volume string) []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.data[volume])
+}
+
 // OnJob makes RunJob answer with fn (nil: exit 0, no output).
 func (r *Runtime) OnJob(fn func(node.JobSpec) (node.JobResult, error)) {
 	if fn == nil {
@@ -909,7 +944,30 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 		return node.JobResult{}, err
 	}
 	if fn != nil {
-		return fn(ctx, spec)
+		if res, err := fn(ctx, spec); !errors.Is(err, ErrDefault) {
+			return res, err
+		}
+	}
+	if st := spec.Stream; st != nil {
+		if vol, ok := tarVolume(spec, "tar -cf"); ok && st.Stdout != nil {
+			r.mu.Lock()
+			out := slices.Clone(r.data[vol])
+			r.mu.Unlock()
+			if _, err := st.Stdout.Write(out); err != nil {
+				return node.JobResult{ExitCode: 137}, fmt.Errorf("job output: %w", err)
+			}
+			return node.JobResult{}, nil
+		}
+		if vol, ok := tarVolume(spec, "tar -xf"); ok && st.Stdin != nil {
+			in, err := io.ReadAll(st.Stdin)
+			if err != nil {
+				return node.JobResult{ExitCode: 1}, fmt.Errorf("job input: %w", err)
+			}
+			r.mu.Lock()
+			r.data[vol] = in
+			r.mu.Unlock()
+			return node.JobResult{}, nil
+		}
 	}
 	if spec.Stdin != nil {
 		if _, err := io.Copy(io.Discard, spec.Stdin); err != nil {

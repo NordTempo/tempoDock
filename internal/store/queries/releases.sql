@@ -55,11 +55,18 @@ SELECT * FROM release_events WHERE release_id = +? ORDER BY id;
 -- name: ListUsedHostPorts :many
 -- Host ports held on one server. A release keeps its port until its
 -- container is confirmed removed (ClearReleaseHostPort), so a container
--- that is still draining, or failed to stop, never shares it.
+-- that is still draining, or failed to stop, never shares it. An open
+-- environment move holds the ports it reserved for the services it
+-- starts there (ADR 0053).
 SELECT releases.host_port FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
-WHERE environments.server_id = +? AND releases.host_port > 0;
+WHERE environments.server_id = +sqlc.arg(server_id) AND releases.host_port > 0
+UNION ALL
+SELECT environment_move_services.host_port FROM environment_move_services
+JOIN environment_moves ON environment_moves.id = environment_move_services.move_id
+WHERE environment_moves.to_server_id = +sqlc.arg(server_id)
+  AND environment_moves.status IN ('running', 'rolling_back') AND environment_move_services.host_port > 0;
 
 -- name: ClearReleaseHostPort :exec
 -- Frees a retired release's port once its containers are gone.

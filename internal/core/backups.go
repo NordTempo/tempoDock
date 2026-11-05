@@ -474,6 +474,9 @@ func (c *Core) startBackup(ctx context.Context, a Actor, ss svcScope, trigger st
 	if c.backupsMoving() {
 		return store.Backup{}, conflict("the backups are moving to other storage; back up %s once the move finishes", ss)
 	}
+	if err := c.notMoving(ctx, ss.envScope, "back it up"); err != nil {
+		return store.Backup{}, err
+	}
 	if !c.claimService(ss.svc.ID) {
 		return store.Backup{}, conflict("a backup or restore of %s is already running; wait for it to finish", ss)
 	}

@@ -4214,6 +4214,9 @@
           "lock": {
             "$ref": "#/components/schemas/EnvironmentLock"
           },
+          "moving_to": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -4350,6 +4353,102 @@
         "required": [
           "locked_at",
           "locked_by"
+        ],
+        "type": "object"
+      },
+      "EnvironmentMove": {
+        "additionalProperties": false,
+        "properties": {
+          "created_by": {
+            "type": "string"
+          },
+          "downtime_from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "downtime_to": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/MoveService"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "rolling_back",
+              "succeeded",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "step": {
+            "enum": [
+              "prepare",
+              "stop",
+              "copy",
+              "start",
+              "switch",
+              "cleanup",
+              "done"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "environment",
+          "from",
+          "to",
+          "status",
+          "step",
+          "services",
+          "notes",
+          "created_by",
+          "started_at"
         ],
         "type": "object"
       },
@@ -4633,6 +4732,9 @@
           "message": {
             "type": "string"
           },
+          "move": {
+            "$ref": "#/components/schemas/EnvironmentMove"
+          },
           "project": {
             "type": "string"
           },
@@ -4686,7 +4788,8 @@
               "access_request",
               "run",
               "uptime",
-              "job"
+              "job",
+              "environment_move"
             ],
             "type": "string"
           },
@@ -5751,6 +5854,55 @@
         },
         "required": [
           "storage"
+        ],
+        "type": "object"
+      },
+      "MoveEnvironmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "to": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "to"
+        ],
+        "type": "object"
+      },
+      "MoveService": {
+        "additionalProperties": false,
+        "properties": {
+          "copied_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "stateful": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "waiting",
+              "stopped",
+              "copied",
+              "started",
+              "healthy",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "stateful",
+          "status",
+          "copied_bytes"
         ],
         "type": "object"
       },
@@ -23585,6 +23737,316 @@
         "summary": "Send a test line to a log drain",
         "tags": [
           "logs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/move": {
+      "get": {
+        "description": "The running move, or the latest one: its step, each service's progress, the downtime and what is left to do by hand. 404 if the environment never moved. Scope: read.",
+        "operationId": "get-environment-move",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentMove"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "An environment's move",
+        "tags": [
+          "environments"
+        ]
+      },
+      "post": {
+        "description": "Checks everything first and refuses with the reason: the target accepts the environment's kind, both servers are online, the target has the memory and disk, every active release's image can reach it, and domains routed through Cloudflare have a tunnel on it. Then answers with the move, running, and works in the background: stateful services are down while their volumes copy; the rest keep serving until the switch. A failure before the switch rolls back and leaves the environment where it was. Progress is published as environment_move events; environment.moved or environment.move_failed is audited at the end. Operators only, and the environment's lock applies.",
+        "operationId": "move-environment",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveEnvironmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentMove"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Move an environment to another server",
+        "tags": [
+          "environments"
         ]
       }
     },
