@@ -176,7 +176,7 @@ func Write(root, service, release string, limits node.LogLimits, fill func(add f
 }
 
 // commit makes the member in tmp part of target: a rename when target is
-// new, else an append (mu held).
+// new, else an append (mu held). A failed append leaves target as it was.
 func commit(tmp *os.File, target string) error {
 	if _, err := os.Stat(target); errors.Is(err, fs.ErrNotExist) {
 		return os.Rename(tmp.Name(), target)
@@ -190,12 +190,23 @@ func commit(tmp *os.File, target string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, tmp); err != nil {
+	before, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := copyMember(f, tmp); err != nil {
+		// Half a member (a disk filling meanwhile) would end every read
+		// there, hiding the members appended after it: cut it off.
+		_ = f.Truncate(before)
 		_ = f.Close()
 		return err
 	}
 	return f.Close()
 }
+
+// copyMember appends a member to an archive (io.Copy; tests replace it).
+var copyMember = io.Copy
 
 // archiveFile is one release's archive: its name in a service's
 // directory, or <service>/<name> under the root for enforceTotal.
@@ -406,10 +417,32 @@ func Read(ctx context.Context, root string, q node.LogArchiveQuery) (<-chan node
 				return false
 			}
 		}
+		if q.Tail > maxRing {
+			// A long tail is a count, then a second read that skips the
+			// lines before it: memory stays a line, not the archive.
+			all := node.LogArchiveQuery{Since: q.Since}
+			skip := -q.Tail
+			_ = scan(f, all, func(node.LogLine) bool { skip++; return ctx.Err() == nil })
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				return
+			}
+			_ = scan(f, all, func(l node.LogLine) bool {
+				if skip > 0 {
+					skip--
+					return true
+				}
+				return emit(l)
+			})
+			return
+		}
 		_ = scan(f, q, emit)
 	}()
 	return ch, nil
 }
+
+// maxRing is the longest tail Read keeps in memory while it reads; a
+// longer one reads the archive twice instead.
+const maxRing = 4096
 
 // scan reads an archive from r and emits its lines as Read describes. It
 // returns once emit refuses a line, at the end, or at the first damage.
@@ -426,7 +459,7 @@ func scan(r io.Reader, q node.LogArchiveQuery, emit func(node.LogLine) bool) err
 	sc.Split(wholeLines)
 	var tail ring
 	if q.Tail > 0 {
-		tail.slots = make([][]byte, 0, min(q.Tail, 4096))
+		tail.slots = make([][]byte, 0, min(q.Tail, maxRing))
 		tail.n = q.Tail
 	}
 	for sc.Scan() {

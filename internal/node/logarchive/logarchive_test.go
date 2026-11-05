@@ -298,3 +298,39 @@ func TestTotalLimit(t *testing.T) {
 		t.Fatalf("prune: %+v %v, left %v %v", r, err, archives(t, root, "2"), archives(t, root, "3"))
 	}
 }
+
+// A disk that fills while a member is appended to the release's archive
+// cuts the half member off, so members appended later still read.
+func TestDiskFullMidAppend(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "1", "2", node.LogLimits{}, lines(0, 2))
+	copyMember = func(dst io.Writer, src io.Reader) (int64, error) {
+		n, _ := io.CopyN(dst, src, 10)
+		return n, syscall.ENOSPC
+	}
+	_, err := Write(root, "1", "2", node.LogLimits{}, func(add func(node.LogLine) error) error {
+		return add(node.LogLine{Text: "lost"})
+	})
+	copyMember = io.Copy
+	if !errors.Is(err, syscall.ENOSPC) {
+		t.Fatal(err)
+	}
+	write(t, root, "1", "2", node.LogLimits{}, lines(2, 1))
+	if got := read(t, root, node.LogArchiveQuery{Service: "1", Release: "2"}); !slices.Equal(got, []string{"line 0", "line 1", "line 2"}) {
+		t.Fatalf("after a failed append = %v", got)
+	}
+}
+
+// A tail longer than Read keeps in memory reads the archive twice and
+// still sends exactly the last lines, oldest first.
+func TestLongTail(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "1", "2", node.LogLimits{}, lines(0, maxRing+100))
+	got := read(t, root, node.LogArchiveQuery{Service: "1", Release: "2", Tail: maxRing + 10})
+	if len(got) != maxRing+10 || got[0] != "line 90" || got[len(got)-1] != fmt.Sprintf("line %d", maxRing+99) {
+		t.Fatalf("%d lines, %q .. %q", len(got), got[0], got[len(got)-1])
+	}
+	if got := read(t, root, node.LogArchiveQuery{Service: "1", Release: "2", Tail: 1 << 30}); len(got) != maxRing+100 {
+		t.Fatalf("tail past the start = %d lines", len(got))
+	}
+}
