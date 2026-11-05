@@ -566,7 +566,7 @@ function Editable({
       <button
         type="button"
         title={`Edit ${label}`}
-        aria-label={`Edit ${label}: ${formatSetting(key, change ? change.new : value)}`}
+        aria-label={`Edit ${label}: ${formatSetting(key, change ? change.new : value).replace(" (default)", " default")}`}
         onClick={() => {
           setError(null);
           setDraft(editText(key, change ? change.new : value));
