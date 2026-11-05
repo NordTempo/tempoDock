@@ -292,3 +292,31 @@ func TestCLILoginTokenFollowsItsUser(t *testing.T) {
 	h.cliUser("ada@example.com", apitypes.ScopeAdmin)
 	refused("deleted, email reused", tok)
 }
+
+// TestTokensCantManageAccounts checks that an operator's token can't create
+// or reset accounts, while a signed-in operator and System can.
+func TestTokensCantManageAccounts(t *testing.T) {
+	h := newHarness(t)
+	session := h.cliUser("op@example.com", apitypes.ScopeAdmin)
+	session.Operator = true
+	other := h.cliUser("other@example.com", apitypes.ScopeAdmin)
+	token := session
+	token.Kind = "token"
+
+	req := apitypes.CreateUserRequest{Email: "new@example.com", Name: "x", Password: "a long enough password", Role: apitypes.ScopeAdmin}
+	if _, err := h.c.CreateUser(h.ctx, token, req); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("token CreateUser: got %v, want forbidden", err)
+	}
+	if _, err := h.c.ResetPassword(h.ctx, token, other.UserID, apitypes.ResetPasswordRequest{}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("token ResetPassword: got %v, want forbidden", err)
+	}
+	if _, err := h.c.CreateUser(h.ctx, session, req); err != nil {
+		t.Fatalf("session CreateUser: %v", err)
+	}
+	if _, err := h.c.ResetPassword(h.ctx, session, other.UserID, apitypes.ResetPasswordRequest{}); err != nil {
+		t.Fatalf("session ResetPassword: %v", err)
+	}
+	if _, err := h.c.ResetPassword(h.ctx, testSystem, other.UserID, apitypes.ResetPasswordRequest{}); err != nil {
+		t.Fatalf("system ResetPassword: %v", err)
+	}
+}

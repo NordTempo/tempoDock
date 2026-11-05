@@ -45,7 +45,9 @@ func TestCookieRequestsRefuseCrossSite(t *testing.T) {
 		{"foreign referer", false, map[string]string{"Referer": "https://evil.example/x", "Content-Type": "application/json"}, 403},
 		{"form body", false, map[string]string{"Origin": "http://" + self, "Content-Type": "text/plain"}, 403},
 		{"no content type", false, map[string]string{"Origin": "http://" + self}, 403},
-		{"bearer is exempt", true, map[string]string{"Origin": "https://evil.example"}, 201},
+		// A token passes the guard and meets core's rule instead: accounts
+		// are never a token's.
+		{"bearer is exempt", true, map[string]string{"Origin": "https://evil.example"}, 403},
 		{"same origin JSON", false, map[string]string{"Sec-Fetch-Site": "same-origin", "Origin": "http://" + self, "Content-Type": "application/json"}, 201},
 	}
 	for i, tc := range cases {
@@ -66,7 +68,7 @@ func TestCookieRequestsRefuseCrossSite(t *testing.T) {
 			}
 			b, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			if resp.StatusCode != tc.status {
+			if resp.StatusCode != tc.status || tc.bearer && !strings.Contains(string(b), "is for a person") {
 				t.Fatalf("status %d, want %d: %s", resp.StatusCode, tc.status, b)
 			}
 		})
