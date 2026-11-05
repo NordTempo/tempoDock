@@ -102,7 +102,6 @@ function purpose(back: string | undefined): { title: string; note?: string } {
   return { title: "Sign in" };
 }
 
-
 /** What finishes a sign-in after the password (ADR 0057). */
 type SecondFactor = NonNullable<
   components["schemas"]["LoginResult"]["second_factor"]

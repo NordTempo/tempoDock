@@ -16,6 +16,7 @@ import { Icon } from "../../ui/icons";
 import {
   Act,
   Button,
+  Confirm,
   ErrorText,
   lockHolds,
   Menu,
@@ -113,7 +114,8 @@ export function LockStrip({
       r.environment === ref.environment &&
       isPending(r),
   );
-  const error = lockNow.error ?? unlock.error;
+  const [asking, setAsking] = useState(false);
+  const error = lockNow.error ?? (asking ? null : unlock.error);
   const busy = lockNow.isPending || unlock.isPending;
   const env = ref.environment;
   return (
@@ -176,10 +178,40 @@ export function LockStrip({
                 className={warnBtn}
                 cli={`dock environment unlock ${env}`}
                 disabled={busy}
-                onClick={() => unlock.mutate({ ref, minutes: 0 })}
+                onClick={() => setAsking(true)}
               >
                 Unlock
               </Act>
+              {asking && (
+                <Confirm
+                  action={`Unlock ${env}`}
+                  cli={`dock environment unlock ${env}`}
+                  pending={unlock.isPending}
+                  error={unlock.error}
+                  onConfirm={() =>
+                    unlock.mutate(
+                      { ref, minutes: 0 },
+                      { onSuccess: () => setAsking(false) },
+                    )
+                  }
+                  onCancel={() => {
+                    unlock.reset();
+                    setAsking(false);
+                  }}
+                >
+                  {lock.locked_by} locked it {ago(lock.locked_at)}
+                  {lock.reason ? (
+                    <>
+                      {" "}
+                      for <b>{lock.reason}</b>
+                    </>
+                  ) : (
+                    ""
+                  )}
+                  . Tokens can change {env} again until someone locks it. To let
+                  one change through, use Open for… instead.
+                </Confirm>
+              )}
             </>
           ) : (
             <Act
