@@ -19,11 +19,12 @@ permissions:
 jobs:
   # The release reuses main's CI result for the tagged commit: passes if
   # ci succeeded on main for it, waits up to 40 minutes for a run still in
-  # progress (the tag usually follows the merge), fails otherwise. On a
-  # hosted runner, as it may wait while main's CI uses every self-hosted
-  # slot.
+  # progress (the tag usually follows the merge), fails otherwise. On
+  # Blacksmith like the builds, not a self-hosted runner, as it may wait
+  # while main's CI uses every self-hosted slot (blacksmith-2vcpu jobs sat
+  # queued with no runner).
   ci:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 45
     permissions:
       actions: read
