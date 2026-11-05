@@ -787,7 +787,7 @@ func upperFirst(s string) string {
 // hostRuleRe matches a Traefik Host(...) matcher; quotedRe the hostnames
 // in it.
 var (
-	hostRuleRe = regexp.MustCompile("Host\\(([^)]*)\\)")
+	hostRuleRe = regexp.MustCompile(`Host\(([^)]*)\)`)
 	quotedRe   = regexp.MustCompile("[`\"']([^`\"']+)[`\"']")
 )
 
