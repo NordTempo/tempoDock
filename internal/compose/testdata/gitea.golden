@@ -1,0 +1,65 @@
+# Tempo Dock project app, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'app'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'db'
+    image = 'postgis/postgis:16-3.4'
+    variables = ['POSTGRES_PASSWORD']
+    volumes = [{name = 'postgres', mount_path = '/var/lib/postgresql/data'}]
+
+    [environments.services.values]
+      POSTGRES_DB = 'gitea'
+      POSTGRES_USER = 'gitea'
+
+  [[environments.services]]
+    name = 'nextcloud'
+    image = 'nextcloud:29-apache'
+    port = 80
+    health_check_path = '/status.php'
+    volumes = [{name = 'nextcloud', mount_path = '/var/www/html'}]
+
+  [[environments.services]]
+    name = 'server'
+    image = 'docker.gitea.com/gitea:1.22.3-rootless'
+    port = 3000
+    health_check_path = '/api/healthz'
+    variables = ['GITEA__database__PASSWD']
+    depends_on = ['db']
+    volumes = [{name = 'gitea-data', mount_path = '/var/lib/gitea'}]
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      GITEA__database__DB_TYPE = 'postgres'
+      GITEA__database__HOST = 'db:5432'
+      GITEA__database__NAME = 'gitea'
+      GITEA__database__USER = 'gitea'
+      USER_GID = '1000'
+      USER_UID = '1000'
+
+# warnings
+ | networks | Dock gives every environment one network, and services reach each other by service name, so the networks section is ignored.
+ | networks.proxy | Network proxy (traefik_proxy) is external in Compose: it is made outside this file, often by a reverse proxy. Dock services don't join outside networks: Dock routes HTTP to services through their domains, and services in other projects aren't reachable by name.
+db | image | postgis/postgis:16-3.4 is PostgreSQL with extensions, not Dock's postgres template, so it stays an image service with its own volume: Dock doesn't back it up and the data panel doesn't open it. Back it up yourself with pg_dump, or switch to the postgres template if the app doesn't need the extensions.
+db | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
+nextcloud | labels | Caddy labels are ignored: Dock routes HTTP to the service's port through its domains, without a proxy container. Add cloud.example.com with `dock domain add cloud.example.com -s nextcloud`.
+nextcloud | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
+server | labels | Traefik labels are ignored: Dock routes HTTP to the service's port through its domains, without a proxy container. Add git.example.com with `dock domain add git.example.com -s server`.
+server | networks | Dock gives every environment one network, and services reach each other by service name, so networks is ignored.
+server | ports | A Dock service receives traffic on one port, so 3000 is used and 2222 isn't. Other services in the environment can still reach it at server:2222.
+server | ports | Dock doesn't publish host ports, so 3000:3000 isn't opened on the server. HTTP reaches port 3000 through a generated domain when the server has a base domain; add your own with `dock domain add <hostname> -s server`.
+server | volumes | The bind mount ./config:/etc/gitea isn't mounted: Dock mounts only named volumes, so files written to /etc/gitea are lost on the next deploy. Add a volume there with `dock volume add <name> /etc/gitea -s server`, and copy existing files into it.
+server | volumes | The bind mount /etc/timezone:/etc/timezone isn't mounted, so the container keeps the image's time zone (usually UTC). Set a TZ variable with `dock env set -s server TZ=Europe/Oslo` if the image reads it.
+
+# secrets
+db POSTGRES_PASSWORD (value set)
+server GITEA__database__PASSWD (value set)
+
+# builds

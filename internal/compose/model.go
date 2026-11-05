@@ -54,6 +54,10 @@ type file struct {
 	Name     scalar                    `yaml:"name"`
 	Services map[string]*service       `yaml:"services"`
 	Volumes  map[string]map[string]any `yaml:"volumes"`
+	Networks map[string]map[string]any `yaml:"networks"`
+	// Secrets and Configs are the top-level definitions, by name.
+	Secrets map[string]map[string]any `yaml:"secrets"`
+	Configs map[string]map[string]any `yaml:"configs"`
 }
 
 // UnmarshalYAML records the top-level keys.
@@ -83,6 +87,13 @@ type service struct {
 	Deploy      *deploy      `yaml:"deploy"`
 	Restart     scalar       `yaml:"restart"`
 	NetworkMode scalar       `yaml:"network_mode"`
+	// Labels is a list of KEY=VALUE or a map; labelsOf reads both.
+	Labels any `yaml:"labels"`
+	// Secrets and Configs are names, or maps with a source.
+	Secrets  []any    `yaml:"secrets"`
+	Configs  []any    `yaml:"configs"`
+	Profiles []string `yaml:"profiles"`
+	Extends  any      `yaml:"extends"`
 }
 
 // UnmarshalYAML records the service's keys.
@@ -388,8 +399,9 @@ func (d *deploy) UnmarshalYAML(unmarshal func(any) error) error {
 
 // resources is `deploy.resources`.
 type resources struct {
-	keys   []string
-	Limits *limits `yaml:"limits"`
+	keys         []string
+	Limits       *limits `yaml:"limits"`
+	Reservations *limits `yaml:"reservations"`
 }
 
 // UnmarshalYAML records the section's keys.
@@ -401,10 +413,12 @@ func (r *resources) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 // limits is `deploy.resources.limits`.
+// It is also `deploy.resources.reservations`, whose devices are GPUs.
 type limits struct {
-	keys   []string
-	Memory scalar `yaml:"memory"`
-	CPUs   scalar `yaml:"cpus"`
+	keys    []string
+	Memory  scalar `yaml:"memory"`
+	CPUs    scalar `yaml:"cpus"`
+	Devices []any  `yaml:"devices"`
 }
 
 // UnmarshalYAML records the section's keys.
@@ -431,4 +445,30 @@ func isTrue(s string) bool {
 		return true
 	}
 	return false
+}
+
+// labelsOf reads labels in the list (KEY=VALUE) or the map form.
+func labelsOf(v any) map[string]string {
+	out := map[string]string{}
+	switch l := v.(type) {
+	case []any:
+		for _, e := range l {
+			k, val, _ := strings.Cut(fmt.Sprint(e), "=")
+			out[k] = val
+		}
+	case map[any]any:
+		for k, val := range l {
+			out[fmt.Sprint(k)] = fmt.Sprint(val)
+		}
+	}
+	return out
+}
+
+// sourceOf is the name a service's secrets or configs entry refers to:
+// the entry itself in the short form, its source in the long one.
+func sourceOf(v any) string {
+	if m, ok := v.(map[any]any); ok {
+		return fmt.Sprint(m["source"])
+	}
+	return fmt.Sprint(v)
 }

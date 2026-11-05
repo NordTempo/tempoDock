@@ -72,8 +72,9 @@ web | NEXTAUTH_SECRET | NEXTAUTH_SECRET uses ${NEXTAUTH_SECRET}, which isn't set
 web | PORT | PORT is set by Dock from the service's port setting, so this value isn't used.
 web | STRIPE_SECRET_KEY | STRIPE_SECRET_KEY has no value in the Compose file or .env, so it is a secret without a value. Set it before the first deploy with `dock env set -s web STRIPE_SECRET_KEY=...`.
 web | build.args | Build arguments aren't set separately: Dock passes the service's variables to the build as build arguments, so set any the build needs as variables.
+web | env_file | The env file ./web/.env.local is optional in Compose (required: false) and wasn't sent, so its variables aren't set. If it exists, import again with the file next to the Compose file, or set them with `dock env set -s web`.
 web | image | The service has both build and image; Dock builds it from source, so the image name acme/web:latest isn't used.
-web | ports | Dock doesn't publish host ports, so 3000:3000 isn't opened on the server. HTTP reaches port 3000 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+web | ports | Dock doesn't publish host ports, so 3000:3000 isn't opened on the server. HTTP reaches port 3000 through a generated domain when the server has a base domain; add your own with `dock domain add <hostname> -s web`.
 worker | DATABASE_URL | DATABASE_URL points at postgres, so it now uses the postgres template's DATABASE_URL: ${{postgres.DATABASE_URL}}.
 worker | PG_PASSWORD | PG_PASSWORD matches postgres's POSTGRES_PASSWORD in the Compose file, so it now references ${{postgres.POSTGRES_PASSWORD}}.
 

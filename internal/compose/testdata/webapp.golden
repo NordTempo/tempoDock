@@ -53,7 +53,7 @@ web | DB_PASSWORD | DB_PASSWORD matches db's POSTGRES_PASSWORD in the Compose fi
 web | REDIS_URL | REDIS_URL points at cache, so it now uses the redis template's REDIS_URL: ${{cache.REDIS_URL}}/0.
 web | container_name | Dock names containers itself, so container_name is ignored. Other services in the environment reach this one at web.
 web | logging | Dock keeps every service's logs itself (`dock logs`), so the logging settings are ignored.
-web | ports | Dock doesn't publish host ports, so 9090:9090 isn't opened on the server. HTTP reaches port 9090 through a generated domain when the server has a base domain; add your own with `dock domain add`.
+web | ports | Dock doesn't publish host ports, so 9090:9090 isn't opened on the server. HTTP reaches port 9090 through a generated domain when the server has a base domain; add your own with `dock domain add <hostname> -s web`.
 
 # secrets
 web SECRET_KEY (value set)

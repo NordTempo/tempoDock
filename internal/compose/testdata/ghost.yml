@@ -1,0 +1,31 @@
+services:
+  ghost:
+    image: ghost:5-alpine
+    restart: always
+    ports:
+      - 127.0.0.1:2368:2368
+    environment:
+      database__client: mysql
+      database__connection__host: db
+      database__connection__user: root
+      database__connection__password: example
+      database__connection__database: ghost
+      url: http://localhost:2368
+    volumes:
+      - ghost:/var/lib/ghost/content
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mysql:8.0
+    restart: on-failure:5
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+    volumes:
+      - db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+volumes:
+  ghost:
+  db:

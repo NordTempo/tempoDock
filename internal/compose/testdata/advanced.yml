@@ -1,0 +1,80 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-common: &common
+  restart: unless-stopped
+  logging: *default-logging
+  init: true
+  stop_grace_period: 30s
+
+services:
+  api:
+    <<: *common
+    image: ghcr.io/acme/api@sha256:0f8a6f5e8b4c7d9e2a1b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081
+    environment:
+      DATABASE_URL: postgres://app:${DB_PASSWORD:?set DB_PASSWORD in .env}@db:5432/app
+      ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+    secrets:
+      - admin_password
+      - source: api_key
+        target: api_key.txt
+    configs:
+      - source: api_config
+        target: /etc/api/config.yml
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 512M
+        reservations:
+          memory: 256M
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      db:
+        condition: service_healthy
+        restart: true
+
+  worker:
+    <<: *common
+    image: ghcr.io/acme/api:2.3.1
+    command: ["worker", "--concurrency", "4"]
+    profiles: [worker]
+    depends_on: [api]
+
+  debug:
+    image: nicolaka/netshoot
+    profiles: ["debug"]
+    command: sleep infinity
+
+  db:
+    <<: *common
+    image: postgres:17
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+
+secrets:
+  admin_password:
+    file: ./secrets/admin_password.txt
+  api_key:
+    environment: API_KEY
+
+configs:
+  api_config:
+    file: ./config/api.yml
+
+volumes:
+  pgdata:

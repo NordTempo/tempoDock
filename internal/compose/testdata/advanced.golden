@@ -1,0 +1,71 @@
+# Tempo Dock project app, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'app'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'api'
+    image = 'ghcr.io/acme/api@sha256:0f8a6f5e8b4c7d9e2a1b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081'
+    port = 8080
+    memory_mb = 512
+    cpus = 1.5
+    variables = ['ADMIN_PASSWORD_FILE']
+    depends_on = ['db']
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      DATABASE_URL = '${{db.DATABASE_URL}}'
+
+  [[environments.services]]
+    name = 'db'
+    template = 'postgres'
+
+    [environments.services.values]
+      POSTGRES_USER = 'app'
+
+  [[environments.services]]
+    name = 'debug'
+    image = 'nicolaka/netshoot'
+    start_command = 'sleep infinity'
+
+  [[environments.services]]
+    name = 'worker'
+    image = 'ghcr.io/acme/api:2.3.1'
+    start_command = 'worker --concurrency 4'
+    depends_on = ['api']
+
+# warnings
+ | configs.api_config | Compose config api_config (the file ./config/api.yml) isn't supported, so no file is mounted for it. Build the file into the image with COPY in a Dockerfile instead.
+ | secrets.admin_password | Compose secret admin_password (the file ./secrets/admin_password.txt) isn't supported, so no file is mounted for it. Set its value as a secret variable with `dock env set -s <service> NAME=...` on each service that uses it.
+ | secrets.api_key | Compose secret api_key (the variable API_KEY) isn't supported, so no file is mounted for it. Set its value as a secret variable with `dock env set -s <service> NAME=...` on each service that uses it.
+api | ADMIN_PASSWORD_FILE | ADMIN_PASSWORD_FILE points at a Compose secret file under /run/secrets, which Dock doesn't create. If the image also reads the value itself from a variable, set that with `dock env set -s api` instead.
+api | DATABASE_URL | DATABASE_URL points at db, so it now uses the postgres template's DATABASE_URL: ${{db.DATABASE_URL}}.
+api | configs | Compose configs (files mounted into the container) aren't supported, so api_config isn't mounted. Build the files into the image with COPY in a Dockerfile instead.
+api | deploy.resources.reservations | Dock sets limits, not reservations, so the reserved memory and CPUs aren't set aside. Set limits with `dock service update --memory` and `--cpus` if the service needs them.
+api | deploy.resources.reservations.devices | Devices (GPUs) can't be passed to a Dock service, so the service runs without them. Use an image that runs on the CPU.
+api | init | init isn't applied, so the service's command runs as PID 1 without an init process. If it leaves zombie processes or ignores stop signals, add tini to the image as its entrypoint.
+api | logging | Dock keeps every service's logs itself (`dock logs`), so the logging settings are ignored.
+api | ports | Dock doesn't publish host ports, so 8080:8080 isn't opened on the server. HTTP reaches port 8080 through a generated domain when the server has a base domain; add your own with `dock domain add <hostname> -s api`.
+api | secrets | Compose secrets (files under /run/secrets) aren't supported, so admin_password, api_key aren't mounted. Set each value as a secret variable with `dock env set -s api NAME=...`, and have the service read it from its environment instead of a file.
+api | stop_grace_period | stop_grace_period isn't applied: Dock gives a container 30s to stop before it kills it.
+db | POSTGRES_PASSWORD | The postgres template generates its own password, so this value isn't used. Other services' variables that held it now reference ${{db.POSTGRES_PASSWORD}}.
+db | image | postgres:17 becomes Dock's postgres template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used. Data in the Compose volumes isn't moved: the new database starts empty.
+db | init | init isn't applied, so the service's command runs as PID 1 without an init process. If it leaves zombie processes or ignores stop signals, add tini to the image as its entrypoint.
+db | logging | Dock keeps every service's logs itself (`dock logs`), so the logging settings are ignored.
+db | stop_grace_period | stop_grace_period isn't applied: Dock gives a container 30s to stop before it kills it.
+debug | profiles | Compose starts this service only with the profile debug (`docker compose --profile debug up`). Dock has no profiles, so it is imported and always runs; archive it with `dock service archive debug` if you don't need it.
+worker | init | init isn't applied, so the service's command runs as PID 1 without an init process. If it leaves zombie processes or ignores stop signals, add tini to the image as its entrypoint.
+worker | logging | Dock keeps every service's logs itself (`dock logs`), so the logging settings are ignored.
+worker | profiles | Compose starts this service only with the profile worker (`docker compose --profile worker up`). Dock has no profiles, so it is imported and always runs; archive it with `dock service archive worker` if you don't need it.
+worker | stop_grace_period | stop_grace_period isn't applied: Dock gives a container 30s to stop before it kills it.
+
+# secrets
+api ADMIN_PASSWORD_FILE (value set)
+
+# builds
