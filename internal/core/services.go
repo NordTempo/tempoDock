@@ -365,6 +365,16 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 	}
 	for _, as := range done {
 		c.setStatus(as.svcScope, apitypes.ServiceStatus{State: apitypes.ServiceNone})
+		// Its domains stay, unrouted, so their alerts are found by hostname.
+		var hostnames []string
+		if ds, err := c.store.ListDomainsByService(ctx, as.svc.ID); err != nil {
+			c.log.Error("list domains after archive", "service", as.svc.ID, "err", err)
+		} else {
+			for _, d := range ds {
+				hostnames = append(hostnames, d.Hostname)
+			}
+		}
+		c.resolveServiceAlerts(ctx, as.svc.ID, hostnames)
 		if as.active == nil {
 			continue
 		}
