@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-race test-integration lint generate dev perf perf-baseline
+.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-race test-integration lint generate dev perf perf-bench perf-artifacts perf-baseline
 
 ## build: the single static binary (UI embedded if web/dist is built, and
 ## dock-probe)
@@ -82,11 +82,17 @@ web:
 test:
 	go test ./...
 
-## test-race: the race detector on the most concurrent packages (CI's race job);
-## core alone takes 5 to 15 minutes under -race, past go test's 10 minute default
+## test-race: the race detector on the most concurrent packages (CI's race
+## jobs); core alone takes 15 to 20 minutes under -race, past go test's 10
+## minute default. SHARD=i/n runs one of n shards of the tests, split by name
+## (scripts/race-shard.sh), as CI does with n=3
 RACE_PKGS := ./internal/core/... ./internal/api/... ./internal/mcp/...
 test-race:
+ifdef SHARD
+	scripts/race-shard.sh $(SHARD) $(RACE_PKGS)
+else
 	go test -race -timeout 30m $(RACE_PKGS)
+endif
 
 ## test-integration: tests against a real Docker Engine (and Caddy, BuildKit)
 test-integration: probe
@@ -111,6 +117,14 @@ PERF_TEMPOBASE := $(if $(wildcard cmd/tempobase),build-tempobase)
 ## perf: check performance budgets (docs/performance.md); builds the UIs and binaries first
 perf: web build build-analytics $(PERF_TEMPOBASE)
 	go run ./scripts/perf $(PERF_FLAGS)
+
+## perf-bench: only the Go benchmarks against the baseline; needs no builds
+perf-bench:
+	go run ./scripts/perf -checks bench $(PERF_FLAGS)
+
+## perf-artifacts: every check but the benchmarks (CI runs the two as jobs)
+perf-artifacts: web build build-analytics $(PERF_TEMPOBASE)
+	go run ./scripts/perf -skip bench $(PERF_FLAGS)
 
 ## perf-baseline: re-record binary sizes and benchmarks in scripts/perf/baseline.json
 perf-baseline: web build build-analytics $(PERF_TEMPOBASE)

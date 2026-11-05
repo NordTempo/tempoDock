@@ -1,7 +1,8 @@
 name: release
 
-# Pushing a v* tag runs every CI check alongside the release build
-# (make release-local, see scripts/release/build.sh), then publishes a
+# Pushing a v* tag checks that the tagged commit passed CI on main (it
+# doesn't run the checks again) alongside the release build (make
+# release-local, see scripts/release/build.sh), then publishes a
 # GitHub Release with generated notes: dock and tempobase from the same
 # commit, one version (ADR 0024). Tags with a "-" (v0.2.0-rc.1) are marked
 # as pre-releases, so "latest" never points at them. tempoBase's image goes
@@ -16,8 +17,23 @@ permissions:
   contents: read
 
 jobs:
+  # The release reuses main's CI result for the tagged commit: passes if
+  # ci succeeded on main for it, waits up to 40 minutes for a run still in
+  # progress (the tag usually follows the merge), fails otherwise. On a
+  # hosted runner, as it may wait while main's CI uses every self-hosted
+  # slot.
   ci:
-    uses: ./.github/workflows/ci.yml
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: useblacksmith/checkout@v1
+      - name: CI passed on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/release/wait-for-ci.sh "$GITHUB_SHA" 2400
 
   build:
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -72,7 +88,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Neither GitHub Releases nor GHCR may publish until every check and the
+  # Neither GitHub Releases nor GHCR may publish until main's CI and the
   # parallel builds have succeeded. Publish the built artifacts, never
   # rebuild.
   release:

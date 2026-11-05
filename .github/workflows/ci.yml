@@ -4,19 +4,23 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The release workflow runs every check before it publishes.
+  # Kept for callers; release.yml no longer calls it, it waits for main's
+  # run of the tagged commit (scripts/release/wait-for-ci.sh).
   workflow_call:
 
-# A newer push supersedes a running one: only the latest commit is checked.
+# A newer push to a pull request supersedes a running one: only its latest
+# commit is checked. Every commit on main gets its own run, as a release
+# of that commit needs main's result.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 # Jobs run on the org's self-hosted runners (label nordtempo): ephemeral,
 # each with its own Docker daemon. If they're down, set the repo variable
 # CI_RUNNER to blacksmith-4vcpu-ubuntu-2404 to fall back to Blacksmith.
 jobs:
-  go:
+  # The Go checks run as parallel jobs, each with only the setup it needs.
+  lint:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -26,43 +30,55 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.15.0
-      - run: make test
       # tempoBase must not link Dock's daemon (ADR 0024); skips until
       # cmd/tempobase exists.
       - run: make tempobase-deps
       # dock must not link DuckDB (ADR 0037).
       - run: make analytics-deps
-      - name: Install Caddy
-        run: curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin caddy
-      # The analytics store's container test runs its binary (ADR 0037).
-      - run: make analytics-binary VERSION=dev
-      - name: Integration tests (Docker, Caddy, BuildKit)
-        run: make test-integration
-      # Build the UI first so the binary embeds it.
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-      - uses: pnpm/action-setup@v6
-        with:
-          package_json_file: web/package.json
-          cache: true
-          cache_dependency_path: web/pnpm-lock.yaml
-      - run: make web
-      - run: make build
-      - run: make build-tempobase
-        if: hashFiles('cmd/tempobase/*.go') != ''
 
-  # The race detector on the packages with the most concurrency (deploys,
-  # the event bus, SSE streams, MCP sessions). Its own job, as -race makes
-  # them several times slower than make test.
-  race:
+  test:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - run: make test-race
+      - run: make test
+
+  # The binaries and UIs are built by perf's artifacts job, which measures
+  # them, so this job only runs the integration tests.
+  integration:
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install Caddy
+        run: curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin caddy
+      # The analytics store's container test runs its binary (ADR 0037).
+      - run: make analytics-binary VERSION=dev
+      - name: Integration tests (Docker, Caddy, BuildKit)
+        run: make test-integration
+
+  # The race detector on the packages with the most concurrency (deploys,
+  # the event bus, SSE streams, MCP sessions). -race makes them several
+  # times slower than make test (core alone takes 15 to 20 minutes), so
+  # they run in three shards that split the tests by name
+  # (scripts/race-shard.sh); every test runs in exactly one shard.
+  race:
+    name: race (${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: make test-race SHARD=${{ matrix.shard }}/3
 
   # Dock Analytics' store (ADR 0037): its own module with CGO and DuckDB,
   # which the root's lint and tests don't enter. The binary is built as
@@ -85,9 +101,11 @@ jobs:
   # Performance budgets (docs/performance.md): binary size, CLI start-up,
   # daemon idle memory/CPU/wake-ups, API latency, UI bundle and benchmarks
   # against scripts/perf/baseline.json, for Dock and tempoBase, and the
-  # analytics store's idle cost, dashboards and ingest. Builds its
-  # own inputs, so it runs alongside the Go and web checks.
-  perf:
+  # analytics store's idle cost, dashboards and ingest. Two jobs: the Go
+  # benchmarks, which need no builds, and everything else, which builds
+  # the UIs and binaries (and so checks that they build). Each builds its
+  # own inputs, so they run alongside the Go and web checks.
+  perf-artifacts:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     # For tempoBase's check that it closes Postgres connections after use.
     services:
@@ -116,10 +134,20 @@ jobs:
           cache_dependency_path: web/pnpm-lock.yaml
       # Shared runners are too noisy for timing budgets: they warn here and
       # are enforced locally (make perf). Sizes, memory and allocs still fail.
-      - run: make perf PERF_FLAGS="-soft-timing -tempobase-pg $PERF_PG_URL"
+      - run: make perf-artifacts PERF_FLAGS="-soft-timing -tempobase-pg $PERF_PG_URL"
         env:
           # The throwaway service above, not a secret.
           PERF_PG_URL: postgres://postgres:perf@127.0.0.1:5432/postgres?sslmode=disable
+
+  perf-bench:
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # Timing warns, allocations fail (see perf-artifacts).
+      - run: make perf-bench PERF_FLAGS="-soft-timing"
 
   # The UI, and every generated file: the API specs and sqlc's code are
   # regenerated from Go first, so the stale-client check and the final diff
@@ -170,3 +198,4 @@ jobs:
             echo "::error::Generated files are out of date: run make generate and commit the result."
             exit 1
           fi
+
